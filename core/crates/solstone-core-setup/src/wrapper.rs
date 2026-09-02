@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use chrono::Utc;
 use nix::fcntl::{Flock, FlockArg};
 use solstone_core_installation_identity::{GuardFields, InstallationBinding, wrapper_guard_lines};
+use solstone_core_journal::resolve_identity_root_from_executable_dir;
 
 use crate::args::canonicalize_or_normalize;
 use crate::legacy_launcher;
@@ -166,6 +167,40 @@ fn expected_targets(environment: &WrapperEnvironment, binary: &str) -> [PathBuf;
     ]
 }
 
+/// Whether `target` is `<prefix>/versions/<some-build>/bin/<binary>` for the
+/// same versioned-prefix installation `environment.executable_dir` resolves
+/// to.
+///
+/// `expected_targets` alone only recognises the *current* run's executable
+/// directory, which is exactly wrong across a version swap: after
+/// `install.sh` flips `current` onto a newly installed build, the wrapper's
+/// own `SOL_BIN=` still names the *previous* build's `versions/<old>/bin`
+/// (that is the version this wrapper was written for). Without this check
+/// that legitimate, sol-pbc-owned sibling reads as `AliasState::Foreign` and
+/// `provision_wrappers` refuses to touch it, permanently stranding the
+/// wrapper (and the service it fronts) on the old build. Any single path
+/// component between `versions/` and `bin/<binary>` qualifies -- it is
+/// content-addressed by `install.sh` and never chosen by the owner.
+fn is_own_versioned_target(environment: &WrapperEnvironment, binary: &str, target: &Path) -> bool {
+    let Some(identity_root) =
+        resolve_identity_root_from_executable_dir(&environment.executable_dir)
+    else {
+        return false;
+    };
+    // `target` is already `resolved()` by the caller; match that so a
+    // non-canonical `identity_root` (the literal-`current` resolver arm
+    // returns one unchanged) cannot produce a false negative.
+    let versions_dir = resolved(&identity_root).join("versions");
+    let Ok(relative) = target.strip_prefix(&versions_dir) else {
+        return false;
+    };
+    let mut components = relative.iter();
+    components.next().is_some()
+        && components.next().is_some_and(|part| part == "bin")
+        && components.next().is_some_and(|part| part == binary)
+        && components.next().is_none()
+}
+
 pub fn check_alias(
     environment: &WrapperEnvironment,
     binary: &str,
@@ -210,7 +245,7 @@ pub fn check_alias(
     };
     let target = resolved(&wrapper.sol_bin);
     Ok((
-        if targets.contains(&target) {
+        if targets.contains(&target) || is_own_versioned_target(environment, binary, &target) {
             AliasState::Owned
         } else {
             AliasState::Foreign
@@ -996,6 +1031,55 @@ mod tests {
         assert_eq!(
             check_alias(&environment, "solstone").unwrap().0,
             AliasState::Owned
+        );
+    }
+
+    /// After `install.sh` flips `current` onto a newly installed sibling
+    /// build, an existing wrapper's `SOL_BIN=` still names the *previous*
+    /// build's `versions/<old>/bin` -- that is the version it was written
+    /// for, and `expected_targets` alone only ever recognises this run's own
+    /// `executable_dir`. Without recognising the sibling shape,
+    /// `provision_wrappers` reads that as `AliasState::Foreign` and refuses
+    /// to touch it, permanently stranding the wrapper on the old build.
+    #[test]
+    fn sibling_version_directory_target_is_recognized_as_owned() {
+        let root = root("sibling-version-owned");
+        let prefix = root.join("prefix");
+        let old_bin = prefix.join("versions/1.0.0-aaaaaaaa/bin");
+        let new_bin = prefix.join("versions/2.0.0-bbbbbbbb/bin");
+        fs::create_dir_all(&old_bin).unwrap();
+        fs::create_dir_all(&new_bin).unwrap();
+        // `current` already reflects the flip install.sh just performed: the
+        // running process's own executable_dir is the NEW build.
+        symlink("versions/2.0.0-bbbbbbbb", prefix.join("current")).unwrap();
+
+        let home = root.join("home");
+        let curdir = root.join("repo");
+        fs::create_dir_all(home.join(".local/bin")).unwrap();
+        fs::create_dir_all(&curdir).unwrap();
+        let environment = WrapperEnvironment {
+            home_dir: home.clone(),
+            curdir,
+            executable_dir: new_bin,
+            backup_dir: Some(root.join("backups")),
+            legacy_replacement: false,
+        };
+
+        fs::write(
+            wrapper_paths(&home).journal,
+            render_wrapper(
+                "journal",
+                Path::new("/journal"),
+                &old_bin.join("journal"),
+                &guard(),
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(
+            check_alias(&environment, "journal").unwrap().0,
+            AliasState::Owned,
+            "a sibling version directory under the same installation prefix must not read as foreign"
         );
     }
     #[test]

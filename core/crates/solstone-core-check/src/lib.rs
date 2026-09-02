@@ -120,6 +120,15 @@ pub struct Check {
     pub detail: String,
     pub required_bytes: Option<u64>,
     pub available_bytes: Option<u64>,
+    /// The specific reason a `ced`/`rfdetr` check is Degraded (`absent`,
+    /// `integrity_invalid`, `unloadable`/`unrunnable`) -- `None` for every
+    /// other check and for a non-Degraded ced/rfdetr check. `detail` stays
+    /// the fixed owner-facing sentence (`CED_UNAVAILABLE_GUIDANCE` /
+    /// `RFDETR_UNAVAILABLE_GUIDANCE`) regardless of which cause fired, so
+    /// this is the only place the three causes are distinguishable; owner
+    /// copy is a separate, out-of-bounds change.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cause: Option<&'static str>,
 }
 
 fn command_text(program: &str, args: &[&str]) -> Option<String> {
@@ -329,6 +338,7 @@ fn check(
         detail: detail.into(),
         required_bytes,
         available_bytes,
+        cause: None,
     }
 }
 fn label(bytes: u64) -> String {
@@ -441,19 +451,56 @@ pub fn build_check_report(inputs: &CheckInputs) -> CheckReport {
         version: inputs.version.clone(),
     }
 }
+/// Stable diagnostic string for each CED degraded cause. Not owner-facing
+/// copy -- `CED_UNAVAILABLE_GUIDANCE` is the fixed sentence a person reads;
+/// this is what a future investigator (or `journal check --json`) reads to
+/// tell `Absent`, `IntegrityInvalid` and `Unloadable` apart, which the
+/// shared guidance sentence alone cannot do.
+/// The specific reason a CED capability is not Ready, as a stable snake_case token.
+///
+/// `main` models CED readiness with the richer [`CapabilityStatus`] (it carries a
+/// `capability` and a free-text `detail`), but its check builder discarded that
+/// distinction: all four degraded variants rendered one indistinguishable warning.
+/// The burn-in fix this replaces surfaced the cause on the diagnostic surface; keep
+/// that, mapped onto the newer vocabulary. `Ready` has no cause and is handled by
+/// the caller before this is reached.
+fn ced_cause_str(status: &CapabilityStatus) -> &'static str {
+    match status {
+        CapabilityStatus::Ready => "ready",
+        CapabilityStatus::Absent { .. } => "absent",
+        CapabilityStatus::IntegrityInvalid { .. } => "integrity_invalid",
+        CapabilityStatus::UnloadableOrUnrunnable { .. } => "unloadable",
+        CapabilityStatus::WrongAbiOrProtocol { .. } => "wrong_abi_or_protocol",
+        CapabilityStatus::ResourceOrOwnerScopeUnavailable { .. } => {
+            "resource_or_owner_scope_unavailable"
+        }
+    }
+}
+/// Same as [`ced_cause_str`], for RF-DETR's degraded causes.
+fn rfdetr_cause_str(cause: RfdetrDegradedCause) -> &'static str {
+    match cause {
+        RfdetrDegradedCause::Absent => "absent",
+        RfdetrDegradedCause::IntegrityInvalid => "integrity_invalid",
+        RfdetrDegradedCause::Unrunnable => "unrunnable",
+    }
+}
 fn ced_check(inputs: &CheckInputs) -> Option<Check> {
     match &inputs.ced {
         None => None,
         Some(CapabilityStatus::Ready) => {
             Some(check("ced", Severity::Ok, CED_READY_DETAIL, None, None))
         }
-        Some(_) => Some(check(
-            "ced",
-            Severity::Warning,
-            CED_UNAVAILABLE_GUIDANCE,
-            None,
-            None,
-        )),
+        Some(status) => {
+            let mut item = check(
+                "ced",
+                Severity::Warning,
+                CED_UNAVAILABLE_GUIDANCE,
+                None,
+                None,
+            );
+            item.cause = Some(ced_cause_str(status));
+            Some(item)
+        }
     }
 }
 fn rfdetr_check(inputs: &CheckInputs) -> Option<Check> {
@@ -466,13 +513,27 @@ fn rfdetr_check(inputs: &CheckInputs) -> Option<Check> {
             None,
             None,
         )),
-        RfdetrCheckInput::Degraded { .. } => Some(check(
-            "rfdetr",
-            Severity::Blocked,
-            RFDETR_UNAVAILABLE_GUIDANCE,
-            None,
-            None,
-        )),
+        RfdetrCheckInput::Degraded { cause } => {
+            // ⚠ Warning, not Blocked, and deliberately identical to `ced_check`.
+            // Object detection is an optional enhancement -- this check's own
+            // `RFDETR_UNAVAILABLE_GUIDANCE` says "Screen descriptions will
+            // continue" -- so a degraded RF-DETR must not set `overall`
+            // to Blocked, which renders as "Not ready -- this computer can't run
+            // the bundled local models yet." That sentence contradicts the
+            // detail beside it, and it was false on the founder's machine, where
+            // a working 2.0.0 journal reported `overall: blocked` and exit 2
+            // solely because a leftover V1-shaped RF-DETR sidecar failed its
+            // pinned-artifact comparison.
+            let mut item = check(
+                "rfdetr",
+                Severity::Warning,
+                RFDETR_UNAVAILABLE_GUIDANCE,
+                None,
+                None,
+            );
+            item.cause = Some(rfdetr_cause_str(*cause));
+            Some(item)
+        }
     }
 }
 fn mac_memory(memory: &MemoryInput) -> Check {
@@ -700,7 +761,7 @@ pub fn exit_code(report: &CheckReport) -> u8 {
     }
 }
 pub fn json_output(report: &CheckReport) -> String {
-    let checks = report.checks.iter().map(|item| json!({"name": item.name, "severity": item.severity, "detail": item.detail, "required_bytes": item.required_bytes, "available_bytes": item.available_bytes})).collect::<Vec<_>>();
+    let checks = report.checks.iter().map(|item| json!({"name": item.name, "severity": item.severity, "detail": item.detail, "required_bytes": item.required_bytes, "available_bytes": item.available_bytes, "cause": item.cause})).collect::<Vec<_>>();
     let value: Value = json!({"platform":{"os":report.platform.os,"os_version":report.platform.os_version,"arch":report.platform.arch,"python":null,"supported":report.platform.supported},"checks":checks,"overall":report.overall,"feedback_url":FEEDBACK_URL,"version":report.version});
     format!(
         "{}\n",
@@ -789,18 +850,162 @@ mod tests {
         assert_eq!(overall(&[rfdetr]), Severity::Ok);
     }
 
+    /// A degraded optional capability warns; it does not declare the machine unfit.
+    ///
+    /// ⚠ This test previously asserted `Blocked` for all three causes. That
+    /// expectation was wrong: `overall == Blocked` renders as "Not ready -- this
+    /// computer can't run the bundled local models yet", which contradicts this
+    /// check's own detail ("Screen descriptions will continue") and was false on
+    /// the founder's 2.0.0 journal, which ran normally while reporting
+    /// `overall: blocked` and exit 2 over a stale RF-DETR sidecar. CED is the
+    /// same class of optional inference asset and has always warned; the two
+    /// must agree.
     #[test]
-    fn degraded_rfdetr_blocks_for_every_cause() {
-        for cause in [
-            RfdetrDegradedCause::Absent,
-            RfdetrDegradedCause::IntegrityInvalid,
-            RfdetrDegradedCause::Unrunnable,
+    fn degraded_rfdetr_warns_for_every_cause_and_matches_ced() {
+        for (cause, expected_cause_str) in [
+            (RfdetrDegradedCause::Absent, "absent"),
+            (RfdetrDegradedCause::IntegrityInvalid, "integrity_invalid"),
+            (RfdetrDegradedCause::Unrunnable, "unrunnable"),
         ] {
             let inputs = check_inputs(None, RfdetrCheckInput::Degraded { cause });
             let rfdetr = rfdetr_check(&inputs).expect("degraded RF-DETR check");
-            assert_eq!(rfdetr.severity, Severity::Blocked, "{cause:?}");
-            assert_eq!(overall(&[rfdetr]), Severity::Blocked, "{cause:?}");
+            assert_eq!(rfdetr.severity, Severity::Warning, "{cause:?}");
+            // Done condition 7: the owner-facing `detail` stays the single
+            // shared guidance sentence (unchanged, out of bounds to reword),
+            // but `cause` now distinguishes which of the three fired.
+            assert_eq!(rfdetr.detail, RFDETR_UNAVAILABLE_GUIDANCE);
+            assert_eq!(rfdetr.cause, Some(expected_cause_str), "{cause:?}");
+            assert_eq!(overall(&[rfdetr]), Severity::Warning, "{cause:?}");
         }
+
+        // The two optional-asset checks must not disagree about severity.
+        let degraded_ced = ced_check(&check_inputs(
+            Some(CapabilityStatus::UnloadableOrUnrunnable {
+                capability: CED_CAPABILITY.to_owned(),
+                detail: "ced library failed to load".to_owned(),
+            }),
+            RfdetrCheckInput::Omit,
+        ))
+        .expect("degraded CED check");
+        let degraded_rfdetr = rfdetr_check(&check_inputs(
+            None,
+            RfdetrCheckInput::Degraded {
+                cause: RfdetrDegradedCause::Unrunnable,
+            },
+        ))
+        .expect("degraded RF-DETR check");
+        assert_eq!(
+            degraded_rfdetr.severity, degraded_ced.severity,
+            "CED and RF-DETR are both optional inference assets and must agree"
+        );
+    }
+
+    /// CED counterpart of `degraded_rfdetr_blocks_for_every_cause`: same
+    /// done-condition-7 guarantee (shared owner sentence, distinguishable
+    /// `cause`), for every non-Ready [`CapabilityStatus`] variant.
+    ///
+    /// Ported from the burn-in's `CedDegradedCause` form when `main` replaced that
+    /// enum with the richer `CapabilityStatus`. `main`'s builder collapsed every
+    /// degraded variant into one indistinguishable warning; this is the test that
+    /// keeps them distinguishable, now covering the two variants `main` added.
+    #[test]
+    fn degraded_ced_warns_and_surfaces_every_cause() {
+        let detail = "ced degraded".to_owned();
+        let capability = CED_CAPABILITY.to_owned();
+        for (status, expected_cause_str) in [
+            (
+                CapabilityStatus::Absent {
+                    capability: capability.clone(),
+                    detail: detail.clone(),
+                },
+                "absent",
+            ),
+            (
+                CapabilityStatus::IntegrityInvalid {
+                    capability: capability.clone(),
+                    detail: detail.clone(),
+                },
+                "integrity_invalid",
+            ),
+            (
+                CapabilityStatus::UnloadableOrUnrunnable {
+                    capability: capability.clone(),
+                    detail: detail.clone(),
+                },
+                "unloadable",
+            ),
+            (
+                CapabilityStatus::WrongAbiOrProtocol {
+                    capability: capability.clone(),
+                    detail: detail.clone(),
+                },
+                "wrong_abi_or_protocol",
+            ),
+            (
+                CapabilityStatus::ResourceOrOwnerScopeUnavailable {
+                    capability: capability.clone(),
+                    detail: detail.clone(),
+                },
+                "resource_or_owner_scope_unavailable",
+            ),
+        ] {
+            let inputs = check_inputs(Some(status.clone()), RfdetrCheckInput::Omit);
+            let ced = ced_check(&inputs).expect("degraded CED check");
+            assert_eq!(ced.severity, Severity::Warning, "{status:?}");
+            assert_eq!(ced.detail, CED_UNAVAILABLE_GUIDANCE);
+            assert_eq!(ced.cause, Some(expected_cause_str), "{status:?}");
+        }
+    }
+
+    /// Done condition 7, end to end: the distinguishing cause reaches the
+    /// actual diagnostic surface (`journal check --json`'s `cause` key),
+    /// not just the in-memory `Check` value -- and a Ready check (no cause
+    /// to report) serializes `cause` as `null` rather than omitting or
+    /// misreporting the field.
+    #[test]
+    fn json_output_surfaces_the_distinguishing_cause() {
+        let inputs = check_inputs(
+            Some(CapabilityStatus::UnloadableOrUnrunnable {
+                capability: CED_CAPABILITY.to_owned(),
+                detail: "ced library failed to load".to_owned(),
+            }),
+            RfdetrCheckInput::Ready,
+        );
+        let report = build_check_report(&inputs);
+        let rendered = json_output(&report);
+        let parsed: Value = serde_json::from_str(&rendered).expect("valid JSON");
+        let checks = parsed["checks"].as_array().expect("checks array");
+        let ced = checks
+            .iter()
+            .find(|item| item["name"] == "ced")
+            .expect("ced check present");
+        assert_eq!(ced["cause"], json!("unloadable"), "{rendered}");
+        let rfdetr = checks
+            .iter()
+            .find(|item| item["name"] == "rfdetr")
+            .expect("rfdetr check present");
+        assert_eq!(rfdetr["cause"], Value::Null, "{rendered}");
+    }
+
+    /// Brief A, done condition 6: once both provider readiness verdicts are
+    /// Ready (the fixed CED path plus a correctly re-installed RF-DETR),
+    /// the severity combination `rfdetr_check`'s `Degraded -> Blocked`
+    /// feeds into `overall()` must not read `Blocked` -- that propagation is
+    /// what currently suppresses the unrelated text-generation bootstrap via
+    /// `local_provider_blocked`. Isolated to just the ced/rfdetr checks
+    /// (matching `ced_warning_stays_independent_from_ready_rfdetr` below) so
+    /// an unrelated host-fit check (gpu/ram/disk) can't confound the result;
+    /// this does not depend on how either provider became Ready, only on
+    /// the propagation once both readiness verdicts agree the assets work.
+    #[test]
+    fn both_providers_ready_leaves_overall_ok() {
+        let inputs = check_inputs(Some(CapabilityStatus::Ready), RfdetrCheckInput::Ready);
+        let overall_severity = overall(&[
+            ced_check(&inputs).expect("ready CED check"),
+            rfdetr_check(&inputs).expect("ready RF-DETR check"),
+        ]);
+        assert_eq!(overall_severity, Severity::Ok);
+        assert_ne!(overall_severity, Severity::Blocked);
     }
 
     #[test]

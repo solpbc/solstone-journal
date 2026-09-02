@@ -57,6 +57,7 @@ members = [
     "crates/solstone-core-transcribe",
     "crates/solstone-core-transcribe-cli",
     "crates/solstone-core-ced-sys",
+    "crates/solstone-core-ced-analyze",
     "crates/solstone-core-sound-tags",
     "crates/solstone-core-segment",
     "crates/solstone-core-sol",

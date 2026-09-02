@@ -6,6 +6,15 @@ use crate::AudioError;
 const WAV_HEADER_BYTES: usize = 44;
 const PCM16_BYTES_PER_SAMPLE: usize = 2;
 
+/// The exact byte length `audio_to_wav_bytes` will produce for `samples`.
+///
+/// Exposed so a caller can size a request against a server's byte budget before
+/// building the payload, rather than guessing from a duration.
+#[must_use]
+pub fn wav_bytes_for_samples(samples: usize) -> usize {
+    WAV_HEADER_BYTES.saturating_add(samples.saturating_mul(PCM16_BYTES_PER_SAMPLE))
+}
+
 /// Encodes mono audio as a canonical PCM-16 RIFF/WAVE payload.
 pub fn audio_to_wav_bytes(audio: &[f32], sample_rate: u32) -> Result<Vec<u8>, AudioError> {
     if sample_rate == 0 {

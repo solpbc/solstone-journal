@@ -18,9 +18,36 @@ use solstone_core_spp_ratls::{
 };
 
 use crate::TranscribeError;
-use crate::backend::parakeet_cpp::{ModelInfo, TranscriptionResponse, parse_verbose_json};
+use crate::backend::parakeet_cpp::{
+    ModelInfo, TranscriptionResponse, WordContractError, parse_verbose_json,
+};
 
-pub(crate) const CONFIDENTIAL_STT_MAX_AUDIO_SECONDS: f64 = 300.0;
+/// The confidential ASR shim bounds a request by BYTES, not by duration.
+///
+/// `asr_shim.py` on the engine: `MAX_REQUEST_BYTES = 11 * 1024 * 1024`, commented
+/// "canonical 300s WAV is ~9.6 MB; allow validator tolerance + multipart framing".
+/// ⚠ There is **no** server-side duration limit. This client used to mirror that
+/// budget as a flat 300-second cap, which is a proxy rather than the contract -- and
+/// it refused 301-305 s recordings the server would have accepted, because a 302 s
+/// PCM16 WAV is about 9.7 MB with ~1.3 MB to spare.
+///
+/// Measured on the founder's journal 2026-09-01: 60 `confidential_audio_too_long`
+/// refusals, all just over the proxy and all comfortably inside the real budget.
+pub(crate) const CONFIDENTIAL_STT_MAX_REQUEST_BYTES: usize = 11 * 1024 * 1024;
+
+/// Headroom for the multipart envelope wrapped around the WAV payload.
+const CONFIDENTIAL_STT_ENVELOPE_BYTES: usize = 64 * 1024;
+
+/// The request size a PCM16 WAV of `samples` will occupy, envelope included.
+pub(crate) fn confidential_request_bytes(samples: usize) -> usize {
+    solstone_core_observe_audio::wav_bytes_for_samples(samples)
+        .saturating_add(CONFIDENTIAL_STT_ENVELOPE_BYTES)
+}
+
+/// Whether that request fits the shim's budget.
+pub(crate) fn confidential_request_fits(samples: usize) -> bool {
+    confidential_request_bytes(samples) <= CONFIDENTIAL_STT_MAX_REQUEST_BYTES
+}
 
 const ATTESTED_CHANNEL_TIMEOUT: Duration = Duration::from_secs(120);
 const TRANSCRIBE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -476,6 +503,38 @@ fn parse_status(line: &[u8]) -> Result<u16, ()> {
         .ok_or(())
 }
 
+/// The structural name of a verbose-JSON contract violation.
+///
+/// ⛔ Never includes `InvalidJson`'s payload: that is the raw response body, which in
+/// real use carries the owner's speech.
+fn word_contract_detail(error: &WordContractError) -> String {
+    match error {
+        WordContractError::InvalidNumber { key, found } => {
+            format!("word `{key}` was not a finite number (found {found})")
+        }
+        other => word_contract_kind(other).to_owned(),
+    }
+}
+
+fn word_contract_kind(error: &WordContractError) -> &'static str {
+    match error {
+        WordContractError::InvalidJson(_) => "response was not JSON",
+        WordContractError::NotObject => "response was not an object",
+        WordContractError::MissingWords => "response had no words array",
+        WordContractError::TextWithoutTimings => "response had text but no word timings",
+        WordContractError::WordNotObject => "a word entry was not an object",
+        WordContractError::MissingKey(key) => match *key {
+            "word" => "a word entry was missing `word`",
+            "start" => "a word entry was missing `start`",
+            "end" => "a word entry was missing `end`",
+            _ => "a word entry was missing a required key",
+        },
+        WordContractError::BlankWord => "a word entry was blank",
+        // ⚠ Rendered by the caller with the key and type, so it is not folded here.
+        WordContractError::InvalidNumber { .. } => "a word number was not finite",
+    }
+}
+
 fn hosted_response(
     response: HttpResponse,
 ) -> Result<(TranscriptionResponse, ModelInfo), TranscribeError> {
@@ -490,10 +549,19 @@ fn hosted_response(
         )),
         200 => {
             let body = String::from_utf8_lossy(&response.body);
-            let transcription = parse_verbose_json(&body).map_err(|_| {
+            let transcription = parse_verbose_json(&body).map_err(|error| {
+                // ⚠ Name WHICH clause of the contract failed. This used to discard the
+                // error, so 20 refusals on the founder's journal said only "violated
+                // the verbose JSON contract" -- true, unactionable, and indistinguishable
+                // from a transport problem. The variant is structural; ⛔ the InvalidJson
+                // payload is deliberately not included, because it is the response body
+                // and in real use that is owner speech.
                 deferred(
                     "hosted_transcribe_contract_failed",
-                    "hosted STT response violated the verbose JSON contract",
+                    format!(
+                        "hosted STT response violated the verbose JSON contract: {}",
+                        word_contract_detail(&error)
+                    ),
                 )
             })?;
             Ok((
@@ -543,7 +611,7 @@ mod tests {
     };
 
     use super::{
-        CONFIDENTIAL_STT_MAX_AUDIO_SECONDS, ConfidentialCall, HttpResponse, attestation_reason,
+        CONFIDENTIAL_STT_MAX_REQUEST_BYTES, ConfidentialCall, HttpResponse, attestation_reason,
         confidential_channel_plausible, confidential_provenance, confidential_transcribe_with,
         hosted_response, multipart_boundary, refuse_confidential_egress,
     };
@@ -850,7 +918,7 @@ mod tests {
                 Some("attestation_stale")
             );
         }
-        assert_eq!(CONFIDENTIAL_STT_MAX_AUDIO_SECONDS, 300.0);
+        assert_eq!(CONFIDENTIAL_STT_MAX_REQUEST_BYTES, 11 * 1024 * 1024);
     }
 
     #[test]

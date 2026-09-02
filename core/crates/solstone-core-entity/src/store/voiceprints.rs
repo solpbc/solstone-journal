@@ -315,6 +315,25 @@ pub fn try_load_entity_voiceprints_file(
     load_voiceprints(&path)
 }
 
+/// Load an entity voiceprint archive from an already-resolved entity directory.
+///
+/// `try_load_entity_voiceprints_file` resolves `entity_id` through the journal
+/// identity map, and building that map reads every `entities/*/entity.json` on
+/// disk. A caller that resolves many entities in one pass holds the map itself
+/// and calls this instead, so the scan happens once rather than once per lookup.
+pub fn try_load_entity_voiceprints_in_dir(
+    journal_root: &Path,
+    entity_dir: &str,
+) -> Result<Option<VoiceprintArchive>, VoiceprintOperationError> {
+    let identity = super::paths::identity_path(journal_root, entity_dir)
+        .map_err(EntityLifecycleError::from)?;
+    let path = identity
+        .parent()
+        .expect("identity path always has an entity directory")
+        .join("voiceprints.npz");
+    load_voiceprints(&path)
+}
+
 /// Return saved voiceprint identity keys for idempotency checks.
 pub fn load_existing_voiceprint_keys(
     journal_root: &Path,

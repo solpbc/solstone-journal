@@ -6,7 +6,7 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use solstone_core_system::provider_runtime::{ParakeetCppReadiness, probe_parakeet_cpp_binary};
 use tempfile::tempdir;
@@ -47,7 +47,16 @@ fn binary_probe_reaps_a_timed_out_child() {
         probe_parakeet_cpp_binary(&binary, Duration::from_secs(1)),
         ParakeetCppReadiness::BinaryUnstartable { .. }
     ));
-    let child_pid = fs::read_to_string(&pid).unwrap();
+    // ⚠ The child writes its pid and then sleeps; the probe's 1 s timeout can elapse
+    // before the shell has flushed that write, so reading it straight away raced and
+    // panicked with `NotFound` under parallel suite load. Wait for the file instead of
+    // assuming it is there -- and fail with a sentence rather than an `unwrap`.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !pid.exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let child_pid = fs::read_to_string(&pid)
+        .expect("the probed child must have recorded its pid before the probe reaped it");
     let status = Command::new("sh")
         .args(["-c", &format!("kill -0 {} 2>/dev/null", child_pid.trim())])
         .status()

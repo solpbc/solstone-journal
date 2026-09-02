@@ -69,6 +69,7 @@ use solstone_core_system::lifecycle::{
     ADMISSION_WAIT_TERMINAL_COPY, ADMISSION_WAIT_UNVERIFIABLE_COPY, CoordinatorBootstrap,
     DeclaredParent, HostedServiceKind, HostedServiceParentRuntime, ParentAdmissionFailure,
     ParentLossCoordinator, acknowledge_hosted_child_admission, admit_hosted_service_parent,
+    arm_parent_loss_coordinator_termination_guard,
 };
 use solstone_core_system::process::ProcessInstance;
 mod thinking;
@@ -974,6 +975,10 @@ fn run_talent_worker(args: Vec<OsString>) -> ExitCode {
 }
 
 fn run_parent_loss_coordinator(args: Vec<OsString>) -> ExitCode {
+    if let Err(error) = arm_parent_loss_coordinator_termination_guard() {
+        eprintln!("parent-loss coordinator: could not block group-termination signal: {error}");
+        return ExitCode::from(EXIT_TEMPFAIL);
+    }
     let mut supervisor = None;
     let mut enabled = None;
     let mut supervisor_heartbeat_filename = None;

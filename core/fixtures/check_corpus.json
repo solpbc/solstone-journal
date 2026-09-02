@@ -44,35 +44,40 @@
             "detail": "Linux (x86_64)",
             "name": "platform",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "a GPU render node exists under /dev/dri but this user cannot open it — add yourself to the render group with `sudo usermod -aG render $USER`, then log out and back in and run `sol check` again",
             "name": "gpu",
             "required_bytes": null,
-            "severity": "unknown"
+            "severity": "unknown",
+            "cause": null
           },
           {
             "available_bytes": 68719476736,
             "detail": "64 GB of system memory",
             "name": "ram",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 536870912000,
             "detail": "500 GB free at /journal (need 20 GB)",
             "name": "disk",
             "required_bytes": 21474836480,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets. If the signed CED app payload is unavailable on Windows, reinstall the journal app.",
             "name": "ced",
             "required_bytes": null,
-            "severity": "warning"
+            "severity": "warning",
+            "cause": "absent"
           }
         ],
         "feedback_url": "https://github.com/solpbc/solstone-journal",
@@ -132,35 +137,40 @@
             "detail": "Linux (x86_64)",
             "name": "platform",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "no NVIDIA GPU found and the Vulkan probe did not complete — GPU readiness is unknown",
             "name": "gpu",
             "required_bytes": null,
-            "severity": "unknown"
+            "severity": "unknown",
+            "cause": null
           },
           {
             "available_bytes": 68719476736,
             "detail": "64 GB of system memory",
             "name": "ram",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 536870912000,
             "detail": "500 GB free at /journal (need 20 GB)",
             "name": "disk",
             "required_bytes": 21474836480,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets. If the signed CED app payload is unavailable on Windows, reinstall the journal app.",
             "name": "ced",
             "required_bytes": null,
-            "severity": "warning"
+            "severity": "warning",
+            "cause": "integrity_invalid"
           }
         ],
         "feedback_url": "https://github.com/solpbc/solstone-journal",
@@ -221,35 +231,40 @@
             "detail": "Linux (x86_64)",
             "name": "platform",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "no usable GPU found — the bundled local models need a hardware GPU with at least 6 GB",
             "name": "gpu",
             "required_bytes": 6442450944,
-            "severity": "blocked"
+            "severity": "blocked",
+            "cause": null
           },
           {
             "available_bytes": 68719476736,
             "detail": "64 GB of system memory",
             "name": "ram",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 536870912000,
             "detail": "500 GB free at /journal (need 20 GB)",
             "name": "disk",
             "required_bytes": 21474836480,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets. If the signed CED app payload is unavailable on Windows, reinstall the journal app.",
             "name": "ced",
             "required_bytes": null,
-            "severity": "warning"
+            "severity": "warning",
+            "cause": "unloadable"
           }
         ],
         "feedback_url": "https://github.com/solpbc/solstone-journal",
@@ -314,35 +329,40 @@
             "detail": "Linux (x86_64)",
             "name": "platform",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 5905580032,
             "detail": "GPU Small Vulkan GPU has 5.5 GB — the bundled local models need at least 6 GB",
             "name": "gpu",
             "required_bytes": 6442450944,
-            "severity": "blocked"
+            "severity": "blocked",
+            "cause": null
           },
           {
             "available_bytes": 68719476736,
             "detail": "64 GB of system memory",
             "name": "ram",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 536870912000,
             "detail": "500 GB free at /journal (need 20 GB)",
             "name": "disk",
             "required_bytes": 21474836480,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "ced.cpp sound-tag engine and model are ready",
             "name": "ced",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           }
         ],
         "feedback_url": "https://github.com/solpbc/solstone-journal",
@@ -407,35 +427,40 @@
             "detail": "Linux (x86_64)",
             "name": "platform",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 25769803776,
             "detail": "Vulkan GPU Vulkan GPU with 24 GB",
             "name": "gpu",
             "required_bytes": 6442450944,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 68719476736,
             "detail": "64 GB of system memory",
             "name": "ram",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 536870912000,
             "detail": "500 GB free at /journal (need 20 GB)",
             "name": "disk",
             "required_bytes": 21474836480,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "ced.cpp sound-tag engine and model are ready",
             "name": "ced",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           }
         ],
         "feedback_url": "https://github.com/solpbc/solstone-journal",
@@ -500,35 +525,40 @@
             "detail": "Linux (x86_64)",
             "name": "platform",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "NVIDIA GPU detected but its memory could not be read — GPU readiness is unknown",
             "name": "gpu",
             "required_bytes": 6442450944,
-            "severity": "unknown"
+            "severity": "unknown",
+            "cause": null
           },
           {
             "available_bytes": 68719476736,
             "detail": "64 GB of system memory",
             "name": "ram",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 536870912000,
             "detail": "500 GB free at /journal (need 20 GB)",
             "name": "disk",
             "required_bytes": 21474836480,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "ced.cpp sound-tag engine and model are ready",
             "name": "ced",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           }
         ],
         "feedback_url": "https://github.com/solpbc/solstone-journal",
@@ -593,35 +623,40 @@
             "detail": "Linux (x86_64)",
             "name": "platform",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 5905580032,
             "detail": "the NVIDIA GPU has 5.5 GB — the bundled local models need at least 6 GB",
             "name": "gpu",
             "required_bytes": 6442450944,
-            "severity": "blocked"
+            "severity": "blocked",
+            "cause": null
           },
           {
             "available_bytes": 68719476736,
             "detail": "64 GB of system memory",
             "name": "ram",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 536870912000,
             "detail": "500 GB free at /journal (need 20 GB)",
             "name": "disk",
             "required_bytes": 21474836480,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "ced.cpp sound-tag engine and model are ready",
             "name": "ced",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           }
         ],
         "feedback_url": "https://github.com/solpbc/solstone-journal",
@@ -686,35 +721,40 @@
             "detail": "Linux (x86_64)",
             "name": "platform",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 6442450944,
             "detail": "NVIDIA GPU with 6 GB; a model runs on your GPU; transcription runs on your CPU on this machine",
             "name": "gpu",
             "required_bytes": 6442450944,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 68719476736,
             "detail": "64 GB of system memory",
             "name": "ram",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 536870912000,
             "detail": "500 GB free at /journal (need 20 GB)",
             "name": "disk",
             "required_bytes": 21474836480,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "ced.cpp sound-tag engine and model are ready",
             "name": "ced",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           }
         ],
         "feedback_url": "https://github.com/solpbc/solstone-journal",
@@ -779,35 +819,40 @@
             "detail": "Linux (x86_64)",
             "name": "platform",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 6442450944,
             "detail": "NVIDIA GPU with 6 GB (unified memory)",
             "name": "gpu",
             "required_bytes": 6442450944,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 68719476736,
             "detail": "64 GB of system memory",
             "name": "ram",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 536870912000,
             "detail": "500 GB free at /journal (need 20 GB)",
             "name": "disk",
             "required_bytes": 21474836480,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "ced.cpp sound-tag engine and model are ready",
             "name": "ced",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           }
         ],
         "feedback_url": "https://github.com/solpbc/solstone-journal",
@@ -872,35 +917,40 @@
             "detail": "Linux (x86_64)",
             "name": "platform",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "GPU readiness could not be determined: controlled GPU failure",
             "name": "gpu",
             "required_bytes": null,
-            "severity": "unknown"
+            "severity": "unknown",
+            "cause": null
           },
           {
             "available_bytes": 68719476736,
             "detail": "64 GB of system memory",
             "name": "ram",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 536870912000,
             "detail": "500 GB free at /journal (need 20 GB)",
             "name": "disk",
             "required_bytes": 21474836480,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "ced.cpp sound-tag engine and model are ready",
             "name": "ced",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           }
         ],
         "feedback_url": "https://github.com/solpbc/solstone-journal",
@@ -958,28 +1008,32 @@
             "detail": "Apple Silicon macOS (arm64)",
             "name": "platform",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "available memory could not be verified",
             "name": "memory",
             "required_bytes": 17179869184,
-            "severity": "unknown"
+            "severity": "unknown",
+            "cause": null
           },
           {
             "available_bytes": 536870912000,
             "detail": "500 GB free at /journal (need 20 GB)",
             "name": "disk",
             "required_bytes": 21474836480,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "ced.cpp sound-tag engine and model are ready",
             "name": "ced",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           }
         ],
         "feedback_url": "https://github.com/solpbc/solstone-journal",
@@ -1037,28 +1091,32 @@
             "detail": "Apple Silicon macOS (arm64)",
             "name": "platform",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 8589934592,
             "detail": "Apple Silicon needs at least 16 GB of memory for the bundled local models (this Mac has 8 GB)",
             "name": "memory",
             "required_bytes": 17179869184,
-            "severity": "blocked"
+            "severity": "blocked",
+            "cause": null
           },
           {
             "available_bytes": 536870912000,
             "detail": "500 GB free at /journal (need 20 GB)",
             "name": "disk",
             "required_bytes": 21474836480,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "ced.cpp sound-tag engine and model are ready",
             "name": "ced",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           }
         ],
         "feedback_url": "https://github.com/solpbc/solstone-journal",
@@ -1116,28 +1174,32 @@
             "detail": "Apple Silicon macOS (arm64)",
             "name": "platform",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 10737418240,
             "detail": "enough total memory, but only 10 GB is free right now — close some apps before the local models load",
             "name": "memory",
             "required_bytes": 13958643712,
-            "severity": "warning"
+            "severity": "warning",
+            "cause": null
           },
           {
             "available_bytes": 536870912000,
             "detail": "500 GB free at /journal (need 20 GB)",
             "name": "disk",
             "required_bytes": 21474836480,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "ced.cpp sound-tag engine and model are ready",
             "name": "ced",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           }
         ],
         "feedback_url": "https://github.com/solpbc/solstone-journal",
@@ -1195,28 +1257,32 @@
             "detail": "Apple Silicon macOS (arm64)",
             "name": "platform",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 25769803776,
             "detail": "24 GB of memory meets the 16 GB minimum",
             "name": "memory",
             "required_bytes": 17179869184,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 536870912000,
             "detail": "500 GB free at /journal (need 20 GB)",
             "name": "disk",
             "required_bytes": 21474836480,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "ced.cpp sound-tag engine and model are ready",
             "name": "ced",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           }
         ],
         "feedback_url": "https://github.com/solpbc/solstone-journal",
@@ -1281,35 +1347,40 @@
             "detail": "Linux (x86_64)",
             "name": "platform",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 25769803776,
             "detail": "Vulkan GPU Vulkan GPU with 24 GB",
             "name": "gpu",
             "required_bytes": 6442450944,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "system memory could not be verified",
             "name": "ram",
             "required_bytes": null,
-            "severity": "warning"
+            "severity": "warning",
+            "cause": null
           },
           {
             "available_bytes": 536870912000,
             "detail": "500 GB free at /journal (need 20 GB)",
             "name": "disk",
             "required_bytes": 21474836480,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "ced.cpp sound-tag engine and model are ready",
             "name": "ced",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           }
         ],
         "feedback_url": "https://github.com/solpbc/solstone-journal",
@@ -1374,35 +1445,40 @@
             "detail": "Linux (x86_64)",
             "name": "platform",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 25769803776,
             "detail": "Vulkan GPU Vulkan GPU with 24 GB",
             "name": "gpu",
             "required_bytes": 6442450944,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 5905580032,
             "detail": "5.5 GB of system memory is on the low side — 8 GB or more is recommended",
             "name": "ram",
             "required_bytes": 8589934592,
-            "severity": "warning"
+            "severity": "warning",
+            "cause": null
           },
           {
             "available_bytes": 536870912000,
             "detail": "500 GB free at /journal (need 20 GB)",
             "name": "disk",
             "required_bytes": 21474836480,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "ced.cpp sound-tag engine and model are ready",
             "name": "ced",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           }
         ],
         "feedback_url": "https://github.com/solpbc/solstone-journal",
@@ -1467,35 +1543,40 @@
             "detail": "Linux (x86_64)",
             "name": "platform",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 25769803776,
             "detail": "Vulkan GPU Vulkan GPU with 24 GB",
             "name": "gpu",
             "required_bytes": 6442450944,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 68719476736,
             "detail": "64 GB of system memory",
             "name": "ram",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "free space at /journal could not be verified: controlled disk failure",
             "name": "disk",
             "required_bytes": 21474836480,
-            "severity": "unknown"
+            "severity": "unknown",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "ced.cpp sound-tag engine and model are ready",
             "name": "ced",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           }
         ],
         "feedback_url": "https://github.com/solpbc/solstone-journal",
@@ -1560,35 +1641,40 @@
             "detail": "Linux (x86_64)",
             "name": "platform",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 25769803776,
             "detail": "Vulkan GPU Vulkan GPU with 24 GB",
             "name": "gpu",
             "required_bytes": 6442450944,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 68719476736,
             "detail": "64 GB of system memory",
             "name": "ram",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": 10737418240,
             "detail": "the journal and local models need at least 20 GB free — /journal has 10 GB",
             "name": "disk",
             "required_bytes": 21474836480,
-            "severity": "blocked"
+            "severity": "blocked",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "ced.cpp sound-tag engine and model are ready",
             "name": "ced",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           }
         ],
         "feedback_url": "https://github.com/solpbc/solstone-journal",
@@ -1643,7 +1729,8 @@
             "detail": "Windows isn't supported for the bundled local models yet — run the journal on Linux or an Apple Silicon Mac.",
             "name": "platform",
             "required_bytes": null,
-            "severity": "blocked"
+            "severity": "blocked",
+            "cause": null
           }
         ],
         "feedback_url": "https://github.com/solpbc/solstone-journal",
@@ -1698,7 +1785,8 @@
             "detail": "Intel Macs aren't supported — use an Apple Silicon Mac, or run the journal on supported Linux.",
             "name": "platform",
             "required_bytes": null,
-            "severity": "blocked"
+            "severity": "blocked",
+            "cause": null
           }
         ],
         "feedback_url": "https://github.com/solpbc/solstone-journal",
@@ -1753,7 +1841,8 @@
             "detail": "FreeBSD/x86_64 can't run the bundled local models yet — only Apple Silicon macOS and x86_64/aarch64 Linux are supported.",
             "name": "platform",
             "required_bytes": null,
-            "severity": "blocked"
+            "severity": "blocked",
+            "cause": null
           }
         ],
         "feedback_url": "https://github.com/solpbc/solstone-journal",
@@ -1811,35 +1900,40 @@
             "detail": "Linux (x86_64)",
             "name": "platform",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "no usable GPU found — the bundled local models need a hardware GPU with at least 6 GB",
             "name": "gpu",
             "required_bytes": 6442450944,
-            "severity": "blocked"
+            "severity": "blocked",
+            "cause": null
           },
           {
             "available_bytes": 5905580032,
             "detail": "5.5 GB of system memory is on the low side — 8 GB or more is recommended",
             "name": "ram",
             "required_bytes": 8589934592,
-            "severity": "warning"
+            "severity": "warning",
+            "cause": null
           },
           {
             "available_bytes": 536870912000,
             "detail": "500 GB free at /journal (need 20 GB)",
             "name": "disk",
             "required_bytes": 21474836480,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           },
           {
             "available_bytes": null,
             "detail": "ced.cpp sound-tag engine and model are ready",
             "name": "ced",
             "required_bytes": null,
-            "severity": "ok"
+            "severity": "ok",
+            "cause": null
           }
         ],
         "feedback_url": "https://github.com/solpbc/solstone-journal",

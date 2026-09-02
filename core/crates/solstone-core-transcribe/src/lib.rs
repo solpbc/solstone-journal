@@ -229,35 +229,28 @@ where
     })
 }
 
-fn discover_audio_files(journal_path: &Path, on_day: &mut dyn FnMut(&Path)) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    let Ok(days) = std::fs::read_dir(journal_path.join("chronicle")) else {
-        return files;
-    };
-    let mut days: Vec<_> = days
-        .flatten()
-        .filter(|entry| entry.file_type().ok().is_some_and(|kind| kind.is_dir()))
-        .collect();
-    days.sort_by_key(|right| std::cmp::Reverse(right.file_name()));
-    for day in days {
-        let day_path = day.path();
-        on_day(&day_path);
+/// Yield every transcribable audio file, one chronicle day at a time.
+///
+/// Collecting the whole journal before returning meant `--all` walked every day,
+/// stream and segment on disk before touching a single file. On an owner journal
+/// with hundreds of days that is minutes of directory walking during which the CLI
+/// looks idle and no audio is transcribed -- measured at 673 s with zero files
+/// processed on a 570-day journal. Streaming per day starts work immediately.
+///
+/// Days are walked newest-first, and `on_day` fires as each day's walk begins, so a
+/// caller can report progress without waiting for the whole tree.
+fn discover_audio_files<'a>(
+    journal_path: &Path,
+    on_day: &'a mut dyn FnMut(&Path),
+) -> impl Iterator<Item = PathBuf> + 'a {
+    let mut days = read_child_directories(&journal_path.join("chronicle"));
+    days.sort_by(|left, right| right.cmp(left));
+    days.into_iter().flat_map(move |day| {
+        on_day(&day);
         let mut day_files = Vec::new();
-        let Ok(streams) = std::fs::read_dir(&day_path) else {
-            continue;
-        };
-        for stream in streams
-            .flatten()
-            .filter(|entry| entry.file_type().ok().is_some_and(|kind| kind.is_dir()))
-        {
-            let Ok(segments) = std::fs::read_dir(stream.path()) else {
-                continue;
-            };
-            for segment in segments
-                .flatten()
-                .filter(|entry| entry.file_type().ok().is_some_and(|kind| kind.is_dir()))
-            {
-                let Ok(entries) = std::fs::read_dir(segment.path()) else {
+        for stream in read_child_directories(&day) {
+            for segment in read_child_directories(&stream) {
+                let Ok(entries) = std::fs::read_dir(&segment) else {
                     continue;
                 };
                 for entry in entries.flatten() {
@@ -278,9 +271,19 @@ fn discover_audio_files(journal_path: &Path, on_day: &mut dyn FnMut(&Path)) -> V
             }
         }
         day_files.sort();
-        files.extend(day_files);
-    }
-    files
+        day_files
+    })
+}
+
+fn read_child_directories(parent: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter(|entry| entry.file_type().ok().is_some_and(|kind| kind.is_dir()))
+        .map(|entry| entry.path())
+        .collect()
 }
 
 /// Errors currently emitted by the native transcription contract.
@@ -558,6 +561,57 @@ mod tests {
     use super::{ModelAssetError, TranscribeError, discover_audio_files, run_all_with};
     use crate::speakers::SpeakerAnalyzeError;
 
+    /// The discovery order is the contract: `--all` used to build one global sorted
+    /// list. Streaming per day must produce exactly the same sequence, because a
+    /// full path sorts by its day directory first.
+    #[test]
+    fn discovery_streams_per_day_in_the_same_order_a_global_sort_produced() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        let root = temporary.path();
+        let mut expected = Vec::new();
+        for day in ["20260902", "20260831", "20260901"] {
+            for stream in ["watch", "device_mobile"] {
+                for segment in ["101500_300", "090000_301"] {
+                    let dir = root.join("chronicle").join(day).join(stream).join(segment);
+                    fs::create_dir_all(&dir).unwrap();
+                    for name in ["audio.m4a", "notes.txt", "audio.wav"] {
+                        fs::write(dir.join(name), b"x").unwrap();
+                    }
+                    expected.push(dir.join("audio.m4a"));
+                    expected.push(dir.join("audio.wav"));
+                }
+            }
+        }
+        // Days are walked newest-first (`sweep --all` reports recent work first);
+        // within a day the order is the plain ascending walk. A stable re-sort by
+        // descending day over an ascending list produces exactly that.
+        expected.sort();
+        expected.sort_by_key(|path| {
+            let day = path
+                .components()
+                .skip_while(|part| part.as_os_str() != "chronicle")
+                .nth(1)
+                .map(|part| part.as_os_str().to_owned())
+                .unwrap_or_default();
+            std::cmp::Reverse(day)
+        });
+
+        let streamed: Vec<_> = discover_audio_files(root, &mut |_| {}).collect();
+        assert_eq!(streamed, expected);
+        // `notes.txt` is not transcribable and must not appear.
+        assert!(
+            streamed
+                .iter()
+                .all(|path| path.extension().is_some_and(|extension| extension != "txt"))
+        );
+    }
+
+    #[test]
+    fn discovery_yields_nothing_when_the_chronicle_is_absent() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        assert_eq!(discover_audio_files(temporary.path(), &mut |_| {}).count(), 0);
+    }
+
     fn write_audio(temporary: &tempfile::TempDir, name: &str) -> std::path::PathBuf {
         let path = temporary.path().join(name);
         fs::write(&path, b"audio").unwrap();
@@ -773,7 +827,9 @@ mod tests {
         );
 
         let mut fired = Vec::new();
-        discover_audio_files(journal, &mut |day| fired.push(day.to_path_buf()));
+        // The walk is lazy: without consuming the iterator `on_day` never fires and
+        // this test would pass while exercising nothing.
+        discover_audio_files(journal, &mut |day| fired.push(day.to_path_buf())).for_each(drop);
 
         let expected = ["20260401", "20260315", "20260201", "20260101"]
             .map(|day| journal.join("chronicle").join(day));
@@ -807,7 +863,7 @@ mod tests {
         let march_late =
             write_chronicle_file(journal, "20260315", "audio", "120000_1", "b.wav", b"audio");
 
-        let files = discover_audio_files(journal, &mut |_| {});
+        let files: Vec<_> = discover_audio_files(journal, &mut |_| {}).collect();
 
         let mut march = vec![march_early, march_late, march_screen];
         march.sort();

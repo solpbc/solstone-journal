@@ -187,7 +187,16 @@ impl CortexStore {
         if !is_day_key(&day) {
             return;
         }
-        let start_ts = request.get("ts").and_then(Value::as_i64).unwrap_or(0);
+        // No sender populates a request `ts`: the dispatcher stamps `ts` onto each
+        // relayed event, not onto the request. Defaulting to 0 made every day-index
+        // row render at the epoch and, because `runtime` treats a zero start as
+        // unknown, left `runtime_seconds` null. The use id is epoch milliseconds --
+        // `day_from_use_id` above already relies on that -- so derive from it.
+        let start_ts = request
+            .get("ts")
+            .and_then(Value::as_i64)
+            .filter(|timestamp| *timestamp != 0)
+            .unwrap_or_else(|| ts_from_use_id(use_id));
         let mut thinking_count = 0_u64;
         let mut tool_count = 0_u64;
         let mut degraded = Value::Null;
@@ -495,6 +504,11 @@ fn runtime(start: i64, end: Option<i64>) -> Value {
     }
 }
 
+/// Epoch milliseconds encoded in a use id, or 0 when it is not a numeric id.
+fn ts_from_use_id(use_id: &str) -> i64 {
+    use_id.parse::<i64>().unwrap_or(0)
+}
+
 fn day_from_use_id(use_id: &str) -> String {
     use_id
         .parse::<i64>()
@@ -641,6 +655,39 @@ mod tests {
             .lines()
             .map(|line| serde_json::from_str(line).unwrap())
             .collect()
+    }
+
+    /// No sender puts a `ts` on the request, so the day index used to stamp every
+    /// row at the epoch and report a null runtime. The use id is epoch milliseconds.
+    #[test]
+    fn day_index_row_dates_from_the_use_id_when_the_request_has_no_ts() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let mut request = request();
+        request.remove("ts");
+        let use_id = "1788248640729";
+        let (active, identity) = store
+            .claim("conversation", use_id, &request)
+            .unwrap()
+            .unwrap();
+        store
+            .append_active(
+                &active,
+                &serde_json::from_value(json!({"event":"start","ts":1788248640729_i64})).unwrap(),
+            )
+            .unwrap();
+        store
+            .append_active(
+                &active,
+                &serde_json::from_value(json!({"event":"finish","ts":1788248643229_i64})).unwrap(),
+            )
+            .unwrap();
+        store.complete(use_id, "conversation", identity, Some(&request));
+
+        let rows = day_rows(&store, "19700101");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["ts"], json!(1788248640729_i64));
+        assert_eq!(rows[0]["runtime_seconds"], json!(2.5));
     }
 
     #[test]

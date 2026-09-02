@@ -1222,8 +1222,21 @@ mod tests {
         let _ = std::fs::remove_dir_all(path);
     }
 
+    /// A confidential converse with no served window must still POST.
+    ///
+    /// ⚠ This test previously asserted the opposite -- `context_budget_exceeded` and
+    /// `written.is_empty()` -- which encoded the defect rather than a requirement.
+    /// `AttestedEndpointTransport::get` refuses model discovery unconditionally and
+    /// by design, so `resolve_served_window` returns `None` for EVERY confidential
+    /// endpoint unless `providers.local.served_context_window` is configured. Pinning
+    /// "no window means refuse" therefore pinned "the confidential lane can never
+    /// converse", which is why thinking was down on the founder's journal with
+    /// attestation and generation both healthy.
+    ///
+    /// 🔒 The safety property that remains: no client-side fitting is applied, exactly
+    /// as on the non-confidential BYO path, and the server enforces its own window.
     #[test]
-    fn confidential_converse_without_a_served_window_posts_nothing_after_attestation() {
+    fn confidential_converse_without_a_served_window_still_posts_after_attestation() {
         let runtime = EndpointRuntime::default();
         let establish = AtomicUsize::new(0);
         let written = Rc::new(RefCell::new(Vec::new()));
@@ -1251,10 +1264,16 @@ mod tests {
                 })
             },
         )
-        .expect_err("missing served window");
-        assert_eq!(failure.reason_code, "context_budget_exceeded");
+        .expect_err("the stub channel returns no usable response");
+        // ⛔ The refusal must no longer be a budget verdict -- there is no budget to
+        // exceed when no window was ever resolved.
+        assert_ne!(failure.reason_code, "context_budget_exceeded");
         assert_eq!(establish.load(Ordering::SeqCst), 1);
-        assert!(written.borrow().is_empty());
+        assert!(
+            !written.borrow().is_empty(),
+            "the request must be posted; a missing served window is the normal \
+             confidential case, not a refusal"
+        );
         let _ = std::fs::remove_dir_all(path);
     }
 

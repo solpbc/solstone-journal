@@ -5,6 +5,7 @@
 
 use std::ffi::OsStr;
 use std::fs;
+use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::process::Command;
 use std::thread;
@@ -61,6 +62,42 @@ fn wait_for(path: &std::path::Path) {
         thread::sleep(Duration::from_millis(5));
     }
     panic!("fixture was not ready");
+}
+
+#[test]
+fn parent_loss_coordinator_survives_group_term_until_its_own_terminal_decision() {
+    let bed = Bed::new("parent-loss-term-guard");
+    let ready = bed.root.join("ready");
+    let mut coordinator = Command::new(FIXTURE)
+        .args([
+            "parent-loss-termination-guard",
+            ready.to_str().expect("utf8 ready path"),
+        ])
+        .spawn()
+        .expect("spawn guarded coordinator fixture");
+    wait_for(&ready);
+
+    nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(coordinator.id() as i32),
+        nix::sys::signal::Signal::SIGTERM,
+    )
+    .expect("send control-group SIGTERM");
+    thread::sleep(Duration::from_millis(100));
+    assert!(
+        coordinator
+            .try_wait()
+            .expect("inspect coordinator")
+            .is_none(),
+        "the terminal authority must outlive the control-group SIGTERM"
+    );
+
+    nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(coordinator.id() as i32),
+        nix::sys::signal::Signal::SIGKILL,
+    )
+    .expect("send bounded-backstop SIGKILL");
+    let status = coordinator.wait().expect("reap coordinator");
+    assert_eq!(status.signal(), Some(nix::libc::SIGKILL));
 }
 
 #[cfg(target_os = "linux")]

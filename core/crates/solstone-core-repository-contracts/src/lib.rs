@@ -30,6 +30,9 @@ mod distribution_install_basename;
 #[path = "contracts/distribution_install_tmpdir.rs"]
 mod distribution_install_tmpdir;
 #[cfg(test)]
+#[path = "contracts/distribution_lane_dlopen_purity.rs"]
+mod distribution_lane_dlopen_purity;
+#[cfg(test)]
 #[path = "contracts/distribution_launchers.rs"]
 mod distribution_launchers;
 #[cfg(test)]

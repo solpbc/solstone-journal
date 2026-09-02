@@ -30,7 +30,7 @@ solstone-core-journal-io = { workspace = true }
 solstone-core-processing-record = { workspace = true }
 solstone-core-format = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, features = ["sync", "time"] }
 
 [target.'cfg(unix)'.dependencies]
 # `feature` enables sysconf/SysconfVar for Linux process start-time identity.
@@ -43,6 +43,7 @@ solstone-core-assets = { workspace = true }
 
 [dev-dependencies]
 filetime = "0.2.29"
+tokio = { workspace = true, features = ["macros", "rt"] }
 tempfile = "3.24.0"
 
 [target.'cfg(windows)'.dependencies]

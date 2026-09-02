@@ -95,6 +95,16 @@ fn wait_for_ready(path: &std::path::Path) {
     panic!("fixture did not signal readiness");
 }
 
+/// The scheduler state character from `/proc/<pid>/stat`, or `None` if the pid is
+/// gone. `comm` is parenthesised and may itself contain spaces and parens, so the
+/// state is read relative to the LAST `)` rather than by splitting on whitespace.
+#[cfg(target_os = "linux")]
+fn linux_process_state(pid: u32) -> Option<char> {
+    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let (_, after_comm) = stat.rsplit_once(") ")?;
+    after_comm.chars().next()
+}
+
 fn process_is_gone(pid: u32) -> bool {
     let pid = i32::try_from(pid).expect("fixture pid fits i32");
     matches!(
@@ -509,6 +519,55 @@ fn ac27_linux_sigkill_of_spawner_kills_direct_child() {
         "direct child {grandchild_pid} survived SIGKILL of its spawner"
     );
     let _ = spawner.wait();
+}
+
+/// Reproduce the shutdown shape `solstone.service` actually runs.
+///
+/// The unit ships `KillMode=control-group`, so on `systemctl stop` systemd
+/// SIGTERMs every process in the cgroup and the managed children are already
+/// gone — unreaped, therefore zombies — by the time the supervisor's shutdown
+/// loop calls `terminate_exact` on them. The census drops zombies, so `snapshot`
+/// could not find the managed parent and the exact path reported
+/// `process tree not reaped: cleanup_unproven; survivors=[]`, which the
+/// supervisor logged as `failed to terminate <service> during shutdown` on every
+/// clean stop of the founder's journal.
+///
+/// The child is deliberately never polled before termination: polling caches the
+/// exit and takes the `TerminationMode::ExactExited` short-circuit, which is the
+/// reason existing coverage missed this.
+#[cfg(target_os = "linux")]
+#[test]
+fn ac31_exact_termination_reports_an_already_exited_child_as_its_exit_not_a_tree_failure() {
+    let bed = Bed::new("exact-already-exited");
+    let mut process = bed.spawn_exact("exact-already-exited", &["sleep"]);
+    let pid = process.pid();
+    let raw = nix::unistd::Pid::from_raw(i32::try_from(pid).expect("fixture pid fits i32"));
+    nix::sys::signal::kill(raw, nix::sys::signal::Signal::SIGKILL).expect("kill fixture child");
+
+    // ⚠ `process_is_gone` cannot be used to wait here: a zombie is still a live
+    // pid and answers `kill(pid, None)` with `Ok` until it is reaped. Wait on the
+    // procfs state instead, which is the exact condition that defeats the census.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        if linux_process_state(pid).is_none_or(|state| state == 'Z') {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        linux_process_state(pid),
+        Some('Z'),
+        "the fixture child must be an unreaped zombie when termination runs"
+    );
+
+    assert!(
+        matches!(
+            process.terminate_exact(Duration::from_secs(1)),
+            Ok(TerminationOutcome::Graceful { .. })
+        ),
+        "an already-exited child must report its exit, not a termination failure"
+    );
+    process.cleanup();
 }
 
 #[test]

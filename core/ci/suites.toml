@@ -403,6 +403,17 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
+id = "package::solstone-core-ced-analyze"
+package = "solstone-core-ced-analyze"
+set = "native"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-support-drafts"
 package = "solstone-core-support-drafts"
 set = "component"
@@ -3109,6 +3120,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-journal-bin::journal_v2_self_upgrade"
+package = "solstone-core-journal-bin"
+target = "journal_v2_self_upgrade"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-journal-bin::journal_native_process_contract"
 package = "solstone-core-journal-bin"
 target = "journal_native_process_contract"
@@ -4266,6 +4290,19 @@ timeout = "standard"
 default_full = true
 required_features = ["runtime"]
 runtime = "onnx"
+
+[[suites]]
+id = "solstone-core-ced-analyze::ced_oracles"
+package = "solstone-core-ced-analyze"
+target = "ced_oracles"
+set = "native"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
 
 [[suites]]
 id = "solstone-core-transcribe::transcription_transports"

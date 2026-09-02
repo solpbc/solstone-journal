@@ -169,15 +169,41 @@ fn inspect_from_linux_stat(stat: &str, btime: u64, clk_tck: u64, uid: u32) -> In
 }
 
 #[cfg(target_os = "linux")]
-fn linux_uid(pid: u32) -> Option<u32> {
-    std::fs::read_to_string(format!("/proc/{pid}/status"))
-        .ok()?
-        .lines()
-        .find_map(|line| line.strip_prefix("Uid:"))?
-        .split_whitespace()
-        .next()?
-        .parse()
-        .ok()
+/// Why a `/proc/<pid>/status` uid read did not produce a uid.
+///
+/// ⚠ The distinction is load-bearing. `linux_uid` used to collapse every failure
+/// into `None`, and `census_linux` read that as "the census is incomplete" -- so a
+/// process exiting between its `stat` read and its `status` read, which is an
+/// ordinary race on any busy machine, marked the WHOLE census incomplete. That
+/// made `snapshot` fail, which made exact termination refuse with
+/// `cleanup_unproven; survivors=[]`. Observed on the founder's journal, where
+/// `sense` reported it on a restart while parakeet-server was spawning.
+#[cfg(any(target_os = "linux", test))]
+enum UidRead {
+    Uid(u32),
+    /// The process exited. Not a defect, and not an incomplete census.
+    Gone,
+    /// Present but unreadable or unparseable -- the census really is incomplete.
+    Unreadable,
+}
+
+#[cfg(target_os = "linux")]
+fn linux_uid(pid: u32) -> UidRead {
+    classify_uid_read(std::fs::read_to_string(format!("/proc/{pid}/status")))
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn classify_uid_read(result: std::io::Result<String>) -> UidRead {
+    match result {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => UidRead::Gone,
+        Err(_) => UidRead::Unreadable,
+        Ok(text) => text
+            .lines()
+            .find_map(|line| line.strip_prefix("Uid:"))
+            .and_then(|line| line.split_whitespace().next())
+            .and_then(|value| value.parse().ok())
+            .map_or(UidRead::Unreadable, UidRead::Uid),
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -200,8 +226,15 @@ fn inspect_linux(pid: u32) -> InspectResult {
     let Some((btime, clk_tck)) = linux_boot_clock() else {
         return InspectResult::Unverifiable;
     };
-    let Some(uid) = linux_uid(pid) else {
-        return InspectResult::Unverifiable;
+    let uid = match linux_uid(pid) {
+        UidRead::Uid(uid) => uid,
+        // ⚠ Deliberately UNCHANGED: single-pid inspection keeps reporting
+        // `Unverifiable` for both, because callers use it to decide whether a
+        // remembered instance is still the same live process, and the warmup
+        // lifecycle depends on that distinction. The census-race fix this enum
+        // exists for is in `census_linux`; widening it to here breaks
+        // `warmup_reports_ready_exited_and_timeout_without_wall_clock_waits`.
+        UidRead::Gone | UidRead::Unreadable => return InspectResult::Unverifiable,
     };
     inspect_from_linux_stat(&stat, btime, clk_tck, uid)
 }
@@ -231,9 +264,16 @@ fn census_linux() -> InstanceCensus {
                 continue;
             }
             Ok(stat) => {
-                let Some(uid) = linux_uid(pid) else {
-                    complete = false;
-                    continue;
+                let uid = match linux_uid(pid) {
+                    UidRead::Uid(uid) => uid,
+                    // Exited between the stat read and the status read. Treat it
+                    // exactly like the NotFound on /proc/<pid>/stat above: skip
+                    // the row, do NOT declare the census incomplete.
+                    UidRead::Gone => continue,
+                    UidRead::Unreadable => {
+                        complete = false;
+                        continue;
+                    }
                 };
                 match inspect_from_linux_stat(&stat, btime, clk_tck, uid) {
                     InspectResult::Unverifiable => {
@@ -821,6 +861,43 @@ mod tests {
             InspectResult::Unverifiable
         );
         assert!(parse_linux_stat("1 (comm").is_none());
+    }
+
+    /// A process that exits mid-census is GONE, never UNREADABLE.
+    ///
+    /// ⚠ This is the distinction the census depends on. Collapsing both into one
+    /// "no uid" answer made an ordinary exit race mark the entire census
+    /// incomplete, which made `snapshot` fail, which made exact termination
+    /// refuse with `cleanup_unproven; survivors=[]` without signalling anything.
+    /// Measured on the founder's journal: `sense` reported exactly that on a
+    /// restart while parakeet-server was spawning.
+    #[test]
+    fn a_process_that_exits_mid_census_is_gone_not_an_incomplete_census() {
+        assert!(matches!(
+            classify_uid_read(Err(std::io::Error::from(std::io::ErrorKind::NotFound))),
+            UidRead::Gone
+        ));
+        // A real read failure still makes the census incomplete.
+        assert!(matches!(
+            classify_uid_read(Err(std::io::Error::from(
+                std::io::ErrorKind::PermissionDenied
+            ))),
+            UidRead::Unreadable
+        ));
+        // Present and parseable.
+        assert!(matches!(
+            classify_uid_read(Ok("Name:\tsh\nUid:\t501\t501\t501\t501\n".to_owned())),
+            UidRead::Uid(501)
+        ));
+        // Present but malformed is a genuine gap, not a vanished process.
+        assert!(matches!(
+            classify_uid_read(Ok("Name:\tsh\nUid:\tnope\n".to_owned())),
+            UidRead::Unreadable
+        ));
+        assert!(matches!(
+            classify_uid_read(Ok("Name:\tsh\n".to_owned())),
+            UidRead::Unreadable
+        ));
     }
 
     #[test]

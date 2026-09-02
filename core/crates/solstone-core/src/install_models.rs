@@ -454,12 +454,29 @@ where
         }
         CedVerdict::Ready { .. } | CedVerdict::Degraded(_) => {
             provider_stdout.push(ced_download_disclosure(&host.os_name, &host.arch));
+            // 🔴 `force: true` below is deliberate and load-bearing -- do not
+            // "simplify" it to `options.force`. This arm is reached two ways:
+            // `Ready` only falls through when `options.force` is already true,
+            // and `Degraded` falls through unconditionally because the verdict
+            // above used the full readiness probe (catalog digest + engine
+            // probe), which is strictly stronger than the installer's own
+            // `check_ced_assets` idempotency gate (sidecar match + size +
+            // nonempty files). Passing `options.force` verbatim let a Degraded
+            // verdict reach the installer with `force` false, so the weaker
+            // gate saw its own checks pass and skipped reinstalling entirely --
+            // silently returning the same broken assets and making
+            // `journal install-models` a no-op against exactly the "present but
+            // not actually working" case it exists to repair.
             match (providers.ced)(
                 &journal,
                 &host.os_name,
                 &host.arch,
+                // 🔴 Force is deliberate on the download/repair path -- see the note
+                // above. The Windows package engine is the exception: its engine ships
+                // inside the signed app payload rather than being downloaded, so this
+                // step installs only the model and forcing has nothing to repair.
                 InstallerAction::Install {
-                    force: options.force,
+                    force: !ced_install::ced_uses_package_engine(&host.os_name, &host.arch),
                 },
             ) {
                 Ok(CedInstallDisposition::Unsupported) => provider_stdout.push(format!(
@@ -935,7 +952,7 @@ mod disclosure_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use solstone_core_local::install::ced_readiness::evaluate_ced_readiness_against;
+    use solstone_core_local::install::ced_readiness::evaluate_ced_readiness_against_with_probe;
     use std::fs;
 
     macro_rules! run_inner_with_test {
@@ -1037,15 +1054,27 @@ mod tests {
 
     fn seed_ready_ced(journal: &Path, os: &str, arch: &str) {
         let key = ced_install::ced_artifact_key(os, arch).expect("supported CED host");
-        assert!(
-            solstone_core_local::install::ced_fixture::write_ready_ced_install(journal, key),
-            "C compiler required for CED ready fixture"
-        );
+        solstone_core_local::install::ced_fixture::write_complete_ced_install(journal, key)
+            .expect("write complete CED install");
     }
 
+    /// CED's deep engine probe runs **out of process**: `solstone-core-ced-sys`
+    /// `dlopen`s a glibc shared object that this `musl-static` binary can never
+    /// load in-process. This module only exercises `install_models`'s branching
+    /// on a verdict, not the probe itself, so it supplies the deep probe
+    /// directly via `evaluate_ced_readiness_against_with_probe` rather than
+    /// spawning `solstone-core-ced-analyze`. The closure only runs once the
+    /// fixture has already passed the digest check, so it stands in exactly for
+    /// "the engine loaded".
     fn fixture_ced_verdict(journal: &Path, os: &str, arch: &str) -> CedVerdict {
         match solstone_core_local::install::ced_fixture::ced_model_digest(journal) {
-            Ok(digest) => evaluate_ced_readiness_against(journal, os, arch, &digest),
+            Ok(digest) => evaluate_ced_readiness_against_with_probe(
+                journal,
+                os,
+                arch,
+                &digest,
+                |_library, _model| Ok(()),
+            ),
             Err(_) => evaluate_ced_readiness(journal, os, arch),
         }
     }
@@ -1764,6 +1793,51 @@ mod tests {
                 .stdout
                 .iter()
                 .any(|line| line.starts_with("model ready:"))
+        );
+    }
+
+    /// Regression test for the CED repair no-op: `check_ced_assets` (sidecar
+    /// match + size + nonempty files) is strictly weaker than the readiness
+    /// verdict that got us into this branch (catalog digest + library
+    /// ABI/symbols + `load_model`). Before the fix, a plain
+    /// `journal install-models` (no `--force`) forwarded `options.force`
+    /// (false) straight into the installer, so whenever the weak check
+    /// happened to pass despite the strong verdict saying Degraded, the
+    /// installer's own `!force && check_ced_assets(...).is_ok()` guard
+    /// skipped any real repair and silently returned the stale, still-broken
+    /// record -- the documented repair command doing nothing at all.
+    #[test]
+    fn degraded_ced_repair_always_forces_a_real_reinstall_attempt() {
+        let journal = tempfile::tempdir().unwrap();
+        let mut seen_force = None;
+        let outcome = run_inner_with_test!(
+            host("linux", "x86_64", None),
+            || false,
+            options(InstallModelsVariant::Auto),
+            || Ok(journal.path().to_path_buf()),
+            |_| Ok(()),
+            None,
+            |_, _, _, action| {
+                if let InstallerAction::Install { force } = action {
+                    seen_force = Some(force);
+                }
+                Err(ced_install::CedInstallError::new(
+                    "download_failed",
+                    "ced download failed",
+                    EXIT_IOERR,
+                ))
+            },
+            |_, _, _, _| panic!("failed CED repair must not reach rf-detr"),
+            |_, _, _| panic!("coreml installer must not run"),
+            |_, _, _| panic!("failed CED repair must not reach parakeet"),
+        );
+        assert_eq!(outcome.exit_code, EXIT_IOERR);
+        assert_eq!(
+            seen_force,
+            Some(true),
+            "a Degraded CED verdict must force a real reinstall attempt \
+             even when the caller did not pass --force, or the installer's \
+             own weaker idempotency check can silently no-op the repair"
         );
     }
 

@@ -4,11 +4,12 @@
 use chrono::TimeZone;
 use solstone_core_doctor::{
     args::DoctorArgs,
-    checks::{service_running, task_pace},
+    checks::{journal_sync, service_running, task_pace},
     context::CheckContext,
     run,
     vocabulary::{Check, CheckResult, Platform, Severity, Status, results_failed},
 };
+use solstone_core_system::lifecycle::{HeartbeatV2, RunId, WriterId, v2_heartbeat_filename};
 use std::{
     collections::BTreeMap,
     fs,
@@ -794,5 +795,137 @@ fn ac9_full_batteries_never_invoke_poisoned_interpreters() {
         !marker.exists(),
         "native doctor invoked a poison interpreter: {}",
         fs::read_to_string(&marker).unwrap_or_default()
+    );
+}
+
+fn journal_sync_check() -> Check {
+    Check {
+        name: "journal_sync",
+        severity: Severity::Blocker,
+        platforms: &[Platform::Linux],
+    }
+}
+
+/// W8-1: a healthy, currently-running supervisor's own fresh heartbeat must
+/// not trip `journal_sync`'s blocker check. Boots a real
+/// `solstone_core_system::lifecycle::SupervisorLifecycle` onto a disposable
+/// journal (the exact mechanism the production supervisor uses to publish
+/// its heartbeat file under `health/sync/`), then answers doctor's
+/// service-status probe the same way a running supervisor would, using the
+/// same accept/write rendezvous the existing `service_running` callosum
+/// tests use so the check thread's confirmation is not a timing race.
+#[test]
+fn ac_journal_sync_ok_against_confirmed_running_supervisors_own_heartbeat() {
+    let (mut context, _root) = context();
+    context.service_status_timeout = COMPLETE_STATUS_TIMEOUT;
+    fs::create_dir_all(&context.journal_path).expect("create disposable journal");
+    let writer_id =
+        WriterId::parse("0123456789abcdef0123456789abcdef").expect("parse fixture writer id");
+    let lifecycle = solstone_core_system::lifecycle::boot(&context.journal_path, writer_id)
+        .expect("boot a real supervisor lifecycle onto the disposable journal");
+
+    let listener = bind_listener(&context.callosum_socket_path);
+    let socket_path = context.callosum_socket_path.clone();
+    let result_rx = spawn_result(move || {
+        journal_sync::run(&context, journal_sync_check()).expect("journal_sync check")
+    });
+    let mut stream = accept_stream(listener);
+    let mut frame = serde_json::json!({
+        "tract": "supervisor",
+        "event": "status",
+        "crashed": [],
+    })
+    .to_string()
+    .into_bytes();
+    frame.push(b'\n');
+    write_exact(&mut stream, &frame);
+    let row = recv_result(result_rx, CHECK_RESULT_BOUND);
+    drop(stream);
+    drop(lifecycle);
+    fs::remove_file(&socket_path).expect("remove callosum fixture socket");
+
+    assert_eq!(
+        row.status,
+        Status::Ok,
+        "journal_sync must not fail against the running supervisor's own live heartbeat; detail: {}",
+        row.detail
+    );
+}
+
+/// W8-1 follow-up: confirming our own supervisor is reachable must not mask a
+/// genuinely different, live foreign writer's heartbeat. `journal_sync` may
+/// downgrade the blocker (our own supervisor being fine is real information),
+/// but it must still name the foreign writer in the detail rather than
+/// asserting an unqualified "this device only" that would be false.
+#[test]
+fn ac_journal_sync_still_names_a_genuinely_foreign_live_writer_when_our_supervisor_is_reachable() {
+    let (mut context, _root) = context();
+    context.service_status_timeout = COMPLETE_STATUS_TIMEOUT;
+    fs::create_dir_all(&context.journal_path).expect("create disposable journal");
+
+    // Our own real supervisor, exactly as the sibling test above.
+    let writer_id =
+        WriterId::parse("0123456789abcdef0123456789abcdef").expect("parse fixture writer id");
+    let lifecycle = solstone_core_system::lifecycle::boot(&context.journal_path, writer_id)
+        .expect("boot a real supervisor lifecycle onto the disposable journal");
+
+    // A genuinely different, live foreign writer's heartbeat, written
+    // directly into health/sync so it lands with a fresh mtime -- exactly
+    // what a real concurrent writer's heartbeat looks like from doctor's
+    // read-only perspective. Its writer id ("fedc...") sorts after ours
+    // ("0123...") in list_flat_directory's byte-sorted enumeration
+    // (core/crates/solstone-core-journal-io/src/flat_directory.rs:268), so
+    // it is deterministically the `peer_observations.last()` entry the
+    // shared detail-renderer names.
+    let foreign_writer_id =
+        WriterId::parse("fedcba9876543210fedcba9876543210").expect("parse foreign writer id");
+    let foreign_run_id = RunId::generate().expect("generate foreign run id");
+    let foreign_heartbeat = HeartbeatV2::new(
+        foreign_writer_id.clone(),
+        foreign_run_id,
+        "foreign-host".to_owned(),
+        99_999,
+        "1234.5".to_owned(),
+        "test".to_owned(),
+        15,
+        "/foreign-journal".to_owned(),
+    );
+    let sync_dir = context.journal_path.join("health/sync");
+    fs::write(
+        sync_dir.join(v2_heartbeat_filename(&foreign_writer_id, &foreign_run_id)),
+        serde_json::to_vec(&foreign_heartbeat).expect("serialize foreign heartbeat"),
+    )
+    .expect("write foreign heartbeat file directly into health/sync");
+
+    let listener = bind_listener(&context.callosum_socket_path);
+    let socket_path = context.callosum_socket_path.clone();
+    let result_rx = spawn_result(move || {
+        journal_sync::run(&context, journal_sync_check()).expect("journal_sync check")
+    });
+    let mut stream = accept_stream(listener);
+    let mut frame = serde_json::json!({
+        "tract": "supervisor",
+        "event": "status",
+        "crashed": [],
+    })
+    .to_string()
+    .into_bytes();
+    frame.push(b'\n');
+    write_exact(&mut stream, &frame);
+    let row = recv_result(result_rx, CHECK_RESULT_BOUND);
+    drop(stream);
+    drop(lifecycle);
+    fs::remove_file(&socket_path).expect("remove callosum fixture socket");
+
+    assert_eq!(
+        row.status,
+        Status::Ok,
+        "our own confirmed-running supervisor should still downgrade the blocker; detail: {}",
+        row.detail
+    );
+    assert!(
+        row.detail.contains("foreign-host"),
+        "a genuinely foreign live writer must still be named, not silently erased by \"this device only\"; detail: {}",
+        row.detail
     );
 }

@@ -144,11 +144,10 @@ async fn run_native_service_async(
         let _ = parent_task.await;
     }
     if let Some(parent) = hosted_parent {
-        let reason = parent_loss_receive.try_recv().ok().or_else(|| {
-            parent
-                .retire_expected_requested()
-                .then_some(ParentLossReason::ExitedOrReused)
-        });
+        let mut reason = parent_loss_receive.try_recv().ok();
+        if reason.is_none() {
+            reason = parent.await_parent_loss_or_retire_expected_request().await;
+        }
         if reason.is_some() {
             parent
                 .finish_parent_loss(HostedServiceShutdownEvidence {

@@ -24,6 +24,7 @@ use solstone_core::supervisor::{
 use solstone_core_cli::SupervisorOptions;
 use solstone_core_system::lifecycle::{
     CoordinatorBootstrap, DeclaredParent, HostedServiceKind, ParentLossCoordinator,
+    arm_parent_loss_coordinator_termination_guard,
 };
 #[cfg(target_os = "macos")]
 use solstone_core_system::lifecycle::{
@@ -132,6 +133,10 @@ fn run_launcher(journal: PathBuf, child_pid: PathBuf, outcome: PathBuf, nonce: S
 /// coordinator state machine. This preserves the normal `current_exe()`
 /// launch shape used by `bootstrap_parent_loss_coordinator`.
 fn run_parent_loss_coordinator(mut args: impl Iterator<Item = std::ffi::OsString>) -> ExitCode {
+    if let Err(error) = arm_parent_loss_coordinator_termination_guard() {
+        eprintln!("hosted fixture: coordinator could not block SIGTERM: {error}");
+        return ExitCode::from(75);
+    }
     let mut supervisor = None;
     let mut enabled = None;
     let mut supervisor_heartbeat_filename = None;

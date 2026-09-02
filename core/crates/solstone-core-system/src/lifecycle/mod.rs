@@ -78,7 +78,7 @@ pub use parent_loss_admission::{
 pub use parent_loss_coordinator::{
     CoordinatorBootstrap, CoordinatorBootstrapError, CoordinatorBootstrapReady,
     PARENT_LOSS_COORDINATOR_RETIREMENT_DEADLINE, ParentLossCoordinator, ParentLossCoordinatorError,
-    write_retire_expected_control,
+    arm_parent_loss_coordinator_termination_guard, write_retire_expected_control,
 };
 #[cfg(unix)]
 pub use parent_loss_ledger::{

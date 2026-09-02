@@ -42,7 +42,23 @@ pub const ALL_STEP_NAMES: [StepName; 8] = [
     StepName::Brain,
 ];
 
-const CONTINUE_AFTER_FAILURE: [StepName; 2] = [StepName::SkillsUser, StepName::SkillsJournal];
+/// Steps whose failure is reported but does not halt the run.
+///
+/// `InstallModels` belongs here because it runs third of eight, ahead of
+/// `Wrapper`, `Service` and `Brain`. Halting there leaves a brand-new owner with
+/// no wrappers, no unit and no service — no journal at all — because one
+/// *optional* inference asset did not verify. Continuing leaves them a working
+/// journal missing one capability, which `journal doctor` reports and
+/// `journal install-models` re-runs.
+///
+/// ⚠ This does not hide the failure: the aggregate below still returns the
+/// step's own non-zero exit code and emits `SetupCompleted{status: "failed"}`.
+/// Setup reports failure and still finishes building something the owner can use.
+const CONTINUE_AFTER_FAILURE: [StepName; 3] = [
+    StepName::InstallModels,
+    StepName::SkillsUser,
+    StepName::SkillsJournal,
+];
 const DOCTOR_TIMEOUT_SECONDS: u64 = 30;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2622,6 +2638,110 @@ mod tests {
                 .contains(".local/bin")
         );
     }
+
+    /// A degraded optional asset must not cost the owner their whole journal.
+    ///
+    /// `InstallModels` runs third of eight. When it halted the run, a brand-new
+    /// install ended with no wrappers, no unit and no service — observed on the
+    /// founder's machine, where setup aborted with
+    /// `install_models failed: … CED assets are unavailable` and only
+    /// `--skip-models` got through. Setup must finish building the journal and
+    /// still report the failure.
+    #[test]
+    fn install_models_failure_does_not_halt_setup_before_the_journal_is_usable() {
+        // The steps that actually make a journal usable run after this one.
+        let models = ALL_STEP_NAMES
+            .iter()
+            .position(|name| *name == StepName::InstallModels)
+            .expect("install_models is a setup step");
+        for later in [StepName::Wrapper, StepName::Service, StepName::Brain] {
+            let index = ALL_STEP_NAMES
+                .iter()
+                .position(|name| *name == later)
+                .expect("step is in the canonical order");
+            assert!(
+                index > models,
+                "{} runs after install_models, so halting there strands the owner",
+                later.as_str()
+            );
+        }
+
+        let (args, resolved, root, home) = fixture("models-continue", &[]);
+        let mut runner = FakeRunner::new(vec![
+            Ok(CommandOutput {
+                exit_code: 0,
+                stdout: "{}".into(),
+                stderr: String::new(),
+                timed_out: false,
+            }),
+            Ok(CommandOutput {
+                exit_code: 9,
+                stdout: String::new(),
+                stderr: "CED assets are unavailable".into(),
+                timed_out: false,
+            }),
+            Ok(CommandOutput {
+                exit_code: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+                timed_out: false,
+            }),
+            Ok(CommandOutput {
+                exit_code: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+                timed_out: false,
+            }),
+        ]);
+        let mut prompt = Prompt(false);
+        let specs = [
+            StepSpec {
+                name: StepName::Doctor,
+                executor: Some(step_doctor),
+                plan: plan_doctor,
+            },
+            StepSpec {
+                name: StepName::InstallModels,
+                executor: Some(step_install_models),
+                plan: plan_install_models,
+            },
+            StepSpec {
+                name: StepName::SkillsUser,
+                executor: Some(step_skills_user),
+                plan: plan_skills_user,
+            },
+            StepSpec {
+                name: StepName::SkillsJournal,
+                executor: Some(step_skills_journal),
+                plan: plan_skills_journal,
+            },
+        ];
+        let outcome = run_setup(
+            &mut context(
+                &args,
+                &resolved,
+                &root,
+                &home,
+                &mut runner,
+                &mut prompt,
+                None,
+            ),
+            &specs,
+        );
+        assert_eq!(
+            outcome.ran_steps,
+            vec![
+                StepName::Doctor,
+                StepName::InstallModels,
+                StepName::SkillsUser,
+                StepName::SkillsJournal
+            ],
+            "setup must keep going after a failed install_models"
+        );
+        // ...and must still report the failure rather than claiming success.
+        assert_eq!(outcome.exit_code, 9);
+    }
+
     #[test]
     fn skills_failures_continue_and_single_failure_uses_its_exit_code() {
         let (args, resolved, root, home) = fixture("aggregate", &[]);

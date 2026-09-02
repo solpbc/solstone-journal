@@ -4,9 +4,13 @@ use crate::{
     context::CheckContext,
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
-use solstone_core_system::lifecycle::{SyncPeerIdentity, sync_peer_diagnostic};
+use solstone_core_system::lifecycle::{
+    SyncCheckResult, SyncPeerIdentity, SyncRescan, rescan_sync_read_only, sync_peer_diagnostic,
+};
 use solstone_core_system::process::SystemProcessInstanceSource;
 use solstone_core_system_health::{SyncRescanDiagnosis, describe_sync_rescan};
+
+use super::service_status;
 
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     if !context.journal_path.is_dir() {
@@ -18,16 +22,62 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         ));
     }
     let process_source = SystemProcessInstanceSource;
-    render_sync_rescan(
-        context,
-        check,
-        describe_sync_rescan(
-            &context.journal_path,
-            "doctor.check",
-            context.now.timestamp() as f64,
-            &process_source,
-        ),
-    )
+    let now = context.now.timestamp() as f64;
+    let diagnosis =
+        describe_sync_rescan(&context.journal_path, "doctor.check", now, &process_source);
+    // `doctor` never writes its own heartbeat, so the exclusion filter inside
+    // `describe_sync_rescan` (keyed on a caller's own heartbeat filename) can
+    // never suppress the journal's own supervisor. That means a healthy,
+    // currently-running supervisor's fresh heartbeat is otherwise
+    // indistinguishable from a genuine foreign live writer and gets
+    // classified `HeartbeatNeedsAttention`. Confirming that this journal's
+    // own supervisor is reachable over its status socket (the same probe
+    // `service_running` and `task_pace` already use) tells us our own
+    // supervisor is healthy, but it does NOT tell us whether the live
+    // heartbeat behind this classification was ours or a genuine second
+    // writer -- the status payload carries no heartbeat filename, writer id,
+    // or run id for us to exclude by (and adding one would be a
+    // Callosum wire-contract change, out of scope here). So when the
+    // supervisor is confirmed reachable, re-read the raw peer set
+    // (read-only, no side effects) and report it exactly the way the Clean
+    // branch below would: Ok, but naming the last observed peer's identity
+    // when one is present, so a genuine foreign writer is still surfaced
+    // instead of silently erased by an unconditional "this device only".
+    if matches!(diagnosis, SyncRescanDiagnosis::HeartbeatNeedsAttention(_))
+        && service_status::fetch(context).is_some()
+        && let Ok(SyncRescan::Complete(result)) =
+            rescan_sync_read_only(&context.journal_path, "doctor.check", None, now)
+    {
+        return Ok(make_result(
+            check,
+            Status::Ok,
+            clean_detail(context, Some(&result)),
+            None::<String>,
+        ));
+    }
+    render_sync_rescan(context, check, diagnosis)
+}
+
+/// Render the "this device only" detail, naming the most recently observed
+/// peer's identity when one is present. Shared by the confirmed-running
+/// downgrade above and the `Clean` diagnosis below so both report a genuine
+/// foreign writer identically instead of one of them silently dropping it.
+fn clean_detail(context: &CheckContext, result: Option<&SyncCheckResult>) -> String {
+    let clean = format!("this device only ({})", context.hostname);
+    result
+        .and_then(|result| result.peer_observations.last())
+        .map(sync_peer_diagnostic)
+        .filter(|writer| !writer.identity.is_unidentified())
+        .map_or_else(
+            || clean.clone(),
+            |writer| {
+                format!(
+                    "{clean}\n  last foreign writer: {} ({})",
+                    writer.hostname,
+                    doctor_identity_label(&writer.identity)
+                )
+            },
+        )
 }
 
 fn render_sync_rescan(
@@ -46,25 +96,12 @@ fn render_sync_rescan(
         SyncRescanDiagnosis::Unsafe(message) => {
             Ok(make_result(check, Status::Fail, message, None::<String>))
         }
-        SyncRescanDiagnosis::Clean(result) => {
-            let clean = format!("this device only ({})", context.hostname);
-            let detail = result
-                .as_ref()
-                .and_then(|result| result.peer_observations.last())
-                .map(sync_peer_diagnostic)
-                .filter(|writer| !writer.identity.is_unidentified())
-                .map_or_else(
-                    || clean.to_owned(),
-                    |writer| {
-                        format!(
-                            "{clean}\n  last foreign writer: {} ({})",
-                            writer.hostname,
-                            doctor_identity_label(&writer.identity)
-                        )
-                    },
-                );
-            Ok(make_result(check, Status::Ok, detail, None::<String>))
-        }
+        SyncRescanDiagnosis::Clean(result) => Ok(make_result(
+            check,
+            Status::Ok,
+            clean_detail(context, result.as_ref()),
+            None::<String>,
+        )),
     }
 }
 

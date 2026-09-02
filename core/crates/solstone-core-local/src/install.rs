@@ -16,6 +16,7 @@ pub mod capability_status;
 pub mod ced_fixture;
 pub mod ced_install;
 pub mod ced_readiness;
+pub mod ced_runtime;
 pub mod coreml_install;
 pub mod fingerprint;
 pub mod fit_report;

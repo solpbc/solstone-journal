@@ -35,6 +35,15 @@ const SAFETY_MARGIN_TOKENS: u32 = 256;
 const MIN_COMPLETION_TOKENS: u32 = 256;
 const ESTIMATED_IMAGE_TOKENS: u32 = 2_500;
 const RECLAMP_SLACK_TOKENS: u32 = 16;
+/// Completion ceiling used when the served window could not be resolved.
+///
+/// A known window clamps the completion budget against the room actually left by
+/// the prompt. When the window is unknown there is nothing to clamp against, and
+/// a talent that declares no `max_output_tokens` asks for 8192 * 6 tokens -- more
+/// completion than a small served model will accept, so the endpoint rejects the
+/// request outright rather than returning a short answer. An unknown window is
+/// not a licence to ask for an unbounded completion.
+const UNKNOWN_WINDOW_MAX_COMPLETION_TOKENS: u32 = 8_192;
 const COMPLETION_ANCHOR: &str = "tokens for the completion";
 const CONTEXT_WINDOW_PATTERNS: &[&str] = &[
     "exceeds the available context size",
@@ -326,13 +335,24 @@ pub(crate) fn endpoint_converse_with<T: EndpointTransport>(
         Err(_) => return converse_failure("provider_response_invalid"),
     };
     let served_window = runtime.resolve_served_window(endpoint, config, transport, now);
-    let input_budget_tokens = match served_window {
-        Some(window) => Some(solstone_core_local::generate::compute_input_budget(
-            max_tokens, window,
-        )),
-        None if endpoint.is_confidential => return converse_failure("context_budget_exceeded"),
-        None => None,
-    };
+    // 🔴 A confidential endpoint used to REFUSE here when no served window was
+    // resolved:
+    // `None if endpoint.is_confidential => converse_failure("context_budget_exceeded")`.
+    //
+    // `AttestedEndpointTransport::get` returns `Err` unconditionally and says so in
+    // its own comment -- "model discovery is optional ... it must not issue an
+    // unaudited second request over the one-shot channel". So for a confidential
+    // endpoint `resolve_served_window` can only ever return `None` unless
+    // `providers.local.served_context_window` is configured. Discovery was declared
+    // optional and its absence was then fatal, in exactly the case where it is
+    // guaranteed absent -- thinking was down on the SPP lane for every owner.
+    //
+    // ⚠ `None` is not a licence to overflow: it means no CLIENT-side fitting, which
+    // is what the non-confidential BYO path already does, and the server still
+    // enforces its own window. ✅ Client-side fitting remains available by setting
+    // `providers.local.served_context_window`, which `resolve_served_window` reads first.
+    let input_budget_tokens = served_window
+        .map(|window| solstone_core_local::generate::compute_input_budget(max_tokens, window));
     let message_values = converse_messages_to_value(messages);
     let tool_values = converse_tools_to_value(tools);
     let local_request = LocalConverseRequest {
@@ -520,7 +540,12 @@ fn prepare_endpoint_request(
 ) -> Result<PreparedEndpointRequest, &'static str> {
     let contents = request_contents(request);
     let (contents, input_budget, request_budget, max_tokens) = match served_window {
-        None => (contents, None, None, max_tokens),
+        None => (
+            contents,
+            None,
+            None,
+            max_tokens.min(UNKNOWN_WINDOW_MAX_COMPLETION_TOKENS),
+        ),
         Some(window) => {
             let mut count = estimate_tokens;
             let (fitted_contents, input_budget) = fit_contents(
@@ -1427,6 +1452,45 @@ mod tests {
         ));
         assert_eq!(transport.posts.len(), 2);
         assert_eq!(transport.posts[1]["max_tokens"], 384);
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    /// A talent that declares no `max_output_tokens` asks for 8192 * 6. With a
+    /// known window that is clamped against the room the prompt leaves; with an
+    /// unknown one there is nothing to clamp against, and the served model
+    /// rejects the request outright instead of answering briefly.
+    #[test]
+    fn an_unknown_served_window_caps_the_completion_budget() {
+        let runtime = EndpointRuntime::default();
+        let journal = journal_path();
+        let mut oversized = request(None);
+        oversized.max_output_tokens = 8192 * 6;
+        let mut transport = StubTransport {
+            // A models payload carrying no `max_model_len` leaves the window unknown.
+            get_script: vec![Ok(HttpResponse {
+                status: 200,
+                body: json!({"data": [{"id": "served"}]}).to_string(),
+            })],
+            post_script: vec![Ok(response())],
+            ..Default::default()
+        };
+        assert!(matches!(
+            endpoint_generate_with(
+                &oversized,
+                &journal,
+                &endpoint("http://endpoint"),
+                &Map::new(),
+                &runtime,
+                &mut transport,
+                Instant::now(),
+            ),
+            EndpointResult::Generated(_)
+        ));
+        assert_eq!(transport.posts.len(), 1);
+        assert_eq!(
+            transport.posts[0]["max_tokens"],
+            UNKNOWN_WINDOW_MAX_COMPLETION_TOKENS
+        );
         let _ = std::fs::remove_dir_all(journal);
     }
 

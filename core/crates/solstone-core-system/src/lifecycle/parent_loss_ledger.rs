@@ -198,6 +198,20 @@ pub enum BootstrapRecoveryReason {
     RecordWriteFailed,
 }
 
+/// Whether the recorded coordinator can be positively proven to have exited.
+///
+/// ⚠ `Unverifiable` returns false on purpose: an observation we cannot make is not
+/// evidence of death, and treating it as such is exactly how two supervisors would
+/// end up sharing one journal.
+fn coordinator_is_provably_gone(active: &ActiveGeneration) -> bool {
+    active.coordinator.is_some_and(|coordinator| {
+        matches!(
+            SystemProcessInstanceSource.observe(&coordinator),
+            InstanceVerdict::NotSameOrExited
+        )
+    })
+}
+
 /// Errors for the lifecycle domain's durable primitives.
 #[derive(Debug, Error)]
 pub enum ParentLossLedgerError {
@@ -294,6 +308,32 @@ impl ParentLossLedger {
                 ParentLossReaderOutcome::Completed { generation, .. }
                 | ParentLossReaderOutcome::RetiredExpected { generation }
                 | ParentLossReaderOutcome::CancelledBeforeAdmission { generation } => {
+                    generation + 1
+                }
+                // 🔴 A sealed `Unresolved` generation whose COORDINATOR IS PROVABLY
+                // GONE must not brick the journal.
+                //
+                // Measured on the founder's machine 2026-08-31: one shutdown where a
+                // single service missed the 15s retirement deadline sealed generation
+                // 7 `unresolved{retirement_deadline_exceeded}`. Every boot afterwards
+                // failed "coordinator initial-admission handshake failed" -- 8 systemd
+                // attempts, then `start-limit-hit`. The journal was unbootable and
+                // stayed that way, and ⛔ rolling the binary back did NOT help,
+                // because the wedge is in journal state rather than in the build.
+                //
+                // 🔒 The liveness test is what keeps this safe, and it is the property
+                // the existing `..._blocks_successor` tests actually protect: in every
+                // one of them the coordinator is still ALIVE and still holds its
+                // process lease, so a successor must be refused. Here it is dead, the
+                // generation is sealed, and nothing can ever advance it.
+                //
+                // ⚠ `Unverifiable` deliberately does NOT qualify -- only a coordinator
+                // we can positively prove exited unblocks. When we cannot tell, we
+                // still refuse, because that is the case where a live peer might be
+                // sharing the journal.
+                ParentLossReaderOutcome::Unresolved { generation, .. }
+                    if coordinator_is_provably_gone(&active) =>
+                {
                     generation + 1
                 }
                 ParentLossReaderOutcome::BootstrapRecoveryRequired { reason, .. } => {
@@ -1522,6 +1562,105 @@ mod tests {
         assert_eq!(
             read_parent_loss_outcome(directory.path()).expect("completed outcome"),
             expected
+        );
+    }
+
+    /// 🔴 A sealed `Unresolved` generation must not brick the journal.
+    ///
+    /// This is W8-23, reproduced from the founder's machine. One shutdown where a
+    /// single service missed the 15s retirement deadline sealed generation 7 as
+    /// `unresolved{retirement_deadline_exceeded}`. Every boot afterwards failed the
+    /// coordinator handshake, 8 systemd attempts then `start-limit-hit`, and the
+    /// journal never started again. Rolling the binary back did not help: the wedge
+    /// is in journal state, so no reinstall or downgrade escapes it.
+    #[test]
+    fn a_sealed_unresolved_generation_still_allows_the_next_one() {
+        let directory = TempDir::new().expect("temporary root");
+        let (ledger, active, coordinator) = ready_generation(&directory, []);
+        write_terminal(
+            &ledger,
+            &active,
+            coordinator,
+            ParentLossTerminalDisposition::Unresolved {
+                reason: ParentLossUnresolvedReason::RetirementDeadlineExceeded {
+                    deadline_seconds: 15,
+                },
+            },
+        );
+
+        let next = ledger
+            .reserve_generation(instance(11, 3), [])
+            .expect("a sealed unresolved generation must not block the next boot");
+        assert_eq!(next.generation, active.generation + 1);
+
+        // 🔒 The failed generation is kept, not erased -- it is the forensic record.
+        assert!(
+            ledger
+                .record(active.generation)
+                .expect("prior record readable")
+                .is_some_and(|record| matches!(
+                    record.terminal,
+                    Some(ParentLossTerminalDisposition::Unresolved { .. })
+                )),
+            "the unresolved disposition must survive for forensics"
+        );
+    }
+
+    /// 🔒 Negative twin, and the one that matters: a sealed `Unresolved` generation
+    /// whose coordinator is STILL RUNNING must keep refusing the successor.
+    ///
+    /// Uses this test process as the coordinator, so the liveness observation is
+    /// real rather than synthetic. If this ever goes green the fix above has become
+    /// "ignore the ledger and boot anyway", which would let two supervisors share
+    /// one journal.
+    #[test]
+    fn a_sealed_unresolved_generation_with_a_live_coordinator_still_refuses() {
+        let directory = TempDir::new().expect("temporary root");
+        let ledger = ParentLossLedger::open(directory.path()).expect("ledger");
+        let active = ledger
+            .reserve_generation(instance(10, 1), [])
+            .expect("reserve generation");
+        ledger.initialize_record(&active).expect("record");
+
+        let live_coordinator = match SystemProcessInstanceSource.inspect(std::process::id()) {
+            crate::process::InspectResult::Present { instance, .. } => instance,
+            _ => panic!("this test process must be observable"),
+        };
+        let active = ledger
+            .persist_coordinator_identity(active.generation, live_coordinator)
+            .expect("coordinator identity");
+        let active = ledger
+            .mark_admitting(active.generation, live_coordinator)
+            .expect("admitting state");
+        write_terminal(
+            &ledger,
+            &active,
+            live_coordinator,
+            ParentLossTerminalDisposition::Unresolved {
+                reason: ParentLossUnresolvedReason::RetirementDeadlineExceeded {
+                    deadline_seconds: 15,
+                },
+            },
+        );
+
+        assert!(
+            ledger.reserve_generation(instance(11, 3), []).is_err(),
+            "a live coordinator must still block a successor"
+        );
+    }
+
+    /// 🔒 Negative twin: a LIVE coordinator must still block a second supervisor.
+    ///
+    /// This is the guard that actually matters, and the fix above must not weaken
+    /// it. `ready_generation` leaves the generation non-terminal with a coordinator
+    /// identity persisted, which is the shape a running peer has.
+    #[test]
+    fn a_generation_that_never_sealed_still_refuses_the_next_one() {
+        let directory = TempDir::new().expect("temporary root");
+        let (ledger, _active, _coordinator) = ready_generation(&directory, []);
+        assert!(
+            ledger.reserve_generation(instance(11, 3), []).is_err(),
+            "an unsealed generation must not be advanced past"
         );
     }
 
