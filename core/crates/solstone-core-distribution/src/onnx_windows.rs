@@ -10,9 +10,12 @@
 //! separate from `onnx_runtime`'s `TARGETS` wheel-staging table — there is
 //! no `wheel_url` field and no extraction route.
 //!
-//! The ORT source-tree digest, submodule names and digests, and
-//! builder-input versions and digests are an invented plausible fixture,
-//! not a verified ONNX Runtime inventory or real captured hashes. The three
+//! The ORT source-tree digest, submodule names/repositories/revisions/digests,
+//! and builder-input versions and digests are format-validated only
+//! (nonempty, 64-hex SHA-256, or 7-40 hex commit-shaped). They are not
+//! compared against a pinned inventory. Test fixtures in this module are
+//! illustrative, not verified evidence. Capturing and comparing real
+//! identities against this schema is Phase 3, out of scope here. The three
 //! model digests are hardcoded local consts rather than a
 //! `solstone-core-transcribe` dependency, for the same reason
 //! `parakeet_windows` states for its own model digests: this crate has no
@@ -30,8 +33,6 @@ use crate::provenance;
 pub const ONNX_RUNTIME_TAG: &str = "v1.25.0";
 pub const ONNX_RUNTIME_COMMIT: &str = "7a71bc575b189cdedea7fa2c0f87389f870bd10e";
 pub const ONNX_RUNTIME_REPOSITORY: &str = "microsoft/onnxruntime";
-pub const ONNX_RUNTIME_CONTENT_SHA256: &str =
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 pub const ONNX_WINDOWS_TARGET_TRIPLE: &str = "x86_64-pc-windows-msvc";
 pub const ONNX_WINDOWS_BUILD_PROFILE: &str = "Release";
@@ -39,35 +40,13 @@ pub const ONNX_WINDOWS_API_LEVEL: u32 = 24;
 
 pub const ONNX_WINDOWS_BUILD_FLAGS: &[&str] = &[
     "--build_shared_lib",
-    "--config=Release",
-    "--disable_telemetry",
-    "--include_ops_by_config=solstone-ort-reduced-ops.config",
+    "--include_ops_by_config",
+    "--disable_contrib_ops",
+    "--disable_ml_ops",
 ];
 
 pub const ONNX_WINDOWS_REDUCED_OPS_CONFIG_SHA256: &str =
     "d624f0c4902d58df3a5513535450ad4a5c2fffdd95676b23d44c925886b2654d";
-
-/// Invented 4-name fixture; not a verified ONNX Runtime submodule inventory.
-pub const ONNX_WINDOWS_REQUIRED_SUBMODULES: &[&str] =
-    &["onnx", "protobuf", "abseil-cpp", "flatbuffers"];
-pub const ONNX_WINDOWS_SUBMODULE_ONNX_SHA256: &str =
-    "1111111111111111111111111111111111111111111111111111111111111111";
-pub const ONNX_WINDOWS_SUBMODULE_PROTOBUF_SHA256: &str =
-    "2222222222222222222222222222222222222222222222222222222222222222";
-pub const ONNX_WINDOWS_SUBMODULE_ABSEIL_SHA256: &str =
-    "3333333333333333333333333333333333333333333333333333333333333333";
-pub const ONNX_WINDOWS_SUBMODULE_FLATBUFFERS_SHA256: &str =
-    "4444444444444444444444444444444444444444444444444444444444444444";
-
-pub const ONNX_WINDOWS_PYTHON_VERSION: &str = "3.12.8";
-pub const ONNX_WINDOWS_PYTHON_SHA256: &str =
-    "5151515151515151515151515151515151515151515151515151515151515151";
-pub const ONNX_WINDOWS_CMAKE_VERSION: &str = "3.31.6";
-pub const ONNX_WINDOWS_CMAKE_SHA256: &str =
-    "5252525252525252525252525252525252525252525252525252525252525252";
-pub const ONNX_WINDOWS_MSVC_VERSION: &str = "19.40";
-pub const ONNX_WINDOWS_MSVC_SHA256: &str =
-    "5353535353535353535353535353535353535353535353535353535353535353";
 
 pub const WESPEAKER_FILENAME: &str = "wespeaker-resnet34-256.onnx";
 pub const WESPEAKER_SIZE_BYTES: u64 = 26_534_365;
@@ -87,7 +66,7 @@ pub const ONNX_WINDOWS_NOTICE_NAMES: &[&str] = &[
     "onnxruntime-LICENSE.txt",
     "onnxruntime-ThirdPartyNotices.txt",
 ];
-pub const ONNX_WINDOWS_API_POLICY: u32 = 25;
+pub const ONNX_WINDOWS_API_POLICY: u32 = 24;
 pub const ONNX_WINDOWS_ORDINARY_IMPORT: &str = "onnxruntime.dll";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -283,10 +262,10 @@ pub enum OnnxWindowsError {
         category: OnnxWindowsAdmissionCategory,
     },
     MissingRequired {
-        role: &'static str,
+        role: String,
     },
     Unexpected {
-        role: &'static str,
+        role: String,
         expected: String,
         observed: String,
     },
@@ -346,12 +325,12 @@ fn format_diff_side(names: &[String]) -> String {
 }
 
 fn unexpected(
-    role: &'static str,
+    role: impl Into<String>,
     expected: impl Into<String>,
     observed: impl Into<String>,
 ) -> OnnxWindowsError {
     OnnxWindowsError::Unexpected {
-        role,
+        role: role.into(),
         expected: expected.into(),
         observed: observed.into(),
     }
@@ -361,11 +340,50 @@ fn missing(category: OnnxWindowsAdmissionCategory) -> OnnxWindowsError {
     OnnxWindowsError::Missing { category }
 }
 
+fn is_sha256(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn is_commit_shaped(value: &str) -> bool {
+    (7..=40).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn require_nonempty(value: &str, role: impl Into<String>) -> Result<(), OnnxWindowsError> {
+    if value.is_empty() {
+        Err(OnnxWindowsError::MissingRequired { role: role.into() })
+    } else {
+        Ok(())
+    }
+}
+
+fn require_hex_sha256(value: &str, role: impl Into<String>) -> Result<(), OnnxWindowsError> {
+    let role = role.into();
+    if value.is_empty() {
+        return Err(OnnxWindowsError::MissingRequired { role });
+    }
+    if !is_sha256(value) {
+        return Err(unexpected(role, "64 hex characters", value));
+    }
+    Ok(())
+}
+
+fn require_commit_shaped(value: &str, role: impl Into<String>) -> Result<(), OnnxWindowsError> {
+    let role = role.into();
+    if value.is_empty() {
+        return Err(OnnxWindowsError::MissingRequired { role });
+    }
+    if !is_commit_shaped(value) {
+        return Err(unexpected(role, "7-40 hex characters", value));
+    }
+    Ok(())
+}
+
 fn require_nonempty_string(
     value: &str,
-    role: &'static str,
+    role: impl Into<String>,
     expected: &str,
 ) -> Result<(), OnnxWindowsError> {
+    let role = role.into();
     if value.is_empty() {
         return Err(OnnxWindowsError::MissingRequired { role });
     }
@@ -378,8 +396,9 @@ fn require_nonempty_string(
 fn require_pinned_commit(
     expected: &str,
     actual: &str,
-    role: &'static str,
+    role: impl Into<String>,
 ) -> Result<(), OnnxWindowsError> {
+    let role = role.into();
     if actual.is_empty() {
         return Err(OnnxWindowsError::MissingRequired { role });
     }
@@ -444,64 +463,26 @@ fn verify_source_identity(source: &TaggedSource) -> Result<(), OnnxWindowsError>
         &source.dependency.revision,
         "onnxruntime commit",
     )?;
-    require_nonempty_string(
-        &source.dependency.content_sha256,
-        "onnxruntime digest",
-        ONNX_RUNTIME_CONTENT_SHA256,
-    )
-}
-
-fn submodule_digest(name: &str) -> Option<&'static str> {
-    match name {
-        "onnx" => Some(ONNX_WINDOWS_SUBMODULE_ONNX_SHA256),
-        "protobuf" => Some(ONNX_WINDOWS_SUBMODULE_PROTOBUF_SHA256),
-        "abseil-cpp" => Some(ONNX_WINDOWS_SUBMODULE_ABSEIL_SHA256),
-        "flatbuffers" => Some(ONNX_WINDOWS_SUBMODULE_FLATBUFFERS_SHA256),
-        _ => None,
-    }
-}
-
-fn submodule_revision_role(name: &str) -> &'static str {
-    match name {
-        "onnx" => "onnx submodule revision",
-        "protobuf" => "protobuf submodule revision",
-        "abseil-cpp" => "abseil-cpp submodule revision",
-        "flatbuffers" => "flatbuffers submodule revision",
-        _ => "submodule revision",
-    }
-}
-
-fn submodule_digest_role(name: &str) -> &'static str {
-    match name {
-        "onnx" => "onnx submodule digest",
-        "protobuf" => "protobuf submodule digest",
-        "abseil-cpp" => "abseil-cpp submodule digest",
-        "flatbuffers" => "flatbuffers submodule digest",
-        _ => "submodule digest",
-    }
+    require_hex_sha256(&source.dependency.content_sha256, "onnxruntime digest")
 }
 
 fn verify_submodules(
     submodules: &BTreeMap<String, DependencySource>,
 ) -> Result<(), OnnxWindowsError> {
-    let expected: BTreeSet<&str> = ONNX_WINDOWS_REQUIRED_SUBMODULES.iter().copied().collect();
-    let actual: BTreeSet<&str> = submodules.keys().map(String::as_str).collect();
-    set_mismatch("submodules", expected, actual)?;
-    for name in ONNX_WINDOWS_REQUIRED_SUBMODULES {
-        let identity = submodules
-            .get(*name)
-            .expect("required submodule present after set check");
-        if identity.revision.is_empty() {
+    if submodules.is_empty() {
+        return Err(OnnxWindowsError::MissingRequired {
+            role: "submodules".into(),
+        });
+    }
+    for (name, identity) in submodules {
+        if name.is_empty() {
             return Err(OnnxWindowsError::MissingRequired {
-                role: submodule_revision_role(name),
+                role: "submodule name".into(),
             });
         }
-        let digest = submodule_digest(name).expect("required submodule has a pinned digest");
-        require_nonempty_string(
-            &identity.content_sha256,
-            submodule_digest_role(name),
-            digest,
-        )?;
+        require_nonempty(&identity.repository, format!("{name} submodule repository"))?;
+        require_commit_shaped(&identity.revision, format!("{name} submodule revision"))?;
+        require_hex_sha256(&identity.content_sha256, format!("{name} submodule digest"))?;
     }
     Ok(())
 }
@@ -519,14 +500,6 @@ fn builder_digest_role(role: BuilderInputRole) -> &'static str {
         BuilderInputRole::Cmake => "cmake digest",
         BuilderInputRole::Msvc => "msvc digest",
         BuilderInputRole::Python => "python digest",
-    }
-}
-
-fn builder_pin(role: BuilderInputRole) -> (&'static str, &'static str) {
-    match role {
-        BuilderInputRole::Cmake => (ONNX_WINDOWS_CMAKE_VERSION, ONNX_WINDOWS_CMAKE_SHA256),
-        BuilderInputRole::Msvc => (ONNX_WINDOWS_MSVC_VERSION, ONNX_WINDOWS_MSVC_SHA256),
-        BuilderInputRole::Python => (ONNX_WINDOWS_PYTHON_VERSION, ONNX_WINDOWS_PYTHON_SHA256),
     }
 }
 
@@ -555,9 +528,8 @@ fn verify_builder_inputs(
         let identity = inputs
             .get(&role)
             .expect("required builder input present after set check");
-        let (version, digest) = builder_pin(role);
-        require_nonempty_string(&identity.version, builder_version_role(role), version)?;
-        require_nonempty_string(&identity.content_sha256, builder_digest_role(role), digest)?;
+        require_nonempty(&identity.version, builder_version_role(role))?;
+        require_hex_sha256(&identity.content_sha256, builder_digest_role(role))?;
     }
     Ok(())
 }
@@ -792,7 +764,7 @@ fn admit_helper_census_inner(
     draft: &OnnxHelperCensusDraft,
 ) -> Result<OnnxHelperCensusAdmission, OnnxWindowsError> {
     let role = draft.role.ok_or(OnnxWindowsError::MissingRequired {
-        role: "helper role",
+        role: "helper role".into(),
     })?;
     if role != expected {
         return Err(unexpected("helper role", expected.as_str(), role.as_str()));
@@ -801,7 +773,7 @@ fn admit_helper_census_inner(
         .import_census
         .clone()
         .ok_or(OnnxWindowsError::MissingRequired {
-            role: "import census",
+            role: "import census".into(),
         })?;
     if is_ordinary_import(&import_census.imports, ONNX_WINDOWS_ORDINARY_IMPORT) {
         return Err(unexpected(
@@ -815,7 +787,7 @@ fn admit_helper_census_inner(
             .package_closure
             .clone()
             .ok_or(OnnxWindowsError::MissingRequired {
-                role: "package closure",
+                role: "package closure".into(),
             })?;
     let expected_closure: BTreeSet<&str> = ONNX_WINDOWS_PACKAGE_CLOSURE.iter().copied().collect();
     let actual_closure: BTreeSet<&str> = package_closure.iter().map(String::as_str).collect();
@@ -823,11 +795,13 @@ fn admit_helper_census_inner(
     let notices = draft
         .notices
         .clone()
-        .ok_or(OnnxWindowsError::MissingRequired { role: "notices" })?;
+        .ok_or(OnnxWindowsError::MissingRequired {
+            role: "notices".into(),
+        })?;
     verify_helper_notices(&notices)?;
-    let api_policy = draft
-        .api_policy
-        .ok_or(OnnxWindowsError::MissingRequired { role: "api policy" })?;
+    let api_policy = draft.api_policy.ok_or(OnnxWindowsError::MissingRequired {
+        role: "api policy".into(),
+    })?;
     if api_policy != ONNX_WINDOWS_API_POLICY {
         return Err(unexpected(
             "api policy",
@@ -859,54 +833,91 @@ mod tests {
     use super::*;
     use crate::pe::{FixtureSpec, ImportSpec, fixture, parse_pe};
 
-    fn pinned_source() -> TaggedSource {
+    fn pinned_source(content_sha256: &str) -> TaggedSource {
         TaggedSource {
             tag: ONNX_RUNTIME_TAG.to_owned(),
             dependency: DependencySource {
                 repository: ONNX_RUNTIME_REPOSITORY.to_owned(),
                 revision: ONNX_RUNTIME_COMMIT.to_owned(),
-                content_sha256: ONNX_RUNTIME_CONTENT_SHA256.to_owned(),
+                content_sha256: content_sha256.to_owned(),
             },
         }
     }
 
-    fn pinned_submodules() -> BTreeMap<String, DependencySource> {
-        let mut submodules = BTreeMap::new();
-        for (name, digest) in [
-            ("onnx", ONNX_WINDOWS_SUBMODULE_ONNX_SHA256),
-            ("protobuf", ONNX_WINDOWS_SUBMODULE_PROTOBUF_SHA256),
-            ("abseil-cpp", ONNX_WINDOWS_SUBMODULE_ABSEIL_SHA256),
-            ("flatbuffers", ONNX_WINDOWS_SUBMODULE_FLATBUFFERS_SHA256),
-        ] {
-            submodules.insert(
-                name.to_owned(),
-                DependencySource {
-                    repository: name.to_owned(),
-                    revision: "rev".to_owned(),
-                    content_sha256: digest.to_owned(),
-                },
-            );
-        }
-        submodules
+    fn submodule_entry(
+        name: &str,
+        repository: &str,
+        revision: impl Into<String>,
+        content_sha256: impl Into<String>,
+    ) -> (String, DependencySource) {
+        (
+            name.to_owned(),
+            DependencySource {
+                repository: repository.to_owned(),
+                revision: revision.into(),
+                content_sha256: content_sha256.into(),
+            },
+        )
     }
 
-    fn pinned_builder_inputs() -> BTreeMap<BuilderInputRole, BuilderInputIdentity> {
+    fn submodules_a() -> BTreeMap<String, DependencySource> {
+        BTreeMap::from([
+            submodule_entry("onnx", "onnx", "aaaaaaaa", "1".repeat(64)),
+            submodule_entry("protobuf", "protobuf", "bbbbbbbb", "2".repeat(64)),
+            submodule_entry("abseil-cpp", "abseil-cpp", "cccccccc", "3".repeat(64)),
+            submodule_entry("flatbuffers", "flatbuffers", "dddddddd", "4".repeat(64)),
+        ])
+    }
+
+    fn submodules_b() -> BTreeMap<String, DependencySource> {
+        BTreeMap::from([
+            submodule_entry(
+                "onnx-runtime-core",
+                "microsoft/onnxruntime-core",
+                "1111111",
+                "b".repeat(64),
+            ),
+            submodule_entry("nsync", "google/nsync", "2".repeat(40), "c".repeat(64)),
+            submodule_entry("cpuinfo", "pytorch/cpuinfo", "abcdef0", "d".repeat(64)),
+        ])
+    }
+
+    fn builder_inputs(
+        cmake: (&str, String),
+        msvc: (&str, String),
+        python: (&str, String),
+    ) -> BTreeMap<BuilderInputRole, BuilderInputIdentity> {
         let mut inputs = BTreeMap::new();
-        for role in [
-            BuilderInputRole::Cmake,
-            BuilderInputRole::Msvc,
-            BuilderInputRole::Python,
+        for (role, (version, digest)) in [
+            (BuilderInputRole::Cmake, cmake),
+            (BuilderInputRole::Msvc, msvc),
+            (BuilderInputRole::Python, python),
         ] {
-            let (version, digest) = builder_pin(role);
             inputs.insert(
                 role,
                 BuilderInputIdentity {
                     version: version.to_owned(),
-                    content_sha256: digest.to_owned(),
+                    content_sha256: digest,
                 },
             );
         }
         inputs
+    }
+
+    fn builder_inputs_a() -> BTreeMap<BuilderInputRole, BuilderInputIdentity> {
+        builder_inputs(
+            ("3.31.6", "52".repeat(32)),
+            ("19.40", "53".repeat(32)),
+            ("3.12.8", "51".repeat(32)),
+        )
+    }
+
+    fn builder_inputs_b() -> BTreeMap<BuilderInputRole, BuilderInputIdentity> {
+        builder_inputs(
+            ("3.28.0", "62".repeat(32)),
+            ("19.41", "63".repeat(32)),
+            ("3.13.1", "61".repeat(32)),
+        )
     }
 
     fn pinned_model(role: ModelRole) -> ModelInputIdentity {
@@ -949,11 +960,22 @@ mod tests {
         notices
     }
 
-    fn canonical_draft() -> OnnxWindowsAdmissionDraft {
+    fn canonical_draft_a() -> OnnxWindowsAdmissionDraft {
         OnnxWindowsAdmissionDraft {
-            source: Some(pinned_source()),
-            submodules: Some(pinned_submodules()),
-            builder_inputs: Some(pinned_builder_inputs()),
+            source: Some(pinned_source(&"a".repeat(64))),
+            submodules: Some(submodules_a()),
+            builder_inputs: Some(builder_inputs_a()),
+            build: Some(onnx_windows_build_configuration()),
+            reduced_ops_config_sha256: Some(ONNX_WINDOWS_REDUCED_OPS_CONFIG_SHA256.to_owned()),
+            models: Some(pinned_models()),
+        }
+    }
+
+    fn canonical_draft_b() -> OnnxWindowsAdmissionDraft {
+        OnnxWindowsAdmissionDraft {
+            source: Some(pinned_source(&"e".repeat(64))),
+            submodules: Some(submodules_b()),
+            builder_inputs: Some(builder_inputs_b()),
             build: Some(onnx_windows_build_configuration()),
             reduced_ops_config_sha256: Some(ONNX_WINDOWS_REDUCED_OPS_CONFIG_SHA256.to_owned()),
             models: Some(pinned_models()),
@@ -980,7 +1002,7 @@ mod tests {
     );
 
     fn admit_err(mutate: impl FnOnce(&mut OnnxWindowsAdmissionDraft)) -> OnnxWindowsError {
-        let mut draft = canonical_draft();
+        let mut draft = canonical_draft_a();
         mutate(&mut draft);
         admit(draft).expect_err("must reject")
     }
@@ -1013,13 +1035,20 @@ mod tests {
 
     #[test]
     fn onnx_windows_admission_accepts_canonical_controlled_inputs() {
-        let admitted = admit(canonical_draft()).expect("canonical inputs");
-        assert_eq!(admitted.build.api_level, ONNX_WINDOWS_API_LEVEL);
-        assert!(!admitted.build.telemetry_enabled);
-        assert!(admitted.build.cpu_only);
-        assert!(admitted.build.network_access_denied);
-        assert_eq!(admitted.build.runtime_library, RuntimeLibrary::Md);
-        assert_eq!(admitted.models.len(), 3);
+        let admitted_a = admit(canonical_draft_a()).expect("canonical inputs a");
+        assert_eq!(admitted_a.build.api_level, ONNX_WINDOWS_API_LEVEL);
+        assert!(!admitted_a.build.telemetry_enabled);
+        assert!(admitted_a.build.cpu_only);
+        assert!(admitted_a.build.network_access_denied);
+        assert_eq!(admitted_a.build.runtime_library, RuntimeLibrary::Md);
+        assert_eq!(admitted_a.models.len(), 3);
+        let admitted_b = admit(canonical_draft_b()).expect("canonical inputs b");
+        for name in admitted_a.submodules.keys() {
+            assert!(
+                !admitted_b.submodules.contains_key(name),
+                "fixture submodule names must differ: {name}"
+            );
+        }
         admit_helper_census(HelperRole::Speaker, &canonical_census(HelperRole::Speaker))
             .expect("canonical speaker census");
         admit_helper_census(HelperRole::Vad, &canonical_census(HelperRole::Vad))
@@ -1088,7 +1117,7 @@ mod tests {
                 "empty commit",
                 |draft| mutate_source(draft).dependency.revision.clear(),
                 OnnxWindowsError::MissingRequired {
-                    role: "onnxruntime commit",
+                    role: "onnxruntime commit".into(),
                 },
             ),
             (
@@ -1098,44 +1127,32 @@ mod tests {
             ),
             (
                 "wrong source digest",
-                |draft| mutate_source(draft).dependency.content_sha256 = "0".repeat(64),
-                unexpected(
-                    "onnxruntime digest",
-                    ONNX_RUNTIME_CONTENT_SHA256,
-                    "0".repeat(64),
-                ),
+                |draft| mutate_source(draft).dependency.content_sha256 = "ab".repeat(30),
+                unexpected("onnxruntime digest", "64 hex characters", "ab".repeat(30)),
             ),
             (
-                "missing submodule name",
-                |draft| {
-                    if let Some(submodules) = &mut draft.submodules {
-                        submodules.remove("onnx");
-                    }
-                },
-                OnnxWindowsError::SetMismatch {
-                    role: "submodules",
-                    missing: vec!["onnx".into()],
-                    unexpected: Vec::new(),
+                "empty submodule collection",
+                |draft| draft.submodules = Some(BTreeMap::new()),
+                OnnxWindowsError::MissingRequired {
+                    role: "submodules".into(),
                 },
             ),
             (
-                "extra submodule name",
+                "empty submodule name",
                 |draft| {
                     if let Some(submodules) = &mut draft.submodules {
                         submodules.insert(
-                            "eigen".into(),
+                            String::new(),
                             DependencySource {
-                                repository: "eigen".into(),
-                                revision: "rev".into(),
-                                content_sha256: "0".repeat(64),
+                                repository: "empty".into(),
+                                revision: "aaaaaaaa".into(),
+                                content_sha256: "1".repeat(64),
                             },
                         );
                     }
                 },
-                OnnxWindowsError::SetMismatch {
-                    role: "submodules",
-                    missing: Vec::new(),
-                    unexpected: vec!["eigen".into()],
+                OnnxWindowsError::MissingRequired {
+                    role: "submodule name".into(),
                 },
             ),
             (
@@ -1144,14 +1161,10 @@ mod tests {
                     if let Some(submodules) = &mut draft.submodules
                         && let Some(onnx) = submodules.get_mut("onnx")
                     {
-                        onnx.content_sha256 = "0".repeat(64);
+                        onnx.content_sha256 = "g".repeat(64);
                     }
                 },
-                unexpected(
-                    "onnx submodule digest",
-                    ONNX_WINDOWS_SUBMODULE_ONNX_SHA256,
-                    "0".repeat(64),
-                ),
+                unexpected("onnx submodule digest", "64 hex characters", "g".repeat(64)),
             ),
             (
                 "empty submodule revision",
@@ -1163,8 +1176,19 @@ mod tests {
                     }
                 },
                 OnnxWindowsError::MissingRequired {
-                    role: "onnx submodule revision",
+                    role: "onnx submodule revision".into(),
                 },
+            ),
+            (
+                "non-commit-shaped submodule revision",
+                |draft| {
+                    if let Some(submodules) = &mut draft.submodules
+                        && let Some(onnx) = submodules.get_mut("onnx")
+                    {
+                        onnx.revision = "not-hex!".into();
+                    }
+                },
+                unexpected("onnx submodule revision", "7-40 hex characters", "not-hex!"),
             ),
             (
                 "missing builder-input role",
@@ -1180,15 +1204,17 @@ mod tests {
                 },
             ),
             (
-                "wrong python version",
+                "empty python version",
                 |draft| {
                     if let Some(inputs) = &mut draft.builder_inputs
                         && let Some(python) = inputs.get_mut(&BuilderInputRole::Python)
                     {
-                        python.version = "3.11.0".into();
+                        python.version.clear();
                     }
                 },
-                unexpected("python version", ONNX_WINDOWS_PYTHON_VERSION, "3.11.0"),
+                OnnxWindowsError::MissingRequired {
+                    role: "python version".into(),
+                },
             ),
             (
                 "wrong python digest",
@@ -1196,10 +1222,10 @@ mod tests {
                     if let Some(inputs) = &mut draft.builder_inputs
                         && let Some(python) = inputs.get_mut(&BuilderInputRole::Python)
                     {
-                        python.content_sha256 = "0".repeat(64);
+                        python.content_sha256 = "not-hex".into();
                     }
                 },
-                unexpected("python digest", ONNX_WINDOWS_PYTHON_SHA256, "0".repeat(64)),
+                unexpected("python digest", "64 hex characters", "not-hex"),
             ),
             (
                 "wrong target triple",
@@ -1263,10 +1289,49 @@ mod tests {
                 },
             ),
             (
+                "missing disable contrib ops",
+                |draft| {
+                    mutate_build(draft)
+                        .flags
+                        .retain(|flag| flag != "--disable_contrib_ops");
+                },
+                OnnxWindowsError::SetMismatch {
+                    role: "build flags",
+                    missing: vec!["--disable_contrib_ops".into()],
+                    unexpected: Vec::new(),
+                },
+            ),
+            (
+                "missing disable ml ops",
+                |draft| {
+                    mutate_build(draft)
+                        .flags
+                        .retain(|flag| flag != "--disable_ml_ops");
+                },
+                OnnxWindowsError::SetMismatch {
+                    role: "build flags",
+                    missing: vec!["--disable_ml_ops".into()],
+                    unexpected: Vec::new(),
+                },
+            ),
+            (
+                "substitute telemetry flag",
+                |draft| {
+                    let flags = &mut mutate_build(draft).flags;
+                    flags.retain(|flag| flag != "--disable_contrib_ops");
+                    flags.push("--disable_telemetry".into());
+                },
+                OnnxWindowsError::SetMismatch {
+                    role: "build flags",
+                    missing: vec!["--disable_contrib_ops".into()],
+                    unexpected: vec!["--disable_telemetry".into()],
+                },
+            ),
+            (
                 "empty reduced ops digest",
                 |draft| draft.reduced_ops_config_sha256 = Some(String::new()),
                 OnnxWindowsError::MissingRequired {
-                    role: "reduced ops config digest",
+                    role: "reduced ops config digest".into(),
                 },
             ),
             (
@@ -1387,7 +1452,7 @@ mod tests {
                 census_wrap(
                     HelperRole::Speaker,
                     OnnxWindowsError::MissingRequired {
-                        role: "helper role",
+                        role: "helper role".into(),
                     },
                 ),
             ),
@@ -1398,7 +1463,7 @@ mod tests {
                 census_wrap(
                     HelperRole::Speaker,
                     OnnxWindowsError::MissingRequired {
-                        role: "import census",
+                        role: "import census".into(),
                     },
                 ),
             ),
@@ -1409,7 +1474,7 @@ mod tests {
                 census_wrap(
                     HelperRole::Speaker,
                     OnnxWindowsError::MissingRequired {
-                        role: "package closure",
+                        role: "package closure".into(),
                     },
                 ),
             ),
@@ -1419,7 +1484,9 @@ mod tests {
                 |draft| draft.notices = None,
                 census_wrap(
                     HelperRole::Speaker,
-                    OnnxWindowsError::MissingRequired { role: "notices" },
+                    OnnxWindowsError::MissingRequired {
+                        role: "notices".into(),
+                    },
                 ),
             ),
             (
@@ -1428,7 +1495,9 @@ mod tests {
                 |draft| draft.api_policy = None,
                 census_wrap(
                     HelperRole::Speaker,
-                    OnnxWindowsError::MissingRequired { role: "api policy" },
+                    OnnxWindowsError::MissingRequired {
+                        role: "api policy".into(),
+                    },
                 ),
             ),
             (
@@ -1539,8 +1608,20 @@ mod tests {
             (
                 "wrong api policy",
                 HelperRole::Speaker,
-                |draft| draft.api_policy = Some(24),
-                census_wrap(HelperRole::Speaker, unexpected("api policy", "25", "24")),
+                |draft| draft.api_policy = Some(25),
+                census_wrap(HelperRole::Speaker, unexpected("api policy", "24", "25")),
+            ),
+            (
+                "wrong api policy vad",
+                HelperRole::Vad,
+                |draft| draft.api_policy = Some(25),
+                census_wrap(HelperRole::Vad, unexpected("api policy", "24", "25")),
+            ),
+            (
+                "api policy other non-24",
+                HelperRole::Speaker,
+                |draft| draft.api_policy = Some(99),
+                census_wrap(HelperRole::Speaker, unexpected("api policy", "24", "99")),
             ),
             (
                 "helper-role mismatch",
