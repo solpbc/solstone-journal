@@ -214,17 +214,14 @@ fn validation_request() -> GenerateRequest {
 
 fn client_failure(error: ClientError) -> Value {
     match error {
-        ClientError::Resolve(error) => {
+        ClientError::Resolve(error) | ClientError::Decode(error) => {
             json!({"valid":false,"reason_code":"validation_unavailable","error":error})
         }
-        ClientError::Io(error) => {
-            json!({"valid":false,"reason_code":"validation_unavailable","error":error})
+        error @ (ClientError::Io { .. } | ClientError::UnexpectedChild(_)) => {
+            json!({"valid":false,"reason_code":"validation_unavailable","error":error.to_string()})
         }
-        ClientError::Protocol(error) => {
-            json!({"valid":false,"reason_code":error.reason,"error":error.detail})
-        }
-        ClientError::Decode(error) => {
-            json!({"valid":false,"reason_code":"validation_unavailable","error":error})
+        ClientError::Protocol(failure) => {
+            json!({"valid":false,"reason_code":failure.error.reason,"error":failure.error.detail})
         }
     }
 }
@@ -921,8 +918,9 @@ mod tests {
     use serde_json::{Map, Value, json};
 
     use solstone_core_generate::{
-        ClientError, ContentPart, GenerateRequest, GenerateResponse, GeneratedResponse,
-        ProtocolError, ReasonCode, ReasonCodeValue, RefusalReason, RefusedResponse,
+        CapturedStream, ChildStatus, ClientError, ContentPart, GenerateRequest, GenerateResponse,
+        GeneratedResponse, ProtocolError, ProtocolFailure, ReasonCode, ReasonCodeValue,
+        RefusalReason, RefusedResponse,
     };
     #[cfg(unix)]
     use solstone_core_generate::{encode_one_shot_request, encode_one_shot_response};
@@ -1461,11 +1459,19 @@ mod tests {
 
     #[test]
     fn classify_key_transport_failure_is_invalid() {
-        let result = classify_key_probe(Err(ClientError::Protocol(ProtocolError {
-            id: None,
-            reason: "stub_failure".to_owned(),
-            detail: "one-shot stub hard failure".to_owned(),
-        })));
+        let result = classify_key_probe(Err(ClientError::Protocol(Box::new(ProtocolFailure {
+            error: ProtocolError {
+                id: None,
+                reason: "stub_failure".to_owned(),
+                detail: "one-shot stub hard failure".to_owned(),
+            },
+            status: ChildStatus {
+                exit_code: Some(70),
+                signal: None,
+            },
+            stdout: CapturedStream::empty(),
+            stderr: CapturedStream::empty(),
+        }))));
         assert_eq!(result["valid"], false);
         assert_eq!(result["reason_code"], "stub_failure");
         assert_eq!(result["error"], "one-shot stub hard failure");
@@ -1505,11 +1511,19 @@ mod tests {
 
     #[test]
     fn classify_model_transport_failure_is_invalid() {
-        let result = classify_model_probe(Err(ClientError::Protocol(ProtocolError {
-            id: None,
-            reason: "stub_failure".to_owned(),
-            detail: "one-shot stub hard failure".to_owned(),
-        })));
+        let result = classify_model_probe(Err(ClientError::Protocol(Box::new(ProtocolFailure {
+            error: ProtocolError {
+                id: None,
+                reason: "stub_failure".to_owned(),
+                detail: "one-shot stub hard failure".to_owned(),
+            },
+            status: ChildStatus {
+                exit_code: Some(70),
+                signal: None,
+            },
+            stdout: CapturedStream::empty(),
+            stderr: CapturedStream::empty(),
+        }))));
         assert_eq!(result["valid"], false);
         assert_eq!(result["reason_code"], "stub_failure");
         assert_eq!(result["error"], "one-shot stub hard failure");

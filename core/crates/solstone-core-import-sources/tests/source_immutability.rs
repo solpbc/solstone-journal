@@ -73,7 +73,10 @@ struct FailingWire;
 
 impl WireClient for FailingWire {
     fn execute(&self, _: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
-        Err(ClientError::Io("wire unavailable".to_owned()))
+        Err(ClientError::Io {
+            primary: "wire unavailable".to_owned(),
+            cleanup: None,
+        })
     }
 }
 

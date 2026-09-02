@@ -4163,6 +4163,7 @@ dependencies = [
 name = "solstone-core-generate"
 version = "2.0.0"
 dependencies = [
+ "nix",
  "serde",
  "serde_json",
 ]

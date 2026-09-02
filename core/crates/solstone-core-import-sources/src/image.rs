@@ -124,9 +124,7 @@ pub struct SystemWireClient;
 
 impl WireClient for SystemWireClient {
     fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
-        OneShotClient::sibling()?
-            .with_prefix_arguments(["generate".into()])
-            .execute(request)
+        OneShotClient::sibling()?.execute(request)
     }
 }
 
@@ -372,12 +370,17 @@ fn interpret_generate(response: Result<GenerateResponse, ClientError>) -> Descri
         Ok(GenerateResponse::Refused(refusal)) => DescriptionOutcome::Unavailable {
             reason: format!("{}: {}", refusal.reason.as_str(), refusal.detail),
         },
-        Err(ClientError::Protocol(error)) => DescriptionOutcome::Unavailable {
-            reason: format!("{}: {}", error.reason, error.detail),
+        Err(ClientError::Protocol(failure)) => DescriptionOutcome::Unavailable {
+            reason: format!("{}: {}", failure.error.reason, failure.error.detail),
         },
-        Err(ClientError::Decode(detail))
-        | Err(ClientError::Io(detail))
-        | Err(ClientError::Resolve(detail)) => DescriptionOutcome::Unavailable { reason: detail },
+        Err(ClientError::Decode(detail) | ClientError::Resolve(detail)) => {
+            DescriptionOutcome::Unavailable { reason: detail }
+        }
+        Err(error @ (ClientError::Io { .. } | ClientError::UnexpectedChild(_))) => {
+            DescriptionOutcome::Unavailable {
+                reason: error.to_string(),
+            }
+        }
     }
 }
 
@@ -529,8 +532,8 @@ mod tests {
     use image::{ImageBuffer, ImageFormat, Rgb};
     use serde_json::Value;
     use solstone_core_generate::{
-        GeneratedResponse, ProtocolError, ReasonCode, ReasonCodeValue, RefusalReason,
-        RefusedResponse,
+        CapturedStream, ChildStatus, GeneratedResponse, ProtocolError, ProtocolFailure, ReasonCode,
+        ReasonCodeValue, RefusalReason, RefusedResponse, UnexpectedChildFailure,
     };
 
     use super::*;
@@ -641,14 +644,33 @@ mod tests {
             DescriptionOutcome::Unavailable { .. }
         ));
         for error in [
-            ClientError::Protocol(ProtocolError {
-                id: None,
-                reason: "protocol".to_owned(),
-                detail: "detail".to_owned(),
-            }),
+            ClientError::Protocol(Box::new(ProtocolFailure {
+                error: ProtocolError {
+                    id: None,
+                    reason: "protocol".to_owned(),
+                    detail: "detail".to_owned(),
+                },
+                status: ChildStatus {
+                    exit_code: Some(70),
+                    signal: None,
+                },
+                stdout: CapturedStream::empty(),
+                stderr: CapturedStream::empty(),
+            })),
             ClientError::Decode("decode".to_owned()),
-            ClientError::Io("io".to_owned()),
+            ClientError::Io {
+                primary: "io".to_owned(),
+                cleanup: None,
+            },
             ClientError::Resolve("resolve".to_owned()),
+            ClientError::UnexpectedChild(Box::new(UnexpectedChildFailure {
+                status: ChildStatus {
+                    exit_code: Some(64),
+                    signal: None,
+                },
+                stdout: CapturedStream::empty(),
+                stderr: CapturedStream::empty(),
+            })),
         ] {
             assert!(matches!(
                 interpret_generate(Err(error)),

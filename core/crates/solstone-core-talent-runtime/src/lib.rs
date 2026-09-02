@@ -186,7 +186,7 @@ pub fn run_worker(_args: &[String], journal: &Path) -> ExitCode {
             return ExitCode::from(70);
         }
     };
-    let generate = OneShotClient::sibling().map(configure_generate_client);
+    let generate = OneShotClient::sibling();
     let cogitate = CogitateOneShotClient::sibling().map(configure_cogitate_client);
     let stdin = io::stdin().lock();
     let mut stdout = io::stdout().lock();
@@ -201,6 +201,7 @@ pub fn run_worker(_args: &[String], journal: &Path) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+#[cfg(test)]
 fn configure_generate_client(client: OneShotClient) -> OneShotClient {
     client.with_prefix_arguments(["generate".into()])
 }
@@ -278,7 +279,7 @@ fn run_lines(
                 phase: "generate",
                 stage: "runtime",
                 talent,
-                detail: format!("{error:?}"),
+                detail: format!("{error}"),
             }),
             (_, Err(error)) => RuntimeOutcome::StageFailed(StageError {
                 phase: "cogitate",
@@ -435,7 +436,7 @@ pub(crate) fn generate_and_write(
                     "generate",
                     "runtime",
                     prepared,
-                    format!("{error:?}"),
+                    format!("{error}"),
                 ));
             }
         },
