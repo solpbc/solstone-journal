@@ -24,6 +24,8 @@ pub(crate) struct ModeResult {
     pub(crate) timed_out: bool,
     pub(crate) failed_names: Vec<String>,
     pub(crate) success_names: Vec<String>,
+    pub(crate) skipped: usize,
+    pub(crate) skipped_names: Vec<String>,
     pub(crate) applicable_units: BTreeSet<(String, Option<String>)>,
     /// Daily units that are terminal either from this invocation or a
     /// previously folded terminal record.
@@ -43,6 +45,8 @@ pub(crate) fn merge_mode_result(into: &mut ModeResult, from: ModeResult) {
     into.timed_out |= from.timed_out;
     into.failed_names.extend(from.failed_names);
     into.success_names.extend(from.success_names);
+    into.skipped += from.skipped;
+    into.skipped_names.extend(from.skipped_names);
     into.applicable_units.extend(from.applicable_units);
     into.terminal_units.extend(from.terminal_units);
     into.capped_units.extend(from.capped_units);

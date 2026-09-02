@@ -40,7 +40,7 @@ struct CompletionScope {
     observed_fingerprint: String,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct SegmentPhaseOutcome {
     result: ModeResult,
     blockers: Option<BTreeSet<SegmentIdentity>>,
@@ -53,6 +53,9 @@ const REQUIRED_PHASES: [&str; 5] = [
     "indexer",
     "journal_stats",
 ];
+const SKIP_SEGMENT_REPAIR_FAILED: &str = "segment_repair_failed";
+const SKIP_READINESS_UNAVAILABLE: &str = "readiness_unavailable";
+const SKIP_BLOCKED: &str = "blocked";
 const SENSE_PHASE_TIMEOUT: Duration = Duration::from_secs(1_800);
 const INDEXER_PHASE_TIMEOUT: Duration = Duration::from_secs(3_600);
 const STATS_PHASE_TIMEOUT: Duration = Duration::from_secs(600);
@@ -125,7 +128,7 @@ fn run_with_phase_process(
         .collect::<Vec<_>>();
     let force_all_repairs = force_all_repairs(args);
     let mut daily_result = ModeResult::default();
-    let mut segment_outcome = SegmentPhaseOutcome::default();
+    let segment_outcome = std::cell::RefCell::new(SegmentPhaseOutcome::default());
     let mut total = run_required_phases(
         log,
         context,
@@ -176,7 +179,7 @@ fn run_with_phase_process(
                 // `run_repair_batch_with_activity` already honours the
                 // segment timeout and must finish its durable activity tail
                 // before the later daily/index/stats phases may observe it.
-                segment_outcome = run_segment_repair_phase(
+                segment_outcome.replace(run_segment_repair_phase(
                     context,
                     refresh,
                     jobs,
@@ -185,8 +188,8 @@ fn run_with_phase_process(
                     repair_skip_talents,
                     args.no_activity_prompts,
                     refresh,
-                );
-                segment_outcome.result.clone()
+                ));
+                segment_outcome.borrow().result.clone()
             }
             "daily" => {
                 daily_result = match daily::run(
@@ -231,8 +234,16 @@ fn run_with_phase_process(
             }
             _ => unreachable!("required phase registry is closed"),
         },
+        |phase| {
+            if phase == "daily" {
+                daily_dependency_skip(&segment_outcome.borrow())
+            } else {
+                None
+            }
+        },
     );
 
+    let segment_outcome = segment_outcome.into_inner();
     let no_blockers = BTreeSet::new();
     let post_repair_blocked = segment_outcome.blockers.as_ref().unwrap_or(&no_blockers);
     let lifecycle_progress = segment_outcome
@@ -298,7 +309,7 @@ fn run_segment_repair_phase(
         Err(error) => {
             return SegmentPhaseOutcome {
                 result: failed_phase("segment_repair_scan", error),
-                ..SegmentPhaseOutcome::default()
+                blockers: None,
             };
         }
     };
@@ -311,7 +322,7 @@ fn run_segment_repair_phase(
         Err(error) => {
             return SegmentPhaseOutcome {
                 result: failed_phase("segment_repair_scan", error),
-                ..SegmentPhaseOutcome::default()
+                blockers: None,
             };
         }
     };
@@ -337,34 +348,36 @@ fn run_segment_repair_phase(
         Err(error) => failed_phase("segment_repair", error),
     };
     let post_repair_blocked = match blocked_segments(context) {
-        Ok(blocked) => blocked,
+        Ok(blocked) => Some(blocked),
         Err(error) => {
             merge_mode_result(&mut result, failed_phase("segment_repair_scan", error));
-            repair_targets.clone()
+            None
         }
     };
-    let progress = blocker_progress(&pre_repair_blocked, &post_repair_blocked);
-    if repair_attempted {
-        let (cleared, remaining) = progress;
-        record_segment_repair_outcome(
-            &context.journal,
-            &context.day,
-            SegmentRepairOutcome {
-                success: result.failed == 0 && remaining == 0,
-                timed_out: result.timed_out,
-                timeout_seconds: result
-                    .timed_out
-                    .then(|| timeout.map(|duration| duration.as_secs_f64()))
-                    .flatten(),
-                ended_at: unix_seconds_f64(),
-                cleared: Some(cleared),
-                remaining: Some(remaining),
-            },
-        );
+    if let Some(post_repair_blocked) = post_repair_blocked.as_ref() {
+        let progress = blocker_progress(&pre_repair_blocked, post_repair_blocked);
+        if repair_attempted {
+            let (cleared, remaining) = progress;
+            record_segment_repair_outcome(
+                &context.journal,
+                &context.day,
+                SegmentRepairOutcome {
+                    success: result.failed == 0 && remaining == 0,
+                    timed_out: result.timed_out,
+                    timeout_seconds: result
+                        .timed_out
+                        .then(|| timeout.map(|duration| duration.as_secs_f64()))
+                        .flatten(),
+                    ended_at: unix_seconds_f64(),
+                    cleared: Some(cleared),
+                    remaining: Some(remaining),
+                },
+            );
+        }
     }
     SegmentPhaseOutcome {
         result,
-        blockers: Some(post_repair_blocked),
+        blockers: post_repair_blocked,
     }
 }
 
@@ -376,18 +389,48 @@ fn blocker_progress(
     (baseline.difference(remaining).count(), remaining.len())
 }
 
+fn daily_dependency_skip(repair: &SegmentPhaseOutcome) -> Option<&'static str> {
+    if repair.blockers.is_none() {
+        return Some(SKIP_READINESS_UNAVAILABLE);
+    }
+    if repair.result.failed != 0 || repair.result.timed_out {
+        return Some(SKIP_SEGMENT_REPAIR_FAILED);
+    }
+    if repair
+        .blockers
+        .as_ref()
+        .is_some_and(|blockers| !blockers.is_empty())
+    {
+        return Some(SKIP_BLOCKED);
+    }
+    None
+}
+
+fn skipped_phase(phase: &str, reason: &'static str) -> ModeResult {
+    ModeResult {
+        skipped: 1,
+        skipped_names: vec![format!("{phase} ({reason})")],
+        ..ModeResult::default()
+    }
+}
+
 fn run_required_phases(
     log: &mut RunLogWriter<std::fs::File>,
     context: &ThinkContext,
     phases: &[&str],
     phase_budget: impl Fn(&str) -> Option<PhaseBudget>,
     mut execute: impl FnMut(&str, &mut RunLogWriter<std::fs::File>) -> ModeResult,
+    mut skip: impl FnMut(&str) -> Option<&'static str>,
 ) -> ModeResult {
     let mut total = ModeResult::default();
     for phase in phases {
         let started = Instant::now();
         log_phase_start(log, context, phase);
-        let result = execute(phase, log);
+        let result = if let Some(reason) = skip(phase) {
+            skipped_phase(phase, reason)
+        } else {
+            execute(phase, log)
+        };
         log_phase_complete(
             log,
             context,
@@ -396,11 +439,7 @@ fn run_required_phases(
             phase_budget(phase),
             &result,
         );
-        let failed = result.failed != 0 || result.timed_out;
         merge_mode_result(&mut total, result);
-        if failed {
-            break;
-        }
     }
     total
 }
@@ -699,6 +738,13 @@ fn log_phase_start(log: &mut RunLogWriter<std::fs::File>, context: &ThinkContext
     );
 }
 
+fn skip_reason_code(result: &ModeResult) -> Option<&str> {
+    result.skipped_names.first().and_then(|name| {
+        name.rsplit_once(" (")
+            .and_then(|(_, rest)| rest.strip_suffix(')'))
+    })
+}
+
 fn log_phase_complete(
     log: &mut RunLogWriter<std::fs::File>,
     context: &ThinkContext,
@@ -707,7 +753,8 @@ fn log_phase_complete(
     budget: Option<PhaseBudget>,
     result: &ModeResult,
 ) {
-    let success = result.failed == 0 && !result.timed_out;
+    let skipped = result.skipped != 0;
+    let success = result.failed == 0 && !result.timed_out && !skipped;
     let mut fields = Map::from_iter([
         ("mode".to_owned(), Value::String("daily".to_owned())),
         ("day".to_owned(), Value::String(context.day.clone())),
@@ -718,6 +765,9 @@ fn log_phase_complete(
             Value::from(u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)),
         ),
     ]);
+    if skipped {
+        fields.insert("skipped".to_owned(), Value::Bool(true));
+    }
     if let Some(budget) = budget {
         fields.insert("bounded".to_owned(), Value::Bool(true));
         fields.insert(
@@ -736,8 +786,12 @@ fn log_phase_complete(
             "reason_code".to_owned(),
             Value::String("wall_clock_exceeded".to_owned()),
         );
-    } else if let Some(reason) = result.failed_names.first() {
-        fields.insert("reason".to_owned(), Value::String(reason.clone()));
+    } else if skipped {
+        if let Some(reason) = skip_reason_code(result) {
+            fields.insert("reason_code".to_owned(), Value::String(reason.to_owned()));
+        }
+    } else if result.failed != 0 {
+        fields.insert("reason_code".to_owned(), Value::String("failed".to_owned()));
     }
     log.log("phase.complete", context.now_ms, fields);
 }
@@ -1465,62 +1519,404 @@ mod tests {
         assert_eq!(total.failed, 0);
     }
 
-    #[test]
-    fn every_required_phase_failure_short_circuits_later_phases() {
-        for failed_index in 0..REQUIRED_PHASES.len() {
-            let journal = tempdir().unwrap();
-            let context = context(journal.path());
-            let mut log = log(journal.path());
-            let mut invoked = Vec::new();
-            let total = run_required_phases(
-                &mut log,
-                &context,
-                &REQUIRED_PHASES,
-                |_| None,
-                |phase, _| {
-                    invoked.push(phase.to_owned());
-                    if phase == REQUIRED_PHASES[failed_index] {
-                        failed_phase(phase, "injected")
-                    } else {
-                        succeeded_phase(phase)
-                    }
-                },
-            );
-            assert_eq!(total.failed, 1);
-            assert_eq!(invoked, REQUIRED_PHASES[..=failed_index]);
-            let completions = fs::read_to_string(
-                journal
-                    .path()
-                    .join("chronicle")
-                    .join(DAY)
-                    .join("lifecycle.jsonl"),
-            )
+    fn lifecycle_rows(journal: &std::path::Path, event: &str) -> Vec<Value> {
+        fs::read_to_string(journal.join("chronicle").join(DAY).join("lifecycle.jsonl"))
             .unwrap()
             .lines()
             .map(|line| serde_json::from_str::<Value>(line).unwrap())
-            .filter(|row| row["event"] == "phase.complete")
-            .collect::<Vec<_>>();
-            assert_eq!(completions.len(), failed_index + 1);
-            assert_eq!(completions.last().unwrap()["success"], false);
-            assert!(completions.last().unwrap()["duration_ms"].is_u64());
+            .filter(|row| row["event"] == event)
+            .collect()
+    }
+
+    fn policy_run(
+        context: &ThinkContext,
+        log: &mut RunLogWriter<std::fs::File>,
+        repair: SegmentPhaseOutcome,
+        mut execute: impl FnMut(&str) -> ModeResult,
+    ) -> (ModeResult, Vec<String>) {
+        let repair = std::cell::RefCell::new(repair);
+        let invoked = std::cell::RefCell::new(Vec::new());
+        let total = run_required_phases(
+            log,
+            context,
+            &REQUIRED_PHASES,
+            |_| None,
+            |phase, _| {
+                invoked.borrow_mut().push(phase.to_owned());
+                if phase == "segment_repair" {
+                    return repair.borrow().result.clone();
+                }
+                execute(phase)
+            },
+            |phase| {
+                if phase == "daily" {
+                    daily_dependency_skip(&repair.borrow())
+                } else {
+                    None
+                }
+            },
+        );
+        (total, invoked.into_inner())
+    }
+
+    fn succeeded_repair() -> SegmentPhaseOutcome {
+        SegmentPhaseOutcome {
+            result: succeeded_phase("segment_repair"),
+            blockers: Some(BTreeSet::new()),
+        }
+    }
+
+    fn blocked_repair() -> SegmentPhaseOutcome {
+        SegmentPhaseOutcome {
+            result: succeeded_phase("segment_repair"),
+            blockers: Some(BTreeSet::from([blocker("090000_300")])),
+        }
+    }
+
+    fn failed_repair(timed_out: bool) -> SegmentPhaseOutcome {
+        SegmentPhaseOutcome {
+            result: if timed_out {
+                timed_out_phase("segment_repair", None)
+            } else {
+                failed_phase("segment_repair", "injected")
+            },
+            blockers: Some(BTreeSet::new()),
+        }
+    }
+
+    fn unread_repair(detail: &str) -> SegmentPhaseOutcome {
+        SegmentPhaseOutcome {
+            result: failed_phase("segment_repair_scan", detail),
+            blockers: None,
         }
     }
 
     #[test]
-    fn bounded_phase_timeout_is_a_terminal_failure() {
-        let result = timed_out_phase("injected", None);
-
-        assert!(result.timed_out);
-        assert_eq!(result.failed, 1);
-        assert_eq!(result.failed_names, ["injected (wall_clock_exceeded)"]);
+    fn daily_dependency_skip_reasons_are_stable() {
+        assert_eq!(daily_dependency_skip(&succeeded_repair()), None);
+        assert_eq!(daily_dependency_skip(&blocked_repair()), Some(SKIP_BLOCKED));
+        assert_eq!(
+            daily_dependency_skip(&failed_repair(false)),
+            Some(SKIP_SEGMENT_REPAIR_FAILED)
+        );
+        assert_eq!(
+            daily_dependency_skip(&failed_repair(true)),
+            Some(SKIP_SEGMENT_REPAIR_FAILED)
+        );
+        assert_eq!(
+            daily_dependency_skip(&unread_repair("missing")),
+            Some(SKIP_READINESS_UNAVAILABLE)
+        );
+        assert_eq!(
+            daily_dependency_skip(&unread_repair("malformed")),
+            Some(SKIP_READINESS_UNAVAILABLE)
+        );
+        assert_eq!(
+            daily_dependency_skip(&unread_repair("unreadable")),
+            Some(SKIP_READINESS_UNAVAILABLE)
+        );
     }
 
     #[test]
-    fn process_phase_nonzero_short_circuits_before_stats() {
+    fn all_green_zero_blockers_runs_every_phase_in_order() {
         let journal = tempdir().unwrap();
         let context = context(journal.path());
         let mut log = log(journal.path());
-        let runner = RecordingPhaseProcessRunner::new([PhaseProcessOutcome::Exited(7)]);
+        let mut daily_calls = 0;
+        let (total, invoked) = policy_run(&context, &mut log, succeeded_repair(), |phase| {
+            if phase == "daily" {
+                daily_calls += 1;
+            }
+            succeeded_phase(phase)
+        });
+        assert_eq!(invoked, REQUIRED_PHASES);
+        assert_eq!(daily_calls, 1);
+        assert_eq!(total.failed, 0);
+        assert_eq!(total.skipped, 0);
+        assert_eq!(
+            total.success_names,
+            [
+                "sense_batch",
+                "segment_repair",
+                "daily",
+                "indexer",
+                "journal_stats"
+            ]
+        );
+        let starts = lifecycle_rows(journal.path(), "phase.start");
+        let completions = lifecycle_rows(journal.path(), "phase.complete");
+        assert_eq!(starts.len(), 5);
+        assert_eq!(completions.len(), 5);
+        assert!(completions.iter().all(|row| row["success"] == true));
+        assert!(completions.iter().all(|row| row.get("skipped").is_none()));
+    }
+
+    #[test]
+    fn sense_failure_or_timeout_still_runs_repair_and_skips_daily_when_blocked() {
+        for sense in [
+            failed_phase("sense_batch", "injected"),
+            timed_out_phase("sense_batch", None),
+        ] {
+            let journal = tempdir().unwrap();
+            bump_stream_marker(journal.path(), DAY).unwrap();
+            let context = context(journal.path());
+            let mut log = log(journal.path());
+            let mut daily_calls = 0;
+            let sense_result = sense.clone();
+            let (mut total, invoked) = policy_run(&context, &mut log, blocked_repair(), |phase| {
+                if phase == "daily" {
+                    daily_calls += 1;
+                }
+                if phase == "sense_batch" {
+                    return sense_result.clone();
+                }
+                succeeded_phase(phase)
+            });
+            assert_eq!(
+                invoked,
+                ["sense_batch", "segment_repair", "indexer", "journal_stats"]
+            );
+            assert_eq!(daily_calls, 0);
+            assert_eq!(total.skipped_names, ["daily (blocked)"]);
+            assert!(total.failed > 0);
+            assert!(!total.success_names.iter().any(|name| name == "daily"));
+            maybe_finalize_completion(
+                &context,
+                &mut log,
+                completion_scope(journal.path(), 1),
+                &complete_daily(),
+                &BTreeSet::from([blocker("090000_300")]),
+                Some((0, 1)),
+                &mut total,
+                |_, _, _| true,
+            );
+            assert_eq!(marker_generation(journal.path()), None);
+        }
+    }
+
+    #[test]
+    fn sense_failure_with_clear_blockers_still_runs_daily_once() {
+        let journal = tempdir().unwrap();
+        bump_stream_marker(journal.path(), DAY).unwrap();
+        let context = context(journal.path());
+        let mut log = log(journal.path());
+        let mut daily_calls = 0;
+        let (mut total, invoked) = policy_run(&context, &mut log, succeeded_repair(), |phase| {
+            if phase == "daily" {
+                daily_calls += 1;
+            }
+            if phase == "sense_batch" {
+                return failed_phase("sense_batch", "injected");
+            }
+            succeeded_phase(phase)
+        });
+        assert_eq!(invoked, REQUIRED_PHASES);
+        assert_eq!(daily_calls, 1);
+        assert_eq!(total.failed, 1);
+        assert_eq!(total.failed_names, ["sense_batch (injected)"]);
+        assert_eq!(total.skipped, 0);
+        maybe_finalize_completion(
+            &context,
+            &mut log,
+            completion_scope(journal.path(), 1),
+            &complete_daily(),
+            &BTreeSet::new(),
+            Some((0, 0)),
+            &mut total,
+            |_, _, _| true,
+        );
+        assert_eq!(marker_generation(journal.path()), None);
+        assert_eq!(total.failed, 1);
+    }
+
+    #[test]
+    fn remaining_blockers_skip_daily_and_zero_blocker_twin_runs_daily() {
+        let journal = tempdir().unwrap();
+        bump_stream_marker(journal.path(), DAY).unwrap();
+        let blocked_context = context(journal.path());
+        let mut blocked_log = log(journal.path());
+        let mut daily_calls = 0;
+        let (mut blocked_total, blocked_invoked) = policy_run(
+            &blocked_context,
+            &mut blocked_log,
+            blocked_repair(),
+            |phase| {
+                if phase == "daily" {
+                    daily_calls += 1;
+                }
+                succeeded_phase(phase)
+            },
+        );
+        assert_eq!(
+            blocked_invoked,
+            ["sense_batch", "segment_repair", "indexer", "journal_stats"]
+        );
+        assert_eq!(daily_calls, 0);
+        assert_eq!(blocked_total.skipped_names, ["daily (blocked)"]);
+        maybe_finalize_completion(
+            &blocked_context,
+            &mut blocked_log,
+            completion_scope(journal.path(), 1),
+            &complete_daily(),
+            &BTreeSet::from([blocker("090000_300")]),
+            Some((0, 1)),
+            &mut blocked_total,
+            |_, _, _| true,
+        );
+        assert_eq!(marker_generation(journal.path()), None);
+        assert_eq!(blocked_total.failed, 1);
+
+        let clear_journal = tempdir().unwrap();
+        bump_stream_marker(clear_journal.path(), DAY).unwrap();
+        let clear_context = context(clear_journal.path());
+        let mut clear_log = log(clear_journal.path());
+        daily_calls = 0;
+        let (mut clear_total, clear_invoked) = policy_run(
+            &clear_context,
+            &mut clear_log,
+            succeeded_repair(),
+            |phase| {
+                if phase == "daily" {
+                    daily_calls += 1;
+                }
+                succeeded_phase(phase)
+            },
+        );
+        assert_eq!(clear_invoked, REQUIRED_PHASES);
+        assert_eq!(daily_calls, 1);
+        maybe_finalize_completion(
+            &clear_context,
+            &mut clear_log,
+            completion_scope(clear_journal.path(), 1),
+            &complete_daily(),
+            &BTreeSet::new(),
+            Some((1, 0)),
+            &mut clear_total,
+            |_, _, _| true,
+        );
+        assert_eq!(marker_generation(clear_journal.path()), Some(1));
+        assert_eq!(clear_total.failed, 0);
+    }
+
+    #[test]
+    fn unread_post_repair_readiness_skips_daily_for_each_fixture_shape() {
+        for detail in ["missing", "malformed", "unreadable"] {
+            let journal = tempdir().unwrap();
+            bump_stream_marker(journal.path(), DAY).unwrap();
+            let context = context(journal.path());
+            let mut log = log(journal.path());
+            let mut daily_calls = 0;
+            let (mut total, invoked) =
+                policy_run(&context, &mut log, unread_repair(detail), |phase| {
+                    if phase == "daily" {
+                        daily_calls += 1;
+                    }
+                    succeeded_phase(phase)
+                });
+            assert_eq!(
+                invoked,
+                ["sense_batch", "segment_repair", "indexer", "journal_stats"],
+                "{detail}"
+            );
+            assert_eq!(daily_calls, 0, "{detail}");
+            assert_eq!(
+                total.skipped_names,
+                ["daily (readiness_unavailable)"],
+                "{detail}"
+            );
+            assert_eq!(total.failed, 1, "{detail}");
+            assert_eq!(
+                total.failed_names,
+                [format!("segment_repair_scan ({detail})")],
+                "{detail}"
+            );
+            maybe_finalize_completion(
+                &context,
+                &mut log,
+                completion_scope(journal.path(), 1),
+                &complete_daily(),
+                &BTreeSet::new(),
+                None,
+                &mut total,
+                |_, _, _| true,
+            );
+            assert_eq!(marker_generation(journal.path()), None, "{detail}");
+            assert_eq!(total.failed, 1, "{detail}");
+        }
+    }
+
+    #[test]
+    fn later_maintenance_phases_run_after_every_upstream_failure() {
+        let cases: [(&str, SegmentPhaseOutcome, ModeResult); 4] = [
+            (
+                "repair-failed",
+                failed_repair(false),
+                succeeded_phase("sense_batch"),
+            ),
+            (
+                "repair-timeout",
+                failed_repair(true),
+                succeeded_phase("sense_batch"),
+            ),
+            (
+                "daily-failed",
+                succeeded_repair(),
+                failed_phase("daily", "injected"),
+            ),
+            (
+                "daily-timeout",
+                succeeded_repair(),
+                timed_out_phase("daily", None),
+            ),
+        ];
+        for (label, repair, daily) in cases {
+            let journal = tempdir().unwrap();
+            let context = context(journal.path());
+            let mut log = log(journal.path());
+            let daily_result = daily.clone();
+            let expect_daily = daily_dependency_skip(&repair).is_none();
+            let mut daily_calls = 0;
+            let (total, invoked) = policy_run(&context, &mut log, repair, |phase| {
+                if phase == "daily" {
+                    daily_calls += 1;
+                    return daily_result.clone();
+                }
+                succeeded_phase(phase)
+            });
+            assert!(
+                invoked.ends_with(&["indexer".to_owned(), "journal_stats".to_owned()]),
+                "{label}: {invoked:?}"
+            );
+            assert_eq!(daily_calls, usize::from(expect_daily), "{label}");
+            if !expect_daily {
+                assert_eq!(
+                    total.skipped_names,
+                    ["daily (segment_repair_failed)"],
+                    "{label}"
+                );
+            }
+            assert_eq!(total.failed, 1, "{label}");
+            assert_eq!(
+                total
+                    .failed_names
+                    .iter()
+                    .filter(|name| name.as_str() == total.failed_names[0].as_str())
+                    .count(),
+                1,
+                "{label} retains each failure once"
+            );
+        }
+    }
+
+    #[test]
+    fn indexer_failure_still_runs_statistics() {
+        let journal = tempdir().unwrap();
+        let context = context(journal.path());
+        let mut log = log(journal.path());
+        let runner = RecordingPhaseProcessRunner::new([
+            PhaseProcessOutcome::Exited(7),
+            PhaseProcessOutcome::Exited(0),
+        ]);
 
         let result = run_with_phase_process(
             &context,
@@ -1536,7 +1932,7 @@ mod tests {
         assert_eq!(result.failed, 1);
         assert!(!result.timed_out);
         let calls = runner.calls.lock().unwrap();
-        assert_eq!(calls.len(), 1);
+        assert_eq!(calls.len(), 2);
         assert_eq!(calls[0].0, "indexer");
         assert_eq!(
             calls[0]
@@ -1549,11 +1945,15 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["indexer", "--rescan"]
         );
+        assert_eq!(calls[1].0, "journal_stats");
+        assert_eq!(calls[1].1.last().map(String::as_str), Some("journal-stats"));
+        assert_eq!(marker_generation(journal.path()), None);
     }
 
     #[test]
-    fn process_phase_timeout_is_terminal_after_exact_commands() {
+    fn statistics_failure_fails_the_attempt_and_withholds_completion() {
         let journal = tempdir().unwrap();
+        bump_stream_marker(journal.path(), DAY).unwrap();
         let context = context(journal.path());
         let mut log = log(journal.path());
         let runner = RecordingPhaseProcessRunner::new([
@@ -1581,6 +1981,104 @@ mod tests {
         assert_eq!(calls[0].1.last().map(String::as_str), Some("--rescan"));
         assert_eq!(calls[1].0, "journal_stats");
         assert_eq!(calls[1].1.last().map(String::as_str), Some("journal-stats"));
+        assert_eq!(marker_generation(journal.path()), None);
+    }
+
+    #[test]
+    fn phase_account_logs_one_start_and_terminal_including_skips() {
+        let journal = tempdir().unwrap();
+        let context = context(journal.path());
+        let mut log = log(journal.path());
+        let sentinel = "SENTINEL_STDERR_/journal/path/raw";
+        let (_total, invoked) = policy_run(&context, &mut log, blocked_repair(), |phase| {
+            if phase == "sense_batch" {
+                return failed_phase("sense_batch", format!("command failed: {sentinel} exit 1"));
+            }
+            succeeded_phase(phase)
+        });
+        assert_eq!(
+            invoked,
+            ["sense_batch", "segment_repair", "indexer", "journal_stats"]
+        );
+        let starts = lifecycle_rows(journal.path(), "phase.start");
+        let completions = lifecycle_rows(journal.path(), "phase.complete");
+        assert_eq!(starts.len(), 5);
+        assert_eq!(completions.len(), 5);
+        let phases = completions
+            .iter()
+            .map(|row| row["phase"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(phases, REQUIRED_PHASES);
+        let daily = completions
+            .iter()
+            .find(|row| row["phase"] == "daily")
+            .unwrap();
+        assert_eq!(daily["success"], false);
+        assert_eq!(daily["skipped"], true);
+        assert_eq!(daily["reason_code"], SKIP_BLOCKED);
+        assert!(daily.get("reason").is_none());
+        let sense = completions
+            .iter()
+            .find(|row| row["phase"] == "sense_batch")
+            .unwrap();
+        assert_eq!(sense["success"], false);
+        assert_eq!(sense["reason_code"], "failed");
+        let rendered = serde_json::to_string(sense).unwrap();
+        assert!(
+            !rendered.contains(sentinel),
+            "raw failure text leaked into {rendered}"
+        );
+        let repair = completions
+            .iter()
+            .find(|row| row["phase"] == "segment_repair")
+            .unwrap();
+        assert_eq!(repair["success"], true);
+        assert_ne!(
+            repair.get("reason_code").and_then(Value::as_str),
+            Some("wall_clock_exceeded")
+        );
+    }
+
+    #[test]
+    fn mixed_outcome_counts_each_phase_once_and_does_not_count_skips_as_success() {
+        let journal = tempdir().unwrap();
+        let context = context(journal.path());
+        let mut log = log(journal.path());
+        let (total, invoked) = policy_run(&context, &mut log, blocked_repair(), |phase| {
+            if phase == "sense_batch" {
+                return failed_phase("sense_batch", "injected");
+            }
+            succeeded_phase(phase)
+        });
+        assert_eq!(
+            invoked,
+            ["sense_batch", "segment_repair", "indexer", "journal_stats"]
+        );
+        assert_eq!(total.failed, 1);
+        assert_eq!(total.failed_names, ["sense_batch (injected)"]);
+        assert_eq!(total.skipped, 1);
+        assert_eq!(total.skipped_names, ["daily (blocked)"]);
+        assert_eq!(
+            total.success_names,
+            ["segment_repair", "indexer", "journal_stats"]
+        );
+        assert!(!total.success_names.iter().any(|name| name == "daily"));
+        assert_eq!(
+            blocker_progress(
+                &BTreeSet::from([blocker("090000_300")]),
+                &BTreeSet::from([blocker("090000_300")])
+            ),
+            (0, 1)
+        );
+    }
+
+    #[test]
+    fn bounded_phase_timeout_is_a_terminal_failure() {
+        let result = timed_out_phase("injected", None);
+
+        assert!(result.timed_out);
+        assert_eq!(result.failed, 1);
+        assert_eq!(result.failed_names, ["injected (wall_clock_exceeded)"]);
     }
 
     #[test]
