@@ -35,6 +35,7 @@ const PDEATHSIG: &str = include_str!("../src/process/unix/pdeathsig.rs");
 const SPAWN: &str = include_str!("../src/process/unix/spawn.rs");
 const TERMINATE: &str = include_str!("../src/process/unix/terminate.rs");
 const PROCESS_WINDOWS: &str = include_str!("../src/process/windows/mod.rs");
+const PROCESS_WINDOWS_MANAGED: &str = include_str!("../src/process/windows/managed.rs");
 const PROCESS_WINDOWS_HANDLE: &str = include_str!("../src/process/windows/handle.rs");
 const PROCESS_WINDOWS_IDENTITY: &str = include_str!("../src/process/windows/identity.rs");
 const PROCESS_WINDOWS_JOB: &str = include_str!("../src/process/windows/job.rs");
@@ -298,6 +299,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
             .collect()
     );
     let windows_process_modules = [
+        ("managed", PROCESS_WINDOWS_MANAGED),
         ("handle", PROCESS_WINDOWS_HANDLE),
         ("identity", PROCESS_WINDOWS_IDENTITY),
         ("job", PROCESS_WINDOWS_JOB),
@@ -471,6 +473,7 @@ fn ac28_process_common_and_non_unix_facade_are_unix_free() {
     for (name, source) in [
         ("common", PROCESS_COMMON),
         ("windows facade", PROCESS_WINDOWS),
+        ("windows managed facade", PROCESS_WINDOWS_MANAGED),
         ("windows handle", PROCESS_WINDOWS_HANDLE),
         ("windows identity", PROCESS_WINDOWS_IDENTITY),
         ("windows job", PROCESS_WINDOWS_JOB),
@@ -494,8 +497,9 @@ fn ac28_process_common_and_non_unix_facade_are_unix_free() {
         !PROCESS_WINDOWS.contains(".spawn("),
         "the non-Unix process facade must not spawn owned children"
     );
-    assert!(PROCESS_WINDOWS.contains("pub enum ManagedProcess {}"));
-    assert!(PROCESS_WINDOWS.contains("pub enum LaunchAuthority {}"));
+    assert!(PROCESS_WINDOWS.contains("mod managed;"));
+    assert!(PROCESS_WINDOWS_MANAGED.contains("launch_windows_job_process"));
+    assert!(!PROCESS_WINDOWS_MANAGED.contains("Command::new"));
 }
 
 #[test]

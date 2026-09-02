@@ -513,6 +513,7 @@ pub enum SignalKind {
     Kill,
 }
 
+#[cfg(not(windows))]
 pub(crate) fn require_managed_process_capability() -> Result<(), &'static str> {
     #[cfg(unix)]
     {

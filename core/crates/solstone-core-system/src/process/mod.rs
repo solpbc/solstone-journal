@@ -22,6 +22,7 @@ use std::process::ExitStatus;
 pub use common::CensusRow;
 #[cfg(any(test, feature = "test-hooks"))]
 pub(crate) use common::hosted_admission_test_fault;
+#[cfg(not(windows))]
 pub(crate) use common::require_managed_process_capability;
 #[cfg(windows)]
 pub(crate) use common::windows_filetime_epoch_seconds;

@@ -274,6 +274,45 @@ impl WindowsJobProcess {
             Instant::now() + JOB_HARD_STOP_TIMEOUT,
         )
     }
+
+    /// Terminate the complete Job and require both root reap and Job quiescence
+    /// before the caller's already-established deadline.
+    #[cfg(windows)]
+    pub(super) fn hard_stop_until(&mut self, deadline: Instant) -> io::Result<i32> {
+        self.hard_stop_with(
+            &SystemWindowsJobApi,
+            &SystemWindowsProcessControlApi,
+            deadline,
+        )
+    }
+
+    /// Transfer the two parent-owned output pipe ends to the managed facade.
+    /// The pipe handles leave this owner exactly once, after child endpoints
+    /// have been closed and atomic Job enrollment has succeeded.
+    #[cfg(windows)]
+    pub(super) fn take_output_files(&mut self) -> (std::fs::File, std::fs::File) {
+        use std::os::windows::io::{FromRawHandle, RawHandle};
+
+        let stdout = self.pipes.parent_stdout_read.take_raw();
+        let stderr = self.pipes.parent_stderr_read.take_raw();
+        // SAFETY: `take_raw` transfers each uniquely owned pipe handle to its
+        // corresponding File, which becomes its sole closer.
+        #[allow(unsafe_code)]
+        unsafe {
+            (
+                std::fs::File::from_raw_handle(stdout as RawHandle),
+                std::fs::File::from_raw_handle(stderr as RawHandle),
+            )
+        }
+    }
+
+    #[cfg(windows)]
+    pub(super) fn is_quiescent(&self) -> io::Result<bool> {
+        Ok(SystemWindowsJobApi
+            .accounting(self.job()?)?
+            .active_processes
+            == 0)
+    }
 }
 
 #[cfg(windows)]

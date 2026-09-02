@@ -556,7 +556,11 @@ mod tests {
     fn failure_cause_reports_the_callers_fallback_when_nothing_else_knows() {
         let journal = tempfile::tempdir().expect("journal");
         assert_eq!(
-            failure_cause(journal.path(), "1788358659849", "wait failed: Dispatch(Closed)"),
+            failure_cause(
+                journal.path(),
+                "1788358659849",
+                "wait failed: Dispatch(Closed)"
+            ),
             "wait failed: Dispatch(Closed)"
         );
         assert_eq!(
