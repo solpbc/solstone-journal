@@ -16,13 +16,13 @@ use serde_json::{Map, Value, json};
 use solstone_core_sol_link::client_status::{
     ClientActivityState, ClientAssessment, ClientCaptureState, ClientInspection,
     ClientLedgerUnavailable, ClientReach, ConnectionFreshness, ConnectionGroup, ConnectionState,
-    inspect_clients_at,
+    SourceDelivery, inspect_clients_at,
 };
 use solstone_core_sol_link::ledger::AuthorizationLedger;
 
 use crate::JournalRoot;
 
-const CLIENT_ENTRY_FIELDS: [&str; 24] = [
+const CLIENT_ENTRY_FIELDS: [&str; 25] = [
     "cid",
     "cid_short",
     "device_label",
@@ -47,6 +47,7 @@ const CLIENT_ENTRY_FIELDS: [&str; 24] = [
     "unassessed_reason",
     "failing",
     "ingest_rejection",
+    "source_delivery",
 ];
 
 pub(crate) fn router(prefix: &str) -> Router {
@@ -168,9 +169,43 @@ fn client_json(client: &ClientAssessment, activity: ClientActivityState) -> Valu
                 .as_ref()
                 .map_or(Value::Null, |rejection| json!(rejection)),
         ),
+        ("source_delivery".to_owned(), source_delivery_json(client)),
     ]);
     debug_assert_eq!(value.len(), CLIENT_ENTRY_FIELDS.len());
     Value::Object(value)
+}
+
+fn source_delivery_json(client: &ClientAssessment) -> Value {
+    if client.source_delivery.is_empty() {
+        return Value::Null;
+    }
+    Value::Object(
+        client
+            .source_delivery
+            .iter()
+            .map(|(source, row)| {
+                (
+                    source.clone(),
+                    json!({
+                        "state": source_delivery_state(row.state),
+                        "elapsed_ms": row.elapsed_ms,
+                        "ingest_rejection": row
+                            .ingest_rejection
+                            .as_ref()
+                            .map_or(Value::Null, |rejection| json!(rejection)),
+                    }),
+                )
+            })
+            .collect(),
+    )
+}
+
+fn source_delivery_state(state: SourceDelivery) -> &'static str {
+    match state {
+        SourceDelivery::Current => "current",
+        SourceDelivery::NeedsAttention => "needs_attention",
+        SourceDelivery::Unknown => "unknown",
+    }
 }
 
 fn cid_short(cid: &str) -> String {
@@ -379,7 +414,74 @@ mod tests {
             );
             assert_eq!(row["capture_state"], "degraded");
             assert!(row["failing"].as_bool().expect("failing boolean"));
+            assert!(row["source_delivery"].is_null());
         }
+    }
+
+    #[tokio::test]
+    async fn api_clients_single_source_keeps_existing_fields_and_adds_source_delivery() {
+        let cid = "sha256:0123456789abcdef0123456789abcdef";
+        let journal = EstablishedJournal::new();
+        journal.write_ledger(json!([client(cid, "phone")]));
+        journal.write_activity(json!({
+            cid: {
+                "last_seen_at": "2026-08-13T00:01:00Z",
+                "last_accepted_ingest_at": "2026-08-13T00:02:00Z",
+                "sources": {
+                    "audio": {"last_accepted_ingest_at": "2026-08-13T00:02:00Z"}
+                }
+            }
+        }));
+        let (status, body) = request(
+            crate::router(journal.0.path().to_path_buf()),
+            Request::get("/app/network/api/clients")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let row = &body["clients"][0];
+        assert_eq!(row["last_accepted_ingest_at"], "2026-08-13T00:02:00Z");
+        assert!(row["source_delivery"]["audio"].is_object());
+        assert_eq!(row["source_delivery"].as_object().unwrap().len(), 1);
+        assert_eq!(
+            row.as_object()
+                .expect("client row")
+                .keys()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>(),
+            CLIENT_ENTRY_FIELDS.into_iter().collect::<BTreeSet<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn api_clients_projects_source_delivery_for_multi_source_activity() {
+        let cid = "sha256:0123456789abcdef0123456789abcdef";
+        let journal = EstablishedJournal::new();
+        journal.write_ledger(json!([client(cid, "phone")]));
+        journal.write_activity(json!({
+            cid: {
+                "last_seen_at": "2026-08-13T00:01:00Z",
+                "last_accepted_ingest_at": "2026-08-13T00:02:00Z",
+                "sources": {
+                    "audio": {"last_accepted_ingest_at": "2026-08-13T00:02:00Z"},
+                    "location": {"last_accepted_ingest_at": "2026-08-13T00:00:00Z"}
+                }
+            }
+        }));
+        let (status, body) = request(
+            crate::router(journal.0.path().to_path_buf()),
+            Request::get("/app/network/api/clients")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let row = &body["clients"][0];
+        assert!(row["source_delivery"].is_object());
+        assert!(row["source_delivery"]["audio"]["state"].is_string());
+        assert!(row["source_delivery"]["location"]["state"].is_string());
+        assert!(row["source_delivery"]["audio"]["ingest_rejection"].is_null());
     }
 
     #[tokio::test]
