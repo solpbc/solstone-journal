@@ -706,11 +706,11 @@ fn terminal_cogitate_reason(stdout: &[u8]) -> Option<String> {
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())
         .find(|value| {
             matches!(
-                value.get("kind").and_then(Value::as_str),
+                value.get("event").and_then(Value::as_str),
                 Some("finish" | "error")
             )
         })?;
-    if terminal.get("kind").and_then(Value::as_str) == Some("finish")
+    if terminal.get("event").and_then(Value::as_str) == Some("finish")
         && terminal
             .get("result")
             .and_then(Value::as_str)
@@ -1222,20 +1222,41 @@ mod tests {
             "probe_output_starved"
         );
         assert_eq!(
-            terminal_cogitate_reason(br#"{"kind":"finish","result":"OK","reason_code":null}"#)
+            terminal_cogitate_reason(br#"{"event":"finish","result":"OK","reason_code":null}"#)
                 .as_deref(),
             Some("ok")
         );
         assert_eq!(
-            terminal_cogitate_reason(br#"{"kind":"error","reason_code":"endpoint_unreachable"}"#)
+            terminal_cogitate_reason(br#"{"event":"error","reason_code":"endpoint_unreachable"}"#)
                 .as_deref(),
             Some("endpoint_unreachable")
         );
         assert_eq!(
-            terminal_cogitate_reason(br#"{"kind":"error","reason_code":"unrecognized"}"#)
+            terminal_cogitate_reason(br#"{"event":"error","reason_code":"unrecognized"}"#)
                 .as_deref(),
             Some("probe_internal_error")
         );
+    }
+
+    #[test]
+    fn owner_cogitate_multiline_wire_terminals_are_classified() {
+        let success = br#"{"event":"text_delta","ts":1,"correlation_id":"health.brain.cogitate","delta":"O","model":"model"}
+{"event":"finish","ts":2,"correlation_id":"health.brain.cogitate","terminal":true,"usage":{"input_tokens":1,"output_tokens":1,"cached_tokens":0,"cache_creation_tokens":0,"reasoning_tokens":0,"requests":1},"result":"OK"}"#;
+        assert_eq!(terminal_cogitate_reason(success), Some("ok".to_owned()));
+
+        let error = br#"{"event":"text_delta","ts":1,"correlation_id":"health.brain.cogitate","delta":"E","model":"model"}
+{"event":"error","ts":2,"correlation_id":"health.brain.cogitate","terminal":true,"usage":{"input_tokens":1,"output_tokens":1,"cached_tokens":0,"cache_creation_tokens":0,"reasoning_tokens":0,"requests":1},"error":"endpoint unreachable","reason_code":"endpoint_unreachable"}"#;
+        assert_eq!(
+            terminal_cogitate_reason(error),
+            Some("endpoint_unreachable".to_owned())
+        );
+    }
+
+    #[test]
+    fn owner_cogitate_unparseable_terminal_stream_is_none() {
+        let stdout = br#"{"event":"text_delta","ts":1,"correlation_id":"health.brain.cogitate","delta":"O","model":"model"}
+garbage"#;
+        assert_eq!(terminal_cogitate_reason(stdout), None);
     }
 
     #[test]
