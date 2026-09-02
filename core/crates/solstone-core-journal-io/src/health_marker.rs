@@ -882,8 +882,13 @@ mod tests {
         .unwrap();
         let before = fs::read(&stream).unwrap();
 
-        assert!(bump_stream_marker(temporary.path(), DAY).is_err());
-        assert_eq!(fs::read(stream).unwrap(), before);
+        let error = bump_stream_marker(temporary.path(), DAY).unwrap_err();
+        assert!(matches!(
+            error,
+            AtomicWriteError::Io { path, source }
+                if path == stream && source.to_string() == "stream marker generation overflow"
+        ));
+        assert_eq!(fs::read(&stream).unwrap(), before);
     }
 
     #[test]
@@ -900,13 +905,17 @@ mod tests {
         )
         .unwrap();
         let before = fs::read(&stream).unwrap();
-        assert!(
-            publish_daily_marker_if_current(temporary.path(), DAY, u64::MAX, "before", || Ok(
-                "after".to_owned()
-            ))
-            .is_err()
-        );
-        assert_eq!(fs::read(stream).unwrap(), before);
+        let error =
+            publish_daily_marker_if_current(temporary.path(), DAY, u64::MAX, "before", || {
+                Ok("after".to_owned())
+            })
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            HealthMarkerError::Atomic(AtomicWriteError::Io { path, source })
+                if path == stream && source.to_string() == "stream marker generation overflow"
+        ));
+        assert_eq!(fs::read(&stream).unwrap(), before);
 
         let temporary = TempDir::new();
         let stream = marker_path(temporary.path(), HealthMarkerKind::Stream);
@@ -930,13 +939,19 @@ mod tests {
         )
         .unwrap();
         let before = fs::read(&stream).unwrap();
-        assert!(
-            publish_daily_marker_if_current(temporary.path(), DAY, u64::MAX, "after", || Ok(
-                "after".to_owned()
-            ))
-            .is_err()
-        );
-        assert_eq!(fs::read(stream).unwrap(), before);
+        let daily_before = fs::read(&daily).unwrap();
+        let error =
+            publish_daily_marker_if_current(temporary.path(), DAY, u64::MAX, "after", || {
+                Ok("after".to_owned())
+            })
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            HealthMarkerError::Atomic(AtomicWriteError::Io { path, source })
+                if path == stream && source.to_string() == "stream marker generation overflow"
+        ));
+        assert_eq!(fs::read(&stream).unwrap(), before);
+        assert_eq!(fs::read(&daily).unwrap(), daily_before);
     }
 
     #[test]
@@ -973,6 +988,31 @@ mod tests {
             .unwrap(),
             PublishOutcome::Published(1)
         );
+        assert_eq!(
+            day_marker_pair_status(temporary.path(), DAY).unwrap(),
+            DayMarkerPairStatus::Complete
+        );
+    }
+
+    #[test]
+    fn equal_generation_pair_with_matching_fingerprints_is_complete() {
+        let temporary = TempDir::new();
+        let marker = HealthMarker {
+            version: MARKER_VERSION,
+            generation: 1,
+            fingerprint: Some("same-fingerprint".to_owned()),
+        };
+        write_marker(
+            &marker_path(temporary.path(), HealthMarkerKind::Stream),
+            &marker,
+        )
+        .unwrap();
+        write_marker(
+            &marker_path(temporary.path(), HealthMarkerKind::Daily),
+            &marker,
+        )
+        .unwrap();
+
         assert_eq!(
             day_marker_pair_status(temporary.path(), DAY).unwrap(),
             DayMarkerPairStatus::Complete

@@ -88,6 +88,14 @@ call :run_receipt "NTFS stale-heartbeat cleanup" "solstone-core-system" "windows
 call :run_receipt "ReFS stale-heartbeat cleanup" "solstone-core-system" "windows_lifecycle_receipt" "refs_stale_heartbeat_cleanup_receipt" "JOURNAL_WIN_CI_REFS_STALE_HEARTBEAT_CLEANUP" "ReFS" || exit /b 1
 echo === cargo test --locked (journal-io library) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --lib || exit /b 1
+echo === cargo test --locked (journal-io health-marker protocol) ===
+set "JOURNAL_WIN_CI_HEALTH_MARKER_LOG=core\target\journal-win-ci-health-marker-%RANDOM%%RANDOM%.log"
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_health_marker_protocol -- --nocapture > "%JOURNAL_WIN_CI_HEALTH_MARKER_LOG%" 2>&1
+if not "%ERRORLEVEL%"=="0" ( del /q "%JOURNAL_WIN_CI_HEALTH_MARKER_LOG%" >nul 2>&1 & echo ERROR: journal-io health-marker protocol failed & exit /b 1 )
+powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_CI_HEALTH_MARKER_LOG); $marker = 'JOURNAL_WIN_CI_HEALTH_MARKER'; $pass = [regex]::Escape($marker + '=read/bump/lock/publish/legacy/pair/pass'); if ([regex]::Matches($text, '(?m)^' + [regex]::Escape($marker) + '=.*\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $pass + '\r?$').Count -eq 1) { exit 0 }; exit 1"
+if not "%ERRORLEVEL%"=="0" ( del /q "%JOURNAL_WIN_CI_HEALTH_MARKER_LOG%" >nul 2>&1 & echo ERROR: journal-io health-marker protocol did not emit exactly one source-originated pass marker & exit /b 1 )
+type "%JOURNAL_WIN_CI_HEALTH_MARKER_LOG%"
+del /q "%JOURNAL_WIN_CI_HEALTH_MARKER_LOG%" >nul 2>&1
 echo === cargo test --locked (journal-io lock component) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test journal_io_lock_component --features test-hooks || exit /b 1
 echo === cargo test --locked (journal-io detailed atomic publication) ===
