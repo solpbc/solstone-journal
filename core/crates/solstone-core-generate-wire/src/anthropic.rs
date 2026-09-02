@@ -453,6 +453,7 @@ fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> AnthropicC
             name: name.to_owned(),
             arguments: arguments.clone(),
             not_offered: !offered.contains(name),
+            thought_signature: None,
         });
     }
     if stop_reason == "tool_use" && tool_calls.is_empty() {
@@ -1044,6 +1045,7 @@ mod tests {
                     name: "weather".into(),
                     arguments: json!({"city": "Denver"}),
                     not_offered: false,
+                    thought_signature: None,
                 }],
             },
             ConverseMessage::ToolResult {

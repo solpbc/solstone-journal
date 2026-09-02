@@ -295,15 +295,19 @@ fn converse_request_body(
                     json!({"role": "user", "parts": [{"text": text}]})
                 }
                 ConverseMessage::Assistant { text, tool_calls } => {
-                    // Multi-turn Gemini 3 tool history needs thoughtSignature replay;
-                    // this generic assistant representation does not carry it yet.
                     let mut parts = Vec::new();
                     if !text.is_empty() {
                         parts.push(json!({"text": text}));
                     }
-                    parts.extend(tool_calls.iter().map(|call| json!({
-                    "functionCall": {"id": call.id, "name": call.name, "args": call.arguments},
-                })));
+                    for call in tool_calls {
+                        let mut part = json!({
+                            "functionCall": {"id": call.id, "name": call.name, "args": call.arguments},
+                        });
+                        if let Some(signature) = &call.thought_signature {
+                            part["thoughtSignature"] = json!(signature);
+                        }
+                        parts.push(part);
+                    }
                     json!({"role": "model", "parts": parts})
                 }
                 ConverseMessage::ToolResult {
@@ -436,7 +440,11 @@ fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> GoogleConv
             text.push_str(value);
         }
         if let Some(function_call) = part.get("functionCall") {
-            function_parts.push(function_call);
+            let thought_signature = part
+                .get("thoughtSignature")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty());
+            function_parts.push((function_call, thought_signature));
         }
     }
     let finish_reason = normalize_finish_reason(candidate);
@@ -454,7 +462,7 @@ fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> GoogleConv
         return converse_failure("tool_call_arguments_invalid");
     }
     let mut tool_calls = Vec::new();
-    for (position, function_call) in function_parts.into_iter().enumerate() {
+    for (position, (function_call, thought_signature)) in function_parts.into_iter().enumerate() {
         let Some(name) = function_call
             .get("name")
             .and_then(Value::as_str)
@@ -485,6 +493,7 @@ fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> GoogleConv
             name: name.to_owned(),
             arguments: arguments.clone(),
             not_offered: !offered.contains(name),
+            thought_signature: thought_signature.map(str::to_owned),
         });
     }
     GoogleConverseResult::Turn(Box::new(ConverseTurn {
@@ -1299,6 +1308,109 @@ mod tests {
     }
 
     #[test]
+    fn converse_captures_gemini_thought_signature() {
+        let offered = ["weather".to_owned()].into_iter().collect();
+        let GoogleConverseResult::Turn(turn) = parse_converse_response(
+            &json!({
+                "modelVersion":"gemini",
+                "candidates":[{"finishReason":"STOP","content":{"parts":[
+                    {"functionCall":{"name":"weather","args":{"city":"Denver"}},"thoughtSignature":"sig-denver"},
+                    {"functionCall":{"name":"weather","args":{"city":"Boulder"}},"thoughtSignature":"sig-boulder"}
+                ]}}]
+            })
+            .to_string(),
+            &offered,
+        ) else {
+            panic!("a gemini tool call with thoughtSignature must parse")
+        };
+        assert_eq!(turn.tool_calls.len(), 2);
+        let denver = turn
+            .tool_calls
+            .iter()
+            .find(|call| call.arguments["city"] == "Denver")
+            .expect("denver call");
+        let boulder = turn
+            .tool_calls
+            .iter()
+            .find(|call| call.arguments["city"] == "Boulder")
+            .expect("boulder call");
+        assert_eq!(denver.thought_signature.as_deref(), Some("sig-denver"));
+        assert_eq!(boulder.thought_signature.as_deref(), Some("sig-boulder"));
+        assert_ne!(denver.id, boulder.id);
+        assert!(!denver.id.is_empty());
+    }
+
+    #[test]
+    fn converse_treats_missing_or_empty_thought_signature_as_none() {
+        let offered = ["weather".to_owned()].into_iter().collect();
+        let GoogleConverseResult::Turn(turn) = parse_converse_response(
+            &json!({
+                "modelVersion":"gemini",
+                "candidates":[{"finishReason":"STOP","content":{"parts":[
+                    {"functionCall":{"name":"weather","args":{"city":"a"}}},
+                    {"functionCall":{"name":"weather","args":{"city":"b"}},"thoughtSignature":""},
+                    {"functionCall":{"name":"weather","args":{"city":"c"}},"thoughtSignature":"keep-me"}
+                ]}}]
+            })
+            .to_string(),
+            &offered,
+        ) else {
+            panic!("missing or empty thoughtSignature must parse")
+        };
+        assert_eq!(turn.tool_calls.len(), 3);
+        assert_eq!(turn.tool_calls[0].thought_signature, None);
+        assert_eq!(turn.tool_calls[1].thought_signature, None);
+        assert_eq!(
+            turn.tool_calls[2].thought_signature.as_deref(),
+            Some("keep-me")
+        );
+    }
+
+    #[test]
+    fn converse_replays_thought_signature_on_gemini_tool_history() {
+        let messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city":"Denver"}),
+                    not_offered: false,
+                    thought_signature: Some("sig-1".to_string()),
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "sunny".into(),
+            },
+        ];
+        let tools = vec![ConverseToolSpec {
+            name: "weather".into(),
+            description: "weather".into(),
+            parameters: json!({"type":"object"}),
+        }];
+        let body = converse_request_body(&request(), &messages, &tools);
+        assert_eq!(
+            crate::converse::canonical_json(&body),
+            crate::converse::canonical_json(&json!({
+                "contents":[
+                    {"role":"user","parts":[{"text":"ask"}]},
+                    {"role":"model","parts":[{"text":"working"},{"functionCall":{"id":"call-1","name":"weather","args":{"city":"Denver"}},"thoughtSignature":"sig-1"}]},
+                    {"role":"user","parts":[{"functionResponse":{"id":"call-1","name":"weather","response":{"result":"sunny"}}}]}
+                ],
+                "tools":[{"functionDeclarations":[{"name":"weather","description":"weather","parameters":{"type":"object"}}]}],
+                "generationConfig":{"temperature":0.3,"maxOutputTokens":4000},
+                "systemInstruction":{"parts":[{"text":"system"}]}
+            }))
+        );
+        assert!(body["contents"][2]["parts"][0]
+            .get("thoughtSignature")
+            .is_none());
+    }
+
+    #[test]
     fn converse_body_and_tool_turns_follow_gemini_shapes() {
         let messages = vec![
             ConverseMessage::User { text: "ask".into() },
@@ -1309,6 +1421,7 @@ mod tests {
                     name: "weather".into(),
                     arguments: json!({"city":"Denver"}),
                     not_offered: false,
+                    thought_signature: None,
                 }],
             },
             ConverseMessage::ToolResult {
@@ -1359,6 +1472,7 @@ mod tests {
         assert_eq!(turn.finish_reason, "tool_calls");
         assert_eq!(turn.text, "before");
         assert!(!turn.tool_calls[0].not_offered);
+        assert!(turn.tool_calls[0].thought_signature.is_none());
         assert_eq!(
             turn.usage,
             json!({"input_tokens":2,"output_tokens":3,"total_tokens":5,"reasoning_tokens":1,"model_version":"gemini"})

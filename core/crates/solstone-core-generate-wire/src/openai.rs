@@ -486,6 +486,7 @@ fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> OpenAiConv
             name: name.to_owned(),
             arguments,
             not_offered: !offered.contains(name),
+            thought_signature: None,
         });
     }
     OpenAiConverseResult::Turn(Box::new(ConverseTurn {
@@ -1281,6 +1282,7 @@ mod tests {
                     name: "weather".into(),
                     arguments: json!({"city":"Denver"}),
                     not_offered: false,
+                    thought_signature: None,
                 }],
             },
             ConverseMessage::ToolResult {

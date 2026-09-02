@@ -127,6 +127,7 @@ fn call(name: &str, arguments: Value) -> ConverseToolCall {
         name: name.to_owned(),
         arguments,
         not_offered: false,
+        thought_signature: None,
     }
 }
 

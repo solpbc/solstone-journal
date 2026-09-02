@@ -448,6 +448,7 @@ pub(crate) fn endpoint_converse_with<T: EndpointTransport>(
                 name: call.name,
                 arguments: call.arguments,
                 not_offered,
+                thought_signature: None,
             }
         })
         .collect();
@@ -1914,6 +1915,7 @@ mod tests {
                         name: "weather".into(),
                         arguments: json!({"city": "Denver"}),
                         not_offered: false,
+                        thought_signature: None,
                     }],
                 },
                 ConverseMessage::ToolResult {
@@ -1983,6 +1985,7 @@ mod tests {
                     name: "weather".into(),
                     arguments: json!({"note": "x".repeat(500)}),
                     not_offered: false,
+                    thought_signature: None,
                 }],
             });
             messages.push(ConverseMessage::ToolResult {
@@ -2047,6 +2050,7 @@ mod tests {
                     name: "weather".into(),
                     arguments: json!({"note": "x".repeat(650)}),
                     not_offered: false,
+                    thought_signature: None,
                 }],
             });
             messages.push(ConverseMessage::ToolResult {
@@ -2119,6 +2123,7 @@ mod tests {
                     name: "weather".into(),
                     arguments: json!({"note": "x".repeat(20_000)}),
                     not_offered: false,
+                    thought_signature: None,
                 }],
             },
             ConverseMessage::ToolResult {
