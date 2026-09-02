@@ -12,6 +12,8 @@ use super::handle::{JobHandle, PrimaryThreadHandle, RootProcessHandle};
 #[cfg(windows)]
 use super::identity::{WindowsFileTime, filetime_value};
 use super::job::{JobMembership, WindowsJobApi};
+#[cfg(all(windows, feature = "test-hooks"))]
+use super::job::{JobResourceLimits, create_kill_on_close_job_with_limits};
 #[cfg(windows)]
 use super::job::{SystemWindowsJobApi, create_kill_on_close_job};
 #[cfg(windows)]
@@ -706,6 +708,61 @@ fn wait_for_observer_signal(observer: &TestProcessObserver, label: &str) -> Resu
 
 #[cfg(all(windows, feature = "test-hooks"))]
 pub(super) fn windows_job_process_owner_receipt_for_test() -> Result<(), String> {
+    let jobs = SystemWindowsJobApi;
+    let limits = JobResourceLimits {
+        cpu_rate_per_10_000: 2_500,
+        committed_memory_bytes: 512 * 1024 * 1024,
+    };
+    let resource_job = create_kill_on_close_job_with_limits(&jobs, Some(limits))
+        .map_err(|error| format!("creating limited Job failed: {error}"))?;
+    let observed_limits = jobs
+        .resource_limits(&resource_job)
+        .map_err(|error| format!("reading limited Job configuration failed: {error}"))?;
+    if observed_limits.cpu_rate_per_10_000 != limits.cpu_rate_per_10_000
+        || observed_limits.committed_memory_bytes != limits.committed_memory_bytes
+        || !observed_limits.process_memory_enforced
+        || !observed_limits.job_memory_enforced
+        || !observed_limits.cpu_hard_cap_enforced
+    {
+        return Err(format!(
+            "limited Job readback did not retain the configured hard limits: {observed_limits:?}"
+        ));
+    }
+    let limited_sleep = test_child_command("sleep", &["30".to_owned()])?;
+    let mut limited_launch_spec = prepare_launch_spec(&limited_sleep, &Default::default())
+        .map_err(|error| error.to_string())?;
+    let startup_api = SystemWindowsStartupInfoApi;
+    let mut limited_startup = WindowsStartupInfo::new_job_only(&startup_api, &resource_job)
+        .map_err(|error| error.to_string())?;
+    let limited_created = SystemWindowsCreateProcessApi.create_process(
+        &mut limited_launch_spec,
+        &limited_startup,
+        None,
+        false,
+    );
+    limited_startup.delete_with(&startup_api);
+    let mut limited_created = limited_created.map_err(|error| error.to_string())?;
+    limited_created
+        .thread
+        .close()
+        .map_err(|error| error.to_string())?;
+    if jobs
+        .observe_member(limited_created.root.raw(), &resource_job)
+        .map_err(|error| error.to_string())?
+        != JobMembership::Member
+    {
+        return Err("limited Job did not atomically enroll its root process".to_owned());
+    }
+    jobs.terminate(&resource_job, JOB_HARD_STOP_EXIT_CODE)
+        .map_err(|error| error.to_string())?;
+    if SystemWindowsProcessControlApi
+        .wait_for_process(&limited_created.root, JOB_HARD_STOP_TIMEOUT)
+        .map_err(|error| error.to_string())?
+        != ProcessWait::Signaled
+    {
+        return Err("limited Job root did not stop within the receipt bound".to_owned());
+    }
+
     let lines = test_child_command("lines", &[])?;
     let mut lines_owner = launch_windows_job_process(&lines, &Default::default())
         .map_err(|error| error.to_string())?;
@@ -735,13 +792,13 @@ pub(super) fn windows_job_process_owner_receipt_for_test() -> Result<(), String>
     if owner.observe_member().map_err(|error| error.to_string())? != JobMembership::Member {
         return Err("launched root was not a Job member".to_owned());
     }
-    if !SystemWindowsJobApi
+    if !jobs
         .kill_on_close_enabled(owner.job().map_err(|error| error.to_string())?)
         .map_err(|error| error.to_string())?
     {
         return Err("launched Job does not retain the kill-on-close limit".to_owned());
     }
-    if SystemWindowsJobApi
+    if jobs
         .accounting(owner.job().map_err(|error| error.to_string())?)
         .map_err(|error| error.to_string())?
         .active_processes
@@ -870,7 +927,9 @@ mod tests {
     use super::super::handle::{
         JobHandle, PipeEndHandle, PrimaryThreadHandle, RawWindowsHandle, RootProcessHandle,
     };
-    use super::super::job::{JobAccounting, JobMembership, JobResourceLimits, WindowsJobApi};
+    use super::super::job::{
+        JobAccounting, JobMembership, JobResourceLimitReceipt, JobResourceLimits, WindowsJobApi,
+    };
     use super::super::pipes::{PipedStdio, WindowsPipeApi};
     use super::{
         CreatedWindowsProcess, JOB_HARD_STOP_TIMEOUT, ProcessWait, WindowsJobProcess,
@@ -922,6 +981,16 @@ mod tests {
             _limits: JobResourceLimits,
         ) -> io::Result<()> {
             Ok(())
+        }
+
+        fn resource_limits(&self, _job: &JobHandle) -> io::Result<JobResourceLimitReceipt> {
+            Ok(JobResourceLimitReceipt {
+                cpu_rate_per_10_000: 0,
+                committed_memory_bytes: 0,
+                process_memory_enforced: false,
+                job_memory_enforced: false,
+                cpu_hard_cap_enforced: false,
+            })
         }
 
         fn kill_on_close_enabled(&self, _job: &JobHandle) -> io::Result<bool> {

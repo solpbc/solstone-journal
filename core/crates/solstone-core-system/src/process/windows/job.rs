@@ -40,6 +40,17 @@ pub(super) struct JobAccounting {
     pub(super) active_processes: u32,
 }
 
+/// The limit state read back from an existing Job for a native receipt.
+#[cfg(any(test, all(windows, feature = "test-hooks")))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct JobResourceLimitReceipt {
+    pub(super) cpu_rate_per_10_000: u32,
+    pub(super) committed_memory_bytes: usize,
+    pub(super) process_memory_enforced: bool,
+    pub(super) job_memory_enforced: bool,
+    pub(super) cpu_hard_cap_enforced: bool,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum JobMembership {
     Member,
@@ -56,6 +67,8 @@ pub(super) trait WindowsJobApi {
         job: &JobHandle,
         limits: JobResourceLimits,
     ) -> io::Result<()>;
+    #[cfg(any(test, all(windows, feature = "test-hooks")))]
+    fn resource_limits(&self, job: &JobHandle) -> io::Result<JobResourceLimitReceipt>;
     #[cfg_attr(not(windows), allow(dead_code))]
     fn kill_on_close_enabled(&self, job: &JobHandle) -> io::Result<bool>;
     fn terminate(&self, job: &JobHandle, exit_code: u32) -> io::Result<()>;
@@ -190,6 +203,64 @@ impl WindowsJobApi for SystemWindowsJobApi {
         Ok(())
     }
 
+    #[cfg(any(test, all(windows, feature = "test-hooks")))]
+    fn resource_limits(&self, job: &JobHandle) -> io::Result<JobResourceLimitReceipt> {
+        use std::mem::size_of;
+
+        use windows_sys::Win32::System::JobObjects::{
+            JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
+            JOB_OBJECT_LIMIT_JOB_MEMORY, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
+            JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+            JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation,
+            QueryInformationJobObject,
+        };
+
+        let mut extended = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        // SAFETY: `extended` is writable for the exact information-class size and
+        // the synchronous query does not retain its pointer.
+        #[allow(unsafe_code)]
+        let memory_read = unsafe {
+            QueryInformationJobObject(
+                job.raw(),
+                JobObjectExtendedLimitInformation,
+                (&raw mut extended).cast(),
+                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                std::ptr::null_mut(),
+            )
+        };
+        if memory_read == 0 {
+            return Err(io::Error::last_os_error());
+        }
+
+        let mut cpu = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION::default();
+        // SAFETY: `cpu` is writable for the exact information-class size and
+        // the synchronous query does not retain its pointer.
+        #[allow(unsafe_code)]
+        let cpu_read = unsafe {
+            QueryInformationJobObject(
+                job.raw(),
+                JobObjectCpuRateControlInformation,
+                (&raw mut cpu).cast(),
+                size_of::<JOBOBJECT_CPU_RATE_CONTROL_INFORMATION>() as u32,
+                std::ptr::null_mut(),
+            )
+        };
+        if cpu_read == 0 {
+            return Err(io::Error::last_os_error());
+        }
+
+        let limit_flags = extended.BasicLimitInformation.LimitFlags;
+        Ok(JobResourceLimitReceipt {
+            cpu_rate_per_10_000: cpu.Anonymous.CpuRate,
+            committed_memory_bytes: extended.JobMemoryLimit,
+            process_memory_enforced: limit_flags & JOB_OBJECT_LIMIT_PROCESS_MEMORY != 0,
+            job_memory_enforced: limit_flags & JOB_OBJECT_LIMIT_JOB_MEMORY != 0,
+            cpu_hard_cap_enforced: cpu.ControlFlags
+                & (JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP)
+                == (JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP),
+        })
+    }
+
     fn terminate(&self, job: &JobHandle, exit_code: u32) -> io::Result<()> {
         use windows_sys::Win32::System::JobObjects::TerminateJobObject;
 
@@ -286,8 +357,9 @@ mod tests {
     use std::io;
 
     use super::{
-        JobAccounting, JobHandle, JobMembership, JobResourceLimits, RawWindowsHandle,
-        WindowsJobApi, create_kill_on_close_job, create_kill_on_close_job_with_limits,
+        JobAccounting, JobHandle, JobMembership, JobResourceLimitReceipt, JobResourceLimits,
+        RawWindowsHandle, WindowsJobApi, create_kill_on_close_job,
+        create_kill_on_close_job_with_limits,
     };
 
     struct FakeJobApi {
@@ -314,6 +386,16 @@ mod tests {
         ) -> io::Result<()> {
             self.setup.borrow_mut().push("resource-limits");
             Ok(())
+        }
+
+        fn resource_limits(&self, _job: &JobHandle) -> io::Result<JobResourceLimitReceipt> {
+            Ok(JobResourceLimitReceipt {
+                cpu_rate_per_10_000: 0,
+                committed_memory_bytes: 0,
+                process_memory_enforced: false,
+                job_memory_enforced: false,
+                cpu_hard_cap_enforced: false,
+            })
         }
 
         fn kill_on_close_enabled(&self, _job: &JobHandle) -> io::Result<bool> {
