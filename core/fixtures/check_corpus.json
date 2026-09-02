@@ -2,7 +2,7 @@
   "cases": [
     {
       "exit_code": 1,
-      "human_stdout": "sol check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [unknown] gpu       a GPU render node exists under /dev/dri but this user cannot open it — add yourself to the render group with `sudo usermod -aG render $USER`, then log out and back in and run `sol check` again\n  [ok]      ram       64 GB of system memory\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [warn]    ced       Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets.\nMostly ready (see the warnings above) — you can install the journal:  see INSTALL.md\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
+      "human_stdout": "sol check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [unknown] gpu       a GPU render node exists under /dev/dri but this user cannot open it — add yourself to the render group with `sudo usermod -aG render $USER`, then log out and back in and run `sol check` again\n  [ok]      ram       64 GB of system memory\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [warn]    ced       Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets. If the signed CED app payload is unavailable on Windows, reinstall the journal app.\nMostly ready (see the warnings above) — you can install the journal:  see INSTALL.md\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
         "disk": {
           "free_bytes": 536870912000,
@@ -69,7 +69,7 @@
           },
           {
             "available_bytes": null,
-            "detail": "Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets.",
+            "detail": "Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets. If the signed CED app payload is unavailable on Windows, reinstall the journal app.",
             "name": "ced",
             "required_bytes": null,
             "severity": "warning"
@@ -90,7 +90,7 @@
     },
     {
       "exit_code": 1,
-      "human_stdout": "sol check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [unknown] gpu       no NVIDIA GPU found and the Vulkan probe did not complete — GPU readiness is unknown\n  [ok]      ram       64 GB of system memory\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [warn]    ced       Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets.\nMostly ready (see the warnings above) — you can install the journal:  see INSTALL.md\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
+      "human_stdout": "sol check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [unknown] gpu       no NVIDIA GPU found and the Vulkan probe did not complete — GPU readiness is unknown\n  [ok]      ram       64 GB of system memory\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [warn]    ced       Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets. If the signed CED app payload is unavailable on Windows, reinstall the journal app.\nMostly ready (see the warnings above) — you can install the journal:  see INSTALL.md\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
         "disk": {
           "free_bytes": 536870912000,
@@ -157,7 +157,7 @@
           },
           {
             "available_bytes": null,
-            "detail": "Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets.",
+            "detail": "Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets. If the signed CED app payload is unavailable on Windows, reinstall the journal app.",
             "name": "ced",
             "required_bytes": null,
             "severity": "warning"
@@ -179,7 +179,7 @@
     {
       "exit_code": 2,
       "fit_report_severity": "warning",
-      "human_stdout": "sol check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [blocked] gpu       no usable GPU found — the bundled local models need a hardware GPU with at least 6 GB\n  [ok]      ram       64 GB of system memory\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [warn]    ced       Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets.\nNot ready — this computer can't run the bundled local models yet.\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
+      "human_stdout": "sol check — can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [blocked] gpu       no usable GPU found — the bundled local models need a hardware GPU with at least 6 GB\n  [ok]      ram       64 GB of system memory\n  [ok]      disk      500 GB free at /journal (need 20 GB)\n  [warn]    ced       Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets. If the signed CED app payload is unavailable on Windows, reinstall the journal app.\nNot ready — this computer can't run the bundled local models yet.\n\nThink this readout is wrong for your machine? We'd love a patch — https://github.com/solpbc/solstone-journal\n",
       "inputs": {
         "disk": {
           "free_bytes": 536870912000,
@@ -246,7 +246,7 @@
           },
           {
             "available_bytes": null,
-            "detail": "Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets.",
+            "detail": "Sound tagging is degraded because its CED assets are unavailable. Transcription will continue. Use `journal install-models` to check or repair the CED assets. If the signed CED app payload is unavailable on Windows, reinstall the journal app.",
             "name": "ced",
             "required_bytes": null,
             "severity": "warning"
