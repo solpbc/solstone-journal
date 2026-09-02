@@ -927,11 +927,14 @@ async fn serve_carrier(
     {
         Ok(Ok(connection)) => connection,
         Ok(Err(error)) => {
-            log::debug!("paired-device carrier TLS/mux failed: {error}");
+            // warn, not debug: this is the one line that explains a client-observed
+            // connection drop from the server's side, and production runs at the
+            // `warn` default (main.rs `install_logger`) with no per-module override.
+            log::warn!("paired-device carrier TLS/mux failed: {error}");
             return;
         }
         Err(_) => {
-            log::debug!("paired-device carrier handshake timed out");
+            log::warn!("paired-device carrier handshake timed out");
             return;
         }
     };
@@ -1020,7 +1023,8 @@ async fn serve_carrier(
                         None => router,
                     };
                     if let Err(error) = serve_connection(stream, router, basis, &builder).await {
-                        log::debug!("paired-device door stream failed: {error}");
+                        // warn, not debug: see the TLS/mux-failed warn above — same reasoning.
+                        log::warn!("paired-device door stream failed: {error}");
                     }
                     if let Some(state) = pairing_state {
                         let remaining = state.active_streams.fetch_sub(1, Ordering::AcqRel) - 1;
