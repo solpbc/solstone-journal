@@ -8,15 +8,26 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 use crate::controlled_build::{
-    BuildConfiguration, BuilderIdentity, ControlledBuildReceiptDraft, OutputIdentityEntry,
-    SourceIdentity,
+    BuildConfiguration, BuilderIdentity, ControlledBuildReceiptDraft, DependencySource,
+    InputIdentityEntry, OutputIdentityEntry, SourceIdentity, SupportingArtifactRef,
 };
+use crate::digest::sha256_hex;
 use crate::pe::{PeInfo, PeSymbol};
 use crate::provenance::{self, ProvenanceError};
 
 pub const CED_CPP_COMMIT: &str = "c04ac14b7992d00584d9e812c9bb6268598a6ce7";
 pub const GGML_COMMIT: &str = "e705c5fed490514458bdd2eaddc43bd098fcce9b";
 pub const CED_CPP_REPOSITORY: &str = "https://github.com/localai-org/ced.cpp.git";
+pub const CED_GGML_REPOSITORY: &str = "https://github.com/ggml-org/ggml";
+
+/// Strict sidecar schema retained beside a controlled-build receipt. Receipt V1
+/// names one Windows dependency source, so this document binds its CED source
+/// identity to the nested ggml source and to the exact CMake evidence that V1
+/// otherwise cannot represent structurally.
+pub const CED_WINDOWS_BUILD_EVIDENCE_SCHEMA_V1: &str = "solstone.ced-windows-build-evidence.v1";
+pub const CED_WINDOWS_BUILD_EVIDENCE_LABEL: &str =
+    "provenance/windows-x86_64/ced-build-evidence.json";
+pub const CED_WINDOWS_SOURCE_ARCHIVE_LABEL: &str = "sources/ced.cpp-with-ggml.tar.gz";
 
 pub const CED_WINDOWS_TARGET_TRIPLE: &str = "x86_64-pc-windows-msvc";
 pub const CED_WINDOWS_BUILD_PROFILE: &str = "Release";
@@ -71,6 +82,131 @@ const FORBIDDEN_IMPORT_NEEDLES: &[&str] = &[
     "cuda", "nvcuda", "cudart", "cublas", "cudnn", "nvrtc", "vulkan", "opencl",
 ];
 
+/// Nested source and generated-input facts for one controlled CED build.
+///
+/// The record is deliberately separate from the V1 receipt rather than
+/// extending a general receipt with a CED-specific field. Its canonical bytes
+/// are bound as a `SupportingArtifactRef` by [`assemble_receipt_draft`].
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CedWindowsBuildEvidence {
+    pub schema: String,
+    pub source_archive: InputIdentityEntry,
+    pub ggml: DependencySource,
+    pub export_definition_sha256: String,
+    pub cmake_cache_sha256: String,
+}
+
+#[derive(Debug)]
+pub enum CedWindowsBuildEvidenceError {
+    Schema {
+        found: String,
+    },
+    Source {
+        source: ProvenanceError,
+    },
+    Unexpected {
+        field: &'static str,
+        expected: String,
+        found: String,
+    },
+    Missing {
+        field: &'static str,
+    },
+    InvalidSha256 {
+        field: &'static str,
+        found: String,
+    },
+    OutputCount {
+        found: usize,
+    },
+    OutputCensus {
+        source: CedWindowsError,
+    },
+}
+
+impl fmt::Display for CedWindowsBuildEvidenceError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Schema { found } => write!(
+                formatter,
+                "unexpected:\n  build evidence schema {found}\n  expected: {CED_WINDOWS_BUILD_EVIDENCE_SCHEMA_V1}"
+            ),
+            Self::Source { source } => write!(formatter, "source identity: {source}"),
+            Self::Unexpected {
+                field,
+                expected,
+                found,
+            } => write!(
+                formatter,
+                "unexpected:\n  {field}\n  expected: {expected}\n  found: {found}"
+            ),
+            Self::Missing { field } => write!(formatter, "missing required:\n  {field}"),
+            Self::InvalidSha256 { field, found } => write!(
+                formatter,
+                "unexpected:\n  {field}\n  expected: 64 hex characters\n  found: {found}"
+            ),
+            Self::OutputCount { found } => write!(
+                formatter,
+                "unexpected:\n  CED output count\n  expected: 1\n  found: {found}"
+            ),
+            Self::OutputCensus { source } => write!(formatter, "CED output census: {source}"),
+        }
+    }
+}
+
+impl std::error::Error for CedWindowsBuildEvidenceError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Source { source } => Some(source),
+            Self::OutputCensus { source } => Some(source),
+            Self::Schema { .. }
+            | Self::Unexpected { .. }
+            | Self::Missing { .. }
+            | Self::InvalidSha256 { .. }
+            | Self::OutputCount { .. } => None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum CedWindowsBuildEvidenceCodecError {
+    Encode {
+        source: serde_json::Error,
+    },
+    Decode {
+        source: serde_json::Error,
+    },
+    Validation {
+        source: CedWindowsBuildEvidenceError,
+    },
+}
+
+impl fmt::Display for CedWindowsBuildEvidenceCodecError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Encode { source } => {
+                write!(formatter, "could not encode CED build evidence: {source}")
+            }
+            Self::Decode { source } => {
+                write!(formatter, "could not decode CED build evidence: {source}")
+            }
+            Self::Validation { source } => {
+                write!(formatter, "invalid CED build evidence: {source}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for CedWindowsBuildEvidenceCodecError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Encode { source } | Self::Decode { source } => Some(source),
+            Self::Validation { source } => Some(source),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CedWindowsError {
     ExportAllowlist {
@@ -111,6 +247,116 @@ fn format_diff_side(names: &[String]) -> String {
     } else {
         names.join(", ")
     }
+}
+
+fn require_sha256(field: &'static str, value: &str) -> Result<(), CedWindowsBuildEvidenceError> {
+    if value.is_empty() {
+        return Err(CedWindowsBuildEvidenceError::Missing { field });
+    }
+    if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(CedWindowsBuildEvidenceError::InvalidSha256 {
+            field,
+            found: value.to_owned(),
+        });
+    }
+    Ok(())
+}
+
+impl CedWindowsBuildEvidence {
+    /// Validate fields that do not need the enclosing receipt source identity.
+    pub fn validate(&self) -> Result<(), CedWindowsBuildEvidenceError> {
+        if self.schema != CED_WINDOWS_BUILD_EVIDENCE_SCHEMA_V1 {
+            return Err(CedWindowsBuildEvidenceError::Schema {
+                found: self.schema.clone(),
+            });
+        }
+        if self.source_archive.label != CED_WINDOWS_SOURCE_ARCHIVE_LABEL {
+            return Err(CedWindowsBuildEvidenceError::Unexpected {
+                field: "CED source archive label",
+                expected: CED_WINDOWS_SOURCE_ARCHIVE_LABEL.to_owned(),
+                found: self.source_archive.label.clone(),
+            });
+        }
+        if self.source_archive.size == 0 {
+            return Err(CedWindowsBuildEvidenceError::Unexpected {
+                field: "CED source archive size",
+                expected: "nonzero".to_owned(),
+                found: "0".to_owned(),
+            });
+        }
+        require_sha256("CED source archive SHA-256", &self.source_archive.sha256)?;
+        provenance::require_repository(CED_GGML_REPOSITORY, &self.ggml.repository)
+            .map_err(|source| CedWindowsBuildEvidenceError::Source { source })?;
+        provenance::require_commit(GGML_COMMIT, &self.ggml.revision)
+            .map_err(|source| CedWindowsBuildEvidenceError::Source { source })?;
+        require_sha256("ggml source SHA-256", &self.ggml.content_sha256)?;
+        let expected_definition_sha256 = sha256_hex(CED_WINDOWS_EXPORT_DEFINITION.as_bytes());
+        if self.export_definition_sha256 != expected_definition_sha256 {
+            return Err(CedWindowsBuildEvidenceError::Unexpected {
+                field: "CED export definition SHA-256",
+                expected: expected_definition_sha256,
+                found: self.export_definition_sha256.clone(),
+            });
+        }
+        require_sha256("CMake cache SHA-256", &self.cmake_cache_sha256)?;
+        Ok(())
+    }
+
+    /// Bind this nested-source record to the one source identity carried by a
+    /// V1 controlled-build receipt.
+    pub fn validate_against_source(
+        &self,
+        source: &SourceIdentity,
+    ) -> Result<(), CedWindowsBuildEvidenceError> {
+        self.validate()?;
+        verify_source_commits(source, &self.ggml.revision)
+            .map_err(|source| CedWindowsBuildEvidenceError::Source { source })?;
+        require_sha256(
+            "CED source archive SHA-256",
+            &source.windows_dependency.content_sha256,
+        )?;
+        if source.windows_dependency.content_sha256 != self.source_archive.sha256 {
+            return Err(CedWindowsBuildEvidenceError::Unexpected {
+                field: "CED source archive receipt binding",
+                expected: self.source_archive.sha256.clone(),
+                found: source.windows_dependency.content_sha256.clone(),
+            });
+        }
+        Ok(())
+    }
+
+    /// SHA-256 of the canonical evidence JSON after structural validation.
+    pub fn digest(&self) -> Result<String, CedWindowsBuildEvidenceError> {
+        self.validate()?;
+        Ok(sha256_hex(
+            &serde_json::to_vec(self).expect("CED build evidence serialization"),
+        ))
+    }
+}
+
+/// Encode a structurally valid CED build-evidence sidecar. The caller must
+/// additionally use [`CedWindowsBuildEvidence::validate_against_source`] when
+/// binding it to a receipt's CED source identity.
+pub fn encode_ced_windows_build_evidence(
+    evidence: &CedWindowsBuildEvidence,
+) -> Result<Vec<u8>, CedWindowsBuildEvidenceCodecError> {
+    evidence
+        .validate()
+        .map_err(|source| CedWindowsBuildEvidenceCodecError::Validation { source })?;
+    serde_json::to_vec(evidence)
+        .map_err(|source| CedWindowsBuildEvidenceCodecError::Encode { source })
+}
+
+/// Decode and structurally validate a CED build-evidence sidecar.
+pub fn decode_ced_windows_build_evidence(
+    bytes: &[u8],
+) -> Result<CedWindowsBuildEvidence, CedWindowsBuildEvidenceCodecError> {
+    let evidence = serde_json::from_slice::<CedWindowsBuildEvidence>(bytes)
+        .map_err(|source| CedWindowsBuildEvidenceCodecError::Decode { source })?;
+    evidence
+        .validate()
+        .map_err(|source| CedWindowsBuildEvidenceCodecError::Validation { source })?;
+    Ok(evidence)
 }
 
 pub fn verify_source_commits(
@@ -185,18 +431,52 @@ pub fn verify_cpu_only_imports(census: &PeInfo) -> Result<(), CedWindowsError> {
     }
 }
 
+fn verify_ced_output(outputs: &[OutputIdentityEntry]) -> Result<(), CedWindowsBuildEvidenceError> {
+    let [output] = outputs else {
+        return Err(CedWindowsBuildEvidenceError::OutputCount {
+            found: outputs.len(),
+        });
+    };
+    if output.label != CED_DLL_OUTPUT_LABEL {
+        return Err(CedWindowsBuildEvidenceError::Unexpected {
+            field: "CED output label",
+            expected: CED_DLL_OUTPUT_LABEL.to_owned(),
+            found: output.label.clone(),
+        });
+    }
+    if output.census.machine != crate::pe::machine_amd64() {
+        return Err(CedWindowsBuildEvidenceError::Unexpected {
+            field: "CED output machine",
+            expected: format!("{:#x}", crate::pe::machine_amd64()),
+            found: format!("{:#x}", output.census.machine),
+        });
+    }
+    verify_exports(&output.census)
+        .and_then(|()| verify_cpu_only_imports(&output.census))
+        .map_err(|source| CedWindowsBuildEvidenceError::OutputCensus { source })
+}
+
 pub fn assemble_receipt_draft(
     source: SourceIdentity,
+    evidence: CedWindowsBuildEvidence,
     builder: BuilderIdentity,
     outputs: Vec<OutputIdentityEntry>,
-) -> ControlledBuildReceiptDraft {
-    ControlledBuildReceiptDraft {
+) -> Result<ControlledBuildReceiptDraft, CedWindowsBuildEvidenceError> {
+    evidence.validate_against_source(&source)?;
+    verify_ced_output(&outputs)?;
+    let evidence_digest = evidence.digest()?;
+    Ok(ControlledBuildReceiptDraft {
         source: Some(source),
+        inputs: Some(vec![evidence.source_archive]),
         builder: Some(builder),
         configuration: Some(ced_windows_build_configuration()),
         outputs: Some(outputs),
+        supporting: Some(vec![SupportingArtifactRef {
+            label: CED_WINDOWS_BUILD_EVIDENCE_LABEL.to_owned(),
+            sha256: evidence_digest,
+        }]),
         ..ControlledBuildReceiptDraft::default()
-    }
+    })
 }
 
 #[cfg(test)]
@@ -217,8 +497,26 @@ mod tests {
             windows_dependency: DependencySource {
                 repository: CED_CPP_REPOSITORY.into(),
                 revision: CED_CPP_COMMIT.to_owned(),
-                content_sha256: String::new(),
+                content_sha256: "a".repeat(64),
             },
+        }
+    }
+
+    fn pinned_evidence(source: &SourceIdentity) -> CedWindowsBuildEvidence {
+        CedWindowsBuildEvidence {
+            schema: CED_WINDOWS_BUILD_EVIDENCE_SCHEMA_V1.to_owned(),
+            source_archive: InputIdentityEntry {
+                label: CED_WINDOWS_SOURCE_ARCHIVE_LABEL.to_owned(),
+                sha256: source.windows_dependency.content_sha256.clone(),
+                size: 1,
+            },
+            ggml: DependencySource {
+                repository: CED_GGML_REPOSITORY.to_owned(),
+                revision: GGML_COMMIT.to_owned(),
+                content_sha256: "b".repeat(64),
+            },
+            export_definition_sha256: sha256_hex(CED_WINDOWS_EXPORT_DEFINITION.as_bytes()),
+            cmake_cache_sha256: "c".repeat(64),
         }
     }
 
@@ -242,15 +540,113 @@ mod tests {
         .expect("fixture parses")
     }
 
+    fn good_outputs() -> Vec<OutputIdentityEntry> {
+        let exports = named_exports(CED_WINDOWS_EXPORTS);
+        let dll = fixture(&FixtureSpec {
+            dll: true,
+            exports: &exports,
+            ..FixtureSpec::default()
+        });
+        census_outputs(&[(CED_DLL_OUTPUT_LABEL, dll.as_slice())]).expect("CED fixture census")
+    }
+
     #[test]
     fn assemble_receipt_draft_is_missing_schema_first() {
-        let draft = assemble_receipt_draft(pinned_source(), dummy_builder(), vec![]);
+        let source = pinned_source();
+        let draft = assemble_receipt_draft(
+            source.clone(),
+            pinned_evidence(&source),
+            dummy_builder(),
+            good_outputs(),
+        )
+        .expect("bound CED receipt draft");
         match draft.validate() {
             Err(ControlledBuildReceiptError::Missing {
                 category: ReceiptCategory::Schema,
             }) => {}
             other => panic!("expected Missing Schema, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn build_evidence_codec_is_strict_and_round_trips() {
+        let source = pinned_source();
+        let evidence = pinned_evidence(&source);
+        let bytes = encode_ced_windows_build_evidence(&evidence).expect("encode evidence");
+        assert_eq!(
+            decode_ced_windows_build_evidence(&bytes).expect("decode evidence"),
+            evidence
+        );
+
+        let mut document = serde_json::to_value(&evidence).expect("evidence document");
+        document
+            .as_object_mut()
+            .expect("evidence object")
+            .insert("unknown".into(), serde_json::json!(true));
+        assert!(matches!(
+            decode_ced_windows_build_evidence(&serde_json::to_vec(&document).unwrap()),
+            Err(CedWindowsBuildEvidenceCodecError::Decode { .. })
+        ));
+    }
+
+    #[test]
+    fn build_evidence_binds_the_nested_ggml_and_receipt_source_archive() {
+        let source = pinned_source();
+        let evidence = pinned_evidence(&source);
+        evidence
+            .validate_against_source(&source)
+            .expect("nested identity binds");
+
+        let mut wrong_ggml = evidence.clone();
+        wrong_ggml.ggml.repository = "https://example.invalid/ggml".into();
+        assert!(matches!(
+            wrong_ggml.validate_against_source(&source),
+            Err(CedWindowsBuildEvidenceError::Source { .. })
+        ));
+
+        let mut wrong_archive = source;
+        wrong_archive.windows_dependency.content_sha256 = "d".repeat(64);
+        match evidence.validate_against_source(&wrong_archive) {
+            Err(CedWindowsBuildEvidenceError::Unexpected { field, .. }) => {
+                assert_eq!(field, "CED source archive receipt binding");
+            }
+            other => panic!("expected archive binding refusal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn receipt_draft_binds_evidence_digest_and_rejects_an_unreviewed_output() {
+        let source = pinned_source();
+        let evidence = pinned_evidence(&source);
+        let evidence_digest = evidence.digest().expect("evidence digest");
+        let draft = assemble_receipt_draft(source, evidence, dummy_builder(), good_outputs())
+            .expect("bound receipt draft");
+        assert_eq!(draft.inputs.expect("source input").len(), 1);
+        assert_eq!(
+            draft.supporting.expect("build evidence sidecar").as_slice(),
+            [SupportingArtifactRef {
+                label: CED_WINDOWS_BUILD_EVIDENCE_LABEL.to_owned(),
+                sha256: evidence_digest,
+            }]
+        );
+
+        let source = pinned_source();
+        let evidence = pinned_evidence(&source);
+        let mut exports = named_exports(CED_WINDOWS_EXPORTS);
+        exports.push(PeSymbolSpec::Named("ced_capi_unreviewed"));
+        let dll = fixture(&FixtureSpec {
+            dll: true,
+            exports: &exports,
+            ..FixtureSpec::default()
+        });
+        let outputs = census_outputs(&[(CED_DLL_OUTPUT_LABEL, dll.as_slice())])
+            .expect("census permits an output before CED admission");
+        assert!(matches!(
+            assemble_receipt_draft(source, evidence, dummy_builder(), outputs),
+            Err(CedWindowsBuildEvidenceError::OutputCensus {
+                source: CedWindowsError::ExportAllowlist { .. }
+            })
+        ));
     }
 
     #[test]
