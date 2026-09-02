@@ -852,6 +852,9 @@ mod exclusive_cleanup_tests {
         for operation in [
             "revalidate publication path after move",
             "observe published destination after move",
+            "revalidate install paths after move",
+            "observe installed destination after move",
+            "reconcile install after failed move",
         ] {
             let error = AtomicWriteError::PublicationUncertain {
                 path: path.clone(),

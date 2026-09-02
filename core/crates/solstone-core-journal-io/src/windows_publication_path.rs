@@ -283,7 +283,8 @@ fn check_terminal_names_budget(
 
 #[cfg(windows)]
 pub(crate) use windows_impl::{
-    PublicationPathError, WindowsPublicationPath, prepare_publication_path_with_terminals,
+    AdmittedPublicationPath, AncestorAdmission, PublicationPathError, WindowsPublicationPath,
+    admit_publication_path, leaf_move_spelling, prepare_publication_path_with_terminals,
 };
 
 #[cfg(windows)]
@@ -357,6 +358,12 @@ mod windows_impl {
             level: usize,
         },
         MoveSpellingDiverged,
+        Missing {
+            component: String,
+        },
+        NotRegularFile {
+            component: String,
+        },
     }
 
     impl std::fmt::Display for PublicationPathError {
@@ -408,6 +415,18 @@ mod windows_impl {
                 Self::MoveSpellingDiverged => formatter.write_str(
                     "publication path move spelling no longer names the terminal parent",
                 ),
+                Self::Missing { component } => {
+                    write!(
+                        formatter,
+                        "publication path component '{component}' does not exist"
+                    )
+                }
+                Self::NotRegularFile { component } => {
+                    write!(
+                        formatter,
+                        "publication path leaf '{component}' is not a regular file"
+                    )
+                }
             }
         }
     }
@@ -423,7 +442,9 @@ mod windows_impl {
                 | Self::AlreadyExists { .. }
                 | Self::IdentityMismatch { .. }
                 | Self::IdentityChanged { .. }
-                | Self::MoveSpellingDiverged => None,
+                | Self::MoveSpellingDiverged
+                | Self::Missing { .. }
+                | Self::NotRegularFile { .. } => None,
             }
         }
     }
@@ -485,6 +506,14 @@ mod windows_impl {
             &self.move_spelling
         }
 
+        /// Frozen identity of the retained terminal parent.
+        pub(crate) fn terminal_parent_identity(&self) -> WindowsFileIdentity {
+            self.retained
+                .last()
+                .expect("prepare always retains the terminal parent")
+                .1
+        }
+
         /// Re-check every retained identity (drive root through terminal parent) and that `move_spelling` still names the parent.
         pub(crate) fn revalidate(&self) -> Result<(), PublicationPathError> {
             for (level, (handle, frozen)) in self.retained.iter().enumerate() {
@@ -512,6 +541,86 @@ mod windows_impl {
         }
     }
 
+    /// Whether missing ancestors may be created while retaining a publication path.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub(crate) enum AncestorAdmission {
+        CreateMissing,
+        ExistingOnly,
+    }
+
+    /// Drive-root admission and path budget before any ancestor walk.
+    pub(crate) struct AdmittedPublicationPath {
+        anchor: OwnedHandle,
+        anchor_identity: WindowsFileIdentity,
+        guid: Vec<u16>,
+        ancestors: Vec<String>,
+        leaf: OsString,
+        diagnostic_path: PathBuf,
+    }
+
+    impl AdmittedPublicationPath {
+        pub(crate) fn volume_serial(&self) -> u64 {
+            self.anchor_identity.volume_serial()
+        }
+
+        pub(crate) fn retain_ancestors(
+            self,
+            admission: AncestorAdmission,
+        ) -> Result<WindowsPublicationPath, PublicationPathError> {
+            let mut retained: Vec<(OwnedHandle, WindowsFileIdentity)> =
+                Vec::with_capacity(self.ancestors.len() + 1);
+            retained.push((self.anchor, self.anchor_identity));
+            for name in &self.ancestors {
+                let parent = retained.last().expect("root just pushed").0.as_raw_handle();
+                let (handle, identity) = admit_ancestor(parent, name, admission)?;
+                retained.push((handle, identity));
+            }
+            let ancestor_names = self
+                .ancestors
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>();
+            Ok(WindowsPublicationPath {
+                retained,
+                diagnostic_path: self.diagnostic_path,
+                leaf: self.leaf,
+                move_spelling: OsString::from_wide(&join_guid_parent(&self.guid, &ancestor_names)),
+            })
+        }
+    }
+
+    pub(crate) fn admit_publication_path(
+        input: &str,
+        extra_terminals: &[&str],
+    ) -> Result<AdmittedPublicationPath, PublicationPathError> {
+        let spec = parse_publication_path(input).map_err(PublicationPathError::Parse)?;
+        let spec = resolve_effective_spec(spec)?;
+        let drive = match &spec {
+            PublicationPathSpec::DriveAbsolute { drive, .. } => *drive,
+            PublicationPathSpec::CurrentDirectoryRelative { .. } => {
+                unreachable!("resolve_effective_spec always returns DriveAbsolute")
+            }
+        };
+        let (anchor, anchor_identity) = open_anchor(drive)?;
+        let guid = volume_guid_path(anchor.as_raw_handle())?;
+        let ancestors = spec.ancestors().to_vec();
+        let ancestor_names = ancestors.iter().map(String::as_str).collect::<Vec<_>>();
+        let leaf = spec.leaf();
+        let mut terminals = Vec::with_capacity(1 + extra_terminals.len());
+        terminals.push(leaf);
+        terminals.extend_from_slice(extra_terminals);
+        check_terminal_names_budget(&guid, &ancestor_names, &terminals)
+            .map_err(|_| PublicationPathError::PathTooLong)?;
+        Ok(AdmittedPublicationPath {
+            anchor,
+            anchor_identity,
+            guid,
+            ancestors,
+            leaf: OsString::from(leaf),
+            diagnostic_path: PathBuf::from(input),
+        })
+    }
+
     /// Resolve a relative path against the current directory, then retain the drive root and every ancestor. Does not open or create the leaf.
     #[allow(
         dead_code,
@@ -527,43 +636,26 @@ mod windows_impl {
         input: &str,
         extra_terminals: &[&str],
     ) -> Result<WindowsPublicationPath, PublicationPathError> {
-        let spec = parse_publication_path(input).map_err(PublicationPathError::Parse)?;
-        let spec = resolve_effective_spec(spec)?;
-        let drive = match &spec {
-            PublicationPathSpec::DriveAbsolute { drive, .. } => *drive,
-            PublicationPathSpec::CurrentDirectoryRelative { .. } => {
-                unreachable!("resolve_effective_spec always returns DriveAbsolute")
-            }
-        };
-        let (anchor, anchor_identity) = open_anchor(drive)?;
-        let guid = volume_guid_path(anchor.as_raw_handle())?;
-        let ancestor_names = spec
-            .ancestors()
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>();
-        let leaf = spec.leaf();
-        let mut terminals = Vec::with_capacity(1 + extra_terminals.len());
-        terminals.push(leaf);
-        terminals.extend_from_slice(extra_terminals);
-        check_terminal_names_budget(&guid, &ancestor_names, &terminals)
-            .map_err(|_| PublicationPathError::PathTooLong)?;
+        admit_publication_path(input, extra_terminals)?
+            .retain_ancestors(AncestorAdmission::CreateMissing)
+    }
 
-        let mut retained: Vec<(OwnedHandle, WindowsFileIdentity)> =
-            Vec::with_capacity(spec.ancestors().len() + 1);
-        retained.push((anchor, anchor_identity));
-        for name in spec.ancestors() {
-            let parent = retained.last().expect("root just pushed").0.as_raw_handle();
-            let (handle, identity) = open_or_create_ancestor(parent, name)?;
-            retained.push((handle, identity));
+    pub(crate) fn leaf_move_spelling(parent: &OsStr, leaf: &OsStr) -> io::Result<Vec<u16>> {
+        let mut wide: Vec<u16> = parent.encode_wide().collect();
+        if wide.contains(&0) || leaf.encode_wide().any(|unit| unit == 0) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "move spelling contains an interior NUL",
+            ));
         }
-
-        Ok(WindowsPublicationPath {
-            retained,
-            diagnostic_path: PathBuf::from(input),
-            leaf: OsString::from(spec.leaf()),
-            move_spelling: OsString::from_wide(&join_guid_parent(&guid, &ancestor_names)),
-        })
+        while matches!(wide.last(), Some(&unit) if unit == u16::from(b'\\') || unit == u16::from(b'/'))
+        {
+            wide.pop();
+        }
+        wide.push(u16::from(b'\\'));
+        wide.extend(leaf.encode_wide());
+        wide.push(0);
+        Ok(wide)
     }
 
     fn resolve_effective_spec(
@@ -683,6 +775,46 @@ mod windows_impl {
             });
         }
         Ok(buffer)
+    }
+
+    fn admit_ancestor(
+        parent: RawHandle,
+        name: &str,
+        admission: AncestorAdmission,
+    ) -> Result<(OwnedHandle, WindowsFileIdentity), PublicationPathError> {
+        match admission {
+            AncestorAdmission::CreateMissing => open_or_create_ancestor(parent, name),
+            AncestorAdmission::ExistingOnly => open_existing_ancestor(parent, name),
+        }
+    }
+
+    fn open_existing_ancestor(
+        parent: RawHandle,
+        name: &str,
+    ) -> Result<(OwnedHandle, WindowsFileIdentity), PublicationPathError> {
+        let os_name = OsStr::new(name);
+        match nt_create_relative_deny_delete_sharing(
+            parent,
+            os_name,
+            DIRECTORY_ACCESS,
+            FILE_OPEN,
+            DIRECTORY_OPTIONS,
+        ) {
+            Ok(handle) => {
+                let identity = validate_retained_directory(handle.as_raw_handle(), name)?;
+                Ok((handle, identity))
+            }
+            Err(source) if is_not_found(&source) => Err(PublicationPathError::Missing {
+                component: name.to_owned(),
+            }),
+            Err(source) if is_not_directory(&source) => Err(PublicationPathError::NotDirectory {
+                component: name.to_owned(),
+            }),
+            Err(source) => Err(PublicationPathError::Io {
+                operation: "open publication-path ancestor",
+                source,
+            }),
+        }
     }
 
     fn open_or_create_ancestor(
