@@ -10,8 +10,9 @@
 //! separate from `onnx_runtime`'s `TARGETS` wheel-staging table — there is
 //! no `wheel_url` field and no extraction route.
 //!
-//! The submodule name set and builder-input versions are an invented
-//! plausible fixture, not a verified ONNX Runtime inventory. The three
+//! The ORT source-tree digest, submodule names and digests, and
+//! builder-input versions and digests are an invented plausible fixture,
+//! not a verified ONNX Runtime inventory or real captured hashes. The three
 //! model digests are hardcoded local consts rather than a
 //! `solstone-core-transcribe` dependency, for the same reason
 //! `parakeet_windows` states for its own model digests: this crate has no
