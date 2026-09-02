@@ -19,8 +19,9 @@ use windows_sys::Wdk::Storage::FileSystem::{
     FILE_SYNCHRONOUS_IO_NONALERT,
 };
 use windows_sys::Win32::Foundation::{
-    ERROR_ACCESS_DENIED, ERROR_ALREADY_EXISTS, ERROR_FILE_EXISTS, ERROR_FILE_NOT_FOUND,
-    ERROR_LOCK_VIOLATION, ERROR_SHARING_VIOLATION, GENERIC_READ, GENERIC_WRITE,
+    ERROR_ACCESS_DENIED, ERROR_ALREADY_EXISTS, ERROR_DIRECTORY, ERROR_FILE_EXISTS,
+    ERROR_FILE_NOT_FOUND, ERROR_LOCK_VIOLATION, ERROR_SHARING_VIOLATION, GENERIC_READ,
+    GENERIC_WRITE,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     DELETE, FILE_DISPOSITION_INFO, FILE_READ_ATTRIBUTES, FileDispositionInfo, FlushFileBuffers,
@@ -108,37 +109,21 @@ pub(super) fn write_reader_exclusive(
     let copied = match copy_and_flush(reader, &mut stage) {
         Ok(copied) => copied,
         Err(source) => {
-            return Err(fail_with_cleanup(
-                path,
-                capability.terminal_parent(),
-                &stage_name,
-                None,
-                source,
-            ));
+            return Err(fail_with_cleanup(path, &stage_name, &stage, source));
         }
     };
     let stage_identity = match file_identity(stage.as_raw_handle()) {
         Ok(identity) => identity,
         Err(source) => {
-            return Err(fail_with_cleanup(
-                path,
-                capability.terminal_parent(),
-                &stage_name,
-                None,
-                source,
-            ));
+            return Err(fail_with_cleanup(path, &stage_name, &stage, source));
         }
     };
 
     for attempt in 1..=CREATE_ONLY_MAX_ATTEMPTS {
-        if let Err(source) = admit_before_move(&capability, dest_name, &stage, stage_identity) {
-            return Err(fail_with_cleanup(
-                path,
-                capability.terminal_parent(),
-                &stage_name,
-                Some(stage_identity),
-                source,
-            ));
+        if let Err(source) =
+            admit_before_move(&capability, dest_name, &stage_name, &stage, stage_identity)
+        {
+            return Err(fail_with_cleanup(path, &stage_name, &stage, source));
         }
         match move_stage(&capability, &stage_name, dest_name) {
             Ok(()) => {
@@ -164,9 +149,8 @@ pub(super) fn write_reader_exclusive(
                             CreateOnlyRetry::Stop => {
                                 return Err(stop_after_move(
                                     path,
-                                    capability.terminal_parent(),
                                     &stage_name,
-                                    stage_identity,
+                                    &stage,
                                     failure,
                                     reclass,
                                     source,
@@ -180,9 +164,8 @@ pub(super) fn write_reader_exclusive(
     }
     Err(fail_with_cleanup(
         path,
-        capability.terminal_parent(),
         &stage_name,
-        Some(stage_identity),
+        &stage,
         io::Error::new(io::ErrorKind::TimedOut, "create-only publication exhausted"),
     ))
 }
@@ -202,6 +185,7 @@ fn copy_and_flush(reader: &mut impl Read, stage: &mut File) -> io::Result<u64> {
 fn admit_before_move(
     capability: &crate::windows_publication_path::WindowsPublicationPath,
     dest_name: &OsStr,
+    stage_name: &OsStr,
     stage: &File,
     expected: WindowsFileIdentity,
 ) -> io::Result<()> {
@@ -217,6 +201,20 @@ fn admit_before_move(
         return Err(io::Error::other(
             "stage identity changed before publication",
         ));
+    }
+    match inspect_stage(capability.terminal_parent(), stage_name)? {
+        Some(identity) if identity == expected => {}
+        Some(_) => {
+            return Err(io::Error::other(
+                "stage name identifies a different file before publication",
+            ));
+        }
+        None => {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "stage name is absent before publication",
+            ));
+        }
     }
     Ok(())
 }
@@ -275,9 +273,8 @@ fn reclassify(
 
 fn stop_after_move(
     path: &Path,
-    parent: &OwnedHandle,
     stage_name: &OsStr,
-    expected: WindowsFileIdentity,
+    stage: &File,
     failure: CreateOnlyMoveFailure,
     reclass: CreateOnlyReclass,
     source: io::Error,
@@ -289,7 +286,7 @@ fn stop_after_move(
     } else {
         source
     };
-    fail_with_cleanup(path, parent, stage_name, Some(expected), source)
+    fail_with_cleanup(path, stage_name, stage, source)
 }
 
 fn finish_published(
@@ -358,7 +355,16 @@ fn allocate_stage(parent: &OwnedHandle, destination: &OsStr) -> io::Result<(OsSt
             STAGE_OPTIONS,
         ) {
             Ok(handle) => return Ok((stage_name, File::from(handle))),
-            Err(error) if error.raw_os_error() == Some(ERROR_FILE_EXISTS as i32) => continue,
+            Err(error)
+                if matches!(
+                    error.raw_os_error(),
+                    Some(code)
+                        if code == ERROR_FILE_EXISTS as i32
+                            || code == ERROR_ALREADY_EXISTS as i32
+                ) =>
+            {
+                continue;
+            }
             Err(error) => return Err(error),
         }
     }
@@ -406,6 +412,7 @@ fn join_move_spelling(parent: &OsStr, name: &OsStr) -> io::Result<Vec<u16>> {
 fn destination_present(parent: &OwnedHandle, name: &OsStr) -> io::Result<bool> {
     match open_named(parent, name, FILE_READ_ATTRIBUTES | SYNCHRONIZE) {
         Ok(_) => Ok(true),
+        Err(error) if error.raw_os_error() == Some(ERROR_DIRECTORY as i32) => Ok(true),
         Err(error) if is_not_found(&error) => Ok(false),
         Err(error) => Err(error),
     }
@@ -461,46 +468,24 @@ fn flush_handle(handle: RawHandle) -> io::Result<()> {
 
 fn fail_with_cleanup(
     path: &Path,
-    parent: &OwnedHandle,
     stage_name: &OsStr,
-    expected: Option<WindowsFileIdentity>,
+    stage: &File,
     primary: io::Error,
 ) -> AtomicWriteError {
-    let source = match expected {
-        Some(expected) => cleanup_stage(parent, stage_name, expected, primary),
-        None => match inspect_stage(parent, stage_name) {
-            Ok(Some(identity)) => cleanup_stage(parent, stage_name, identity, primary),
-            _ => primary,
-        },
-    };
+    let source = cleanup_stage(stage, stage_name, primary);
     io_error(path, source)
 }
 
-fn cleanup_stage(
-    parent: &OwnedHandle,
-    stage_name: &OsStr,
-    expected: WindowsFileIdentity,
-    primary: io::Error,
-) -> io::Error {
-    match open_named(
-        parent,
-        stage_name,
-        DELETE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
-    ) {
-        Ok(handle) => match file_identity(handle.as_raw_handle()) {
-            Ok(identity) if identity == expected => match delete_by_handle(handle) {
-                Ok(()) => primary,
-                Err(cleanup) => compose_exclusive_cleanup(primary, stage_name, cleanup),
-            },
-            Ok(_) | Err(_) => primary,
-        },
-        Err(_) => primary,
+fn cleanup_stage(stage: &File, stage_name: &OsStr, primary: io::Error) -> io::Error {
+    match delete_by_handle(stage) {
+        Ok(()) => primary,
+        Err(cleanup) => compose_exclusive_cleanup(primary, stage_name, cleanup),
     }
 }
 
-fn delete_by_handle(handle: OwnedHandle) -> io::Result<()> {
+fn delete_by_handle(handle: &impl AsRawHandle) -> io::Result<()> {
     let mut disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
-    // SAFETY: `handle` is owned and opened with DELETE; `disposition` is the exact
+    // SAFETY: `handle` remains live and was opened with DELETE; `disposition` is the exact
     // FileDispositionInfo buffer and remains live for the synchronous call.
     #[allow(unsafe_code)]
     let result = unsafe {
@@ -511,7 +496,6 @@ fn delete_by_handle(handle: OwnedHandle) -> io::Result<()> {
             size_of::<FILE_DISPOSITION_INFO>() as u32,
         )
     };
-    drop(handle);
     if result == 0 {
         Err(io::Error::last_os_error())
     } else {

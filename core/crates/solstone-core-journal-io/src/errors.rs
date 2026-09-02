@@ -834,4 +834,38 @@ mod exclusive_cleanup_tests {
             }
         }
     }
+
+    #[cfg(windows)]
+    #[test]
+    fn atomic_write_errors_expose_path_operation_and_source() {
+        let path = PathBuf::from("dest.bin");
+        let io_error = AtomicWriteError::Io {
+            path: path.clone(),
+            source: io::Error::new(io::ErrorKind::PermissionDenied, "write denied"),
+        };
+        assert_eq!(io_error.to_string(), "dest.bin: write denied");
+        assert_eq!(
+            Error::source(&io_error).map(ToString::to_string).as_deref(),
+            Some("write denied")
+        );
+
+        for operation in [
+            "revalidate publication path after move",
+            "observe published destination after move",
+        ] {
+            let error = AtomicWriteError::PublicationUncertain {
+                path: path.clone(),
+                operation,
+                source: io::Error::other("observation boom"),
+            };
+            assert_eq!(
+                error.to_string(),
+                format!("dest.bin: {operation}: observation boom")
+            );
+            assert_eq!(
+                Error::source(&error).map(ToString::to_string).as_deref(),
+                Some("observation boom")
+            );
+        }
+    }
 }

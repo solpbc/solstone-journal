@@ -222,4 +222,44 @@ mod tests {
         }
         assert_eq!(outstanding, 0);
     }
+
+    #[test]
+    fn copy_exclusive_streams_more_than_two_buffers_with_a_fixed_read_bound() {
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let mut reader = ScriptedReader {
+            chunks: VecDeque::from([
+                Ok(vec![b'a'; COPY_BUFFER_SIZE]),
+                Ok(vec![b'b'; COPY_BUFFER_SIZE]),
+                Ok(vec![b'c'; 17]),
+            ]),
+            events: Rc::clone(&events),
+        };
+        let mut writer = ScriptedWriter {
+            script: VecDeque::new(),
+            events: Rc::clone(&events),
+            sink: Vec::new(),
+        };
+
+        let copied = copy_exclusive(&mut reader, &mut writer).unwrap();
+        assert_eq!(copied, (COPY_BUFFER_SIZE * 2 + 17) as u64);
+        assert_eq!(writer.sink.len(), COPY_BUFFER_SIZE * 2 + 17);
+        assert_eq!(
+            &writer.sink[..COPY_BUFFER_SIZE],
+            vec![b'a'; COPY_BUFFER_SIZE]
+        );
+        assert_eq!(
+            &writer.sink[COPY_BUFFER_SIZE..COPY_BUFFER_SIZE * 2],
+            vec![b'b'; COPY_BUFFER_SIZE]
+        );
+        assert_eq!(&writer.sink[COPY_BUFFER_SIZE * 2..], vec![b'c'; 17]);
+
+        let log = events.borrow();
+        assert!(
+            log.iter().all(|event| match event {
+                CopyEvent::ReadRequest { buf_len } => *buf_len <= COPY_BUFFER_SIZE,
+                _ => true,
+            }),
+            "copy buffer exceeded 64 KiB: {log:?}"
+        );
+    }
 }

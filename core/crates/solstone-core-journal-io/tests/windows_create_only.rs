@@ -4,13 +4,17 @@
 #![cfg(windows)]
 
 use std::collections::VecDeque;
-use std::fs;
+use std::fs::{self, File};
 use std::io::{self, Read};
+use std::os::windows::io::AsRawHandle;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
 use solstone_core_journal_io::{
     AtomicWriteError, AtomicWriteOptions, write_bytes_exclusive, write_reader_exclusive,
+};
+use windows_sys::Win32::Storage::FileSystem::{
+    BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
 };
 
 const COMPETITOR: &[u8] = b"competitor-bytes";
@@ -55,6 +59,20 @@ fn invalid_input(error: &AtomicWriteError) -> bool {
     matches!(
         error,
         AtomicWriteError::Io { source, .. } if source.kind() == io::ErrorKind::InvalidInput
+    )
+}
+
+fn file_identity(path: &Path) -> (u32, u64) {
+    let file = File::open(path).unwrap();
+    let mut information = BY_HANDLE_FILE_INFORMATION::default();
+    // SAFETY: `information` points to writable storage for the exact structure, and `file` remains
+    // live through the synchronous query.
+    #[allow(unsafe_code)]
+    let result = unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut information) };
+    assert_ne!(result, 0, "query identity for {}", path.display());
+    (
+        information.dwVolumeSerialNumber,
+        (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow),
     )
 }
 
@@ -193,6 +211,7 @@ fn existing_destination_is_untouched_and_leaves_no_stage() {
     let path = temporary.path().join("held.bin");
     fs::write(&path, COMPETITOR).unwrap();
     let before = fs::metadata(&path).unwrap();
+    let before_identity = file_identity(&path);
 
     let bytes_error = write_bytes_exclusive(&path, PAYLOAD, AtomicWriteOptions::default())
         .expect_err("occupied destination must refuse bytes exclusive");
@@ -201,6 +220,7 @@ fn existing_destination_is_untouched_and_leaves_no_stage() {
     let after_bytes = fs::metadata(&path).unwrap();
     assert_eq!(after_bytes.len(), before.len());
     assert_eq!(after_bytes.created().ok(), before.created().ok());
+    assert_eq!(file_identity(&path), before_identity);
 
     let mut reader = &PAYLOAD[..];
     let reader_error = write_reader_exclusive(&path, &mut reader, AtomicWriteOptions::default())
@@ -210,6 +230,7 @@ fn existing_destination_is_untouched_and_leaves_no_stage() {
     let after_reader = fs::metadata(&path).unwrap();
     assert_eq!(after_reader.len(), before.len());
     assert_eq!(after_reader.created().ok(), before.created().ok());
+    assert_eq!(file_identity(&path), before_identity);
     assert_eq!(
         fs::read_dir(temporary.path())
             .unwrap()
@@ -217,6 +238,23 @@ fn existing_destination_is_untouched_and_leaves_no_stage() {
             .collect::<Vec<_>>(),
         vec![path.file_name().unwrap().to_os_string()]
     );
+    assert_no_stage_residue(temporary.path());
+}
+
+#[test]
+fn existing_directory_is_an_already_exists_collision() {
+    let temporary = temporary("create-only-directory-collision-");
+    let path = temporary.path().join("held");
+    fs::create_dir(&path).unwrap();
+
+    let bytes_error = write_bytes_exclusive(&path, PAYLOAD, AtomicWriteOptions::default())
+        .expect_err("occupied directory must refuse bytes exclusive");
+    assert!(already_exists(&bytes_error), "{bytes_error}");
+    let mut reader = &PAYLOAD[..];
+    let reader_error = write_reader_exclusive(&path, &mut reader, AtomicWriteOptions::default())
+        .expect_err("occupied directory must refuse reader exclusive");
+    assert!(already_exists(&reader_error), "{reader_error}");
+    assert!(path.is_dir());
     assert_no_stage_residue(temporary.path());
 }
 
