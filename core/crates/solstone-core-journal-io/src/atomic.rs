@@ -2676,6 +2676,7 @@ mod tests {
         assert!(fired);
         assert!(result.is_err());
         assert!(!dest.exists());
+        assert_no_exclusive_stage(temporary.path());
     }
 
     #[test]
@@ -2707,6 +2708,7 @@ mod tests {
         ));
         assert!(matches!(published.cleanup, StageCleanup::Removed));
         assert!(!dest.exists());
+        assert_no_exclusive_stage(temporary.path());
     }
 
     #[test]
@@ -2817,6 +2819,7 @@ mod tests {
         ));
         assert!(matches!(published.cleanup, StageCleanup::Removed));
         assert!(!dest.exists());
+        assert_no_exclusive_stage(temporary.path());
     }
 
     #[test]
@@ -2955,6 +2958,7 @@ mod tests {
         ));
         assert!(matches!(published.cleanup, StageCleanup::Removed));
         assert!(!dest.exists());
+        assert_no_exclusive_stage(temporary.path());
     }
 }
 

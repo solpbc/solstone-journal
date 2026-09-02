@@ -1082,6 +1082,14 @@ fn try_cleanup_stage(
     }
 }
 
+/// Assemble the three post-publication facts after a create-only move has landed.
+///
+/// A successful `MoveFileExW(..., 0)` is a true rename: the stage spelling and
+/// the destination spelling are never simultaneously live. Cleanup therefore
+/// probes the *original* stage spelling and treats `ERROR_FILE_NOT_FOUND` as
+/// [`StageCleanup::Removed`]. Directory-entry durability is always
+/// [`MetadataDurability::Unproven`] with `source: None`; there is no documented
+/// flush primitive on the retained parent handle.
 #[allow(clippy::too_many_arguments)]
 fn finish_published_detailed(
     path: &Path,
@@ -1166,6 +1174,9 @@ fn observe_exclusive_dest(
 const WINDOWS_TO_UNIX_EPOCH_100NS: i128 = 116_444_736_000_000_000;
 const HUNDRED_NANOSECONDS_PER_SECOND: i128 = 10_000_000;
 
+// Intentionally self-contained: windows_sync_dir::entry_from_handle/native_mtime
+// return FlatDirectoryError, classify reparse/directory as kinds rather than
+// refusing them, and are module-private.
 fn exclusive_entry_from_handle(
     name: OsString,
     handle: RawHandle,
@@ -1226,6 +1237,14 @@ fn exclusive_native_mtime(value: u64) -> io::Result<NativeMtime> {
     })
 }
 
+/// Probe the original stage spelling after a create-only rename.
+///
+/// On a clean `MoveFileExW` success the stage name is the dest name, so this
+/// probe returns `ERROR_FILE_NOT_FOUND` and reports [`StageCleanup::Removed`].
+/// [`StageCleanup::Retained`] only happens when the spelling still resolves to
+/// this invocation's file ID (unreachable on a real clean rename; tests plant
+/// an extra hard link) or when the probe/delete fails with any error other
+/// than not-found — an inconclusive probe cannot certify the name is clear.
 fn dispose_stage_name_if_still_ours(
     parent: &OwnedHandle,
     stage_name: &OsStr,

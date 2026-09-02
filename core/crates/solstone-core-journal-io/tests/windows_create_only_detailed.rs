@@ -9,7 +9,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use solstone_core_journal_io::atomic::{
-    run_with_windows_detailed_atomic_barrier, run_with_windows_detailed_atomic_faults_and_barrier,
+    run_with_windows_detailed_atomic_barrier,
     run_with_windows_detailed_atomic_faults_and_two_barriers,
 };
 use solstone_core_journal_io::{
@@ -151,6 +151,7 @@ fn detailed_exclusive_publication_stage_identity_mismatch_refused() {
     assert!(fired);
     assert!(result.is_err());
     assert!(!dest.exists());
+    assert_no_stage_residue(temporary.path());
 }
 
 #[test]
@@ -174,6 +175,7 @@ fn detailed_exclusive_publication_race_before_observation_one_is_unverified() {
     assert_windows_unproven(&published);
     assert!(matches!(published.cleanup, StageCleanup::Removed));
     assert!(!dest.exists());
+    assert_no_stage_residue(temporary.path());
 }
 
 #[test]
@@ -243,21 +245,45 @@ fn detailed_exclusive_publication_final_observation_and_durability_combined_fail
     assert_windows_unproven(&published);
     assert!(matches!(published.cleanup, StageCleanup::Removed));
     assert!(!dest.exists());
+    assert_no_stage_residue(temporary.path());
 }
 
 #[test]
 fn detailed_exclusive_publication_observation_one_race_and_cleanup_failure() {
     let temporary = temporary("create-only-detailed-obs1-cleanup-");
     let dest = temporary.path().join("record.bin");
-    let dest_for_barrier = dest.clone();
-    let (result, _, fired) = run_with_windows_detailed_atomic_faults_and_barrier(
+    let parent = temporary.path().to_path_buf();
+    let captured = Arc::new(Mutex::new(None));
+    let capture = Arc::clone(&captured);
+    let parent_for_publish = parent.clone();
+    let dest_for_observe = dest.clone();
+    let captured_for_observe = Arc::clone(&captured);
+    let (result, _, barriers) = run_with_windows_detailed_atomic_faults_and_two_barriers(
         [("stage-cleanup", 1, ERROR_ACCESS_DENIED as i32)],
+        "exclusive-publish",
+        1,
+        move || {
+            let names = stage_names(&parent_for_publish);
+            *capture.lock().unwrap() = names.into_iter().next();
+        },
         "exclusive-observe-1",
         1,
-        move || fs::remove_file(&dest_for_barrier).unwrap(),
+        move || {
+            let stage = captured_for_observe
+                .lock()
+                .unwrap()
+                .clone()
+                .expect("stage name captured before move");
+            fs::hard_link(
+                &dest_for_observe,
+                dest_for_observe.parent().unwrap().join(stage),
+            )
+            .unwrap();
+            fs::remove_file(&dest_for_observe).unwrap();
+        },
         || write_bytes_exclusive_detailed(&dest, PAYLOAD, AtomicWriteOptions::default()),
     );
-    assert!(fired);
+    assert_eq!(barriers, 2);
     let published = result.unwrap();
     assert!(matches!(
         published.final_name,
@@ -265,21 +291,46 @@ fn detailed_exclusive_publication_observation_one_race_and_cleanup_failure() {
     ));
     assert_windows_unproven(&published);
     assert!(matches!(published.cleanup, StageCleanup::Retained { .. }));
+    assert!(!dest.exists());
+    assert_eq!(stage_names(temporary.path()).len(), 1);
 }
 
 #[test]
 fn detailed_exclusive_publication_all_three_facts_fail() {
     let temporary = temporary("create-only-detailed-all-");
     let dest = temporary.path().join("record.bin");
-    let dest_for_barrier = dest.clone();
-    let (result, _, fired) = run_with_windows_detailed_atomic_faults_and_barrier(
+    let parent = temporary.path().to_path_buf();
+    let captured = Arc::new(Mutex::new(None));
+    let capture = Arc::clone(&captured);
+    let parent_for_publish = parent.clone();
+    let dest_for_observe = dest.clone();
+    let captured_for_observe = Arc::clone(&captured);
+    let (result, _, barriers) = run_with_windows_detailed_atomic_faults_and_two_barriers(
         [("stage-cleanup", 1, ERROR_ACCESS_DENIED as i32)],
+        "exclusive-publish",
+        1,
+        move || {
+            let names = stage_names(&parent_for_publish);
+            *capture.lock().unwrap() = names.into_iter().next();
+        },
         "exclusive-observe-1",
         1,
-        move || fs::remove_file(&dest_for_barrier).unwrap(),
+        move || {
+            let stage = captured_for_observe
+                .lock()
+                .unwrap()
+                .clone()
+                .expect("stage name captured before move");
+            fs::hard_link(
+                &dest_for_observe,
+                dest_for_observe.parent().unwrap().join(stage),
+            )
+            .unwrap();
+            fs::remove_file(&dest_for_observe).unwrap();
+        },
         || write_bytes_exclusive_detailed(&dest, PAYLOAD, AtomicWriteOptions::default()),
     );
-    assert!(fired);
+    assert_eq!(barriers, 2);
     let published = result.unwrap();
     assert!(matches!(
         published.final_name,
@@ -287,6 +338,8 @@ fn detailed_exclusive_publication_all_three_facts_fail() {
     ));
     assert_windows_unproven(&published);
     assert!(matches!(published.cleanup, StageCleanup::Retained { .. }));
+    assert!(!dest.exists());
+    assert_eq!(stage_names(temporary.path()).len(), 1);
 }
 
 #[test]
@@ -310,4 +363,5 @@ fn detailed_exclusive_publication_race_before_observation_two_is_unverified() {
     assert_windows_unproven(&published);
     assert!(matches!(published.cleanup, StageCleanup::Removed));
     assert!(!dest.exists());
+    assert_no_stage_residue(temporary.path());
 }
