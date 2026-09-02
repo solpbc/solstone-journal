@@ -159,7 +159,7 @@ pub(super) fn encode_oplog_admission(names: &[OplogName; 8]) -> Vec<u8> {
             && name.opened_utc() == names[0].opened_utc()
             && name.format() == names[0].format()
     }));
-    let mut header = String::from("{\"_solstone_oplog_v\":1,\"candidates\":[");
+    let mut header = format!("{{\"_solstone_oplog_v\":{VERSION},\"candidates\":[");
     for (index, name) in names.iter().enumerate() {
         if index > 0 {
             header.push(',');
