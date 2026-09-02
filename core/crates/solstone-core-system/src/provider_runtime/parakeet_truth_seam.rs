@@ -19,10 +19,15 @@ use std::thread;
 use serde_json::{Map, Value, json};
 use solstone_core_brain::{CanonicalInput, canonical_json, fingerprint_sha256};
 use solstone_core_journal_config::read_journal_config;
+use solstone_core_local::detect_gpus;
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
+#[cfg(windows)]
+use solstone_core_local::install::parakeet_readiness::verified_windows_parakeet_package;
+#[cfg(not(windows))]
 use solstone_core_local::install::pins;
 use solstone_core_local::plan::VulkanDevice;
-use solstone_core_local::{detect_gpus, select_device};
+#[cfg(not(windows))]
+use solstone_core_local::select_device;
 
 use super::admission::{ParakeetAdmissionInput, parakeet_stt_admission_latch};
 use super::model::{
@@ -59,6 +64,14 @@ pub struct ParakeetTruthSeam {
 struct ResolvedParakeetPaths {
     binary_path: PathBuf,
     model_path: PathBuf,
+    package_root: Option<PathBuf>,
+}
+
+struct ParakeetLaunchMetadata {
+    journal_path: PathBuf,
+    threads: u32,
+    desired_fingerprint_json: String,
+    desired_fingerprint_sha256: String,
 }
 
 impl ParakeetTruthSeam {
@@ -209,90 +222,103 @@ fn observe_parakeet_truth(
         return admission_not_desired_observation(&latch);
     }
 
-    let Ok(artifact_key) = pins::parakeet_artifact_key(&config.platform, &config.machine) else {
-        return platform_cannot_host_not_desired(&config.platform);
-    };
-    let Some((fingerprint_json, fingerprint_sha256)) =
-        parakeet_target_fingerprint(&config.journal_path, &artifact_key)
-    else {
-        return unavailable_observation("truth-observation-failed");
-    };
-    let (config_device, invalid_device) = configured_parakeet_device(&transcribe);
-    if let Some(value) = invalid_device {
-        eprintln!("{}", invalid_device_warning(&value));
-    }
-    let (selected_gpu, auto_without_gpu) = selected_gpu(&config_device, &config.vulkan_devices);
-    if auto_without_gpu {
-        eprintln!("{}", auto_without_gpu_warning());
-    }
-    let (mut backend, mut env_updates, mut gpu_index) =
-        resolve_parakeet_backend(&config_device, selected_gpu);
-    let mut paths = resolved_parakeet_paths(&config.journal_path, &artifact_key, &backend);
-    if backend == "vulkan" {
-        let vulkan_ready = paths.as_ref().is_some_and(|candidate| {
-            regular_files_exist(&candidate.binary_path, &candidate.model_path).unwrap_or(false)
-        });
-        if !vulkan_ready {
-            // A GPU is present, but the Vulkan binary is not installed. Stay
-            // on CPU rather than reporting artifact-missing for transcription.
-            let cpu = resolve_parakeet_backend("cpu", None);
-            backend = cpu.0;
-            env_updates = cpu.1;
-            gpu_index = cpu.2;
-            paths = resolved_parakeet_paths(&config.journal_path, &artifact_key, &backend);
-        }
-    }
-    let Some(paths) = paths else {
-        return unavailable_observation("truth-observation-failed");
-    };
-    match regular_files_exist(&paths.binary_path, &paths.model_path) {
-        Ok(true) => {}
-        Ok(false) => return artifact_missing_observation(&fingerprint_json, &fingerprint_sha256),
-        Err(_) => return unavailable_observation("record-unavailable"),
-    }
+    #[cfg(windows)]
+    return observe_windows_parakeet_truth(shared, config, &latch);
 
-    let launch = build_parakeet_launch_config(
-        backend.clone(),
-        env_updates,
-        gpu_index,
-        paths,
-        parakeet_physical_thread_count(),
-        fingerprint_json.clone(),
-        fingerprint_sha256.clone(),
-    );
-    shared.record_launch_request(Some(fingerprint_sha256.clone()), launch);
-    let Some((after_json, after_sha256)) =
-        parakeet_target_fingerprint(&config.journal_path, &artifact_key)
-    else {
-        return unavailable_observation("truth-observation-failed");
-    };
-    if after_sha256 != fingerprint_sha256 {
-        return ProviderTruthObservation {
-            provider: ProviderName::Parakeet,
-            phase: RuntimePhase::StateUnavailable,
-            reason_code: Some(ReasonCode::known("observation-raced")),
-            desired_fingerprint: None,
-            has_plan: false,
-            boot_required: true,
-            detail: Some(json!({"before": fingerprint_sha256, "after": after_sha256})),
+    #[cfg(not(windows))]
+    {
+        let Ok(artifact_key) = pins::parakeet_artifact_key(&config.platform, &config.machine)
+        else {
+            return platform_cannot_host_not_desired(&config.platform);
         };
-    }
-    ProviderTruthObservation {
-        provider: ProviderName::Parakeet,
-        phase: RuntimePhase::Starting,
-        reason_code: Some(ReasonCode::known("launch-requested")),
-        desired_fingerprint: Some(after_sha256),
-        has_plan: true,
-        boot_required: true,
-        detail: Some(json!({
-            "backend": backend,
-            "placement": if backend == "vulkan" { "gpu" } else { "cpu" },
-            "stt_admission_latch": latch.to_json(),
-            "target_fingerprint_json": after_json,
-        })),
+        let Some((fingerprint_json, fingerprint_sha256)) =
+            parakeet_target_fingerprint(&config.journal_path, &artifact_key)
+        else {
+            return unavailable_observation("truth-observation-failed");
+        };
+        let (config_device, invalid_device) = configured_parakeet_device(&transcribe);
+        if let Some(value) = invalid_device {
+            eprintln!("{}", invalid_device_warning(&value));
+        }
+        let (selected_gpu, auto_without_gpu) = selected_gpu(&config_device, &config.vulkan_devices);
+        if auto_without_gpu {
+            eprintln!("{}", auto_without_gpu_warning());
+        }
+        let (mut backend, mut env_updates, mut gpu_index) =
+            resolve_parakeet_backend(&config_device, selected_gpu);
+        let mut paths = resolved_parakeet_paths(&config.journal_path, &artifact_key, &backend);
+        if backend == "vulkan" {
+            let vulkan_ready = paths.as_ref().is_some_and(|candidate| {
+                regular_files_exist(&candidate.binary_path, &candidate.model_path).unwrap_or(false)
+            });
+            if !vulkan_ready {
+                // A GPU is present, but the Vulkan binary is not installed. Stay
+                // on CPU rather than reporting artifact-missing for transcription.
+                let cpu = resolve_parakeet_backend("cpu", None);
+                backend = cpu.0;
+                env_updates = cpu.1;
+                gpu_index = cpu.2;
+                paths = resolved_parakeet_paths(&config.journal_path, &artifact_key, &backend);
+            }
+        }
+        let Some(paths) = paths else {
+            return unavailable_observation("truth-observation-failed");
+        };
+        match regular_files_exist(&paths.binary_path, &paths.model_path) {
+            Ok(true) => {}
+            Ok(false) => {
+                return artifact_missing_observation(&fingerprint_json, &fingerprint_sha256);
+            }
+            Err(_) => return unavailable_observation("record-unavailable"),
+        }
+
+        let launch = build_parakeet_launch_config(
+            backend.clone(),
+            env_updates,
+            gpu_index,
+            paths,
+            ParakeetLaunchMetadata {
+                journal_path: config.journal_path.clone(),
+                threads: parakeet_physical_thread_count(),
+                desired_fingerprint_json: fingerprint_json.clone(),
+                desired_fingerprint_sha256: fingerprint_sha256.clone(),
+            },
+        );
+        shared.record_launch_request(Some(fingerprint_sha256.clone()), launch);
+        let Some((after_json, after_sha256)) =
+            parakeet_target_fingerprint(&config.journal_path, &artifact_key)
+        else {
+            return unavailable_observation("truth-observation-failed");
+        };
+        if after_sha256 != fingerprint_sha256 {
+            return ProviderTruthObservation {
+                provider: ProviderName::Parakeet,
+                phase: RuntimePhase::StateUnavailable,
+                reason_code: Some(ReasonCode::known("observation-raced")),
+                desired_fingerprint: None,
+                has_plan: false,
+                boot_required: true,
+                detail: Some(json!({"before": fingerprint_sha256, "after": after_sha256})),
+            };
+        }
+        ProviderTruthObservation {
+            provider: ProviderName::Parakeet,
+            phase: RuntimePhase::Starting,
+            reason_code: Some(ReasonCode::known("launch-requested")),
+            desired_fingerprint: Some(after_sha256),
+            has_plan: true,
+            boot_required: true,
+            detail: Some(json!({
+                "backend": backend,
+                "placement": if backend == "vulkan" { "gpu" } else { "cpu" },
+                "stt_admission_latch": latch.to_json(),
+                "target_fingerprint_json": after_json,
+            })),
+        }
     }
 }
 
+#[cfg(not(windows))]
 fn configured_parakeet_device(transcribe: &Map<String, Value>) -> (String, Option<String>) {
     let value = transcribe
         .get("parakeet-cpp")
@@ -307,16 +333,19 @@ fn configured_parakeet_device(transcribe: &Map<String, Value>) -> (String, Optio
     }
 }
 
+#[cfg(not(windows))]
 fn invalid_device_warning(value: &str) -> String {
     format!(
         "supervisor: WARN: invalid transcribe.parakeet-cpp.device={value}; defaulting to \"auto\""
     )
 }
 
+#[cfg(not(windows))]
 fn auto_without_gpu_warning() -> &'static str {
     "supervisor: WARN: transcribe.parakeet-cpp.device=\"auto\" has no Vulkan GPU available; falling back to \"cpu\""
 }
 
+#[cfg(not(windows))]
 fn selected_gpu<'a>(
     config_device: &str,
     vulkan_devices: &'a [VulkanDevice],
@@ -337,9 +366,7 @@ fn build_parakeet_launch_config(
     env_updates: BTreeMap<String, String>,
     gpu_index: Option<u32>,
     paths: ResolvedParakeetPaths,
-    threads: u32,
-    desired_fingerprint_json: String,
-    desired_fingerprint_sha256: String,
+    metadata: ParakeetLaunchMetadata,
 ) -> ParakeetLaunchConfig {
     let placement = if binary_backend == "vulkan" {
         ParakeetPlacement::Gpu
@@ -352,13 +379,16 @@ fn build_parakeet_launch_config(
         gpu_index,
         binary_path: paths.binary_path,
         model_path: paths.model_path,
-        threads,
-        desired_fingerprint_json,
-        desired_fingerprint_sha256,
+        package_root: paths.package_root,
+        journal_path: metadata.journal_path,
+        threads: metadata.threads,
+        desired_fingerprint_json: metadata.desired_fingerprint_json,
+        desired_fingerprint_sha256: metadata.desired_fingerprint_sha256,
         placement,
     }
 }
 
+#[cfg(not(windows))]
 fn parakeet_target_fingerprint(
     journal_path: &Path,
     artifact_key: &str,
@@ -379,10 +409,12 @@ fn parakeet_target_fingerprint(
     Some((input_json, input_sha256))
 }
 
+#[cfg(not(windows))]
 fn path_from_value(paths: &Value, key: &str) -> Option<PathBuf> {
     paths.get(key)?.as_str().map(PathBuf::from)
 }
 
+#[cfg(not(windows))]
 fn resolved_parakeet_paths(
     journal_path: &Path,
     artifact_key: &str,
@@ -397,7 +429,79 @@ fn resolved_parakeet_paths(
     Some(ResolvedParakeetPaths {
         binary_path: path_from_value(&paths, binary_key)?,
         model_path: path_from_value(&paths, "model_path")?,
+        package_root: None,
     })
+}
+
+#[cfg(windows)]
+fn observe_windows_parakeet_truth(
+    shared: &ParakeetRuntimeShared,
+    config: &ParakeetTruthConfig,
+    latch: &super::admission::ParakeetAdmissionLatch,
+) -> ProviderTruthObservation {
+    let package = match verified_windows_parakeet_package() {
+        Ok(package) => package,
+        Err(_) => return unavailable_observation("artifact-missing"),
+    };
+    let paths = ResolvedParakeetPaths {
+        binary_path: package.server,
+        model_path: package.model,
+        package_root: Some(package.package_root),
+    };
+    match regular_files_exist(&paths.binary_path, &paths.model_path) {
+        Ok(true) => {}
+        Ok(false) => return unavailable_observation("artifact-missing"),
+        Err(_) => return unavailable_observation("record-unavailable"),
+    }
+    let target = json!({
+        "provider": "parakeet",
+        "runtime": "parakeet.cpp",
+        "artifact_key": "x86_64-pc-windows-msvc",
+        "package_root": paths.package_root.as_ref().map(|path| path.display().to_string()),
+        "server": paths.binary_path.display().to_string(),
+        "model": paths.model_path.display().to_string(),
+        "launch_env": {PARAKEET_ATT_CONTEXT_ENV: PARAKEET_ATT_CONTEXT},
+    });
+    let Some((fingerprint_json, fingerprint_sha256)) =
+        canonical_json(&CanonicalInput::Json(target))
+            .ok()
+            .map(|json| {
+                let sha256 = fingerprint_sha256(&json);
+                (json, sha256)
+            })
+    else {
+        return unavailable_observation("truth-observation-failed");
+    };
+    let launch = build_parakeet_launch_config(
+        "cpu".to_owned(),
+        BTreeMap::from([(
+            PARAKEET_ATT_CONTEXT_ENV.to_owned(),
+            PARAKEET_ATT_CONTEXT.to_owned(),
+        )]),
+        None,
+        paths,
+        ParakeetLaunchMetadata {
+            journal_path: config.journal_path.clone(),
+            threads: parakeet_physical_thread_count(),
+            desired_fingerprint_json: fingerprint_json.clone(),
+            desired_fingerprint_sha256: fingerprint_sha256.clone(),
+        },
+    );
+    shared.record_launch_request(Some(fingerprint_sha256.clone()), launch);
+    ProviderTruthObservation {
+        provider: ProviderName::Parakeet,
+        phase: RuntimePhase::Starting,
+        reason_code: Some(ReasonCode::known("launch-requested")),
+        desired_fingerprint: Some(fingerprint_sha256),
+        has_plan: true,
+        boot_required: true,
+        detail: Some(json!({
+            "backend": "cpu",
+            "placement": "cpu",
+            "stt_admission_latch": latch.to_json(),
+            "target_fingerprint_json": fingerprint_json,
+        })),
+    }
 }
 
 fn regular_files_exist(binary_path: &Path, model_path: &Path) -> Result<bool, std::io::Error> {
@@ -465,6 +569,7 @@ fn confidential_audio_enabled(transcribe: &Map<String, Value>) -> bool {
         .is_none_or(|value| value.as_bool().unwrap_or(false))
 }
 
+#[cfg(not(windows))]
 fn artifact_missing_observation(
     fingerprint_json: &str,
     fingerprint_sha256: &str,
@@ -504,7 +609,7 @@ fn unavailable_observation(reason_code: &'static str) -> ProviderTruthObservatio
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(windows)))]
 mod tests {
     use super::*;
 
@@ -645,9 +750,12 @@ mod tests {
             BTreeMap::from([("GGML_VK_VISIBLE_DEVICES".to_owned(), "0".to_owned())]),
             Some(0),
             vulkan_paths,
-            8,
-            "{}".to_owned(),
-            "fingerprint".to_owned(),
+            ParakeetLaunchMetadata {
+                journal_path: journal.clone(),
+                threads: 8,
+                desired_fingerprint_json: "{}".to_owned(),
+                desired_fingerprint_sha256: "fingerprint".to_owned(),
+            },
         );
         assert_eq!(vulkan_launch.placement, ParakeetPlacement::Gpu);
 
@@ -658,9 +766,12 @@ mod tests {
             BTreeMap::new(),
             None,
             cpu_paths,
-            8,
-            "{}".to_owned(),
-            "fingerprint".to_owned(),
+            ParakeetLaunchMetadata {
+                journal_path: journal.clone(),
+                threads: 8,
+                desired_fingerprint_json: "{}".to_owned(),
+                desired_fingerprint_sha256: "fingerprint".to_owned(),
+            },
         );
         assert_eq!(cpu_launch.placement, ParakeetPlacement::Cpu);
     }
@@ -727,9 +838,12 @@ mod tests {
             BTreeMap::new(),
             None,
             paths,
-            37,
-            "{}".to_owned(),
-            "fingerprint".to_owned(),
+            ParakeetLaunchMetadata {
+                journal_path: PathBuf::from("/fixture-journal"),
+                threads: 37,
+                desired_fingerprint_json: "{}".to_owned(),
+                desired_fingerprint_sha256: "fingerprint".to_owned(),
+            },
         );
         assert_eq!(launch.threads, 37);
         assert_eq!(launch.binary_path, binary_path);

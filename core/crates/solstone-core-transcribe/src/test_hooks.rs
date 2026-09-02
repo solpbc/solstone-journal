@@ -109,6 +109,7 @@ pub fn parakeet_transcribe(base_url: &str, wav: &[u8], timeout: Duration) -> Par
     let server = ParakeetServer {
         port: 0,
         base_url: base_url.to_owned(),
+        auth_headers: None,
     };
     match transcribe_transport_with_timeout(&server, wav, timeout) {
         Ok(response) => ParakeetTranscribe::Ok {

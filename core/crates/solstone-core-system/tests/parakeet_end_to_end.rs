@@ -12,6 +12,10 @@
 //! durable store reach `Ready` without driving a truth dispatch.
 
 use std::collections::BTreeMap;
+#[cfg(windows)]
+use std::io::{Read, Write};
+#[cfg(windows)]
+use std::net::TcpStream;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -53,6 +57,56 @@ fn journal() -> PathBuf {
     root
 }
 
+/// The production Windows path requires an executable and model under the
+/// signed package root. This fixture creates the same containment shape and
+/// only returns 200 after the native provider sends its launch capability.
+#[cfg(windows)]
+fn fixture_launch_paths(
+    journal: &std::path::Path,
+) -> (PathBuf, PathBuf, Option<PathBuf>, BTreeMap<String, String>) {
+    let package = journal.join("signed-fixture-package");
+    let bin = package.join("bin");
+    let models = package.join("models");
+    std::fs::create_dir_all(&bin).expect("fixture package bin");
+    std::fs::create_dir_all(&models).expect("fixture package models");
+    let binary = bin.join("parakeet-server.exe");
+    std::fs::copy(FIXTURE, &binary).expect("copy fixture into package bin");
+    let model = models.join("model.bin");
+    std::fs::write(&model, "test-ready-auth").expect("write fixture model marker");
+    (
+        binary,
+        model,
+        Some(package),
+        BTreeMap::from([("PARAKEET_ATT_CONTEXT".to_owned(), "128".to_owned())]),
+    )
+}
+
+#[cfg(not(windows))]
+fn fixture_launch_paths(
+    _: &std::path::Path,
+) -> (PathBuf, PathBuf, Option<PathBuf>, BTreeMap<String, String>) {
+    (
+        PathBuf::from(FIXTURE),
+        PathBuf::from("test-ready"),
+        None,
+        BTreeMap::new(),
+    )
+}
+
+#[cfg(windows)]
+fn unauthenticated_health_is_refused(port: u16) {
+    let mut stream =
+        TcpStream::connect(("127.0.0.1", port)).expect("connect unauthenticated health");
+    stream
+        .write_all(b"GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        .expect("send unauthenticated health");
+    let mut response = String::new();
+    stream
+        .read_to_string(&mut response)
+        .expect("read refused health");
+    assert!(response.starts_with("HTTP/1.1 401"));
+}
+
 fn pump(
     coordinator: &ProviderRuntimeCoordinator,
     now: ProviderRuntimeNow,
@@ -82,6 +136,7 @@ fn pump(
 #[test]
 fn parakeet_launches_through_the_real_lifecycle_seam_and_reaches_ready() {
     let journal = journal();
+    let (binary_path, model_path, package_root, env_updates) = fixture_launch_paths(&journal);
     let shared = Arc::new(ParakeetRuntimeShared::default());
     let clock: Arc<dyn RuntimeClock> = Arc::new(TestClock {
         millis: AtomicU64::new(0),
@@ -115,10 +170,12 @@ fn parakeet_launches_through_the_real_lifecycle_seam_and_reaches_ready() {
         Some("desired-a".to_owned()),
         ParakeetLaunchConfig {
             binary_backend: "cpu".to_owned(),
-            env_updates: BTreeMap::new(),
+            env_updates,
             gpu_index: None,
-            binary_path: PathBuf::from(FIXTURE),
-            model_path: PathBuf::from("test-ready"),
+            binary_path,
+            model_path,
+            package_root,
+            journal_path: journal.clone(),
             threads: 4,
             desired_fingerprint_json: "{}".to_owned(),
             desired_fingerprint_sha256: "desired-a".to_owned(),
@@ -176,6 +233,8 @@ fn parakeet_launches_through_the_real_lifecycle_seam_and_reaches_ready() {
         Some(u64::from(published_port))
     );
     assert_eq!(health["process"]["name"], "parakeet-server");
+    #[cfg(windows)]
+    unauthenticated_health_is_refused(published_port);
 
     state.pending_stop_request = Some(ProviderStopCleanupRequest {
         managed: processes[0].clone(),

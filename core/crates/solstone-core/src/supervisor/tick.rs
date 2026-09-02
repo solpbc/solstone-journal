@@ -806,6 +806,10 @@ pub(crate) fn reconcile_providers(state: &mut SupervisorState) {
         &mut state.local.processes,
         &mut local_context,
     );
+    #[cfg(windows)]
+    if !synchronize_parakeet_sense_credentials(state) {
+        return;
+    }
     if let Some(in_flight) = state.parakeet.state.truth.as_mut()
         && in_flight.result.is_none()
         && let Some(result) = state.parakeet.shared.take_truth_result(&in_flight.fence)
@@ -848,6 +852,54 @@ pub(crate) fn reconcile_providers(state: &mut SupervisorState) {
         &mut state.parakeet.processes,
         &mut parakeet_context,
     );
+}
+
+/// A Windows Parakeet launch rotates its in-memory loopback credential. Sense
+/// is the sole managed service that can spawn native transcription children,
+/// so replace that one process tree before reconciling a ready provider result.
+/// The port/runtime record never becomes readable as a credential source.
+#[cfg(windows)]
+fn synchronize_parakeet_sense_credentials(state: &mut SupervisorState) -> bool {
+    let Some((revision, credentials)) = state.parakeet.shared.sense_child_environment() else {
+        return true;
+    };
+    if revision == state.parakeet_sense_credentials_revision {
+        return true;
+    }
+
+    let sense = state
+        .app_processes
+        .iter_mut()
+        .find(|app| app.service == AppService::Sense)
+        .expect("app process inventory is complete");
+    if let Some(process) = sense.process.as_mut() {
+        if let Err(error) = process.terminate(Duration::from_secs(5)) {
+            eprintln!(
+                "supervisor: failed to replace Sense for Parakeet credential rotation: {error}"
+            );
+            return false;
+        }
+        process.cleanup();
+    }
+    sense.process = None;
+    sense.started_at = None;
+    sense.restart_at = Some(Instant::now());
+    sense.backoff = None;
+
+    state
+        .sense_child_environment
+        .remove(&std::ffi::OsString::from("SOLSTONE_PARAKEET_AUTH_TOKEN"));
+    state
+        .sense_child_environment
+        .remove(&std::ffi::OsString::from("SOLSTONE_PARAKEET_AUTH_NONCE"));
+    state
+        .sense_child_environment
+        .remove(&std::ffi::OsString::from("SOLSTONE_PARAKEET_AUTH_PORT"));
+    if let Some(credentials) = credentials {
+        state.sense_child_environment.extend(credentials);
+    }
+    state.parakeet_sense_credentials_revision = revision;
+    false
 }
 
 fn record_fixture_local_launch(state: &mut SupervisorState) {
