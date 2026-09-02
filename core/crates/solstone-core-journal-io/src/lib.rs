@@ -46,7 +46,7 @@ pub mod paths;
 pub mod readers;
 pub mod removal;
 pub mod snapshot;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod staged;
 pub mod strict_segment;
 #[cfg(windows)]
@@ -202,7 +202,7 @@ pub use removal::{remove_contained_tree, remove_dir_all};
 pub use snapshot::{
     JournalSnapshot, SnapshotDirectory, SnapshotFile, capture_snapshot, restore_snapshot,
 };
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use staged::{StagedDirOptions, StagedWriteError, publish_staged_dir};
 pub use strict_segment::{
     ExactLookupError, StrictCreateError, create_segment_strict, preflight_segment_admission,

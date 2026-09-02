@@ -105,6 +105,14 @@ powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_
 if not "%ERRORLEVEL%"=="0" ( del /q "%JOURNAL_WIN_CI_SNAPSHOT_LOG%" >nul 2>&1 & echo ERROR: journal-io snapshot protocol did not emit exactly one source-originated pass marker & exit /b 1 )
 type "%JOURNAL_WIN_CI_SNAPSHOT_LOG%"
 del /q "%JOURNAL_WIN_CI_SNAPSHOT_LOG%" >nul 2>&1
+echo === cargo test --locked (journal-io staged-directory protocol) ===
+set "JOURNAL_WIN_CI_STAGED_LOG=core\target\journal-win-ci-staged-%RANDOM%%RANDOM%.log"
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_staged_protocol --features test-hooks -- --test-threads=1 --nocapture > "%JOURNAL_WIN_CI_STAGED_LOG%" 2>&1
+if not "%ERRORLEVEL%"=="0" ( type "%JOURNAL_WIN_CI_STAGED_LOG%" & del /q "%JOURNAL_WIN_CI_STAGED_LOG%" >nul 2>&1 & echo ERROR: journal-io staged-directory protocol failed & exit /b 1 )
+powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_CI_STAGED_LOG); $marker = [regex]::Escape('JOURNAL_WIN_CI_STAGED=publish/race/crash/cleanup/pass'); $ntfs = '^JOURNAL_WIN_CI_STAGED_NTFS_OUTCOMES=empty:(replaced|refused)/file:(replaced|refused)/nonempty:(replaced|refused)\r?$'; $refs = '^JOURNAL_WIN_CI_STAGED_REFS_OUTCOMES=empty:(replaced|refused)/file:(replaced|refused)/nonempty:(replaced|refused)\r?$'; if ([regex]::Matches($text, '(?m)^JOURNAL_WIN_CI_STAGED=.*\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $marker + '\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^JOURNAL_WIN_CI_STAGED_OS=.+\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)' + $ntfs).Count -eq 1 -and [regex]::Matches($text, '(?m)' + $refs).Count -eq 1) { exit 0 }; exit 1"
+if not "%ERRORLEVEL%"=="0" ( type "%JOURNAL_WIN_CI_STAGED_LOG%" & del /q "%JOURNAL_WIN_CI_STAGED_LOG%" >nul 2>&1 & echo ERROR: journal-io staged-directory protocol did not emit the exact source-originated NTFS/ReFS receipt & exit /b 1 )
+type "%JOURNAL_WIN_CI_STAGED_LOG%"
+del /q "%JOURNAL_WIN_CI_STAGED_LOG%" >nul 2>&1
 echo === cargo test --locked (journal-io lock component) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test journal_io_lock_component --features test-hooks || exit /b 1
 echo === cargo test --locked (journal-io detailed atomic publication) ===
