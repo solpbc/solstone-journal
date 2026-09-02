@@ -4112,6 +4112,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-system::managed_process"
+package = "solstone-core-system"
+target = "managed_process"
+set = "component"
+areas = ["system"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-system::windows_lifecycle_receipt"
 package = "solstone-core-system"
 target = "windows_lifecycle_receipt"
