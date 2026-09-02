@@ -74,9 +74,9 @@ try {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     [IO.Compression.ZipFile]::ExtractToDirectory($CmakeArchive, $cmakeRoot); [IO.Compression.ZipFile]::ExtractToDirectory($PythonArchive, $pythonRoot); [IO.Compression.ZipFile]::ExtractToDirectory($ProtocArchive, $protocRoot)
     $flatbuffersArchive = Join-Path $mirrorRoot 'github.com/google/flatbuffers/archive/refs/tags/v23.5.26.zip'; Require-File $flatbuffersArchive 'verified FlatBuffers mirror archive'; [IO.Compression.ZipFile]::ExtractToDirectory($flatbuffersArchive, $flatbuffersRoot)
-    $cmake = @(Get-ChildItem -LiteralPath $cmakeRoot -Filter cmake.exe -Recurse -File); $python = @(Get-ChildItem -LiteralPath $pythonRoot -Filter python.exe -Recurse -File); $protoc = @(Get-ChildItem -LiteralPath $protocRoot -Filter protoc.exe -Recurse -File)
-    if ($cmake.Count -ne 1 -or $python.Count -ne 1 -or $protoc.Count -ne 1) { throw 'controlled tool archives did not produce exactly one cmake.exe, python.exe, and protoc.exe' }
-    $cmakeExe = $cmake[0].FullName; $pythonExe = $python[0].FullName; $protocExe = $protoc[0].FullName
+    $cmake = @(Get-ChildItem -LiteralPath $cmakeRoot -Filter cmake.exe -Recurse -File); $ctest = @(Get-ChildItem -LiteralPath $cmakeRoot -Filter ctest.exe -Recurse -File); $python = @(Get-ChildItem -LiteralPath $pythonRoot -Filter python.exe -Recurse -File); $protoc = @(Get-ChildItem -LiteralPath $protocRoot -Filter protoc.exe -Recurse -File)
+    if ($cmake.Count -ne 1 -or $ctest.Count -ne 1 -or $python.Count -ne 1 -or $protoc.Count -ne 1) { throw 'controlled tool archives did not produce exactly one cmake.exe, ctest.exe, python.exe, and protoc.exe' }
+    $cmakeExe = $cmake[0].FullName; $ctestExe = $ctest[0].FullName; $pythonExe = $python[0].FullName; $protocExe = $protoc[0].FullName
     $pythonPth = @(Get-ChildItem -LiteralPath $pythonRoot -Filter 'python*._pth' -File)
     if ($pythonPth.Count -ne 1) { throw 'controlled Python archive did not produce exactly one python*._pth file' }
     # The embedded interpreter intentionally ignores ambient PYTHONPATH. Add
@@ -88,13 +88,13 @@ try {
     $flatbuffersPackages = @(Get-ChildItem -LiteralPath $flatbuffersRoot -Directory -Recurse | Where-Object { $_.Name -eq 'flatbuffers' -and (Test-Path -LiteralPath (Join-Path $_.FullName '__init__.py')) })
     if ($flatbuffersPackages.Count -ne 1) { throw 'verified FlatBuffers mirror archive did not produce exactly one Python flatbuffers package' }
     Add-Content -LiteralPath $pythonPth[0].FullName -Value $flatbuffersPackages[0].Parent.FullName -Encoding ascii
-    $ordinal = 1; foreach ($program in @($cmakeExe, $pythonExe, $protocExe, $msbuild, $cl, $link, $git) | Select-Object -Unique) { Add-NetworkDeny $program $ordinal; $ordinal += 1 }
-    Write-Host 'ONNX_WINDOWS_NETWORK_DENY=firewall-outbound-block-for-cmake-python-protoc-msbuild-cl-link-git'
+    $ordinal = 1; foreach ($program in @($cmakeExe, $ctestExe, $pythonExe, $protocExe, $msbuild, $cl, $link, $git) | Select-Object -Unique) { Add-NetworkDeny $program $ordinal; $ordinal += 1 }
+    Write-Host 'ONNX_WINDOWS_NETWORK_DENY=firewall-outbound-block-for-cmake-ctest-python-protoc-msbuild-cl-link-git'
     Invoke-Checked 'verify isolated ONNX build-driver imports' $pythonExe @('-c', 'import build_args; import flatbuffers; import util; print(build_args.__file__); print(flatbuffers.__file__); print(util.__file__)')
     Invoke-Checked 'build reduced CPU-only ONNX Runtime' $pythonExe @(
         (Join-Path $sourceRoot 'tools/ci_build/build.py'), '--build_dir', (Join-Path $sourceRoot 'build/Windows'), '--config', 'Release', '--update', '--build', '--skip_tests', '--skip_submodule_sync', '--parallel', '2',
         '--build_shared_lib', '--include_ops_by_config', (Join-Path $sourceRoot 'required-operators.config'), '--disable_contrib_ops', '--disable_ml_ops',
-        '--path_to_protoc_exe', $protocExe, '--cmake_path', $cmakeExe, '--cmake_generator', 'Visual Studio 17 2022', '--cmake_deps_mirror_dir', $mirrorRoot,
+        '--path_to_protoc_exe', $protocExe, '--cmake_path', $cmakeExe, '--ctest_path', $ctestExe, '--cmake_generator', 'Visual Studio 17 2022', '--cmake_deps_mirror_dir', $mirrorRoot,
         '--cmake_extra_defines', 'CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL', 'onnxruntime_USE_TELEMETRY=OFF', 'onnxruntime_BUILD_UNIT_TESTS=OFF'
     )
     $cache = Join-Path $sourceRoot 'build/Windows/Release/CMakeCache.txt'; Require-File $cache 'ONNX Runtime CMake cache'; $cacheText = Get-Content -LiteralPath $cache -Raw
@@ -103,7 +103,7 @@ try {
     $outputBin = Join-Path $OutputRoot 'bin'; New-Item -ItemType Directory -Path $outputBin | Out-Null; $outputDll = Join-Path $outputBin 'onnxruntime.dll'; Copy-Item -LiteralPath $dll[0].FullName -Destination $outputDll
     $dumpbin = Join-Path $toolBin 'dumpbin.exe'; Require-File $dumpbin 'dumpbin.exe'; $dependents = (& $dumpbin /dependents $outputDll 2>&1 | Out-String); if ($LASTEXITCODE -ne 0) { throw 'dumpbin /dependents failed' }
     $forbidden = @($dependents -split "`r?`n" | Where-Object { $_ -match '(?i)(cuda|nvcuda|cudart|cublas|cudnn|nvrtc|vulkan|opencl|tensorrt|directml)' }); if ($forbidden.Count -ne 0) { throw "ONNX DLL has forbidden accelerator imports: $($forbidden -join '; ')" }
-    $validation = Join-Path $ReportRoot 'onnxruntime-build-validation.log'; @('schema=solstone.onnx-windows-validation.v1', "product_commit=$ExpectedProductCommit", "cargo_lock_sha256=$ExpectedCargoLockSha256", "source_sha256=$(Get-Sha256 $SourceArchive)", "mirror_sha256=$(Get-Sha256 $MirrorArchive)", "cmake_cache_sha256=$(Get-Sha256 $cache)", 'flatbuffers_python=verified-cmake-mirror', 'network_access=denied-by-firewall-for-cmake-python-protoc-msbuild-cl-link-git', 'forbidden_accelerator_imports=none', "output_sha256=$(Get-Sha256 $outputDll)") | Set-Content -LiteralPath $validation -Encoding utf8
+    $validation = Join-Path $ReportRoot 'onnxruntime-build-validation.log'; @('schema=solstone.onnx-windows-validation.v1', "product_commit=$ExpectedProductCommit", "cargo_lock_sha256=$ExpectedCargoLockSha256", "source_sha256=$(Get-Sha256 $SourceArchive)", "mirror_sha256=$(Get-Sha256 $MirrorArchive)", "cmake_cache_sha256=$(Get-Sha256 $cache)", 'flatbuffers_python=verified-cmake-mirror', 'network_access=denied-by-firewall-for-cmake-ctest-python-protoc-msbuild-cl-link-git', 'forbidden_accelerator_imports=none', "output_sha256=$(Get-Sha256 $outputDll)") | Set-Content -LiteralPath $validation -Encoding utf8
     $toolchain = "$((& $cmakeExe --version | Select-Object -First 1).Trim()); $((Get-Item -LiteralPath $cl).VersionInfo.ProductVersion)"; $evidence = Join-Path $ReportRoot 'onnxruntime-build-evidence.json'; $receipt = Join-Path $ReportRoot 'onnxruntime-build-receipt.json'
     Invoke-Checked 'persist ONNX controlled-build receipt' $distribution @('onnx-windows', 'record', '--source-archive', $SourceArchive, '--mirror-archive', $MirrorArchive, '--cmake-archive', $CmakeArchive, '--python-archive', $PythonArchive, '--protoc-archive', $ProtocArchive, '--cmake-cache', $cache, '--output-root', $OutputRoot, '--evidence', $evidence, '--receipt', $receipt, '--validation', $validation, '--product-commit', $ExpectedProductCommit, '--cargo-lock-sha256', $ExpectedCargoLockSha256, '--builder-host', $BuilderHost, '--toolchain', $toolchain)
     Invoke-Checked 'rehash persisted ONNX receipt output' $distribution @('onnx-windows', 'verify', '--receipt', $receipt, '--output-root', $OutputRoot)
