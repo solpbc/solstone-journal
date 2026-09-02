@@ -32,6 +32,17 @@ pub(super) struct UnixIdentity {
     ino: u64,
 }
 
+#[allow(clippy::unnecessary_cast)]
+fn identity_and_nlink_from_stat(status: &nix::sys::stat::FileStat) -> (UnixIdentity, u64) {
+    (
+        UnixIdentity {
+            dev: status.st_dev as u64,
+            ino: status.st_ino as u64,
+        },
+        status.st_nlink as u64,
+    )
+}
+
 pub(super) struct StagedFile {
     pub file: File,
     pub stage_name: OsString,
@@ -185,13 +196,7 @@ fn dest_identity_and_nlink(
         return Err(io::Error::from_raw_os_error(nix::libc::EIO));
     }
     let status = fstatat(health.health(), dest, AtFlags::AT_SYMLINK_NOFOLLOW).map_err(errno_io)?;
-    Ok((
-        UnixIdentity {
-            dev: status.st_dev,
-            ino: status.st_ino,
-        },
-        status.st_nlink,
-    ))
+    Ok(identity_and_nlink_from_stat(&status))
 }
 
 pub(super) enum PublishOutcome {
@@ -250,13 +255,7 @@ fn set_append(file: &File) -> io::Result<()> {
 
 fn identity_of(file: &File) -> io::Result<(UnixIdentity, u64)> {
     let status = fstat(file).map_err(errno_io)?;
-    Ok((
-        UnixIdentity {
-            dev: status.st_dev,
-            ino: status.st_ino,
-        },
-        status.st_nlink,
-    ))
+    Ok(identity_and_nlink_from_stat(&status))
 }
 
 fn classify_named(
@@ -265,10 +264,7 @@ fn classify_named(
     expected: Option<UnixIdentity>,
 ) -> Result<OplogResidue, Errno> {
     let status = fstatat(health.health(), name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
-    let observed = UnixIdentity {
-        dev: status.st_dev,
-        ino: status.st_ino,
-    };
+    let (observed, _) = identity_and_nlink_from_stat(&status);
     let own = expected.is_none_or(|expected| expected == observed);
     Ok(OplogResidue::new(if own {
         OplogResidueClass::OwnNoncanonical
@@ -279,4 +275,36 @@ fn classify_named(
 
 fn errno_io(error: Errno) -> io::Error {
     io::Error::from_raw_os_error(error as i32)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::fs::MetadataExt;
+
+    use super::*;
+
+    #[test]
+    fn raw_stat_normalization_matches_metadata_ext_across_hard_link() {
+        let temp = tempfile::tempdir_in("/var/tmp").unwrap();
+        let path = temp.path().join("original");
+        std::fs::write(&path, b"identity").unwrap();
+        let file = std::fs::File::open(&path).unwrap();
+        let (identity, nlink) = identity_of(&file).unwrap();
+        let metadata = file.metadata().unwrap();
+        assert_eq!(identity.dev, metadata.dev());
+        assert_eq!(identity.ino, metadata.ino());
+        assert_eq!(nlink, metadata.nlink());
+
+        let linked = temp.path().join("linked");
+        std::fs::hard_link(&path, &linked).unwrap();
+        let file = std::fs::File::open(&path).unwrap();
+        let (linked_identity, linked_nlink) = identity_of(&file).unwrap();
+        let linked_metadata = file.metadata().unwrap();
+        assert_eq!(linked_identity.dev, identity.dev);
+        assert_eq!(linked_identity.ino, identity.ino);
+        assert_eq!(linked_nlink, nlink + 1);
+        assert_eq!(linked_identity.dev, linked_metadata.dev());
+        assert_eq!(linked_identity.ino, linked_metadata.ino());
+        assert_eq!(linked_nlink, linked_metadata.nlink());
+    }
 }
