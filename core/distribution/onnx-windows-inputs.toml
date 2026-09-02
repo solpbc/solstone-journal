@@ -1,0 +1,106 @@
+schema = "solstone-onnx-windows-inputs-v1"
+
+# This is the founder-reviewed output of ONNX Runtime's pinned generator over
+# the three hash-verified raw Journal models. Its comments retain the original
+# generator inputs so the locked 711-byte digest remains reproducible.
+reduced_ops_config = "core/distribution/onnx-windows-required-operators.config"
+reduced_ops_config_sha256 = "d624f0c4902d58df3a5513535450ad4a5c2fffdd95676b23d44c925886b2654d"
+
+[protoc_windows_x86_64]
+version = "21.12"
+filename = "protoc-21.12-win64.zip"
+url = "https://github.com/protocolbuffers/protobuf/releases/download/v21.12/protoc-21.12-win64.zip"
+sha1 = "b4521f7ada5b260380f94c4bd7f1b7684c76969a"
+sha256 = "71852a30cf62975358edfcbbff93086e8857a079c8e4d6904881aa968d65c7f9"
+size = 2278456
+
+[[cmake_dependency]]
+name = "abseil_cpp"
+url = "https://github.com/abseil/abseil-cpp/archive/refs/tags/20250814.0.zip"
+sha1 = "a9eb1d648cbca4d4d788737e971a6a7a63726b07"
+sha256 = "b2bdcf6682d8cb53df365bcc5d6c318a22e55821d9978a10fdb61404c026daff"
+size = 3194036
+
+[[cmake_dependency]]
+name = "date"
+url = "https://github.com/HowardHinnant/date/archive/refs/tags/v3.0.1.zip"
+sha1 = "2dac0c81dc54ebdd8f8d073a75c053b04b56e159"
+sha256 = "f4300b96f7a304d4ef9bf6e0fa3ded72159f7f2d0f605bdde3e030a0dba7cf9f"
+size = 941286
+
+[[cmake_dependency]]
+name = "eigen"
+url = "https://github.com/eigen-mirror/eigen/archive/1d8b82b0740839c0de7f1242a3585e3390ff5f33/eigen-1d8b82b0740839c0de7f1242a3585e3390ff5f33.zip"
+sha1 = "05b19b49e6fbb91246be711d801160528c135e34"
+sha256 = "6a60d76351f97132669daeeb721d6bf14b008101883ad2d687a3201c5c461eb0"
+size = 4075744
+
+[[cmake_dependency]]
+name = "flatbuffers"
+url = "https://github.com/google/flatbuffers/archive/refs/tags/v23.5.26.zip"
+sha1 = "59422c3b5e573dd192fead2834d25951f1c1670c"
+sha256 = "57bd580c0772fd1a726c34ab8bf05325293bc5f9c165060a898afa1feeeb95e1"
+size = 3209602
+
+[[cmake_dependency]]
+name = "json"
+url = "https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.zip"
+sha1 = "5e88795165cc8590138d1f47ce94ee567b85b4d6"
+sha256 = "04022b05d806eb5ff73023c280b68697d12b93e1b7267a0b22a1a39ec7578069"
+size = 8489998
+
+[[cmake_dependency]]
+name = "microsoft_gsl"
+url = "https://github.com/microsoft/GSL/archive/refs/tags/v4.0.0.zip"
+sha1 = "cf368104cd22a87b4dd0c80228919bb2df3e2a14"
+sha256 = "eb91fcb10a6aa5ccb1d224e07a56c8ecffe9a1bb601fa1848276ec46a2200bfb"
+size = 78670
+
+[[cmake_dependency]]
+name = "microsoft_wil"
+url = "https://github.com/microsoft/wil/archive/refs/tags/v1.0.250325.1.zip"
+sha1 = "826c8bd47c2258ec61b8b218e031e5b33d27f761"
+sha256 = "48f7fdc3c7d0b284efae783c1266836b61b63fd0c94749098a60dc8ec78b0725"
+size = 577341
+
+[[cmake_dependency]]
+name = "mp11"
+url = "https://github.com/boostorg/mp11/archive/refs/tags/boost-1.82.0.zip"
+sha1 = "9bc9e01dffb64d9e0773b2e44d2f22c51aace063"
+sha256 = "81431bdc44c439a324e02c07ed067f8f556419fd86f2d8b486ff568df6aac899"
+size = 232716
+
+[[cmake_dependency]]
+name = "onnx"
+url = "https://github.com/onnx/onnx/archive/refs/tags/v1.21.0.zip"
+sha1 = "321d4acc807c8e0fb0bbcc0424a143dffde1e846"
+sha256 = "b8b56570d94ecce49fee94e6380db456bb42035722b967015c9dd6459359433e"
+size = 18072652
+
+[[cmake_dependency]]
+name = "protobuf"
+url = "https://github.com/protocolbuffers/protobuf/archive/refs/tags/v21.12.zip"
+sha1 = "7cf2733949036c7d52fda017badcab093fe73bfa"
+sha256 = "6a31b662deaeb0ac35e6287bda2f3369b19836e6c9f8828d4da444346f420298"
+size = 7180794
+
+[[cmake_dependency]]
+name = "pytorch_cpuinfo"
+url = "https://github.com/pytorch/cpuinfo/archive/403d652dca4c1046e8145950b1c0997a9f748b57.zip"
+sha1 = "30b2a07fe4bae8574f89176e56274cacdd6d135b"
+sha256 = "357d9824b8d3f4c05f0b2287e45b4e0d982422c27b67b968eb23a643dc52b5e2"
+size = 3853314
+
+[[cmake_dependency]]
+name = "re2"
+url = "https://github.com/google/re2/archive/refs/tags/2024-07-02.zip"
+sha1 = "646e1728269cde7fcef990bf4a8e87b047882e88"
+sha256 = "a835fe55fbdcd8e80f38584ab22d0840662c67f2feb36bd679402da9641dc71e"
+size = 451539
+
+[[cmake_dependency]]
+name = "safeint"
+url = "https://github.com/dcleblanc/SafeInt/archive/refs/tags/3.0.28.zip"
+sha1 = "23f252040ff6cb9f1fd18575b32fa8fb5928daac"
+sha256 = "3ffbd9a2fdff45da77da3e7269e9aa512ea43bed5c38ce8fd8f3d1068a032c3f"
+size = 626378
