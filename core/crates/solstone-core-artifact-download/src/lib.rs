@@ -40,6 +40,7 @@ const BUILDER_INPUT_ALLOWED_HOSTS: &[&str] = &[
     "ziglang.org",
     "cmake.org",
     "static.rust-lang.org",
+    "www.python.org",
     "files.pythonhosted.org",
 ];
 
@@ -762,6 +763,7 @@ mod tests {
             "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz",
             "https://cmake.org/files/v3.31/cmake-3.31.12-windows-x86_64.zip",
             "https://static.rust-lang.org/dist/rust-std.tar.xz",
+            "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip",
             "https://files.pythonhosted.org/packages/onnxruntime.whl",
         ] {
             validate_url(url, &BUILDER_INPUT_DOWNLOAD_POLICY)
