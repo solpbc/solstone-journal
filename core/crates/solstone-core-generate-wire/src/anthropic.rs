@@ -315,7 +315,10 @@ fn converse_request_body(
 // solstone-core-thinking/src/providers.rs and must be revisited whenever
 // that catalog changes.
 fn model_supports_temperature(model: &str) -> bool {
-    !matches!(model, "claude-opus-4-7" | "claude-sonnet-5")
+    !matches!(
+        model,
+        "claude-opus-4-7" | "claude-sonnet-5" | "claude-opus-4-8"
+    )
 }
 
 fn request_timeout(timeout_s: Option<f64>) -> Duration {
@@ -949,6 +952,21 @@ mod tests {
         );
         assert!(
             no_temperature_sonnet_5.posts[0]
+                .get("temperature")
+                .is_none()
+        );
+
+        let mut no_temperature_opus_4_8 = StubTransport {
+            responses: vec![Ok(success_response())],
+            ..Default::default()
+        };
+        let _ = anthropic_generate_with(
+            &request(),
+            &config(Some("configured-secret"), Some("claude-opus-4-8")),
+            &mut no_temperature_opus_4_8,
+        );
+        assert!(
+            no_temperature_opus_4_8.posts[0]
                 .get("temperature")
                 .is_none()
         );
