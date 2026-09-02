@@ -8,16 +8,21 @@ use std::fs;
 use std::io;
 use std::mem::{offset_of, size_of};
 use std::os::windows::ffi::OsStrExt;
-use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+use std::os::windows::io::{AsHandle, AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
+use chrono::{FixedOffset, TimeZone};
+use solstone_core_journal_io::operational_log::{
+    OplogFormat, admit_day_health_directory, create_oplog_with_test_timing,
+};
 use solstone_core_journal_io::{
     InventoryBudget, JournalRoot, WindowsAcquisitionPrimitive, WindowsInventoryPrimitive,
     enumerate_windows_inventory, read_windows_inventory_file, run_with_windows_acquisition_trace,
     run_with_windows_inventory_trace,
 };
 use windows_sys::Win32::Foundation::{
-    ERROR_INSUFFICIENT_BUFFER, GetLastError, INVALID_HANDLE_VALUE, LUID,
+    ERROR_INSUFFICIENT_BUFFER, ERROR_SHARING_VIOLATION, GetLastError, INVALID_HANDLE_VALUE, LUID,
 };
 use windows_sys::Win32::Security::{
     GetTokenInformation, LUID_AND_ATTRIBUTES, LookupPrivilegeValueW, SE_BACKUP_NAME,
@@ -25,10 +30,12 @@ use windows_sys::Win32::Security::{
     TokenPrivileges,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    CreateFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO,
-    FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES,
-    FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FileAttributeTagInfo,
-    GetFileInformationByHandleEx, GetVolumeInformationByHandleW, OPEN_EXISTING,
+    CreateFileW, ExtendedFileIdType, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
+    FILE_ATTRIBUTE_TAG_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_ID_128,
+    FILE_ID_DESCRIPTOR, FILE_ID_DESCRIPTOR_0, FILE_ID_INFO, FILE_READ_ATTRIBUTES,
+    FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FileAttributeTagInfo, FileIdInfo,
+    GetFileInformationByHandleEx, GetVolumeInformationByHandleW, OPEN_EXISTING, OpenFileById,
+    SYNCHRONIZE,
 };
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
@@ -258,6 +265,164 @@ fn directory_handle(path: &Path) -> io::Result<OwnedHandle> {
     Ok(unsafe { OwnedHandle::from_raw_handle(raw) })
 }
 
+fn metadata_handle(path: &Path) -> io::Result<OwnedHandle> {
+    let path = wide(path.as_os_str());
+    // SAFETY: `path` is NUL-terminated, and the returned handle is owned immediately after the
+    // invalid-handle sentinel check.
+    #[allow(unsafe_code)]
+    let raw = unsafe {
+        CreateFileW(
+            path.as_ptr(),
+            FILE_READ_ATTRIBUTES,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            FILE_FLAG_OPEN_REPARSE_POINT,
+            std::ptr::null_mut(),
+        )
+    };
+    if raw == INVALID_HANDLE_VALUE {
+        return Err(io_error("open metadata handle"));
+    }
+    // SAFETY: `raw` is a valid uniquely owned handle after the invalid sentinel check.
+    #[allow(unsafe_code)]
+    Ok(unsafe { OwnedHandle::from_raw_handle(raw) })
+}
+
+fn file_identity(handle: RawHandle) -> io::Result<FILE_ID_INFO> {
+    let mut info = FILE_ID_INFO::default();
+    // SAFETY: `info` is writable for its exact supplied size and `handle` is live for the
+    // synchronous identity query.
+    #[allow(unsafe_code)]
+    let result = unsafe {
+        GetFileInformationByHandleEx(
+            handle,
+            FileIdInfo,
+            (&mut info as *mut FILE_ID_INFO).cast(),
+            size_of::<FILE_ID_INFO>() as u32,
+        )
+    };
+    if result == 0 {
+        return Err(io_error("query file identity"));
+    }
+    Ok(info)
+}
+
+fn open_by_extended_id_without_write_share(
+    volume_hint: RawHandle,
+    file_id: [u8; 16],
+) -> io::Result<OwnedHandle> {
+    let descriptor = FILE_ID_DESCRIPTOR {
+        dwSize: size_of::<FILE_ID_DESCRIPTOR>() as u32,
+        Type: ExtendedFileIdType,
+        Anonymous: FILE_ID_DESCRIPTOR_0 {
+            ExtendedFileId: FILE_ID_128 {
+                Identifier: file_id,
+            },
+        },
+    };
+    // SAFETY: `volume_hint` is live on the target volume, `descriptor` identifies one file, and
+    // a successful return transfers exactly one owned handle. Omitting FILE_SHARE_WRITE is the
+    // deliberate liveness oracle under test.
+    #[allow(unsafe_code)]
+    let raw = unsafe {
+        OpenFileById(
+            volume_hint,
+            &descriptor,
+            FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+            FILE_SHARE_READ | FILE_SHARE_DELETE,
+            std::ptr::null(),
+            FILE_FLAG_OPEN_REPARSE_POINT,
+        )
+    };
+    if raw == INVALID_HANDLE_VALUE {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: `raw` is a valid uniquely owned handle after the invalid sentinel check.
+    #[allow(unsafe_code)]
+    Ok(unsafe { OwnedHandle::from_raw_handle(raw) })
+}
+
+fn exercise_oplog_open_by_id_share_probe(root: &Path, filesystem: &str) {
+    let journal = root.join("oplog-open-by-id-share-probe");
+    fs::create_dir(&journal).expect("create oplog share-probe journal root");
+    let instant = FixedOffset::east_opt(0)
+        .expect("UTC offset")
+        .with_ymd_and_hms(2026, 9, 2, 16, 0, 0)
+        .single()
+        .expect("fixed receipt instant");
+    let writer = create_oplog_with_test_timing(
+        JournalRoot::open(&journal).expect("admit oplog share-probe root"),
+        "native-open-by-id-feasibility",
+        "ordinary-owner-receipt",
+        OplogFormat::Log,
+        instant,
+        Duration::ZERO,
+        Duration::ZERO,
+    )
+    .expect("create product operational-log writer");
+    let health = admit_day_health_directory(
+        JournalRoot::open(&journal).expect("readmit oplog share-probe root"),
+        "20260902",
+    )
+    .expect("admit oplog share-probe day health");
+    let published = journal
+        .join("chronicle")
+        .join("20260902")
+        .join("health")
+        .join(writer.leaf_name());
+    let reader = metadata_handle(&published).expect("open retained metadata reader");
+    let original = file_identity(reader.as_raw_handle()).expect("capture full oplog identity");
+    let volume = file_identity(health.health().as_handle().as_raw_handle())
+        .expect("capture volume-hint identity");
+    assert_eq!(
+        original.VolumeSerialNumber, volume.VolumeSerialNumber,
+        "captured oplog identity must belong to the retained volume hint"
+    );
+
+    let renamed = published.with_extension("renamed");
+    fs::rename(&published, &renamed).expect("rename the live oplog after identity capture");
+    fs::write(&published, b"path-replacement-control")
+        .expect("replace the oplog pathname with a different file");
+    let replacement = metadata_handle(&published).expect("open replacement metadata handle");
+    let replacement_identity =
+        file_identity(replacement.as_raw_handle()).expect("capture replacement identity");
+    assert_ne!(
+        original.FileId.Identifier, replacement_identity.FileId.Identifier,
+        "replacement control must install a different file identity"
+    );
+
+    let active = open_by_extended_id_without_write_share(
+        health.health().as_handle().as_raw_handle(),
+        original.FileId.Identifier,
+    )
+    .expect_err("the live product writer must conflict through omitted write sharing");
+    assert_eq!(
+        active.raw_os_error(),
+        Some(ERROR_SHARING_VIOLATION as i32),
+        "only the original identity's live write handle may establish Active"
+    );
+
+    drop(writer);
+    drop(
+        open_by_extended_id_without_write_share(
+            health.health().as_handle().as_raw_handle(),
+            original.FileId.Identifier,
+        )
+        .expect("the original identity must become Released after its writer closes"),
+    );
+    drop(
+        open_by_extended_id_without_write_share(
+            health.health().as_handle().as_raw_handle(),
+            original.FileId.Identifier,
+        )
+        .expect("a completed probe must not retain or leak a conflicting handle"),
+    );
+    drop(replacement);
+    drop(reader);
+    println!("JOURNAL_WIN_CI_ORDINARY_OWNER_{filesystem}_OPLOG_OPEN_BY_ID=executed/pass");
+}
+
 fn filesystem_name(path: &Path) -> io::Result<String> {
     let handle = directory_handle(path)?;
     let mut attributes = FILE_ATTRIBUTE_TAG_INFO::default();
@@ -417,6 +582,7 @@ fn exercise_refs_control() {
         "ordinary-owner ReFS fixture must remain on ReFS"
     );
     exercise_full_flow(&fixture.root, "REFS");
+    exercise_oplog_open_by_id_share_probe(&fixture.root, "REFS");
     println!("JOURNAL_WIN_CI_ORDINARY_OWNER_REFS=passed");
     println!(
         "JOURNAL_WIN_CI_ORDINARY_OWNER_REFS_ROOT={}",
@@ -438,6 +604,7 @@ fn ordinary_owner_inventory_control() {
         "ordinary-owner fixture must be NTFS"
     );
     exercise_full_flow(&fixture.root, "NTFS");
+    exercise_oplog_open_by_id_share_probe(&fixture.root, "NTFS");
     println!("JOURNAL_WIN_CI_ORDINARY_OWNER_NTFS=passed");
 
     exercise_refs_control();
