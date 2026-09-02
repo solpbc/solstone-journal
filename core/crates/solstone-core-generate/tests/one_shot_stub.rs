@@ -245,11 +245,19 @@ fn nonzero_non_protocol_stderr_is_unexpected_child() {
         let ClientError::UnexpectedChild(failure) = error else {
             panic!("{mode}: expected UnexpectedChild, got {error:?}");
         };
-        assert!(
-            failure.stderr.bytes.starts_with(stderr_prefix),
-            "{mode}: stderr {:?}",
-            failure.stderr
-        );
+        if stderr_prefix.is_empty() {
+            assert!(
+                failure.stderr.bytes.is_empty(),
+                "{mode}: stderr {:?}",
+                failure.stderr
+            );
+        } else {
+            assert!(
+                failure.stderr.bytes.starts_with(stderr_prefix),
+                "{mode}: stderr {:?}",
+                failure.stderr
+            );
+        }
         assert!(!failure.stderr.truncated);
         assert_reaped(&fixture);
     }
