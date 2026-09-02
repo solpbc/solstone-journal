@@ -175,6 +175,7 @@ solstone-core-journal-config = { path = "crates/solstone-core-journal-config" }
 solstone-core-journal-config-write = { path = "crates/solstone-core-journal-config-write" }
 solstone-core-journal-io = { path = "crates/solstone-core-journal-io" }
 solstone-core-mcp-audit = { path = "crates/solstone-core-mcp-audit" }
+solstone-core-win-dll-load = { path = "crates/solstone-core-win-dll-load" }
 solstone-core-win-owner-rail = { path = "crates/solstone-core-win-owner-rail" }
 solstone-core-transfer = { path = "crates/solstone-core-transfer" }
 solstone-core-transfer-manifest = { path = "crates/solstone-core-transfer-manifest" }

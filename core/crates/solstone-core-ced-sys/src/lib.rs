@@ -77,9 +77,7 @@ pub struct CedLibrary {
 impl CedLibrary {
     /// Open `path`, bind the supported ABI, and reject incompatible engine versions.
     pub fn open(path: &Path) -> Result<Self, CedError> {
-        let library = unsafe { Library::new(path) }.map_err(|error| CedError::Library {
-            detail: format!("could not load ced engine {}: {error}", path.display()),
-        })?;
+        let library = open_library(path)?;
         let symbols = Symbols {
             abi_version: load_symbol(&library, b"ced_capi_abi_version\0", "ced_capi_abi_version")?,
             load: load_symbol(&library, b"ced_capi_load\0", "ced_capi_load")?,
@@ -124,6 +122,30 @@ impl CedLibrary {
             unsafe { CStr::from_ptr(pointer.as_ptr()) }
                 .to_string_lossy()
                 .into_owned()
+        })
+    }
+}
+
+fn open_library(path: &Path) -> Result<Library, CedError> {
+    #[cfg(windows)]
+    {
+        use solstone_core_win_dll_load::{
+            LoadPolicy, load_dll, restrict_default_dll_directories,
+        };
+
+        restrict_default_dll_directories().map_err(|error| CedError::Library {
+            detail: format!("could not restrict DLL search before loading CED: {error}"),
+        })?;
+        load_dll(LoadPolicy::ApplicationDir, path).map_err(|error| CedError::Library {
+            detail: format!("could not load ced engine {}: {error}", path.display()),
+        })
+    }
+    #[cfg(not(windows))]
+    {
+        // SAFETY: non-Windows callers retain the established explicit-path dynamic-load
+        // contract. Windows must use `LoadLibraryExW` through the branch above.
+        unsafe { Library::new(path) }.map_err(|error| CedError::Library {
+            detail: format!("could not load ced engine {}: {error}", path.display()),
         })
     }
 }

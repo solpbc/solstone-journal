@@ -3686,6 +3686,7 @@ name = "solstone-core-ced-sys"
 version = "2.0.0"
 dependencies = [
  "libloading",
+ "solstone-core-win-dll-load",
 ]
 
 [[package]]
