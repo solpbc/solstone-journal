@@ -137,6 +137,7 @@ pub use errors::{
 pub use flat_directory::{
     FlatDirectory, create_or_open_flat_directory_bound, list_flat_directory,
     open_flat_directory_bound, read_observed_file, read_observed_file_bounded,
+    read_observed_root_file_bounded,
 };
 #[cfg(unix)]
 pub use health_marker::{

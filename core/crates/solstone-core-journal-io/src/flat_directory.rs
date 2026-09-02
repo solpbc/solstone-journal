@@ -385,6 +385,25 @@ pub fn read_observed_file_bounded(
     read_observed_file_unchecked_bounded(directory, name, maximum)
 }
 
+/// Read one direct regular file from a retained root descriptor.
+///
+/// This has the same no-follow, stable-metadata, and bounded-read contract as
+/// [`read_observed_file_bounded`], without requiring callers to invent a
+/// synthetic child directory merely to read a direct root member.
+pub fn read_observed_root_file_bounded(
+    root: &JournalRoot,
+    name: &OsStr,
+    maximum: usize,
+) -> Result<Option<FileObservation>, FlatDirectoryError> {
+    validate_portable_name(name)?;
+    let root_path = root.canonical_path().to_path_buf();
+    let path = root_path.join(name);
+    read_observed_file_from_parent(root, name, path, maximum, || {
+        root.revalidate()
+            .map_err(|error| map_root_revalidation_error(error, root_path.clone()))
+    })
+}
+
 pub(crate) fn read_observed_file_unchecked(
     directory: &FlatDirectory,
     name: &OsStr,
@@ -397,10 +416,20 @@ fn read_observed_file_unchecked_bounded(
     name: &OsStr,
     maximum: usize,
 ) -> Result<Option<FileObservation>, FlatDirectoryError> {
-    directory.revalidate()?;
     let path = directory.diagnostic_entry(name);
+    read_observed_file_from_parent(directory, name, path, maximum, || directory.revalidate())
+}
+
+fn read_observed_file_from_parent(
+    parent: &impl AsFd,
+    name: &OsStr,
+    path: PathBuf,
+    maximum: usize,
+    revalidate: impl Fn() -> Result<(), FlatDirectoryError>,
+) -> Result<Option<FileObservation>, FlatDirectoryError> {
+    revalidate()?;
     flat_directory_test_hook(FlatDirectoryTestPrimitive::BeforeObservedFileOpen);
-    let fd = match openat(directory, name, FILE_FLAGS, Mode::empty()) {
+    let fd = match openat(parent, name, FILE_FLAGS, Mode::empty()) {
         Ok(fd) => fd,
         Err(Errno::ENOENT) => return Ok(None),
         Err(Errno::ELOOP) => return Err(FlatDirectoryError::NotRegular { path }),
@@ -441,23 +470,13 @@ fn read_observed_file_unchecked_bounded(
             source,
         });
     }
-    let after = fstat(&file).map_err(|error| {
-        errno_error(
-            "restat observed file",
-            directory.diagnostic_entry(name),
-            error,
-        )
-    })?;
-    let after_entry = entry_from_stat(
-        name.to_os_string(),
-        &after,
-        &directory.diagnostic_entry(name),
-    )?;
+    let after =
+        fstat(&file).map_err(|error| errno_error("restat observed file", path.clone(), error))?;
+    let after_entry = entry_from_stat(name.to_os_string(), &after, &path)?;
     if !same_entry_metadata(&entry, &after_entry) {
-        return Err(FlatDirectoryError::IdentityChanged {
-            path: directory.diagnostic_entry(name),
-        });
+        return Err(FlatDirectoryError::IdentityChanged { path });
     }
+    revalidate()?;
     Ok(Some(FileObservation { entry, bytes }))
 }
 
@@ -883,6 +902,30 @@ mod tests {
         let mut bytes = vec![0; 10];
         read_exact(&mut reader, &mut bytes).unwrap();
         assert_eq!(bytes, b"short-read");
+    }
+
+    #[test]
+    fn observed_root_read_is_direct_no_follow_and_bounded() {
+        let temporary = TempDir::new();
+        let record = temporary.path().join("record");
+        fs::write(&record, b"bytes").unwrap();
+        let root = JournalRoot::open(temporary.path()).unwrap();
+        assert_eq!(
+            read_observed_root_file_bounded(&root, OsStr::new("record"), 5)
+                .unwrap()
+                .expect("record")
+                .bytes,
+            b"bytes"
+        );
+        assert!(matches!(
+            read_observed_root_file_bounded(&root, OsStr::new("record"), 4),
+            Err(FlatDirectoryError::SizeLimitExceeded { .. })
+        ));
+        symlink(&record, temporary.path().join("link")).unwrap();
+        assert!(matches!(
+            read_observed_root_file_bounded(&root, OsStr::new("link"), 5),
+            Err(FlatDirectoryError::NotRegular { .. })
+        ));
     }
 
     #[test]
