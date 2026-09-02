@@ -80,10 +80,10 @@ Priority is required on every scheduled prompt. See [CORTEX.md](CORTEX.md).
 `config/schedules.json` stores scheduler metadata and named entries. Reserved
 keys are `daily_time`, `weekly_day`, and `weekly_time`. Every other top-level
 key is a named entry with `cmd` and `every`, plus optional `enabled` and
-`max_runtime`. New schedule configurations set daily work to `00:15` and
-weekly work to Sunday at `03:15`, keeping both off the hourly boundary. Existing
-configurations are not backfilled with those metadata values. Writes go through
-`solstone-core-system`.
+`max_runtime`. New schedule configurations set the daily scheduler time to
+`00:15` and weekly scheduler time to Sunday at `03:15`, keeping both off the
+hourly boundary. Existing configurations are not backfilled with those metadata
+values. Writes go through `solstone-core-system`.
 
 ## Related
 
