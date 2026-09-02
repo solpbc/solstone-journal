@@ -5,17 +5,14 @@ use std::io::IsTerminal;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
 
 use chrono::Local;
 use solstone_core_cli::{
     HEALTH_LOGS_HELP, HEALTH_LOGS_USAGE, HealthLogsArgs, HealthLogsValueCheck,
 };
 use solstone_core_operational_logs::{
-    CollectError, EnumerationError, HealthDirectoryState, HealthLogsQuery, OrdinaryTailError,
-    ParsedCount, StdDayLogDirectoryOps, StdFollowFs, StdProbeOps, StdTailFileOpener,
-    collect_health_logs, parse_health_log_count, probe_health_directory, render_collected,
-    run_follow,
+    CollectError, HealthLogsQuery, ParsedCount, collect_health_logs, parse_health_log_count,
+    render_collected, run_follow,
 };
 use solstone_core_system::operational_log_parse::parse_health_log_since;
 use solstone_core_system_health::{
@@ -42,14 +39,7 @@ pub(super) fn run(args: HealthLogsArgs) -> ExitCode {
         service: prepared.service,
         grep: prepared.grep,
     };
-    match collect_health_logs(
-        &journal,
-        now,
-        &query,
-        &StdProbeOps,
-        &StdTailFileOpener,
-        &StdDayLogDirectoryOps,
-    ) {
+    match collect_health_logs(&journal, now, &query) {
         Ok(rows) => match render_collected(&mut std::io::stdout(), &rows, is_tty) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => failure(SafeDiagnostic::dynamic(error.to_string())),
@@ -118,31 +108,18 @@ fn prepare(args: HealthLogsArgs, now: chrono::NaiveDateTime) -> Result<PreparedH
 }
 
 fn run_follow_mode(journal: &std::path::Path, is_tty: bool) -> ExitCode {
-    let health_dir = journal.join("health");
-    match probe_health_directory(&health_dir, &StdProbeOps) {
-        Ok(HealthDirectoryState::Absent | HealthDirectoryState::NotADirectory) => {
-            eprintln!("No health directory found.");
-            ExitCode::SUCCESS
-        }
-        Err(error) => failure(SafeDiagnostic::path_source(&error.path, &error.source)),
-        Ok(HealthDirectoryState::Directory) => {
-            let stopped = Arc::new(AtomicBool::new(false));
-            install_stop_listener(stopped.clone());
-            let start = Instant::now();
-            let result = run_follow(
-                &StdFollowFs,
-                &health_dir,
-                &|| start.elapsed(),
-                &|| stopped.load(Ordering::Relaxed),
-                &mut std::io::stdout(),
-                is_tty,
-                &mut |warning| eprintln!("{warning}"),
-            );
-            match result {
-                Ok(()) => ExitCode::SUCCESS,
-                Err(error) => failure(follow_error_message(error)),
-            }
-        }
+    let stopped = Arc::new(AtomicBool::new(false));
+    install_stop_listener(stopped.clone());
+    let result = run_follow(
+        journal,
+        &|| stopped.load(Ordering::Relaxed),
+        &mut std::io::stdout(),
+        is_tty,
+        &mut |warning| eprintln!("{warning}"),
+    );
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => failure(follow_error_message(error)),
     }
 }
 
@@ -204,15 +181,10 @@ impl SafeDiagnostic {
 
 fn collect_error_message(error: CollectError) -> SafeDiagnostic {
     match error {
-        CollectError::HealthDirectoryProbe(error) | CollectError::SupervisorProbe(error) => {
-            SafeDiagnostic::path_source(&error.path, &error.source)
+        CollectError::Root | CollectError::CatalogIo | CollectError::CatalogUtf8 => {
+            SafeDiagnostic::dynamic(error.to_string())
         }
-        CollectError::Enumeration(EnumerationError::Enumerate { path, source }) => {
-            SafeDiagnostic::path_source(&path, &source)
-        }
-        CollectError::InvalidUtf8(OrdinaryTailError::InvalidUtf8 { path, source }) => {
-            SafeDiagnostic::path_source(&path, &source)
-        }
+        CollectError::Catalog(error) => SafeDiagnostic::dynamic(error.to_string()),
     }
 }
 

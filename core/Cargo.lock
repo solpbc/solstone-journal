@@ -4730,7 +4730,6 @@ dependencies = [
 name = "solstone-core-operational-logs"
 version = "2.0.0"
 dependencies = [
- "base64 0.22.1",
  "chrono",
  "serde",
  "serde_json",

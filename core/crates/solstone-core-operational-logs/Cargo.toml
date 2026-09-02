@@ -19,7 +19,6 @@ solstone-core-system-health.workspace = true
 solstone-core-journal-io.workspace = true
 
 [dev-dependencies]
-base64 = "0.22.1"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true
