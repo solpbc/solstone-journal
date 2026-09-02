@@ -1,0 +1,117 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Linked-device pairing identity contract",
+    "version": "1.0.0",
+    "description": "Pairer-supplied pairing identity on the ceremony POST. client_label and platform are pairer-supplied, non-attestation, and non-authorization: they do not grant device-door access. A certificate is authorized only by a unique fingerprint in link/authorized_clients.json. Direct and relay carriers are equivalent for these fields. Validation runs for every nonce role, including peer, before nonce consumption.",
+    "x-disclaimer": "pairer-supplied / non-attestation / non-authorization"
+  },
+  "paths": {
+    "/app/network/pair": {
+      "post": {
+        "operationId": "client.pair",
+        "x-aliases": ["/app/link/pair"],
+        "description": "Complete a one-shot pairing ceremony. Identity fields live in the flattened additional_fields of PairRequest (client_label, platform). Direct and relay admissions apply the same field rules.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PairRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ceremony completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PairResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Pairing request invalid, including invalid pairing identity fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "PairRequest": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["csr", "device_label"],
+        "properties": {
+          "csr": {
+            "type": "string",
+            "description": "PEM-encoded certificate-signing request"
+          },
+          "device_label": {
+            "type": "string"
+          },
+          "client_label": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Pairer-supplied label. Valid on the wire iff the UTF-8 byte length is 1-253 (no charset restriction). Empty, wrong JSON type, or more than 253 UTF-8 bytes is refused before nonce consume. JSON Schema minLength counts characters; the byte bound is x-max-utf8-bytes.",
+            "x-max-utf8-bytes": 253
+          },
+          "platform": {
+            "type": "string",
+            "enum": ["linux", "macos", "windows", "ios", "android"],
+            "description": "Closed pairer-supplied platform vocabulary. Empty string, wrong JSON type, or any other value is refused before nonce consume. There is no present-empty read-back state."
+          }
+        }
+      },
+      "PairResponse": {
+        "type": "object",
+        "required": ["client_cert", "ca_chain", "instance_id", "home_label", "fingerprint"],
+        "properties": {
+          "client_cert": {"type": "string"},
+          "ca_chain": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "instance_id": {"type": "string"},
+          "home_label": {"type": "string"},
+          "fingerprint": {"type": "string"},
+          "home_attestation": {"type": "string"},
+          "local_endpoints": {}
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": ["reason_code", "reason", "error", "detail"],
+        "properties": {
+          "reason_code": {
+            "type": "string",
+            "enum": ["pairing_request_invalid", "missing_required_field"]
+          },
+          "reason": {"type": "string"},
+          "error": {"type": "string"},
+          "detail": {"type": "string"}
+        }
+      }
+    }
+  },
+  "x-pairing-identity": {
+    "disclaimer": "pairer-supplied / non-attestation / non-authorization",
+    "carrier_equivalence": "direct == relay",
+    "nonce_roles": ["", "phone", "observer", "peer"],
+    "validation": "before nonce consume, every role including peer",
+    "client_label_read_back": ["absent", "present-empty", "valid", "present-but-unprojectable", "malformed"],
+    "platform_read_back": ["absent", "valid", "malformed"],
+    "combined": "either field malformed => Unavailable, no companion fallback"
+  }
+}

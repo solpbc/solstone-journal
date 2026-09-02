@@ -3797,6 +3797,29 @@ async fn ac6_malformed_ledger_is_refused() {
 }
 
 #[tokio::test]
+async fn ac6_duplicate_cid_ledger_is_refused() {
+    let fixture = Fixture::established(2);
+    fixture.induce_duplicate_cid_authorization();
+    assert_eq!(
+        ledger_posture(&fixture),
+        AuthorizedClientsRead::DuplicateCid
+    );
+    let handle = serve(options(&fixture, router(fixture.root.clone()), 0))
+        .await
+        .expect("serve");
+    let port = door_port(handle.door_outcome());
+    assert!(
+        request_result(&fixture, 0, port).await.is_err(),
+        "duplicated CID handshake was accepted"
+    );
+    assert!(
+        request_result(&fixture, 1, port).await.is_err(),
+        "unrelated valid CID handshake was accepted under duplicate-CID posture"
+    );
+    handle.shutdown();
+}
+
+#[tokio::test]
 async fn ac7_missing_ledger_is_refused() {
     let fixture = Fixture::established(1);
     std::fs::remove_file(fixture.root.join("link/authorized_clients.json"))
@@ -4371,6 +4394,82 @@ async fn ac10_transient_unreadable_posture_does_not_close_admitted_carrier() {
         "unreadable posture closed an admitted carrier"
     );
     std::fs::remove_dir(&authorization).expect("unreadable directory removes");
+    std::fs::write(&authorization, b"[]").expect("definite revocation writes");
+    assert_eq!(
+        ledger_posture(&fixture),
+        AuthorizedClientsRead::Present(Vec::new())
+    );
+    let transitioned = tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if exchange_over_carrier(
+                &mut carrier,
+                &mut decoder,
+                ids.allocate(),
+                "GET",
+                "/api/system/status",
+                &[],
+                &[],
+            )
+            .await
+            .is_err()
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await;
+    assert!(
+        transitioned.is_ok(),
+        "definite Present removal did not close carrier"
+    );
+    handle.shutdown();
+}
+
+#[tokio::test]
+async fn ac10_transient_duplicate_cid_posture_does_not_close_admitted_carrier() {
+    let fixture = Fixture::established(1);
+    let handle = serve(options(&fixture, router(fixture.root.clone()), 0))
+        .await
+        .expect("serve");
+    let mut carrier = live_carrier(&fixture, door_port(handle.door_outcome())).await;
+    let mut decoder = FrameDecoder::new();
+    let mut ids = FrameDialer::default();
+    assert!(
+        exchange_over_carrier(
+            &mut carrier,
+            &mut decoder,
+            ids.allocate(),
+            "GET",
+            "/api/system/status",
+            &[],
+            &[]
+        )
+        .await
+        .is_ok()
+    );
+    let authorization = fixture.root.join("link/authorized_clients.json");
+    fixture.induce_duplicate_cid_authorization();
+    assert_eq!(
+        ledger_posture(&fixture),
+        AuthorizedClientsRead::DuplicateCid
+    );
+    tokio::time::sleep(Duration::from_millis(1_600)).await;
+    assert!(
+        exchange_over_carrier(
+            &mut carrier,
+            &mut decoder,
+            ids.allocate(),
+            "GET",
+            "/api/system/status",
+            &[],
+            &[]
+        )
+        .await
+        .is_ok(),
+        "duplicate-CID posture closed an admitted carrier"
+    );
+    std::fs::remove_file(&authorization).expect("duplicate ledger removes");
     std::fs::write(&authorization, b"[]").expect("definite revocation writes");
     assert_eq!(
         ledger_posture(&fixture),

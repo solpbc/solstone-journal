@@ -257,6 +257,25 @@ impl Fixture {
         fs::write(&path, b"{}").expect("malformed authorization writes");
     }
 
+    /// Inode-changing induction: client 0's row is duplicated; other rows stay unique.
+    pub fn induce_duplicate_cid_authorization(&self) {
+        let path = self.authorized_clients_path();
+        let mut entries: Vec<serde_json::Value> =
+            serde_json::from_slice(&self.established_authorized_clients)
+                .expect("established ledger parses");
+        let first = entries
+            .first()
+            .expect("established ledger has a client")
+            .clone();
+        entries.push(first);
+        fs::remove_file(&path).expect("authorization file removes");
+        fs::write(
+            &path,
+            serde_json::to_vec(&entries).expect("duplicate ledger serializes"),
+        )
+        .expect("duplicate authorization writes");
+    }
+
     pub fn remove_authorization(&self, index: usize) -> RemoveOutcome {
         let cid = format!(
             "sha256:{}",

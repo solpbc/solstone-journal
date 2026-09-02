@@ -37,6 +37,7 @@ pub enum ClientActivityState {
 pub enum ClientLedgerUnavailable {
     Unreadable,
     Malformed,
+    DuplicateCid,
 }
 
 /// Result of reading the client-ledger projection.
@@ -134,6 +135,10 @@ pub fn inspect_clients_at(journal_root: &Path, now_ms: i64) -> ClientInspection 
         },
         AuthorizedClientsRead::Malformed => ClientInspection::LedgerUnavailable {
             reason: ClientLedgerUnavailable::Malformed,
+            activity,
+        },
+        AuthorizedClientsRead::DuplicateCid => ClientInspection::LedgerUnavailable {
+            reason: ClientLedgerUnavailable::DuplicateCid,
             activity,
         },
         AuthorizedClientsRead::Present(entries) => {
@@ -364,6 +369,18 @@ mod tests {
             inspect_clients_at(root.path(), NOW_MS),
             ClientInspection::LedgerUnavailable {
                 reason: ClientLedgerUnavailable::Malformed,
+                ..
+            }
+        ));
+        fs::write(
+            root.path().join("link/authorized_clients.json"),
+            br#"[{"fingerprint":"a"},{"fingerprint":"a"}]"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            inspect_clients_at(root.path(), NOW_MS),
+            ClientInspection::LedgerUnavailable {
+                reason: ClientLedgerUnavailable::DuplicateCid,
                 ..
             }
         ));

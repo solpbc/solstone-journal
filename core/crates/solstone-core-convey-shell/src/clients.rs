@@ -86,6 +86,10 @@ async fn list(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
                     "authorization_ledger_malformed",
                     "authorized-client ledger is invalid",
                 ),
+                ClientLedgerUnavailable::DuplicateCid => (
+                    "authorization_ledger_duplicate_cid",
+                    "authorized-client ledger contains a duplicate client identifier",
+                ),
             };
             log::warn!("network clients could not read the authorization ledger: {reason_code}");
             crate::network::refusal(reason_code, detail, StatusCode::SERVICE_UNAVAILABLE)
@@ -417,6 +421,26 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(body["reason_code"], "authorization_ledger_malformed");
+
+        fs::write(
+            journal.0.path().join("link/authorized_clients.json"),
+            json!([
+                client("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "one"),
+                client("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "two"),
+            ])
+            .to_string(),
+        )
+        .expect("duplicate ledger");
+        let (status, body) = request(
+            crate::router(journal.0.path().to_path_buf()),
+            Request::get("/app/network/api/clients")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body["reason_code"], "authorization_ledger_duplicate_cid");
+        assert_ne!(body.get("clients"), Some(&json!([])));
     }
 
     #[tokio::test]
@@ -574,5 +598,54 @@ mod tests {
             row.keys().map(String::as_str).collect::<BTreeSet<_>>(),
             NETWORK_DEVICE_FIELDS.into_iter().collect::<BTreeSet<_>>()
         );
+    }
+
+    #[tokio::test]
+    async fn clients_projection_ignores_pairing_identity_reader_states() {
+        let cid = "sha256:0123456789abcdef0123456789abcdef";
+        let expected_keys = CLIENT_ENTRY_FIELDS.into_iter().collect::<BTreeSet<_>>();
+        for (client_label, expected) in [
+            (None, json!("")),
+            (Some(json!("")), json!("")),
+            (Some(json!("Phone")), json!("Phone")),
+            (Some(json!(1)), json!("")),
+        ] {
+            let journal = EstablishedJournal::new();
+            let mut entry = client(cid, "phone");
+            match client_label {
+                None => {
+                    entry
+                        .as_object_mut()
+                        .expect("object")
+                        .remove("client_label");
+                }
+                Some(value) => {
+                    entry
+                        .as_object_mut()
+                        .expect("object")
+                        .insert("client_label".to_owned(), value);
+                }
+            }
+            entry
+                .as_object_mut()
+                .expect("object")
+                .insert("platform".to_owned(), json!("linux"));
+            journal.write_ledger(json!([entry]));
+            let (status, body) = request(
+                crate::router(journal.0.path().to_path_buf()),
+                Request::get("/app/network/api/clients")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+            let row = body["clients"][0].as_object().expect("client row");
+            assert_eq!(
+                row.keys().map(String::as_str).collect::<BTreeSet<_>>(),
+                expected_keys
+            );
+            assert_eq!(row["client_label"], expected);
+            assert!(!row.contains_key("platform"));
+        }
     }
 }

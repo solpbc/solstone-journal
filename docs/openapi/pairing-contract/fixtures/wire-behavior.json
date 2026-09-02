@@ -1,0 +1,244 @@
+{
+  "fixtures": [
+    {
+      "id": "declared.pairing.identity.omission",
+      "kind": "declared",
+      "payload": {
+        "accepted": true
+      },
+      "provenance": {
+        "http_status": 200,
+        "vocabulary": "pairing_identity"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
+      "id": "declared.pairing.identity.presence.label_only",
+      "kind": "declared",
+      "payload": {
+        "accepted": true
+      },
+      "provenance": {
+        "http_status": 200,
+        "vocabulary": "pairing_identity"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
+      "id": "declared.pairing.identity.presence.platform_only",
+      "kind": "declared",
+      "payload": {
+        "accepted": true
+      },
+      "provenance": {
+        "http_status": 200,
+        "vocabulary": "pairing_identity"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
+      "id": "declared.pairing.identity.presence.both",
+      "kind": "declared",
+      "payload": {
+        "accepted": true
+      },
+      "provenance": {
+        "http_status": 200,
+        "vocabulary": "pairing_identity"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
+      "id": "declared.pairing.identity.lookalike.casing",
+      "kind": "declared",
+      "payload": {
+        "accepted": true
+      },
+      "provenance": {
+        "http_status": 200,
+        "vocabulary": "pairing_identity"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
+      "id": "declared.pairing.identity.lookalike.punctuation",
+      "kind": "declared",
+      "payload": {
+        "accepted": true
+      },
+      "provenance": {
+        "http_status": 200,
+        "vocabulary": "pairing_identity"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
+      "id": "declared.pairing.identity.opaque.extension",
+      "kind": "declared",
+      "payload": {
+        "accepted": true
+      },
+      "provenance": {
+        "http_status": 200,
+        "vocabulary": "pairing_identity"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
+      "id": "declared.pairing.identity.invalid.client_label.type",
+      "kind": "declared",
+      "payload": {
+        "detail": "client_label is invalid",
+        "error": "client_label is invalid",
+        "reason": "pairing_request_invalid",
+        "reason_code": "pairing_request_invalid"
+      },
+      "provenance": {
+        "http_status": 400,
+        "vocabulary": "pairing_identity"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
+      "id": "declared.pairing.identity.invalid.client_label.empty",
+      "kind": "declared",
+      "payload": {
+        "detail": "client_label is invalid",
+        "error": "client_label is invalid",
+        "reason": "pairing_request_invalid",
+        "reason_code": "pairing_request_invalid"
+      },
+      "provenance": {
+        "http_status": 400,
+        "vocabulary": "pairing_identity"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
+      "id": "declared.pairing.identity.invalid.client_label.oversize",
+      "kind": "declared",
+      "payload": {
+        "detail": "client_label is invalid",
+        "error": "client_label is invalid",
+        "reason": "pairing_request_invalid",
+        "reason_code": "pairing_request_invalid"
+      },
+      "provenance": {
+        "http_status": 400,
+        "vocabulary": "pairing_identity"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
+      "id": "declared.pairing.identity.invalid.platform.unknown",
+      "kind": "declared",
+      "payload": {
+        "detail": "platform is invalid",
+        "error": "platform is invalid",
+        "reason": "pairing_request_invalid",
+        "reason_code": "pairing_request_invalid"
+      },
+      "provenance": {
+        "http_status": 400,
+        "vocabulary": "pairing_identity"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
+      "id": "declared.pairing.identity.bound.client_label.253",
+      "kind": "declared",
+      "payload": {
+        "accepted": true
+      },
+      "provenance": {
+        "http_status": 200,
+        "vocabulary": "pairing_identity"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
+      "id": "declared.pairing.identity.role.empty",
+      "kind": "declared",
+      "payload": {
+        "accepted": true
+      },
+      "provenance": {
+        "http_status": 200,
+        "vocabulary": "pairing_identity"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
+      "id": "declared.pairing.identity.role.phone",
+      "kind": "declared",
+      "payload": {
+        "accepted": true
+      },
+      "provenance": {
+        "http_status": 200,
+        "vocabulary": "pairing_identity"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
+      "id": "declared.pairing.identity.role.observer",
+      "kind": "declared",
+      "payload": {
+        "accepted": true
+      },
+      "provenance": {
+        "http_status": 200,
+        "vocabulary": "pairing_identity"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
+      "id": "declared.pairing.identity.role.peer",
+      "kind": "declared",
+      "payload": {
+        "detail": "peer pairing is not available on this build",
+        "error": "peer pairing is not available on this build",
+        "reason": "pairing_request_invalid",
+        "reason_code": "pairing_request_invalid"
+      },
+      "provenance": {
+        "http_status": 400,
+        "vocabulary": "pairing_identity"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    }
+  ],
+  "schema": "solstone.pairing-contract-fixtures.v1"
+}

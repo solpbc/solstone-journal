@@ -89,6 +89,30 @@ async fn malformed_ledger_is_refused_with_certificate_unknown() {
 }
 
 #[tokio::test]
+async fn duplicate_cid_ledger_is_refused_with_certificate_unknown() {
+    let temporary = TempDir::new();
+    let fixture = TlsFixture::new();
+    let path = temporary
+        .path()
+        .join("link")
+        .join("authorized_clients.json");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        br#"[{"fingerprint":"a","device_label":"one","paired_at":"1","instance_id":"i"},{"fingerprint":"a","device_label":"two","paired_at":"2","instance_id":"i"}]"#,
+    )
+    .unwrap();
+    let mut ledger = AuthorizationLedger::new(temporary.path());
+    let (_sender, receiver) = authorization_channel(&mut ledger);
+    let config = fixture.server_config(receiver);
+
+    let (server, client) = handshake(config, fixture.client_config()).await;
+
+    assert!(server.is_err());
+    assert_peer_alert(client, AlertDescription::CertificateUnknown);
+}
+
+#[tokio::test]
 async fn unreadable_ledger_is_refused_with_certificate_unknown() {
     let temporary = TempDir::new();
     let fixture = TlsFixture::new();
@@ -150,6 +174,32 @@ async fn server_config_built_after_refresh_snapshots_unreadable_posture() {
     let path = ledger.authorized_clients_path().to_path_buf();
     fs::remove_file(&path).unwrap();
     fs::create_dir(&path).unwrap();
+    refresh_once(&mut ledger, &sender);
+    let refreshed_config = fixture.server_config(receiver);
+    let (server, client) = handshake(refreshed_config, fixture.client_config()).await;
+    assert!(server.is_err());
+    assert_peer_alert(client, AlertDescription::CertificateUnknown);
+}
+
+#[tokio::test]
+async fn server_config_built_after_refresh_snapshots_duplicate_cid_posture() {
+    let temporary = TempDir::new();
+    let fixture = TlsFixture::new();
+    let mut ledger = AuthorizationLedger::new(temporary.path());
+    ledger.add(fixture.entry()).unwrap();
+    let (sender, receiver) = authorization_channel(&mut ledger);
+    let config = fixture.server_config(receiver.clone());
+
+    let (server, client) = handshake(config.clone(), fixture.client_config()).await;
+    assert!(server.is_ok());
+    assert!(client.is_ok());
+
+    let path = ledger.authorized_clients_path().to_path_buf();
+    fs::write(
+        &path,
+        br#"[{"fingerprint":"a","device_label":"one","paired_at":"1","instance_id":"i"},{"fingerprint":"a","device_label":"two","paired_at":"2","instance_id":"i"}]"#,
+    )
+    .unwrap();
     refresh_once(&mut ledger, &sender);
     let refreshed_config = fixture.server_config(receiver);
     let (server, client) = handshake(refreshed_config, fixture.client_config()).await;
