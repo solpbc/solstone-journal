@@ -13,7 +13,7 @@ use std::process::Command;
 
 use super::ced_install::{
     CedInstallError, ced_library_path, ced_model_path, engine_dir, library_name, model_artifact,
-    write_sidecar,
+    write_model_sidecar, write_sidecar,
 };
 use super::manifest::sha256_file;
 
@@ -79,6 +79,14 @@ pub fn write_ced_model_bytes(journal: &Path, bytes: &[u8]) -> Result<(), CedInst
         .map_err(|error| CedInstallError::new("install_failed", error.to_string(), 74))?;
     file.set_len(size)
         .map_err(|error| CedInstallError::new("install_failed", error.to_string(), 74))?;
+    Ok(())
+}
+
+/// Write the journal-owned CED model and its model-only sidecar, without
+/// constructing a writable engine directory.
+pub fn write_ced_model_only(journal: &Path) -> Result<(), CedInstallError> {
+    write_ced_model_bytes(journal, b"")?;
+    write_model_sidecar(journal)?;
     Ok(())
 }
 

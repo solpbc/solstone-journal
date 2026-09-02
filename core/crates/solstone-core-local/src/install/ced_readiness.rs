@@ -72,26 +72,36 @@ pub fn evaluate_ced_readiness_against(
             os: os.to_owned(),
             arch: arch.to_owned(),
         },
-        Err(error) => {
-            let status = match error.reason_code.as_str() {
-                "sidecar_missing" | "file_missing" => CapabilityStatus::Absent {
-                    capability: CED_CAPABILITY.to_owned(),
-                    detail: error.to_string(),
-                },
-                _ => CapabilityStatus::IntegrityInvalid {
-                    capability: CED_CAPABILITY.to_owned(),
-                    detail: error.to_string(),
-                },
-            };
-            CedVerdict::Degraded(status)
-        }
+        Err(error) => CedVerdict::Degraded(ced_install_status(&error)),
         Ok(Some(_)) => probe_integrity_and_load(journal, key, expected_model_sha256),
+    }
+}
+
+fn ced_install_status(error: &super::ced_install::CedInstallError) -> CapabilityStatus {
+    match error.reason_code.as_str() {
+        "sidecar_missing" | "file_missing" => CapabilityStatus::Absent {
+            capability: CED_CAPABILITY.to_owned(),
+            detail: error.to_string(),
+        },
+        _ => CapabilityStatus::IntegrityInvalid {
+            capability: CED_CAPABILITY.to_owned(),
+            detail: error.to_string(),
+        },
     }
 }
 
 fn probe_integrity_and_load(journal: &Path, key: &str, expected_model_sha256: &str) -> CedVerdict {
     let model = ced_model_path(journal);
-    let actual = match sha256_file(&model) {
+    let library = ced_library_path(journal, key);
+    probe_model_and_library_at_paths(&model, expected_model_sha256, &library)
+}
+
+fn probe_model_and_library_at_paths(
+    model: &Path,
+    expected_model_sha256: &str,
+    library: &Path,
+) -> CedVerdict {
+    let actual = match sha256_file(model) {
         Ok(actual) => actual,
         Err(detail) => {
             return CedVerdict::Degraded(CapabilityStatus::IntegrityInvalid {
@@ -109,8 +119,7 @@ fn probe_integrity_and_load(journal: &Path, key: &str, expected_model_sha256: &s
             ),
         });
     }
-    let library = ced_library_path(journal, key);
-    let loaded = match CedLibrary::open(&library) {
+    let loaded = match CedLibrary::open(library) {
         Ok(engine) => engine,
         Err(error) => {
             return CedVerdict::Degraded(CapabilityStatus::UnloadableOrUnrunnable {
@@ -119,13 +128,16 @@ fn probe_integrity_and_load(journal: &Path, key: &str, expected_model_sha256: &s
             });
         }
     };
-    if let Err(error) = loaded.load_model(&model) {
+    if let Err(error) = loaded.load_model(model) {
         return CedVerdict::Degraded(CapabilityStatus::UnloadableOrUnrunnable {
             capability: CED_CAPABILITY.to_owned(),
             detail: error.to_string(),
         });
     }
-    CedVerdict::Ready { library, model }
+    CedVerdict::Ready {
+        library: library.to_path_buf(),
+        model: model.to_path_buf(),
+    }
 }
 
 #[cfg(test)]
