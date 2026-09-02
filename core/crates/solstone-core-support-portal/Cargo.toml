@@ -20,6 +20,7 @@ base64 = "0.22.1"
 chrono.workspace = true
 getrandom.workspace = true
 hmac.workspace = true
+log.workspace = true
 regex.workspace = true
 ring = "=0.17.14"
 rsa.workspace = true
@@ -30,7 +31,6 @@ solstone-core-brain.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-thinking.workspace = true
 thiserror.workspace = true
-tracing.workspace = true
 unicode-normalization.workspace = true
 ureq = { workspace = true, features = ["rustls", "multipart"] }
 uuid = { version = "1", features = ["v4"] }

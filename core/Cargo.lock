@@ -3953,7 +3953,9 @@ version = "2.0.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
+ "env_logger",
  "image",
+ "log",
  "serde",
  "serde_json",
  "sha2",
@@ -5150,6 +5152,8 @@ dependencies = [
 name = "solstone-core-speakers-analyze"
 version = "2.0.0"
 dependencies = [
+ "env_logger",
+ "log",
  "serde_json",
  "solstone-core-speakers",
  "solstone-core-speakers-onnx",
@@ -5274,6 +5278,7 @@ dependencies = [
  "chrono",
  "getrandom 0.3.4",
  "hmac",
+ "log",
  "nix",
  "regex",
  "ring",
@@ -5288,7 +5293,6 @@ dependencies = [
  "solstone-core-thinking",
  "tempfile",
  "thiserror 2.0.20",
- "tracing",
  "unicode-normalization",
  "ureq",
  "uuid",
@@ -5603,6 +5607,7 @@ version = "2.0.0"
 dependencies = [
  "chrono",
  "jsonschema",
+ "log",
  "rcgen",
  "serde",
  "serde_json",

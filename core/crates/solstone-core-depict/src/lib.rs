@@ -523,7 +523,7 @@ fn build_header_from_values(
                     "SEGMENT_META must be an object".to_owned(),
                 ));
             }
-            Err(_) => eprintln!("native depict: invalid SEGMENT_META JSON"),
+            Err(_) => log::warn!("native depict: invalid SEGMENT_META JSON"),
         }
     }
     Ok(header)

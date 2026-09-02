@@ -369,7 +369,7 @@ The rules above govern *where* code lives. The rules below govern *how* code beh
   ```
 
   (`//` for JavaScript.) Markdown, text, and prompt files don't need it.
-- **Fail loudly, not silently.** Raise specific errors with clear messages; log through the crate's own tracing/logging setup, not ad hoc printing. Validate inputs at module boundaries. A silent swallow in production costs days of forensics — an error at the boundary is free.
+- **Fail loudly, not silently.** Raise specific errors with clear messages; log through `log`, not ad hoc printing — see `docs/LOGGING.md` for the output-vs-diagnostic test, level definitions, and why a binary needs its own logger installed before a `log::` call does anything. Validate inputs at module boundaries. A silent swallow in production costs days of forensics — an error at the boundary is free.
 - **Trust internal code.** Don't add defensive validation for things internal callers can't violate. Validate at system boundaries (user input, external APIs, imported files) — not between modules you control.
 
 Generic software principles (DRY, KISS, YAGNI, single responsibility, small focused commits) apply; see `docs/coding-standards.md` for the full list.
@@ -415,6 +415,7 @@ Bare links don't motivate clicking. Each entry below says when you actually need
 | `docs/JOURNAL_FILESYSTEM_CONTRACT.md` | The shared vocabulary for a journal root, its identity, entry kinds, and refusals — not a generic VFS |
 | `docs/coding-standards.md` | Full naming conventions, ruff config, dep-management details — reference for everything not promoted into this file |
 | `docs/project-structure.md` | Canonical directory layout; resolving "where does this file go" debates |
+| `docs/LOGGING.md` | Choosing between `println!`/`eprintln!` and `log::`, picking a level, or adding a new diagnostic — the output-vs-diagnostic test, level definitions, and why a binary needs its own logger installed before a `log::` call site does anything |
 | `docs/DOCTOR.md` | Diagnostics and debugging a running system |
 | `docs/SCREEN_CATEGORIES.md` | Screen-understanding classifier taxonomy (observe side) |
 | `docs/VENDOR.md` | Vendor-level integrations |

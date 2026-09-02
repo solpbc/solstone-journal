@@ -15,16 +15,22 @@ const EXIT_USAGE: i32 = 64;
 const EXIT_UNAVAILABLE: i32 = 69;
 const EXIT_TEMPFAIL: i32 = 75;
 
+fn install_logger() {
+    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
+        .try_init();
+}
+
 fn main() {
+    install_logger();
     if env::var_os(solstone_core_system::lifecycle::HOSTED_GENERATION_ENV).is_some() {
         let Some(journal) = env::var_os("SOLSTONE_JOURNAL") else {
-            eprintln!("hosted speakers analysis child is missing SOLSTONE_JOURNAL");
+            log::error!("hosted speakers analysis child is missing SOLSTONE_JOURNAL");
             process::exit(EXIT_TEMPFAIL);
         };
         if let Err(error) =
             solstone_core_system::lifecycle::acknowledge_hosted_child_admission(Path::new(&journal))
         {
-            eprintln!("hosted speakers analysis admission failed: {error}");
+            log::error!("hosted speakers analysis admission failed: {error}");
             process::exit(EXIT_TEMPFAIL);
         }
     }
