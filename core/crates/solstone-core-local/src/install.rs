@@ -23,6 +23,7 @@ pub mod lease;
 pub mod manifest;
 pub mod metal_candidate;
 pub mod migration;
+pub mod onnx_readiness;
 pub mod pdfium_readiness;
 pub mod pins;
 pub mod readiness;

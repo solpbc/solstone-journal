@@ -32,6 +32,20 @@ pub const WINDOWS_PDFIUM_LIBRARY: &str = "lib/solstone-core-pdf/pdfium.dll";
 /// The PDF worker is a signed package executable, never a sibling discovered
 /// through an ambient search path.
 pub const WINDOWS_PDFIUM_WORKER: &str = "bin/solstone-core-pdf.exe";
+/// The speaker helper is a signed package executable, never an ambient sibling.
+pub const WINDOWS_SPEAKERS_ANALYZE_WORKER: &str = "bin/solstone-core-speakers-analyze.exe";
+/// The VAD helper is a signed package executable, never an ambient sibling.
+pub const WINDOWS_VAD_ANALYZE_WORKER: &str = "bin/solstone-core-vad-analyze.exe";
+/// The one shared ONNX Runtime DLL is a signed private package member.
+pub const WINDOWS_ONNXRUNTIME_LIBRARY: &str = "lib/solstone-core-speakers-analyze/onnxruntime.dll";
+/// The speaker embedding model is a signed package member.
+pub const WINDOWS_WESPEAKER_MODEL: &str =
+    "lib/solstone_journal_models/assets/wespeaker-resnet34-256.onnx";
+/// The speaker segmentation model is a signed package member.
+pub const WINDOWS_PYANNOTE_MODEL: &str =
+    "lib/solstone_journal_models/assets/pyannote-segmentation-3.0.onnx";
+/// The VAD model is a signed package member.
+pub const WINDOWS_SILERO_VAD_MODEL: &str = "lib/solstone_journal_models/assets/silero_vad_v6.onnx";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -114,6 +128,66 @@ impl VerifiedWindowsPayload {
     pub fn pdfium_worker_path(&self) -> Result<PathBuf, WindowsPayloadError> {
         self.declared_path(WINDOWS_PDFIUM_WORKER).ok_or_else(|| {
             WindowsPayloadError::new(WindowsPayloadRefusal::MissingMember, WINDOWS_PDFIUM_WORKER)
+        })
+    }
+
+    /// Return the speaker helper only when the verified package declared it.
+    pub fn speakers_analyze_worker_path(&self) -> Result<PathBuf, WindowsPayloadError> {
+        self.declared_path(WINDOWS_SPEAKERS_ANALYZE_WORKER)
+            .ok_or_else(|| {
+                WindowsPayloadError::new(
+                    WindowsPayloadRefusal::MissingMember,
+                    WINDOWS_SPEAKERS_ANALYZE_WORKER,
+                )
+            })
+    }
+
+    /// Return the VAD helper only when the verified package declared it.
+    pub fn vad_analyze_worker_path(&self) -> Result<PathBuf, WindowsPayloadError> {
+        self.declared_path(WINDOWS_VAD_ANALYZE_WORKER)
+            .ok_or_else(|| {
+                WindowsPayloadError::new(
+                    WindowsPayloadRefusal::MissingMember,
+                    WINDOWS_VAD_ANALYZE_WORKER,
+                )
+            })
+    }
+
+    /// Return the shared ONNX Runtime DLL only when the verified package declared it.
+    pub fn onnxruntime_library_path(&self) -> Result<PathBuf, WindowsPayloadError> {
+        self.declared_path(WINDOWS_ONNXRUNTIME_LIBRARY)
+            .ok_or_else(|| {
+                WindowsPayloadError::new(
+                    WindowsPayloadRefusal::MissingMember,
+                    WINDOWS_ONNXRUNTIME_LIBRARY,
+                )
+            })
+    }
+
+    /// Return the speaker embedding model only when the verified package declared it.
+    pub fn wespeaker_model_path(&self) -> Result<PathBuf, WindowsPayloadError> {
+        self.declared_path(WINDOWS_WESPEAKER_MODEL).ok_or_else(|| {
+            WindowsPayloadError::new(
+                WindowsPayloadRefusal::MissingMember,
+                WINDOWS_WESPEAKER_MODEL,
+            )
+        })
+    }
+
+    /// Return the speaker segmentation model only when the verified package declared it.
+    pub fn pyannote_model_path(&self) -> Result<PathBuf, WindowsPayloadError> {
+        self.declared_path(WINDOWS_PYANNOTE_MODEL).ok_or_else(|| {
+            WindowsPayloadError::new(WindowsPayloadRefusal::MissingMember, WINDOWS_PYANNOTE_MODEL)
+        })
+    }
+
+    /// Return the VAD model only when the verified package declared it.
+    pub fn silero_vad_model_path(&self) -> Result<PathBuf, WindowsPayloadError> {
+        self.declared_path(WINDOWS_SILERO_VAD_MODEL).ok_or_else(|| {
+            WindowsPayloadError::new(
+                WindowsPayloadRefusal::MissingMember,
+                WINDOWS_SILERO_VAD_MODEL,
+            )
         })
     }
 }
