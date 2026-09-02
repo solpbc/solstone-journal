@@ -5,8 +5,11 @@
 
 use std::path::{Path, PathBuf};
 
+#[cfg(unix)]
 use nix::sys::statvfs::statvfs;
 use solstone_core_assets::resolve;
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
 
 use super::{pins, rfdetr_install::rfdetr_artifact_key};
 use crate::vulkan::{cpu_placement_suffix, select_device};
@@ -463,6 +466,7 @@ fn disk_check(
     }
 }
 
+#[cfg(unix)]
 pub fn free_bytes(target: &Path) -> Result<u64, String> {
     let usage_root = nearest_existing_ancestor(target);
     let stats = statvfs(&usage_root).map_err(|error| error.to_string())?;
@@ -471,6 +475,41 @@ pub fn free_bytes(target: &Path) -> Result<u64, String> {
     blocks
         .checked_mul(fragment_size)
         .ok_or_else(|| "available disk space overflow".to_owned())
+}
+
+#[cfg(windows)]
+pub fn free_bytes(target: &Path) -> Result<u64, String> {
+    let usage_root = nearest_existing_ancestor(target);
+    let mut path = usage_root.as_os_str().encode_wide().collect::<Vec<_>>();
+    path.push(0);
+    let mut available = 0_u64;
+    let mut total = 0_u64;
+    let mut free = 0_u64;
+    // SAFETY: `path` is nul-terminated and live for the synchronous call; the
+    // three u64 values are writable Windows ULARGE_INTEGER-compatible output.
+    #[allow(unsafe_code)]
+    let result =
+        unsafe { GetDiskFreeSpaceExW(path.as_ptr(), &mut available, &mut total, &mut free) };
+    if result == 0 {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
+    Ok(available)
+}
+
+#[cfg(not(any(unix, windows)))]
+pub fn free_bytes(_target: &Path) -> Result<u64, String> {
+    Err("disk-space inspection is unsupported on this platform".to_owned())
+}
+
+#[cfg(windows)]
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn GetDiskFreeSpaceExW(
+        directory_name: *const u16,
+        available_to_caller: *mut u64,
+        total_bytes: *mut u64,
+        total_free_bytes: *mut u64,
+    ) -> i32;
 }
 
 fn nearest_existing_ancestor(target: &Path) -> PathBuf {
@@ -692,7 +731,8 @@ mod tests {
             "disk",
             FitSeverity::Unknown,
             format!(
-                "available disk space could not be verified at /journal/cache/providers/local: disk unavailable; {unknown}"
+                "available disk space could not be verified at {}: disk unavailable; {unknown}",
+                pins::cache_root(Path::new("/journal")).display(),
             ),
         );
         assert_branch(

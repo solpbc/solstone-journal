@@ -582,6 +582,7 @@ fn dispatch_error(error: super::DispatchError) -> CedInstallError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use crate::install::test_support::{leaked_temps, prove_temp_sweep};
     use std::fs::OpenOptions;
     #[cfg(unix)]

@@ -72,6 +72,8 @@ pub mod test_hooks {
 
     fn write_parakeet_binary(path: &Path, executable: bool) {
         fs::write(path, b"#!/bin/sh\nexit 0\n").expect("write Parakeet binary fixture");
+        #[cfg(not(unix))]
+        let _ = executable;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -205,7 +207,7 @@ pub mod test_hooks {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) mod test_support {
     use std::fs;
     use std::path::{Path, PathBuf};

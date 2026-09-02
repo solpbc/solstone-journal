@@ -8,13 +8,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use chrono::{SecondsFormat, Utc};
-#[allow(deprecated)]
-use nix::fcntl::{FlockArg, flock};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::os::fd::AsRawFd;
 use thiserror::Error;
 
+#[cfg(unix)]
 const STATUS_MODE: u32 = 0o600;
 pub const PROGRESS_COALESCE_SECONDS: Duration = Duration::from_secs(1);
 static ATTEMPT_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -277,7 +275,6 @@ pub fn record_interrupted(
     )
 }
 
-#[allow(deprecated)]
 fn status_lock(path: &Path) -> Result<File, StatusError> {
     let lock_path = PathBuf::from(format!("{}.lock", path.display()));
     if let Some(parent) = lock_path.parent() {
@@ -290,16 +287,16 @@ fn status_lock(path: &Path) -> Result<File, StatusError> {
         .write(true)
         .open(lock_path)?;
     set_mode(&file)?;
-    flock(file.as_raw_fd(), FlockArg::LockExclusive)
+    file.lock()
         .map_err(|err| StatusError::Lock(err.to_string()))?;
     Ok(file)
 }
 
-fn set_mode(file: &File) -> Result<(), std::io::Error> {
+fn set_mode(_file: &File) -> Result<(), std::io::Error> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        file.set_permissions(fs::Permissions::from_mode(STATUS_MODE))?;
+        _file.set_permissions(fs::Permissions::from_mode(STATUS_MODE))?;
     }
     Ok(())
 }
