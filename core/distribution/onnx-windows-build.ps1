@@ -79,11 +79,14 @@ try {
     $pythonPth = @(Get-ChildItem -LiteralPath $pythonRoot -Filter 'python*._pth' -File)
     if ($pythonPth.Count -ne 1) { throw 'controlled Python archive did not produce exactly one python*._pth file' }
     # The embedded interpreter intentionally ignores ambient PYTHONPATH. Add
-    # only the reviewed extracted ONNX build-driver directory so build.py can
-    # import its own sibling modules; do not enable site-packages or pip.
+    # only the reviewed extracted ONNX build-driver and tools directories so
+    # build.py can import its source-owned modules; do not enable site-packages
+    # or pip.
     Add-Content -LiteralPath $pythonPth[0].FullName -Value (Join-Path $sourceRoot 'tools/ci_build') -Encoding ascii
+    Add-Content -LiteralPath $pythonPth[0].FullName -Value (Join-Path $sourceRoot 'tools/python') -Encoding ascii
     $ordinal = 1; foreach ($program in @($cmakeExe, $pythonExe, $protocExe, $msbuild, $cl, $link, $git) | Select-Object -Unique) { Add-NetworkDeny $program $ordinal; $ordinal += 1 }
     Write-Host 'ONNX_WINDOWS_NETWORK_DENY=firewall-outbound-block-for-cmake-python-protoc-msbuild-cl-link-git'
+    Invoke-Checked 'verify isolated ONNX build-driver imports' $pythonExe @('-c', 'import build_args; import util; print(build_args.__file__); print(util.__file__)')
     Invoke-Checked 'build reduced CPU-only ONNX Runtime' $pythonExe @(
         (Join-Path $sourceRoot 'tools/ci_build/build.py'), '--config', 'Release', '--update', '--build', '--skip_tests', '--skip_submodule_sync', '--parallel', '2',
         '--build_shared_lib', '--include_ops_by_config', (Join-Path $sourceRoot 'required-operators.config'), '--disable_contrib_ops', '--disable_ml_ops',
