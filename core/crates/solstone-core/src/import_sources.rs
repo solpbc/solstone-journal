@@ -301,10 +301,10 @@ fn error_text(error: solstone_core_generate::ClientError) -> String {
             primary,
             cleanup: Some(cleanup),
         } => format!("{primary} (cleanup: {cleanup})"),
-        solstone_core_generate::ClientError::Protocol(failure) => failure.error.detail,
-        unexpected @ solstone_core_generate::ClientError::UnexpectedChild(_) => {
-            unexpected.to_string()
-        }
+        protocol @ solstone_core_generate::ClientError::Protocol(_) => protocol.to_string(),
+        process @ (solstone_core_generate::ClientError::ProcessIo(_)
+        | solstone_core_generate::ClientError::InvalidResponse(_)
+        | solstone_core_generate::ClientError::UnexpectedChild(_)) => process.to_string(),
     }
 }
 

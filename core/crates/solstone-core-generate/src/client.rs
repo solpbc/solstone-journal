@@ -6,8 +6,10 @@ use std::env;
 use std::ffi::OsString;
 use std::fmt;
 use std::io::{self, Read, Write};
+use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 
 use crate::{
@@ -75,6 +77,7 @@ pub struct ProtocolFailure {
     pub status: ChildStatus,
     pub stdout: CapturedStream,
     pub stderr: CapturedStream,
+    pub stdin_closed_early: bool,
 }
 
 #[derive(Debug)]
@@ -82,6 +85,26 @@ pub struct UnexpectedChildFailure {
     pub status: ChildStatus,
     pub stdout: CapturedStream,
     pub stderr: CapturedStream,
+    pub stdin_closed_early: bool,
+}
+
+#[derive(Debug)]
+pub struct InvalidResponseFailure {
+    pub detail: String,
+    pub status: ChildStatus,
+    pub stdout: CapturedStream,
+    pub stderr: CapturedStream,
+    pub stdin_closed_early: bool,
+}
+
+#[derive(Debug)]
+pub struct ProcessFailure {
+    pub primary: String,
+    pub cleanup: Vec<String>,
+    pub status: Option<ChildStatus>,
+    pub stdout: CapturedStream,
+    pub stderr: CapturedStream,
+    pub stdin_closed_early: bool,
 }
 
 #[derive(Debug)]
@@ -93,6 +116,8 @@ pub enum ClientError {
     },
     Protocol(Box<ProtocolFailure>),
     UnexpectedChild(Box<UnexpectedChildFailure>),
+    InvalidResponse(Box<InvalidResponseFailure>),
+    ProcessIo(Box<ProcessFailure>),
     Decode(String),
 }
 
@@ -110,15 +135,48 @@ impl fmt::Display for ClientError {
             } => write!(formatter, "{primary} (cleanup: {cleanup})"),
             Self::Protocol(failure) => write!(
                 formatter,
-                "protocol {} ({}): {}",
-                failure.error.reason, failure.status, failure.error.detail
+                "protocol {} ({}): {}; stdin_closed_early={}; stdout={}; stderr={}",
+                failure.error.reason,
+                failure.status,
+                failure.error.detail,
+                failure.stdin_closed_early,
+                failure.stdout,
+                failure.stderr
             ),
             Self::UnexpectedChild(failure) => {
                 write!(
                     formatter,
-                    "unexpected child ({}): {}",
-                    failure.status, failure.stderr
+                    "unexpected child ({}); stdin_closed_early={}; stdout={}; stderr={}",
+                    failure.status, failure.stdin_closed_early, failure.stdout, failure.stderr
                 )
+            }
+            Self::InvalidResponse(failure) => write!(
+                formatter,
+                "invalid child response ({}): {}; stdin_closed_early={}; stdout={}; stderr={}",
+                failure.status,
+                failure.detail,
+                failure.stdin_closed_early,
+                failure.stdout,
+                failure.stderr
+            ),
+            Self::ProcessIo(failure) => {
+                write!(
+                    formatter,
+                    "process I/O failed: {}; status={}; stdin_closed_early={}; stdout={}; stderr={}",
+                    failure.primary,
+                    failure
+                        .status
+                        .as_ref()
+                        .map(ToString::to_string)
+                        .unwrap_or_else(|| "unavailable".to_owned()),
+                    failure.stdin_closed_early,
+                    failure.stdout,
+                    failure.stderr
+                )?;
+                if !failure.cleanup.is_empty() {
+                    write!(formatter, "; cleanup={}", failure.cleanup.join("; "))?;
+                }
+                Ok(())
             }
         }
     }
@@ -140,9 +198,83 @@ enum StdinWrite {
 }
 
 struct PipeWorkers {
-    stdin: Option<JoinHandle<io::Result<StdinWrite>>>,
-    stdout: Option<JoinHandle<io::Result<CapturedStream>>>,
-    stderr: Option<JoinHandle<io::Result<CapturedStream>>>,
+    receiver: Receiver<PipeCompletion>,
+    handles: Vec<(&'static str, JoinHandle<()>)>,
+}
+
+struct StreamCollection {
+    captured: CapturedStream,
+    error: Option<String>,
+}
+
+enum PipeCompletion {
+    Stdin(Result<StdinWrite, String>),
+    Stdout(StreamCollection),
+    Stderr(StreamCollection),
+}
+
+struct PipeReport {
+    stdin_write: Option<StdinWrite>,
+    stdin_closed_early: bool,
+    stdout: CapturedStream,
+    stderr: CapturedStream,
+    failures: Vec<String>,
+    status: Option<ChildStatus>,
+}
+
+struct ChildGuard {
+    child: Child,
+    status: Option<ChildStatus>,
+}
+
+impl ChildGuard {
+    fn new(child: Child) -> Self {
+        Self {
+            child,
+            status: None,
+        }
+    }
+}
+
+trait ChildControl {
+    fn try_wait_status(&mut self) -> io::Result<Option<ChildStatus>>;
+    fn terminate(&mut self) -> io::Result<()>;
+    fn wait_status(&mut self) -> io::Result<ChildStatus>;
+}
+
+impl ChildControl for ChildGuard {
+    fn try_wait_status(&mut self) -> io::Result<Option<ChildStatus>> {
+        if let Some(status) = &self.status {
+            return Ok(Some(status.clone()));
+        }
+        let status = self.child.try_wait()?.map(|exit| child_status(&exit));
+        if let Some(status) = &status {
+            self.status = Some(status.clone());
+        }
+        Ok(status)
+    }
+
+    fn terminate(&mut self) -> io::Result<()> {
+        self.child.kill()
+    }
+
+    fn wait_status(&mut self) -> io::Result<ChildStatus> {
+        if let Some(status) = &self.status {
+            return Ok(status.clone());
+        }
+        let status = child_status(&self.child.wait()?);
+        self.status = Some(status.clone());
+        Ok(status)
+    }
+}
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        if self.status.is_none() {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
+    }
 }
 
 fn resolve_sibling_executable(current: &Path) -> Result<PathBuf, ClientError> {
@@ -165,12 +297,19 @@ pub fn sibling_executable() -> Result<PathBuf, ClientError> {
     resolve_sibling_executable(&current)
 }
 
-fn collect_bounded<R: Read>(mut reader: R, limit: usize) -> io::Result<CapturedStream> {
+fn collect_bounded<R: Read>(mut reader: R, limit: usize) -> StreamCollection {
     let mut bytes = Vec::new();
     let mut buffer = [0_u8; 8_192];
     let mut truncated = false;
+    let mut error = None;
     loop {
-        let read = reader.read(&mut buffer)?;
+        let read = match reader.read(&mut buffer) {
+            Ok(read) => read,
+            Err(read_error) => {
+                error = Some(read_error.to_string());
+                break;
+            }
+        };
         if read == 0 {
             break;
         }
@@ -186,7 +325,10 @@ fn collect_bounded<R: Read>(mut reader: R, limit: usize) -> io::Result<CapturedS
             truncated = true;
         }
     }
-    Ok(CapturedStream { bytes, truncated })
+    StreamCollection {
+        captured: CapturedStream { bytes, truncated },
+        error,
+    }
 }
 
 fn write_request<W: Write>(mut writer: W, bytes: &[u8]) -> io::Result<StdinWrite> {
@@ -214,14 +356,6 @@ fn child_status(status: &ExitStatus) -> ChildStatus {
     }
 }
 
-fn join_thread<T>(handle: JoinHandle<io::Result<T>>, name: &str) -> Result<T, String> {
-    match handle.join() {
-        Ok(Ok(value)) => Ok(value),
-        Ok(Err(error)) => Err(error.to_string()),
-        Err(_) => Err(format!("{name} thread panicked")),
-    }
-}
-
 fn try_protocol(stderr: &CapturedStream) -> Option<ProtocolError> {
     if stderr.truncated {
         return None;
@@ -231,26 +365,39 @@ fn try_protocol(stderr: &CapturedStream) -> Option<ProtocolError> {
 }
 
 fn classify(
-    exit: ExitStatus,
+    status: ChildStatus,
     stdout: CapturedStream,
     stderr: CapturedStream,
+    stdin_write: StdinWrite,
 ) -> Result<GenerateResponse, ClientError> {
-    let status = child_status(&exit);
-    if exit.success() {
-        if stdout.truncated {
-            return Err(ClientError::Decode(format!(
-                "stdout truncated at {STDOUT_LIMIT} bytes"
-            )));
+    let stdin_closed_early = stdin_write == StdinWrite::BrokenPipe;
+    if status.exit_code == Some(0) {
+        let decoded = if stdout.truncated {
+            Err(format!("stdout truncated at {STDOUT_LIMIT} bytes"))
+        } else {
+            std::str::from_utf8(&stdout.bytes)
+                .map_err(|error| error.to_string())
+                .and_then(decode_one_shot_response)
+        };
+        match decoded {
+            Ok(response) => Ok(response),
+            Err(detail) => Err(ClientError::InvalidResponse(Box::new(
+                InvalidResponseFailure {
+                    detail,
+                    status,
+                    stdout,
+                    stderr,
+                    stdin_closed_early,
+                },
+            ))),
         }
-        let text = std::str::from_utf8(&stdout.bytes)
-            .map_err(|error| ClientError::Decode(error.to_string()))?;
-        decode_one_shot_response(text).map_err(ClientError::Decode)
     } else if let Some(error) = try_protocol(&stderr) {
         Err(ClientError::Protocol(Box::new(ProtocolFailure {
             error,
             status,
             stdout,
             stderr,
+            stdin_closed_early,
         })))
     } else {
         Err(ClientError::UnexpectedChild(Box::new(
@@ -258,30 +405,60 @@ fn classify(
                 status,
                 stdout,
                 stderr,
+                stdin_closed_early,
             },
         )))
     }
 }
 
-fn reap_after_failure(
-    child: &mut Child,
-    workers: Option<&mut PipeWorkers>,
-    primary: String,
-) -> ClientError {
-    let _ = child.kill();
-    if let Some(workers) = workers {
-        workers.join_remaining();
+fn terminate_if_running<C: ChildControl>(
+    child: &mut C,
+    status: &mut Option<ChildStatus>,
+) -> Vec<String> {
+    let mut failures = Vec::new();
+    match child.try_wait_status() {
+        Ok(Some(exit)) => *status = Some(exit),
+        Ok(None) => {
+            if let Err(error) = child.terminate() {
+                failures.push(format!("terminate child: {error}"));
+            }
+        }
+        Err(error) => {
+            failures.push(format!("inspect child before termination: {error}"));
+            if let Err(error) = child.terminate() {
+                failures.push(format!("terminate child: {error}"));
+            }
+        }
     }
-    match child.wait() {
-        Ok(_) => ClientError::Io {
-            primary,
-            cleanup: None,
-        },
-        Err(error) => ClientError::Io {
-            primary,
-            cleanup: Some(error.to_string()),
-        },
+    failures
+}
+
+fn process_failure_without_workers<C: ChildControl>(child: &mut C, primary: String) -> ClientError {
+    let mut status = None;
+    let mut cleanup = terminate_if_running(child, &mut status);
+    if status.is_none() {
+        match child.wait_status() {
+            Ok(exit) => status = Some(exit),
+            Err(error) => {
+                cleanup.push(format!("reap child: {error}"));
+                cleanup.extend(terminate_if_running(child, &mut status));
+                if status.is_none() {
+                    match child.wait_status() {
+                        Ok(exit) => status = Some(exit),
+                        Err(error) => cleanup.push(format!("retry reap child: {error}")),
+                    }
+                }
+            }
+        }
     }
+    ClientError::ProcessIo(Box::new(ProcessFailure {
+        primary,
+        cleanup,
+        status,
+        stdout: CapturedStream::empty(),
+        stderr: CapturedStream::empty(),
+        stdin_closed_early: false,
+    }))
 }
 
 impl PipeWorkers {
@@ -290,52 +467,168 @@ impl PipeWorkers {
         stdout: std::process::ChildStdout,
         stderr: std::process::ChildStderr,
         input: Vec<u8>,
-    ) -> Self {
+    ) -> Result<Self, (String, Self)> {
+        Self::spawn_tasks(
+            move || write_request(stdin, &input),
+            move || collect_bounded(stdout, STDOUT_LIMIT),
+            move || collect_bounded(stderr, STDERR_LIMIT),
+        )
+    }
+
+    fn spawn_tasks<SI, SO, SE>(stdin: SI, stdout: SO, stderr: SE) -> Result<Self, (String, Self)>
+    where
+        SI: FnOnce() -> io::Result<StdinWrite> + Send + 'static,
+        SO: FnOnce() -> StreamCollection + Send + 'static,
+        SE: FnOnce() -> StreamCollection + Send + 'static,
+    {
+        let (sender, receiver) = mpsc::channel();
+        let mut workers = Self {
+            receiver,
+            handles: Vec::new(),
+        };
+        match spawn_stdin_worker(sender.clone(), stdin) {
+            Ok(handle) => workers.handles.push(("stdin", handle)),
+            Err(error) => return Err((format!("start stdin worker: {error}"), workers)),
+        }
+        match spawn_stream_worker(sender.clone(), stdout, PipeCompletion::Stdout, "stdout") {
+            Ok(handle) => workers.handles.push(("stdout", handle)),
+            Err(error) => return Err((format!("start stdout worker: {error}"), workers)),
+        }
+        match spawn_stream_worker(sender, stderr, PipeCompletion::Stderr, "stderr") {
+            Ok(handle) => workers.handles.push(("stderr", handle)),
+            Err(error) => return Err((format!("start stderr worker: {error}"), workers)),
+        }
+        Ok(workers)
+    }
+
+    fn collect<C: ChildControl>(
+        mut self,
+        child: &mut C,
+        initial_failure: Option<String>,
+    ) -> PipeReport {
+        let mut report = PipeReport::new();
+        let mut terminated = initial_failure.is_some();
+        if let Some(failure) = initial_failure {
+            report.failures.push(failure);
+            report
+                .failures
+                .extend(terminate_if_running(child, &mut report.status));
+        }
+        let expected = self.handles.len();
+        for _ in 0..expected {
+            let failure = match self.receiver.recv() {
+                Ok(completion) => report.apply(completion, terminated),
+                Err(error) => Some(format!("pipe worker completion channel: {error}")),
+            };
+            if let Some(failure) = failure {
+                report.failures.push(failure);
+                if !terminated {
+                    report
+                        .failures
+                        .extend(terminate_if_running(child, &mut report.status));
+                    terminated = true;
+                }
+            }
+        }
+        for (name, handle) in self.handles.drain(..) {
+            if handle.join().is_err() {
+                report
+                    .failures
+                    .push(format!("{name} worker join: thread panicked"));
+            }
+        }
+        if report.status.is_none() {
+            match child.wait_status() {
+                Ok(exit) => report.status = Some(exit),
+                Err(error) => {
+                    report.failures.push(format!("reap child: {error}"));
+                    report
+                        .failures
+                        .extend(terminate_if_running(child, &mut report.status));
+                    if report.status.is_none() {
+                        match child.wait_status() {
+                            Ok(exit) => report.status = Some(exit),
+                            Err(error) => {
+                                report.failures.push(format!("retry reap child: {error}"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        report
+    }
+}
+
+impl PipeReport {
+    fn new() -> Self {
         Self {
-            stdin: Some(thread::spawn(move || write_request(stdin, &input))),
-            stdout: Some(thread::spawn(move || collect_bounded(stdout, STDOUT_LIMIT))),
-            stderr: Some(thread::spawn(move || collect_bounded(stderr, STDERR_LIMIT))),
+            stdin_write: None,
+            stdin_closed_early: false,
+            stdout: CapturedStream::empty(),
+            stderr: CapturedStream::empty(),
+            failures: Vec::new(),
+            status: None,
         }
     }
 
-    fn join_stdin(&mut self) -> Result<StdinWrite, String> {
-        join_thread(
-            self.stdin.take().expect("stdin thread joined once"),
-            "stdin",
-        )
-    }
-
-    fn join_stdout(&mut self) -> Result<CapturedStream, String> {
-        join_thread(
-            self.stdout.take().expect("stdout thread joined once"),
-            "stdout",
-        )
-    }
-
-    fn join_stderr(&mut self) -> Result<CapturedStream, String> {
-        join_thread(
-            self.stderr.take().expect("stderr thread joined once"),
-            "stderr",
-        )
-    }
-
-    fn join_remaining(&mut self) {
-        if let Some(handle) = self.stdin.take() {
-            let _ = handle.join();
-        }
-        if let Some(handle) = self.stdout.take() {
-            let _ = handle.join();
-        }
-        if let Some(handle) = self.stderr.take() {
-            let _ = handle.join();
+    fn apply(&mut self, completion: PipeCompletion, cleanup_started: bool) -> Option<String> {
+        match completion {
+            PipeCompletion::Stdin(Ok(result)) => {
+                self.stdin_closed_early = result == StdinWrite::BrokenPipe && !cleanup_started;
+                self.stdin_write = Some(result);
+                None
+            }
+            PipeCompletion::Stdin(Err(error)) => Some(format!("stdin writer: {error}")),
+            PipeCompletion::Stdout(result) => {
+                self.stdout = result.captured;
+                result
+                    .error
+                    .map(|error| format!("stdout collector: {error}"))
+            }
+            PipeCompletion::Stderr(result) => {
+                self.stderr = result.captured;
+                result
+                    .error
+                    .map(|error| format!("stderr collector: {error}"))
+            }
         }
     }
 }
 
-impl Drop for PipeWorkers {
-    fn drop(&mut self) {
-        self.join_remaining();
-    }
+fn spawn_stdin_worker<SI>(sender: Sender<PipeCompletion>, task: SI) -> io::Result<JoinHandle<()>>
+where
+    SI: FnOnce() -> io::Result<StdinWrite> + Send + 'static,
+{
+    thread::Builder::new()
+        .name("solstone-generate-stdin".to_owned())
+        .spawn(move || {
+            let result = panic::catch_unwind(AssertUnwindSafe(task))
+                .map_err(|_| "thread panicked".to_owned())
+                .and_then(|result| result.map_err(|error| error.to_string()));
+            let _ = sender.send(PipeCompletion::Stdin(result));
+        })
+}
+
+fn spawn_stream_worker<SO>(
+    sender: Sender<PipeCompletion>,
+    task: SO,
+    completion: fn(StreamCollection) -> PipeCompletion,
+    name: &'static str,
+) -> io::Result<JoinHandle<()>>
+where
+    SO: FnOnce() -> StreamCollection + Send + 'static,
+{
+    thread::Builder::new()
+        .name(format!("solstone-generate-{name}"))
+        .spawn(move || {
+            let result =
+                panic::catch_unwind(AssertUnwindSafe(task)).unwrap_or_else(|_| StreamCollection {
+                    captured: CapturedStream::empty(),
+                    error: Some("thread panicked".to_owned()),
+                });
+            let _ = sender.send(completion(result));
+        })
 }
 
 impl OneShotClient {
@@ -369,7 +662,7 @@ impl OneShotClient {
 
     pub fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
         let input = encode_one_shot_request(request).map_err(ClientError::Decode)?;
-        let mut child = Command::new(&self.executable)
+        let child = Command::new(&self.executable)
             .args(&self.prefix_arguments)
             .arg("--one-shot")
             .envs(&self.environment)
@@ -381,52 +674,56 @@ impl OneShotClient {
                 primary: error.to_string(),
                 cleanup: None,
             })?;
-        let Some(stdin) = child.stdin.take() else {
-            return Err(reap_after_failure(
+        let mut child = ChildGuard::new(child);
+        let Some(stdin) = child.child.stdin.take() else {
+            return Err(process_failure_without_workers(
                 &mut child,
-                None,
                 "wire stdin is unavailable".to_owned(),
             ));
         };
-        let Some(stdout) = child.stdout.take() else {
-            return Err(reap_after_failure(
+        let Some(stdout) = child.child.stdout.take() else {
+            return Err(process_failure_without_workers(
                 &mut child,
-                None,
                 "wire stdout is unavailable".to_owned(),
             ));
         };
-        let Some(stderr) = child.stderr.take() else {
-            return Err(reap_after_failure(
+        let Some(stderr) = child.child.stderr.take() else {
+            return Err(process_failure_without_workers(
                 &mut child,
-                None,
                 "wire stderr is unavailable".to_owned(),
             ));
         };
-        let mut workers = PipeWorkers::spawn(stdin, stdout, stderr, input.into_bytes());
-        execute_with_workers(&mut child, &mut workers)
+        match PipeWorkers::spawn(stdin, stdout, stderr, input.into_bytes()) {
+            Ok(workers) => execute_with_workers(&mut child, workers, None),
+            Err((primary, workers)) => execute_with_workers(&mut child, workers, Some(primary)),
+        }
     }
 }
 
-fn execute_with_workers(
-    child: &mut Child,
-    workers: &mut PipeWorkers,
+fn execute_with_workers<C: ChildControl>(
+    child: &mut C,
+    workers: PipeWorkers,
+    initial_failure: Option<String>,
 ) -> Result<GenerateResponse, ClientError> {
-    match workers.join_stdin() {
-        Ok(StdinWrite::Complete | StdinWrite::BrokenPipe) => {}
-        Err(primary) => return Err(reap_after_failure(child, Some(workers), primary)),
+    let mut report = workers.collect(child, initial_failure);
+    if !report.failures.is_empty() {
+        let primary = report.failures.remove(0);
+        return Err(ClientError::ProcessIo(Box::new(ProcessFailure {
+            primary,
+            cleanup: report.failures,
+            status: report.status,
+            stdout: report.stdout,
+            stderr: report.stderr,
+            stdin_closed_early: report.stdin_closed_early,
+        })));
     }
-    let stdout = match workers.join_stdout() {
-        Ok(stdout) => stdout,
-        Err(primary) => return Err(reap_after_failure(child, Some(workers), primary)),
-    };
-    let stderr = match workers.join_stderr() {
-        Ok(stderr) => stderr,
-        Err(primary) => return Err(reap_after_failure(child, Some(workers), primary)),
-    };
-    match child.wait() {
-        Ok(status) => classify(status, stdout, stderr),
-        Err(error) => Err(reap_after_failure(child, Some(workers), error.to_string())),
-    }
+    let status = report
+        .status
+        .expect("a failure-free pipe report has a child status");
+    let stdin_write = report
+        .stdin_write
+        .expect("a failure-free pipe report has a stdin result");
+    classify(status, report.stdout, report.stderr, stdin_write)
 }
 
 #[cfg(test)]
@@ -575,52 +872,56 @@ mod tests {
 
     #[test]
     fn collect_bounded_keeps_bytes_under_the_cap() {
-        let stream = collect_bounded(&b"abc"[..], 8).expect("read");
-        assert_eq!(stream.bytes, b"abc");
-        assert!(!stream.truncated);
+        let result = collect_bounded(&b"abc"[..], 8);
+        assert_eq!(result.captured.bytes, b"abc");
+        assert!(!result.captured.truncated);
+        assert!(result.error.is_none());
     }
 
     #[test]
     fn collect_bounded_flags_truncation_and_keeps_the_cap() {
         let data = vec![b'x'; 16];
-        let stream = collect_bounded(data.as_slice(), 8).expect("read");
-        assert_eq!(stream.bytes, vec![b'x'; 8]);
-        assert!(stream.truncated);
+        let result = collect_bounded(data.as_slice(), 8);
+        assert_eq!(result.captured.bytes, vec![b'x'; 8]);
+        assert!(result.captured.truncated);
+        assert!(result.error.is_none());
     }
 
     #[test]
     fn collect_bounded_reads_empty_input() {
-        let stream = collect_bounded(&b""[..], 8).expect("read");
-        assert!(stream.bytes.is_empty());
-        assert!(!stream.truncated);
+        let result = collect_bounded(&b""[..], 8);
+        assert!(result.captured.bytes.is_empty());
+        assert!(!result.captured.truncated);
+        assert!(result.error.is_none());
     }
 
     #[test]
     fn collect_bounded_accepts_one_byte_reads() {
-        let stream = collect_bounded(
+        let result = collect_bounded(
             ByteAtATime {
                 data: b"xyz",
                 offset: 0,
             },
             8,
-        )
-        .expect("read");
-        assert_eq!(stream.bytes, b"xyz");
-        assert!(!stream.truncated);
+        );
+        assert_eq!(result.captured.bytes, b"xyz");
+        assert!(!result.captured.truncated);
+        assert!(result.error.is_none());
     }
 
     #[test]
     fn collect_bounded_surfaces_injected_read_errors() {
-        let error = collect_bounded(
+        let result = collect_bounded(
             ErrorAfter {
                 data: b"abcdef".to_vec(),
                 offset: 0,
                 fail_at: 3,
             },
             8,
-        )
-        .expect_err("injected failure");
-        assert_eq!(error.to_string(), "injected read failure");
+        );
+        assert_eq!(result.captured.bytes, b"abc");
+        assert!(!result.captured.truncated);
+        assert_eq!(result.error.as_deref(), Some("injected read failure"));
     }
 
     #[test]
@@ -687,9 +988,119 @@ mod tests {
                     bytes: b"Usage:\n".to_vec(),
                     truncated: false,
                 },
+                stdin_closed_early: false,
             }))
             .to_string(),
-            "unexpected child (exit 64): Usage:\\n"
+            "unexpected child (exit 64); stdin_closed_early=false; stdout=; stderr=Usage:\\n"
         );
+    }
+
+    #[test]
+    fn protocol_display_preserves_status_and_bounded_stream_evidence() {
+        let error = ClientError::Protocol(Box::new(ProtocolFailure {
+            error: ProtocolError {
+                id: None,
+                reason: "fixture_failure".to_owned(),
+                detail: "provider rejected output".to_owned(),
+            },
+            status: ChildStatus {
+                exit_code: None,
+                signal: Some(9),
+            },
+            stdout: CapturedStream {
+                bytes: vec![0xff, b'\n'],
+                truncated: true,
+            },
+            stderr: CapturedStream {
+                bytes: b"diagnostic\n".to_vec(),
+                truncated: false,
+            },
+            stdin_closed_early: true,
+        }));
+
+        assert_eq!(
+            error.to_string(),
+            "protocol fixture_failure (signal 9): provider rejected output; stdin_closed_early=true; stdout=\\xff\\n [truncated]; stderr=diagnostic\\n"
+        );
+    }
+
+    #[test]
+    fn collector_failure_interrupts_blocked_stdin_and_preserves_partial_evidence() {
+        struct FakeChild {
+            release: std::sync::Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
+            terminated: bool,
+        }
+
+        impl ChildControl for FakeChild {
+            fn try_wait_status(&mut self) -> io::Result<Option<ChildStatus>> {
+                Ok(self.terminated.then_some(ChildStatus {
+                    exit_code: None,
+                    signal: Some(9),
+                }))
+            }
+
+            fn terminate(&mut self) -> io::Result<()> {
+                self.terminated = true;
+                let (released, wake) = &*self.release;
+                *released.lock().expect("release lock") = true;
+                wake.notify_all();
+                Ok(())
+            }
+
+            fn wait_status(&mut self) -> io::Result<ChildStatus> {
+                Ok(ChildStatus {
+                    exit_code: None,
+                    signal: Some(9),
+                })
+            }
+        }
+
+        let release =
+            std::sync::Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+        let stdin_release = release.clone();
+        let workers = match PipeWorkers::spawn_tasks(
+            move || {
+                let (released, wake) = &*stdin_release;
+                let mut released = released.lock().expect("release lock");
+                while !*released {
+                    released = wake.wait(released).expect("release wait");
+                }
+                Ok(StdinWrite::BrokenPipe)
+            },
+            move || StreamCollection {
+                captured: CapturedStream {
+                    bytes: b"partial".to_vec(),
+                    truncated: false,
+                },
+                error: Some("injected read failure".to_owned()),
+            },
+            move || StreamCollection {
+                captured: CapturedStream::empty(),
+                error: None,
+            },
+        ) {
+            Ok(workers) => workers,
+            Err((error, _)) => panic!("fixture workers start: {error}"),
+        };
+        let mut child = FakeChild {
+            release,
+            terminated: false,
+        };
+
+        let started = std::time::Instant::now();
+        let error = execute_with_workers(&mut child, workers, None)
+            .expect_err("collector failure must fail execution");
+        let ClientError::ProcessIo(failure) = error else {
+            panic!("expected process I/O error, got {error:?}");
+        };
+        assert_eq!(failure.primary, "stdout collector: injected read failure");
+        assert_eq!(failure.stdout.bytes, b"partial");
+        assert!(
+            !failure.stdin_closed_early,
+            "cleanup-induced BrokenPipe must not be attributed to the child"
+        );
+        assert!(failure.status.is_some());
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        assert!(child.terminated);
     }
 }

@@ -370,17 +370,20 @@ fn interpret_generate(response: Result<GenerateResponse, ClientError>) -> Descri
         Ok(GenerateResponse::Refused(refusal)) => DescriptionOutcome::Unavailable {
             reason: format!("{}: {}", refusal.reason.as_str(), refusal.detail),
         },
-        Err(ClientError::Protocol(failure)) => DescriptionOutcome::Unavailable {
-            reason: format!("{}: {}", failure.error.reason, failure.error.detail),
+        Err(error @ ClientError::Protocol(_)) => DescriptionOutcome::Unavailable {
+            reason: error.to_string(),
         },
         Err(ClientError::Decode(detail) | ClientError::Resolve(detail)) => {
             DescriptionOutcome::Unavailable { reason: detail }
         }
-        Err(error @ (ClientError::Io { .. } | ClientError::UnexpectedChild(_))) => {
-            DescriptionOutcome::Unavailable {
-                reason: error.to_string(),
-            }
-        }
+        Err(
+            error @ (ClientError::Io { .. }
+            | ClientError::ProcessIo(_)
+            | ClientError::InvalidResponse(_)
+            | ClientError::UnexpectedChild(_)),
+        ) => DescriptionOutcome::Unavailable {
+            reason: error.to_string(),
+        },
     }
 }
 
@@ -656,6 +659,7 @@ mod tests {
                 },
                 stdout: CapturedStream::empty(),
                 stderr: CapturedStream::empty(),
+                stdin_closed_early: false,
             })),
             ClientError::Decode("decode".to_owned()),
             ClientError::Io {
@@ -670,6 +674,7 @@ mod tests {
                 },
                 stdout: CapturedStream::empty(),
                 stderr: CapturedStream::empty(),
+                stdin_closed_early: false,
             })),
         ] {
             assert!(matches!(

@@ -217,11 +217,18 @@ fn client_failure(error: ClientError) -> Value {
         ClientError::Resolve(error) | ClientError::Decode(error) => {
             json!({"valid":false,"reason_code":"validation_unavailable","error":error})
         }
-        error @ (ClientError::Io { .. } | ClientError::UnexpectedChild(_)) => {
+        error @ (ClientError::Io { .. }
+        | ClientError::ProcessIo(_)
+        | ClientError::InvalidResponse(_)
+        | ClientError::UnexpectedChild(_)) => {
             json!({"valid":false,"reason_code":"validation_unavailable","error":error.to_string()})
         }
-        ClientError::Protocol(failure) => {
-            json!({"valid":false,"reason_code":failure.error.reason,"error":failure.error.detail})
+        error @ ClientError::Protocol(_) => {
+            let reason = match &error {
+                ClientError::Protocol(failure) => failure.error.reason.clone(),
+                _ => unreachable!("matched protocol error"),
+            };
+            json!({"valid":false,"reason_code":reason,"error":error.to_string()})
         }
     }
 }
@@ -1471,10 +1478,14 @@ mod tests {
             },
             stdout: CapturedStream::empty(),
             stderr: CapturedStream::empty(),
+            stdin_closed_early: false,
         }))));
         assert_eq!(result["valid"], false);
         assert_eq!(result["reason_code"], "stub_failure");
-        assert_eq!(result["error"], "one-shot stub hard failure");
+        assert_eq!(
+            result["error"],
+            "protocol stub_failure (exit 70): one-shot stub hard failure; stdin_closed_early=false; stdout=; stderr="
+        );
     }
 
     #[test]
@@ -1523,10 +1534,14 @@ mod tests {
             },
             stdout: CapturedStream::empty(),
             stderr: CapturedStream::empty(),
+            stdin_closed_early: false,
         }))));
         assert_eq!(result["valid"], false);
         assert_eq!(result["reason_code"], "stub_failure");
-        assert_eq!(result["error"], "one-shot stub hard failure");
+        assert_eq!(
+            result["error"],
+            "protocol stub_failure (exit 70): one-shot stub hard failure; stdin_closed_early=false; stdout=; stderr="
+        );
     }
 
     // The prompt, token budget, thinking budget, retry count, and timeout are
