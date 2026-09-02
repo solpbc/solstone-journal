@@ -558,7 +558,6 @@ mod tests {
     /// Captured verbatim 2026-09-01 via a shape dump: Qwen 3.5 writes an XML-ish
     /// block, not JSON, and SGLang without a tool-call parser passes it through.
 
-
     /// 🔒 Negative twins for the XML spelling -- strict, never guessed at.
 
     /// 🔒 Negative twins. Recovery must stay conservative: a malformed block keeps the
