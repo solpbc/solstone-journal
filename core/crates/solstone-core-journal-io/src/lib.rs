@@ -45,7 +45,6 @@ pub mod operational_log;
 pub mod paths;
 pub mod readers;
 pub mod removal;
-#[cfg(unix)]
 pub mod snapshot;
 #[cfg(unix)]
 pub mod staged;
@@ -200,7 +199,6 @@ pub use readers::{
     read_jsonl_with_report, read_text,
 };
 pub use removal::{remove_contained_tree, remove_dir_all};
-#[cfg(unix)]
 pub use snapshot::{
     JournalSnapshot, SnapshotDirectory, SnapshotFile, capture_snapshot, restore_snapshot,
 };
