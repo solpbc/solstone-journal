@@ -10,7 +10,7 @@ use std::io;
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 #[cfg(unix)]
-use std::os::unix::io::{FromRawFd, OwnedFd};
+use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd};
 #[cfg(windows)]
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::path::{Path, PathBuf};
@@ -37,7 +37,8 @@ use windows_sys::Win32::System::Threading::GetCurrentProcess;
 use crate::errors::LeaseError;
 #[cfg(windows)]
 use crate::windows_lock::{
-    WindowsLockGuard, is_contention as windows_contention, try_lock_exclusive,
+    WindowsLockGuard, WindowsLockHeld, is_contention as windows_contention, try_lock_exclusive,
+    try_lock_exclusive_held,
 };
 
 /// Python-compatible number of nonblocking acquisition attempts.
@@ -80,13 +81,17 @@ pub struct FileLease {
 
 /// Exclusive lease taken on an already-open file's own descriptor.
 ///
-/// Dropping this value unlocks. It does not close the caller's original `File`.
+/// Dropping this value closes the lease descriptor. It does not close the
+/// caller's original `File`. The advisory lock is released when the last
+/// descriptor of this open file description (Unix) or locked handle (Windows)
+/// closes; there is no explicit unlock on drop.
 #[derive(Debug)]
 pub struct SelfLease {
     #[cfg(unix)]
-    _guard: Flock<File>,
+    #[allow(dead_code)]
+    file: File,
     #[cfg(windows)]
-    _guard: WindowsLockGuard,
+    _held: WindowsLockHeld,
 }
 
 /// Result of a non-blocking exclusive try-lock used as a liveness probe.
@@ -211,14 +216,18 @@ fn acquire_self_lease_unix(file: &File) -> Result<Option<SelfLease>, LeaseError>
     #[allow(unsafe_code)]
     let owned = unsafe { OwnedFd::from_raw_fd(duplicated) };
     let file = File::from(owned);
-    match Flock::lock(file, FlockArg::LockExclusiveNonblock) {
-        Ok(guard) => Ok(Some(SelfLease { _guard: guard })),
-        Err((file, error)) if is_contention(error) => {
-            drop(file);
+    // SAFETY: `file` owns a live descriptor; `LOCK_NB` makes this call non-blocking.
+    #[allow(unsafe_code)]
+    let result =
+        unsafe { nix::libc::flock(file.as_raw_fd(), nix::libc::LOCK_EX | nix::libc::LOCK_NB) };
+    if result == 0 {
+        Ok(Some(SelfLease { file }))
+    } else {
+        let error = Errno::last();
+        drop(file);
+        if is_contention(error) {
             Ok(None)
-        }
-        Err((file, error)) => {
-            drop(file);
+        } else {
             Err(io_error(
                 Path::new("self-lease"),
                 io::Error::from_raw_os_error(error as i32),
@@ -230,8 +239,8 @@ fn acquire_self_lease_unix(file: &File) -> Result<Option<SelfLease>, LeaseError>
 #[cfg(windows)]
 fn acquire_self_lease_windows(file: &File) -> Result<Option<SelfLease>, LeaseError> {
     let duplicated = duplicate_windows_handle(file)?;
-    match try_lock_exclusive(duplicated) {
-        Ok(guard) => Ok(Some(SelfLease { _guard: guard })),
+    match try_lock_exclusive_held(duplicated) {
+        Ok(held) => Ok(Some(SelfLease { _held: held })),
         Err((file, error)) if windows_contention(&error) => {
             drop(file);
             Ok(None)

@@ -678,7 +678,7 @@ mod tests {
 
     use super::*;
     use crate::journal_root::JournalRoot;
-    use crate::lease::probe_file_lease;
+    use crate::lease::{DEFAULT_LEASE_RETRY_MAX, probe_file_lease};
     use crate::operational_log::name::{OplogNameClassification, classify_oplog_name};
     use crate::operational_log::{
         OplogFormat, acquire_oplog_namespace_lock_with_test_timing, admit_day_health_directory,
@@ -726,6 +726,22 @@ mod tests {
         assert_eq!(error.to_string(), token);
         assert_eq!(format!("{error:?}"), token);
         assert!(error.source().is_none());
+    }
+
+    // A concurrent test's forked child can briefly inherit this writer's OFD across
+    // fork-to-exec (CLOEXEC applies at exec, not fork); the lock self-releases.
+    fn assert_lease_released(health: &OplogDayHealth, leaf: &OsStr) {
+        let deadline = std::time::Instant::now() + DEFAULT_LEASE_RETRY_MAX;
+        loop {
+            if probe_oplog_lease(health, leaf) == LeaseProbe::Released {
+                return;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "lease did not converge to Released within {DEFAULT_LEASE_RETRY_MAX:?}"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 
     fn listing(path: &Path) -> Vec<String> {
@@ -939,10 +955,7 @@ mod tests {
             LeaseProbe::Active
         );
         drop(writer);
-        assert_eq!(
-            probe_oplog_lease(&health, OsStr::new(&leaf)),
-            LeaseProbe::Released
-        );
+        assert_lease_released(&health, OsStr::new(&leaf));
     }
 
     #[test]
@@ -1332,10 +1345,7 @@ mod tests {
         );
         assert_eq!(fs::read(&path).unwrap(), b"replacement");
         drop(writer);
-        assert_eq!(
-            probe_oplog_lease(&health, OsStr::new("moved")),
-            LeaseProbe::Released
-        );
+        assert_lease_released(&health, OsStr::new("moved"));
     }
 
     #[test]
@@ -1386,10 +1396,7 @@ mod tests {
         dup.write_all(b"still\n").unwrap();
         dup.flush().unwrap();
         drop(dup);
-        assert_eq!(
-            probe_oplog_lease(&health, OsStr::new(&leaf)),
-            LeaseProbe::Released
-        );
+        assert_lease_released(&health, OsStr::new(&leaf));
         assert_eq!(
             payload_after_admission(&health_dir(temporary.path()).join(&leaf), &leaf),
             b"still\n"
@@ -1401,9 +1408,8 @@ mod tests {
         let temporary = temp();
         let health = health_at(temporary.path());
         let writer = create(&health).unwrap();
-        let dup = writer.try_clone_for_stdio().unwrap();
         let leaf = writer.leaf_name().to_owned();
-        let stdio = dup.into_stdio();
+        let stdio = writer.duplicate_locked_stdio().unwrap();
         drop(writer);
         let mut child = super::spawn_sleep_holding_oplog_stdout(stdio);
         assert_eq!(
@@ -1413,10 +1419,7 @@ mod tests {
         let status = child.wait().unwrap();
         assert!(status.success());
         drop(child);
-        assert_eq!(
-            probe_oplog_lease(&health, OsStr::new(&leaf)),
-            LeaseProbe::Released
-        );
+        assert_lease_released(&health, OsStr::new(&leaf));
     }
 
     #[test]

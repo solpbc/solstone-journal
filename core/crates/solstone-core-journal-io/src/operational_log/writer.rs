@@ -7,12 +7,6 @@ use std::error::Error;
 use std::fmt;
 use std::fs::File;
 use std::io::{self, Write};
-use std::sync::Arc;
-
-#[cfg(unix)]
-use std::os::fd::AsRawFd;
-#[cfg(windows)]
-use std::os::windows::io::AsRawHandle;
 
 use crate::lease::SelfLease;
 
@@ -68,15 +62,15 @@ impl Error for OplogWriterError {
 /// Append-only writer bound to one published oplog inode.
 pub struct OplogWriter {
     file: File,
-    lease: Arc<SelfLease>,
+    /// Held so the locked descriptor stays open for the writer's lifetime.
+    #[allow(dead_code)]
+    lease: SelfLease,
     leaf: String,
 }
 
 /// Stdio-oriented duplicate of an [`OplogWriter`]. Does not implement `Seek`.
 pub struct OplogStdioHandle {
     file: File,
-    #[allow(dead_code)]
-    lease: Arc<SelfLease>,
 }
 
 impl fmt::Debug for OplogWriter {
@@ -90,11 +84,7 @@ impl fmt::Debug for OplogWriter {
 
 impl OplogWriter {
     pub(super) fn new(file: File, lease: SelfLease, leaf: String) -> Self {
-        Self {
-            file,
-            lease: Arc::new(lease),
-            leaf,
-        }
+        Self { file, lease, leaf }
     }
 
     /// Canonical leaf name of the published file.
@@ -102,27 +92,37 @@ impl OplogWriter {
         &self.leaf
     }
 
-    /// Duplicate this writer for stdout/stderr capture.
+    /// Duplicate this writer for in-process stdout/stderr capture.
     ///
     /// The duplicate shares the open file description (Unix) or access mask
-    /// (Windows) and keeps the self-lease alive until the last handle drops.
+    /// (Windows). The advisory lock remains until the last such descriptor
+    /// closes.
     pub fn try_clone_for_stdio(&self) -> Result<OplogStdioHandle, OplogWriterError> {
         let file = self
             .file
             .try_clone()
             .map_err(|_| OplogWriterError::clone_io())?;
-        Ok(OplogStdioHandle {
-            file,
-            lease: Arc::clone(&self.lease),
-        })
+        Ok(OplogStdioHandle { file })
     }
-}
 
-impl OplogStdioHandle {
-    /// Consume this handle into a stdio stream for a child process.
-    #[cfg(all(test, unix))]
-    pub(crate) fn into_stdio(self) -> std::process::Stdio {
-        std::process::Stdio::from(self.file)
+    /// Duplicate this writer as a child-process stdio stream.
+    ///
+    /// No raw descriptor is exposed. The lock stays held on the shared open
+    /// file description (Unix) or inheritable handle (Windows) until the last
+    /// remaining duplicate, including the child's, is closed.
+    pub fn duplicate_locked_stdio(&self) -> Result<std::process::Stdio, OplogWriterError> {
+        #[cfg(unix)]
+        {
+            let file = self
+                .file
+                .try_clone()
+                .map_err(|_| OplogWriterError::clone_io())?;
+            Ok(std::process::Stdio::from(file))
+        }
+        #[cfg(windows)]
+        {
+            duplicate_inheritable_stdio(&self.file)
+        }
     }
 }
 
@@ -146,30 +146,71 @@ impl Write for OplogStdioHandle {
     }
 }
 
-#[cfg(unix)]
-impl AsRawFd for OplogWriter {
-    fn as_raw_fd(&self) -> std::os::fd::RawFd {
-        self.file.as_raw_fd()
-    }
-}
-
-#[cfg(unix)]
-impl AsRawFd for OplogStdioHandle {
-    fn as_raw_fd(&self) -> std::os::fd::RawFd {
-        self.file.as_raw_fd()
-    }
-}
-
 #[cfg(windows)]
-impl AsRawHandle for OplogWriter {
-    fn as_raw_handle(&self) -> std::os::windows::io::RawHandle {
-        self.file.as_raw_handle()
+fn duplicate_inheritable_stdio(file: &File) -> Result<std::process::Stdio, OplogWriterError> {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+
+    use windows_sys::Win32::Foundation::{
+        DUPLICATE_SAME_ACCESS, DuplicateHandle, INVALID_HANDLE_VALUE,
+    };
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+    let mut duplicated = INVALID_HANDLE_VALUE;
+    // SAFETY: source handle is a live `File`; output pointer is a local HANDLE.
+    #[allow(unsafe_code)]
+    let result = unsafe {
+        DuplicateHandle(
+            GetCurrentProcess(),
+            file.as_raw_handle(),
+            GetCurrentProcess(),
+            &mut duplicated,
+            0,
+            1,
+            DUPLICATE_SAME_ACCESS,
+        )
+    };
+    if result == 0 || duplicated == INVALID_HANDLE_VALUE {
+        return Err(OplogWriterError::clone_io());
     }
+    // SAFETY: `duplicated` is an owned inheritable handle returned by DuplicateHandle.
+    #[allow(unsafe_code)]
+    let file = File::from(unsafe { OwnedHandle::from_raw_handle(duplicated) });
+    Ok(std::process::Stdio::from(file))
 }
 
-#[cfg(windows)]
-impl AsRawHandle for OplogStdioHandle {
-    fn as_raw_handle(&self) -> std::os::windows::io::RawHandle {
-        self.file.as_raw_handle()
+#[cfg(test)]
+mod no_raw_io {
+    use std::marker::PhantomData;
+
+    use super::{OplogStdioHandle, OplogWriter};
+
+    trait NoRawIo {
+        fn token(&self) {}
+    }
+
+    impl<T> NoRawIo for PhantomData<T> {}
+
+    #[cfg(unix)]
+    #[allow(dead_code)]
+    trait HasRawIo {
+        fn token(&self) {}
+    }
+
+    #[cfg(unix)]
+    impl<T: std::os::fd::AsRawFd> HasRawIo for PhantomData<T> {}
+
+    #[cfg(windows)]
+    #[allow(dead_code)]
+    trait HasRawIo {
+        fn token(&self) {}
+    }
+
+    #[cfg(windows)]
+    impl<T: std::os::windows::io::AsRawHandle> HasRawIo for PhantomData<T> {}
+
+    #[test]
+    fn oplog_writer_and_stdio_handle_do_not_implement_raw_io() {
+        PhantomData::<OplogWriter>.token();
+        PhantomData::<OplogStdioHandle>.token();
     }
 }

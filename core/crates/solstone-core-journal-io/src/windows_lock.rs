@@ -80,6 +80,53 @@ pub(crate) fn try_lock_exclusive(file: File) -> Result<WindowsLockGuard, (File, 
     try_lock(file, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY)
 }
 
+/// Exclusive whole-file lock whose drop only closes the handle.
+pub(crate) struct WindowsLockHeld {
+    #[allow(dead_code)]
+    file: File,
+}
+
+impl fmt::Debug for WindowsLockHeld {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("WindowsLockHeld")
+            .field("file", &self.file)
+            .finish_non_exhaustive()
+    }
+}
+
+pub(crate) fn try_lock_exclusive_held(file: File) -> Result<WindowsLockHeld, (File, io::Error)> {
+    let mut overlapped = OVERLAPPED::default();
+    let handle = lock_handle(file.as_raw_handle());
+    let genuine = handle.is_some();
+    let result = match handle {
+        Some(handle) => {
+            record_lock_handle(handle);
+            // SAFETY: `handle` is either the owned file handle or a test-only borrowed
+            // replacement. The zeroed OVERLAPPED describes the whole-file range for this
+            // synchronous `LOCKFILE_FAIL_IMMEDIATELY` call.
+            #[allow(unsafe_code)]
+            unsafe {
+                LockFileEx(
+                    handle,
+                    LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
+                    0,
+                    WHOLE_FILE_LOW,
+                    WHOLE_FILE_HIGH,
+                    &mut overlapped,
+                )
+            }
+        }
+        None => 1,
+    };
+    if result != 0 {
+        record_last_lock_file_ex_genuine(genuine);
+        Ok(WindowsLockHeld { file })
+    } else {
+        Err((file, io::Error::last_os_error()))
+    }
+}
+
 pub(crate) fn try_lock_shared(file: File) -> Result<WindowsLockGuard, (File, io::Error)> {
     try_lock(file, LOCKFILE_FAIL_IMMEDIATELY)
 }
