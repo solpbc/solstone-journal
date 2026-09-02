@@ -53,8 +53,7 @@ pub fn collect_health_logs(
         file.read_to_end(&mut bytes)
             .map_err(|_| CollectError::CatalogIo)?;
         let text = String::from_utf8(bytes).map_err(|_| CollectError::CatalogUtf8)?;
-        let count = if has_filters { 0 } else { query.count };
-        for raw in tail_slice(splitlines(&text), count) {
+        for raw in tail_slice(splitlines(&text), 0) {
             if let Some(row) = parse_health_log_row(&raw)
                 && (!has_filters || matches_filters(&row, query))
             {
@@ -67,7 +66,7 @@ pub fn collect_health_logs(
     // managed-process alias; retain its historical behaviour unchanged.
     if !has_filters {
         let supervisor_path = journal_root.join("health").join("supervisor.log");
-        for raw in tail_reverse_text(&supervisor_path, query.count, &StdTailFileOpener) {
+        for raw in tail_reverse_text(&supervisor_path, i64::MAX, &StdTailFileOpener) {
             if let Some(row) = parse_health_log_row(&raw) {
                 rows.push(row);
             }
@@ -75,11 +74,7 @@ pub fn collect_health_logs(
     }
 
     rows.sort_by_key(|row| row.timestamp);
-    Ok(if has_filters {
-        tail_slice(rows, query.count)
-    } else {
-        rows
-    })
+    Ok(tail_slice(rows, query.count))
 }
 
 fn matches_filters(row: &ParsedHealthLogRow, query: &HealthLogsQuery) -> bool {
@@ -209,5 +204,51 @@ mod tests {
             ["first", "second", "third", "fourth", "fifth", "sixth"]
         );
         assert!(rows.iter().all(|row| !row.raw.contains("oplog--")));
+    }
+
+    #[test]
+    fn unfiltered_count_is_applied_once_after_all_canonical_segments_merge() {
+        use std::io::Write;
+
+        let temporary = tempfile::tempdir().unwrap();
+        let opened = FixedOffset::east_opt(0)
+            .unwrap()
+            .with_ymd_and_hms(2026, 8, 7, 12, 0, 0)
+            .single()
+            .unwrap();
+        for (source, seconds) in [
+            ("alpha", [1, 4, 7]),
+            ("beta", [2, 5, 8]),
+            ("gamma", [3, 6, 9]),
+        ] {
+            let mut writer = create_oplog_at(
+                JournalRoot::open(temporary.path()).unwrap(),
+                source,
+                "run",
+                OplogFormat::Log,
+                opened,
+            )
+            .unwrap();
+            for second in seconds {
+                writeln!(
+                    writer,
+                    "2026-08-07T12:00:{second:02} [{source}:stdout] {source}-{second}"
+                )
+                .unwrap();
+            }
+        }
+        let query = HealthLogsQuery {
+            count: 2,
+            since: None,
+            service: None,
+            grep: None,
+        };
+        let rows = collect_health_logs(temporary.path(), opened.naive_local(), &query).unwrap();
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.message.as_str())
+                .collect::<Vec<_>>(),
+            ["beta-8", "gamma-9"]
+        );
     }
 }
