@@ -646,7 +646,7 @@ mod tests {
     fn rewrite_owner(journal: &Path, mutate: impl FnOnce(&mut Value)) {
         let mut record = owner_json(journal);
         mutate(&mut record);
-        write_json(&owner_path(journal), &record, OWNER_WRITE_OPTIONS).unwrap();
+        write_json(owner_path(journal), &record, OWNER_WRITE_OPTIONS).unwrap();
     }
 
     fn contended_detail(error: &CliError) -> String {
