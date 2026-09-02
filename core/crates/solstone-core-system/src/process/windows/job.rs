@@ -42,6 +42,7 @@ pub(super) struct JobAccounting {
 
 /// The limit state read back from an existing Job for a native receipt.
 #[cfg(any(test, all(windows, feature = "test-hooks")))]
+#[cfg_attr(not(windows), allow(dead_code))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct JobResourceLimitReceipt {
     pub(super) cpu_rate_per_10_000: u32,
@@ -68,6 +69,7 @@ pub(super) trait WindowsJobApi {
         limits: JobResourceLimits,
     ) -> io::Result<()>;
     #[cfg(any(test, all(windows, feature = "test-hooks")))]
+    #[cfg_attr(not(windows), allow(dead_code))]
     fn resource_limits(&self, job: &JobHandle) -> io::Result<JobResourceLimitReceipt>;
     #[cfg_attr(not(windows), allow(dead_code))]
     fn kill_on_close_enabled(&self, job: &JobHandle) -> io::Result<bool>;
