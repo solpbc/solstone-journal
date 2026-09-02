@@ -736,10 +736,18 @@ mod windows_atomic;
 #[cfg(windows)]
 #[path = "windows_create_only.rs"]
 mod windows_create_only;
+#[cfg(windows)]
+#[path = "windows_install.rs"]
+mod windows_install;
 #[cfg(all(windows, feature = "test-hooks"))]
 pub use windows_create_only::{
     WindowsCreateOnlyPrimitive, WindowsCreateOnlyTrace, run_with_windows_create_only_barrier,
     run_with_windows_create_only_faults, run_with_windows_create_only_faults_and_barrier,
+};
+#[cfg(all(windows, feature = "test-hooks"))]
+pub use windows_install::{
+    WindowsInstallPrimitive, WindowsInstallTrace, run_with_windows_install_barrier,
+    run_with_windows_install_faults, run_with_windows_install_faults_and_barrier,
 };
 
 #[cfg(all(windows, feature = "test-hooks"))]
@@ -1618,6 +1626,16 @@ pub fn install_file(
         let _ = fs::remove_file(temporary_path);
     }
     operation
+}
+
+/// Publish an already-created temporary file by flushing and replacing the destination.
+#[cfg(windows)]
+pub fn install_file(
+    temporary_path: impl AsRef<Path>,
+    path: impl AsRef<Path>,
+    options: AtomicWriteOptions,
+) -> Result<(), AtomicWriteError> {
+    windows_install::install_file(temporary_path.as_ref(), path.as_ref(), options)
 }
 
 /// Serialize and atomically replace a JSON file.

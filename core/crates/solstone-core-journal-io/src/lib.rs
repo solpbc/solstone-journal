@@ -29,6 +29,7 @@ mod exclusive_copy;
 pub mod flat_directory;
 #[cfg(unix)]
 pub mod health_marker;
+mod install_retry;
 pub mod inventory_budget;
 pub mod journal_root;
 #[cfg(any(unix, windows))]
@@ -80,7 +81,7 @@ pub(crate) mod test_support;
 pub use append::append_jsonl;
 #[cfg(any(unix, windows))]
 pub use append::append_text;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use atomic::install_file;
 #[cfg(unix)]
 pub use atomic::write_bytes_exclusive_bound_detailed;
@@ -104,6 +105,11 @@ pub use atomic::{
 pub use atomic::{
     WindowsCreateOnlyPrimitive, WindowsCreateOnlyTrace, run_with_windows_create_only_barrier,
     run_with_windows_create_only_faults, run_with_windows_create_only_faults_and_barrier,
+};
+#[cfg(all(windows, feature = "test-hooks"))]
+pub use atomic::{
+    WindowsInstallPrimitive, WindowsInstallTrace, run_with_windows_install_barrier,
+    run_with_windows_install_faults, run_with_windows_install_faults_and_barrier,
 };
 #[cfg(all(unix, feature = "test-hooks"))]
 pub use atomic::{

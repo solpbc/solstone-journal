@@ -71,3 +71,8 @@ required-features = ["test-hooks"]
 name = "windows_create_only_detailed"
 path = "tests/windows_create_only_detailed.rs"
 required-features = ["test-hooks"]
+
+[[test]]
+name = "windows_install_file_protocol"
+path = "tests/windows_install_file_protocol.rs"
+required-features = ["test-hooks"]
