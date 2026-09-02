@@ -3860,15 +3860,19 @@ mod tests {
             },
             Case {
                 name: "wait_failed",
+                // The wait error must reach the operator. This case previously used the
+                // mock error "unavailable" -- the same word the code hardcoded when it
+                // discarded the error -- so it passed whether or not the cause survived.
+                // A distinctive error proves the real one is surfaced.
                 configure: |recorder| {
-                    *recorder.wait_error.lock().unwrap() = Some("unavailable".to_owned());
+                    *recorder.wait_error.lock().unwrap() = Some("cortex socket closed".to_owned());
                 },
                 event: "talent.fail",
                 state: "wait_failed",
                 success: 0,
                 failed: 1,
                 timed_out: false,
-                failed_names: &["sense (unavailable)"],
+                failed_names: &["sense (wait failed: \"cortex socket closed\")"],
                 success_names: &[],
                 need_sense_output: false,
             },
