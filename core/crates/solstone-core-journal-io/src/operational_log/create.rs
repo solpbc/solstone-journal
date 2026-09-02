@@ -587,20 +587,6 @@ pub fn run_with_oplog_file_ids<T>(ids: Vec<[u8; 16]>, operation: impl FnOnce() -
     .0
 }
 
-/// Force stage rollback to report `own_residue`.
-#[cfg(any(test, feature = "test-hooks"))]
-pub fn run_with_oplog_rollback_fail<T>(operation: impl FnOnce() -> T) -> T {
-    with_trace(
-        OplogCreateTraceState {
-            rollback_fail: true,
-            ..empty_trace()
-        },
-        operation,
-        |_| true,
-    )
-    .0
-}
-
 /// Force `probe_oplog_lease` to return `Indeterminate`.
 #[cfg(any(test, feature = "test-hooks"))]
 pub fn run_with_oplog_probe_indeterminate<T>(operation: impl FnOnce() -> T) -> T {
@@ -641,26 +627,14 @@ fn with_trace<T>(
 
 #[cfg(all(test, unix))]
 fn spawn_sleep_holding_oplog_stdout(stdio: std::process::Stdio) -> std::process::Child {
-    use std::os::unix::process::CommandExt;
     use std::process::{Command, Stdio};
 
-    let mut command = Command::new("sleep");
-    command.arg("0.3").stdout(stdio).stderr(Stdio::null());
-    // SAFETY: `pre_exec` only flocks the already-wired stdout descriptor.
-    // SelfLease Drop issues LOCK_UN on the shared open-file description, so
-    // the parent drops before spawn; the child then holds the lease across
-    // exec until it exits. `Command` is dropped after spawn so the parent
-    // does not keep the inherited open-file description.
-    #[allow(unsafe_code)]
-    unsafe {
-        command.pre_exec(|| {
-            if nix::libc::flock(1, nix::libc::LOCK_EX) != 0 {
-                return Err(std::io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
-    command.spawn().unwrap()
+    Command::new("sleep")
+        .arg("0.3")
+        .stdout(stdio)
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap()
 }
 
 #[cfg(all(test, unix))]

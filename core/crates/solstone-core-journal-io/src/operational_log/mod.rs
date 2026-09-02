@@ -29,7 +29,7 @@ pub use create::{
 #[cfg(any(test, feature = "test-hooks"))]
 pub use create::{
     create_oplog_with_test_timing, run_with_oplog_create_barrier, run_with_oplog_create_fault,
-    run_with_oplog_file_ids, run_with_oplog_probe_indeterminate, run_with_oplog_rollback_fail,
+    run_with_oplog_file_ids, run_with_oplog_probe_indeterminate,
 };
 #[cfg(any(test, feature = "test-hooks"))]
 pub use lock::acquire_oplog_namespace_lock_with_test_timing;
