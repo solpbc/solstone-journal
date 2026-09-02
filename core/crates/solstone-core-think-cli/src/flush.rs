@@ -50,7 +50,7 @@ pub(crate) fn run(
     );
     context.status.update(start.clone());
     let _ = helpers::emit(&context.journal, context.now_ms, "started", start.clone());
-    log.log("started", context.now_ms, start);
+    log.log_event("started", context.now_ms, start);
     let runtime = runtime()?;
     let mut pending = Vec::new();
     let mut result = ModeResult::default();
@@ -116,7 +116,7 @@ pub(crate) fn run(
             }
         ),
     );
-    log.log("completed", context.now_ms, completed);
+    log.log_event("completed", context.now_ms, completed);
     Ok(result)
 }
 
@@ -305,8 +305,8 @@ fn log_dispatch(
         ]),
     );
     // Source-derived, not measured: thinking.py:3604-3617 records accepted flush starts and dispatches.
-    log.log("talent.started", context.now_ms, base.clone());
-    log.log("talent.dispatch", context.now_ms, base);
+    log.log_event("talent.started", context.now_ms, base.clone());
+    log.log_event("talent.dispatch", context.now_ms, base);
 }
 fn log_complete(
     log: &mut RunLogWriter<std::fs::File>,
@@ -325,8 +325,8 @@ fn log_complete(
             ("state".to_owned(), Value::String(state.to_owned())),
         ]),
     );
-    log.log("talent.completed", context.now_ms, base.clone());
-    log.log("talent.complete", context.now_ms, base);
+    log.log_event("talent.completed", context.now_ms, base.clone());
+    log.log_event("talent.complete", context.now_ms, base);
 }
 fn log_fail(
     log: &mut RunLogWriter<std::fs::File>,
@@ -344,8 +344,8 @@ fn log_fail(
         extra.insert("use_id".to_owned(), Value::String(use_id.to_owned()));
     }
     let base = fields(context, segment, extra);
-    log.log("talent.completed", context.now_ms, base.clone());
-    log.log("talent.fail", context.now_ms, base);
+    log.log_event("talent.completed", context.now_ms, base.clone());
+    log.log_event("talent.fail", context.now_ms, base);
 }
 fn merge(into: &mut ModeResult, from: ModeResult) {
     merge_mode_result(into, from);

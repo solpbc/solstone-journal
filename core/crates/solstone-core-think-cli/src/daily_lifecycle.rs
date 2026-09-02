@@ -701,7 +701,7 @@ fn log_completion_fold(
         .iter()
         .map(|(name, facet)| crate::dispatch::item_label(name, facet.as_deref()))
         .collect::<Vec<_>>();
-    log.log(
+    log.log_event(
         "daily.completion",
         context.now_ms,
         Map::from_iter([
@@ -727,7 +727,7 @@ fn log_completion_fold(
 }
 
 fn log_phase_start(log: &mut RunLogWriter<std::fs::File>, context: &ThinkContext, phase: &str) {
-    log.log(
+    log.log_event(
         "phase.start",
         context.now_ms,
         Map::from_iter([
@@ -793,7 +793,7 @@ fn log_phase_complete(
     } else if result.failed != 0 {
         fields.insert("reason_code".to_owned(), Value::String("failed".to_owned()));
     }
-    log.log("phase.complete", context.now_ms, fields);
+    log.log_event("phase.complete", context.now_ms, fields);
 }
 
 fn unix_seconds_f64() -> f64 {

@@ -59,7 +59,7 @@ pub(crate) fn run(
             if let Some(stamp) = last.filter(|stamp| now - *stamp < minutes * 60_000) {
                 // Source-derived, not measured: thinking.py:2984-2991 records
                 // every closed cadence interval in the run sidecar.
-                log.log(
+                log.log_event(
                     "talent.skip",
                     context.now_ms,
                     cadence_skip_fields(
@@ -77,7 +77,7 @@ pub(crate) fn run(
             if completed.segments.is_empty() && completed.activities.is_empty() {
                 // Source-derived, not measured: thinking.py:2994-3001 records
                 // the no-work skip instead of silently omitting the talent.
-                log.log(
+                log.log_event(
                     "talent.skip",
                     context.now_ms,
                     cadence_skip_fields(
@@ -122,7 +122,7 @@ pub(crate) fn run(
                     fields.insert("day".to_owned(), Value::String(context.day.clone()));
                     fields.insert("name".to_owned(), Value::String(config.key.clone()));
                     fields.insert("use_id".to_owned(), Value::String(item.use_id.clone()));
-                    log.log("talent.dispatch", context.now_ms, fields);
+                    log.log_event("talent.dispatch", context.now_ms, fields);
                     let one = drain(context, &runtime, vec![item]);
                     if one.success == 1 && one.failed == 0 {
                         state.set_timestamp(&config.key, now);
@@ -142,7 +142,7 @@ pub(crate) fn run(
                         ("use_id".to_owned(), Value::String(use_id)),
                         ("state".to_owned(), Value::String("request_lost".to_owned())),
                     ]);
-                    log.log("talent.fail", context.now_ms, fields);
+                    log.log_event("talent.fail", context.now_ms, fields);
                 }
                 Err(DispatchFailure::Unavailable) => {
                     result.failed += 1;

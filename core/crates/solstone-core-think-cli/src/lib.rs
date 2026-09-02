@@ -236,10 +236,10 @@ where
         }
 
         if let Some(activity_id) = parsed.activity.as_deref() {
-            let mut log = open_run_log(&parsed, &day_dir, now_ms, &selected_day);
+            let log = open_run_log(&parsed, &day_dir, now_ms, &selected_day);
             let result = activity::run(
                 &context,
-                &mut log,
+                &log,
                 activity_id,
                 parsed.facet.as_deref().expect("validated activity facet"),
                 parsed.refresh,
@@ -299,7 +299,7 @@ where
             return Ok(mode_outcome(result));
         }
         if let Some(segment) = parsed.segment.as_deref() {
-            let mut log = open_run_log(&parsed, &day_dir, now_ms, &selected_day);
+            let log = open_run_log(&parsed, &day_dir, now_ms, &selected_day);
             let skip_talents = parsed
                 .skip_talents
                 .split(',')
@@ -310,7 +310,7 @@ where
             // direct segment path its sole optional overall deadline.
             let result = segment::run(
                 &context,
-                &mut log,
+                &log,
                 segment,
                 parsed.refresh,
                 parsed.stream.as_deref(),
@@ -324,7 +324,7 @@ where
             // activity state after every direct segment Sense run.
             segment::replay_activity_state(
                 &context,
-                &mut log,
+                &log,
                 &[(segment.to_owned(), parsed.stream.clone())],
                 parsed.refresh,
                 parsed.jobs,
@@ -415,7 +415,7 @@ fn open_run_log(
     // This order differs from Python's main chain only superficially: args.rs
     // refuses --segment with --weekly or --cadence before mode derivation.
     let mode = run_log::mode(args);
-    let mut log = run_log::RunLogWriter::open(&run_log::path(day_dir, now_ms, mode));
+    let log = run_log::RunLogWriter::open(&run_log::path(day_dir, now_ms, mode));
     let mut fields = serde_json::Map::new();
     fields.insert(
         "mode".to_owned(),
@@ -423,7 +423,7 @@ fn open_run_log(
     );
     fields.insert("day".to_owned(), serde_json::Value::String(day.to_owned()));
     fields.insert("ref".to_owned(), serde_json::Value::from(now_ms));
-    log.log("run.start", now_ms, fields);
+    log.log_event("run.start", now_ms, fields);
     log
 }
 
@@ -2445,9 +2445,9 @@ mod tests {
         let _writer = run_log::RunLogWriter::open(&path);
         assert!(path.parent().unwrap().is_dir());
         fs::write(&path, b"existing\n").unwrap();
-        let mut writer = run_log::RunLogWriter::open(&path);
-        writer.log("talent.skip", 9, Map::<String, Value>::new());
-        assert_eq!(writer.skip_count, 1);
+        let writer = run_log::RunLogWriter::open(&path);
+        writer.log_event("talent.skip", 9, Map::<String, Value>::new());
+        assert_eq!(writer.skip_count(), 1);
         assert!(fs::read(&path).unwrap().starts_with(b"existing\n"));
     }
 
@@ -2457,10 +2457,10 @@ mod tests {
         let root = tempdir().unwrap();
         let blocked_parent = root.path().join("blocked");
         fs::write(&blocked_parent, b"not a directory").unwrap();
-        let mut writer = run_log::RunLogWriter::open(&blocked_parent.join("run.jsonl"));
+        let writer = run_log::RunLogWriter::open(&blocked_parent.join("run.jsonl"));
         assert_eq!(warnings().len(), 1);
-        writer.log("talent.skip", 9, Map::<String, Value>::new());
-        writer.log("talent.skip", 10, Map::<String, Value>::new());
+        writer.log_event("talent.skip", 9, Map::<String, Value>::new());
+        writer.log_event("talent.skip", 10, Map::<String, Value>::new());
         assert_eq!(warnings().len(), 1);
     }
 
@@ -2469,10 +2469,10 @@ mod tests {
         let _log_guard = capture_logs();
         let root = tempdir().unwrap();
         let path = run_log::path(root.path(), 9, "daily");
-        let mut writer = run_log::RunLogWriter::with_sink(path, Failing);
-        writer.log("talent.skip", 9, Map::<String, Value>::new());
-        writer.log("talent.skip", 10, Map::<String, Value>::new());
-        assert_eq!(writer.skip_count, 2);
+        let writer = run_log::RunLogWriter::with_sink(path, Failing);
+        writer.log_event("talent.skip", 9, Map::<String, Value>::new());
+        writer.log_event("talent.skip", 10, Map::<String, Value>::new());
+        assert_eq!(writer.skip_count(), 2);
         assert_eq!(warnings().len(), 2);
     }
 

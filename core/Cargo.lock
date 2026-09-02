@@ -5463,6 +5463,7 @@ dependencies = [
  "filetime",
  "glob",
  "log",
+ "serde",
  "serde_json",
  "sha2",
  "solstone-core-brain",

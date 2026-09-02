@@ -35,7 +35,7 @@ use crate::run_log::RunLogWriter;
 )]
 pub(crate) fn run(
     context: &ThinkContext,
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &RunLogWriter<std::fs::File>,
     segment: &str,
     refresh: bool,
     stream: Option<&str>,
@@ -210,7 +210,7 @@ pub(crate) fn run(
             "talent_started",
             fields.clone(),
         );
-        log.log("talent.dispatch", context.now_ms, fields);
+        log.log_event("talent.dispatch", context.now_ms, fields);
         context.status.update(segment_status_with_current(
             context,
             segment,
@@ -397,7 +397,7 @@ pub(crate) fn run(
 #[allow(clippy::too_many_arguments)]
 fn select_agents<'a>(
     context: &ThinkContext,
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &RunLogWriter<std::fs::File>,
     by_name: &'a BTreeMap<String, TalentConfig>,
     sense: &Map<String, Value>,
     segment_dir: &std::path::Path,
@@ -523,7 +523,7 @@ fn dispatch_agent(
     stream: Option<&str>,
     live: bool,
     skip_talents: &[String],
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &RunLogWriter<std::fs::File>,
 ) -> Result<AgentDispatch, DispatchFailure> {
     if skip_talents.iter().any(|name| name == &config.key) {
         // Source-derived, not measured: thinking.py:1412-1421 skips names
@@ -609,9 +609,13 @@ fn dispatch_agent(
 }
 
 /// Run selected repairs with the reference's bounded segment-level worker pool.
-/// Each worker owns a log handle; the shared cortex allocator remains locked,
-/// so equal-millisecond concurrent dispatches still receive unique use ids.
+/// Workers share one collision-safe log writer while the shared cortex allocator
+/// remains locked, so equal-millisecond concurrent dispatches receive unique use ids.
 #[allow(clippy::too_many_arguments)]
+#[allow(
+    dead_code,
+    reason = "the direct batch seam is retained for its focused worker-pool contract coverage"
+)]
 pub(crate) fn run_repair_batch(
     context: &ThinkContext,
     segments: Vec<(String, Option<String>)>,
@@ -624,16 +628,44 @@ pub(crate) fn run_repair_batch(
     if segments.is_empty() {
         return Ok(ModeResult::default());
     }
+    let log = Arc::new(
+        RunLogWriter::create_unique(&context.day_dir.join("health"), context.now_ms, "segments")
+            .map_err(|error| error.to_string())?,
+    );
+    run_repair_batch_with_log(
+        context,
+        segments,
+        refresh,
+        max_concurrency,
+        segment_workers,
+        timeout,
+        &skip_talents,
+        log,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_repair_batch_with_log(
+    context: &ThinkContext,
+    segments: Vec<(String, Option<String>)>,
+    refresh: bool,
+    max_concurrency: i64,
+    segment_workers: usize,
+    timeout: Option<Duration>,
+    skip_talents: &[String],
+    log: Arc<RunLogWriter<std::fs::File>>,
+) -> Result<ModeResult, String> {
+    if segments.is_empty() {
+        return Ok(ModeResult::default());
+    }
     let workers = segment_workers.clamp(1, segments.len());
     let queue = Arc::new(Mutex::new(VecDeque::from(segments)));
     let aggregate = Arc::new(Mutex::new(ModeResult::default()));
-    let log_path = crate::run_log::path(&context.day_dir, context.now_ms, "segments");
     std::thread::scope(|scope| {
         for _ in 0..workers {
             let queue = Arc::clone(&queue);
             let aggregate = Arc::clone(&aggregate);
-            let skip_talents = &skip_talents;
-            let log_path = log_path.clone();
+            let log = Arc::clone(&log);
             scope.spawn(move || {
                 loop {
                     let Some((segment, stream)) =
@@ -641,10 +673,9 @@ pub(crate) fn run_repair_batch(
                     else {
                         break;
                     };
-                    let mut log = RunLogWriter::open(&log_path);
                     match run(
                         context,
-                        &mut log,
+                        log.as_ref(),
                         &segment,
                         refresh,
                         stream.as_deref(),
@@ -690,22 +721,23 @@ pub(crate) fn run_repair_batch_with_activity(
     skip_talents: Vec<String>,
     no_activity_prompts: bool,
 ) -> Result<ModeResult, String> {
-    let result = run_repair_batch(
+    let log = Arc::new(
+        RunLogWriter::create_unique(&context.day_dir.join("health"), context.now_ms, "segments")
+            .map_err(|error| error.to_string())?,
+    );
+    let result = run_repair_batch_with_log(
         context,
         segments.clone(),
         refresh,
         max_concurrency,
         segment_workers,
         timeout,
-        skip_talents,
+        &skip_talents,
+        Arc::clone(&log),
     )?;
     replay_activity_state(
         context,
-        &mut RunLogWriter::open(&crate::run_log::path(
-            &context.day_dir,
-            context.now_ms,
-            "segments",
-        )),
+        log.as_ref(),
         &segments,
         refresh,
         max_concurrency,
@@ -725,7 +757,7 @@ pub(crate) fn run_repair_batch_with_activity(
 /// crate owns append-only activity-record publication.
 pub(crate) fn replay_activity_state(
     context: &ThinkContext,
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &RunLogWriter<std::fs::File>,
     segments: &[(String, Option<String>)],
     refresh: bool,
     max_concurrency: i64,
@@ -811,7 +843,7 @@ fn valid_activity_sense(sense: &Value) -> bool {
 
 fn flush_replay_machines(
     context: &ThinkContext,
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &RunLogWriter<std::fs::File>,
     mut machines: BTreeMap<Option<String>, ActivityStateMachine>,
     refresh: bool,
     max_concurrency: i64,
@@ -872,7 +904,7 @@ fn persist_activity_state(
 #[allow(clippy::too_many_arguments)]
 fn persist_ended_activities(
     context: &ThinkContext,
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &RunLogWriter<std::fs::File>,
     segment: &str,
     routing_day: &str,
     changes: Vec<Value>,
@@ -891,7 +923,7 @@ fn persist_ended_activities(
         let Some(facet) = change.get("facet").and_then(Value::as_str) else {
             continue;
         };
-        log.log(
+        log.log_event(
             "activity.detected",
             context.now_ms,
             segment_event(
@@ -918,7 +950,7 @@ fn persist_ended_activities(
                 .map_err(|error| error.to_string())?,
             AppendOutcome::Written(_)
         );
-        log.log(
+        log.log_event(
             "activity.persisted",
             context.now_ms,
             segment_event(
@@ -932,7 +964,7 @@ fn persist_ended_activities(
             ),
         );
         if skip_activity_prompts {
-            log.log(
+            log.log_event(
                 "activity.prompts_skipped",
                 context.now_ms,
                 segment_event(
@@ -953,7 +985,7 @@ fn persist_ended_activities(
             let (changed, input_hash) =
                 activity_input_changed(context, routing_day, facet, id, &record);
             if !(written || refresh || changed) {
-                log.log(
+                log.log_event(
                     "activity.unchanged",
                     context.now_ms,
                     segment_event(
@@ -1139,7 +1171,7 @@ fn write_activity_provenance(
 }
 
 fn log_use_terminal(
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &RunLogWriter<std::fs::File>,
     context: &ThinkContext,
     segment: &str,
     stream: Option<&str>,
@@ -1160,11 +1192,11 @@ fn log_use_terminal(
             ("state".to_owned(), Value::String(state.to_owned())),
         ]),
     );
-    log.log(event, context.now_ms, fields);
+    log.log_event(event, context.now_ms, fields);
 }
 
 fn log_dispatch(
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &RunLogWriter<std::fs::File>,
     context: &ThinkContext,
     segment: &str,
     stream: Option<&str>,
@@ -1185,7 +1217,7 @@ fn log_dispatch(
         "talent_started",
         fields.clone(),
     );
-    log.log("talent.dispatch", context.now_ms, fields);
+    log.log_event("talent.dispatch", context.now_ms, fields);
 }
 
 fn merge(into: &mut ModeResult, from: ModeResult) {
@@ -1193,7 +1225,7 @@ fn merge(into: &mut ModeResult, from: ModeResult) {
 }
 
 fn log_skip(
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &RunLogWriter<std::fs::File>,
     context: &ThinkContext,
     name: &str,
     segment: &str,
@@ -1210,10 +1242,10 @@ fn log_skip(
     if let Some(stream) = stream {
         fields.insert("stream".to_owned(), Value::String(stream.to_owned()));
     }
-    log.log("talent.skip", context.now_ms, fields);
+    log.log_event("talent.skip", context.now_ms, fields);
 }
 fn log_sense(
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &RunLogWriter<std::fs::File>,
     context: &ThinkContext,
     segment: &str,
     density: &str,
@@ -1228,10 +1260,10 @@ fn log_sense(
     if let Some(stream) = stream {
         fields.insert("stream".to_owned(), Value::String(stream.to_owned()));
     }
-    log.log("sense.complete", context.now_ms, fields);
+    log.log_event("sense.complete", context.now_ms, fields);
 }
 fn log_change(
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &RunLogWriter<std::fs::File>,
     context: &ThinkContext,
     segment: &str,
     change: &str,
@@ -1246,7 +1278,7 @@ fn log_change(
     if let Some(stream) = stream {
         fields.insert("stream".to_owned(), Value::String(stream.to_owned()));
     }
-    log.log("sense.change_detect", context.now_ms, fields);
+    log.log_event("sense.change_detect", context.now_ms, fields);
 }
 
 fn empty_input_sense_output() -> Map<String, Value> {
@@ -1442,7 +1474,7 @@ fn segment_status_with_current(
 }
 
 fn log_request_lost(
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &RunLogWriter<std::fs::File>,
     context: &ThinkContext,
     name: &str,
     segment: &str,
@@ -1459,11 +1491,11 @@ fn log_request_lost(
             ("state".to_owned(), Value::String("request_lost".to_owned())),
         ]),
     );
-    log.log("talent.fail", context.now_ms, std::mem::take(&mut fields));
+    log.log_event("talent.fail", context.now_ms, std::mem::take(&mut fields));
 }
 
 fn complete(
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &RunLogWriter<std::fs::File>,
     context: &ThinkContext,
     segment: &str,
     stream: Option<&str>,
@@ -1489,7 +1521,7 @@ fn complete(
             ),
         ]),
     );
-    log.log("completed", context.now_ms, fields.clone());
+    log.log_event("completed", context.now_ms, fields.clone());
     let _ = helpers::emit(&context.journal, context.now_ms, "completed", fields);
 }
 

@@ -68,7 +68,7 @@ pub(crate) fn run(
         fields.insert("day".to_owned(), Value::String(context.day.clone()));
         fields.insert("priority".to_owned(), Value::from(priority));
         fields.insert("count".to_owned(), Value::from(group.len()));
-        log.log("group.start", context.now_ms, fields);
+        log.log_event("group.start", context.now_ms, fields);
         let mut pending = Vec::new();
         let mut group_result = ModeResult::default();
         for config in group {
@@ -137,7 +137,7 @@ pub(crate) fn run(
         completed_fields.insert("priority".to_owned(), Value::from(priority));
         completed_fields.insert("success".to_owned(), Value::from(group_result.success));
         completed_fields.insert("failed".to_owned(), Value::from(group_result.failed));
-        log.log("group.complete", context.now_ms, completed_fields);
+        log.log_event("group.complete", context.now_ms, completed_fields);
         merge(&mut total, group_result);
     }
     context.status.update(Map::from_iter([(
@@ -226,7 +226,7 @@ fn queue_daily(
             if let Some(facet) = facet {
                 fields.insert("facet".to_owned(), Value::String(facet.to_owned()));
             }
-            log.log("talent.dispatch", context.now_ms, fields);
+            log.log_event("talent.dispatch", context.now_ms, fields);
             pending.push(item);
         }
         Err(DispatchFailure::NotClaimed { use_id }) => {
@@ -245,7 +245,7 @@ fn queue_daily(
                 "reason_code".to_owned(),
                 Value::String("request_lost".to_owned()),
             );
-            log.log("talent.fail", context.now_ms, fields);
+            log.log_event("talent.fail", context.now_ms, fields);
             result.failed += 1;
             result
                 .failed_names
@@ -283,7 +283,7 @@ fn log_skip(
     if let Some(facet) = facet {
         fields.insert("facet".to_owned(), Value::String(facet.to_owned()));
     }
-    log.log("talent.skip", context.now_ms, fields);
+    log.log_event("talent.skip", context.now_ms, fields);
 }
 
 fn drain_if_full(
@@ -329,7 +329,7 @@ fn log_daily_terminal(
     match outcome {
         DrainOutcome::Finish => {
             let mut fields = daily_terminal_fields(context, item, "finish");
-            log.log(
+            log.log_event(
                 "talent.complete",
                 context.now_ms,
                 std::mem::take(&mut fields),
@@ -367,7 +367,7 @@ fn log_daily_failure(
         "reason_code".to_owned(),
         Value::String(reason_code.to_owned()),
     );
-    log.log("talent.fail", context.now_ms, fields);
+    log.log_event("talent.fail", context.now_ms, fields);
 }
 
 fn daily_terminal_fields(

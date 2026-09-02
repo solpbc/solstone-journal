@@ -56,7 +56,7 @@ pub(crate) fn run(
         start.insert("day".to_owned(), Value::String(context.day.clone()));
         start.insert("priority".to_owned(), Value::from(priority));
         start.insert("count".to_owned(), Value::from(group.len()));
-        log.log("group.start", context.now_ms, start);
+        log.log_event("group.start", context.now_ms, start);
         let mut pending = Vec::new();
         let mut group_result = ModeResult::default();
         for config in group {
@@ -119,7 +119,7 @@ pub(crate) fn run(
         complete.insert("priority".to_owned(), Value::from(priority));
         complete.insert("success".to_owned(), Value::from(group_result.success));
         complete.insert("failed".to_owned(), Value::from(group_result.failed));
-        log.log("group.complete", context.now_ms, complete);
+        log.log_event("group.complete", context.now_ms, complete);
         merge(&mut total, group_result);
     }
     context.status.update(Map::from_iter([(
@@ -178,7 +178,7 @@ fn queue(
             if let Some(facet) = facet {
                 fields.insert("facet".to_owned(), Value::String(facet.to_owned()));
             }
-            log.log("talent.dispatch", context.now_ms, fields);
+            log.log_event("talent.dispatch", context.now_ms, fields);
             pending.push(item);
         }
         Err(DispatchFailure::NotClaimed { use_id }) => {
@@ -193,7 +193,7 @@ fn queue(
             if let Some(facet) = facet {
                 fields.insert("facet".to_owned(), Value::String(facet.to_owned()));
             }
-            log.log("talent.fail", context.now_ms, fields);
+            log.log_event("talent.fail", context.now_ms, fields);
             result.failed += 1;
             result
                 .failed_names
@@ -221,7 +221,7 @@ fn log_skip(
     if let Some(facet) = facet {
         fields.insert("facet".to_owned(), Value::String(facet.to_owned()));
     }
-    log.log("talent.skip", context.now_ms, fields);
+    log.log_event("talent.skip", context.now_ms, fields);
 }
 fn drain_if_full(
     context: &ThinkContext,
