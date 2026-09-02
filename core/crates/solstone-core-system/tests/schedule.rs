@@ -17,7 +17,8 @@ use solstone_core_system::request::{
 use solstone_core_system::schedule::{
     ScheduleConfig, ScheduleEngine, ScheduleEntry, ScheduleError, ScheduleMutation, ScheduleNow,
     ScheduleSubmissionSink, add_missing_schedule_entries, baseline_cap_contributions, daily_mark,
-    hour_mark, is_due, mutate_schedule_entries, remove_schedule_entry, weekly_mark,
+    hour_mark, initialize_schedule_config, is_due, mutate_schedule_entries, remove_schedule_entry,
+    weekly_mark,
 };
 
 struct Bed {
@@ -370,6 +371,30 @@ fn ac13_ac16_defaults_are_idempotent_and_preserve_disabled_raw_entries() {
     let status = engine.collect_status(now(2026, 3, 22, 10, 0));
     assert!(status.iter().all(|item| item.name != "brain"));
     assert!(status.iter().any(|item| item.name == "heartbeat"));
+}
+
+#[test]
+fn fresh_schedule_defaults_are_staggered_without_backfilling_existing_configs() {
+    let fresh = Bed::new("fresh-staggered-defaults");
+    assert!(initialize_schedule_config(&fresh.config()).expect("fresh defaults"));
+    let fresh_raw: Value =
+        serde_json::from_slice(&fs::read(fresh.config()).expect("fresh config")).expect("json");
+    assert_eq!(fresh_raw.as_object().expect("schedule object").len(), 2);
+    assert_eq!(fresh_raw["daily_time"], "00:15");
+    assert_eq!(fresh_raw["weekly_time"], "03:15");
+
+    let existing = Bed::new("existing-defaults-without-metadata");
+    let mut legacy_raw = fresh_raw;
+    let legacy_object = legacy_raw.as_object_mut().expect("schedule object");
+    legacy_object.remove("daily_time");
+    legacy_object.remove("weekly_time");
+    existing.write_config(legacy_raw);
+    let before = fs::read(existing.config()).expect("legacy config");
+    assert!(!initialize_schedule_config(&existing.config()).expect("legacy defaults"));
+    assert_eq!(
+        fs::read(existing.config()).expect("unchanged legacy config"),
+        before
+    );
 }
 
 #[test]

@@ -14,6 +14,9 @@ use super::ScheduleError;
 
 pub(crate) const RESERVED_METADATA_KEYS: [&str; 3] = ["daily_time", "weekly_day", "weekly_time"];
 
+const DEFAULT_DAILY_TIME: &str = "00:15";
+const DEFAULT_WEEKLY_TIME: &str = "03:15";
+
 /// A validated enabled schedule entry. `every` intentionally retains its raw form.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScheduleEntry {
@@ -71,8 +74,31 @@ pub(crate) fn register_defaults(
     path: &Path,
     _loaded: &ScheduleConfig,
 ) -> Result<bool, ScheduleError> {
+    let initialized = initialize_schedule_config(path)?;
     let defaults = BTreeMap::from(default_entries().map(|(name, value)| (name.to_owned(), value)));
-    Ok(!add_missing_schedule_entries(path, &defaults)?.is_empty())
+    Ok(initialized || !add_missing_schedule_entries(path, &defaults)?.is_empty())
+}
+
+/// Seed timing metadata only when the schedule configuration is absent.
+///
+/// Existing schedule configurations remain byte-for-byte unchanged so initialization
+/// never becomes a metadata migration.
+pub fn initialize_schedule_config(path: &Path) -> Result<bool, ScheduleError> {
+    let _lock = hold_lock(path, Default::default()).map_err(io_error)?;
+    if path.exists() {
+        return Ok(false);
+    }
+    let mut raw = Map::new();
+    raw.insert(
+        "daily_time".to_owned(),
+        Value::String(DEFAULT_DAILY_TIME.to_owned()),
+    );
+    raw.insert(
+        "weekly_time".to_owned(),
+        Value::String(DEFAULT_WEEKLY_TIME.to_owned()),
+    );
+    write_raw(path, raw)?;
+    Ok(true)
 }
 
 /// Add schedule entries that are absent from the raw schedules map.
@@ -86,22 +112,29 @@ pub fn add_missing_schedule_entries(
 ) -> Result<Vec<String>, ScheduleError> {
     let _lock = hold_lock(path, Default::default()).map_err(io_error)?;
     let mut raw = read_strict_raw(path)?;
+    let added = add_missing_entries(&mut raw, entries);
+    if !added.is_empty() {
+        write_raw(path, raw)?;
+    }
+    Ok(added)
+}
+
+fn add_missing_entries(
+    raw: &mut Map<String, Value>,
+    entries: &BTreeMap<String, Value>,
+) -> Vec<String> {
     let missing = entries
         .iter()
         .filter(|(name, _)| !raw.contains_key(name.as_str()))
         .map(|(name, value)| (name.clone(), value.clone()))
         .collect::<Vec<_>>();
-    let added = missing
+    missing
         .into_iter()
         .map(|(name, value)| {
             raw.insert(name.clone(), value);
             name
         })
-        .collect::<Vec<_>>();
-    if !added.is_empty() {
-        write_raw(path, raw)?;
-    }
-    Ok(added)
+        .collect()
 }
 
 /// Remove one schedule entry, returning whether the raw map changed.
