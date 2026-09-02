@@ -9,7 +9,7 @@ use chrono::{TimeZone, Utc};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use solstone_core_facets::{AppendOutcome, append_activity_record};
-use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
+use solstone_core_journal_io::{AtomicWriteOptions, DEFAULT_STREAM, atomic_replace};
 use solstone_core_system::activity_state::ActivityStateMachine;
 use solstone_core_system_health::{
     DataState, FilesystemHealthLogSource, SEGMENT_FLOOR_TALENTS, detect_segment_change,
@@ -17,6 +17,10 @@ use solstone_core_system_health::{
 };
 use solstone_core_talent_config::{
     TalentConfig, TalentFilter, get_output_path, load_talent_configs,
+};
+use solstone_core_timeline::{
+    AttemptOutcome, AttemptStateV1, SegmentBindingV1, continuation_input_digest,
+    publish_continuation_summary,
 };
 
 use crate::context::{DispatchFailure, ThinkContext};
@@ -291,15 +295,38 @@ pub(crate) fn run(
         return Ok(result);
     }
     if change_class == "redundant" && !refresh {
-        // Source-derived, not measured: thinking.py:1773 invokes the maintenance library directly.
         if let Some(previous) = change
             .pointer("/predecessor/segment")
             .and_then(Value::as_str)
         {
-            solstone_core_maintenance::bodies::timeline::write_continuation_summary(
-                &segment_dir,
-                previous,
-            )?;
+            let binding = SegmentBindingV1 {
+                day: context.day.clone(),
+                stream: stream.unwrap_or(DEFAULT_STREAM).to_owned(),
+                segment: segment.to_owned(),
+            };
+            let input_digest =
+                continuation_input_digest(&binding, previous).map_err(|error| error.to_string())?;
+            let attempt = AttemptStateV1 {
+                attempt_id: format!(
+                    "continuation-{}-{}-{segment}",
+                    std::process::id(),
+                    context.now_ms
+                ),
+                input_digest: input_digest.clone(),
+                started_at_ms: context.now_ms,
+                finished_at_ms: None,
+                outcome: AttemptOutcome::Running,
+                detail: String::new(),
+            };
+            publish_continuation_summary(
+                &context.journal,
+                binding,
+                previous.to_owned(),
+                input_digest,
+                context.now_ms,
+                attempt,
+            )
+            .map_err(|error| error.to_string())?;
         }
         log_skip(log, context, "*", segment, "change_redundant", stream);
         complete(log, context, segment, stream, result.clone());

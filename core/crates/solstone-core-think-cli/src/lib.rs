@@ -2763,10 +2763,14 @@ mod tests {
             )
             .contains(&("talent.complete", Some("use-2"), Some("finish")))
         );
+        let continuation = serde_json::from_slice::<solstone_core_timeline::SegmentTimelineV1>(
+            &fs::read(current.join("timeline.json")).unwrap(),
+        )
+        .unwrap();
+        solstone_core_timeline::validate_segment_timeline(&continuation).unwrap();
         assert_eq!(
-            serde_json::from_slice::<Value>(&fs::read(current.join("timeline.json")).unwrap())
-                .unwrap()["continuation_of"],
-            "090500_300"
+            continuation.summary.continuation_of.as_deref(),
+            Some("090500_300")
         );
     }
 

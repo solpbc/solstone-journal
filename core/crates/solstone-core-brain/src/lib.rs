@@ -15,11 +15,10 @@ mod writer;
 mod corpus_tests;
 
 pub use fingerprint::{
-    BundledRuntimeDesired, CanonicalInput, FingerprintError, GenerateModelResolutionError,
-    LaneResolution, build_active_brain_fingerprint, bundled_runtime_desired_fingerprint,
-    canonical_fingerprint, canonical_fingerprint_preserving_array_order, canonical_json,
+    BundledRuntimeDesired, CanonicalInput, FingerprintError, LaneResolution,
+    build_active_brain_fingerprint, bundled_runtime_desired_fingerprint, canonical_fingerprint,
+    canonical_fingerprint_preserving_array_order, canonical_json,
     canonical_json_preserving_array_order, derive_active_brain_lane, fingerprint_sha256,
-    resolve_generate_model,
 };
 pub use inspect::{
     BrainInspection, BrainProjection, BundledRuntimePrerequisiteAssessment, InspectionStatus,

@@ -61,20 +61,11 @@ pub struct TimelineServices<'a> {
     pub now: DateTime<Utc>,
     pub host_timezone: &'a dyn timezone::HostTimezoneSource,
     pub picker: &'a dyn RollupPicker,
-    pub model_resolver: &'a dyn GenerateModelResolver,
 }
 
 /// One model selection request for a timeline rollup.
 pub trait RollupPicker: Sync {
     fn pick(&self, request: &GenerateRequest) -> Result<GeneratedResponse, String>;
-}
-
-/// Resolve the configured generate-lane model without making a generation request.
-pub trait GenerateModelResolver: Sync {
-    fn resolve(
-        &self,
-        config: &serde_json::Map<String, serde_json::Value>,
-    ) -> Result<String, String>;
 }
 
 impl<'a> MaintenanceServices<'a> {
@@ -108,7 +99,6 @@ fn run_cli_with_deps(
     let restore_hooks = NativeJournalMaintenance;
     let host_timezone = timezone::ProductionHostTimezoneSource;
     let rollup_picker = ProductionRollupPicker;
-    let model_resolver = ProductionGenerateModelResolver;
     let now = Utc::now();
     let placeholder = BackupServices {
         runner,
@@ -131,7 +121,6 @@ fn run_cli_with_deps(
         now,
         host_timezone: &host_timezone,
         picker: &rollup_picker,
-        model_resolver: &model_resolver,
     };
     match classify_maintenance_tool_resolution(args) {
         None => run_cli_with_all_services(
@@ -368,17 +357,6 @@ impl RollupPicker for ProductionRollupPicker {
     }
 }
 
-struct ProductionGenerateModelResolver;
-
-impl GenerateModelResolver for ProductionGenerateModelResolver {
-    fn resolve(
-        &self,
-        config: &serde_json::Map<String, serde_json::Value>,
-    ) -> Result<String, String> {
-        solstone_core_brain::resolve_generate_model(config).map_err(|error| error.to_string())
-    }
-}
-
 struct ProductionClock;
 
 impl Clock for ProductionClock {
@@ -408,7 +386,7 @@ mod composed_tests {
     use std::path::Path;
 
     use chrono::{TimeZone, Utc};
-    use serde_json::{Map, Value, json};
+    use serde_json::json;
     use solstone_core_backup_runtime::hosted_runtime::HttpError;
     use solstone_core_backup_runtime::{
         BackupServices, Clock, HttpRequest, HttpResponse, HttpTransport, JournalMaintenance,
@@ -417,8 +395,8 @@ mod composed_tests {
     use solstone_core_generate::{GenerateRequest, GeneratedResponse};
 
     use super::{
-        GenerateModelResolver, HealthServices, MaintenanceServices, RollupPicker, TimelineServices,
-        registry, run_cli_with_all_services,
+        HealthServices, MaintenanceServices, RollupPicker, TimelineServices, registry,
+        run_cli_with_all_services,
     };
     use crate::timezone::HostTimezoneSource;
 
@@ -482,14 +460,6 @@ mod composed_tests {
         }
     }
 
-    struct Model;
-
-    impl GenerateModelResolver for Model {
-        fn resolve(&self, _: &Map<String, Value>) -> Result<String, String> {
-            Ok("fixture-model".to_owned())
-        }
-    }
-
     #[test]
     fn all_routines_compose_through_parser_registry_and_schedule_without_python() {
         let journal = tempfile::tempdir().unwrap();
@@ -512,7 +482,6 @@ mod composed_tests {
         let hooks = Hooks;
         let host = Host;
         let picker = Picker;
-        let model = Model;
         let backup = BackupServices {
             runner: &runner,
             http: &http,
@@ -531,7 +500,6 @@ mod composed_tests {
             now,
             host_timezone: &host,
             picker: &picker,
-            model_resolver: &model,
         };
         let services = MaintenanceServices::new(registry::routines());
         let run = |arguments: &[&str]| {

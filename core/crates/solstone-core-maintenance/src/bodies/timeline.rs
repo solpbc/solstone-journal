@@ -10,15 +10,17 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use serde_json::{Map, Value, json};
 use solstone_core_generate::{ContentPart, GenerateRequest, GeneratedResponse};
 use solstone_core_journal_config::read_journal_config;
-use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
 use solstone_core_timeline::{
     AttemptOutcome, AttemptStateV1, CURRENT_SCHEMA_VERSION, CurationContentPartV1,
     CurationRecordV1, CurationRequestV1, DayTimelineV1, GenerationProvenanceV1, HourTimelineV1,
-    InvalidSelectionReason, SegmentBindingV1, SegmentTimelineV1, TimelineCurationStage,
-    TimelineEntryV1, TimelineError, TimelineKind, TimelineLockRequest, TimelineLockSubject,
+    InvalidSelectionReason, MasterTimelineV1, MonthTimelineEntryV1, MonthTimelineV1,
+    SegmentBindingV1, SegmentTimelineV1, TimelineCurationStage, TimelineEntryV1, TimelineError,
+    TimelineKind, TimelineLockRequest, TimelineLockSet, TimelineLockSubject,
     acquire_timeline_locks, bounded_diagnostic_detail, curation_input_digest, day_subject_key,
-    day_timeline_path, discover_day_segment_bindings, load_timeline_state, publish_day_timeline,
-    record_attempt_outcome, segment_directory, validate_day_timeline, validate_segment_timeline,
+    day_timeline_path, discover_day_segment_bindings, load_timeline_state, master_source_digest,
+    master_subject_key, master_timeline_path, publish_day_timeline, publish_master_timeline,
+    record_attempt_outcome, segment_directory, validate_day_timeline, validate_master_timeline,
+    validate_segment_timeline,
 };
 
 use crate::timezone::{default_rollup_day, resolve_owner_timezone};
@@ -58,17 +60,19 @@ struct EntryBatchResult {
     result: Result<EntryPickResult, TimelineError>,
 }
 
-struct PickResult {
-    picks: Vec<Value>,
-    rationale: String,
+struct MasterScan {
+    days: BTreeMap<String, DayTimelineV1>,
+    failures: Vec<MasterScanFailure>,
 }
 
-struct BatchResult {
-    key: String,
-    result: Result<PickResult, TimelineError>,
+struct MasterScanFailure {
+    day: String,
+    kind: &'static str,
+    detail: String,
 }
 
 static DAY_ATTEMPT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+static MASTER_ATTEMPT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn run(
     id: &str,
@@ -103,6 +107,7 @@ struct DayOptions {
 struct MasterOptions {
     top: usize,
     jobs: usize,
+    commit: bool,
     force: bool,
     dry_run: bool,
     months: Option<BTreeSet<String>>,
@@ -191,11 +196,18 @@ fn parse_master_args(args: &[String]) -> Result<MasterOptions, String> {
                 options.months = (!months.is_empty()).then_some(months);
                 index += 1;
             }
+            "--commit" => options.commit = true,
             "--force" => options.force = true,
             "--dry-run" => options.dry_run = true,
             value => return Err(format!("unrecognized arguments: {value}")),
         }
         index += 1;
+    }
+    if options.commit && options.dry_run {
+        return Err("--commit and --dry-run cannot be combined".to_owned());
+    }
+    if options.force && !options.commit {
+        return Err("--force requires --commit".to_owned());
     }
     Ok(options)
 }
@@ -292,11 +304,17 @@ fn rollup_day(journal: &Path, options: DayOptions, services: &TimelineServices<'
             candidates: rows.iter().map(|row| row.entry.clone()).collect(),
         })
         .collect::<Vec<_>>();
-    let hour_results =
-        match pick_entry_batch(services.picker, jobs, options.top, "hour", options.jobs) {
-            Ok(results) => results,
-            Err(error) => return day_curation_failure(journal, &day, &attempt, &error),
-        };
+    let hour_results = match pick_entry_batch(
+        services.picker,
+        jobs,
+        options.top,
+        "hour",
+        TimelineCurationStage::Day,
+        options.jobs,
+    ) {
+        Ok(results) => results,
+        Err(error) => return day_curation_failure(journal, &day, &attempt, &error),
+    };
     let mut hours = BTreeMap::new();
     for result in hour_results {
         let picked = match result.result {
@@ -316,7 +334,13 @@ fn rollup_day(journal: &Path, options: DayOptions, services: &TimelineServices<'
         .iter()
         .map(|row| row.entry.clone())
         .collect::<Vec<_>>();
-    let day_picked = match pick_entries(services.picker, &day_candidates, options.top, "day") {
+    let day_picked = match pick_entries(
+        services.picker,
+        &day_candidates,
+        options.top,
+        "day",
+        TimelineCurationStage::Day,
+    ) {
         Ok(picked) => picked,
         Err(error) => return day_curation_failure(journal, &day, &attempt, &error),
     };
@@ -445,221 +469,276 @@ fn rollup_master(
     options: MasterOptions,
     services: &TimelineServices<'_>,
 ) -> CliRun {
-    let out_path = journal.join("timeline.json");
-    if out_path.exists() && !options.force && !options.dry_run {
-        return success(format!(
-            "  [skip] {}: already exists (use --force to overwrite)",
-            out_path.display()
-        ));
+    if !options.commit {
+        let scan = match load_day_rollups(journal) {
+            Ok(scan) => scan,
+            Err(error) => return failure(error),
+        };
+        let days = match verified_master_days(scan, options.months.as_ref()) {
+            Ok(days) => days,
+            Err(error) => return failure(error),
+        };
+        return master_preview(journal, &days, options.top);
     }
-    let day_rollups = match load_day_rollups(journal) {
-        Ok(rollups) => rollups,
+
+    let (locks, days) = match lock_master_days(journal, options.months.as_ref()) {
+        Ok(value) => value,
         Err(error) => return failure(error),
     };
-    if day_rollups.is_empty() {
-        return CliRun {
-            stdout: format!(
-                "  [empty] no day-level timeline.json found under {}/chronicle/*/\n",
-                journal.display()
-            ),
-            stderr: String::new(),
-            exit_code: EXIT_EMPTY,
-        };
+    let _locks = locks;
+    if days.is_empty() {
+        return empty_master(journal);
     }
-    let mut by_month = group_by_month(&day_rollups);
-    if let Some(filter) = &options.months {
-        by_month.retain(|month, _| filter.contains(month));
-        if by_month.is_empty() {
-            return success(format!(
-                "  [empty] no overlap between --months {:?} and journal",
-                filter.iter().collect::<Vec<_>>()
-            ));
-        }
+    let candidates = master_candidates(&days);
+    if candidates.is_empty() {
+        return empty_master_candidates();
     }
-    if options.dry_run {
-        return success(format!(
-            "\n== dry run ==\ndays with day-level timeline.json: {}\nmonths covered                   : {}",
-            day_rollups.len(),
-            by_month.len()
-        ));
+    let year_request = entry_rollup_request(&candidates, options.top, "year");
+    let source_digest = match master_digest(&days, &year_request) {
+        Ok(digest) => digest,
+        Err(error) => return failure(error.to_string()),
+    };
+    if !options.force && master_is_current(journal, &source_digest) {
+        return success("  [current] verified master timeline is current".to_owned());
     }
+    let generated_at_ms = services.now.timestamp_millis();
+    let attempt = master_attempt(&source_digest, generated_at_ms);
+    let by_month = group_by_month(&days);
     let jobs = by_month
         .iter()
-        .filter_map(|(month, days)| {
-            let events = days
+        .map(|(month, day_keys)| EntryBatchInput {
+            key: month.clone(),
+            candidates: day_keys
                 .iter()
-                .flat_map(|day| {
-                    day_rollups[day]
-                        .get("day_top")
-                        .and_then(Value::as_array)
-                        .into_iter()
-                        .flatten()
-                        .map(event_value)
-                        .collect::<Vec<_>>()
-                })
-                .collect::<Vec<_>>();
-            (!events.is_empty()).then_some(BatchResultInput {
-                key: month.clone(),
-                events,
-            })
+                .flat_map(|day| days[day].day_curation.picks.iter().cloned())
+                .collect(),
         })
         .collect::<Vec<_>>();
-    if jobs.is_empty() {
-        return success("  [empty] no month candidates found".to_owned());
-    }
-    let config = match read_config(journal) {
-        Ok(config) => config,
-        Err(error) => return failure(error),
-    };
-    let model = match services.model_resolver.resolve(&config) {
-        Ok(model) => model,
-        Err(error) => return failure(error),
-    };
-    let month_results = match pick_batch(
+    let month_results = match pick_entry_batch(
         services.picker,
-        jobs.clone(),
+        jobs,
         options.top,
         "month",
+        TimelineCurationStage::Master,
         options.jobs,
     ) {
         Ok(results) => results,
-        Err(error) => {
-            let detail = error.to_string();
-            jobs.into_iter()
-                .map(|job| BatchResult {
-                    key: job.key,
-                    result: Err(curation_error(&detail)),
-                })
-                .collect()
-        }
+        Err(error) => return master_curation_failure(journal, &attempt, &error),
     };
-    let mut months = Map::new();
-    let mut year_top = Vec::new();
-    let mut stdout = String::new();
+    let mut months = BTreeMap::new();
     for result in month_results {
-        let days = by_month.get(&result.key).cloned().unwrap_or_default();
-        let (month_top, month_rationale) = match result.result {
-            Ok(picked) => (picked.picks, picked.rationale),
-            Err(error) => {
-                let detail = error.to_string();
-                stdout.push_str(&format!(
-                    "  [month-err {}] {}\n",
-                    result.key,
-                    truncate(&detail, 120)
-                ));
-                (Vec::new(), format!("ERROR: {}", truncate(&detail, 200)))
-            }
+        let picked = match result.result {
+            Ok(picked) => picked,
+            Err(error) => return master_curation_failure(journal, &attempt, &error),
         };
-        if let Some(head) = month_top.first() {
-            year_top.push(json!({
-                "month": result.key,
-                "title": string_field(head, "title"),
-                "description": string_field(head, "description"),
-                "origin": string_field(head, "origin"),
-            }));
-        }
-        let embedded_days = days
+        let day_keys = &by_month[&result.key];
+        let month_days = day_keys
             .iter()
-            .map(|day| (day.clone(), day_rollups[day].clone()))
-            .collect::<Map<_, _>>();
+            .map(|day| (day.clone(), days[day].clone()))
+            .collect();
         months.insert(
             result.key,
-            json!({
-                "month_top": month_top,
-                "month_rationale": month_rationale,
-                "day_count": days.len(),
-                "days": embedded_days,
-            }),
+            MonthTimelineV1 {
+                day_count: day_keys.len(),
+                days: month_days,
+                month_curation: curation_record(result.candidates.len(), picked),
+            },
         );
     }
-    let payload = json!({
-        "generated_at": services.now.timestamp(),
-        "model": model,
-        "top_n": options.top,
-        "year_top": year_top,
-        "months": months,
-    });
-    if let Err(error) = write_json(&out_path, &payload) {
-        return failure(error);
+    let year_picked = match pick_entries(
+        services.picker,
+        &candidates,
+        options.top,
+        "year",
+        TimelineCurationStage::Master,
+    ) {
+        Ok(picked) => picked,
+        Err(error) => return master_curation_failure(journal, &attempt, &error),
+    };
+    let year_top = year_picked
+        .picks
+        .iter()
+        .map(|entry| MonthTimelineEntryV1 {
+            month: entry.binding.day[..6].to_owned(),
+            entry: entry.clone(),
+        })
+        .collect();
+    let timeline = MasterTimelineV1 {
+        schema_version: CURRENT_SCHEMA_VERSION,
+        kind: TimelineKind::Master,
+        source_digest,
+        generated_at_ms,
+        top_n: options.top,
+        months,
+        year_top,
+        year_curation: curation_record(candidates.len(), year_picked),
+    };
+    if let Err(error) = publish_master_timeline(journal, &timeline, attempt) {
+        return failure(error.to_string());
     }
-    stdout.push_str(&format!("\n[ok] wrote {}\n", out_path.display()));
+    success(format!(
+        "  [ok] → {}",
+        master_timeline_path(journal).display()
+    ))
+}
+
+fn master_preview(journal: &Path, days: &BTreeMap<String, DayTimelineV1>, top: usize) -> CliRun {
+    if days.is_empty() {
+        return empty_master(journal);
+    }
+    let candidates = master_candidates(days);
+    if candidates.is_empty() {
+        return empty_master_candidates();
+    }
+    let request = entry_rollup_request(&candidates, top, "year");
+    let digest = match master_digest(days, &request) {
+        Ok(digest) => digest,
+        Err(error) => return failure(error.to_string()),
+    };
+    if master_is_current(journal, &digest) {
+        return success("  [current] verified master timeline is current".to_owned());
+    }
+    let status = if master_timeline_path(journal).exists() {
+        "stale"
+    } else {
+        "would_publish"
+    };
+    success(format!(
+        "  [{status}] {} verified day artifacts; --commit to publish",
+        days.len()
+    ))
+}
+
+fn empty_master(journal: &Path) -> CliRun {
     CliRun {
-        stdout,
+        stdout: format!(
+            "  [empty] no day-level timeline.json found under {}/chronicle/*/\n",
+            journal.display()
+        ),
         stderr: String::new(),
-        exit_code: 0,
+        exit_code: EXIT_EMPTY,
     }
 }
 
-#[derive(Clone)]
-struct BatchResultInput {
-    key: String,
-    events: Vec<Value>,
+fn empty_master_candidates() -> CliRun {
+    CliRun {
+        stdout: "  [empty] no master candidates found\n".to_owned(),
+        stderr: String::new(),
+        exit_code: EXIT_EMPTY,
+    }
 }
 
-fn pick_batch(
-    picker: &dyn RollupPicker,
-    jobs: Vec<BatchResultInput>,
-    n: usize,
-    scope_label: &str,
-    max_concurrent: usize,
-) -> Result<Vec<BatchResult>, TimelineError> {
-    if max_concurrent == 0 {
-        return Err(curation_error("max_concurrent must be positive"));
-    }
-    let mut out = Vec::with_capacity(jobs.len());
-    for chunk in jobs.chunks(max_concurrent) {
-        let mut completed = Vec::with_capacity(chunk.len());
-        std::thread::scope(|scope| {
-            let handles = chunk
-                .iter()
-                .cloned()
-                .map(|job| {
-                    scope.spawn(move || BatchResult {
-                        key: job.key,
-                        result: pick_one(picker, &job.events, n, scope_label),
-                    })
-                })
-                .collect::<Vec<_>>();
-            for handle in handles {
-                completed.push(
-                    handle
-                        .join()
-                        .map_err(|_| curation_error("timeline rollup worker panicked")),
-                );
-            }
-        });
-        for result in completed {
-            out.push(result?);
+fn lock_master_days(
+    journal: &Path,
+    months: Option<&BTreeSet<String>>,
+) -> Result<(TimelineLockSet, BTreeMap<String, DayTimelineV1>), String> {
+    for _ in 0..3 {
+        let scan = load_day_rollups(journal)?;
+        let expected = verified_master_days(scan, months)?;
+        let locks = acquire_timeline_locks(
+            journal,
+            TimelineLockRequest {
+                days: expected.keys().cloned().collect(),
+                subjects: vec![TimelineLockSubject::Master],
+                ..TimelineLockRequest::default()
+            },
+        )
+        .map_err(|error| error.to_string())?;
+        let scan = load_day_rollups(journal)?;
+        let confirmed = verified_master_days(scan, months)?;
+        if expected.keys().eq(confirmed.keys()) {
+            return Ok((locks, confirmed));
         }
+        drop(locks);
     }
-    Ok(out)
+    Err("timeline master input population changed while acquiring locks".to_owned())
 }
 
-fn pick_one(
-    picker: &dyn RollupPicker,
-    events: &[Value],
-    n: usize,
-    scope_label: &str,
-) -> Result<PickResult, TimelineError> {
-    if events.len() <= n {
-        return Ok(PickResult {
-            picks: events.to_vec(),
-            rationale: "fewer than N candidates; returning all".to_owned(),
-        });
+fn verified_master_days(
+    scan: MasterScan,
+    months: Option<&BTreeSet<String>>,
+) -> Result<BTreeMap<String, DayTimelineV1>, String> {
+    let matches_month =
+        |day: &str| months.is_none_or(|filter| filter.contains(&day[..6].to_owned()));
+    let failures = scan
+        .failures
+        .into_iter()
+        .filter(|failure| matches_month(&failure.day))
+        .map(|failure| format!("{} ({}): {}", failure.kind, failure.day, failure.detail))
+        .collect::<Vec<_>>();
+    if !failures.is_empty() {
+        return Err(format!(
+            "master scan failed; no partial rollup will be published: {}",
+            failures.join("; ")
+        ));
     }
-    let request = rollup_request(events, n, scope_label);
-    let response = picker
-        .pick(&request)
-        .map_err(|error| curation_error(&error))?;
-    let (indices, rationale) =
-        parse_selection(&response, events.len(), n, TimelineCurationStage::Master)?;
-    Ok(PickResult {
-        picks: indices
-            .into_iter()
-            .map(|index| events[index].clone())
-            .collect(),
-        rationale,
-    })
+    Ok(scan
+        .days
+        .into_iter()
+        .filter(|(day, _)| matches_month(day))
+        .collect())
+}
+
+fn master_candidates(days: &BTreeMap<String, DayTimelineV1>) -> Vec<TimelineEntryV1> {
+    days.values()
+        .flat_map(|day| day.day_curation.picks.iter().cloned())
+        .collect()
+}
+
+fn master_digest(
+    days: &BTreeMap<String, DayTimelineV1>,
+    request: &GenerateRequest,
+) -> Result<String, TimelineError> {
+    let sources = days
+        .iter()
+        .map(|(day, timeline)| (day.clone(), timeline.source_digest.clone()))
+        .collect::<Vec<_>>();
+    master_source_digest(&sources, &curation_request(request))
+}
+
+fn master_is_current(journal: &Path, source_digest: &str) -> bool {
+    let timeline = std::fs::read(master_timeline_path(journal))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<MasterTimelineV1>(&bytes).ok());
+    let Some(timeline) = timeline else {
+        return false;
+    };
+    if validate_master_timeline(&timeline).is_err() || timeline.source_digest != source_digest {
+        return false;
+    }
+    load_timeline_state(journal)
+        .ok()
+        .and_then(|state| state.artifacts.get(master_subject_key()).cloned())
+        .is_some_and(|artifact| artifact.input_digest == source_digest)
+}
+
+fn master_attempt(input_digest: &str, started_at_ms: i64) -> AttemptStateV1 {
+    let sequence = MASTER_ATTEMPT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    AttemptStateV1 {
+        attempt_id: format!("master-{sequence}"),
+        input_digest: input_digest.to_owned(),
+        started_at_ms,
+        finished_at_ms: None,
+        outcome: AttemptOutcome::Running,
+        detail: String::new(),
+    }
+}
+
+fn master_curation_failure(
+    journal: &Path,
+    attempt: &AttemptStateV1,
+    error: &TimelineError,
+) -> CliRun {
+    let detail = bounded_diagnostic_detail(&error.to_string());
+    let _ = record_attempt_outcome(
+        journal,
+        master_subject_key(),
+        attempt.clone(),
+        AttemptOutcome::Failed,
+        &detail,
+        attempt.started_at_ms,
+    );
+    failure(detail)
 }
 
 #[derive(Clone)]
@@ -673,6 +752,7 @@ fn pick_entry_batch(
     jobs: Vec<EntryBatchInput>,
     n: usize,
     scope_label: &str,
+    stage: TimelineCurationStage,
     max_concurrent: usize,
 ) -> Result<Vec<EntryBatchResult>, TimelineError> {
     if max_concurrent == 0 {
@@ -688,7 +768,7 @@ fn pick_entry_batch(
                 .map(|job| {
                     scope.spawn(move || EntryBatchResult {
                         key: job.key,
-                        result: pick_entries(picker, &job.candidates, n, scope_label),
+                        result: pick_entries(picker, &job.candidates, n, scope_label, stage),
                         candidates: job.candidates,
                     })
                 })
@@ -713,6 +793,7 @@ fn pick_entries(
     candidates: &[TimelineEntryV1],
     n: usize,
     scope_label: &str,
+    stage: TimelineCurationStage,
 ) -> Result<EntryPickResult, TimelineError> {
     let request = entry_rollup_request(candidates, n, scope_label);
     let input_digest = curation_input_digest(candidates, &curation_request(&request))?;
@@ -727,8 +808,7 @@ fn pick_entries(
     let response = picker
         .pick(&request)
         .map_err(|error| curation_error(&error))?;
-    let (indices, rationale) =
-        parse_selection(&response, candidates.len(), n, TimelineCurationStage::Day)?;
+    let (indices, rationale) = parse_selection(&response, candidates.len(), n, stage)?;
     Ok(EntryPickResult {
         picks: indices
             .into_iter()
@@ -814,10 +894,6 @@ fn generation_provenance(response: &GeneratedResponse) -> GenerationProvenanceV1
         inference: response.inference.clone().unwrap_or(Value::Null),
         usage: response.usage.clone(),
     }
-}
-
-fn rollup_request(events: &[Value], n: usize, scope_label: &str) -> GenerateRequest {
-    rollup_request_with_prompt(build_user_prompt(events), n, scope_label)
 }
 
 fn entry_rollup_request(
@@ -908,18 +984,6 @@ fn build_system_instruction(scope_label: &str, n: usize) -> String {
     format!(
         "You are picking the {n} MOST IMPORTANT events from a list of candidate events that occurred during one {scope_label} of a personal life-journal. The picked events become the headline cells in the {scope_label} view of a multi-scale timeline UI.\n\nIMPORTANT-EVENT CRITERIA, in priority order:\n  1. Consequence — decisions, shipments, milestones, externally-visible actions outweigh routine maintenance.\n  2. Specificity — concrete events outweigh generic activity descriptors. 'Trademark Filed' beats 'Email Sent'.\n  3. Diversity — when several candidates describe the same underlying thread (e.g., five 'KDE Crash' debugging segments), pick at most one. Reserve the other slots for distinct events.\n  4. Owner-relevance — events involving identifiable people, decisions, or commitments outweigh tooling housekeeping.\n\nReturn JSON: {{ \"picks\": [<indices>], \"rationale\": \"<short>\" }}.\n  - picks: zero-based indices into the input list, in importance order, length exactly {n} (or fewer if input has fewer).\n  - rationale: one sentence naming the criterion (for debugging).\n\nDo NOT rewrite titles or descriptions. Do NOT invent events. Pick from the given list only."
     )
-}
-
-fn build_user_prompt(events: &[Value]) -> String {
-    let mut lines = vec!["Candidate events:\n".to_owned()];
-    for (index, event) in events.iter().enumerate() {
-        lines.push(format!(
-            "  [{index}] {} — {}",
-            string_field(event, "title"),
-            string_field(event, "description")
-        ));
-    }
-    lines.join("\n")
 }
 
 fn load_day_segments(journal: &Path, day: &str) -> Result<DayScan, String> {
@@ -1037,35 +1101,6 @@ pub fn origin_for_segment(segment: &Path) -> String {
     }
 }
 
-/// Write the timeline entry for one chronicle segment by atomic replacement.
-pub fn write_segment_timeline(segment: &Path, payload: &Value) -> Result<(), String> {
-    let mut bytes = serde_json::to_vec(payload).map_err(|error| error.to_string())?;
-    bytes.push(b'\n');
-    atomic_replace(
-        segment.join("timeline.json"),
-        &bytes,
-        AtomicWriteOptions::default(),
-    )
-    .map_err(|error| error.to_string())
-}
-
-/// Write the deterministic continuation entry for a redundant segment.
-pub fn write_continuation_summary(
-    segment: &Path,
-    predecessor_segment_key: &str,
-) -> Result<(), String> {
-    // Preserve solstone/apps/timeline/talent/segment_summary.py:70-88.
-    write_segment_timeline(
-        segment,
-        &json!({
-            "title": "Continued",
-            "description": "Unchanged from the prior window.",
-            "origin": origin_for_segment(segment),
-            "continuation_of": predecessor_segment_key,
-        }),
-    )
-}
-
 fn group_by_hour(rows: &[SegmentRow]) -> BTreeMap<String, Vec<&SegmentRow>> {
     let mut grouped = BTreeMap::<String, Vec<&SegmentRow>>::new();
     for row in rows {
@@ -1074,14 +1109,19 @@ fn group_by_hour(rows: &[SegmentRow]) -> BTreeMap<String, Vec<&SegmentRow>> {
     grouped
 }
 
-fn load_day_rollups(journal: &Path) -> Result<BTreeMap<String, Value>, String> {
+fn load_day_rollups(journal: &Path) -> Result<MasterScan, String> {
     let chronicle = journal.join("chronicle");
     if !chronicle.is_dir() {
-        return Ok(BTreeMap::new());
+        return Ok(MasterScan {
+            days: BTreeMap::new(),
+            failures: Vec::new(),
+        });
     }
     let mut days = std::fs::read_dir(&chronicle)
         .map_err(|error| error.to_string())?
-        .flatten()
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?
+        .into_iter()
         .map(|entry| entry.path())
         .filter(|path| {
             path.is_dir()
@@ -1093,34 +1133,65 @@ fn load_day_rollups(journal: &Path) -> Result<BTreeMap<String, Value>, String> {
         .collect::<Vec<_>>();
     days.sort();
     let mut rollups = BTreeMap::new();
+    let mut failures = Vec::new();
     for day_dir in days {
-        let path = day_dir.join("timeline.json");
-        if !path.is_file() {
-            continue;
-        }
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        let Ok(value) = serde_json::from_str::<Value>(&text) else {
-            continue;
-        };
-        let object = value
-            .as_object()
-            .ok_or_else(|| format!("timeline.json at {} must be a JSON object", path.display()))?;
-        if !object.get("day_top").is_some_and(is_truthy) {
-            continue;
-        }
         let day = day_dir
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or_default()
             .to_owned();
-        rollups.insert(day, value);
+        let path = day_dir.join("timeline.json");
+        if !path.exists() {
+            continue;
+        }
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                failures.push(master_scan_failure(day, "unreadable", error.to_string()));
+                continue;
+            }
+        };
+        let timeline = match serde_json::from_slice::<DayTimelineV1>(&bytes) {
+            Ok(timeline) => timeline,
+            Err(error) => {
+                let kind = if serde_json::from_slice::<Value>(&bytes).is_err() {
+                    "malformed_json"
+                } else {
+                    "wrong_shape"
+                };
+                failures.push(master_scan_failure(day, kind, error.to_string()));
+                continue;
+            }
+        };
+        if let Err(error) = validate_day_timeline(&timeline) {
+            failures.push(master_scan_failure(day, "wrong_shape", error.to_string()));
+            continue;
+        }
+        if timeline.day != day {
+            failures.push(master_scan_failure(
+                day,
+                "wrong_shape",
+                "artifact day does not match its directory".to_owned(),
+            ));
+            continue;
+        }
+        rollups.insert(day, timeline);
     }
-    Ok(rollups)
+    Ok(MasterScan {
+        days: rollups,
+        failures,
+    })
 }
 
-fn group_by_month(day_rollups: &BTreeMap<String, Value>) -> BTreeMap<String, Vec<String>> {
+fn master_scan_failure(day: String, kind: &'static str, detail: String) -> MasterScanFailure {
+    MasterScanFailure {
+        day,
+        kind,
+        detail: bounded_diagnostic_detail(&detail),
+    }
+}
+
+fn group_by_month(day_rollups: &BTreeMap<String, DayTimelineV1>) -> BTreeMap<String, Vec<String>> {
     let mut grouped = BTreeMap::<String, Vec<String>>::new();
     for day in day_rollups.keys() {
         grouped
@@ -1131,22 +1202,6 @@ fn group_by_month(day_rollups: &BTreeMap<String, Value>) -> BTreeMap<String, Vec
     grouped
 }
 
-fn event_value(event: &Value) -> Value {
-    json!({
-        "title": string_field(event, "title"),
-        "description": string_field(event, "description"),
-        "origin": string_field(event, "origin"),
-    })
-}
-
-fn string_field(value: &Value, key: &str) -> String {
-    value
-        .get(key)
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned()
-}
-
 fn is_day(value: &str) -> bool {
     value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())
 }
@@ -1155,31 +1210,10 @@ fn is_month(value: &str) -> bool {
     value.len() == 6 && value.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-fn is_truthy(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(value) => *value,
-        Value::Number(number) => number.as_f64().is_none_or(|value| value != 0.0),
-        Value::String(value) => !value.is_empty(),
-        Value::Array(value) => !value.is_empty(),
-        Value::Object(value) => !value.is_empty(),
-    }
-}
-
 fn read_config(journal: &Path) -> Result<Map<String, Value>, String> {
     read_journal_config(journal)
         .map_err(|error| error.to_string())
         .map(|read| read.config.unwrap_or_default())
-}
-
-fn write_json(path: &Path, value: &Value) -> Result<(), String> {
-    let mut bytes = serde_json::to_vec_pretty(value).map_err(|error| error.to_string())?;
-    bytes.push(b'\n');
-    atomic_replace(path, &bytes, AtomicWriteOptions::default()).map_err(|error| error.to_string())
-}
-
-fn truncate(value: &str, limit: usize) -> &str {
-    value.get(..limit).unwrap_or(value)
 }
 
 fn success(stdout: String) -> CliRun {
@@ -1203,7 +1237,7 @@ fn usage_error(id: &str, detail: &str) -> CliRun {
         "timeline:rollup-day" => {
             " [--day YYYYMMDD] [--commit | --dry-run] [--force] [--top TOP] [--jobs JOBS]"
         }
-        _ => " [--top TOP] [--jobs JOBS] [--force] [--dry-run] [--months MONTHS]",
+        _ => " [--commit | --dry-run] [--force] [--top TOP] [--jobs JOBS] [--months MONTHS]",
     };
     CliRun {
         stdout: String::new(),
@@ -1222,24 +1256,19 @@ fn usage_error(id: &str, detail: &str) -> CliRun {
     reason = "temporary journals and canned model responses are test-only"
 )]
 mod tests {
-    use super::{
-        day_source_digest, load_day_segments, pick_entries, pick_one, rollup_request, run,
-        write_segment_timeline,
-    };
+    use super::{day_source_digest, load_day_segments, pick_entries, run};
     use crate::timezone::HostTimezoneSource;
-    use crate::{GenerateModelResolver, RollupPicker, TimelineServices};
+    use crate::{RollupPicker, TimelineServices};
     use chrono::{TimeZone, Utc};
-    use serde_json::{Map, Value, json};
+    use serde_json::{Value, json};
     use solstone_core_generate::{ContentPart, GenerateRequest, GeneratedResponse};
     use solstone_core_timeline::{
-        AttemptOutcome, CURRENT_SCHEMA_VERSION, SegmentBindingV1, SegmentSummaryV1,
-        SegmentTimelineV1, TimelineKind, load_timeline_state,
+        AttemptOutcome, CURRENT_SCHEMA_VERSION, CurationRecordV1, DayTimelineV1, SegmentBindingV1,
+        SegmentSummaryV1, SegmentTimelineV1, TimelineEntryV1, TimelineKind, load_timeline_state,
     };
-    use std::collections::VecDeque;
-    use std::os::unix::fs::MetadataExt;
+    use std::collections::{BTreeMap, VecDeque};
     use std::path::Path;
     use std::sync::Mutex;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct Host(&'static str);
 
@@ -1319,63 +1348,39 @@ mod tests {
         }
     }
 
-    #[test]
-    fn segment_timeline_writer_atomically_replaces_existing_entry() {
-        // Derived from solstone/apps/timeline/talent/segment_summary.py:70-88, :198-207.
-        let journal = tempfile::tempdir().unwrap();
-        let segment = journal.path().join("chronicle/20260101/090000_300");
-        std::fs::create_dir_all(&segment).unwrap();
-        let timeline = segment.join("timeline.json");
-        std::fs::write(&timeline, b"{\"title\":\"old\"}\n").unwrap();
-        let old_inode = std::fs::metadata(&timeline).unwrap().ino();
-
-        write_segment_timeline(&segment, &json!({"title":"new"})).unwrap();
-
-        assert_eq!(read_json(&timeline), json!({"title":"new"}));
-        assert_ne!(std::fs::metadata(&timeline).unwrap().ino(), old_inode);
-    }
-
-    struct Model {
-        value: &'static str,
-        calls: AtomicUsize,
-    }
+    struct Model;
 
     impl Model {
-        const fn new(value: &'static str) -> Self {
-            Self {
-                value,
-                calls: AtomicUsize::new(0),
-            }
+        const fn new(_: &'static str) -> Self {
+            Self
         }
     }
 
-    impl GenerateModelResolver for Model {
-        fn resolve(&self, _config: &Map<String, Value>) -> Result<String, String> {
-            self.calls.fetch_add(1, Ordering::SeqCst);
-            Ok(self.value.to_owned())
-        }
-    }
-
-    fn services<'a>(picker: &'a Picker, model: &'a Model) -> TimelineServices<'a> {
+    fn services<'a>(picker: &'a Picker, _model: &'a Model) -> TimelineServices<'a> {
         static HOST: Host = Host("UTC");
         TimelineServices {
             now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 30, 0).unwrap(),
             host_timezone: &HOST,
             picker,
-            model_resolver: model,
         }
     }
 
     #[test]
     fn invalid_model_selections_fail_and_short_circuit_never_calls_the_model() {
         let picker = Picker::canned([Ok("{\"picks\":[2,2],\"rationale\":\"duplicate\"}")]);
-        let events = vec![
-            event("Alpha", "first", "a"),
-            event("Bravo", "second", "b"),
-            event("Charlie", "third", "c"),
+        let entries = vec![
+            entry("Alpha", "first", "a", "080000_1"),
+            entry("Bravo", "second", "b", "080100_2"),
+            entry("Charlie", "third", "c", "080200_3"),
         ];
         assert!(matches!(
-            pick_one(&picker, &events, 2, "hour"),
+            pick_entries(
+                &picker,
+                &entries,
+                2,
+                "month",
+                solstone_core_timeline::TimelineCurationStage::Master,
+            ),
             Err(
                 solstone_core_timeline::TimelineError::InvalidModelSelection {
                     stage: solstone_core_timeline::TimelineCurationStage::Master,
@@ -1409,20 +1414,18 @@ mod tests {
                 "additionalProperties": false
             })
         );
-        assert_eq!(
-            rollup_request(&events, 2, "hour")
-                .system_instruction
-                .unwrap(),
-            request.system_instruction.unwrap()
-        );
+        assert!(request.system_instruction.unwrap().contains("one month"));
 
-        let entries = vec![
-            entry("Alpha", "first", "a", "080000_1"),
-            entry("Bravo", "second", "b", "080100_2"),
-        ];
+        let entries = &entries[..2];
         let picker = Picker::canned([Ok("{\"picks\":[3],\"rationale\":\"bad\"}")]);
         assert!(matches!(
-            pick_entries(&picker, &entries, 1, "day"),
+            pick_entries(
+                &picker,
+                entries,
+                1,
+                "day",
+                solstone_core_timeline::TimelineCurationStage::Day,
+            ),
             Err(
                 solstone_core_timeline::TimelineError::InvalidModelSelection {
                     stage: solstone_core_timeline::TimelineCurationStage::Day,
@@ -1434,7 +1437,14 @@ mod tests {
         ));
 
         let picker = Picker::canned([]);
-        let short_circuit = pick_entries(&picker, &entries[..1], 1, "day").unwrap();
+        let short_circuit = pick_entries(
+            &picker,
+            &entries[..1],
+            1,
+            "day",
+            solstone_core_timeline::TimelineCurationStage::Day,
+        )
+        .unwrap();
         assert_eq!(short_circuit.picks, entries[..1]);
         assert_eq!(picker.call_count(), 0);
     }
@@ -1744,7 +1754,6 @@ mod tests {
         );
         assert_eq!(result.exit_code, 0);
         assert_eq!(picker.call_count(), 2);
-        assert_eq!(model.calls.load(Ordering::SeqCst), 0);
         let scan = load_day_segments(journal.path(), "20260301").unwrap();
         let forward = day_source_digest(&scan.rows, 1).unwrap();
         let mut reversed = scan.rows;
@@ -1807,166 +1816,160 @@ mod tests {
     }
 
     #[test]
-    fn master_happy_path_embeds_full_days_and_filters_empty_rollups() {
+    fn master_preview_currentness_locks_and_cli_modes_are_safe() {
         let journal = tempfile::tempdir().unwrap();
         write_day_rollup(
             journal.path(),
             "20260101",
-            json!({"day_top":[event("January", "first", "one")], "extra":"kept"}),
+            vec![day_entry("20260101", "January", "first", "080000_1")],
         );
         write_day_rollup(
             journal.path(),
             "20260102",
-            json!({"day_top":[event("January Two", "second", "two")]}),
+            vec![day_entry("20260102", "January two", "second", "080000_2")],
         );
-        write_day_rollup(journal.path(), "20260201", json!({"day_top":[]}));
-        let picker = Picker::canned([]);
-        let model = Model::new("month-model");
-        let result = run(
+        let picker = Picker::canned([
+            Ok("{\"picks\":[0],\"rationale\":\"month\"}"),
+            Ok("{\"picks\":[1],\"rationale\":\"year\"}"),
+        ]);
+        let model = Model::new("unused");
+        let preview = run(
             "timeline:rollup-master",
             &[],
             journal.path(),
             &services(&picker, &model),
         );
-        assert_eq!(result.exit_code, 0);
-        let payload = read_json(&journal.path().join("timeline.json"));
-        assert_eq!(payload["months"]["202601"]["day_count"], 2);
-        assert_eq!(
-            payload["months"]["202601"]["days"]["20260101"]["extra"],
-            "kept"
-        );
-        assert_eq!(payload["year_top"][0]["month"], "202601");
-        assert!(payload["months"].get("202602").is_none());
-    }
+        assert_eq!(preview.exit_code, 0);
+        assert!(preview.stdout.contains("[would_publish]"));
+        assert_eq!(picker.call_count(), 0);
 
-    #[test]
-    fn master_existing_output_skips_and_force_replaces_it() {
-        let journal = tempfile::tempdir().unwrap();
-        write_day_rollup(
-            journal.path(),
-            "20260101",
-            json!({"day_top":[event("January", "event", "one")]}),
-        );
-        std::fs::write(journal.path().join("timeline.json"), b"{\"old\":true}\n").unwrap();
-        let picker = Picker::canned([]);
-        let model = Model::new("model");
-        let skipped = run(
+        let committed = run(
             "timeline:rollup-master",
-            &[],
+            &["--commit".to_owned(), "--top".to_owned(), "1".to_owned()],
             journal.path(),
             &services(&picker, &model),
         );
-        assert_eq!(skipped.exit_code, 0);
-        assert!(skipped.stdout.contains("[skip]"));
-        assert_eq!(model.calls.load(Ordering::SeqCst), 0);
-        let forced = run(
-            "timeline:rollup-master",
-            &["--force".to_owned()],
-            journal.path(),
-            &services(&picker, &model),
-        );
-        assert_eq!(forced.exit_code, 0);
-        assert!(
-            read_json(&journal.path().join("timeline.json"))
-                .get("months")
-                .is_some()
-        );
-    }
-
-    #[test]
-    fn master_empty_wrong_shape_and_no_overlap_keep_their_distinct_exits() {
-        let journal = tempfile::tempdir().unwrap();
-        let picker = Picker::canned([]);
-        let model = Model::new("model");
-        let empty = run(
-            "timeline:rollup-master",
-            &[],
-            journal.path(),
-            &services(&picker, &model),
-        );
-        assert_eq!(empty.exit_code, 66);
-        write_day_rollup(
-            journal.path(),
-            "20260101",
-            json!({"day_top":[event("A", "b", "c")]}),
-        );
-        let no_overlap = run(
-            "timeline:rollup-master",
-            &["--months".to_owned(), "202602".to_owned()],
-            journal.path(),
-            &services(&picker, &model),
-        );
-        assert_eq!(no_overlap.exit_code, 0);
-        assert!(!journal.path().join("timeline.json").exists());
-        std::fs::write(
-            journal.path().join("chronicle/20260101/timeline.json"),
-            b"[]",
+        assert_eq!(committed.exit_code, 0);
+        let timeline = serde_json::from_slice::<solstone_core_timeline::MasterTimelineV1>(
+            &std::fs::read(journal.path().join("timeline.json")).unwrap(),
         )
         .unwrap();
-        let wrong_shape = run(
-            "timeline:rollup-master",
-            &[],
-            journal.path(),
-            &services(&picker, &model),
+        solstone_core_timeline::validate_master_timeline(&timeline).unwrap();
+        assert_eq!(timeline.months["202601"].day_count, 2);
+        assert_eq!(
+            timeline.year_curation.provenance.unwrap().model,
+            "fixture-byo-model"
         );
-        assert_eq!(wrong_shape.exit_code, 1);
-        assert!(!journal.path().join("timeline.json").exists());
-    }
-
-    #[test]
-    fn master_batch_failure_and_per_month_failure_publish_error_records() {
-        let journal = tempfile::tempdir().unwrap();
-        write_day_rollup(
-            journal.path(),
-            "20260101",
-            json!({"day_top":[event("Jan", "x", "jan"), event("Jan Two", "x", "jan-two")]}),
-        );
-        write_day_rollup(
-            journal.path(),
-            "20260201",
-            json!({"day_top":[event("Feb", "y", "feb"), event("Feb Two", "y", "feb-two")]}),
-        );
-        let picker = Picker::canned([]);
-        let model = Model::new("model");
-        let whole = run(
-            "timeline:rollup-master",
-            &["--jobs".to_owned(), "0".to_owned()],
-            journal.path(),
-            &services(&picker, &model),
-        );
-        assert_eq!(whole.exit_code, 0);
-        let payload = read_json(&journal.path().join("timeline.json"));
-        assert!(
-            payload["months"]["202601"]["month_rationale"]
-                .as_str()
-                .unwrap()
-                .starts_with("ERROR: ")
-        );
-        assert_eq!(payload["months"]["202602"]["day_count"], 1);
-        assert_eq!(payload["year_top"], json!([]));
-
-        std::fs::remove_file(journal.path().join("timeline.json")).unwrap();
-        let picker = Picker::error_when("Feb");
-        let partial = run(
+        for lock in [
+            "health/timeline/locks/population.lock",
+            "health/timeline/locks/days/20260101.order.lock",
+            "health/timeline/locks/days/20260102.order.lock",
+            "health/timeline/locks/subjects/master.attempt.lock",
+        ] {
+            assert!(journal.path().join(lock).exists(), "missing {lock}");
+        }
+        let current = run(
             "timeline:rollup-master",
             &["--top".to_owned(), "1".to_owned()],
             journal.path(),
             &services(&picker, &model),
         );
-        assert_eq!(partial.exit_code, 0);
-        let payload = read_json(&journal.path().join("timeline.json"));
-        assert!(
-            payload["months"]["202602"]["month_rationale"]
-                .as_str()
-                .unwrap()
-                .starts_with("ERROR: ")
+        assert!(current.stdout.contains("[current]"));
+        std::fs::write(journal.path().join("timeline.json"), b"{\"old\":true}\n").unwrap();
+        let stale = run(
+            "timeline:rollup-master",
+            &["--dry-run".to_owned(), "--top".to_owned(), "1".to_owned()],
+            journal.path(),
+            &services(&picker, &model),
         );
-        assert_eq!(payload["months"]["202601"]["month_top"][0]["title"], "Jan");
-        assert_eq!(payload["year_top"].as_array().unwrap().len(), 1);
+        assert!(stale.stdout.contains("[stale]"));
+        let force_without_commit = run(
+            "timeline:rollup-master",
+            &["--force".to_owned()],
+            journal.path(),
+            &services(&picker, &model),
+        );
+        assert_eq!(force_without_commit.exit_code, 2);
+        let contradictory_modes = run(
+            "timeline:rollup-master",
+            &["--commit".to_owned(), "--dry-run".to_owned()],
+            journal.path(),
+            &services(&picker, &model),
+        );
+        assert_eq!(contradictory_modes.exit_code, 2);
     }
 
-    fn event(title: &str, description: &str, origin: &str) -> Value {
-        json!({"title": title, "description": description, "origin": origin})
+    #[test]
+    fn master_scan_reports_invalid_day_artifacts_without_partial_publication() {
+        let journal = tempfile::tempdir().unwrap();
+        let picker = Picker::canned([]);
+        let model = Model::new("model");
+        write_day_rollup(
+            journal.path(),
+            "20260101",
+            vec![day_entry("20260101", "Good", "entry", "080000_1")],
+        );
+        std::fs::create_dir_all(journal.path().join("chronicle/20260102")).unwrap();
+        std::fs::write(
+            journal.path().join("chronicle/20260102/timeline.json"),
+            b"[]",
+        )
+        .unwrap();
+        std::fs::create_dir_all(journal.path().join("chronicle/20260103")).unwrap();
+        std::fs::write(
+            journal.path().join("chronicle/20260103/timeline.json"),
+            b"{not json",
+        )
+        .unwrap();
+        std::fs::create_dir_all(journal.path().join("chronicle/20260104/timeline.json")).unwrap();
+        let result = run(
+            "timeline:rollup-master",
+            &["--commit".to_owned()],
+            journal.path(),
+            &services(&picker, &model),
+        );
+        assert_eq!(result.exit_code, 1);
+        for kind in ["wrong_shape", "malformed_json", "unreadable"] {
+            assert!(
+                result.stderr.contains(kind),
+                "missing {kind}: {}",
+                result.stderr
+            );
+        }
+        assert!(!journal.path().join("timeline.json").exists());
+    }
+
+    #[test]
+    fn master_invalid_model_selection_is_fail_closed() {
+        let journal = tempfile::tempdir().unwrap();
+        write_day_rollup(
+            journal.path(),
+            "20260101",
+            vec![day_entry("20260101", "Jan", "first", "080000_1")],
+        );
+        write_day_rollup(
+            journal.path(),
+            "20260102",
+            vec![day_entry("20260102", "Jan two", "second", "080000_2")],
+        );
+        let picker = Picker::canned([Ok("{\"picks\":[0,0],\"rationale\":\"duplicate\"}")]);
+        let model = Model::new("model");
+        let result = run(
+            "timeline:rollup-master",
+            &["--commit".to_owned(), "--top".to_owned(), "1".to_owned()],
+            journal.path(),
+            &services(&picker, &model),
+        );
+        assert_eq!(result.exit_code, 1);
+        assert!(result.stderr.contains("duplicate"));
+        assert!(!journal.path().join("timeline.json").exists());
+        assert!(
+            load_timeline_state(journal.path())
+                .unwrap()
+                .attempts
+                .values()
+                .any(|attempt| attempt.outcome == AttemptOutcome::Failed)
+        );
     }
 
     fn write_segment(journal: &Path, day: &str, stream: &str, segment: &str, value: Value) {
@@ -2051,10 +2054,44 @@ mod tests {
         std::fs::write(path, contents).unwrap();
     }
 
-    fn write_day_rollup(journal: &Path, day: &str, value: Value) {
+    fn day_entry(day: &str, title: &str, description: &str, segment: &str) -> TimelineEntryV1 {
+        TimelineEntryV1 {
+            title: title.to_owned(),
+            description: description.to_owned(),
+            origin: format!("{day}/field.audio/{segment}"),
+            binding: SegmentBindingV1 {
+                day: day.to_owned(),
+                stream: "field.audio".to_owned(),
+                segment: segment.to_owned(),
+            },
+        }
+    }
+
+    fn write_day_rollup(journal: &Path, day: &str, picks: Vec<TimelineEntryV1>) {
         let path = journal.join("chronicle").join(day).join("timeline.json");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(path, value.to_string()).unwrap();
+        let candidate_count = picks.len();
+        let curation = CurationRecordV1 {
+            input_digest: format!("fixture-{day}"),
+            candidate_count,
+            picks,
+            rationale: "fixture".to_owned(),
+            error: None,
+            provenance: None,
+        };
+        let timeline = DayTimelineV1 {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            kind: TimelineKind::Day,
+            day: day.to_owned(),
+            source_digest: format!("fixture-source-{day}"),
+            generated_at_ms: 1,
+            top_n: 4,
+            segment_count: candidate_count,
+            hour_count: 0,
+            hours: BTreeMap::new(),
+            day_curation: curation,
+        };
+        std::fs::write(path, serde_json::to_vec(&timeline).unwrap()).unwrap();
     }
 
     fn write_config(journal: &Path, config: Value) {

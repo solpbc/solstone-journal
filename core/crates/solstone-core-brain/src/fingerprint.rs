@@ -32,60 +32,6 @@ pub struct LaneResolution {
     pub model: Option<String>,
 }
 
-/// The Python-compatible failure for an active provider without a known default model.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GenerateModelResolutionError {
-    provider: String,
-}
-
-impl fmt::Display for GenerateModelResolutionError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "Unknown provider: '{}'", self.provider)
-    }
-}
-
-impl std::error::Error for GenerateModelResolutionError {}
-
-/// Resolve the active generate model without making a generation request.
-///
-/// This mirrors `solstone.think.models.resolve_provider("generate")[1]` rather
-/// than `derive_active_brain_lane`: an explicit model wins for any non-`none`
-/// provider, and an unknown provider without one is a configuration error.
-pub fn resolve_generate_model(
-    config: &Map<String, Value>,
-) -> Result<String, GenerateModelResolutionError> {
-    let active = config
-        .get("providers")
-        .and_then(Value::as_object)
-        .and_then(|providers| providers.get("active"))
-        .and_then(Value::as_object);
-    let provider = active
-        .and_then(|active| active.get("provider"))
-        .and_then(Value::as_str)
-        .filter(|provider| !provider.is_empty())
-        .unwrap_or("none");
-    if provider == "none" {
-        return Ok(String::new());
-    }
-    if let Some(model) = active
-        .and_then(|active| active.get("model"))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|model| !model.is_empty())
-    {
-        return Ok(model.to_owned());
-    }
-    match provider {
-        "google" => Ok("gemini-3.5-flash".to_owned()),
-        "openai" => Ok("gpt-5.4-mini".to_owned()),
-        "anthropic" => Ok("claude-sonnet-4-6".to_owned()),
-        "local" => Ok("local/qwen3.5-4b".to_owned()),
-        provider => Err(GenerateModelResolutionError {
-            provider: provider.to_owned(),
-        }),
-    }
-}
-
 /// Inputs that Python normalizes before canonical JSON encoding.
 #[derive(Debug, Clone)]
 pub enum CanonicalInput {
@@ -671,9 +617,9 @@ fn sha256_text(value: &str) -> String {
 mod tests {
     use super::{
         CanonicalInput, canonical_fingerprint, canonical_fingerprint_preserving_array_order,
-        canonical_json, canonical_json_preserving_array_order, resolve_generate_model,
+        canonical_json, canonical_json_preserving_array_order,
     };
-    use serde_json::{Map, Value, json};
+    use serde_json::json;
 
     #[test]
     fn formats_python_float_boundaries() {
@@ -740,38 +686,5 @@ mod tests {
             canonical_fingerprint_preserving_array_order(&first).unwrap(),
             canonical_fingerprint_preserving_array_order(&second).unwrap()
         );
-    }
-
-    #[test]
-    fn resolves_generate_models_with_python_provider_semantics() {
-        assert_eq!(resolve_generate_model(&Map::new()).unwrap(), "");
-        let none =
-            config(json!({"providers": {"active": {"provider": "none", "model": "ignored"}}}));
-        assert_eq!(resolve_generate_model(&none).unwrap(), "");
-
-        let explicit = config(
-            json!({"providers": {"active": {"provider": "custom", "model": "  chosen-model  "}}}),
-        );
-        assert_eq!(resolve_generate_model(&explicit).unwrap(), "chosen-model");
-
-        for (provider, model) in [
-            ("google", "gemini-3.5-flash"),
-            ("openai", "gpt-5.4-mini"),
-            ("anthropic", "claude-sonnet-4-6"),
-            ("local", "local/qwen3.5-4b"),
-        ] {
-            let known = config(json!({"providers": {"active": {"provider": provider}}}));
-            assert_eq!(resolve_generate_model(&known).unwrap(), model);
-        }
-
-        let unknown = config(json!({"providers": {"active": {"provider": "custom"}}}));
-        assert_eq!(
-            resolve_generate_model(&unknown).unwrap_err().to_string(),
-            "Unknown provider: 'custom'"
-        );
-    }
-
-    fn config(value: Value) -> Map<String, Value> {
-        value.as_object().expect("object").clone()
     }
 }

@@ -8,10 +8,11 @@ use solstone_core_journal_io::{DetailedAtomicOutcome, atomic_replace_detailed};
 
 use crate::{
     ArtifactStateV1, AttemptOutcome, AttemptStateV1, CURRENT_SCHEMA_VERSION, DayTimelineV1,
-    SegmentBindingV1, SegmentSummaryV1, SegmentTimelineV1, TimelineError, TimelineLockRequest,
-    TimelineLockSubject, acquire_timeline_locks, bounded_diagnostic_detail, load_timeline_state,
-    origin_for_binding, record_artifact_published, record_attempt_outcome, record_attempt_started,
-    segment_directory, validate_day_timeline, validate_segment_timeline,
+    MasterTimelineV1, SegmentBindingV1, SegmentSummaryV1, SegmentTimelineV1, TimelineError,
+    TimelineLockRequest, TimelineLockSubject, acquire_timeline_locks, bounded_diagnostic_detail,
+    load_timeline_state, origin_for_binding, record_artifact_published, record_attempt_outcome,
+    record_attempt_started, segment_directory, validate_day_timeline, validate_master_timeline,
+    validate_segment_timeline,
 };
 
 pub fn segment_timeline_path(
@@ -71,6 +72,31 @@ pub fn publish_day_timeline(
         journal,
         &subject,
         day_timeline_path(journal, &timeline.day),
+        &timeline.source_digest,
+        timeline.generated_at_ms,
+        bytes,
+        attempt,
+    )
+}
+
+pub fn master_timeline_path(journal: &Path) -> PathBuf {
+    journal.join("timeline.json")
+}
+
+pub fn publish_master_timeline(
+    journal: &Path,
+    timeline: &MasterTimelineV1,
+    attempt: AttemptStateV1,
+) -> Result<(), TimelineError> {
+    validate_master_timeline(timeline)?;
+    let subject = master_subject_key();
+    record_attempt_started(journal, subject, attempt.clone())?;
+    let mut bytes = serde_json::to_vec(timeline)?;
+    bytes.push(b'\n');
+    publish_timeline(
+        journal,
+        subject,
+        master_timeline_path(journal),
         &timeline.source_digest,
         timeline.generated_at_ms,
         bytes,
@@ -204,6 +230,10 @@ pub fn day_subject_key(day: &str) -> String {
     format!("day:{day}")
 }
 
+pub const fn master_subject_key() -> &'static str {
+    "master"
+}
+
 fn sha256_hex(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
@@ -216,8 +246,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        AttemptOutcome, CurationRecordV1, DayTimelineV1, TimelineKind, TimelineStateV1,
-        load_timeline_state,
+        AttemptOutcome, CurationRecordV1, DayTimelineV1, MasterTimelineV1, TimelineKind,
+        TimelineStateV1, load_timeline_state,
     };
 
     fn binding() -> SegmentBindingV1 {
@@ -253,6 +283,26 @@ mod tests {
             day_curation: CurationRecordV1 {
                 input_digest: "input".to_owned(),
                 candidate_count: 1,
+                picks: Vec::new(),
+                rationale: "fixture".to_owned(),
+                error: None,
+                provenance: None,
+            },
+        }
+    }
+
+    fn master_timeline() -> MasterTimelineV1 {
+        MasterTimelineV1 {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            kind: TimelineKind::Master,
+            source_digest: "input".to_owned(),
+            generated_at_ms: 2,
+            top_n: 4,
+            months: BTreeMap::new(),
+            year_top: Vec::new(),
+            year_curation: CurationRecordV1 {
+                input_digest: "input".to_owned(),
+                candidate_count: 0,
                 picks: Vec::new(),
                 rationale: "fixture".to_owned(),
                 error: None,
@@ -316,6 +366,28 @@ mod tests {
             state.artifacts[&day_subject_key("20260401")].input_digest,
             "input"
         );
+        assert!(
+            state
+                .attempts
+                .values()
+                .any(|attempt| attempt.outcome == AttemptOutcome::Published)
+        );
+    }
+
+    #[test]
+    fn master_publication_writes_typed_artifact_and_master_subject_state() {
+        let journal = tempfile::tempdir().unwrap();
+        let timeline = master_timeline();
+
+        publish_master_timeline(journal.path(), &timeline, attempt()).unwrap();
+
+        let published = serde_json::from_slice::<MasterTimelineV1>(
+            &fs::read(master_timeline_path(journal.path())).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(published, timeline);
+        let state = load_timeline_state(journal.path()).unwrap();
+        assert_eq!(state.artifacts[master_subject_key()].input_digest, "input");
         assert!(
             state
                 .attempts

@@ -43,6 +43,41 @@ pub fn segment_input_digest(
     )?)
 }
 
+pub fn continuation_input_digest(
+    binding: &SegmentBindingV1,
+    predecessor_segment_key: &str,
+) -> Result<String, TimelineError> {
+    let mut envelope = Map::new();
+    envelope.insert(
+        "schema_version".to_owned(),
+        Value::from(CURRENT_SCHEMA_VERSION),
+    );
+    envelope.insert("binding".to_owned(), to_value(binding)?);
+    envelope.insert(
+        "predecessor_segment_key".to_owned(),
+        Value::String(predecessor_segment_key.to_owned()),
+    );
+    Ok(canonical_fingerprint_preserving_array_order(
+        &CanonicalInput::Json(Value::Object(envelope)),
+    )?)
+}
+
+pub fn master_source_digest(
+    day_sources: &[(String, String)],
+    request: &CurationRequestV1,
+) -> Result<String, TimelineError> {
+    let mut envelope = Map::new();
+    envelope.insert(
+        "schema_version".to_owned(),
+        Value::from(CURRENT_SCHEMA_VERSION),
+    );
+    envelope.insert("day_sources".to_owned(), to_value(day_sources)?);
+    envelope.insert("request".to_owned(), to_value(request)?);
+    Ok(canonical_fingerprint_preserving_array_order(
+        &CanonicalInput::Json(Value::Object(envelope)),
+    )?)
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -106,6 +141,34 @@ mod tests {
         assert_ne!(
             segment_input_digest(&binding, "First activity.").unwrap(),
             segment_input_digest(&binding, "Changed activity.").unwrap()
+        );
+    }
+
+    #[test]
+    fn continuation_digest_changes_with_predecessor_reference() {
+        let binding = SegmentBindingV1 {
+            day: "20260401".to_owned(),
+            stream: "_default".to_owned(),
+            segment: "080000_300".to_owned(),
+        };
+
+        assert_ne!(
+            continuation_input_digest(&binding, "070000_300").unwrap(),
+            continuation_input_digest(&binding, "071000_300").unwrap()
+        );
+    }
+
+    #[test]
+    fn master_digest_changes_with_day_source_order() {
+        let first = vec![
+            ("20260401".to_owned(), "one".to_owned()),
+            ("20260402".to_owned(), "two".to_owned()),
+        ];
+        let second = vec![first[1].clone(), first[0].clone()];
+
+        assert_ne!(
+            master_source_digest(&first, &request()).unwrap(),
+            master_source_digest(&second, &request()).unwrap()
         );
     }
 }
