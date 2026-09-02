@@ -11,6 +11,12 @@ dependency-free `unittest` suite under
 - **Broader same-crate tests**: may also live under `src/`, but the classified modules use each package's non-default `full-tests` feature and execute through package-specific classified targets; those targets are default `ci-full` entries and also preserve the legacy full-workspace preflight
 - **Integration tests**: Cargo integration targets under `core/crates/<crate>/tests/`, grouped into named legs by `core/ci/suites.toml` and validated by `make check-rust-ci-topology`
 
+| Packages | Routine selection | Broader same-crate selection | Integration selection |
+|---|---|---|---|
+| `solstone-core-speakers-analyze`, `solstone-core-speakers-onnx`, `solstone-core-vad-analyze` | `--no-default-features --lib`; runtime-free unit modules only | `full-tests` activates the normal `runtime` feature; `make check-rust-onnx-test` runs serially with the pinned ONNX Runtime | `solstone-core-vad-analyze::vad_oracles`; separate full-registry target |
+
+These packages keep `runtime` in their default feature set, so ordinary production builds and supported-target checks continue to compile the shipped ONNX code. The routine no-default-feature route is narrower by design: it checks deterministic parsing, validation, provider planning, path construction, windowing, timestamp reduction, and response shaping without native linking or runtime setup. Product-filesystem, model, provider, inference, process, platform, and integration evidence stays on the full routes above.
+
 ## Fixture Journal
 
 A test points the journal at the checked-in fixtures by setting `SOLSTONE_JOURNAL`:
@@ -31,7 +37,7 @@ needed input into a temporary directory such as `tempfile::TempDir`.
 - `make test` runs selected Rust library/binary unit harnesses and reports its
   source-derived omission boundary
 - `make check-journal-device-sim` runs the dependency-free simulator unit and fake-bridge tests
-- Per the [Makefile](../Makefile), `make ci` runs the routine code-focused lane: formatting, the CI-topology contract, library/binary Clippy checks, and serialized library/binary unit tests. The formerly duration-excluded `solstone-core-sol-link`, `solstone-core-convey-body`, `solstone-core-facets`, and `solstone-core-describe` packages are now split by behavior: deterministic in-memory and static-contract modules run routinely, while their filesystem, SQLite, HTTP/TLS workflow, corpus/oracle, and native/media modules require `full-tests` and run through package-specific default classified full-test legs in `make ci-full`. The existing `clippy-full` entry invokes package-specific feature-enabled Clippy targets so those broader modules retain `-D warnings` evidence. Routine execution still excludes the host-native `solstone-core-speakers-analyze`, `solstone-core-speakers-onnx`, and `solstone-core-vad-analyze` packages; the default `onnx-host-tests` leg covers them.
+- Per the [Makefile](../Makefile), `make ci` runs the routine code-focused lane: formatting, the CI-topology contract, library/binary Clippy checks, and serialized library/binary unit tests. The formerly duration-excluded `solstone-core-sol-link`, `solstone-core-convey-body`, `solstone-core-facets`, and `solstone-core-describe` packages are now split by behavior: deterministic in-memory and static-contract modules run routinely, while their filesystem, SQLite, HTTP/TLS workflow, corpus/oracle, and native/media modules require `full-tests` and run through package-specific default classified full-test legs in `make ci-full`. The existing `clippy-full` entry invokes package-specific feature-enabled Clippy targets so those broader modules retain `-D warnings` evidence. For `solstone-core-speakers-analyze`, `solstone-core-speakers-onnx`, and `solstone-core-vad-analyze`, it statically checks the default production closure and runs the runtime-free library closure. Their broader same-crate tests use `full-tests` with the normal runtime feature and remain in the staged full gate.
 - The topology validator has no baseline or allowlist. It rejects every
   process-launch, network-constructor, or native-runtime call it detects in
   scanned unit-test code. On Linux, `make ci` requires Bubblewrap and runs with

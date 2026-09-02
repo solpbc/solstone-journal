@@ -9,12 +9,17 @@ publish = false
 [lints]
 workspace = true
 
+[features]
+default = ["runtime"]
+runtime = ["dep:ort"]
+full-tests = ["runtime"]
+
 [dependencies]
-ort = { workspace = true, features = ["api-24", "std"] }
+ort = { workspace = true, features = ["api-24", "std"], optional = true }
 solstone-core-speakers.workspace = true
 
 [target.'cfg(target_vendor = "apple")'.dependencies]
-ort = { workspace = true, features = ["coreml"] }
+ort = { workspace = true, features = ["coreml"], optional = true }
 
 [dev-dependencies]
 serde_json.workspace = true

@@ -441,9 +441,7 @@ fn barrier(_primitive: OplogCreatePrimitive) {}
 fn barrier(primitive: OplogCreatePrimitive) {
     let callback = OPLOG_CREATE_TRACE.with(|trace| {
         let mut trace = trace.borrow_mut();
-        let Some(state) = trace.as_mut() else {
-            return None;
-        };
+        let state = trace.as_mut()?;
         state
             .barriers
             .iter()

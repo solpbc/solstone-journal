@@ -2,6 +2,9 @@
 // Copyright (c) 2026 sol pbc
 
 fn main() {
+    if std::env::var_os("CARGO_FEATURE_RUNTIME").is_none() {
+        return;
+    }
     let target_os =
         std::env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS is set by cargo");
     let rpath = match target_os.as_str() {

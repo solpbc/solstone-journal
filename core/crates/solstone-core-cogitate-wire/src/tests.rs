@@ -309,8 +309,13 @@ fn journal_configuration_selects_each_executable_cogitate_arm() {
 
 #[test]
 fn confidential_dispatch_stops_at_attestation_before_endpoint_transport() {
-    let missing_nvattest_dir =
-        std::env::temp_dir().join("solstone-missing-nvattest-confidential-dispatch");
+    let blocked_parent = std::env::temp_dir().join(format!(
+        "solstone-blocked-nvattest-confidential-dispatch-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&blocked_parent);
+    std::fs::write(&blocked_parent, "not a directory").expect("write nvattest install blocker");
+    let unavailable_nvattest_dir = blocked_parent.join("nvattest");
     let config = json!({
         "providers": {
             "active": {"provider": "local"},
@@ -319,7 +324,7 @@ fn confidential_dispatch_stops_at_attestation_before_endpoint_transport() {
                 "served_model_id": "configured-model"
             }
         },
-        "services": {"confidential": {"nvattest_dir": missing_nvattest_dir}}
+        "services": {"confidential": {"nvattest_dir": unavailable_nvattest_dir}}
     })
     .as_object()
     .expect("config is an object")
@@ -344,6 +349,7 @@ fn confidential_dispatch_stops_at_attestation_before_endpoint_transport() {
         )
         .expect_err("attestation prerequisite refuses confidential lane");
     assert_eq!(failure.reason_code, "attestation_not_yet_verified");
+    std::fs::remove_file(blocked_parent).expect("remove nvattest install blocker");
 }
 
 #[test]

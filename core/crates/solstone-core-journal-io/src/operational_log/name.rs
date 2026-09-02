@@ -819,15 +819,16 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn windows_unpaired_surrogates_are_unrelated_unless_prefixed() {
+        use std::ffi::OsString;
         use std::os::windows::ffi::OsStringExt;
-        let unrelated = OsStringExt::from_wide(&[b'x' as u16, 0xd800]);
+        let unrelated = OsString::from_wide(&[b'x' as u16, 0xd800]);
         assert_eq!(
             classify_oplog_name(&unrelated),
             OplogNameClassification::Unrelated
         );
         let mut prefixed = Vec::from(b"oplog--".map(u16::from));
         prefixed.push(0xd800);
-        let prefixed = OsStringExt::from_wide(&prefixed);
+        let prefixed = OsString::from_wide(&prefixed);
         match classify_oplog_name(&prefixed) {
             OplogNameClassification::Candidate(Err(error)) => {
                 expect_token(error, "oplog_name_invalid_encoding");

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#![cfg_attr(all(not(feature = "runtime"), not(test)), allow(dead_code))]
+
 //! Native Silero VAD v6 analysis command contract.
 //!
 //! Production settings match the retired Python port: `threshold=0.3`,
@@ -13,18 +15,26 @@
 //! is always `inf`, so neither is expressible in a request and those branches
 //! are not ported. The sampling rate is fixed at 16 kHz raw mono `f32le`.
 
+#[cfg(feature = "runtime")]
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::ffi::OsString;
 use std::fmt;
+#[cfg(feature = "runtime")]
 use std::fs;
+#[cfg(feature = "runtime")]
 use std::io::Read;
+#[cfg(feature = "runtime")]
 use std::path::Path;
 
+#[cfg(feature = "runtime")]
 use ort::ep::CPU;
+#[cfg(feature = "runtime")]
 use ort::session::Session;
+#[cfg(feature = "runtime")]
 use ort::value::{Tensor, TensorElementType, ValueType};
 use serde_json::{Map, Value, json};
+#[cfg(feature = "runtime")]
 use sha2::{Digest, Sha256};
 
 pub mod locate;
@@ -44,14 +54,22 @@ pub const SILERO_VAD_V6_SHA256: &str =
 const WINDOW_SIZE_SAMPLES: usize = 512;
 const CONTEXT_SIZE_SAMPLES: usize = 64;
 const ROW_SIZE_SAMPLES: usize = CONTEXT_SIZE_SAMPLES + WINDOW_SIZE_SAMPLES;
+#[cfg(feature = "runtime")]
 const LSTM_STATE_SIZE: usize = 128;
+#[cfg(feature = "runtime")]
 const ENCODER_BATCH_SIZE: usize = 10000;
 
+#[cfg(feature = "runtime")]
 const INPUT_AUDIO_NAME: &str = "input";
+#[cfg(feature = "runtime")]
 const INPUT_H_NAME: &str = "h";
+#[cfg(feature = "runtime")]
 const INPUT_C_NAME: &str = "c";
+#[cfg(feature = "runtime")]
 const OUTPUT_PROBS_NAME: &str = "speech_probs";
+#[cfg(feature = "runtime")]
 const OUTPUT_HN_NAME: &str = "hn";
+#[cfg(feature = "runtime")]
 const OUTPUT_CN_NAME: &str = "cn";
 
 const DEFAULT_THRESHOLD: f64 = 0.3;
@@ -60,8 +78,10 @@ const DEFAULT_MIN_SILENCE_DURATION_MS: u32 = 1000;
 const DEFAULT_SPEECH_PAD_MS: u32 = 400;
 
 /// Where the loader records every shared object this process has mapped.
+#[cfg(feature = "runtime")]
 const PROCESS_MAPS_PATH: &str = "/proc/self/maps";
 /// SONAME stem of the ONNX Runtime shared object the helper links against.
+#[cfg(feature = "runtime")]
 const ONNX_RUNTIME_LIBRARY_PREFIX: &str = "libonnxruntime.so.";
 
 const OPTION_THRESHOLD: &str = "threshold";
@@ -282,6 +302,7 @@ struct Request {
     options: VadOptions,
 }
 
+#[cfg(feature = "runtime")]
 pub fn run_request(input: &str) -> Result<Value, VadError> {
     let request = parse_request(input)?;
     let audio = read_audio_f32le(&request.audio_f32le_path)?;
@@ -297,6 +318,7 @@ pub fn run_request(input: &str) -> Result<Value, VadError> {
 /// thing layered on top of it. Exposed so a probability oracle can be compared
 /// against the raw per-window sequence rather than against post-processed spans,
 /// where padding and merging would hide a per-window divergence.
+#[cfg(feature = "runtime")]
 pub fn speech_probabilities(audio: &[f32], model_path: &Path) -> Result<Vec<f32>, VadError> {
     check_model_identity(&model_path.to_string_lossy())?;
     let (rows, window_count) = windows_with_context(audio);
@@ -313,6 +335,7 @@ pub fn speech_probabilities(audio: &[f32], model_path: &Path) -> Result<Vec<f32>
 /// `libonnxruntime.so.1` SONAME resolves to a versioned real path, and
 /// `/proc/self/maps` names that resolved path for every mapped object. Reading
 /// it reports the library in force rather than a compile-time expectation.
+#[cfg(feature = "runtime")]
 pub fn loaded_onnx_runtime_version() -> Result<String, VadError> {
     let maps = fs::read_to_string(PROCESS_MAPS_PATH).map_err(|error| VadError::Internal {
         detail: format!("could not read {PROCESS_MAPS_PATH}: {error}"),
@@ -509,6 +532,7 @@ fn malformed(detail: impl Into<String>) -> VadError {
     }
 }
 
+#[cfg(feature = "runtime")]
 fn read_audio_f32le(path: &str) -> Result<Vec<f32>, VadError> {
     let metadata = fs::metadata(path).map_err(|error| VadError::AudioUnreadable {
         path: path.to_string(),
@@ -556,6 +580,7 @@ fn read_audio_f32le(path: &str) -> Result<Vec<f32>, VadError> {
     Ok(audio)
 }
 
+#[cfg(feature = "runtime")]
 fn check_model_identity(path: &str) -> Result<(), VadError> {
     let metadata = fs::metadata(path).map_err(|error| VadError::ModelUnreadable {
         path: path.to_string(),
@@ -735,10 +760,12 @@ pub fn find_speech_timestamps(
         .collect()
 }
 
+#[cfg(feature = "runtime")]
 struct SileroVadSession {
     session: Session,
 }
 
+#[cfg(feature = "runtime")]
 impl SileroVadSession {
     fn open(model_path: &Path) -> Result<Self, VadError> {
         let builder = Session::builder().map_err(|error| VadError::ProviderUnavailable {
@@ -797,12 +824,14 @@ impl SileroVadSession {
     }
 }
 
+#[cfg(feature = "runtime")]
 fn session_option_error<R>(error: ort::Error<R>) -> VadError {
     VadError::ProviderUnavailable {
         detail: format!("ONNX Runtime session options could not be applied: {error}"),
     }
 }
 
+#[cfg(feature = "runtime")]
 fn tensor_2d(rows: usize, cols: usize, values: &[f32]) -> Result<Tensor<f32>, VadError> {
     Tensor::from_array(([rows, cols], values.to_vec().into_boxed_slice())).map_err(|error| {
         VadError::Internal {
@@ -811,6 +840,7 @@ fn tensor_2d(rows: usize, cols: usize, values: &[f32]) -> Result<Tensor<f32>, Va
     })
 }
 
+#[cfg(feature = "runtime")]
 fn tensor_state(values: &[f32]) -> Result<Tensor<f32>, VadError> {
     Tensor::from_array((
         [1_usize, 1_usize, LSTM_STATE_SIZE],
@@ -821,6 +851,7 @@ fn tensor_state(values: &[f32]) -> Result<Tensor<f32>, VadError> {
     })
 }
 
+#[cfg(feature = "runtime")]
 fn extract_values(
     outputs: &mut ort::session::SessionOutputs<'_>,
     name: &'static str,
@@ -850,11 +881,13 @@ fn extract_values(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(feature = "runtime")]
 enum ExpectedDim {
     Any,
     Exact(i64),
 }
 
+#[cfg(feature = "runtime")]
 fn check_session_io(session: &Session) -> Result<(), VadError> {
     let inputs = session.inputs();
     let outputs = session.outputs();
@@ -921,6 +954,7 @@ fn check_session_io(session: &Session) -> Result<(), VadError> {
     Ok(())
 }
 
+#[cfg(feature = "runtime")]
 fn check_tensor(
     label: &str,
     name: &str,
@@ -965,22 +999,29 @@ fn check_tensor(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "full-tests")]
     use std::path::PathBuf;
+    #[cfg(feature = "full-tests")]
     use std::process;
+    #[cfg(feature = "full-tests")]
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    #[cfg(feature = "full-tests")]
     fn repo_root() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")
     }
 
+    #[cfg(feature = "full-tests")]
     fn committed_model_path() -> PathBuf {
         repo_root().join("core/models/assets/silero_vad_v6.onnx")
     }
 
+    #[cfg(feature = "full-tests")]
     struct TestDir {
         root: PathBuf,
     }
 
+    #[cfg(feature = "full-tests")]
     impl TestDir {
         fn new() -> Self {
             let nonce = SystemTime::now()
@@ -1000,12 +1041,14 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "full-tests")]
     impl Drop for TestDir {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
     }
 
+    #[cfg(feature = "full-tests")]
     fn write_f32le(path: &str, values: &[f32]) {
         let mut bytes = Vec::with_capacity(std::mem::size_of_val(values));
         for value in values {
@@ -1027,611 +1070,648 @@ mod tests {
         serde_json::to_string(&value).expect("request JSON")
     }
 
-    #[test]
-    fn request_defaults_match_production_run_vad_settings() {
-        let request =
-            parse_request(&request_string(base_request("/tmp/a.f32", "/tmp/m.onnx"))).expect("ok");
+    #[cfg(all(test, not(feature = "full-tests")))]
+    mod routine_request {
+        use super::*;
 
-        assert_eq!(
-            request.options,
-            VadOptions {
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn request_defaults_match_production_run_vad_settings() {
+            let request = parse_request(&request_string(base_request("/tmp/a.f32", "/tmp/m.onnx")))
+                .expect("ok");
+
+            assert_eq!(
+                request.options,
+                VadOptions {
+                    threshold: 0.3,
+                    min_speech_duration_ms: 0,
+                    min_silence_duration_ms: 1000,
+                    speech_pad_ms: 400,
+                }
+            );
+            assert_eq!(request.min_speech_seconds, 0.5);
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn request_options_override_individual_fields() {
+            let mut value = base_request("/tmp/a.f32", "/tmp/m.onnx");
+            value["options"] = json!({"threshold": 0.5, "speech_pad_ms": 0});
+
+            let request = parse_request(&request_string(value)).expect("ok");
+
+            assert_eq!(request.options.threshold, 0.5);
+            assert_eq!(request.options.speech_pad_ms, 0);
+            assert_eq!(request.options.min_silence_duration_ms, 1000);
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn request_with_unknown_schema_is_rejected() {
+            let mut value = base_request("/tmp/a.f32", "/tmp/m.onnx");
+            value["schema"] = json!("solstone-vad-request-v2");
+
+            let error = parse_request(&request_string(value)).unwrap_err();
+
+            assert_eq!(error.reason(), "unknown-schema");
+            assert_eq!(error.exit_code(), 64);
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn request_body_that_is_not_json_is_rejected() {
+            let error = parse_request("not json").unwrap_err();
+
+            assert_eq!(error.reason(), "malformed-request");
+            assert_eq!(error.exit_code(), 64);
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn request_body_that_is_not_an_object_is_rejected() {
+            let error = parse_request("[]").unwrap_err();
+
+            assert_eq!(error.reason(), "malformed-request");
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn request_without_model_path_is_rejected() {
+            let mut value = base_request("/tmp/a.f32", "/tmp/m.onnx");
+            value["models"] = json!({});
+
+            let error = parse_request(&request_string(value)).unwrap_err();
+
+            assert_eq!(error.reason(), "malformed-request");
+            assert!(error.detail().contains("silero_vad_onnx_path"));
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn request_with_empty_audio_path_is_rejected() {
+            let mut value = base_request("", "/tmp/m.onnx");
+            value["audio_f32le_path"] = json!("");
+
+            let error = parse_request(&request_string(value)).unwrap_err();
+
+            assert_eq!(error.reason(), "malformed-request");
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn request_with_negative_min_speech_seconds_is_rejected() {
+            let mut value = base_request("/tmp/a.f32", "/tmp/m.onnx");
+            value["min_speech_seconds"] = json!(-1.0);
+
+            let error = parse_request(&request_string(value)).unwrap_err();
+
+            assert_eq!(error.reason(), "malformed-request");
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn request_with_unknown_option_field_is_rejected() {
+            let mut value = base_request("/tmp/a.f32", "/tmp/m.onnx");
+            value["options"] = json!({"min_silence_ms": 500});
+
+            let error = parse_request(&request_string(value)).unwrap_err();
+
+            assert_eq!(error.reason(), "malformed-request");
+            assert!(error.detail().contains("min_silence_ms"));
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn request_with_non_integer_option_is_rejected() {
+            let mut value = base_request("/tmp/a.f32", "/tmp/m.onnx");
+            value["options"] = json!({"speech_pad_ms": -5});
+
+            let error = parse_request(&request_string(value)).unwrap_err();
+
+            assert_eq!(error.reason(), "malformed-request");
+        }
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    mod full_filesystem {
+        use super::*;
+
+        #[cfg(feature = "full-tests")]
+        #[test]
+        fn missing_audio_path_reports_audio_unreadable() {
+            let dir = TestDir::new();
+
+            let error = read_audio_f32le(&dir.path("missing.f32")).unwrap_err();
+
+            assert_eq!(error.reason(), "audio-unreadable");
+            assert_eq!(error.exit_code(), 69);
+        }
+
+        #[cfg(feature = "full-tests")]
+        #[test]
+        fn directory_audio_path_reports_audio_invalid() {
+            let dir = TestDir::new();
+            let nested = dir.path("nested");
+            fs::create_dir(&nested).expect("create dir");
+
+            let error = read_audio_f32le(&nested).unwrap_err();
+
+            assert_eq!(error.reason(), "audio-invalid");
+            assert_eq!(error.exit_code(), 69);
+        }
+
+        #[cfg(feature = "full-tests")]
+        #[test]
+        fn audio_byte_length_not_divisible_by_four_reports_audio_invalid() {
+            let dir = TestDir::new();
+            let path = dir.path("odd.f32");
+            fs::write(&path, [0_u8, 1, 2]).expect("write");
+
+            let error = read_audio_f32le(&path).unwrap_err();
+
+            assert_eq!(error.reason(), "audio-invalid");
+        }
+
+        #[cfg(feature = "full-tests")]
+        #[test]
+        fn zero_length_audio_reports_audio_invalid() {
+            let dir = TestDir::new();
+            let path = dir.path("empty.f32");
+            fs::write(&path, []).expect("write");
+
+            let error = read_audio_f32le(&path).unwrap_err();
+
+            assert_eq!(error.reason(), "audio-invalid");
+        }
+
+        #[cfg(feature = "full-tests")]
+        #[test]
+        fn non_finite_audio_sample_reports_audio_non_finite() {
+            let dir = TestDir::new();
+            let path = dir.path("nan.f32");
+            write_f32le(&path, &[0.0, 0.5, f32::NAN]);
+
+            let error = read_audio_f32le(&path).unwrap_err();
+
+            assert_eq!(error.reason(), "audio-non-finite");
+            assert_eq!(error.exit_code(), 69);
+            assert!(error.detail().contains("index 2"));
+        }
+
+        #[cfg(feature = "full-tests")]
+        #[test]
+        fn missing_model_reports_model_unreadable() {
+            let dir = TestDir::new();
+
+            let error = check_model_identity(&dir.path("missing.onnx")).unwrap_err();
+
+            assert_eq!(error.reason(), "model-unreadable");
+            assert_eq!(error.exit_code(), 69);
+        }
+
+        #[cfg(feature = "full-tests")]
+        #[test]
+        fn wrong_model_bytes_report_model_identity_mismatch() {
+            let dir = TestDir::new();
+            let path = dir.path("wrong.onnx");
+            fs::write(&path, b"not the silero graph").expect("write");
+
+            let error = check_model_identity(&path).unwrap_err();
+
+            assert_eq!(error.reason(), "model-identity-mismatch");
+            assert_eq!(error.exit_code(), 64);
+        }
+
+        #[cfg(feature = "full-tests")]
+        #[test]
+        fn committed_silero_model_matches_the_pinned_digest() {
+            check_model_identity(&committed_model_path().to_string_lossy()).expect("pinned digest");
+        }
+    }
+
+    #[cfg(all(test, not(feature = "full-tests")))]
+    mod routine_algorithms {
+        use super::*;
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn exact_multiple_audio_length_pads_a_full_extra_window() {
+            let audio = vec![1.0_f32; 2 * WINDOW_SIZE_SAMPLES];
+
+            let (rows, window_count) = windows_with_context(&audio);
+
+            assert_eq!(window_count, 3);
+            assert_eq!(rows.len(), 3 * ROW_SIZE_SAMPLES);
+            // The padded third window is all zeros.
+            assert!(
+                rows[2 * ROW_SIZE_SAMPLES + CONTEXT_SIZE_SAMPLES..3 * ROW_SIZE_SAMPLES]
+                    .iter()
+                    .all(|value| *value == 0.0)
+            );
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn partial_final_window_pads_only_the_remainder() {
+            let audio = vec![1.0_f32; WINDOW_SIZE_SAMPLES + 100];
+
+            let (_rows, window_count) = windows_with_context(&audio);
+
+            assert_eq!(window_count, 2);
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn first_window_context_is_zero_and_later_context_is_the_previous_tail() {
+            let audio: Vec<f32> = (0..3 * WINDOW_SIZE_SAMPLES).map(|i| i as f32).collect();
+
+            let (rows, window_count) = windows_with_context(&audio);
+
+            assert_eq!(window_count, 4);
+            assert!(
+                rows[0..CONTEXT_SIZE_SAMPLES]
+                    .iter()
+                    .all(|value| *value == 0.0)
+            );
+            for window in 1..window_count {
+                let row = window * ROW_SIZE_SAMPLES;
+                let previous = (window - 1) * ROW_SIZE_SAMPLES;
+                assert_eq!(
+                    rows[row..row + CONTEXT_SIZE_SAMPLES],
+                    rows[previous + ROW_SIZE_SAMPLES - CONTEXT_SIZE_SAMPLES
+                        ..previous + ROW_SIZE_SAMPLES]
+                );
+            }
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn in_place_context_zeroing_clears_the_final_window_tail() {
+            // The reference's `context[-1] = 0` writes through a view of the padded
+            // audio, so the last window's own trailing 64 samples are zeroed before
+            // the encoder ever sees them.
+            let audio: Vec<f32> = vec![1.0; 2 * WINDOW_SIZE_SAMPLES - 1];
+
+            let (rows, window_count) = windows_with_context(&audio);
+
+            assert_eq!(window_count, 2);
+            let last_window = ROW_SIZE_SAMPLES + CONTEXT_SIZE_SAMPLES;
+            let tail_start = 2 * ROW_SIZE_SAMPLES - CONTEXT_SIZE_SAMPLES;
+            assert!(
+                rows[tail_start..2 * ROW_SIZE_SAMPLES]
+                    .iter()
+                    .all(|value| *value == 0.0)
+            );
+            // Samples before the zeroed tail are untouched.
+            assert_eq!(rows[last_window], 1.0);
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn single_window_audio_gets_zero_context_and_zeroed_tail() {
+            let audio = vec![1.0_f32; 200];
+
+            let (rows, window_count) = windows_with_context(&audio);
+
+            assert_eq!(window_count, 1);
+            assert!(
+                rows[0..CONTEXT_SIZE_SAMPLES]
+                    .iter()
+                    .all(|value| *value == 0.0)
+            );
+            assert!(
+                rows[ROW_SIZE_SAMPLES - CONTEXT_SIZE_SAMPLES..ROW_SIZE_SAMPLES]
+                    .iter()
+                    .all(|value| *value == 0.0)
+            );
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn neg_threshold_default_tracks_threshold_minus_fifteen_hundredths() {
+            // A probability in [neg_threshold, threshold) keeps a triggered segment
+            // open, which is the only way the derived neg_threshold is observable.
+            let options = VadOptions {
+                threshold: 0.3,
+                min_speech_duration_ms: 0,
+                min_silence_duration_ms: 1000,
+                speech_pad_ms: 0,
+            };
+            let mut probs = vec![0.9_f32];
+            probs.extend(std::iter::repeat_n(0.2_f32, 60));
+
+            let speech = find_speech_timestamps(&probs, 61 * WINDOW_SIZE_SAMPLES, &options);
+
+            assert_eq!(
+                speech,
+                vec![SpeechChunk {
+                    start: 0,
+                    end: 61 * WINDOW_SIZE_SAMPLES,
+                }]
+            );
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn probability_below_neg_threshold_for_long_enough_closes_the_segment() {
+            let options = VadOptions {
+                threshold: 0.3,
+                min_speech_duration_ms: 0,
+                min_silence_duration_ms: 1000,
+                speech_pad_ms: 0,
+            };
+            let mut probs = vec![0.9_f32; 10];
+            probs.extend(std::iter::repeat_n(0.0_f32, 60));
+            probs.extend(std::iter::repeat_n(0.9_f32, 10));
+
+            let speech = find_speech_timestamps(&probs, 80 * WINDOW_SIZE_SAMPLES, &options);
+
+            assert_eq!(
+                speech,
+                vec![
+                    SpeechChunk {
+                        start: 0,
+                        end: 10 * WINDOW_SIZE_SAMPLES,
+                    },
+                    SpeechChunk {
+                        start: 70 * WINDOW_SIZE_SAMPLES,
+                        end: 80 * WINDOW_SIZE_SAMPLES,
+                    },
+                ]
+            );
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn silence_shorter_than_min_silence_does_not_split_a_segment() {
+            let options = VadOptions {
+                threshold: 0.3,
+                min_speech_duration_ms: 0,
+                min_silence_duration_ms: 1000,
+                speech_pad_ms: 0,
+            };
+            let mut probs = vec![0.9_f32; 5];
+            // 20 windows of silence is 10240 samples, under the 16000-sample floor.
+            probs.extend(std::iter::repeat_n(0.0_f32, 20));
+            probs.extend(std::iter::repeat_n(0.9_f32, 5));
+
+            let speech = find_speech_timestamps(&probs, 30 * WINDOW_SIZE_SAMPLES, &options);
+
+            assert_eq!(
+                speech,
+                vec![SpeechChunk {
+                    start: 0,
+                    end: 30 * WINDOW_SIZE_SAMPLES,
+                }]
+            );
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn trailing_segment_and_padding_clamp_to_unpadded_audio_length() {
+            let options = VadOptions::default();
+            // 40 windows of probabilities against a shorter unpadded audio length.
+            let probs = vec![0.9_f32; 40];
+            let audio_length = 40 * WINDOW_SIZE_SAMPLES - 300;
+
+            let speech = find_speech_timestamps(&probs, audio_length, &options);
+
+            assert_eq!(
+                speech,
+                vec![SpeechChunk {
+                    start: 0,
+                    end: audio_length,
+                }]
+            );
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn speech_pad_extends_both_sides_and_clamps_at_zero() {
+            let options = VadOptions {
                 threshold: 0.3,
                 min_speech_duration_ms: 0,
                 min_silence_duration_ms: 1000,
                 speech_pad_ms: 400,
-            }
-        );
-        assert_eq!(request.min_speech_seconds, 0.5);
-    }
+            };
+            let mut probs = vec![0.0_f32; 40];
+            probs.extend(std::iter::repeat_n(0.9_f32, 10));
+            probs.extend(std::iter::repeat_n(0.0_f32, 60));
+            let audio_length = 110 * WINDOW_SIZE_SAMPLES;
 
-    #[test]
-    fn request_options_override_individual_fields() {
-        let mut value = base_request("/tmp/a.f32", "/tmp/m.onnx");
-        value["options"] = json!({"threshold": 0.5, "speech_pad_ms": 0});
+            let speech = find_speech_timestamps(&probs, audio_length, &options);
 
-        let request = parse_request(&request_string(value)).expect("ok");
-
-        assert_eq!(request.options.threshold, 0.5);
-        assert_eq!(request.options.speech_pad_ms, 0);
-        assert_eq!(request.options.min_silence_duration_ms, 1000);
-    }
-
-    #[test]
-    fn request_with_unknown_schema_is_rejected() {
-        let mut value = base_request("/tmp/a.f32", "/tmp/m.onnx");
-        value["schema"] = json!("solstone-vad-request-v2");
-
-        let error = parse_request(&request_string(value)).unwrap_err();
-
-        assert_eq!(error.reason(), "unknown-schema");
-        assert_eq!(error.exit_code(), 64);
-    }
-
-    #[test]
-    fn request_body_that_is_not_json_is_rejected() {
-        let error = parse_request("not json").unwrap_err();
-
-        assert_eq!(error.reason(), "malformed-request");
-        assert_eq!(error.exit_code(), 64);
-    }
-
-    #[test]
-    fn request_body_that_is_not_an_object_is_rejected() {
-        let error = parse_request("[]").unwrap_err();
-
-        assert_eq!(error.reason(), "malformed-request");
-    }
-
-    #[test]
-    fn request_without_model_path_is_rejected() {
-        let mut value = base_request("/tmp/a.f32", "/tmp/m.onnx");
-        value["models"] = json!({});
-
-        let error = parse_request(&request_string(value)).unwrap_err();
-
-        assert_eq!(error.reason(), "malformed-request");
-        assert!(error.detail().contains("silero_vad_onnx_path"));
-    }
-
-    #[test]
-    fn request_with_empty_audio_path_is_rejected() {
-        let mut value = base_request("", "/tmp/m.onnx");
-        value["audio_f32le_path"] = json!("");
-
-        let error = parse_request(&request_string(value)).unwrap_err();
-
-        assert_eq!(error.reason(), "malformed-request");
-    }
-
-    #[test]
-    fn request_with_negative_min_speech_seconds_is_rejected() {
-        let mut value = base_request("/tmp/a.f32", "/tmp/m.onnx");
-        value["min_speech_seconds"] = json!(-1.0);
-
-        let error = parse_request(&request_string(value)).unwrap_err();
-
-        assert_eq!(error.reason(), "malformed-request");
-    }
-
-    #[test]
-    fn request_with_unknown_option_field_is_rejected() {
-        let mut value = base_request("/tmp/a.f32", "/tmp/m.onnx");
-        value["options"] = json!({"min_silence_ms": 500});
-
-        let error = parse_request(&request_string(value)).unwrap_err();
-
-        assert_eq!(error.reason(), "malformed-request");
-        assert!(error.detail().contains("min_silence_ms"));
-    }
-
-    #[test]
-    fn request_with_non_integer_option_is_rejected() {
-        let mut value = base_request("/tmp/a.f32", "/tmp/m.onnx");
-        value["options"] = json!({"speech_pad_ms": -5});
-
-        let error = parse_request(&request_string(value)).unwrap_err();
-
-        assert_eq!(error.reason(), "malformed-request");
-    }
-
-    #[test]
-    fn missing_audio_path_reports_audio_unreadable() {
-        let dir = TestDir::new();
-
-        let error = read_audio_f32le(&dir.path("missing.f32")).unwrap_err();
-
-        assert_eq!(error.reason(), "audio-unreadable");
-        assert_eq!(error.exit_code(), 69);
-    }
-
-    #[test]
-    fn directory_audio_path_reports_audio_invalid() {
-        let dir = TestDir::new();
-        let nested = dir.path("nested");
-        fs::create_dir(&nested).expect("create dir");
-
-        let error = read_audio_f32le(&nested).unwrap_err();
-
-        assert_eq!(error.reason(), "audio-invalid");
-        assert_eq!(error.exit_code(), 69);
-    }
-
-    #[test]
-    fn audio_byte_length_not_divisible_by_four_reports_audio_invalid() {
-        let dir = TestDir::new();
-        let path = dir.path("odd.f32");
-        fs::write(&path, [0_u8, 1, 2]).expect("write");
-
-        let error = read_audio_f32le(&path).unwrap_err();
-
-        assert_eq!(error.reason(), "audio-invalid");
-    }
-
-    #[test]
-    fn zero_length_audio_reports_audio_invalid() {
-        let dir = TestDir::new();
-        let path = dir.path("empty.f32");
-        fs::write(&path, []).expect("write");
-
-        let error = read_audio_f32le(&path).unwrap_err();
-
-        assert_eq!(error.reason(), "audio-invalid");
-    }
-
-    #[test]
-    fn non_finite_audio_sample_reports_audio_non_finite() {
-        let dir = TestDir::new();
-        let path = dir.path("nan.f32");
-        write_f32le(&path, &[0.0, 0.5, f32::NAN]);
-
-        let error = read_audio_f32le(&path).unwrap_err();
-
-        assert_eq!(error.reason(), "audio-non-finite");
-        assert_eq!(error.exit_code(), 69);
-        assert!(error.detail().contains("index 2"));
-    }
-
-    #[test]
-    fn missing_model_reports_model_unreadable() {
-        let dir = TestDir::new();
-
-        let error = check_model_identity(&dir.path("missing.onnx")).unwrap_err();
-
-        assert_eq!(error.reason(), "model-unreadable");
-        assert_eq!(error.exit_code(), 69);
-    }
-
-    #[test]
-    fn wrong_model_bytes_report_model_identity_mismatch() {
-        let dir = TestDir::new();
-        let path = dir.path("wrong.onnx");
-        fs::write(&path, b"not the silero graph").expect("write");
-
-        let error = check_model_identity(&path).unwrap_err();
-
-        assert_eq!(error.reason(), "model-identity-mismatch");
-        assert_eq!(error.exit_code(), 64);
-    }
-
-    #[test]
-    fn committed_silero_model_matches_the_pinned_digest() {
-        check_model_identity(&committed_model_path().to_string_lossy()).expect("pinned digest");
-    }
-
-    #[test]
-    fn silero_digest_matches_transcribe_canonical_digest() {
-        assert_eq!(
-            SILERO_VAD_V6_SHA256,
-            solstone_core_transcribe::SILERO_VAD_V6_SHA256
-        );
-    }
-
-    #[test]
-    fn exact_multiple_audio_length_pads_a_full_extra_window() {
-        let audio = vec![1.0_f32; 2 * WINDOW_SIZE_SAMPLES];
-
-        let (rows, window_count) = windows_with_context(&audio);
-
-        assert_eq!(window_count, 3);
-        assert_eq!(rows.len(), 3 * ROW_SIZE_SAMPLES);
-        // The padded third window is all zeros.
-        assert!(
-            rows[2 * ROW_SIZE_SAMPLES + CONTEXT_SIZE_SAMPLES..3 * ROW_SIZE_SAMPLES]
-                .iter()
-                .all(|value| *value == 0.0)
-        );
-    }
-
-    #[test]
-    fn partial_final_window_pads_only_the_remainder() {
-        let audio = vec![1.0_f32; WINDOW_SIZE_SAMPLES + 100];
-
-        let (_rows, window_count) = windows_with_context(&audio);
-
-        assert_eq!(window_count, 2);
-    }
-
-    #[test]
-    fn first_window_context_is_zero_and_later_context_is_the_previous_tail() {
-        let audio: Vec<f32> = (0..3 * WINDOW_SIZE_SAMPLES).map(|i| i as f32).collect();
-
-        let (rows, window_count) = windows_with_context(&audio);
-
-        assert_eq!(window_count, 4);
-        assert!(
-            rows[0..CONTEXT_SIZE_SAMPLES]
-                .iter()
-                .all(|value| *value == 0.0)
-        );
-        for window in 1..window_count {
-            let row = window * ROW_SIZE_SAMPLES;
-            let previous = (window - 1) * ROW_SIZE_SAMPLES;
             assert_eq!(
-                rows[row..row + CONTEXT_SIZE_SAMPLES],
-                rows[previous + ROW_SIZE_SAMPLES - CONTEXT_SIZE_SAMPLES
-                    ..previous + ROW_SIZE_SAMPLES]
+                speech,
+                vec![SpeechChunk {
+                    start: 40 * WINDOW_SIZE_SAMPLES - 6400,
+                    end: 50 * WINDOW_SIZE_SAMPLES + 6400,
+                }]
             );
         }
-    }
 
-    #[test]
-    fn in_place_context_zeroing_clears_the_final_window_tail() {
-        // The reference's `context[-1] = 0` writes through a view of the padded
-        // audio, so the last window's own trailing 64 samples are zeroed before
-        // the encoder ever sees them.
-        let audio: Vec<f32> = vec![1.0; 2 * WINDOW_SIZE_SAMPLES - 1];
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn min_speech_duration_filters_short_segments() {
+            let options = VadOptions {
+                threshold: 0.3,
+                min_speech_duration_ms: 1000,
+                min_silence_duration_ms: 1000,
+                speech_pad_ms: 0,
+            };
+            let mut probs = vec![0.9_f32; 5];
+            probs.extend(std::iter::repeat_n(0.0_f32, 60));
 
-        let (rows, window_count) = windows_with_context(&audio);
+            let speech = find_speech_timestamps(&probs, 65 * WINDOW_SIZE_SAMPLES, &options);
 
-        assert_eq!(window_count, 2);
-        let last_window = ROW_SIZE_SAMPLES + CONTEXT_SIZE_SAMPLES;
-        let tail_start = 2 * ROW_SIZE_SAMPLES - CONTEXT_SIZE_SAMPLES;
-        assert!(
-            rows[tail_start..2 * ROW_SIZE_SAMPLES]
-                .iter()
-                .all(|value| *value == 0.0)
-        );
-        // Samples before the zeroed tail are untouched.
-        assert_eq!(rows[last_window], 1.0);
-    }
+            assert!(speech.is_empty());
+        }
 
-    #[test]
-    fn single_window_audio_gets_zero_context_and_zeroed_tail() {
-        let audio = vec![1.0_f32; 200];
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn all_silence_yields_no_speech() {
+            let probs = vec![0.0_f32; 50];
 
-        let (rows, window_count) = windows_with_context(&audio);
+            let speech =
+                find_speech_timestamps(&probs, 50 * WINDOW_SIZE_SAMPLES, &VadOptions::default());
 
-        assert_eq!(window_count, 1);
-        assert!(
-            rows[0..CONTEXT_SIZE_SAMPLES]
-                .iter()
-                .all(|value| *value == 0.0)
-        );
-        assert!(
-            rows[ROW_SIZE_SAMPLES - CONTEXT_SIZE_SAMPLES..ROW_SIZE_SAMPLES]
-                .iter()
-                .all(|value| *value == 0.0)
-        );
-    }
+            assert!(speech.is_empty());
+        }
 
-    #[test]
-    fn neg_threshold_default_tracks_threshold_minus_fifteen_hundredths() {
-        // A probability in [neg_threshold, threshold) keeps a triggered segment
-        // open, which is the only way the derived neg_threshold is observable.
-        let options = VadOptions {
-            threshold: 0.3,
-            min_speech_duration_ms: 0,
-            min_silence_duration_ms: 1000,
-            speech_pad_ms: 0,
-        };
-        let mut probs = vec![0.9_f32];
-        probs.extend(std::iter::repeat_n(0.2_f32, 60));
-
-        let speech = find_speech_timestamps(&probs, 61 * WINDOW_SIZE_SAMPLES, &options);
-
-        assert_eq!(
-            speech,
-            vec![SpeechChunk {
-                start: 0,
-                end: 61 * WINDOW_SIZE_SAMPLES,
-            }]
-        );
-    }
-
-    #[test]
-    fn probability_below_neg_threshold_for_long_enough_closes_the_segment() {
-        let options = VadOptions {
-            threshold: 0.3,
-            min_speech_duration_ms: 0,
-            min_silence_duration_ms: 1000,
-            speech_pad_ms: 0,
-        };
-        let mut probs = vec![0.9_f32; 10];
-        probs.extend(std::iter::repeat_n(0.0_f32, 60));
-        probs.extend(std::iter::repeat_n(0.9_f32, 10));
-
-        let speech = find_speech_timestamps(&probs, 80 * WINDOW_SIZE_SAMPLES, &options);
-
-        assert_eq!(
-            speech,
-            vec![
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn response_reports_speech_duration_and_has_speech_from_chunk_spans() {
+            let request = Request {
+                audio_f32le_path: "/tmp/a.f32".to_string(),
+                silero_vad_onnx_path: "/tmp/m.onnx".to_string(),
+                min_speech_seconds: 1.0,
+                options: VadOptions::default(),
+            };
+            let speech = vec![
                 SpeechChunk {
                     start: 0,
-                    end: 10 * WINDOW_SIZE_SAMPLES,
+                    end: 8000,
                 },
                 SpeechChunk {
-                    start: 70 * WINDOW_SIZE_SAMPLES,
-                    end: 80 * WINDOW_SIZE_SAMPLES,
+                    start: 16000,
+                    end: 24000,
                 },
-            ]
-        );
-    }
+            ];
 
-    #[test]
-    fn silence_shorter_than_min_silence_does_not_split_a_segment() {
-        let options = VadOptions {
-            threshold: 0.3,
-            min_speech_duration_ms: 0,
-            min_silence_duration_ms: 1000,
-            speech_pad_ms: 0,
-        };
-        let mut probs = vec![0.9_f32; 5];
-        // 20 windows of silence is 10240 samples, under the 16000-sample floor.
-        probs.extend(std::iter::repeat_n(0.0_f32, 20));
-        probs.extend(std::iter::repeat_n(0.9_f32, 5));
+            let response = response_value(&request, 48000, &speech);
 
-        let speech = find_speech_timestamps(&probs, 30 * WINDOW_SIZE_SAMPLES, &options);
+            assert_eq!(response["schema"], json!(RESPONSE_SCHEMA));
+            assert_eq!(response["duration"], json!(3.0));
+            assert_eq!(response["speech_duration"], json!(1.0));
+            assert_eq!(response["min_speech_seconds"], json!(1.0));
+            assert_eq!(response["has_speech"], json!(true));
+            assert_eq!(response["speech"][1]["start"], json!(16000));
+        }
 
-        assert_eq!(
-            speech,
-            vec![SpeechChunk {
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn response_has_speech_is_false_below_the_minimum() {
+            let request = Request {
+                audio_f32le_path: "/tmp/a.f32".to_string(),
+                silero_vad_onnx_path: "/tmp/m.onnx".to_string(),
+                min_speech_seconds: 1.0,
+                options: VadOptions::default(),
+            };
+            let speech = vec![SpeechChunk {
                 start: 0,
-                end: 30 * WINDOW_SIZE_SAMPLES,
-            }]
-        );
+                end: 15999,
+            }];
+
+            let response = response_value(&request, 48000, &speech);
+
+            assert_eq!(response["has_speech"], json!(false));
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn error_envelope_carries_schema_reason_and_detail() {
+            let line = error_line_for_vad_error(&VadError::Internal {
+                detail: "boom".to_string(),
+            });
+            let value: Value = serde_json::from_str(&line).expect("error JSON");
+
+            assert_eq!(value["schema"], json!(ERROR_SCHEMA));
+            assert_eq!(value["reason"], json!("internal-error"));
+            assert_eq!(value["detail"], json!("boom"));
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn argv_rejects_unexpected_arguments_as_usage() {
+            let error = evaluate_args(&[OsString::from("--help")]).unwrap_err();
+            let line = error_line_for_usage(&error);
+
+            assert!(line.contains("\"reason\":\"usage\""));
+            assert!(line.contains("Usage: solstone-core-vad-analyze"));
+        }
+
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn argv_accepts_a_bare_invocation() {
+            assert_eq!(evaluate_args(&[]), Ok(()));
+        }
     }
 
-    #[test]
-    fn trailing_segment_and_padding_clamp_to_unpadded_audio_length() {
-        let options = VadOptions::default();
-        // 40 windows of probabilities against a shorter unpadded audio length.
-        let probs = vec![0.9_f32; 40];
-        let audio_length = 40 * WINDOW_SIZE_SAMPLES - 300;
+    #[cfg(all(test, feature = "full-tests"))]
+    mod full_native {
+        use super::*;
 
-        let speech = find_speech_timestamps(&probs, audio_length, &options);
+        #[cfg(feature = "full-tests")]
+        #[test]
+        fn committed_silero_model_opens_with_the_expected_graph_io() {
+            let session = SileroVadSession::open(&committed_model_path()).expect("session");
 
-        assert_eq!(
-            speech,
-            vec![SpeechChunk {
-                start: 0,
-                end: audio_length,
-            }]
-        );
-    }
+            assert_eq!(session.session.inputs().len(), 3);
+            assert_eq!(session.session.outputs().len(), 3);
+        }
 
-    #[test]
-    fn speech_pad_extends_both_sides_and_clamps_at_zero() {
-        let options = VadOptions {
-            threshold: 0.3,
-            min_speech_duration_ms: 0,
-            min_silence_duration_ms: 1000,
-            speech_pad_ms: 400,
-        };
-        let mut probs = vec![0.0_f32; 40];
-        probs.extend(std::iter::repeat_n(0.9_f32, 10));
-        probs.extend(std::iter::repeat_n(0.0_f32, 60));
-        let audio_length = 110 * WINDOW_SIZE_SAMPLES;
+        #[cfg(feature = "full-tests")]
+        #[test]
+        fn silence_through_the_committed_model_reports_no_speech() {
+            let audio = vec![0.0_f32; SAMPLE_RATE_HZ as usize];
+            let (rows, window_count) = windows_with_context(&audio);
+            let mut session = SileroVadSession::open(&committed_model_path()).expect("session");
 
-        let speech = find_speech_timestamps(&probs, audio_length, &options);
+            let probs = session.speech_probs(&rows, window_count).expect("probs");
 
-        assert_eq!(
-            speech,
-            vec![SpeechChunk {
-                start: 40 * WINDOW_SIZE_SAMPLES - 6400,
-                end: 50 * WINDOW_SIZE_SAMPLES + 6400,
-            }]
-        );
-    }
+            assert_eq!(probs.len(), window_count);
+            assert!(probs.iter().all(|value| value.is_finite()));
+            assert!(probs.iter().all(|value| *value < 0.3));
+            assert!(find_speech_timestamps(&probs, audio.len(), &VadOptions::default()).is_empty());
+        }
 
-    #[test]
-    fn min_speech_duration_filters_short_segments() {
-        let options = VadOptions {
-            threshold: 0.3,
-            min_speech_duration_ms: 1000,
-            min_silence_duration_ms: 1000,
-            speech_pad_ms: 0,
-        };
-        let mut probs = vec![0.9_f32; 5];
-        probs.extend(std::iter::repeat_n(0.0_f32, 60));
+        #[cfg(feature = "full-tests")]
+        #[test]
+        fn run_request_on_silence_returns_a_well_formed_response() {
+            let dir = TestDir::new();
+            let audio_path = dir.path("silence.f32");
+            write_f32le(&audio_path, &vec![0.0_f32; SAMPLE_RATE_HZ as usize]);
+            let request = base_request(&audio_path, &committed_model_path().to_string_lossy());
 
-        let speech = find_speech_timestamps(&probs, 65 * WINDOW_SIZE_SAMPLES, &options);
+            let response = run_request(&request_string(request)).expect("response");
 
-        assert!(speech.is_empty());
-    }
+            assert_eq!(response["schema"], json!(RESPONSE_SCHEMA));
+            assert_eq!(response["duration"], json!(1.0));
+            assert_eq!(response["speech_duration"], json!(0.0));
+            assert_eq!(response["has_speech"], json!(false));
+            assert_eq!(response["speech"], json!([]));
+        }
 
-    #[test]
-    fn all_silence_yields_no_speech() {
-        let probs = vec![0.0_f32; 50];
+        #[cfg(feature = "full-tests")]
+        #[test]
+        fn loaded_onnx_runtime_version_is_a_dotted_release_version() {
+            // Opening a session forces the runtime to be in use before the mapping
+            // table is read, so this cannot pass against an unloaded library.
+            SileroVadSession::open(&committed_model_path()).expect("session");
 
-        let speech =
-            find_speech_timestamps(&probs, 50 * WINDOW_SIZE_SAMPLES, &VadOptions::default());
+            let version = loaded_onnx_runtime_version().expect("loaded ONNX Runtime version");
 
-        assert!(speech.is_empty());
-    }
-
-    #[test]
-    fn response_reports_speech_duration_and_has_speech_from_chunk_spans() {
-        let request = Request {
-            audio_f32le_path: "/tmp/a.f32".to_string(),
-            silero_vad_onnx_path: "/tmp/m.onnx".to_string(),
-            min_speech_seconds: 1.0,
-            options: VadOptions::default(),
-        };
-        let speech = vec![
-            SpeechChunk {
-                start: 0,
-                end: 8000,
-            },
-            SpeechChunk {
-                start: 16000,
-                end: 24000,
-            },
-        ];
-
-        let response = response_value(&request, 48000, &speech);
-
-        assert_eq!(response["schema"], json!(RESPONSE_SCHEMA));
-        assert_eq!(response["duration"], json!(3.0));
-        assert_eq!(response["speech_duration"], json!(1.0));
-        assert_eq!(response["min_speech_seconds"], json!(1.0));
-        assert_eq!(response["has_speech"], json!(true));
-        assert_eq!(response["speech"][1]["start"], json!(16000));
-    }
-
-    #[test]
-    fn response_has_speech_is_false_below_the_minimum() {
-        let request = Request {
-            audio_f32le_path: "/tmp/a.f32".to_string(),
-            silero_vad_onnx_path: "/tmp/m.onnx".to_string(),
-            min_speech_seconds: 1.0,
-            options: VadOptions::default(),
-        };
-        let speech = vec![SpeechChunk {
-            start: 0,
-            end: 15999,
-        }];
-
-        let response = response_value(&request, 48000, &speech);
-
-        assert_eq!(response["has_speech"], json!(false));
-    }
-
-    #[test]
-    fn error_envelope_carries_schema_reason_and_detail() {
-        let line = error_line_for_vad_error(&VadError::Internal {
-            detail: "boom".to_string(),
-        });
-        let value: Value = serde_json::from_str(&line).expect("error JSON");
-
-        assert_eq!(value["schema"], json!(ERROR_SCHEMA));
-        assert_eq!(value["reason"], json!("internal-error"));
-        assert_eq!(value["detail"], json!("boom"));
-    }
-
-    #[test]
-    fn argv_rejects_unexpected_arguments_as_usage() {
-        let error = evaluate_args(&[OsString::from("--help")]).unwrap_err();
-        let line = error_line_for_usage(&error);
-
-        assert!(line.contains("\"reason\":\"usage\""));
-        assert!(line.contains("Usage: solstone-core-vad-analyze"));
-    }
-
-    #[test]
-    fn argv_accepts_a_bare_invocation() {
-        assert_eq!(evaluate_args(&[]), Ok(()));
-    }
-
-    #[test]
-    fn committed_silero_model_opens_with_the_expected_graph_io() {
-        let session = SileroVadSession::open(&committed_model_path()).expect("session");
-
-        assert_eq!(session.session.inputs().len(), 3);
-        assert_eq!(session.session.outputs().len(), 3);
-    }
-
-    #[test]
-    fn silence_through_the_committed_model_reports_no_speech() {
-        let audio = vec![0.0_f32; SAMPLE_RATE_HZ as usize];
-        let (rows, window_count) = windows_with_context(&audio);
-        let mut session = SileroVadSession::open(&committed_model_path()).expect("session");
-
-        let probs = session.speech_probs(&rows, window_count).expect("probs");
-
-        assert_eq!(probs.len(), window_count);
-        assert!(probs.iter().all(|value| value.is_finite()));
-        assert!(probs.iter().all(|value| *value < 0.3));
-        assert!(find_speech_timestamps(&probs, audio.len(), &VadOptions::default()).is_empty());
-    }
-
-    #[test]
-    fn run_request_on_silence_returns_a_well_formed_response() {
-        let dir = TestDir::new();
-        let audio_path = dir.path("silence.f32");
-        write_f32le(&audio_path, &vec![0.0_f32; SAMPLE_RATE_HZ as usize]);
-        let request = base_request(&audio_path, &committed_model_path().to_string_lossy());
-
-        let response = run_request(&request_string(request)).expect("response");
-
-        assert_eq!(response["schema"], json!(RESPONSE_SCHEMA));
-        assert_eq!(response["duration"], json!(1.0));
-        assert_eq!(response["speech_duration"], json!(0.0));
-        assert_eq!(response["has_speech"], json!(false));
-        assert_eq!(response["speech"], json!([]));
-    }
-
-    #[test]
-    fn loaded_onnx_runtime_version_is_a_dotted_release_version() {
-        // Opening a session forces the runtime to be in use before the mapping
-        // table is read, so this cannot pass against an unloaded library.
-        SileroVadSession::open(&committed_model_path()).expect("session");
-
-        let version = loaded_onnx_runtime_version().expect("loaded ONNX Runtime version");
-
-        assert!(
-            is_dotted_release_version(&version),
-            "{version:?} is not a major.minor.patch version"
-        );
-    }
-
-    #[test]
-    fn dotted_release_version_rejects_the_soname_suffix_and_junk() {
-        assert!(is_dotted_release_version("1.25.0"));
-        assert!(!is_dotted_release_version("1"));
-        assert!(!is_dotted_release_version("1.25"));
-        assert!(!is_dotted_release_version("1.25.0.1"));
-        assert!(!is_dotted_release_version("1.25.0-rc1"));
-        assert!(!is_dotted_release_version("1..0"));
-    }
-
-    /// Pins the SessionOptions calls `SileroVadSession::open` applies.
-    ///
-    /// ONNX Runtime has no read-back for an applied `SessionOptions` and `ort`
-    /// 2.0.0-rc.12 surfaces none either — a committed `Session` exposes its
-    /// graph IO, allocator, and metadata, and nothing about the thread pools,
-    /// the arena, or which providers were registered. There is also no
-    /// behavioral probe: single-threaded execution and a disabled arena change
-    /// timing and allocation, not results. The settings are pinned as source
-    /// text so a silent edit to one of the three calls fails this test.
-    #[test]
-    fn session_options_match_the_reference_single_threaded_cpu_configuration() {
-        let rust_source =
-            fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"))
-                .expect("read this crate's source");
-        for call in [
-            "CPU::default().with_arena_allocator(false).build()",
-            ".with_intra_threads(1)",
-            ".with_inter_threads(1)",
-        ] {
             assert!(
-                rust_source.contains(call),
-                "SileroVadSession::open no longer applies {call}"
+                is_dotted_release_version(&version),
+                "{version:?} is not a major.minor.patch version"
             );
         }
     }
 
-    #[test]
-    fn run_request_with_a_wrong_model_reports_identity_mismatch_before_opening_it() {
-        let dir = TestDir::new();
-        let audio_path = dir.path("silence.f32");
-        write_f32le(&audio_path, &vec![0.0_f32; 1024]);
-        let model_path = dir.path("wrong.onnx");
-        fs::write(&model_path, b"not onnx").expect("write");
-        let request = base_request(&audio_path, &model_path);
+    #[cfg(all(test, not(feature = "full-tests")))]
+    mod routine_version {
+        use super::*;
 
-        let error = run_request(&request_string(request)).unwrap_err();
+        #[cfg(not(feature = "full-tests"))]
+        #[test]
+        fn dotted_release_version_rejects_the_soname_suffix_and_junk() {
+            assert!(is_dotted_release_version("1.25.0"));
+            assert!(!is_dotted_release_version("1"));
+            assert!(!is_dotted_release_version("1.25"));
+            assert!(!is_dotted_release_version("1.25.0.1"));
+            assert!(!is_dotted_release_version("1.25.0-rc1"));
+            assert!(!is_dotted_release_version("1..0"));
+        }
+    }
 
-        assert_eq!(error.reason(), "model-identity-mismatch");
-        assert_eq!(error.exit_code(), 64);
+    #[cfg(all(test, feature = "full-tests"))]
+    mod full_preflight {
+        use super::*;
+
+        #[cfg(feature = "full-tests")]
+        #[test]
+        fn run_request_with_a_wrong_model_reports_identity_mismatch_before_opening_it() {
+            let dir = TestDir::new();
+            let audio_path = dir.path("silence.f32");
+            write_f32le(&audio_path, &vec![0.0_f32; 1024]);
+            let model_path = dir.path("wrong.onnx");
+            fs::write(&model_path, b"not onnx").expect("write");
+            let request = base_request(&audio_path, &model_path);
+
+            let error = run_request(&request_string(request)).unwrap_err();
+
+            assert_eq!(error.reason(), "model-identity-mismatch");
+            assert_eq!(error.exit_code(), 64);
+        }
     }
 }

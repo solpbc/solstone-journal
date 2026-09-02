@@ -235,6 +235,12 @@ fn write_config(root: &Path, config: Value) {
     std::fs::write(root.join("config/journal.json"), config.to_string()).expect("write config");
 }
 
+fn configure_uninstallable_nvattest(root: &Path, config: &mut Value) {
+    let blocked_parent = root.join("blocked-nvattest-parent");
+    std::fs::write(&blocked_parent, "not a directory").expect("write nvattest install blocker");
+    config["services"]["confidential"]["nvattest_dir"] = json!(blocked_parent.join("nvattest"));
+}
+
 fn bundled_config(confidential: bool) -> Value {
     if confidential {
         json!({"providers": {"active": {"provider": "local"}}, "services": {"confidential": {}}})
@@ -746,9 +752,12 @@ fn lane_refusals_use_fixture_fields_without_network_calls() {
             false,
         ),
     ];
-    for (name, config, vector_id, exact_reason_code) in cases {
+    for (name, mut config, vector_id, exact_reason_code) in cases {
         let journal = root(name);
         if name != "none" {
+            if name == "attestation" {
+                configure_uninstallable_nvattest(&journal, &mut config);
+            }
             write_config(&journal, config);
         }
         let output = one_shot(&journal, &fixture_vector("generated")["request"]);
@@ -1220,6 +1229,7 @@ fn byo_endpoint_generates_without_confidential_downgrade() {
     let confidential_journal = root("byo-confidential");
     let mut confidential = config;
     confidential["services"] = json!({"confidential": {}});
+    configure_uninstallable_nvattest(&confidential_journal, &mut confidential);
     write_config(&confidential_journal, confidential);
     let output = one_shot(
         &confidential_journal,

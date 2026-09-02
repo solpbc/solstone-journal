@@ -5640,7 +5640,6 @@ dependencies = [
  "ort",
  "serde_json",
  "sha2",
- "solstone-core-transcribe",
 ]
 
 [[package]]
