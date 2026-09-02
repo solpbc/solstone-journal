@@ -4,12 +4,13 @@
 # Driver for one fresh, source-bound, network-denied ONNX Runtime Windows slot.
 set -eu
 GIT=${GIT:-git}; SCP=${SCP:-scp}; SSH=${SSH:-ssh}
-WIN_REMOTE_HOST=${WIN_REMOTE_HOST:-}; EXPECTED_WIN_COMMIT=${EXPECTED_WIN_COMMIT:-}; ONNX_WINDOWS_SOURCE_ROOT=${ONNX_WINDOWS_SOURCE_ROOT:-}; ONNX_WINDOWS_MIRROR_INPUT_DIR=${ONNX_WINDOWS_MIRROR_INPUT_DIR:-}; ONNX_WINDOWS_PROTOC_ARCHIVE=${ONNX_WINDOWS_PROTOC_ARCHIVE:-}; WIN_REMOTE_HOME=${WIN_REMOTE_HOME:-'C:\Users\solbuild'}
+WIN_REMOTE_HOST=${WIN_REMOTE_HOST:-}; EXPECTED_WIN_COMMIT=${EXPECTED_WIN_COMMIT:-}; ONNX_WINDOWS_SOURCE_ROOT=${ONNX_WINDOWS_SOURCE_ROOT:-}; ONNX_WINDOWS_MIRROR_INPUT_DIR=${ONNX_WINDOWS_MIRROR_INPUT_DIR:-}; ONNX_WINDOWS_PROTOC_ARCHIVE=${ONNX_WINDOWS_PROTOC_ARCHIVE:-}; WIN_REMOTE_HOME=${WIN_REMOTE_HOME:-'C:\Users\solbuild'}; SOLSTONE_JOURNAL_WIN_REFS_ROOT=${SOLSTONE_JOURNAL_WIN_REFS_ROOT:-'R:\'}
 hex() { [ "${#1}" -eq "$2" ] && ! printf '%s' "$1" | grep -q '[^0-9a-f]'; }
 [ -n "$WIN_REMOTE_HOST" ] && printf '%s\n' "$WIN_REMOTE_HOST" | grep -Eq '^[A-Za-z0-9_.@-]+$' || { echo 'ERROR: ONNX Windows build requires safe WIN_REMOTE_HOST' >&2; exit 1; }
 hex "$EXPECTED_WIN_COMMIT" 40 || { echo 'ERROR: EXPECTED_WIN_COMMIT must be full lowercase commit' >&2; exit 1; }
 [ -d "$ONNX_WINDOWS_SOURCE_ROOT" ] && [ -d "$ONNX_WINDOWS_MIRROR_INPUT_DIR" ] && [ -f "$ONNX_WINDOWS_PROTOC_ARCHIVE" ] || { echo 'ERROR: controlled ONNX source, mirror directory, and protoc archive are required' >&2; exit 1; }
 printf '%s\n' "$WIN_REMOTE_HOME" | grep -Eq '^[A-Za-z]:[\\/][A-Za-z0-9_. ()\\/:=-]*$' || { echo 'ERROR: WIN_REMOTE_HOME must be a safe absolute Windows path' >&2; exit 1; }
+printf '%s\n' "$SOLSTONE_JOURNAL_WIN_REFS_ROOT" | grep -Eq '^[A-Za-z]:[\\/][A-Za-z0-9_. ()\\/:=-]*$' || { echo 'ERROR: SOLSTONE_JOURNAL_WIN_REFS_ROOT must be a safe absolute Windows path' >&2; exit 1; }
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd); repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd); cd "$repo_root"
 [ -z "$("$GIT" status --porcelain=v1 --untracked-files=all --ignore-submodules=none)" ] || { echo 'ERROR: source-bound build requires clean Journal checkout' >&2; exit 1; }
 [ "$("$GIT" rev-parse HEAD)" = "$EXPECTED_WIN_COMMIT" ] || { echo 'ERROR: HEAD does not equal EXPECTED_WIN_COMMIT' >&2; exit 1; }
@@ -19,7 +20,7 @@ cargo run --manifest-path core/Cargo.toml -p solstone-core-distribution --bin so
 mkdir -p "$(dirname "$python_archive")"; cargo run --manifest-path core/Cargo.toml -p solstone-core-distribution --bin solstone-distribution --locked -- acquire python-windows --dest "$python_archive"
 mkdir -p "$input_dir"; cargo run --manifest-path core/Cargo.toml -p solstone-core-distribution --bin solstone-distribution --locked -- onnx-windows source-archive --source "$ONNX_WINDOWS_SOURCE_ROOT" --out "$source_archive"; cargo run --manifest-path core/Cargo.toml -p solstone-core-distribution --bin solstone-distribution --locked -- onnx-windows mirror-archive --source "$ONNX_WINDOWS_SOURCE_ROOT" --input-dir "$ONNX_WINDOWS_MIRROR_INPUT_DIR" --out "$mirror_archive"
 cargo run --manifest-path core/Cargo.toml -p solstone-core-distribution --bin solstone-distribution --locked -- onnx-windows verify-inputs --source-archive "$source_archive" --mirror-archive "$mirror_archive" --cmake-archive "$cmake_archive" --python-archive "$python_archive" --protoc-archive "$ONNX_WINDOWS_PROTOC_ARCHIVE"
-make win-host-ci
+SOLSTONE_JOURNAL_WIN_REFS_ROOT="$SOLSTONE_JOURNAL_WIN_REFS_ROOT" make win-host-ci
 remote_rel="onnx-windows-controlled-build/$EXPECTED_WIN_COMMIT"; remote_repo="$WIN_REMOTE_HOME\\sjbuild"; remote_source="$WIN_REMOTE_HOME\\onnx-source-$EXPECTED_WIN_COMMIT.gz"; remote_mirror="$WIN_REMOTE_HOME\\onnx-mirror-$EXPECTED_WIN_COMMIT.gz"; remote_cmake="$WIN_REMOTE_HOME\\onnx-cmake-$EXPECTED_WIN_COMMIT.zip"; remote_python="$WIN_REMOTE_HOME\\onnx-python-$EXPECTED_WIN_COMMIT.zip"; remote_protoc="$WIN_REMOTE_HOME\\onnx-protoc-$EXPECTED_WIN_COMMIT.zip"; remote_slot="$WIN_REMOTE_HOME\\$remote_rel"
 remote_guard="if (Test-Path -LiteralPath '$remote_source') { throw 'remote ONNX source input already exists' }; if (Test-Path -LiteralPath '$remote_mirror') { throw 'remote ONNX mirror input already exists' }; if (Test-Path -LiteralPath '$remote_cmake') { throw 'remote ONNX CMake input already exists' }; if (Test-Path -LiteralPath '$remote_python') { throw 'remote ONNX Python input already exists' }; if (Test-Path -LiteralPath '$remote_protoc') { throw 'remote ONNX protoc input already exists' }; if (Test-Path -LiteralPath '$remote_slot') { throw 'remote ONNX output slot already exists' }"
 "$SSH" "$WIN_REMOTE_HOST" "powershell -NoProfile -Command \"$remote_guard\""
