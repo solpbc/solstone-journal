@@ -154,7 +154,7 @@ pub fn sync_dir(root: &Path, dir_rel: &str) -> Result<(), PathError> {
 ///
 /// Returns its error. This never opens a directory via `AT_FDCWD`.
 #[cfg(unix)]
-pub fn sync_dir_bound(directory: &impl AsFd) -> Result<(), io::Error> {
+pub(crate) fn sync_dir_bound(directory: &impl AsFd) -> Result<(), io::Error> {
     nix::unistd::fsync(directory).map_err(|error| io::Error::from_raw_os_error(error as i32))
 }
 

@@ -343,7 +343,7 @@ pub fn ensure_directory(path: &Path) -> Result<(), PathError> {
 /// `EEXIST` succeeds when the name is already a real directory. A symlink or
 /// other kind at that name is an error. This never opens a parent via `AT_FDCWD`.
 #[cfg(unix)]
-pub fn create_directory_bound(
+pub(crate) fn create_directory_bound(
     parent: &impl std::os::fd::AsFd,
     name: &OsStr,
     mode: u32,
