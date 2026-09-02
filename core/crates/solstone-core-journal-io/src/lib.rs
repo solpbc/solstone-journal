@@ -157,6 +157,8 @@ pub use journal_root::{
     WindowsAcquisitionPrimitive, WindowsAcquisitionTrace, run_with_windows_acquisition_fault,
     run_with_windows_acquisition_trace,
 };
+#[cfg(unix)]
+pub use lease::probe_exclusive_flock_no_release;
 #[cfg(any(unix, windows))]
 pub use lease::{
     DEFAULT_LEASE_ATTEMPTS, DEFAULT_LEASE_MODE, DEFAULT_LEASE_RETRY_MAX, FileLease, LeaseOptions,

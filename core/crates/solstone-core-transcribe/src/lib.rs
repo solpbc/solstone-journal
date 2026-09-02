@@ -42,7 +42,10 @@ pub use model_assets::{
     resolve_model_asset,
 };
 pub use speakers::SpeakerAnalyzeError;
-pub use speakers_installation::{SpeakersAnalyzeGeneration, enter_speakers_analyze_generation};
+pub use speakers_installation::{
+    SpeakersAnalyzeGeneration, SpeakersAnalyzeOwnerRole, SpeakersAnalyzeOwnerView,
+    enter_speakers_analyze_generation, read_speakers_analyze_owner,
+};
 pub use vad_runtime::{
     VAD_RUNTIME_PROBE_TIMEOUT, VadRuntimeStatus, probe_from_executable, status_detail,
 };
@@ -118,7 +121,9 @@ pub fn run_cli(
         config::confidential_audio_enabled(&config),
     )
     .map_err(CliRunError::Transcribe)?;
-    let _generation = enter_speakers_analyze_generation(journal_path).map_err(CliRunError::Cli)?;
+    let _generation =
+        enter_speakers_analyze_generation(journal_path, SpeakersAnalyzeOwnerRole::Transcribe)
+            .map_err(CliRunError::Cli)?;
     let attestation_state = AttestationStateStore::new();
     if parsed.all {
         return run_all(

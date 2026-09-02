@@ -4,6 +4,7 @@
 //! Whole-day catchup composition for the unscoped `journal think --day` mode.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsString;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::Utc;
@@ -82,6 +83,7 @@ pub(crate) fn run(
     args: &ThinkArgs,
     default_segment_workers: usize,
     timeout: Option<Duration>,
+    sense_child_environment: &BTreeMap<OsString, OsString>,
 ) -> Result<ModeResult, String> {
     run_with_phase_process(
         context,
@@ -90,6 +92,7 @@ pub(crate) fn run(
         default_segment_workers,
         timeout,
         &NativePhaseProcessRunner,
+        sense_child_environment,
     )
 }
 
@@ -100,6 +103,7 @@ fn run_with_phase_process(
     default_segment_workers: usize,
     timeout: Option<Duration>,
     phase_process: &dyn PhaseProcessRunner,
+    sense_child_environment: &BTreeMap<OsString, OsString>,
 ) -> Result<ModeResult, String> {
     let observed_generation = stream_generation(context)?;
     let observed_fingerprint = read_raw_input_fingerprint(&context.journal, &context.day)
@@ -154,7 +158,7 @@ fn run_with_phase_process(
                 match solstone_core_sense::batch::run_batch_for_whole_day_with_environment_and_timeout(
                     &context.journal,
                     &request,
-                    &BTreeMap::new(),
+                    sense_child_environment,
                     Some(SENSE_PHASE_TIMEOUT),
                 ) {
                     Ok(()) => succeeded_phase("sense_batch"),
@@ -930,6 +934,7 @@ mod tests {
             &ThinkArgs::default(),
             1,
             Some(Duration::from_secs(610)),
+            &BTreeMap::new(),
         )
         .unwrap();
         assert_eq!(result.failed, 0);
@@ -988,6 +993,7 @@ mod tests {
             &ThinkArgs::default(),
             1,
             Some(Duration::from_secs(610)),
+            &BTreeMap::new(),
         )
         .unwrap();
 
@@ -1023,6 +1029,7 @@ mod tests {
             &ThinkArgs::default(),
             1,
             Some(Duration::from_secs(610)),
+            &BTreeMap::new(),
         )
         .unwrap();
 
@@ -1068,6 +1075,7 @@ mod tests {
             &ThinkArgs::default(),
             1,
             Some(Duration::from_secs(610)),
+            &BTreeMap::new(),
         )
         .unwrap();
 
@@ -1254,7 +1262,15 @@ mod tests {
             stream: Some("default".to_owned()),
             ..ThinkArgs::default()
         };
-        let result = run(&context, &mut log, &args, 1, Some(Duration::from_secs(610))).unwrap();
+        let result = run(
+            &context,
+            &mut log,
+            &args,
+            1,
+            Some(Duration::from_secs(610)),
+            &BTreeMap::new(),
+        )
+        .unwrap();
         assert_eq!(result.failed, 0);
         assert_eq!(marker_generation(journal.path()), None);
     }
@@ -1513,6 +1529,7 @@ mod tests {
             1,
             Some(Duration::from_secs(610)),
             &runner,
+            &BTreeMap::new(),
         )
         .unwrap();
 
@@ -1553,6 +1570,7 @@ mod tests {
             1,
             Some(Duration::from_secs(610)),
             &runner,
+            &BTreeMap::new(),
         )
         .unwrap();
 

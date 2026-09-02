@@ -611,6 +611,7 @@ fn submit_task(
 fn reconcile_app_processes(state: &mut SupervisorState) -> Vec<AppProcessSample> {
     let journal = state.journal.clone();
     let server = state.server.clone();
+    let sense_child_environment = state.sense_child_environment.clone();
     let mut samples = Vec::new();
     for app in &mut state.app_processes {
         if !app.enabled {
@@ -620,7 +621,12 @@ fn reconcile_app_processes(state: &mut SupervisorState) -> Vec<AppProcessSample>
             && app
                 .restart_at
                 .is_some_and(|restart_at| Instant::now() >= restart_at)
-            && let Err(error) = super::runtime::spawn_app_process(app, &journal, server.clone())
+            && let Err(error) = super::runtime::spawn_app_process(
+                app,
+                &journal,
+                server.clone(),
+                &sense_child_environment,
+            )
         {
             eprintln!(
                 "supervisor: failed to restart {}: {error}",
@@ -1472,6 +1478,7 @@ mod tests {
             process_sink: None,
             ready: false,
             before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
         })
     }
 

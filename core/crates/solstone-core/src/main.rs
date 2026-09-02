@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::process::ExitCode;
@@ -107,6 +108,12 @@ const EXIT_IOERR: u8 = 74;
 const EXIT_PROTOCOL: u8 = 76;
 /// `EX_CONFIG`: hosted-service parent admission failed before service work.
 const EXIT_HOSTED_SERVICE_ADMISSION_REFUSED: u8 = 78;
+/// `EX_CONFIG`: the supervisor's own speakers-analyze generation acquisition
+/// or installation validation failed before any app process started.
+/// Numerically identical to but a distinct case from
+/// `EXIT_HOSTED_SERVICE_ADMISSION_REFUSED`, which is the hosted-CHILD
+/// admission refusal, not the supervisor's own boot refusal.
+const EXIT_SPEAKERS_ANALYZE_GENERATION_REFUSED: u8 = 78;
 const MAX_JSON_STDIN_BYTES: usize = 1024 * 1024;
 const MAX_LOCAL_STDIN_BYTES: usize = 1024 * 1024;
 const SESSION_INPUT_TIMEOUT: Duration = Duration::from_secs(90);
@@ -236,6 +243,12 @@ fn render_supervisor_host_outcome(outcome: supervisor::SupervisorHostOutcome) ->
         } => {
             eprintln!("{ADMISSION_WAIT_UNVERIFIABLE_COPY}");
             ExitCode::from(EXIT_TEMPFAIL)
+        }
+        supervisor::SupervisorHostOutcome::Refused {
+            reason: supervisor::SupervisorBootRefusal::SpeakersAnalyzeGeneration(message),
+        } => {
+            eprintln!("{message}");
+            ExitCode::from(EXIT_SPEAKERS_ANALYZE_GENERATION_REFUSED)
         }
         supervisor::SupervisorHostOutcome::Refused { reason } => {
             eprintln!("supervisor failed to boot: {reason:?}");
@@ -371,7 +384,32 @@ fn main() -> ExitCode {
         Ok(Command::RetiredMover(message)) => run_retired_mover(message),
         Ok(Command::Transcribe(options)) => run_transcribe(options),
         Ok(Command::Think(args)) => run_storage_ops_verb("think", args, |arguments, journal| {
-            let run = solstone_core_think_cli::run_cli(arguments, journal);
+            // Only the whole-day lifecycle (the sole caller of `sense_batch`)
+            // needs a speakers-analyze generation; narrower modes (`--segment`,
+            // `--flush`, `--weekly`, `--cadence`, `--activity`, `--updated`,
+            // `--segments`, `--dry-run`) never reach it and must not be forced
+            // to contend for a lease they don't need.
+            if !solstone_core_think_cli::requires_daily_lifecycle(arguments) {
+                let run = solstone_core_think_cli::run_cli(arguments, journal, &BTreeMap::new());
+                return (run.stdout, run.stderr, run.exit_code);
+            }
+            let generation = match solstone_core_transcribe::enter_speakers_analyze_generation(
+                journal,
+                solstone_core_transcribe::SpeakersAnalyzeOwnerRole::Think,
+            ) {
+                Ok(generation) => generation,
+                Err(error) => {
+                    return (
+                        String::new(),
+                        error.message().unwrap_or_default().to_owned(),
+                        error.exit_code(),
+                    );
+                }
+            };
+            let sense_child_environment = generation.inheritance_environment();
+            let run =
+                solstone_core_think_cli::run_cli(arguments, journal, &sense_child_environment);
+            drop(generation);
             (run.stdout, run.stderr, run.exit_code)
         }),
         Ok(Command::ThinkingHelp) => {
@@ -5059,14 +5097,32 @@ fn run_sense_service(options: ServiceOptions) -> ExitCode {
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
+    // Borrows the hosting supervisor's inherited generation when present
+    // (the ordinary hosted case); otherwise acquires as its own root owner
+    // (an unhosted `journal sense` daemon run outside the supervisor).
+    let generation = match solstone_core_transcribe::enter_speakers_analyze_generation(
+        &journal.path,
+        solstone_core_transcribe::SpeakersAnalyzeOwnerRole::Sense,
+    ) {
+        Ok(generation) => generation,
+        Err(error) => {
+            if let Some(message) = error.message() {
+                eprintln!("{message}");
+            }
+            return ExitCode::from(error.exit_code() as u8);
+        }
+    };
+    let sense_child_environment = generation.inheritance_environment();
     let service_journal = journal.path.clone();
     run_hosted_service(&journal.path, HostedServiceKind::Sense, move |parent| {
+        let _generation = generation;
         match solstone_core_sense::run_native_service_with_hosted_parent(
             service_journal,
             solstone_core_sense::SenseOptions {
                 verbose: options.verbose,
                 debug: options.debug,
             },
+            sense_child_environment,
             parent,
         ) {
             Ok(()) => ExitCode::SUCCESS,
@@ -5132,16 +5188,18 @@ fn run_sense(options: SenseOptions) -> ExitCode {
         }
         return ExitCode::from(error.exit_code() as u8);
     }
-    let _generation =
-        match solstone_core_transcribe::enter_speakers_analyze_generation(&journal.path) {
-            Ok(generation) => generation,
-            Err(error) => {
-                if let Some(message) = error.message() {
-                    eprintln!("{message}");
-                }
-                return ExitCode::from(error.exit_code() as u8);
+    let _generation = match solstone_core_transcribe::enter_speakers_analyze_generation(
+        &journal.path,
+        solstone_core_transcribe::SpeakersAnalyzeOwnerRole::Sense,
+    ) {
+        Ok(generation) => generation,
+        Err(error) => {
+            if let Some(message) = error.message() {
+                eprintln!("{message}");
             }
-        };
+            return ExitCode::from(error.exit_code() as u8);
+        }
+    };
     solstone_core_sense::batch::install_batch_signal_handlers();
     let reprocess = options.reprocess.map(|kind| match kind {
         SenseReprocessKind::Screen => solstone_core_sense::batch::ReprocessKind::Screen,

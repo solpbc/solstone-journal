@@ -24,6 +24,7 @@ use solstone_core_system::lifecycle::{
 };
 use solstone_core_system::process::SystemProcessInstanceSource;
 use solstone_core_system_health::format_sync_scan_failure_copy;
+use solstone_core_transcribe::{SpeakersAnalyzeGeneration, SpeakersAnalyzeOwnerRole};
 
 use super::{runtime, tick};
 
@@ -109,6 +110,10 @@ pub enum SupervisorBootRefusal {
     AdmissionWaitTerminal,
     AdmissionWaitUnverifiable,
     Lifecycle(LifecycleBootError),
+    /// Pre-formatted, terminal-safe owner copy for a failed speakers-analyze
+    /// installation-generation acquisition. Distinct from `_generation`
+    /// (installation-binding) and the parent-loss lifecycle generation.
+    SpeakersAnalyzeGeneration(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -138,6 +143,7 @@ pub enum SupervisorHostOutcome {
 struct HostedSupervisorAdmission {
     lifecycle: solstone_core_system::lifecycle::PreReadySupervisorLifecycle,
     _generation: Generation,
+    _speakers_analyze_generation: SpeakersAnalyzeGeneration,
     parent_watch: Option<ParentWatch>,
 }
 
@@ -192,6 +198,24 @@ pub async fn run_hosted(
             };
         }
     };
+    // Acquired before any supervisor lifecycle admission artifact exists
+    // (heartbeat, readiness, parent-loss state): a refusal here must leave
+    // zero such artifacts, so this must happen strictly before
+    // `SupervisorBootAdmission::acquire`.
+    let speakers_analyze_generation =
+        match solstone_core_transcribe::enter_speakers_analyze_generation(
+            journal,
+            SpeakersAnalyzeOwnerRole::Supervisor,
+        ) {
+            Ok(generation) => generation,
+            Err(error) => {
+                return SupervisorHostOutcome::Refused {
+                    reason: SupervisorBootRefusal::SpeakersAnalyzeGeneration(
+                        error.message().unwrap_or_default().to_owned(),
+                    ),
+                };
+            }
+        };
     let admission = match SupervisorBootAdmission::acquire(journal, binding.writer_id.clone()) {
         Ok(admission) => admission,
         Err(error) => {
@@ -219,9 +243,11 @@ pub async fn run_hosted(
             };
         }
     };
+    let sense_child_environment = speakers_analyze_generation.inheritance_environment();
     let admitted = HostedSupervisorAdmission {
         lifecycle,
         _generation: binding.generation,
+        _speakers_analyze_generation: speakers_analyze_generation,
         parent_watch,
     };
     let outcome = match runtime::boot_and_tick(
@@ -230,6 +256,7 @@ pub async fn run_hosted(
         options,
         journal_binary,
         admitted.parent_watch,
+        sense_child_environment,
     )
     .await
     {
