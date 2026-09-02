@@ -44,6 +44,21 @@ pub(super) trait InheritedWindowsEnvironment {
     fn snapshot(&self) -> WindowsEnvironmentSourceResult<Vec<(OsString, OsString)>>;
 }
 
+/// An explicit helper environment starts from no inherited parent variables.
+///
+/// This is deliberately a source adapter, rather than a special case in the
+/// environment merger, so the same duplicate and UTF-16 validation applies to
+/// every child environment shape.
+#[cfg(windows)]
+pub(super) struct EmptyInheritedWindowsEnvironment;
+
+#[cfg(windows)]
+impl InheritedWindowsEnvironment for EmptyInheritedWindowsEnvironment {
+    fn snapshot(&self) -> WindowsEnvironmentSourceResult<Vec<(OsString, OsString)>> {
+        Ok(Vec::new())
+    }
+}
+
 /// The sole lossless `OsString` to UTF-16 conversion boundary.
 pub(super) trait WindowsWideEncoder {
     fn encode_wide(&self, value: &OsStr) -> WindowsWideResult<Vec<u16>>;

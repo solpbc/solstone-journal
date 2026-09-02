@@ -48,6 +48,11 @@ pub(crate) use platform::hold_while_instance_live;
 pub(crate) use platform::macos_sweep_table;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) use platform::signal_pid;
+#[cfg(windows)]
+pub use platform::{
+    BoundedHelperBudget, BoundedHelperError, BoundedHelperOutput, BoundedHelperRequest,
+    BoundedHelperResourceLimits, run_bounded_helper,
+};
 pub use platform::{
     LaunchAuthority, ManagedProcess, apply_parent_death_kill, launch, launch_command,
     launch_command_hosted, launch_managed, launch_managed_hosted, launch_managed_request,

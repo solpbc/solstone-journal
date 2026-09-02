@@ -141,6 +141,8 @@ pub(super) struct WindowsJobProcess {
     identity: ProcessInstance,
     #[cfg_attr(not(windows), allow(dead_code))]
     pipes: PipedStdio,
+    #[cfg_attr(not(windows), allow(dead_code))]
+    parent_stdin_open: bool,
     hard_stop_issued: bool,
 }
 
@@ -304,6 +306,24 @@ impl WindowsJobProcess {
                 std::fs::File::from_raw_handle(stderr as RawHandle),
             )
         }
+    }
+
+    /// Transfer the explicitly retained parent stdin endpoint to one bounded
+    /// helper invocation. Ordinary managed launches close this endpoint before
+    /// returning, so a caller cannot accidentally retain an input channel.
+    #[cfg(windows)]
+    pub(super) fn take_input_file(&mut self) -> Option<std::fs::File> {
+        if !self.parent_stdin_open {
+            return None;
+        }
+        self.parent_stdin_open = false;
+        use std::os::windows::io::{FromRawHandle, RawHandle};
+
+        let stdin = self.pipes.parent_stdin_write.take_raw();
+        // SAFETY: `take_raw` transfers this uniquely owned pipe handle to the
+        // File, which becomes its sole closer.
+        #[allow(unsafe_code)]
+        Some(unsafe { std::fs::File::from_raw_handle(stdin as RawHandle) })
     }
 
     #[cfg(windows)]
@@ -472,8 +492,10 @@ fn prepare_launch_spec(
     command: &[String],
     environment_overrides: &std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString>,
     current_directory: Option<&std::path::Path>,
+    exact_environment: bool,
 ) -> io::Result<super::launch_spec::WindowsLaunchSpec> {
     use super::environment::{
+        EmptyInheritedWindowsEnvironment, InheritedWindowsEnvironment,
         SystemInheritedWindowsEnvironment, SystemWindowsOrdinalCompare, SystemWindowsWideEncoder,
     };
     use super::launch_spec::{WindowsLaunchAdapters, prepare_windows_launch_spec};
@@ -484,13 +506,19 @@ fn prepare_launch_spec(
     let directories = SystemWindowsDirectoryLookup;
     let ordinal = SystemWindowsOrdinalCompare;
     let inherited_environment = SystemInheritedWindowsEnvironment;
+    let empty_environment = EmptyInheritedWindowsEnvironment;
     let wide_encoder = SystemWindowsWideEncoder;
     let full_path = SystemWindowsFullPathName;
+    let inherited_environment: &dyn InheritedWindowsEnvironment = if exact_environment {
+        &empty_environment
+    } else {
+        &inherited_environment
+    };
     let adapters = WindowsLaunchAdapters {
         probe: &probe,
         directories: &directories,
         ordinal: &ordinal,
-        inherited_environment: &inherited_environment,
+        inherited_environment,
         wide_encoder: &wide_encoder,
     };
     let mut launch_spec =
@@ -518,6 +546,11 @@ pub(super) struct WindowsJobLaunchOptions<'a> {
     /// Every requested limit is installed before `CreateProcessW` may execute
     /// the helper's first instruction.
     pub(super) resource_limits: Option<JobResourceLimits>,
+    /// Do not copy the parent environment; use only caller-supplied entries.
+    pub(super) exact_environment: bool,
+    /// Keep the parent input endpoint only for a bounded helper that will
+    /// transfer it immediately to a writer under the same deadline.
+    pub(super) retain_parent_stdin: bool,
 }
 
 #[cfg(windows)]
@@ -540,8 +573,12 @@ pub(super) fn launch_windows_job_process_with_options(
     environment_overrides: &std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString>,
     options: WindowsJobLaunchOptions<'_>,
 ) -> io::Result<WindowsJobProcess> {
-    let mut launch_spec =
-        prepare_launch_spec(command, environment_overrides, options.current_directory)?;
+    let mut launch_spec = prepare_launch_spec(
+        command,
+        environment_overrides,
+        options.current_directory,
+        options.exact_environment,
+    )?;
 
     let jobs = SystemWindowsJobApi;
     let pipe_api = SystemWindowsPipeApi;
@@ -575,7 +612,13 @@ pub(super) fn launch_windows_job_process_with_options(
         created?,
         &mut pipes,
         |thread| thread.close(),
-        |pipes| pipes.close_parent_stdin(&pipe_api),
+        |pipes| {
+            if options.retain_parent_stdin {
+                Ok(())
+            } else {
+                pipes.close_parent_stdin(&pipe_api)
+            }
+        },
         get_process_birth,
     )?;
 
@@ -584,6 +627,7 @@ pub(super) fn launch_windows_job_process_with_options(
         root: finalized.root,
         identity: finalized.identity,
         pipes,
+        parent_stdin_open: options.retain_parent_stdin,
         hard_stop_issued: false,
     })
 }
@@ -622,7 +666,7 @@ fn read_pipe_for_test(end: &mut super::handle::PipeEndHandle) -> Result<String, 
 #[cfg(all(windows, feature = "test-hooks"))]
 pub(super) fn windows_job_process_no_inheritance_premise_for_test() -> Result<(), String> {
     let command = test_child_command("sleep", &["30".to_owned()])?;
-    let mut launch_spec = prepare_launch_spec(&command, &Default::default(), None)
+    let mut launch_spec = prepare_launch_spec(&command, &Default::default(), None, false)
         .map_err(|error| error.to_string())?;
     let jobs = SystemWindowsJobApi;
     let startup_api = SystemWindowsStartupInfoApi;
@@ -770,8 +814,9 @@ pub(super) fn windows_job_process_owner_receipt_for_test() -> Result<(), String>
         ));
     }
     let limited_sleep = test_child_command("sleep", &["30".to_owned()])?;
-    let mut limited_launch_spec = prepare_launch_spec(&limited_sleep, &Default::default(), None)
-        .map_err(|error| error.to_string())?;
+    let mut limited_launch_spec =
+        prepare_launch_spec(&limited_sleep, &Default::default(), None, false)
+            .map_err(|error| error.to_string())?;
     let startup_api = SystemWindowsStartupInfoApi;
     let mut limited_startup = WindowsStartupInfo::new_job_only(&startup_api, &resource_job)
         .map_err(|error| error.to_string())?;
@@ -818,6 +863,8 @@ pub(super) fn windows_job_process_owner_receipt_for_test() -> Result<(), String>
         WindowsJobLaunchOptions {
             current_directory: Some(&expected_current_directory),
             resource_limits: None,
+            exact_environment: false,
+            retain_parent_stdin: false,
         },
     )
     .map_err(|error| error.to_string())?;
@@ -848,6 +895,8 @@ pub(super) fn windows_job_process_owner_receipt_for_test() -> Result<(), String>
             observed_current_directory.display()
         ));
     }
+    super::bounded::bounded_helper_receipt_for_test()
+        .map_err(|error| format!("bounded helper receipt failed: {error}"))?;
 
     let lines = test_child_command("lines", &[])?;
     let mut lines_owner = launch_windows_job_process(&lines, &Default::default())
@@ -1251,6 +1300,7 @@ mod tests {
                 birth: ProcessBirth::windows(9),
             },
             pipes,
+            parent_stdin_open: false,
             hard_stop_issued: false,
         }
     }
