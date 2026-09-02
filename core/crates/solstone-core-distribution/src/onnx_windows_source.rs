@@ -19,7 +19,14 @@ use serde::Deserialize;
 use tar::{Archive, Builder, EntryType, Header};
 
 use crate::acquire;
-use crate::controlled_build::{DependencySource, InputIdentityEntry};
+use crate::artifact_verify::{
+    ControlledBuildArtifactVerificationLimits, verify_persisted_controlled_build_artifacts,
+};
+use crate::controlled_build::{
+    BuildConfiguration, BuilderIdentity, ControlledBuildReceipt, ControlledBuildReceiptPublication,
+    DependencySource, InputIdentityEntry, SourceIdentity, SupportingArtifactRef,
+    ValidationReference, census_outputs, write_controlled_build_receipt_exclusive,
+};
 use crate::digest::sha256_hex;
 use crate::onnx_windows::{
     ONNX_RUNTIME_COMMIT, ONNX_RUNTIME_REPOSITORY, ONNX_WINDOWS_REDUCED_OPS_CONFIG_SHA256,
@@ -27,6 +34,7 @@ use crate::onnx_windows::{
     SILERO_VAD_SHA256, SILERO_VAD_SIZE_BYTES, WESPEAKER_FILENAME, WESPEAKER_SHA256,
     WESPEAKER_SIZE_BYTES,
 };
+use crate::provenance::Provenance;
 
 const ONNX_WINDOWS_INPUTS_PATH: &str = "core/distribution/onnx-windows-inputs.toml";
 const ONNX_WINDOWS_INPUTS_SCHEMA: &str = "solstone-onnx-windows-inputs-v1";
@@ -40,6 +48,11 @@ const ONNX_WINDOWS_CMAKE_ARCHIVE_LABEL: &str = "tools/cmake-windows-x86_64.zip";
 const ONNX_WINDOWS_PYTHON_ARCHIVE_LABEL: &str = "tools/python-windows-x86_64.zip";
 const ONNX_WINDOWS_PROTOC_ARCHIVE_LABEL: &str = "tools/protoc-windows-x86_64.zip";
 const ONNX_WINDOWS_REDUCED_OPS_CONFIG_LABEL: &str = "build/required-operators.config";
+const ONNX_WINDOWS_BUILD_EVIDENCE_SCHEMA: &str = "solstone.onnx-windows-build-evidence.v1";
+const ONNX_WINDOWS_BUILD_EVIDENCE_LABEL: &str =
+    "provenance/windows-x86_64/onnxruntime-build-evidence.json";
+const ONNX_WINDOWS_DLL_OUTPUT_LABEL: &str = "bin/onnxruntime.dll";
+const ONNX_WINDOWS_OUTPUT_TREE_ENTRIES: usize = 2;
 
 const ONNX_SUBMODULES: &[(&str, &str, &str)] = &[
     (
@@ -155,6 +168,63 @@ pub struct OnnxWindowsMirrorArchive {
     pub dependencies: Vec<OnnxWindowsMirroredDependency>,
 }
 
+/// Facts generated in the network-denied native slot and bound by the generic
+/// controlled-build receipt. These inputs are intentionally explicit because
+/// a source archive alone cannot prove which Python, protoc, or CMake mirror
+/// was used to configure ONNX Runtime.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OnnxWindowsBuildEvidence {
+    pub schema: String,
+    pub source_archive: InputIdentityEntry,
+    pub mirror_archive: InputIdentityEntry,
+    pub cmake_archive: InputIdentityEntry,
+    pub python_archive: InputIdentityEntry,
+    pub protoc_archive: InputIdentityEntry,
+    pub cmake_cache_sha256: String,
+}
+
+/// Inputs to receipt persistence after the Windows slot has already built one
+/// DLL. This type invokes no compiler, network client, or dynamic loader.
+pub struct OnnxWindowsBuildRecordArgs<'a> {
+    pub repo_root: &'a Path,
+    pub source_archive: &'a Path,
+    pub mirror_archive: &'a Path,
+    pub cmake_archive: &'a Path,
+    pub python_archive: &'a Path,
+    pub protoc_archive: &'a Path,
+    pub cmake_cache: &'a Path,
+    pub output_root: &'a Path,
+    pub evidence_path: &'a Path,
+    pub receipt_path: &'a Path,
+    pub validation_path: &'a Path,
+    pub product: Provenance,
+    pub builder: BuilderIdentity,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OnnxWindowsBuildRecord {
+    pub receipt: ControlledBuildReceipt,
+    pub receipt_publication: OnnxWindowsReceiptPublication,
+    pub evidence_sha256: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OnnxWindowsReceiptPublication {
+    Durable,
+    PublishedButNotDurable,
+}
+
+impl OnnxWindowsReceiptPublication {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Durable => "durable",
+            Self::PublishedButNotDurable => "published-but-not-durable",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct OnnxWindowsInputs {
@@ -204,7 +274,7 @@ impl SourceFile {
 }
 
 pub fn usage() -> &'static str {
-    "usage: solstone-distribution onnx-windows <source-archive|mirror-archive|verify-inputs|help> [FLAG]"
+    "usage: solstone-distribution onnx-windows <source-archive|mirror-archive|verify-inputs|record|verify|help> [FLAG]"
 }
 
 pub fn run_cli(args: &[String]) -> Result<String, OnnxWindowsSourceError> {
@@ -281,6 +351,100 @@ pub fn run_cli(args: &[String]) -> Result<String, OnnxWindowsSourceError> {
                 cmake.sha256,
                 python.sha256,
                 protoc.sha256,
+            ))
+        }
+        "record" => {
+            let repo = repository_root()?;
+            let source_archive = required_path(&flags, "--source-archive")?;
+            let mirror_archive = required_path(&flags, "--mirror-archive")?;
+            let cmake_archive = required_path(&flags, "--cmake-archive")?;
+            let python_archive = required_path(&flags, "--python-archive")?;
+            let protoc_archive = required_path(&flags, "--protoc-archive")?;
+            let cmake_cache = required_path(&flags, "--cmake-cache")?;
+            let output_root = required_path(&flags, "--output-root")?;
+            let evidence_path = required_path(&flags, "--evidence")?;
+            let receipt_path = required_path(&flags, "--receipt")?;
+            let validation_path = required_path(&flags, "--validation")?;
+            let product_commit = required_lower_hex(&flags, "--product-commit", 40)?;
+            let cargo_lock_sha256 = required_lower_hex(&flags, "--cargo-lock-sha256", 64)?;
+            let builder_host = required_text(&flags, "--builder-host")?;
+            let toolchain = required_text(&flags, "--toolchain")?;
+            require_only(
+                &flags,
+                &[
+                    "--source-archive",
+                    "--mirror-archive",
+                    "--cmake-archive",
+                    "--python-archive",
+                    "--protoc-archive",
+                    "--cmake-cache",
+                    "--output-root",
+                    "--evidence",
+                    "--receipt",
+                    "--validation",
+                    "--product-commit",
+                    "--cargo-lock-sha256",
+                    "--builder-host",
+                    "--toolchain",
+                ],
+            )?;
+            let record = record_onnx_windows_build(OnnxWindowsBuildRecordArgs {
+                repo_root: &repo,
+                source_archive: &source_archive,
+                mirror_archive: &mirror_archive,
+                cmake_archive: &cmake_archive,
+                python_archive: &python_archive,
+                protoc_archive: &protoc_archive,
+                cmake_cache: &cmake_cache,
+                output_root: &output_root,
+                evidence_path: &evidence_path,
+                receipt_path: &receipt_path,
+                validation_path: &validation_path,
+                product: Provenance {
+                    commit: product_commit,
+                    lock_sha256: cargo_lock_sha256,
+                },
+                builder: BuilderIdentity {
+                    host: builder_host,
+                    toolchain,
+                },
+            })?;
+            let output = record
+                .receipt
+                .outputs
+                .first()
+                .expect("ONNX record creates exactly one output");
+            Ok(format!(
+                "ONNX_WINDOWS_RECORD_OK receipt={} evidence_sha256={} output_sha256={} receipt_publication={}",
+                receipt_path.display(),
+                record.evidence_sha256,
+                output.pre_signing_sha256,
+                record.receipt_publication.as_str()
+            ))
+        }
+        "verify" => {
+            let receipt_path = required_path(&flags, "--receipt")?;
+            let output_root = required_path(&flags, "--output-root")?;
+            require_only(&flags, &["--receipt", "--output-root"])?;
+            let verified = verify_persisted_controlled_build_artifacts(
+                &receipt_path,
+                &output_root,
+                ControlledBuildArtifactVerificationLimits::new(
+                    ONNX_WINDOWS_OUTPUT_TREE_ENTRIES,
+                    2,
+                    256 * 1024 * 1024,
+                ),
+            )
+            .map_err(|source| OnnxWindowsSourceError::new(source.to_string()))?;
+            let output = verified
+                .receipt()
+                .outputs
+                .first()
+                .expect("verified ONNX receipt has one output");
+            Ok(format!(
+                "ONNX_WINDOWS_ARTIFACT_VERIFY_OK receipt={} output_sha256={}",
+                receipt_path.display(),
+                output.pre_signing_sha256
             ))
         }
         other => Err(OnnxWindowsSourceError::new(format!(
@@ -498,6 +662,163 @@ fn inspect_exact_input(
         )));
     }
     Ok(input_identity(label, &bytes))
+}
+
+/// Bind one already-produced CPU-only ONNX Runtime DLL to the exact offline
+/// inputs that reached its native build slot. The recorder does not execute
+/// the DLL and does not imply a package, signature, or runtime capability.
+pub fn record_onnx_windows_build(
+    args: OnnxWindowsBuildRecordArgs<'_>,
+) -> Result<OnnxWindowsBuildRecord, OnnxWindowsSourceError> {
+    let source = inspect_onnx_windows_source_archive(args.source_archive)?;
+    let mirror = inspect_onnx_windows_mirror_archive(args.repo_root, args.mirror_archive)?;
+    let cmake = inspect_cmake_archive(args.repo_root, args.cmake_archive)?;
+    let python = inspect_python_archive(args.repo_root, args.python_archive)?;
+    let protoc = inspect_protoc_archive(args.repo_root, args.protoc_archive)?;
+    let cmake_cache = fs::read(args.cmake_cache)?;
+    if cmake_cache.is_empty() {
+        return Err(OnnxWindowsSourceError::new(
+            "ONNX Runtime CMake cache is empty",
+        ));
+    }
+    let output_path = args.output_root.join(ONNX_WINDOWS_DLL_OUTPUT_LABEL);
+    let output = fs::read(&output_path)?;
+    let outputs = census_outputs(&[(ONNX_WINDOWS_DLL_OUTPUT_LABEL, output.as_slice())])
+        .map_err(|source| OnnxWindowsSourceError::new(source.to_string()))?;
+    let evidence = OnnxWindowsBuildEvidence {
+        schema: ONNX_WINDOWS_BUILD_EVIDENCE_SCHEMA.to_owned(),
+        source_archive: source.archive.clone(),
+        mirror_archive: mirror.archive,
+        cmake_archive: cmake,
+        python_archive: python,
+        protoc_archive: protoc,
+        cmake_cache_sha256: sha256_hex(&cmake_cache),
+    };
+    validate_build_evidence(&evidence)?;
+    let evidence_bytes = canonical_json(&evidence)?;
+    let evidence_sha256 = sha256_hex(&evidence_bytes);
+    publish_evidence_exclusive(args.evidence_path, &evidence_bytes)?;
+    let validation = fs::read(args.validation_path)?;
+    if validation.is_empty() {
+        return Err(OnnxWindowsSourceError::new(
+            "ONNX Runtime validation reference is empty",
+        ));
+    }
+    let receipt = ControlledBuildReceipt {
+        schema: crate::controlled_build::CONTROLLED_BUILD_RECEIPT_SCHEMA_V1.to_owned(),
+        source: SourceIdentity {
+            product: args.product,
+            windows_dependency: DependencySource {
+                repository: source.onnxruntime.repository,
+                revision: source.onnxruntime.revision,
+                content_sha256: source.archive.sha256,
+            },
+        },
+        inputs: vec![
+            evidence.source_archive.clone(),
+            evidence.mirror_archive.clone(),
+            evidence.cmake_archive.clone(),
+            evidence.python_archive.clone(),
+            evidence.protoc_archive.clone(),
+        ],
+        builder: args.builder,
+        configuration: BuildConfiguration {
+            target_triple: crate::onnx_windows::ONNX_WINDOWS_TARGET_TRIPLE.to_owned(),
+            profile: crate::onnx_windows::ONNX_WINDOWS_BUILD_PROFILE.to_owned(),
+            flags: vec![
+                "--build_shared_lib".to_owned(),
+                "--include_ops_by_config".to_owned(),
+                "--disable_contrib_ops".to_owned(),
+                "--disable_ml_ops".to_owned(),
+                "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL".to_owned(),
+                "-Donnxruntime_USE_TELEMETRY=OFF".to_owned(),
+                "-Donnxruntime_CMAKE_DEPS_MIRROR_DIR=<verified-offline-mirror>".to_owned(),
+            ],
+            network_access_denied: true,
+        },
+        outputs,
+        supporting: vec![SupportingArtifactRef {
+            label: ONNX_WINDOWS_BUILD_EVIDENCE_LABEL.to_owned(),
+            sha256: evidence_sha256.clone(),
+        }],
+        validation: ValidationReference {
+            description: "ONNX Runtime Windows network-denied source build and PE admission log"
+                .to_owned(),
+            sha256: sha256_hex(&validation),
+        },
+    };
+    receipt
+        .validate()
+        .map_err(|source| OnnxWindowsSourceError::new(source.to_string()))?;
+    let publication = write_controlled_build_receipt_exclusive(args.receipt_path, &receipt)
+        .map_err(|source| OnnxWindowsSourceError::new(source.to_string()))?;
+    let receipt_publication = match publication {
+        ControlledBuildReceiptPublication::Durable { .. } => OnnxWindowsReceiptPublication::Durable,
+        ControlledBuildReceiptPublication::PublishedButNotDurable { .. } => {
+            OnnxWindowsReceiptPublication::PublishedButNotDurable
+        }
+        ControlledBuildReceiptPublication::PublicationUnconfirmed { publication, .. } => {
+            return Err(OnnxWindowsSourceError::new(format!(
+                "ONNX Runtime receipt publication is unconfirmed: {publication:?}"
+            )));
+        }
+    };
+    Ok(OnnxWindowsBuildRecord {
+        receipt,
+        receipt_publication,
+        evidence_sha256,
+    })
+}
+
+fn validate_build_evidence(
+    evidence: &OnnxWindowsBuildEvidence,
+) -> Result<(), OnnxWindowsSourceError> {
+    if evidence.schema != ONNX_WINDOWS_BUILD_EVIDENCE_SCHEMA {
+        return Err(OnnxWindowsSourceError::new(
+            "unexpected ONNX build evidence schema",
+        ));
+    }
+    for (label, input) in [
+        (ONNX_WINDOWS_SOURCE_ARCHIVE_LABEL, &evidence.source_archive),
+        (ONNX_WINDOWS_MIRROR_ARCHIVE_LABEL, &evidence.mirror_archive),
+        (ONNX_WINDOWS_CMAKE_ARCHIVE_LABEL, &evidence.cmake_archive),
+        (ONNX_WINDOWS_PYTHON_ARCHIVE_LABEL, &evidence.python_archive),
+        (ONNX_WINDOWS_PROTOC_ARCHIVE_LABEL, &evidence.protoc_archive),
+    ] {
+        if input.label != label || input.size == 0 {
+            return Err(OnnxWindowsSourceError::new(format!(
+                "ONNX build evidence has an invalid {label} identity"
+            )));
+        }
+        require_hex(&input.sha256, 64, &format!("{label} SHA-256"))?;
+    }
+    require_hex(
+        &evidence.cmake_cache_sha256,
+        64,
+        "ONNX Runtime CMake cache SHA-256",
+    )
+}
+
+fn publish_evidence_exclusive(path: &Path, bytes: &[u8]) -> Result<(), OnnxWindowsSourceError> {
+    let publication = solstone_core_journal_io::write_bytes_exclusive_detailed(
+        path,
+        bytes,
+        solstone_core_journal_io::AtomicWriteOptions::default(),
+    )
+    .map_err(|source| OnnxWindowsSourceError::new(source.to_string()))?;
+    if matches!(
+        publication.final_name,
+        solstone_core_journal_io::FinalNameConfirmation::Confirmed { .. }
+    ) && matches!(
+        publication.cleanup,
+        solstone_core_journal_io::StageCleanup::Removed
+    ) {
+        Ok(())
+    } else {
+        Err(OnnxWindowsSourceError::new(format!(
+            "ONNX build evidence publication is unconfirmed: {publication:?}"
+        )))
+    }
 }
 
 fn validate_source_archive(
@@ -1314,11 +1635,36 @@ fn required_path(
     flags: &BTreeMap<String, String>,
     name: &str,
 ) -> Result<PathBuf, OnnxWindowsSourceError> {
+    Ok(PathBuf::from(required_text(flags, name)?))
+}
+
+fn required_text(
+    flags: &BTreeMap<String, String>,
+    name: &str,
+) -> Result<String, OnnxWindowsSourceError> {
     let value = flags
         .get(name)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| OnnxWindowsSourceError::new(format!("missing required {name}")))?;
-    Ok(PathBuf::from(value))
+    Ok(value.clone())
+}
+
+fn required_lower_hex(
+    flags: &BTreeMap<String, String>,
+    name: &str,
+    length: usize,
+) -> Result<String, OnnxWindowsSourceError> {
+    let value = required_text(flags, name)?;
+    if value.len() != length
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(OnnxWindowsSourceError::new(format!(
+            "required ONNX Windows flag {name} must be {length} lowercase hexadecimal characters"
+        )));
+    }
+    Ok(value)
 }
 
 fn require_only(
