@@ -292,7 +292,7 @@ fn parse_json_tool_call(raw: &str) -> Result<(String, Value), String> {
     let payload: Value = serde_json::from_str(raw)
         .map_err(|_| format!("payload is not JSON; shape={}", mask_payload_shape(raw)))?;
     let object = payload.as_object().ok_or("payload is not an object")?;
-    let keys: Vec<&str> = object.keys().map(String::as_str).collect();
+    let keys: Vec<String> = object.keys().map(|key| mask_payload_shape(key)).collect();
     let name = object
         .get("name")
         .and_then(Value::as_str)
