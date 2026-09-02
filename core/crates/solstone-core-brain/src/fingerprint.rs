@@ -108,14 +108,28 @@ enum CanonicalValue {
 
 impl CanonicalInput {
     fn normalize(&self) -> Result<CanonicalValue, FingerprintError> {
+        self.normalize_with_array_order(false)
+    }
+
+    fn normalize_preserving_array_order(&self) -> Result<CanonicalValue, FingerprintError> {
+        self.normalize_with_array_order(true)
+    }
+
+    fn normalize_with_array_order(
+        &self,
+        preserve_array_order: bool,
+    ) -> Result<CanonicalValue, FingerprintError> {
         match self {
-            Self::Json(value) => normalize_json(value),
-            Self::Tuple(values) => normalize_sequence(values),
+            Self::Json(value) => normalize_json(value, preserve_array_order),
+            Self::Tuple(values) => normalize_sequence(values, preserve_array_order),
             Self::Path(path) => Ok(CanonicalValue::String(path.display().to_string())),
             Self::Object(values) => {
                 let mut normalized = BTreeMap::new();
                 for (key, value) in values {
-                    normalized.insert(key.to_string(), value.normalize()?);
+                    normalized.insert(
+                        key.to_string(),
+                        value.normalize_with_array_order(preserve_array_order)?,
+                    );
                 }
                 Ok(CanonicalValue::Object(normalized))
             }
@@ -123,7 +137,10 @@ impl CanonicalInput {
     }
 }
 
-fn normalize_json(value: &Value) -> Result<CanonicalValue, FingerprintError> {
+fn normalize_json(
+    value: &Value,
+    preserve_array_order: bool,
+) -> Result<CanonicalValue, FingerprintError> {
     match value {
         Value::Null => Ok(CanonicalValue::Null),
         Value::Bool(value) => Ok(CanonicalValue::Bool(*value)),
@@ -142,24 +159,32 @@ fn normalize_json(value: &Value) -> Result<CanonicalValue, FingerprintError> {
                 .cloned()
                 .map(CanonicalInput::Json)
                 .collect::<Vec<_>>();
-            normalize_sequence(&inputs)
+            normalize_sequence(&inputs, preserve_array_order)
         }
         Value::Object(values) => {
             let mut normalized = BTreeMap::new();
             for (key, value) in values {
-                normalized.insert(key.to_string(), normalize_json(value)?);
+                normalized.insert(
+                    key.to_string(),
+                    normalize_json(value, preserve_array_order)?,
+                );
             }
             Ok(CanonicalValue::Object(normalized))
         }
     }
 }
 
-fn normalize_sequence(values: &[CanonicalInput]) -> Result<CanonicalValue, FingerprintError> {
+fn normalize_sequence(
+    values: &[CanonicalInput],
+    preserve_array_order: bool,
+) -> Result<CanonicalValue, FingerprintError> {
     let mut normalized = values
         .iter()
-        .map(CanonicalInput::normalize)
+        .map(|value| value.normalize_with_array_order(preserve_array_order))
         .collect::<Result<Vec<_>, _>>()?;
-    normalized.sort_by_cached_key(canonical_value_json);
+    if !preserve_array_order {
+        normalized.sort_by_cached_key(canonical_value_json);
+    }
     Ok(CanonicalValue::Array(normalized))
 }
 
@@ -171,6 +196,24 @@ pub fn canonical_json(input: &CanonicalInput) -> Result<String, FingerprintError
 /// The SHA-256 digest of Python-compatible canonical JSON.
 pub fn canonical_fingerprint(input: &CanonicalInput) -> Result<String, FingerprintError> {
     Ok(fingerprint_sha256(&canonical_json(input)?))
+}
+
+/// Matches [`canonical_json`] but preserves JSON-array and tuple order.
+pub fn canonical_json_preserving_array_order(
+    input: &CanonicalInput,
+) -> Result<String, FingerprintError> {
+    Ok(canonical_value_json(
+        &input.normalize_preserving_array_order()?,
+    ))
+}
+
+/// The SHA-256 digest of canonical JSON that preserves JSON-array and tuple order.
+pub fn canonical_fingerprint_preserving_array_order(
+    input: &CanonicalInput,
+) -> Result<String, FingerprintError> {
+    Ok(fingerprint_sha256(&canonical_json_preserving_array_order(
+        input,
+    )?))
 }
 
 pub fn fingerprint_sha256(canonical_json: &str) -> String {
@@ -626,7 +669,10 @@ fn sha256_text(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{CanonicalInput, canonical_json, resolve_generate_model};
+    use super::{
+        CanonicalInput, canonical_fingerprint, canonical_fingerprint_preserving_array_order,
+        canonical_json, canonical_json_preserving_array_order, resolve_generate_model,
+    };
     use serde_json::{Map, Value, json};
 
     #[test]
@@ -646,6 +692,53 @@ mod tests {
         assert_eq!(
             canonical_json(&CanonicalInput::Json(json!(1.0))).unwrap(),
             "1.0"
+        );
+    }
+
+    #[test]
+    fn ordered_fingerprint_changes_when_array_order_changes() {
+        let first = CanonicalInput::Json(json!(["first", "second"]));
+        let second = CanonicalInput::Json(json!(["second", "first"]));
+
+        assert_eq!(
+            canonical_fingerprint(&first).unwrap(),
+            canonical_fingerprint(&second).unwrap()
+        );
+        assert_ne!(
+            canonical_fingerprint_preserving_array_order(&first).unwrap(),
+            canonical_fingerprint_preserving_array_order(&second).unwrap()
+        );
+    }
+
+    #[test]
+    fn ordered_canonical_json_still_sorts_object_keys() {
+        let first = CanonicalInput::Json(json!({"b": [2, 1], "a": "first"}));
+        let second = CanonicalInput::Json(json!({"a": "first", "b": [2, 1]}));
+
+        assert_eq!(
+            canonical_json_preserving_array_order(&first).unwrap(),
+            canonical_json_preserving_array_order(&second).unwrap()
+        );
+    }
+
+    #[test]
+    fn ordered_fingerprint_preserves_tuple_order() {
+        let first = CanonicalInput::Tuple(vec![
+            CanonicalInput::Json(json!("first")),
+            CanonicalInput::Json(json!("second")),
+        ]);
+        let second = CanonicalInput::Tuple(vec![
+            CanonicalInput::Json(json!("second")),
+            CanonicalInput::Json(json!("first")),
+        ]);
+
+        assert_eq!(
+            canonical_fingerprint(&first).unwrap(),
+            canonical_fingerprint(&second).unwrap()
+        );
+        assert_ne!(
+            canonical_fingerprint_preserving_array_order(&first).unwrap(),
+            canonical_fingerprint_preserving_array_order(&second).unwrap()
         );
     }
 
