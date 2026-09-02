@@ -134,7 +134,11 @@ pub(super) fn open_named(health: &OplogDayHealth, name: &OsStr) -> io::Result<Na
     }
 }
 
-pub(super) fn probe_named(health: &OplogDayHealth, leaf: &OsStr) -> LeaseProbe {
+pub(super) fn probe_named(
+    health: &OplogDayHealth,
+    leaf: &OsStr,
+    identity: OplogFileIdentity,
+) -> LeaseProbe {
     let descriptor = match openat(health.health(), leaf, FILE_FLAGS, Mode::empty()) {
         Ok(descriptor) => descriptor,
         Err(_) => return LeaseProbe::Indeterminate,
@@ -144,6 +148,12 @@ pub(super) fn probe_named(health: &OplogDayHealth, leaf: &OsStr) -> LeaseProbe {
         Ok(status)
             if SFlag::from_bits_truncate(status.st_mode) & SFlag::S_IFMT == SFlag::S_IFREG => {}
         _ => return LeaseProbe::Indeterminate,
+    }
+    let Ok(actual) = identity_of(&file) else {
+        return LeaseProbe::Indeterminate;
+    };
+    if actual != identity {
+        return LeaseProbe::Indeterminate;
     }
     probe_file_lease(&file)
 }

@@ -131,6 +131,7 @@ type "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%"
 del /q "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%" >nul 2>&1
 call :run_source_marker "journal-io install-file publication protocol" "solstone-core-journal-io" "windows_install_file_protocol" "test-hooks" "journal_win_ci_windows_install_file_protocol_marker" "JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE_PROTOCOL" || exit /b 1
 call :run_source_marked_target "journal-io operational-log namespace" "solstone-core-journal-io" "windows_oplog_namespace" "test-hooks" "journal_win_ci_windows_oplog_namespace_marker" "JOURNAL_WIN_CI_TARGET_WINDOWS_OPLOG_NAMESPACE" || exit /b 1
+call :run_source_marked_target "journal-io operational-log liveness" "solstone-core-journal-io" "windows_oplog_liveness" "test-hooks" "journal_win_ci_windows_oplog_liveness_marker" "JOURNAL_WIN_CI_TARGET_WINDOWS_OPLOG_LIVENESS" || exit /b 1
 echo === checking required journal portability tests ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --list | findstr /c:"tests::config_strip_matches_python_control_whitespace: test" >nul || ( echo ERROR: required journal test config_strip_matches_python_control_whitespace is missing & exit /b 1 )
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --list | findstr /c:"tests::ensure_journal_dir_reports_non_directory_parent: test" >nul || ( echo ERROR: required journal test ensure_journal_dir_reports_non_directory_parent is missing & exit /b 1 )
