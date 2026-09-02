@@ -545,8 +545,11 @@ mod tests {
 #[cfg(all(test, windows))]
 mod windows_tests {
     use std::fs;
+    use std::os::windows::fs::MetadataExt;
     use std::path::Path;
     use std::process::Command;
+
+    use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
 
     use super::*;
 
@@ -584,6 +587,13 @@ mod windows_tests {
 
     fn health_path(root: &Path) -> std::path::PathBuf {
         day_path(root).join(HEALTH_DIR)
+    }
+
+    fn assert_reparse(path: &Path) {
+        assert_ne!(
+            fs::symlink_metadata(path).unwrap().file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT,
+            0
+        );
     }
 
     #[test]
@@ -627,6 +637,11 @@ mod windows_tests {
         .unwrap_err();
         assert_eq!(error.to_string(), "oplog_namespace_health_unsafe");
         assert!(day_path(&root).is_dir());
+        assert_reparse(&health_path(&root));
+        assert!(
+            fs::read_dir(&target).unwrap().next().is_none(),
+            "admit must not create through the planted health junction"
+        );
     }
 
     #[test]
