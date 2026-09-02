@@ -16,6 +16,8 @@ use tokio::time::timeout;
 
 #[path = "support/installation_binding.rs"]
 mod installation_binding;
+#[path = "support/speakers_analyze_stub.rs"]
+mod speakers_analyze_stub;
 #[path = "support/supervisor_guard.rs"]
 mod supervisor_guard;
 
@@ -66,27 +68,26 @@ fn panic_for_wait(context: &str, outcome: WaitOutcome) {
 
 fn start(journal: &TempJournal) -> SupervisorGuard {
     let home = installation_binding::admit_for(&journal.0);
-    SupervisorGuard::new(
-        Command::new(env!("CARGO_BIN_EXE_solstone-core"))
-            .args(["supervisor", "--journal"])
-            .arg(&journal.0)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .env(
-                "SOLSTONE_LOCAL_BINARY",
-                env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
-            )
-            .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
-            .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
-            .env("HOME", home)
-            .env(
-                "SOLSTONE_SUPERVISOR_APP_BINARY",
-                env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
-            )
-            .spawn()
-            .expect("supervisor starts"),
-    )
+    let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
+    command
+        .args(["supervisor", "--journal"])
+        .arg(&journal.0)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .env(
+            "SOLSTONE_LOCAL_BINARY",
+            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+        )
+        .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
+        .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
+        .env("HOME", home)
+        .env(
+            "SOLSTONE_SUPERVISOR_APP_BINARY",
+            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+        );
+    speakers_analyze_stub::apply(&mut command);
+    SupervisorGuard::new(command.spawn().expect("supervisor starts"))
 }
 fn wait_for(path: &std::path::Path, child: &mut SupervisorGuard) {
     // The full macOS suite can delay fixture-supervisor startup while native
@@ -259,6 +260,85 @@ async fn ac14_shutdown_clears_lifecycle_in_order_and_reaps_task_child() {
     assert!(
         nix::sys::signal::kill(nix::unistd::Pid::from_raw(task_pid), None).is_err(),
         "task child was reaped"
+    );
+}
+
+/// After the supervisor process (its own root speakers-analyze generation
+/// owner) is terminated and fully reaped, the lock it held is free again —
+/// bounded containment releases it, and a new independent owner acquires
+/// without lock-file deletion.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ac4_speakers_analyze_generation_is_free_after_bounded_shutdown() {
+    let journal = TempJournal::new();
+    let mut child = start(&journal);
+    let ready = journal.0.join("health/supervisor.ready");
+    wait_for(&ready, &mut child);
+    let lock_path = journal
+        .0
+        .join("health/speakers-analyze/install-generation.lock");
+    assert!(
+        lock_path.exists(),
+        "supervisor must have published its generation lock by readiness"
+    );
+    assert!(
+        solstone_core_journal_io::acquire_file_lease(
+            &lock_path,
+            solstone_core_journal_io::LeaseOptions {
+                attempts: 1,
+                retry_max: Duration::ZERO,
+                ..solstone_core_journal_io::LeaseOptions::default()
+            },
+        )
+        .expect("lease probe does not error")
+        .is_none(),
+        "the running supervisor must still hold its own generation"
+    );
+    nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(child.id() as i32),
+        nix::sys::signal::Signal::SIGTERM,
+    )
+    .expect("signal supervisor");
+    let outcome = await_outcome_async(
+        WaitPolarity::Positive,
+        Duration::from_millis(5),
+        6_000,
+        Instant::now,
+        || match child.try_wait() {
+            Ok(Some(_)) => PollState::Held,
+            Ok(None) => PollState::Pending,
+            Err(error) => PollState::HardFail(format!("supervisor status: {error}")),
+        },
+        tokio::time::sleep,
+    )
+    .await;
+    panic_for_wait("supervisor did not exit after SIGTERM", outcome);
+    let outcome = await_outcome_async(
+        WaitPolarity::Positive,
+        Duration::from_millis(5),
+        2_000,
+        Instant::now,
+        || match solstone_core_journal_io::acquire_file_lease(
+            &lock_path,
+            solstone_core_journal_io::LeaseOptions {
+                attempts: 1,
+                retry_max: Duration::ZERO,
+                ..solstone_core_journal_io::LeaseOptions::default()
+            },
+        ) {
+            Ok(Some(_)) => PollState::Held,
+            Ok(None) => PollState::Pending,
+            Err(error) => PollState::HardFail(format!("lease probe: {error}")),
+        },
+        tokio::time::sleep,
+    )
+    .await;
+    panic_for_wait(
+        "generation lock did not free after bounded supervisor shutdown",
+        outcome,
+    );
+    assert!(
+        lock_path.exists(),
+        "reacquisition must not have required deleting the lock file"
     );
 }
 

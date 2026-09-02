@@ -61,6 +61,10 @@ const APP_FIXTURE_FAST_TIMING_ENV: &str = "SOLSTONE_SUPERVISOR_APP_FIXTURE_FAST_
 const PARAKEET_FIXTURE_ENV: &str = "SOLSTONE_SUPERVISOR_PARAKEET_FIXTURE";
 /// Fixture Convey argv override; test-constructed paths must not contain spaces.
 const APP_FIXTURE_CONVEY_ARGV_ENV: &str = "SOLSTONE_SUPERVISOR_APP_CONVEY_ARGV";
+/// When set, Sense's fixture argv is the real speakers-analyze generation
+/// holder binary instead of the plain `ready-park` fixture, so a
+/// process-tree test can prove an actual inherited descriptor capability.
+const SENSE_GENERATION_HOLDER_ENV: &str = "SOLSTONE_SUPERVISOR_SENSE_GENERATION_HOLDER";
 const CONVEY_READY_WINDOW: Duration = Duration::from_secs(60);
 const CONVEY_READY_INTERVAL: Duration = Duration::from_millis(100);
 const CONVEY_READY_CONNECT_TIMEOUT: Duration = Duration::from_millis(100);
@@ -185,6 +189,12 @@ pub(crate) struct SupervisorState {
     pub wedge: WedgeState,
     pub timing: SupervisorTiming,
     pub parent_loss_coordinator: Option<ParentLossCoordinatorSession>,
+    /// Inherited speakers-analyze installation generation (see
+    /// `solstone-core-transcribe::SpeakersAnalyzeGeneration`), merged into
+    /// `AppService::Sense`'s spawn environment and into scheduled catchup
+    /// think tasks so native transcribe children borrow this supervisor's
+    /// generation instead of each attempting their own acquisition.
+    pub sense_child_environment: BTreeMap<OsString, OsString>,
 }
 
 /// Supervisor-held capability for the independent coordinator. The random
@@ -663,6 +673,15 @@ fn fixture_marker_path(journal: &Path, service: AppService) -> String {
 }
 
 fn fixture_argv(service: AppService, binary: &str, journal: &Path) -> Vec<String> {
+    if service == AppService::Sense
+        && let Ok(holder) = std::env::var(SENSE_GENERATION_HOLDER_ENV)
+    {
+        return vec![
+            holder,
+            journal.to_string_lossy().into_owned(),
+            fixture_marker_path(journal, service),
+        ];
+    }
     let mut argv = vec![binary.to_owned()];
     if service == AppService::Convey {
         if let Ok(override_argv) = std::env::var(APP_FIXTURE_CONVEY_ARGV_ENV) {
@@ -1019,6 +1038,7 @@ pub(crate) fn spawn_app_process(
     app: &mut ManagedAppProcess,
     journal: &Path,
     sink: Arc<CallosumSocketServer>,
+    sense_child_environment: &BTreeMap<OsString, OsString>,
 ) -> Result<(), String> {
     if app.service == AppService::Convey {
         if app.direct_door_generation.is_some() {
@@ -1042,6 +1062,16 @@ pub(crate) fn spawn_app_process(
             .duration_since(UNIX_EPOCH)
             .map_or(0, |value| value.as_nanos())
     );
+    let mut environment = BTreeMap::from([(
+        OsString::from("SOL_SUPERVISOR_SPAWNED"),
+        OsString::from("1"),
+    )]);
+    // Only Sense can reach transcription (it spawns native `journal
+    // transcribe` children); Cortex talent workers cannot (denied by the
+    // cogitate CLI allowlist), and Convey/Spl/Mcp never transcribe.
+    if app.service == AppService::Sense {
+        environment.extend(sense_child_environment.clone());
+    }
     let authority = launch_managed_hosted(
         Disposition::InheritedParentScope,
         ManagedLaunchRequest {
@@ -1051,10 +1081,7 @@ pub(crate) fn spawn_app_process(
                 reference: format!("supervisor-app-{}", app.service.as_str()),
                 day: None,
                 sink: Some(Arc::new(SupervisorProcessSink { server: sink })),
-                environment: BTreeMap::from([(
-                    OsString::from("SOL_SUPERVISOR_SPAWNED"),
-                    OsString::from("1"),
-                )]),
+                environment,
             },
         },
         HostedLaunchProvenance {
@@ -1079,8 +1106,13 @@ pub(crate) fn spawn_app_process(
     Ok(())
 }
 
-fn start_app_process(app: &mut ManagedAppProcess, journal: &Path, sink: Arc<CallosumSocketServer>) {
-    if let Err(error) = spawn_app_process(app, journal, sink) {
+fn start_app_process(
+    app: &mut ManagedAppProcess,
+    journal: &Path,
+    sink: Arc<CallosumSocketServer>,
+    sense_child_environment: &BTreeMap<OsString, OsString>,
+) {
+    if let Err(error) = spawn_app_process(app, journal, sink, sense_child_environment) {
         eprintln!(
             "supervisor: failed to start {}: {error}",
             app.service.as_str()
@@ -1150,6 +1182,7 @@ fn renew_pre_ready_heartbeat(lifecycle: &mut SupervisorLifecycle) -> Result<(), 
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn start_app_stack(
     app_processes: &mut [ManagedAppProcess],
     journal: &Path,
@@ -1157,6 +1190,7 @@ async fn start_app_stack(
     probe: &dyn ConveyReadinessProbe,
     lifecycle: &mut SupervisorLifecycle,
     heartbeat_interval: Duration,
+    sense_child_environment: &BTreeMap<OsString, OsString>,
 ) -> Result<(), SyncTickOutcome> {
     let services = vec![
         AppService::Convey,
@@ -1183,7 +1217,7 @@ async fn start_app_stack(
         if !app.enabled {
             continue;
         }
-        start_app_process(app, journal, sink.clone());
+        start_app_process(app, journal, sink.clone(), sense_child_environment);
         if service == AppService::Convey && app.process.is_some() {
             let _ =
                 wait_for_convey_ready(app, journal, probe, lifecycle, heartbeat_interval).await?;
@@ -1198,6 +1232,7 @@ pub(crate) async fn boot_and_tick(
     options: SupervisorOptions,
     journal_binary: Option<PathBuf>,
     parent_watch: Option<ParentWatch>,
+    sense_child_environment: BTreeMap<OsString, OsString>,
 ) -> Result<SupervisorOutcome, RuntimeBootError> {
     let mut lifecycle = lifecycle.into_lifecycle();
     let mut shutdown_signals = match tick::ShutdownSignals::install() {
@@ -1233,6 +1268,7 @@ pub(crate) async fn boot_and_tick(
         })),
         ready: false,
         before_deadline_commit: None,
+        child_environment: sense_child_environment.clone(),
     });
     let clock: Arc<dyn solstone_core_system::provider_runtime::RuntimeClock> =
         Arc::new(SystemRuntimeClock::default());
@@ -1482,6 +1518,7 @@ pub(crate) async fn boot_and_tick(
         wedge: WedgeState::default(),
         timing: SupervisorTiming::for_app_fixture(fast_fixture_timing),
         parent_loss_coordinator: Some(parent_loss_coordinator),
+        sense_child_environment,
     };
     let startup_journal = state.journal.clone();
     let startup_server = Arc::clone(&state.server);
@@ -1490,6 +1527,7 @@ pub(crate) async fn boot_and_tick(
     } else {
         Duration::from_secs_f64(DEFAULT_INTERVAL_SECONDS)
     };
+    let startup_sense_child_environment = state.sense_child_environment.clone();
     if let Err(outcome) = start_app_stack(
         &mut state.app_processes,
         &startup_journal,
@@ -1497,6 +1535,7 @@ pub(crate) async fn boot_and_tick(
         readiness_probe.as_ref(),
         &mut lifecycle,
         pre_ready_heartbeat_interval,
+        &startup_sense_child_environment,
     )
     .await
     {

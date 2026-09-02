@@ -10,7 +10,7 @@ use std::io;
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 #[cfg(unix)]
-use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 #[cfg(windows)]
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::path::{Path, PathBuf};
@@ -120,6 +120,34 @@ impl FileLease {
     pub fn duplicate_for_inheritance(&self) -> Result<i32, LeaseError> {
         fcntl(&*self._guard, FcntlArg::F_DUPFD(3))
             .map_err(|error| io_error(&self.path, io::Error::from_raw_os_error(error as i32)))
+    }
+}
+
+/// Probe an exclusive nonblocking flock on `fd` without unlocking afterward.
+///
+/// This issues `flock(LOCK_EX | LOCK_NB)` on the borrowed descriptor and never
+/// follows it with `LOCK_UN` or an owning flock guard. Wrapping `fd` in
+/// [`Flock`] would `LOCK_UN` on drop and, for a duplicate of a held open file
+/// description, would release the owner's lock as well.
+///
+/// Returns `Ok(true)` when the exclusive flock succeeds (same-OFD idempotent
+/// re-lock, or the lock was free and is now held on this OFD). Returns
+/// `Ok(false)` on contention. Any other OS error is `Err`.
+#[cfg(unix)]
+pub fn probe_exclusive_flock_no_release(fd: RawFd) -> io::Result<bool> {
+    // SAFETY: the caller supplies a live descriptor; `LOCK_NB` makes the
+    // call non-blocking; this function never unlocks.
+    #[allow(unsafe_code)]
+    let result = unsafe { nix::libc::flock(fd, nix::libc::LOCK_EX | nix::libc::LOCK_NB) };
+    if result == 0 {
+        Ok(true)
+    } else {
+        let error = Errno::last();
+        if is_contention(error) {
+            Ok(false)
+        } else {
+            Err(io::Error::from_raw_os_error(error as i32))
+        }
     }
 }
 
@@ -426,5 +454,70 @@ mod tests {
             .expect("duplicate descriptor");
         assert!(Path::new("/dev/fd").join(descriptor.to_string()).exists());
         nix::unistd::close(descriptor).expect("close duplicate");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn exclusive_flock_probe_on_duplicate_does_not_release_owner_lock() {
+        use std::fs::OpenOptions;
+        use std::os::unix::io::AsRawFd;
+
+        let temporary = TempDir::new();
+        let path = temporary.path().join("generation.lock");
+        let lease = acquire_file_lease(&path, LeaseOptions::default())
+            .unwrap()
+            .expect("owner lease");
+        let duplicate = lease
+            .duplicate_for_inheritance()
+            .expect("duplicate descriptor");
+        assert!(
+            probe_exclusive_flock_no_release(duplicate).expect("probe duplicate"),
+            "same-OFD re-flock is an idempotent success"
+        );
+        assert!(
+            acquire_file_lease(
+                &path,
+                LeaseOptions {
+                    attempts: 1,
+                    retry_max: Duration::ZERO,
+                    ..LeaseOptions::default()
+                },
+            )
+            .unwrap()
+            .is_none(),
+            "owner FileLease must still hold the lock after the no-release probe"
+        );
+        let independent = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .expect("independent open");
+        assert!(
+            !probe_exclusive_flock_no_release(independent.as_raw_fd())
+                .expect("probe independent open"),
+            "an independent OFD must observe contention while the owner holds the lock"
+        );
+        assert!(
+            acquire_file_lease(
+                &path,
+                LeaseOptions {
+                    attempts: 1,
+                    retry_max: Duration::ZERO,
+                    ..LeaseOptions::default()
+                },
+            )
+            .unwrap()
+            .is_none(),
+            "independent-open probe must not unlock the owner either"
+        );
+        nix::unistd::close(duplicate).expect("close duplicate");
+        drop(independent);
+        drop(lease);
+        assert!(
+            acquire_file_lease(&path, LeaseOptions::default())
+                .unwrap()
+                .is_some(),
+            "lock becomes free only after the owner lease drops"
+        );
     }
 }
