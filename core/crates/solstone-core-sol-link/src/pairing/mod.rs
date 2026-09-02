@@ -18,6 +18,7 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use crate::ca::sign_csr;
 use crate::committed::{CommittedIdentityError, load_committed_identity};
 use crate::ledger::{AuthorizationLedger, AuthorizedClientsMutationError, ClientEntry, ClientRole};
+use crate::pairing_identity::validate_ceremony_pairing_identity;
 
 use self::addresses::{
     AddressError, PairLinkEncodeError, PairingSnapshot, RawInterfaceSource, RouteIpv4Source,
@@ -419,6 +420,8 @@ pub fn complete_pairing(
             "sender_instance_id is invalid",
         ));
     }
+    let pairing_identity = validate_ceremony_pairing_identity(&ceremony.request.additional_fields)
+        .map_err(PairingError::PairingRequestInvalid)?;
     // Read only, and deliberately before consume: unavailable identity cannot burn a nonce.
     let identity = load_committed_identity(journal_root)
         .map_err(PairingError::CommittedIdentityUnavailable)?;
@@ -450,6 +453,10 @@ pub fn complete_pairing(
         identity.instance_id(),
         ClientRole::from_wire(Some(&entry.role)),
     );
+    if let Some(client_label) = pairing_identity.client_label {
+        ledger_entry.client_label = client_label;
+    }
+    ledger_entry.platform = pairing_identity.platform;
     if entry.same_machine {
         ledger_entry.network = Some("home".to_owned());
     }
@@ -557,9 +564,12 @@ mod tests {
     use std::net::{IpAddr, Ipv4Addr};
     use std::path::Path;
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::sync::{Arc, Barrier, mpsc};
+    use std::thread;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use serde_json::json;
+    use solstone_core_journal_io::{LockOptions, hold_lock};
     use x509_parser::pem::parse_x509_pem;
 
     use super::*;
@@ -1134,5 +1144,417 @@ mod tests {
             .expect("ledger entry");
         assert_eq!(entry.instance_id, expected_instance_id);
         assert_ne!(entry.instance_id, "a-different-valid-sender");
+    }
+
+    fn pair_request_with(fields: serde_json::Map<String, Value>) -> spl_core::PairRequest {
+        let mut request = pair_request();
+        request.additional_fields = fields;
+        request
+    }
+
+    fn mint_nonce(store: &NonceStore, nonce: &str, role: &str, relay: bool) {
+        if relay {
+            store
+                .add_relay(nonce.to_owned(), "phone".into(), role.to_owned(), 1)
+                .expect("relay nonce");
+        } else {
+            store
+                .add(nonce.into(), "phone".into(), role.into(), false, 1)
+                .expect("direct nonce");
+        }
+    }
+
+    #[test]
+    fn ceremony_pairing_identity_presence_is_accepted_for_every_role_and_carrier() {
+        use crate::pairing_identity::Platform;
+
+        let roles = ["", "phone", "observer", "peer"];
+        let presence = [
+            ("neither", json!({}), "", None),
+            (
+                "label",
+                json!({"client_label": "studio-mac"}),
+                "studio-mac",
+                None,
+            ),
+            (
+                "platform",
+                json!({"platform": "linux"}),
+                "",
+                Some(Platform::Linux),
+            ),
+            (
+                "both",
+                json!({"client_label": "studio-mac", "platform": "macos"}),
+                "studio-mac",
+                Some(Platform::Macos),
+            ),
+        ];
+        for relay in [false, true] {
+            for role in roles {
+                for (name, fields, expected_label, expected_platform) in &presence {
+                    let temporary = TempDir::new();
+                    identity(temporary.path());
+                    let store = NonceStore::new(temporary.path());
+                    let nonce = format!("{role}-{}-{name}", if relay { "relay" } else { "direct" });
+                    mint_nonce(&store, &nonce, role, relay);
+                    let request = pair_request_with(fields.as_object().expect("object").clone());
+                    let result = complete_pairing(
+                        temporary.path(),
+                        CeremonyRequest {
+                            request: &request,
+                            nonce: &nonce,
+                            sender_instance_id: None,
+                            local_endpoints: None,
+                        },
+                        2,
+                    );
+                    if role == "peer" {
+                        let error = result.expect_err("peer refuses after consume");
+                        assert_eq!(error.status(), 400);
+                        assert_eq!(
+                            error.detail(),
+                            Some("peer pairing is not available on this build")
+                        );
+                        assert!(store.peek(&nonce).expect("nonce").used);
+                        continue;
+                    }
+                    let response = result.expect("ceremony succeeds");
+                    assert!(store.peek(&nonce).expect("nonce").used);
+                    let entry = AuthorizationLedger::new(temporary.path())
+                        .get(&response.fingerprint)
+                        .expect("ledger entry");
+                    assert_eq!(entry.client_label, *expected_label);
+                    assert_eq!(entry.platform, *expected_platform);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ceremony_pairing_identity_invalid_fields_refuse_before_nonce_consume() {
+        let oversize = "é".repeat(127);
+        assert_eq!(oversize.len(), 254);
+        let accepted = "é".repeat(126) + "a";
+        assert_eq!(accepted.len(), 253);
+        let invalid = [
+            (json!({"client_label": 1}), "client_label is invalid"),
+            (json!({"client_label": ""}), "client_label is invalid"),
+            (json!({"client_label": oversize}), "client_label is invalid"),
+            (json!({"platform": "plan9"}), "platform is invalid"),
+            (json!({"platform": ""}), "platform is invalid"),
+            (json!({"platform": true}), "platform is invalid"),
+        ];
+        for relay in [false, true] {
+            for role in ["", "phone", "observer", "peer"] {
+                for (fields, detail) in &invalid {
+                    let temporary = TempDir::new();
+                    identity(temporary.path());
+                    let store = NonceStore::new(temporary.path());
+                    let nonce = format!("invalid-{role}-{}", if relay { "r" } else { "d" });
+                    mint_nonce(&store, &nonce, role, relay);
+                    let request = pair_request_with(fields.as_object().expect("object").clone());
+                    let error = complete_pairing(
+                        temporary.path(),
+                        CeremonyRequest {
+                            request: &request,
+                            nonce: &nonce,
+                            sender_instance_id: None,
+                            local_endpoints: None,
+                        },
+                        2,
+                    )
+                    .expect_err("invalid pairing identity refuses");
+                    assert_eq!(error.status(), 400);
+                    assert_eq!(error.reason(), "pairing_request_invalid");
+                    assert_eq!(error.detail(), Some(*detail));
+                    assert!(!store.peek(&nonce).expect("preserved nonce").used);
+                }
+            }
+        }
+
+        let temporary = TempDir::new();
+        identity(temporary.path());
+        let store = NonceStore::new(temporary.path());
+        mint_nonce(&store, "peer-retry", "peer", false);
+        let bad = pair_request_with(object_fields(json!({"client_label": ""})));
+        let refused = complete_pairing(
+            temporary.path(),
+            CeremonyRequest {
+                request: &bad,
+                nonce: "peer-retry",
+                sender_instance_id: None,
+                local_endpoints: None,
+            },
+            2,
+        )
+        .expect_err("malformed peer hint");
+        assert_eq!(refused.detail(), Some("client_label is invalid"));
+        assert!(!store.peek("peer-retry").expect("preserved").used);
+        let good = pair_request_with(object_fields(
+            json!({"client_label": accepted, "platform": "ios"}),
+        ));
+        let peer = complete_pairing(
+            temporary.path(),
+            CeremonyRequest {
+                request: &good,
+                nonce: "peer-retry",
+                sender_instance_id: None,
+                local_endpoints: None,
+            },
+            2,
+        )
+        .expect_err("valid retry reaches peer refusal");
+        assert_eq!(
+            peer.detail(),
+            Some("peer pairing is not available on this build")
+        );
+        assert!(store.peek("peer-retry").expect("consumed").used);
+
+        let temporary = TempDir::new();
+        identity(temporary.path());
+        let store = NonceStore::new(temporary.path());
+        mint_nonce(&store, "len-253", "phone", false);
+        let accepted_request = pair_request_with(object_fields(json!({"client_label": accepted})));
+        let response = complete_pairing(
+            temporary.path(),
+            CeremonyRequest {
+                request: &accepted_request,
+                nonce: "len-253",
+                sender_instance_id: None,
+                local_endpoints: None,
+            },
+            2,
+        )
+        .expect("253-byte client_label is accepted");
+        let entry = AuthorizationLedger::new(temporary.path())
+            .get(&response.fingerprint)
+            .expect("ledger entry");
+        assert_eq!(entry.client_label.len(), 253);
+    }
+
+    fn object_fields(value: Value) -> serde_json::Map<String, Value> {
+        value.as_object().expect("object").clone()
+    }
+
+    #[test]
+    fn ceremony_ledger_write_failure_after_consume_preserves_pre_ceremony_bytes() {
+        let temporary = TempDir::new();
+        identity(temporary.path());
+        let store = NonceStore::new(temporary.path());
+        store
+            .add(
+                "write-fail".into(),
+                "phone".into(),
+                "phone".into(),
+                false,
+                1,
+            )
+            .expect("nonce");
+        let ledger_path = temporary.path().join("link/authorized_clients.json");
+        fs::write(&ledger_path, "[]").expect("empty ledger");
+        let before = fs::read(&ledger_path).expect("pre-ceremony bytes");
+        fs::create_dir(format!("{}.lock", ledger_path.display()))
+            .expect("lock sidecar as directory blocks ledger mutation");
+        let request = pair_request_with(object_fields(json!({
+            "client_label": "studio",
+            "platform": "linux"
+        })));
+        let error = complete_pairing(
+            temporary.path(),
+            CeremonyRequest {
+                request: &request,
+                nonce: "write-fail",
+                sender_instance_id: None,
+                local_endpoints: None,
+            },
+            2,
+        )
+        .expect_err("ledger write fails");
+        assert_eq!(error.status(), 500);
+        assert_eq!(error.reason(), "internal_error");
+        assert!(store.peek("write-fail").expect("consumed nonce").used);
+        assert_eq!(fs::read(&ledger_path).expect("post-ceremony bytes"), before);
+    }
+
+    struct VarTmpDir(std::path::PathBuf);
+
+    impl VarTmpDir {
+        fn new() -> Self {
+            let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos();
+            let path =
+                Path::new("/var/tmp").join(format!("solstone-pairing-lock-{nanos}-{sequence}"));
+            fs::create_dir_all(&path).expect("/var/tmp journal creates");
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for VarTmpDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn ceremony(
+        root: &Path,
+        nonce: &str,
+        request: &spl_core::PairRequest,
+    ) -> Result<spl_core::PairResponse, PairingError> {
+        complete_pairing(
+            root,
+            CeremonyRequest {
+                request,
+                nonce,
+                sender_instance_id: None,
+                local_endpoints: None,
+            },
+            2,
+        )
+    }
+
+    fn ledger_rows(root: &Path) -> Vec<Value> {
+        let bytes = fs::read(root.join("link/authorized_clients.json")).expect("ledger");
+        serde_json::from_slice::<Value>(&bytes)
+            .expect("ledger JSON")
+            .as_array()
+            .expect("array")
+            .clone()
+    }
+
+    #[test]
+    fn same_nonce_second_ceremony_waits_on_authorization_lock_then_sees_spent_nonce() {
+        let temporary = VarTmpDir::new();
+        identity(temporary.path());
+        let store = NonceStore::new(temporary.path());
+        store
+            .add("shared".into(), "phone".into(), "phone".into(), false, 1)
+            .expect("nonce");
+        let ledger_path = temporary.path().join("link/authorized_clients.json");
+        fs::write(&ledger_path, "[]").expect("empty ledger");
+        let winner = pair_request_with(object_fields(json!({
+            "client_label": "winner",
+            "platform": "linux"
+        })));
+        let loser = pair_request_with(object_fields(json!({
+            "client_label": "loser",
+            "platform": "ios"
+        })));
+        let held =
+            hold_lock(&ledger_path, LockOptions::default()).expect("hold authorization lock");
+        let root = temporary.path().to_path_buf();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (finished_tx, finished_rx) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            finished_tx
+                .send(ceremony(&root, "shared", &winner))
+                .unwrap();
+        });
+        started_rx.recv().unwrap();
+        assert!(
+            finished_rx
+                .recv_timeout(Duration::from_millis(100))
+                .is_err(),
+            "first ceremony completed before the authorization lock dropped"
+        );
+        drop(held);
+        let response = finished_rx
+            .recv_timeout(Duration::from_secs(60))
+            .unwrap()
+            .expect("winner commits after lock drop");
+        worker.join().unwrap();
+        assert!(
+            store
+                .peek("shared")
+                .expect("spent nonce still readable")
+                .used
+        );
+        let second = ceremony(temporary.path(), "shared", &loser).expect_err("spent nonce");
+        assert_eq!(second.status(), 410);
+        let rows = ledger_rows(temporary.path());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["fingerprint"], response.fingerprint);
+        assert_eq!(rows[0]["client_label"], "winner");
+        assert_eq!(rows[0]["platform"], "linux");
+        assert_ne!(rows[0]["client_label"], "loser");
+        assert!(
+            store.peek("shared").is_none(),
+            "the second consume collects the spent nonce"
+        );
+    }
+
+    fn cross_nonce_both_commit(first_relay: bool, second_relay: bool) {
+        let temporary = VarTmpDir::new();
+        identity(temporary.path());
+        let store = NonceStore::new(temporary.path());
+        mint_nonce(&store, "first", "phone", first_relay);
+        mint_nonce(&store, "second", "phone", second_relay);
+        let first_request = pair_request_with(object_fields(json!({
+            "client_label": "alpha",
+            "platform": "linux"
+        })));
+        let second_request = pair_request_with(object_fields(json!({
+            "client_label": "beta",
+            "platform": "ios"
+        })));
+        let barrier = Arc::new(Barrier::new(2));
+        let root = temporary.path().to_path_buf();
+        let first_root = root.clone();
+        let second_root = root;
+        let first_barrier = Arc::clone(&barrier);
+        let first = thread::spawn(move || {
+            first_barrier.wait();
+            ceremony(&first_root, "first", &first_request)
+        });
+        let second = thread::spawn(move || {
+            barrier.wait();
+            ceremony(&second_root, "second", &second_request)
+        });
+        let first = first.join().unwrap().expect("first ceremony");
+        let second = second.join().unwrap().expect("second ceremony");
+        assert_ne!(first.fingerprint, second.fingerprint);
+        let rows = ledger_rows(temporary.path());
+        assert_eq!(rows.len(), 2);
+        let labels: Vec<&str> = rows
+            .iter()
+            .map(|row| row["client_label"].as_str().expect("label"))
+            .collect();
+        assert!(
+            labels.contains(&"alpha"),
+            "winner metadata intact: {labels:?}"
+        );
+        assert!(
+            labels.contains(&"beta"),
+            "loser does not upsert over winner: {labels:?}"
+        );
+        let platforms: Vec<&str> = rows
+            .iter()
+            .map(|row| row["platform"].as_str().expect("platform"))
+            .collect();
+        assert!(platforms.contains(&"linux"));
+        assert!(platforms.contains(&"ios"));
+    }
+
+    #[test]
+    fn cross_nonce_direct_direct_both_commit() {
+        cross_nonce_both_commit(false, false);
+    }
+
+    #[test]
+    fn cross_nonce_relay_relay_both_commit() {
+        cross_nonce_both_commit(true, true);
+    }
+
+    #[test]
+    fn cross_nonce_direct_relay_both_commit() {
+        cross_nonce_both_commit(false, true);
     }
 }

@@ -154,9 +154,9 @@ impl ClientCertVerifier for DeviceDoorVerifier {
             AuthorizedClientsRead::Present(_) | AuthorizedClientsRead::Missing => Err(
                 RustlsError::InvalidCertificate(CertificateError::ApplicationVerificationFailure),
             ),
-            AuthorizedClientsRead::Unreadable | AuthorizedClientsRead::Malformed => {
-                Err(authorization_unavailable_error())
-            }
+            AuthorizedClientsRead::Unreadable
+            | AuthorizedClientsRead::Malformed
+            | AuthorizedClientsRead::DuplicateCid => Err(authorization_unavailable_error()),
         }
     }
 
@@ -374,6 +374,19 @@ mod tests {
             AuthorizationLedger::from_paths(path, temporary.path().join("devices.json"));
         let state = ledger.read_state();
         assert_eq!(state, AuthorizedClientsRead::Malformed);
+        assert_certificate_unknown(fixture.verify(state));
+    }
+
+    #[test]
+    fn duplicate_cid_ledger_is_certificate_unknown() {
+        let fixture = Fixture::new();
+        let temporary = TempDir::new();
+        let path = temporary.path().join("authorized_clients.json");
+        fs::write(&path, br#"[{"fingerprint":"a"},{"fingerprint":"a"}]"#).unwrap();
+        let mut ledger =
+            AuthorizationLedger::from_paths(path, temporary.path().join("devices.json"));
+        let state = ledger.read_state();
+        assert_eq!(state, AuthorizedClientsRead::DuplicateCid);
         assert_certificate_unknown(fixture.verify(state));
     }
 

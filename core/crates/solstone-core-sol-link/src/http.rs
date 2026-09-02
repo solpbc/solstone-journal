@@ -172,6 +172,13 @@ async fn devices(State(state): State<LinkHttpState>) -> Response {
             StatusCode::SERVICE_UNAVAILABLE,
         )
         .into_response(),
+        AuthorizedClientsRead::DuplicateCid => error_envelope(
+            "authorization_ledger_duplicate_cid",
+            "Service Unavailable",
+            "authorized-client ledger contains a duplicate client identifier",
+            StatusCode::SERVICE_UNAVAILABLE,
+        )
+        .into_response(),
     }
 }
 

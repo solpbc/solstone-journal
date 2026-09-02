@@ -37,6 +37,8 @@ pub mod pairing;
 #[cfg(feature = "client")]
 mod pairing_entry;
 #[cfg(feature = "host")]
+pub mod pairing_identity;
+#[cfg(feature = "host")]
 mod publish_checkpoint;
 #[cfg(feature = "client")]
 mod serve;
@@ -53,6 +55,11 @@ pub use door::{
     DeviceDoorAuthorization, DeviceDoorConfigError, DeviceDoorVerifier,
     authorization_publication_ticks, build_device_door_server_config, refresh_once,
     spawn_authorization_refresh,
+};
+#[cfg(feature = "host")]
+pub use pairing_identity::{
+    CeremonyPairingIdentity, ClientLabelState, PairingIdentity, PairingIdentityFields, Platform,
+    PlatformState, validate_ceremony_pairing_identity,
 };
 #[cfg(feature = "client")]
 pub use serve::SplLinkServeRunner;

@@ -20,6 +20,8 @@ use serde_json::{Map, Value, json};
 use solstone_core_journal_io::{JsonWriteOptions, LockError, LockOptions, hold_lock, write_json};
 use time::{OffsetDateTime, UtcOffset, format_description::well_known::Rfc3339};
 
+use crate::pairing_identity::Platform;
+
 const CERT_KIND: &str = "cert";
 
 /// A durable role, preserving unknown wire values exactly.
@@ -65,6 +67,7 @@ pub struct ClientEntry {
     pub client_label: String,
     pub label_ordinal: u32,
     pub kind: String,
+    pub platform: Option<Platform>,
 }
 
 /// Non-authoritative activity retained for one authorized certificate client.
@@ -131,6 +134,7 @@ impl ClientEntry {
             client_label: String::new(),
             label_ordinal: 1,
             kind: CERT_KIND.to_owned(),
+            platform: None,
         }
     }
 
@@ -159,6 +163,7 @@ pub enum AuthorizedClientsRead {
     Missing,
     Unreadable,
     Malformed,
+    DuplicateCid,
 }
 
 /// Strict failure while loading an existing authorization ledger for mutation.
@@ -184,12 +189,18 @@ pub enum AuthorizedClientsLoadError {
         path: PathBuf,
         source: Box<dyn Error + Send + Sync>,
     },
+    DuplicateCid {
+        path: PathBuf,
+        fingerprint: String,
+    },
 }
 
 impl fmt::Display for AuthorizedClientsLoadError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let path = match self {
-            Self::Unreadable { path, .. } | Self::Malformed { path, .. } => path,
+            Self::Unreadable { path, .. }
+            | Self::Malformed { path, .. }
+            | Self::DuplicateCid { path, .. } => path,
         };
         write!(
             formatter,
@@ -204,6 +215,7 @@ impl Error for AuthorizedClientsLoadError {
         match self {
             Self::Unreadable { source, .. } => Some(source),
             Self::Malformed { source, .. } => Some(source.as_ref()),
+            Self::DuplicateCid { .. } => None,
         }
     }
 }
@@ -424,6 +436,10 @@ impl AuthorizationLedger {
         let _authorization_lock = lock(&self.authorized_clients_path)?;
         let mut clients = load_authorized_for_mutation(&self.authorized_clients_path)
             .map_err(AuthorizedClientsMutationError::Load)?;
+        if let Some(existing) = clients.get(&entry.fingerprint) {
+            entry.client_label = existing.client_label.clone();
+            entry.platform = existing.platform;
+        }
         entry.kind = CERT_KIND.to_owned();
         entry.label_ordinal =
             allocate_label_ordinal(&clients, entry.base_label(), &entry.fingerprint);
@@ -639,7 +655,8 @@ impl AuthorizationLedger {
             },
             AuthorizedClientsRead::Missing
             | AuthorizedClientsRead::Unreadable
-            | AuthorizedClientsRead::Malformed => Clients::default(),
+            | AuthorizedClientsRead::Malformed
+            | AuthorizedClientsRead::DuplicateCid => Clients::default(),
         };
         self.read_state = read;
         self.reload_key = reload_key(&self.authorized_clients_path);
@@ -658,6 +675,7 @@ pub fn read_authorized_clients(path: &Path) -> AuthorizedClientsRead {
         Ok(None) => AuthorizedClientsRead::Missing,
         Err(AuthorizedClientsLoadError::Unreadable { .. }) => AuthorizedClientsRead::Unreadable,
         Err(AuthorizedClientsLoadError::Malformed { .. }) => AuthorizedClientsRead::Malformed,
+        Err(AuthorizedClientsLoadError::DuplicateCid { .. }) => AuthorizedClientsRead::DuplicateCid,
     }
 }
 
@@ -748,6 +766,12 @@ fn read_authorized(path: &Path) -> Result<Option<Clients>, AuthorizedClientsLoad
                 )),
             });
         };
+        if clients.get(fingerprint).is_some() {
+            return Err(AuthorizedClientsLoadError::DuplicateCid {
+                path: path.to_path_buf(),
+                fingerprint: fingerprint.to_owned(),
+            });
+        }
         let label_ordinal = item
             .get("label_ordinal")
             .and_then(Value::as_u64)
@@ -771,6 +795,10 @@ fn read_authorized(path: &Path) -> Result<Option<Clients>, AuthorizedClientsLoad
                 .to_owned(),
             label_ordinal,
             kind: CERT_KIND.to_owned(),
+            platform: item
+                .get("platform")
+                .and_then(Value::as_str)
+                .and_then(Platform::from_wire),
         });
     }
     if dropped_non_cert {
@@ -826,6 +854,9 @@ fn client_to_json(entry: &ClientEntry) -> Value {
     }
     if !entry.client_label.is_empty() {
         object.insert("client_label".to_owned(), json!(entry.client_label));
+    }
+    if let Some(platform) = entry.platform {
+        object.insert("platform".to_owned(), json!(platform.as_wire()));
     }
     if entry.label_ordinal != 1 {
         object.insert("label_ordinal".to_owned(), json!(entry.label_ordinal));
@@ -1590,7 +1621,7 @@ mod tests {
     }
 
     #[test]
-    fn load_preserves_array_order_with_last_duplicate_record_winning() {
+    fn load_preserves_array_order_of_unique_fingerprints() {
         let temporary = TempDir::new();
         let path = temporary
             .path()
@@ -1600,9 +1631,8 @@ mod tests {
         fs::write(
             &path,
             json!([
-                {"fingerprint":"a","device_label":"old","paired_at":"1","instance_id":"i"},
-                {"fingerprint":"b","device_label":"middle","paired_at":"2","instance_id":"i"},
-                {"fingerprint":"a","device_label":"new","paired_at":"3","instance_id":"i"}
+                {"fingerprint":"a","device_label":"first","paired_at":"1","instance_id":"i"},
+                {"fingerprint":"b","device_label":"middle","paired_at":"2","instance_id":"i"}
             ])
             .to_string(),
         )
@@ -1616,7 +1646,102 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["a", "b"]
         );
-        assert_eq!(entries[0].device_label, "new");
+        assert_eq!(entries[0].device_label, "first");
+    }
+
+    #[test]
+    fn duplicate_fingerprint_makes_the_read_unavailable() {
+        let temporary = TempDir::new();
+        let path = temporary
+            .path()
+            .join("link")
+            .join("authorized_clients.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let original = json!([
+            {"fingerprint":"a","device_label":"old","paired_at":"1","instance_id":"i"},
+            {"fingerprint":"b","device_label":"middle","paired_at":"2","instance_id":"i"},
+            {"fingerprint":"a","device_label":"new","paired_at":"3","instance_id":"i"}
+        ])
+        .to_string();
+        fs::write(&path, &original).unwrap();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        assert_eq!(ledger.read_state(), AuthorizedClientsRead::DuplicateCid);
+        assert!(!ledger.is_authorized("a"));
+        assert!(!ledger.is_authorized("b"));
+        for result in [
+            ledger
+                .add(entry("c", "phone", ClientRole::Roleless))
+                .map(|_| ()),
+            ledger.remove("a").map(|_| ()),
+            ledger.update_label("a", "renamed").map(|_| ()),
+            ledger.touch_last_seen_at("a", NOW).map(|_| ()),
+        ] {
+            let error = result.unwrap_err();
+            assert!(error.to_string().contains("were NOT changed"));
+            assert_eq!(fs::read(&path).unwrap(), original.as_bytes());
+        }
+    }
+
+    #[test]
+    fn add_preserves_existing_pairing_identity_on_the_same_fingerprint() {
+        let temporary = TempDir::new();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        let mut first = entry("a", "phone", ClientRole::Roleless);
+        first.client_label = "host-a".to_owned();
+        first.platform = Some(Platform::Linux);
+        ledger.add(first).unwrap();
+        let mut second = entry("a", "tablet", ClientRole::Roleless);
+        second.client_label = "replaced".to_owned();
+        second.platform = Some(Platform::Ios);
+        let stored = ledger.add(second).unwrap();
+        assert_eq!(stored.device_label, "tablet");
+        assert_eq!(stored.client_label, "host-a");
+        assert_eq!(stored.platform, Some(Platform::Linux));
+        let payload = serde_json::from_slice::<Vec<Value>>(
+            &fs::read(ledger.authorized_clients_path()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(payload[0]["client_label"], "host-a");
+        assert_eq!(payload[0]["platform"], "linux");
+    }
+
+    #[test]
+    fn update_label_and_ordinal_repair_preserve_pairing_identity() {
+        let temporary = TempDir::new();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        let mut first = entry("a", "iPhone", ClientRole::Roleless);
+        first.client_label = "host-a".to_owned();
+        first.platform = Some(Platform::Macos);
+        ledger.add(first).unwrap();
+        let mut second = entry("b", "IPHONE", ClientRole::Roleless);
+        second.client_label = "host-b".to_owned();
+        second.platform = Some(Platform::Ios);
+        ledger.add(second).unwrap();
+
+        let updated = ledger.update_label("a", "Studio").unwrap().unwrap();
+        assert_eq!(updated.device_label, "Studio");
+        assert_eq!(updated.client_label, "host-a");
+        assert_eq!(updated.platform, Some(Platform::Macos));
+        assert_eq!(ledger.get("b").unwrap().client_label, "host-b");
+        assert_eq!(ledger.get("b").unwrap().platform, Some(Platform::Ios));
+
+        let payload = json!([
+            {"fingerprint":"c","device_label":"Phone","paired_at":"2026-04-19T00:00:03Z","instance_id":"i","label_ordinal":1,"client_label":"host-c","platform":"android"},
+            {"fingerprint":"d","device_label":"phone","paired_at":"2026-04-19T00:00:01Z","instance_id":"i","label_ordinal":1,"client_label":"host-d","platform":"windows"}
+        ]);
+        write_json(
+            ledger.authorized_clients_path(),
+            &payload,
+            JsonWriteOptions::default(),
+        )
+        .unwrap();
+        assert!(ledger.backfill_label_ordinals().unwrap());
+        let repaired_c = ledger.get("c").unwrap();
+        let repaired_d = ledger.get("d").unwrap();
+        assert_eq!(repaired_c.client_label, "host-c");
+        assert_eq!(repaired_c.platform, Some(Platform::Android));
+        assert_eq!(repaired_d.client_label, "host-d");
+        assert_eq!(repaired_d.platform, Some(Platform::Windows));
     }
 
     #[test]
@@ -1645,6 +1770,7 @@ mod tests {
         meaningful.network = Some("local".to_owned());
         meaningful.client_label = "tablet-host".to_owned();
         meaningful.label_ordinal = 2;
+        meaningful.platform = Some(Platform::Linux);
         ledger.add(meaningful).unwrap();
         let payload = serde_json::from_slice::<Vec<Value>>(
             &fs::read(ledger.authorized_clients_path()).unwrap(),
@@ -1657,6 +1783,7 @@ mod tests {
         assert_eq!(legacy["kind"], CERT_KIND);
         assert!(legacy.get("network").is_none());
         assert!(legacy.get("client_label").is_none());
+        assert!(legacy.get("platform").is_none());
         assert!(legacy.get("label_ordinal").is_none());
         let meaningful = payload
             .iter()
@@ -1665,6 +1792,7 @@ mod tests {
         assert_eq!(meaningful["network"], "local");
         assert_eq!(meaningful["client_label"], "tablet-host");
         assert_eq!(meaningful["label_ordinal"], 2);
+        assert_eq!(meaningful["platform"], "linux");
     }
 
     fn entry(fingerprint: &str, label: &str, role: ClientRole) -> ClientEntry {

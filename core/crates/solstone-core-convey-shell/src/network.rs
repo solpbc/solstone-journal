@@ -232,9 +232,35 @@ pub(crate) async fn devices(Extension(root): Extension<Arc<JournalRoot>>) -> Res
     let entries = match read_authorized_clients(&authorized_path) {
         AuthorizedClientsRead::Present(entries) => entries,
         AuthorizedClientsRead::Missing => Vec::new(),
-        AuthorizedClientsRead::Unreadable | AuthorizedClientsRead::Malformed => {
-            log::warn!("network devices could not read the authorization ledger");
-            Vec::new()
+        AuthorizedClientsRead::Unreadable => {
+            log::warn!(
+                "network devices could not read the authorization ledger: authorization_ledger_unreadable"
+            );
+            return refusal(
+                "authorization_ledger_unreadable",
+                "authorized-client ledger could not be read",
+                StatusCode::SERVICE_UNAVAILABLE,
+            );
+        }
+        AuthorizedClientsRead::Malformed => {
+            log::warn!(
+                "network devices could not read the authorization ledger: authorization_ledger_malformed"
+            );
+            return refusal(
+                "authorization_ledger_malformed",
+                "authorized-client ledger is invalid",
+                StatusCode::SERVICE_UNAVAILABLE,
+            );
+        }
+        AuthorizedClientsRead::DuplicateCid => {
+            log::warn!(
+                "network devices could not read the authorization ledger: authorization_ledger_duplicate_cid"
+            );
+            return refusal(
+                "authorization_ledger_duplicate_cid",
+                "authorized-client ledger contains a duplicate client identifier",
+                StatusCode::SERVICE_UNAVAILABLE,
+            );
         }
     };
     let activity = match read_device_activity(&root.0.join("link/devices.json")) {
@@ -304,6 +330,7 @@ pub(crate) async fn unpair(Extension(root): Extension<Arc<JournalRoot>>, body: B
 enum UnpairLabelError {
     Unreadable,
     Malformed,
+    DuplicateCid,
     Ambiguous,
 }
 
@@ -326,6 +353,7 @@ fn resolve_unpair_label(
         AuthorizedClientsRead::Missing => Ok(None),
         AuthorizedClientsRead::Unreadable => Err(UnpairLabelError::Unreadable),
         AuthorizedClientsRead::Malformed => Err(UnpairLabelError::Malformed),
+        AuthorizedClientsRead::DuplicateCid => Err(UnpairLabelError::DuplicateCid),
     }
 }
 
@@ -339,6 +367,11 @@ fn unpair_label_refusal(error: UnpairLabelError) -> Response {
         UnpairLabelError::Malformed => refusal(
             "authorization_ledger_malformed",
             "authorized-client ledger is invalid",
+            StatusCode::SERVICE_UNAVAILABLE,
+        ),
+        UnpairLabelError::DuplicateCid => refusal(
+            "authorization_ledger_duplicate_cid",
+            "authorized-client ledger contains a duplicate client identifier",
             StatusCode::SERVICE_UNAVAILABLE,
         ),
         UnpairLabelError::Ambiguous => refusal(
@@ -364,6 +397,13 @@ pub(crate) fn unpair_mutation_refusal(error: AuthorizedClientsMutationError) -> 
                 StatusCode::SERVICE_UNAVAILABLE,
             )
         }
+        AuthorizedClientsMutationError::Load(AuthorizedClientsLoadError::DuplicateCid {
+            ..
+        }) => refusal(
+            "authorization_ledger_duplicate_cid",
+            "authorized-client ledger contains a duplicate client identifier",
+            StatusCode::SERVICE_UNAVAILABLE,
+        ),
         AuthorizedClientsMutationError::Write(_)
         | AuthorizedClientsMutationError::Device(_)
         | AuthorizedClientsMutationError::InvalidLabel(_)
@@ -620,6 +660,10 @@ fn now() -> i64 {
         .try_into()
         .expect("Unix timestamp fits i64")
 }
+
+#[cfg(test)]
+#[path = "pairing_contract_vectors.rs"]
+mod pairing_contract_vectors;
 
 #[cfg(test)]
 mod tests {
@@ -1103,6 +1147,122 @@ mod tests {
                 "{prefix}: legacy handles are no longer exposed"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn devices_unavailable_ledgers_are_service_unavailable_not_empty_lists() {
+        let temporary = TempDir::new();
+        established_journal(temporary.path());
+        fs::create_dir_all(temporary.path().join("link")).expect("link directory");
+        let app = crate::router(temporary.path().to_path_buf());
+
+        fs::create_dir_all(temporary.path().join("link/authorized_clients.json"))
+            .expect("unreadable ledger");
+        for prefix in NETWORK_ROUTE_PREFIXES {
+            let (status, body) = request_json(app.clone(), &format!("{prefix}/api/devices")).await;
+            assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{prefix}");
+            assert_eq!(body["reason_code"], "authorization_ledger_unreadable");
+            assert!(body.get("devices").is_none(), "{prefix}");
+        }
+
+        fs::remove_dir_all(temporary.path().join("link/authorized_clients.json"))
+            .expect("remove unreadable");
+        fs::write(temporary.path().join("link/authorized_clients.json"), "{")
+            .expect("malformed ledger");
+        for prefix in NETWORK_ROUTE_PREFIXES {
+            let (status, body) = request_json(app.clone(), &format!("{prefix}/api/devices")).await;
+            assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{prefix}");
+            assert_eq!(body["reason_code"], "authorization_ledger_malformed");
+            assert!(body.get("devices").is_none(), "{prefix}");
+        }
+
+        fs::write(
+            temporary.path().join("link/authorized_clients.json"),
+            json!([
+                {"fingerprint":"a","device_label":"one","paired_at":"1","instance_id":"i"},
+                {"fingerprint":"a","device_label":"two","paired_at":"2","instance_id":"i"}
+            ])
+            .to_string(),
+        )
+        .expect("duplicate ledger");
+        for prefix in NETWORK_ROUTE_PREFIXES {
+            let (status, body) = request_json(app.clone(), &format!("{prefix}/api/devices")).await;
+            assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{prefix}");
+            assert_eq!(body["reason_code"], "authorization_ledger_duplicate_cid");
+            assert!(body.get("devices").is_none(), "{prefix}");
+        }
+    }
+
+    #[tokio::test]
+    async fn devices_projection_ignores_pairing_identity_reader_states() {
+        let cid = "sha256:0123456789abcdef0123456789abcdef";
+        let expected_keys = NETWORK_DEVICE_FIELDS
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>();
+        for (client_label, expected) in [
+            (None, json!("")),
+            (Some(json!("")), json!("")),
+            (Some(json!("Phone")), json!("Phone")),
+            (Some(json!(1)), json!("")),
+        ] {
+            let temporary = TempDir::new();
+            established_journal(temporary.path());
+            fs::create_dir_all(temporary.path().join("link")).expect("link directory");
+            let mut entry = json!({
+                "fingerprint": cid,
+                "device_label": "phone",
+                "paired_at": "2026-08-13T00:00:00Z",
+                "instance_id": "device-instance",
+                "role": "owner",
+                "kind": "cert",
+                "platform": "linux",
+            });
+            match client_label {
+                None => {}
+                Some(value) => {
+                    entry
+                        .as_object_mut()
+                        .expect("object")
+                        .insert("client_label".to_owned(), value);
+                }
+            }
+            fs::write(
+                temporary.path().join("link/authorized_clients.json"),
+                json!([entry]).to_string(),
+            )
+            .expect("ledger");
+            let (status, body) = request_json(
+                crate::router(temporary.path().to_path_buf()),
+                "/app/network/api/devices",
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+            let row = body["devices"][0].as_object().expect("device row");
+            assert_eq!(
+                row.keys()
+                    .map(String::as_str)
+                    .collect::<std::collections::BTreeSet<_>>(),
+                expected_keys
+            );
+            assert_eq!(row["client_label"], expected);
+            assert!(!row.contains_key("platform"));
+        }
+    }
+
+    async fn request_json(app: Router, path: &str) -> (StatusCode, Value) {
+        let response = app
+            .oneshot(
+                Request::get(path)
+                    .body(Body::empty())
+                    .expect("request builds"),
+            )
+            .await
+            .expect("router responds");
+        let status = response.status();
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        (status, serde_json::from_slice(&body).unwrap_or(Value::Null))
     }
 
     #[tokio::test]
