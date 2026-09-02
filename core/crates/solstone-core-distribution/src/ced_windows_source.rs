@@ -36,6 +36,11 @@ use crate::provenance::Provenance;
 pub const CED_WINDOWS_SOURCE_ARCHIVE_SCHEMA_V1: &str = "solstone.ced-windows-source-archive.v1";
 pub const CED_WINDOWS_SOURCE_ARCHIVE_MANIFEST_LABEL: &str = "ced-windows-source.json";
 
+// The receipt declares one DLL, while the Windows retained-root inventory also
+// observes its `bin` directory. Keep these bounds explicit rather than
+// widening the declared output set to accommodate an implementation detail.
+const CED_WINDOWS_OUTPUT_TREE_ENTRIES: usize = 2;
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CedWindowsSourceArchiveManifest {
@@ -238,7 +243,11 @@ pub fn run_cli(args: &[String]) -> Result<String, CedWindowsSourceArchiveError> 
             let verified = verify_persisted_controlled_build_artifacts(
                 &receipt_path,
                 &output_root,
-                ControlledBuildArtifactVerificationLimits::new(1, 2, 128 * 1024 * 1024),
+                ControlledBuildArtifactVerificationLimits::new(
+                    CED_WINDOWS_OUTPUT_TREE_ENTRIES,
+                    2,
+                    128 * 1024 * 1024,
+                ),
             )
             .map_err(|source| CedWindowsSourceArchiveError::new(source.to_string()))?;
             let output = verified
