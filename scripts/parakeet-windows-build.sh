@@ -92,8 +92,8 @@ remote_work="$WIN_REMOTE_HOME\\parakeet-work-$short_commit"
 remote_guard="if (Test-Path -LiteralPath '$remote_source') { throw 'remote Parakeet source input already exists' }; if (Test-Path -LiteralPath '$remote_cmake') { throw 'remote Parakeet CMake input already exists' }; if (Test-Path -LiteralPath '$remote_model') { throw 'remote Parakeet model input already exists' }; if (Test-Path -LiteralPath '$remote_slot') { throw 'remote Parakeet output slot already exists' }; if (Test-Path -LiteralPath '$remote_work') { throw 'remote Parakeet work root already exists' }"
 "$SSH" "$WIN_REMOTE_HOST" "powershell -NoProfile -Command \"$remote_guard\""
 
-remote_failure_cleanup="\\$ErrorActionPreference = 'Stop'; foreach (\\$path in @('$remote_source', '$remote_cmake', '$remote_model', '$remote_work', '$remote_slot')) { if (Test-Path -LiteralPath \\$path) { Remove-Item -LiteralPath \\$path -Recurse -Force } }; foreach (\\$path in @('$remote_source', '$remote_cmake', '$remote_model', '$remote_work', '$remote_slot')) { if (Test-Path -LiteralPath \\$path) { throw \\\"remote Parakeet cleanup left path: \\$path\\\" } }; Write-Output 'PARAKEET_REMOTE_CLEANUP_OK paths=5'"
-remote_failure_cleanup_encoded=$(printf '%s' "$remote_failure_cleanup" | iconv -f UTF-8 -t UTF-16LE | base64 | tr -d '\\r\\n')
+remote_failure_cleanup="\$ErrorActionPreference = 'Stop'; foreach (\$path in @('$remote_source', '$remote_cmake', '$remote_model', '$remote_work', '$remote_slot')) { if (Test-Path -LiteralPath \$path) { Remove-Item -LiteralPath \$path -Recurse -Force } }; foreach (\$path in @('$remote_source', '$remote_cmake', '$remote_model', '$remote_work', '$remote_slot')) { if (Test-Path -LiteralPath \$path) { throw \"remote Parakeet cleanup left path: \$path\" } }; Write-Output 'PARAKEET_REMOTE_CLEANUP_OK paths=5'"
+remote_failure_cleanup_encoded=$(printf '%s' "$remote_failure_cleanup" | iconv -f UTF-8 -t UTF-16LE | base64 | tr -d '\r\n')
 [ -n "$remote_failure_cleanup_encoded" ] || {
   echo 'ERROR: could not encode remote Parakeet failure-cleanup command' >&2
   exit 1
