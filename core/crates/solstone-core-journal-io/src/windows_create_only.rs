@@ -53,6 +53,11 @@ const PUBLICATION_RETRY_DELAY: Duration = Duration::from_millis(250);
 const STAGE_CREATE_ATTEMPTS: usize = 100;
 const STAGE_OPTIONS: u32 =
     FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT;
+// Destination observation must admit every occupied terminal kind. In particular,
+// asking NtCreateFile for a non-directory handle to an existing directory maps
+// STATUS_FILE_IS_A_DIRECTORY to ERROR_ACCESS_DENIED, which hides a create-only
+// collision behind a permission error.
+const ENTRY_OPTIONS: u32 = FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT;
 const STAGE_ACCESS: u32 = GENERIC_READ | GENERIC_WRITE | DELETE | SYNCHRONIZE;
 
 /// Checkpoints in the Windows create-only publication protocol.
@@ -801,7 +806,7 @@ fn join_move_spelling(parent: &OsStr, name: &OsStr) -> io::Result<Vec<u16>> {
 }
 
 fn destination_present(parent: &OwnedHandle, name: &OsStr) -> io::Result<bool> {
-    match open_named(parent, name, FILE_READ_ATTRIBUTES | SYNCHRONIZE) {
+    match open_destination(parent, name, FILE_READ_ATTRIBUTES | SYNCHRONIZE) {
         Ok(_) => Ok(true),
         Err(error) if error.raw_os_error() == Some(ERROR_DIRECTORY as i32) => Ok(true),
         Err(error) if is_not_found(&error) => Ok(false),
@@ -813,7 +818,7 @@ fn destination_identity(
     parent: &OwnedHandle,
     name: &OsStr,
 ) -> io::Result<Option<WindowsFileIdentity>> {
-    match open_named(parent, name, FILE_READ_ATTRIBUTES | SYNCHRONIZE) {
+    match open_destination(parent, name, FILE_READ_ATTRIBUTES | SYNCHRONIZE) {
         Ok(handle) => Ok(Some(file_identity(handle.as_raw_handle())?)),
         Err(error) if is_not_found(&error) => Ok(None),
         Err(error) => Err(error),
@@ -825,11 +830,25 @@ fn destination_matches(parent: &OwnedHandle, name: &OsStr, expected: WindowsFile
 }
 
 fn inspect_stage(parent: &OwnedHandle, name: &OsStr) -> io::Result<Option<WindowsFileIdentity>> {
-    destination_identity(parent, name)
+    match open_named(parent, name, FILE_READ_ATTRIBUTES | SYNCHRONIZE) {
+        Ok(handle) => Ok(Some(file_identity(handle.as_raw_handle())?)),
+        Err(error) if is_not_found(&error) => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 fn stage_held(parent: &OwnedHandle, name: &OsStr, expected: WindowsFileIdentity) -> bool {
     matches!(inspect_stage(parent, name), Ok(Some(identity)) if identity == expected)
+}
+
+fn open_destination(parent: &OwnedHandle, name: &OsStr, access: u32) -> io::Result<OwnedHandle> {
+    nt_create_relative(
+        parent.as_raw_handle(),
+        name,
+        access,
+        FILE_OPEN,
+        ENTRY_OPTIONS,
+    )
 }
 
 fn open_named(parent: &OwnedHandle, name: &OsStr, access: u32) -> io::Result<OwnedHandle> {
@@ -1148,7 +1167,7 @@ fn observe_exclusive_dest(
     expected_bytes: &[u8],
 ) -> io::Result<FileObservation> {
     let live = file_identity(stage.as_raw_handle())?;
-    let handle = open_named(
+    let handle = open_destination(
         parent,
         dest_name,
         FILE_READ_ATTRIBUTES | FILE_READ_DATA | SYNCHRONIZE,

@@ -4,7 +4,7 @@
 #![cfg(windows)]
 
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -14,13 +14,25 @@ use solstone_core_journal_io::atomic::{
 };
 use solstone_core_journal_io::{
     AtomicWriteOptions, DetailedAtomicError, ExclusivePublication, FinalNameConfirmation,
-    MetadataDurability, StageCleanup, write_bytes_exclusive_detailed,
+    MetadataDurability, StageCleanup, WindowsCreateOnlyPrimitive,
+    run_with_windows_create_only_barrier, write_bytes_exclusive_detailed,
     write_reader_exclusive_detailed,
 };
 use windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED;
 
 const COMPETITOR: &[u8] = b"competitor-bytes";
 const PAYLOAD: &[u8] = b"exclusive-detailed-payload";
+
+struct NamedFailure;
+
+impl Read for NamedFailure {
+    fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
+        Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "named detailed reader failure",
+        ))
+    }
+}
 
 fn temporary(label: &str) -> tempfile::TempDir {
     tempfile::Builder::new().prefix(label).tempdir().unwrap()
@@ -152,6 +164,45 @@ fn detailed_exclusive_publication_stage_identity_mismatch_refused() {
     assert!(result.is_err());
     assert!(!dest.exists());
     assert_no_stage_residue(temporary.path());
+}
+
+#[test]
+fn detailed_reader_failure_preserves_directory_substituted_at_stage_name() {
+    let temporary = temporary("create-only-detailed-stage-directory-");
+    let dest = temporary.path().join("record.bin");
+    let parent = temporary.path().to_path_buf();
+    let moved_stage = temporary.path().join("moved-stage.bin");
+    let substituted = Arc::new(Mutex::new(None));
+    let substituted_at_barrier = Arc::clone(&substituted);
+    let moved_at_barrier = moved_stage.clone();
+    let mut reader = NamedFailure;
+    let (result, trace) = run_with_windows_create_only_barrier(
+        WindowsCreateOnlyPrimitive::StageReady,
+        1,
+        move || {
+            let names = stage_names(&parent);
+            assert_eq!(names.len(), 1, "expected one live stage: {names:?}");
+            let stage = parent.join(&names[0]);
+            fs::rename(&stage, &moved_at_barrier).unwrap();
+            fs::create_dir(&stage).unwrap();
+            *substituted_at_barrier.lock().unwrap() = Some(stage);
+        },
+        || write_reader_exclusive_detailed(&dest, &mut reader, AtomicWriteOptions::default()),
+    );
+
+    let error = result.expect_err("reader failure must refuse publication");
+    assert_eq!(error.source.kind(), io::ErrorKind::UnexpectedEof, "{error}");
+    assert!(trace.barriers_fired, "{trace:?}");
+    assert!(trace.faults_consumed, "{trace:?}");
+    assert!(!dest.exists());
+    let substituted = substituted.lock().unwrap().clone().unwrap();
+    assert!(
+        substituted.is_dir(),
+        "foreign directory substituted at the stage name was removed"
+    );
+    assert_eq!(fs::read(&moved_stage).unwrap(), b"");
+    fs::remove_dir(substituted).unwrap();
+    fs::remove_file(moved_stage).unwrap();
 }
 
 #[test]
