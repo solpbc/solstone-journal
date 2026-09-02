@@ -344,7 +344,7 @@ fn open_by_extended_id_without_write_share(
 }
 
 fn exercise_oplog_open_by_id_share_probe(root: &Path, filesystem: &str) {
-    let journal = root.join("oplog-open-by-id-share-probe");
+    let journal = root.join("opid");
     fs::create_dir(&journal).expect("create oplog share-probe journal root");
     let instant = FixedOffset::east_opt(0)
         .expect("UTC offset")
@@ -353,8 +353,8 @@ fn exercise_oplog_open_by_id_share_probe(root: &Path, filesystem: &str) {
         .expect("fixed receipt instant");
     let mut writer = create_oplog_with_test_timing(
         JournalRoot::open(&journal).expect("admit oplog share-probe root"),
-        "native-open-by-id-feasibility",
-        "ordinary-owner-receipt",
+        "id",
+        "probe",
         OplogFormat::Log,
         instant,
         Duration::ZERO,
