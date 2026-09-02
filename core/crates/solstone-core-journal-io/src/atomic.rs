@@ -9,9 +9,11 @@ use std::fs;
 use std::fs::File;
 #[cfg(unix)]
 use std::fs::OpenOptions;
-use std::io::{self};
+#[cfg(any(unix, windows))]
+use std::io::Read;
 #[cfg(unix)]
-use std::io::{Read, Write};
+use std::io::Write;
+use std::io::{self};
 #[cfg(unix)]
 use std::os::fd::AsFd;
 #[cfg(unix)]
@@ -566,6 +568,9 @@ mod managed_log_windows_tests {
 #[cfg(windows)]
 #[path = "windows_atomic.rs"]
 mod windows_atomic;
+#[cfg(windows)]
+#[path = "windows_create_only.rs"]
+mod windows_create_only;
 
 #[cfg(all(windows, feature = "test-hooks"))]
 pub use windows_atomic::{
@@ -967,6 +972,26 @@ pub fn write_reader_exclusive(
         let _ = fs::remove_file(&temporary_path);
     }
     operation
+}
+
+/// Publish `contents` only when `path` does not yet exist.
+#[cfg(windows)]
+pub fn write_bytes_exclusive(
+    path: impl AsRef<Path>,
+    contents: &[u8],
+    options: AtomicWriteOptions,
+) -> Result<(), AtomicWriteError> {
+    windows_create_only::write_bytes_exclusive(path.as_ref(), contents, options)
+}
+
+/// Create and durably fill a new file from a bounded-memory reader.
+#[cfg(windows)]
+pub fn write_reader_exclusive(
+    path: &Path,
+    reader: &mut impl Read,
+    options: AtomicWriteOptions,
+) -> Result<u64, AtomicWriteError> {
+    windows_create_only::write_reader_exclusive(path, reader, options)
 }
 
 /// Publish an already-created temporary file by syncing and atomically renaming it.
@@ -2032,6 +2057,10 @@ mod generic_writers {
                 assert_eq!(error_path, path);
                 assert_eq!(source.kind(), io::ErrorKind::InvalidData);
             }
+            #[cfg(windows)]
+            AtomicWriteError::PublicationUncertain { .. } => {
+                panic!("serialization failure is pre-publication")
+            }
         }
         assert_eq!(fs::read(&path).unwrap(), b"keep-me-exactly");
         assert_only_destination(temporary.path(), path.file_name().unwrap());
@@ -2094,6 +2123,9 @@ mod windows_tests {
             } => {
                 assert_eq!(error_path, path);
                 assert_eq!(source.to_string(), "boom");
+            }
+            AtomicWriteError::PublicationUncertain { .. } => {
+                panic!("detailed pre-publication errors map to Io")
             }
         }
     }

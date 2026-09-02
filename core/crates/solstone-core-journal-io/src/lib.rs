@@ -20,9 +20,11 @@ pub mod bounded_read;
 #[cfg(unix)]
 pub mod claim_remove;
 pub mod cortex_use;
+mod create_only_retry;
 pub mod deconflict;
 pub mod entry;
 pub mod errors;
+mod exclusive_copy;
 #[cfg(unix)]
 pub mod flat_directory;
 #[cfg(unix)]
@@ -78,6 +80,8 @@ pub(crate) mod test_support;
 pub use append::append_jsonl;
 #[cfg(any(unix, windows))]
 pub use append::append_text;
+#[cfg(unix)]
+pub use atomic::install_file;
 #[cfg(any(unix, windows))]
 pub use atomic::{AtomicWriteOptions, JsonWriteOptions, atomic_replace, write_json};
 #[cfg(unix)]
@@ -89,8 +93,8 @@ pub use atomic::{
 };
 #[cfg(any(unix, windows))]
 pub use atomic::{DetailedAtomicError, DetailedAtomicOutcome, atomic_replace_detailed};
-#[cfg(unix)]
-pub use atomic::{install_file, write_bytes_exclusive, write_reader_exclusive};
+#[cfg(any(unix, windows))]
+pub use atomic::{write_bytes_exclusive, write_reader_exclusive};
 #[cfg(any(unix, windows))]
 pub use atomic::{write_jsonl, write_text};
 pub use bounded_read::{JournalReadError, MAX_BYTES, resolve_read_path};

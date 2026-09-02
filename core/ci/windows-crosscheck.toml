@@ -17,20 +17,14 @@ expected_stderr = ["unresolved import `solstone_core_journal_io::bump_stream_mar
 [[exclusions]]
 package = "solstone-core-retention"
 class = "sibling-owned-platform-backend"
-reason = "The Unix-only health-marker and exclusive-write backends, plus retention's own Unix permissions read, remain."
-expected_stderr = ["solstone_core_journal_io::bump_stream_marker", "solstone_core_journal_io::write_bytes_exclusive", "cannot find `unix` in `os`"]
+reason = "The Unix-only health-marker backend, plus retention's own Unix permissions read, remain."
+expected_stderr = ["solstone_core_journal_io::bump_stream_marker", "cannot find `unix` in `os`"]
 
 [[exclusions]]
 package = "solstone-core-segment"
 class = "sibling-owned-platform-backend"
-reason = "The Unix-only exclusive and health-marker writers remain outside this backend slice."
-expected_stderr = ["solstone_core_journal_io::write_bytes_exclusive", "solstone_core_journal_io::bump_stream_marker"]
-
-[[exclusions]]
-package = "solstone-core-speaker-id"
-class = "sibling-owned-platform-backend"
-reason = "The Unix-only write_bytes_exclusive writer remains outside this backend slice."
-expected_stderr = ["unresolved import `solstone_core_journal_io::write_bytes_exclusive`"]
+reason = "The Unix-only health-marker writer remains outside this backend slice."
+expected_stderr = ["solstone_core_journal_io::bump_stream_marker"]
 
 [[exclusions]]
 package = "solstone-core-pdf"

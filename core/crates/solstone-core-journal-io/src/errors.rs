@@ -4,7 +4,7 @@
 //! Error types for journal file-I/O primitives.
 
 use std::error::Error;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::io;
 use std::path::PathBuf;
@@ -327,12 +327,25 @@ impl Error for PathError {
 pub enum AtomicWriteError {
     /// A filesystem or durability operation failed.
     Io { path: PathBuf, source: io::Error },
+    /// Publication landed, but post-move observation could not be proven.
+    #[cfg(windows)]
+    PublicationUncertain {
+        path: PathBuf,
+        operation: &'static str,
+        source: io::Error,
+    },
 }
 
 impl fmt::Display for AtomicWriteError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Io { path, source } => write!(formatter, "{}: {source}", path.display()),
+            #[cfg(windows)]
+            Self::PublicationUncertain {
+                path,
+                operation,
+                source,
+            } => write!(formatter, "{}: {operation}: {source}", path.display()),
         }
     }
 }
@@ -341,8 +354,50 @@ impl Error for AtomicWriteError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Io { source, .. } => Some(source),
+            #[cfg(windows)]
+            Self::PublicationUncertain { source, .. } => Some(source),
         }
     }
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+#[derive(Debug)]
+struct ExclusiveCleanupChain {
+    primary: io::Error,
+    stage: OsString,
+    cleanup: io::Error,
+}
+
+impl fmt::Display for ExclusiveCleanupChain {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "{}; could not remove stage {:?}: {}",
+            self.primary, self.stage, self.cleanup
+        )
+    }
+}
+
+impl Error for ExclusiveCleanupChain {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        Some(&self.primary)
+    }
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn compose_exclusive_cleanup(
+    primary: io::Error,
+    stage: impl AsRef<OsStr>,
+    cleanup: io::Error,
+) -> io::Error {
+    io::Error::new(
+        primary.kind(),
+        ExclusiveCleanupChain {
+            primary,
+            stage: stage.as_ref().to_os_string(),
+            cleanup,
+        },
+    )
 }
 
 /// Append writer failure.
@@ -724,6 +779,59 @@ impl Error for ClaimRemovalError {
             | Self::ObservationNameMismatch { .. }
             | Self::AliasedClaimName { .. }
             | Self::ReconciliationInconclusive { .. } => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod exclusive_cleanup_tests {
+    use super::{AtomicWriteError, compose_exclusive_cleanup};
+    use std::error::Error;
+    use std::ffi::OsString;
+    use std::io;
+    use std::path::PathBuf;
+
+    #[test]
+    fn compose_preserves_already_exists_and_appends_cleanup() {
+        let primary = io::Error::new(io::ErrorKind::AlreadyExists, "destination already exists");
+        let cleanup = io::Error::other("cleanup boom");
+        let stage = OsString::from(".tmp_1_2.tmp");
+        let composed = compose_exclusive_cleanup(primary, &stage, cleanup);
+        assert_eq!(composed.kind(), io::ErrorKind::AlreadyExists);
+        let display = composed.to_string();
+        assert!(display.contains("destination already exists"), "{display}");
+        assert!(
+            display.contains("could not remove stage \".tmp_1_2.tmp\": cleanup boom"),
+            "{display}"
+        );
+        let chain = composed
+            .get_ref()
+            .and_then(|error| error.downcast_ref::<super::ExclusiveCleanupChain>())
+            .expect("ExclusiveCleanupChain");
+        assert_eq!(chain.primary.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(chain.primary.to_string(), "destination already exists");
+        assert!(
+            Error::source(chain)
+                .is_some_and(|source| source.to_string() == "destination already exists"),
+            "Error::source must be the original primary"
+        );
+
+        let wrapped = AtomicWriteError::Io {
+            path: PathBuf::from("dest.bin"),
+            source: compose_exclusive_cleanup(
+                io::Error::new(io::ErrorKind::AlreadyExists, "destination already exists"),
+                &stage,
+                io::Error::other("cleanup boom"),
+            ),
+        };
+        match wrapped {
+            AtomicWriteError::Io { source, .. } => {
+                assert_eq!(source.kind(), io::ErrorKind::AlreadyExists);
+            }
+            #[cfg(windows)]
+            AtomicWriteError::PublicationUncertain { .. } => {
+                panic!("cleanup composition stays on Io")
+            }
         }
     }
 }

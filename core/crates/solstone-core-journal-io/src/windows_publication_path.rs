@@ -266,13 +266,24 @@ fn check_move_spelling_budget(
     }
 }
 
+/// Budget each terminal name as a sibling under `ancestors`, not a chained path.
+fn check_terminal_names_budget(
+    guid_prefix: &[u16],
+    ancestors: &[&str],
+    names: &[&str],
+) -> Result<(), MoveSpellingTooLong> {
+    for name in names {
+        let mut components = Vec::with_capacity(ancestors.len() + 1);
+        components.extend_from_slice(ancestors);
+        components.push(name);
+        check_move_spelling_budget(guid_prefix, &components)?;
+    }
+    Ok(())
+}
+
 #[cfg(windows)]
-#[allow(
-    unused_imports,
-    reason = "re-exported for the create-only publication writer landing in the next lode"
-)]
 pub(crate) use windows_impl::{
-    PublicationPathError, WindowsPublicationPath, prepare_publication_path,
+    PublicationPathError, WindowsPublicationPath, prepare_publication_path_with_terminals,
 };
 
 #[cfg(windows)]
@@ -302,7 +313,7 @@ mod windows_impl {
 
     use super::{
         MAX_EXTENDED_PATH_UTF16, PublicationPathParseError, PublicationPathSpec,
-        VOLUME_GUID_PREFIX, ascii_drive_letter, check_move_spelling_budget, join_guid_parent,
+        VOLUME_GUID_PREFIX, ascii_drive_letter, check_terminal_names_budget, join_guid_parent,
         parse_publication_path,
     };
     use crate::windows_identity::{WindowsFileIdentity, file_identity};
@@ -319,10 +330,6 @@ mod windows_impl {
     const GUID_PATH_INITIAL_UNITS: usize = 512;
 
     /// Failure while preparing or revalidating a retained publication path.
-    #[allow(
-        dead_code,
-        reason = "consumed by the create-only publication writer landing in the next lode"
-    )]
     #[derive(Debug)]
     pub(crate) enum PublicationPathError {
         Parse(PublicationPathParseError),
@@ -426,12 +433,12 @@ mod windows_impl {
     /// the terminal parent.
     ///
     /// Not `Clone`: the OS share-mode guarantee is bound to these live handles.
-    #[allow(
-        dead_code,
-        reason = "consumed by the create-only publication writer landing in the next lode"
-    )]
     pub(crate) struct WindowsPublicationPath {
         retained: Vec<(OwnedHandle, WindowsFileIdentity)>,
+        #[allow(
+            dead_code,
+            reason = "diagnostic spelling retained for callers; create-only reports the caller path"
+        )]
         diagnostic_path: PathBuf,
         leaf: OsString,
         move_spelling: OsString,
@@ -452,17 +459,13 @@ mod windows_impl {
         /// Diagnostic path only; it is never authority for a child operation.
         #[allow(
             dead_code,
-            reason = "consumed by the create-only publication writer landing in the next lode"
+            reason = "diagnostic spelling retained for callers; create-only reports the caller path"
         )]
         pub(crate) fn diagnostic_path(&self) -> &Path {
             &self.diagnostic_path
         }
 
         /// Retained terminal-parent handle used as the authority for the leaf.
-        #[allow(
-            dead_code,
-            reason = "consumed by the create-only publication writer landing in the next lode"
-        )]
         pub(crate) fn terminal_parent(&self) -> &OwnedHandle {
             &self
                 .retained
@@ -472,28 +475,16 @@ mod windows_impl {
         }
 
         /// Admitted destination leaf name; this lode never opens or creates it.
-        #[allow(
-            dead_code,
-            reason = "consumed by the create-only publication writer landing in the next lode"
-        )]
         pub(crate) fn leaf_name(&self) -> &OsStr {
             &self.leaf
         }
 
         /// Volume-GUID absolute spelling of the terminal parent (drive-root GUID plus every ancestor, no leaf).
-        #[allow(
-            dead_code,
-            reason = "consumed by the create-only publication writer landing in the next lode"
-        )]
         pub(crate) fn move_spelling(&self) -> &OsStr {
             &self.move_spelling
         }
 
         /// Re-check every retained identity (drive root through terminal parent) and that `move_spelling` still names the parent.
-        #[allow(
-            dead_code,
-            reason = "consumed by the create-only publication writer landing in the next lode"
-        )]
         pub(crate) fn revalidate(&self) -> Result<(), PublicationPathError> {
             for (level, (handle, frozen)) in self.retained.iter().enumerate() {
                 let observed = validate_retained_directory(handle.as_raw_handle(), "<retained>")?;
@@ -523,10 +514,17 @@ mod windows_impl {
     /// Resolve a relative path against the current directory, then retain the drive root and every ancestor. Does not open or create the leaf.
     #[allow(
         dead_code,
-        reason = "consumed by the create-only publication writer landing in the next lode"
+        reason = "Windows unit tests use the one-arg wrapper; create-only uses prepare_publication_path_with_terminals"
     )]
     pub(crate) fn prepare_publication_path(
         input: &str,
+    ) -> Result<WindowsPublicationPath, PublicationPathError> {
+        prepare_publication_path_with_terminals(input, &[])
+    }
+
+    pub(crate) fn prepare_publication_path_with_terminals(
+        input: &str,
+        extra_terminals: &[&str],
     ) -> Result<WindowsPublicationPath, PublicationPathError> {
         let spec = parse_publication_path(input).map_err(PublicationPathError::Parse)?;
         let spec = resolve_effective_spec(spec)?;
@@ -543,7 +541,11 @@ mod windows_impl {
             .iter()
             .map(String::as_str)
             .collect::<Vec<_>>();
-        check_move_spelling_budget(&guid, &ancestor_names)
+        let leaf = spec.leaf();
+        let mut terminals = Vec::with_capacity(1 + extra_terminals.len());
+        terminals.push(leaf);
+        terminals.extend_from_slice(extra_terminals);
+        check_terminal_names_budget(&guid, &ancestor_names, &terminals)
             .map_err(|_| PublicationPathError::PathTooLong)?;
 
         let mut retained: Vec<(OwnedHandle, WindowsFileIdentity)> =
@@ -858,7 +860,8 @@ mod windows_impl {
 mod tests {
     use super::{
         MAX_EXTENDED_PATH_UTF16, PublicationPathParseError, PublicationPathSpec,
-        check_move_spelling_budget, join_guid_parent, parse_publication_path,
+        check_move_spelling_budget, check_terminal_names_budget, join_guid_parent,
+        parse_publication_path,
     };
     use crate::name_admission::NameAdmissionReason;
 
@@ -1235,6 +1238,25 @@ mod tests {
             join_guid_parent(&prefix, &["a"]).len(),
             MAX_EXTENDED_PATH_UTF16
         );
+    }
+
+    #[test]
+    fn terminal_budget_accepts_destination_leaf_at_bound() {
+        let prefix = vec![b'x' as u16; MAX_EXTENDED_PATH_UTF16 - 2];
+        check_terminal_names_budget(&prefix, &[], &["a"]).unwrap();
+    }
+
+    #[test]
+    fn terminal_budget_rejects_destination_leaf_over_bound() {
+        let prefix = vec![b'x' as u16; MAX_EXTENDED_PATH_UTF16 - 1];
+        assert!(check_terminal_names_budget(&prefix, &[], &["a"]).is_err());
+    }
+
+    #[test]
+    fn terminal_budget_rejects_worst_case_stage_over_bound_when_destination_fits() {
+        let prefix = vec![b'x' as u16; MAX_EXTENDED_PATH_UTF16 - 2];
+        check_terminal_names_budget(&prefix, &[], &["a"]).unwrap();
+        assert!(check_terminal_names_budget(&prefix, &[], &["a", "ab"]).is_err());
     }
 
     #[cfg(windows)]

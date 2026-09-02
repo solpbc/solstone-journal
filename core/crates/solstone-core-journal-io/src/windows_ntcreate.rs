@@ -68,10 +68,6 @@ fn nt_create_relative_with_attributes(
 }
 
 /// Open or create one native-name child without sharing `DELETE`.
-#[allow(
-    dead_code,
-    reason = "consumed by publication-path prepare, itself consumed by the create-only writer in the next lode"
-)]
 pub(crate) fn nt_create_relative_deny_delete_sharing(
     parent: RawHandle,
     name: &OsStr,
@@ -88,6 +84,26 @@ pub(crate) fn nt_create_relative_deny_delete_sharing(
         OBJ_CASE_INSENSITIVE,
         windows_sys::Win32::Storage::FileSystem::FILE_SHARE_READ
             | windows_sys::Win32::Storage::FileSystem::FILE_SHARE_WRITE,
+    )
+}
+
+/// Open or create one native-name child sharing read and delete, but not write.
+pub(crate) fn nt_create_relative_share_read_delete(
+    parent: RawHandle,
+    name: &OsStr,
+    desired_access: u32,
+    disposition: u32,
+    options: u32,
+) -> io::Result<OwnedHandle> {
+    nt_create_relative_raw(
+        parent,
+        name,
+        desired_access,
+        disposition,
+        options,
+        OBJ_CASE_INSENSITIVE,
+        windows_sys::Win32::Storage::FileSystem::FILE_SHARE_READ
+            | windows_sys::Win32::Storage::FileSystem::FILE_SHARE_DELETE,
     )
 }
 
