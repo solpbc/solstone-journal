@@ -195,6 +195,10 @@ pub(crate) struct SupervisorState {
     /// think tasks so native transcribe children borrow this supervisor's
     /// generation instead of each attempting their own acquisition.
     pub sense_child_environment: BTreeMap<OsString, OsString>,
+    /// Windows Parakeet credentials rotate for every provider launch. This is
+    /// the revision already inherited by the current Sense process tree.
+    #[cfg(windows)]
+    pub parakeet_sense_credentials_revision: u64,
 }
 
 /// Supervisor-held capability for the independent coordinator. The random
@@ -1261,6 +1265,7 @@ pub(crate) async fn boot_and_tick(
         .and_then(|value| value.parse::<u64>().ok())
         .map(Duration::from_secs)
         .unwrap_or(DEFAULT_TASK_MAX_RUNTIME);
+    let parakeet_shared = Arc::new(ParakeetRuntimeShared::default());
     let queue = TaskQueue::new(TaskQueueOptions {
         journal_root: journal.clone(),
         cap_resolver: Arc::new(DefaultCapResolver::new(default_cap)),
@@ -1347,7 +1352,6 @@ pub(crate) async fn boot_and_tick(
     // `is_local_provider_needed` co-location branch remain follow-up work. Those
     // gaps degrade placement quality; they do not leave the provider unmanaged,
     // which is the distinction that gated the cutover.
-    let parakeet_shared = Arc::new(ParakeetRuntimeShared::default());
     let parakeet_fixture = std::env::var(PARAKEET_FIXTURE_ENV).as_deref() == Ok("1");
     let parakeet_truth = if parakeet_fixture {
         ParakeetTruthSeam::with_config(
@@ -1522,6 +1526,8 @@ pub(crate) async fn boot_and_tick(
         timing: SupervisorTiming::for_app_fixture(fast_fixture_timing),
         parent_loss_coordinator: Some(parent_loss_coordinator),
         sense_child_environment,
+        #[cfg(windows)]
+        parakeet_sense_credentials_revision: 0,
     };
     let startup_journal = state.journal.clone();
     let startup_server = Arc::clone(&state.server);

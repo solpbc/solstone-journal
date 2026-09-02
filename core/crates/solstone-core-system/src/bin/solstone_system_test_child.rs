@@ -467,7 +467,7 @@ fn launch_stub(mut args: impl Iterator<Item = String>) {
     // pinned model path whose fixture contents carry that marker.
     let model = std::fs::read_to_string(&model_path).unwrap_or(model_path);
     match model.trim() {
-        "test-ready" | "test-ready-block-term" => {
+        "test-ready" | "test-ready-auth" | "test-ready-block-term" => {
             if model.trim() == "test-ready-block-term" {
                 #[cfg(any(target_os = "linux", target_os = "macos"))]
                 {
@@ -483,10 +483,32 @@ fn launch_stub(mut args: impl Iterator<Item = String>) {
             for stream in listener.incoming() {
                 let mut stream = stream.expect("accept health probe");
                 let mut request = [0_u8; 1024];
+                #[cfg(windows)]
+                let request_len = stream.read(&mut request).unwrap_or_default();
+                #[cfg(not(windows))]
                 let _ = stream.read(&mut request);
+                #[cfg(windows)]
+                let authorized = if model.trim() == "test-ready-auth" {
+                    let token =
+                        std::env::var("SOLSTONE_PARAKEET_AUTH_TOKEN").expect("fixture auth token");
+                    let nonce =
+                        std::env::var("SOLSTONE_PARAKEET_AUTH_NONCE").expect("fixture auth nonce");
+                    let request = String::from_utf8_lossy(&request[..request_len]);
+                    std::env::var("PARAKEET_ATT_CONTEXT").is_ok_and(|context| context == "128")
+                        && request.contains(&format!("Authorization: Bearer {token}"))
+                        && request.contains(&format!("X-Solstone-Nonce: {nonce}"))
+                } else {
+                    true
+                };
+                #[cfg(not(windows))]
+                let authorized = true;
                 stream
                     .write_all(
-                        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+                        if authorized {
+                            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}"
+                        } else {
+                            b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}"
+                        },
                     )
                     .expect("write health response");
             }

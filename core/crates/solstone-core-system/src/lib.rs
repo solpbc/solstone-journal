@@ -13,7 +13,7 @@ pub mod memory_admission;
 pub mod operational_log_parse;
 pub mod partition;
 pub mod process;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod provider_runtime;
 pub mod queue;
 pub mod request;

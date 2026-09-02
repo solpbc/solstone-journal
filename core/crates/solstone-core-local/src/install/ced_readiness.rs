@@ -18,13 +18,13 @@ use solstone_core_distribution::windows_payload::{
 use serde_json::{Value, json};
 
 use super::capability_status::CapabilityStatus;
-use super::ced_runtime::{
-    CED_ANALYZE_TIMEOUT, CED_PROBE_COMMAND, CedAnalyzeError, CedAnalyzeProgram,
-    invoke_ced_analyze_with_args,
-};
 use super::ced_install::{
     ced_artifact_key, ced_library_path, ced_model_path, ced_uses_package_engine, check_ced_assets,
     check_ced_model, model_artifact,
+};
+use super::ced_runtime::{
+    CED_ANALYZE_TIMEOUT, CED_PROBE_COMMAND, CedAnalyzeError, CedAnalyzeProgram,
+    invoke_ced_analyze_with_args,
 };
 use super::manifest::sha256_file;
 
@@ -291,7 +291,10 @@ mod tests {
     fn windows_requires_a_verified_package_engine() {
         let journal = tempfile::tempdir().unwrap();
         match evaluate_ced_readiness(journal.path(), "windows", "x86_64") {
-            CedVerdict::Degraded(CapabilityStatus::ResourceOrOwnerScopeUnavailable { detail, .. }) => {}
+            CedVerdict::Degraded(CapabilityStatus::ResourceOrOwnerScopeUnavailable {
+                detail,
+                ..
+            }) => {}
             other => panic!("expected package-engine refusal, got {other:?}"),
         }
         match evaluate_ced_readiness(journal.path(), "macos", "aarch64") {

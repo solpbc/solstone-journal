@@ -609,7 +609,10 @@ mod tests {
     #[test]
     fn discovery_yields_nothing_when_the_chronicle_is_absent() {
         let temporary = tempfile::TempDir::new().unwrap();
-        assert_eq!(discover_audio_files(temporary.path(), &mut |_| {}).count(), 0);
+        assert_eq!(
+            discover_audio_files(temporary.path(), &mut |_| {}).count(),
+            0
+        );
     }
 
     fn write_audio(temporary: &tempfile::TempDir, name: &str) -> std::path::PathBuf {

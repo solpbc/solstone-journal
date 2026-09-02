@@ -14,16 +14,15 @@ use std::path::PathBuf;
 
 use serde_json::json;
 use solstone_core_assets::canonical_host_pair;
+use solstone_core_local::install::capability_status::CapabilityStatus;
 use solstone_core_local::install::ced_fixture::{
     write_ced_model_bytes, write_complete_ced_install,
 };
 use solstone_core_local::install::ced_install::{
     ced_artifact_key, ced_library_path, ced_model_path,
 };
-use solstone_core_local::install::capability_status::CapabilityStatus;
 use solstone_core_local::install::ced_readiness::{
-    CedVerdict, evaluate_ced_readiness,
-    evaluate_ced_readiness_against_with_probe,
+    CedVerdict, evaluate_ced_readiness, evaluate_ced_readiness_against_with_probe,
 };
 use solstone_core_local::install::ced_runtime::CedAnalyzeProgram;
 use solstone_core_sound_tags::{tag_audio, tag_audio_with_readiness_and_program};
