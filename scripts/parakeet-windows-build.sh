@@ -81,7 +81,7 @@ if "$GIT" -C "$PARAKEET_WINDOWS_SOURCE_ROOT" diff --quiet HEAD -- examples/serve
   "$GIT" -C "$PARAKEET_WINDOWS_SOURCE_ROOT" apply --check "$server_patch"
   "$GIT" -C "$PARAKEET_WINDOWS_SOURCE_ROOT" apply "$server_patch"
 else
-  "$GIT" -C "$PARAKEET_WINDOWS_SOURCE_ROOT" diff --binary HEAD -- examples/server/main.cpp | cmp -s - "$server_patch" || {
+  "$GIT" -C "$PARAKEET_WINDOWS_SOURCE_ROOT" -c core.abbrev=8 diff --binary HEAD -- examples/server/main.cpp | cmp -s - "$server_patch" || {
     echo 'ERROR: Parakeet source has a server patch other than the controlled boundary' >&2
     exit 1
   }
