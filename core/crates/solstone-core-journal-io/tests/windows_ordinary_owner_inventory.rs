@@ -5,7 +5,7 @@
 
 use std::ffi::OsStr;
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::mem::{offset_of, size_of};
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::{AsHandle, AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
@@ -351,7 +351,7 @@ fn exercise_oplog_open_by_id_share_probe(root: &Path, filesystem: &str) {
         .with_ymd_and_hms(2026, 9, 2, 16, 0, 0)
         .single()
         .expect("fixed receipt instant");
-    let writer = create_oplog_with_test_timing(
+    let mut writer = create_oplog_with_test_timing(
         JournalRoot::open(&journal).expect("admit oplog share-probe root"),
         "native-open-by-id-feasibility",
         "ordinary-owner-receipt",
@@ -361,6 +361,12 @@ fn exercise_oplog_open_by_id_share_probe(root: &Path, filesystem: &str) {
         Duration::ZERO,
     )
     .expect("create product operational-log writer");
+    writer
+        .write_all(b"open-by-id share probe\n")
+        .expect("write retained product operational log");
+    writer
+        .flush()
+        .expect("flush retained product operational log");
     let health = admit_day_health_directory(
         JournalRoot::open(&journal).expect("readmit oplog share-probe root"),
         "20260902",
