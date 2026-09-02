@@ -32,36 +32,36 @@ pub struct WindowsParakeetPackage {
 #[cfg(windows)]
 pub fn verified_windows_parakeet_package() -> Result<WindowsParakeetPackage, String> {
     static PACKAGE: OnceLock<Result<WindowsParakeetPackage, String>> = OnceLock::new();
-    PACKAGE
-        .get_or_init(|| {
-            let executable = std::env::current_exe().map_err(|error| {
-                format!("could not determine the running journal executable: {error}")
-            })?;
-            let bin = executable.parent().ok_or_else(|| {
-                format!(
-                    "running journal executable has no containing directory: {}",
-                    executable.display()
-                )
-            })?;
-            if bin.file_name() != Some(OsStr::new("bin")) {
-                return Err(format!(
-                    "running journal executable is not in the package bin directory: {}",
-                    executable.display()
-                ));
-            }
-            let package_root = bin.parent().ok_or_else(|| {
-                format!(
-                    "package bin directory has no package root: {}",
-                    bin.display()
-                )
-            })?;
-            let payload = verify_windows_payload(package_root).map_err(|error| {
-                format!("could not verify the signed Parakeet app payload: {error}")
-            })?;
-            declared_parakeet_members(package_root, &payload)
-        })
-        .as_ref()
-        .map(Clone::clone)
+    match PACKAGE.get_or_init(|| {
+        let executable = std::env::current_exe().map_err(|error| {
+            format!("could not determine the running journal executable: {error}")
+        })?;
+        let bin = executable.parent().ok_or_else(|| {
+            format!(
+                "running journal executable has no containing directory: {}",
+                executable.display()
+            )
+        })?;
+        if bin.file_name() != Some(OsStr::new("bin")) {
+            return Err(format!(
+                "running journal executable is not in the package bin directory: {}",
+                executable.display()
+            ));
+        }
+        let package_root = bin.parent().ok_or_else(|| {
+            format!(
+                "package bin directory has no package root: {}",
+                bin.display()
+            )
+        })?;
+        let payload = verify_windows_payload(package_root).map_err(|error| {
+            format!("could not verify the signed Parakeet app payload: {error}")
+        })?;
+        declared_parakeet_members(package_root, &payload)
+    }) {
+        Ok(package) => Ok(package.clone()),
+        Err(error) => Err(error.clone()),
+    }
 }
 
 #[cfg(windows)]

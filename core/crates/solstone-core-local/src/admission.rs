@@ -3,13 +3,12 @@
 
 //! Cross-process FIFO admission for bundled local inference.
 
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use nix::errno::Errno;
-use nix::fcntl::{Flock, FlockArg};
+#[cfg(unix)]
 use nix::time::{ClockId, clock_gettime};
 use uuid::Uuid;
 
@@ -34,18 +33,12 @@ impl From<std::io::Error> for AdmissionError {
 pub struct LocalSlotPermit {
     pub slot_index: u32,
     pub queue_wait_ms: f64,
-    locks: Vec<Flock<File>>,
-}
-
-impl Drop for LocalSlotPermit {
-    fn drop(&mut self) {
-        self.locks.clear();
-    }
+    _locks: Vec<File>,
 }
 
 struct WaitTicket {
     path: PathBuf,
-    lock: Option<Flock<File>>,
+    lock: Option<File>,
 }
 
 impl Drop for WaitTicket {
@@ -115,7 +108,7 @@ fn create_ticket(root: &Path) -> Result<WaitTicket, AdmissionError> {
         .write(true)
         .create_new(true)
         .open(&creating)?;
-    let lock = lock_exclusive(file)?;
+    let lock = lock_exclusive(file).map_err(lock_error)?;
     if let Err(error) = fs::rename(&creating, &ticket) {
         drop(lock);
         let _ = fs::remove_file(&creating);
@@ -128,15 +121,39 @@ fn create_ticket(root: &Path) -> Result<WaitTicket, AdmissionError> {
 }
 
 fn ticket_identity() -> Result<String, AdmissionError> {
-    let now = clock_gettime(ClockId::CLOCK_MONOTONIC)
-        .map_err(|error| std::io::Error::from_raw_os_error(error as i32))?;
-    let nanos = (u128::try_from(now.tv_sec()).unwrap_or_default() * 1_000_000_000)
-        + u128::try_from(now.tv_nsec()).unwrap_or_default();
+    let nanos = monotonic_nanos()?;
     Ok(format!(
         "{nanos:020}-{}-{}",
         std::process::id(),
         Uuid::new_v4().simple()
     ))
+}
+
+#[cfg(unix)]
+fn monotonic_nanos() -> Result<u128, AdmissionError> {
+    let now = clock_gettime(ClockId::CLOCK_MONOTONIC)
+        .map_err(|error| std::io::Error::from_raw_os_error(error as i32))?;
+    Ok(
+        (u128::try_from(now.tv_sec()).unwrap_or_default() * 1_000_000_000)
+            + u128::try_from(now.tv_nsec()).unwrap_or_default(),
+    )
+}
+
+#[cfg(windows)]
+fn monotonic_nanos() -> Result<u128, AdmissionError> {
+    // SAFETY: GetTickCount64 reads the system's monotonic boot-duration counter
+    // and has no pointer or ownership preconditions.
+    #[allow(unsafe_code)]
+    let milliseconds = unsafe { GetTickCount64() };
+    Ok(u128::from(milliseconds) * 1_000_000)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn monotonic_nanos() -> Result<u128, AdmissionError> {
+    Ok(std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(std::io::Error::other)?
+        .as_nanos())
 }
 
 fn ticket_has_turn(root: &Path, own_ticket: &Path) -> Result<bool, AdmissionError> {
@@ -152,7 +169,7 @@ fn ticket_has_turn(root: &Path, own_ticket: &Path) -> Result<bool, AdmissionErro
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(error) => return Err(error.into()),
         };
-        match Flock::lock(file, FlockArg::LockExclusiveNonblock) {
+        match lock_exclusive(file) {
             Ok(lock) => {
                 let removed = fs::remove_file(&oldest);
                 drop(lock);
@@ -162,10 +179,8 @@ fn ticket_has_turn(root: &Path, own_ticket: &Path) -> Result<bool, AdmissionErro
                     Err(error) => return Err(error.into()),
                 }
             }
-            Err((_file, error)) if is_contended(error) => return Ok(false),
-            Err((_file, error)) => {
-                return Err(std::io::Error::from_raw_os_error(error as i32).into());
-            }
+            Err(TryLockError::WouldBlock) => return Ok(false),
+            Err(TryLockError::Error(error)) => return Err(error.into()),
         }
     }
 }
@@ -192,18 +207,16 @@ fn try_acquire(
 ) -> Result<Option<LocalSlotPermit>, AdmissionError> {
     for slot_index in 0..capacity {
         let file = slot_file(root, slot_index)?;
-        match Flock::lock(file, FlockArg::LockExclusiveNonblock) {
+        match lock_exclusive(file) {
             Ok(lock) => {
                 return Ok(Some(LocalSlotPermit {
                     slot_index,
                     queue_wait_ms: elapsed_ms(started),
-                    locks: vec![lock],
+                    _locks: vec![lock],
                 }));
             }
-            Err((_file, error)) if is_contended(error) => continue,
-            Err((_file, error)) => {
-                return Err(std::io::Error::from_raw_os_error(error as i32).into());
-            }
+            Err(TryLockError::WouldBlock) => continue,
+            Err(TryLockError::Error(error)) => return Err(error.into()),
         }
     }
     Ok(None)
@@ -217,22 +230,22 @@ fn try_acquire_exclusive(
     let mut locks = Vec::with_capacity(capacity as usize);
     for slot_index in 0..capacity {
         let file = slot_file(root, slot_index)?;
-        match Flock::lock(file, FlockArg::LockExclusiveNonblock) {
+        match lock_exclusive(file) {
             Ok(lock) => locks.push(lock),
-            Err((_file, error)) if is_contended(error) => {
+            Err(TryLockError::WouldBlock) => {
                 drop(locks);
                 return Ok(None);
             }
-            Err((_file, error)) => {
+            Err(TryLockError::Error(error)) => {
                 drop(locks);
-                return Err(std::io::Error::from_raw_os_error(error as i32).into());
+                return Err(error.into());
             }
         }
     }
     Ok(Some(LocalSlotPermit {
         slot_index: 0,
         queue_wait_ms: elapsed_ms(started),
-        locks,
+        _locks: locks,
     }))
 }
 
@@ -246,14 +259,24 @@ fn slot_file(root: &Path, slot_index: u32) -> Result<File, AdmissionError> {
         .map_err(Into::into)
 }
 
-fn lock_exclusive(file: File) -> Result<Flock<File>, AdmissionError> {
-    Flock::lock(file, FlockArg::LockExclusiveNonblock).map_err(|(_file, error)| {
-        AdmissionError::Io(std::io::Error::from_raw_os_error(error as i32))
-    })
+fn lock_exclusive(file: File) -> Result<File, TryLockError> {
+    file.try_lock()?;
+    Ok(file)
 }
 
-fn is_contended(error: Errno) -> bool {
-    error == Errno::EACCES || error == Errno::EAGAIN || error == Errno::EWOULDBLOCK
+fn lock_error(error: TryLockError) -> AdmissionError {
+    match error {
+        TryLockError::WouldBlock => {
+            AdmissionError::Io(std::io::Error::from(std::io::ErrorKind::WouldBlock))
+        }
+        TryLockError::Error(error) => error.into(),
+    }
+}
+
+#[cfg(windows)]
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn GetTickCount64() -> u64;
 }
 
 fn elapsed_ms(started: Instant) -> f64 {

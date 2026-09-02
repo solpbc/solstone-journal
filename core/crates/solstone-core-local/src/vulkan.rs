@@ -209,6 +209,8 @@ fn resolve_program(
                     return Err(ResolveProbeProgramError::HelperNotExecutable(path));
                 }
             }
+            #[cfg(not(unix))]
+            let _ = metadata;
             Ok(ResolvedProbeProgram {
                 executable: path,
                 args: Vec::new(),
