@@ -367,6 +367,10 @@ bin = "solstone-core-hosted-supervisor-fixture"
 reason = "test child; never ship"
 
 [[deny]]
+bin = "solstone-core-speakers-analyze-generation-holder"
+reason = "test child; never ship"
+
+[[deny]]
 bin = "solstone-cortex-controller"
 reason = "test child; never ship"
 
