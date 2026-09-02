@@ -27,7 +27,6 @@ pub mod errors;
 mod exclusive_copy;
 #[cfg(unix)]
 pub mod flat_directory;
-#[cfg(unix)]
 pub mod health_marker;
 mod install_retry;
 pub mod inventory_budget;
@@ -145,7 +144,6 @@ pub use flat_directory::{
     open_flat_directory_bound, read_observed_file, read_observed_file_bounded,
     read_observed_root_file_bounded,
 };
-#[cfg(unix)]
 pub use health_marker::{
     DayMarkerPairStatus, HealthMarker, HealthMarkerError, HealthMarkerKind, HealthMarkerState,
     PublishOutcome, bump_stream_marker, day_marker_pair_status, health_marker_path,

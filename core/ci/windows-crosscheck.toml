@@ -9,22 +9,10 @@ workspace_packages = 137
 library_packages = 131
 
 [[exclusions]]
-package = "solstone-core-backfill-cli"
-class = "sibling-owned-platform-backend"
-reason = "The Unix-only health-marker backend still owns bump_stream_marker."
-expected_stderr = ["unresolved import `solstone_core_journal_io::bump_stream_marker`"]
-
-[[exclusions]]
 package = "solstone-core-retention"
 class = "sibling-owned-platform-backend"
-reason = "The Unix-only health-marker backend, plus retention's own Unix permissions read, remain."
-expected_stderr = ["solstone_core_journal_io::bump_stream_marker", "cannot find `unix` in `os`"]
-
-[[exclusions]]
-package = "solstone-core-segment"
-class = "sibling-owned-platform-backend"
-reason = "The Unix-only health-marker writer remains outside this backend slice."
-expected_stderr = ["solstone_core_journal_io::bump_stream_marker"]
+reason = "Retention's compact_log still reads Unix file permissions via std::os::unix::fs::PermissionsExt."
+expected_stderr = ["cannot find `unix` in `os`"]
 
 [[exclusions]]
 package = "solstone-core-pdf"

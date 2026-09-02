@@ -765,4 +765,217 @@ mod tests {
             DayMarkerPairStatus::Dirty
         );
     }
+
+    #[test]
+    fn bumped_stream_marker_writes_exact_compact_json() {
+        let temporary = TempDir::new();
+        assert_eq!(bump_stream_marker(temporary.path(), DAY).unwrap(), 1);
+        assert_eq!(
+            fs::read(marker_path(temporary.path(), HealthMarkerKind::Stream)).unwrap(),
+            br#"{"version":1,"generation":1,"fingerprint":null}"#
+        );
+    }
+
+    #[test]
+    fn marker_without_version_or_generation_is_malformed() {
+        for bytes in [
+            br#"{"generation":1,"fingerprint":null}"#.as_slice(),
+            br#"{"version":1,"fingerprint":null}"#.as_slice(),
+        ] {
+            let temporary = TempDir::new();
+            let stream = marker_path(temporary.path(), HealthMarkerKind::Stream);
+            fs::create_dir_all(stream.parent().unwrap()).unwrap();
+            fs::write(&stream, bytes).unwrap();
+            assert!(matches!(
+                read_health_marker(temporary.path(), DAY, HealthMarkerKind::Stream).unwrap(),
+                HealthMarkerState::MalformedNonEmpty { .. }
+            ));
+        }
+    }
+
+    #[test]
+    fn duplicate_generation_field_is_malformed() {
+        let bytes = br#"{"version":1,"generation":1,"generation":2,"fingerprint":null}"#;
+        assert!(serde_json::from_slice::<HealthMarker>(bytes).is_err());
+
+        let temporary = TempDir::new();
+        let stream = marker_path(temporary.path(), HealthMarkerKind::Stream);
+        fs::create_dir_all(stream.parent().unwrap()).unwrap();
+        fs::write(&stream, bytes).unwrap();
+        assert!(matches!(
+            read_health_marker(temporary.path(), DAY, HealthMarkerKind::Stream).unwrap(),
+            HealthMarkerState::MalformedNonEmpty { .. }
+        ));
+    }
+
+    #[test]
+    fn unknown_marker_field_is_ignored() {
+        let bytes = br#"{"version":1,"generation":1,"fingerprint":null,"extra":"ignored"}"#;
+        assert_eq!(
+            serde_json::from_slice::<HealthMarker>(bytes).unwrap(),
+            HealthMarker {
+                version: 1,
+                generation: 1,
+                fingerprint: None,
+            }
+        );
+
+        let temporary = TempDir::new();
+        let stream = marker_path(temporary.path(), HealthMarkerKind::Stream);
+        fs::create_dir_all(stream.parent().unwrap()).unwrap();
+        fs::write(&stream, bytes).unwrap();
+        assert!(matches!(
+            read_health_marker(temporary.path(), DAY, HealthMarkerKind::Stream).unwrap(),
+            HealthMarkerState::Versioned {
+                marker: HealthMarker {
+                    generation: 1,
+                    fingerprint: None,
+                    ..
+                },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn unsupported_marker_version_is_malformed() {
+        let bytes = br#"{"version":2,"generation":1,"fingerprint":null}"#;
+        let marker = serde_json::from_slice::<HealthMarker>(bytes).unwrap();
+        assert_eq!(marker.version, 2);
+
+        let temporary = TempDir::new();
+        let stream = marker_path(temporary.path(), HealthMarkerKind::Stream);
+        fs::create_dir_all(stream.parent().unwrap()).unwrap();
+        fs::write(&stream, bytes).unwrap();
+        assert!(matches!(
+            read_health_marker(temporary.path(), DAY, HealthMarkerKind::Stream).unwrap(),
+            HealthMarkerState::MalformedNonEmpty { .. }
+        ));
+    }
+
+    #[test]
+    fn read_io_error_includes_the_marker_path() {
+        let temporary = TempDir::new();
+        let expected = marker_path(temporary.path(), HealthMarkerKind::Stream);
+        fs::create_dir_all(&expected).unwrap();
+        let error =
+            read_health_marker(temporary.path(), DAY, HealthMarkerKind::Stream).unwrap_err();
+        assert!(matches!(
+            &error,
+            HealthMarkerError::Io { path, .. } if path == &expected
+        ));
+        assert!(error.to_string().contains(&expected.display().to_string()));
+    }
+
+    #[test]
+    fn overflow_refuses_bump_without_changing_bytes() {
+        let temporary = TempDir::new();
+        let stream = marker_path(temporary.path(), HealthMarkerKind::Stream);
+        write_marker(
+            &stream,
+            &HealthMarker {
+                version: MARKER_VERSION,
+                generation: u64::MAX,
+                fingerprint: None,
+            },
+        )
+        .unwrap();
+        let before = fs::read(&stream).unwrap();
+
+        assert!(bump_stream_marker(temporary.path(), DAY).is_err());
+        assert_eq!(fs::read(stream).unwrap(), before);
+    }
+
+    #[test]
+    fn overflow_refuses_publish_without_changing_bytes() {
+        let temporary = TempDir::new();
+        let stream = marker_path(temporary.path(), HealthMarkerKind::Stream);
+        write_marker(
+            &stream,
+            &HealthMarker {
+                version: MARKER_VERSION,
+                generation: u64::MAX,
+                fingerprint: None,
+            },
+        )
+        .unwrap();
+        let before = fs::read(&stream).unwrap();
+        assert!(
+            publish_daily_marker_if_current(temporary.path(), DAY, u64::MAX, "before", || Ok(
+                "after".to_owned()
+            ))
+            .is_err()
+        );
+        assert_eq!(fs::read(stream).unwrap(), before);
+
+        let temporary = TempDir::new();
+        let stream = marker_path(temporary.path(), HealthMarkerKind::Stream);
+        let daily = marker_path(temporary.path(), HealthMarkerKind::Daily);
+        write_marker(
+            &stream,
+            &HealthMarker {
+                version: MARKER_VERSION,
+                generation: u64::MAX,
+                fingerprint: None,
+            },
+        )
+        .unwrap();
+        write_marker(
+            &daily,
+            &HealthMarker {
+                version: MARKER_VERSION,
+                generation: u64::MAX,
+                fingerprint: Some("old".to_owned()),
+            },
+        )
+        .unwrap();
+        let before = fs::read(&stream).unwrap();
+        assert!(
+            publish_daily_marker_if_current(temporary.path(), DAY, u64::MAX, "after", || Ok(
+                "after".to_owned()
+            ))
+            .is_err()
+        );
+        assert_eq!(fs::read(stream).unwrap(), before);
+    }
+
+    #[test]
+    fn absent_stream_marker_is_complete() {
+        let temporary = TempDir::new();
+        assert_eq!(
+            day_marker_pair_status(temporary.path(), DAY).unwrap(),
+            DayMarkerPairStatus::Complete
+        );
+    }
+
+    #[test]
+    fn stream_without_daily_marker_is_dirty() {
+        let temporary = TempDir::new();
+        assert_eq!(bump_stream_marker(temporary.path(), DAY).unwrap(), 1);
+        assert_eq!(
+            day_marker_pair_status(temporary.path(), DAY).unwrap(),
+            DayMarkerPairStatus::Dirty
+        );
+    }
+
+    #[test]
+    fn equal_generation_pair_without_fingerprint_mismatch_is_complete() {
+        let temporary = TempDir::new();
+        assert_eq!(bump_stream_marker(temporary.path(), DAY).unwrap(), 1);
+        assert_eq!(
+            publish_daily_marker_if_current(
+                temporary.path(),
+                DAY,
+                1,
+                "raw-fingerprint",
+                stable_fingerprint,
+            )
+            .unwrap(),
+            PublishOutcome::Published(1)
+        );
+        assert_eq!(
+            day_marker_pair_status(temporary.path(), DAY).unwrap(),
+            DayMarkerPairStatus::Complete
+        );
+    }
 }
