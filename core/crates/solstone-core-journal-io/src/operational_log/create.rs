@@ -49,6 +49,7 @@ enum OplogCreateClass {
     LeaseFailed,
     OwnResidue,
     ForeignResidue,
+    Aliased,
     RetryExhausted,
     EntropyExhausted,
     LockUnsafe,
@@ -66,6 +67,7 @@ impl OplogCreateClass {
             Self::LeaseFailed => "oplog_create_lease_failed",
             Self::OwnResidue => "oplog_create_own_residue",
             Self::ForeignResidue => "oplog_create_foreign_residue",
+            Self::Aliased => "oplog_create_aliased",
             Self::RetryExhausted => "oplog_create_retry_exhausted",
             Self::EntropyExhausted => "oplog_create_entropy_exhausted",
             Self::LockUnsafe => "oplog_create_lock_unsafe",
@@ -224,13 +226,15 @@ fn create_with_timing(
             rollback(health, &staged)?;
             return Err(OplogCreateError::new(OplogCreateClass::AncestorReplaced));
         }
-        let published = if force_name_based() {
-            platform::publish_name_based(health, staged, dest_os)
-        } else {
-            platform::publish_handle_bound(health, staged, dest_os)
-        };
+        let published = platform::publish_handle_bound(health, staged, dest_os);
         match published {
             Ok(file) => {
+                if sync_published(health).is_err() {
+                    return Err(OplogCreateError::io());
+                }
+                if health.revalidate_binding().is_err() {
+                    return Err(OplogCreateError::new(OplogCreateClass::AncestorReplaced));
+                }
                 return Ok(OplogWriter::new(file, lease, dest));
             }
             Err(platform::PublishOutcome::Occupied(staged)) => {
@@ -240,25 +244,22 @@ fn create_with_timing(
                     return Err(OplogCreateError::io());
                 }
             }
-            Err(platform::PublishOutcome::OccupiedName { identity }) => {
-                let foreign = platform::dest_is_foreign(health, dest_os, identity)?;
-                if !foreign {
-                    return Err(OplogCreateError::io());
-                }
-            }
             Err(platform::PublishOutcome::WrongIdentityPublished { file }) => {
                 drop(file);
                 drop(lease);
                 return Err(OplogCreateError::new(OplogCreateClass::ForeignResidue));
             }
+            Err(platform::PublishOutcome::Aliased { file }) => {
+                drop(file);
+                drop(lease);
+                return Err(OplogCreateError::new(OplogCreateClass::Aliased));
+            }
             Err(platform::PublishOutcome::Io(staged)) => {
                 rollback(health, &staged)?;
                 return Err(OplogCreateError::io());
             }
-            Err(platform::PublishOutcome::NameBasedIo) => {
-                return Err(OplogCreateError::io());
-            }
-            Err(platform::PublishOutcome::IoAfterPublish { .. }) => {
+            Err(platform::PublishOutcome::IoAfterPublish { file }) => {
+                drop(file);
                 return Err(OplogCreateError::own_residue());
             }
         }
@@ -274,6 +275,18 @@ fn write_admission(
     file.write_all(&header)
         .map_err(|_| OplogCreateError::io())?;
     file.sync_all().map_err(|_| OplogCreateError::io())?;
+    Ok(())
+}
+
+fn sync_published(health: &OplogDayHealth) -> Result<(), OplogCreateError> {
+    #[cfg(unix)]
+    {
+        crate::entry::sync_dir_bound(health.health()).map_err(|_| OplogCreateError::io())?;
+    }
+    #[cfg(windows)]
+    {
+        let _ = health;
+    }
     Ok(())
 }
 
@@ -378,11 +391,10 @@ struct OplogCreateTraceState {
     fault_consumed: bool,
     barriers: Vec<(OplogCreatePrimitive, Box<dyn FnOnce()>)>,
     file_ids: std::collections::VecDeque<[u8; 16]>,
-    name_based: bool,
     rollback_fail: bool,
     probe_indeterminate: bool,
     dest_identity_io: bool,
-    name_based_link_io: bool,
+    publish_io: bool,
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
@@ -444,21 +456,6 @@ fn barrier(primitive: OplogCreatePrimitive) {
 }
 
 #[cfg(not(any(test, feature = "test-hooks")))]
-fn force_name_based() -> bool {
-    false
-}
-
-#[cfg(any(test, feature = "test-hooks"))]
-fn force_name_based() -> bool {
-    OPLOG_CREATE_TRACE.with(|trace| {
-        trace
-            .borrow()
-            .as_ref()
-            .is_some_and(|state| state.name_based)
-    })
-}
-
-#[cfg(not(any(test, feature = "test-hooks")))]
 fn force_rollback_fail() -> bool {
     false
 }
@@ -504,17 +501,17 @@ pub(super) fn force_dest_identity_io() -> bool {
 }
 
 #[cfg(not(any(test, feature = "test-hooks")))]
-pub(super) fn force_name_based_link_io() -> bool {
+pub(super) fn force_publish_io() -> bool {
     false
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
-pub(super) fn force_name_based_link_io() -> bool {
+pub(super) fn force_publish_io() -> bool {
     OPLOG_CREATE_TRACE.with(|trace| {
         trace
             .borrow()
             .as_ref()
-            .is_some_and(|state| state.name_based_link_io)
+            .is_some_and(|state| state.publish_io)
     })
 }
 
@@ -535,11 +532,10 @@ fn empty_trace() -> OplogCreateTraceState {
         fault_consumed: false,
         barriers: Vec::new(),
         file_ids: std::collections::VecDeque::new(),
-        name_based: false,
         rollback_fail: false,
         probe_indeterminate: false,
         dest_identity_io: false,
-        name_based_link_io: false,
+        publish_io: false,
     }
 }
 
@@ -583,20 +579,6 @@ pub fn run_with_oplog_file_ids<T>(ids: Vec<[u8; 16]>, operation: impl FnOnce() -
     with_trace(
         OplogCreateTraceState {
             file_ids: ids.into(),
-            ..empty_trace()
-        },
-        operation,
-        |_| true,
-    )
-    .0
-}
-
-/// Force the name-based publish fallback for one operation.
-#[cfg(any(test, feature = "test-hooks"))]
-pub fn run_with_oplog_name_based_publish<T>(operation: impl FnOnce() -> T) -> T {
-    with_trace(
-        OplogCreateTraceState {
-            name_based: true,
             ..empty_trace()
         },
         operation,
@@ -767,6 +749,19 @@ mod tests {
             .collect()
     }
 
+    fn leftover_unrelated(path: &Path) -> Vec<String> {
+        listing(path)
+            .into_iter()
+            .filter(|name| *name != ".oplog-namespace.lock")
+            .filter(|name| {
+                matches!(
+                    classify_oplog_name(OsStr::new(name)),
+                    OplogNameClassification::Unrelated
+                )
+            })
+            .collect()
+    }
+
     fn payload_after_admission(path: &Path, leaf: &str) -> Vec<u8> {
         let bytes = fs::read(path).unwrap();
         let record = validate_oplog_admission(OsStr::new(leaf), &bytes).unwrap();
@@ -817,7 +812,7 @@ mod tests {
             assert_eq!(fs::read(dir.join(incumbent)).unwrap(), b"same-bytes");
         }
         assert_eq!(canonical_leaves(&dir), incumbents);
-        assert!(!listing(&dir).iter().any(|name| name.contains(".tmp")));
+        assert!(!leftover_unrelated(&dir).is_empty());
     }
 
     #[test]
@@ -870,8 +865,10 @@ mod tests {
             run_with_oplog_create_fault(OplogCreatePrimitive::Lease, || create(&health));
         assert!(consumed);
         expect_token(result.unwrap_err(), "oplog_create_lease_failed");
-        let names = listing(&health_dir(temporary.path()));
-        assert_eq!(names, vec![".oplog-namespace.lock".to_owned()]);
+        let dir = health_dir(temporary.path());
+        assert!(canonical_leaves(&dir).is_empty());
+        assert!(listing(&dir).contains(&".oplog-namespace.lock".to_owned()));
+        assert_eq!(leftover_unrelated(&dir).len(), 1);
     }
 
     #[test]
@@ -972,21 +969,15 @@ mod tests {
         expect_token(result.unwrap_err(), "oplog_create_io");
         let dir = health_dir(temporary.path());
         assert!(canonical_leaves(&dir).is_empty());
-        assert_eq!(
-            listing(&dir)
-                .iter()
-                .filter(|name| *name != ".oplog-namespace.lock")
-                .count(),
-            0
-        );
+        assert_eq!(leftover_unrelated(&dir).len(), 1);
     }
 
     #[test]
-    fn handle_bound_publish_ignores_stage_pathname_replacement() {
+    fn extra_hard_link_before_publish_is_aliased() {
         let temporary = temp();
         let root = temporary.path().to_path_buf();
         let health = health_at(&root);
-        let writer = run_with_oplog_create_barrier(
+        let error = run_with_oplog_create_barrier(
             OplogCreatePrimitive::AfterLeaseBeforePublish,
             {
                 let dir = health_dir(&root);
@@ -996,38 +987,20 @@ mod tests {
                         .map(|entry| entry.unwrap().file_name())
                         .find(|name| name.to_string_lossy().contains(".tmp"))
                         .expect("stage name");
-                    let from = dir.join(&stage);
-                    fs::rename(&from, dir.join("displaced-stage")).unwrap();
-                    fs::write(&from, b"replacement").unwrap();
+                    fs::hard_link(dir.join(&stage), dir.join("alias-link")).unwrap();
                 }
             },
             || create(&health),
         )
-        .unwrap();
+        .unwrap_err();
+        expect_token(error, "oplog_create_aliased");
         let dir = health_dir(&root);
-        assert_eq!(
-            payload_after_admission(&dir.join(writer.leaf_name()), writer.leaf_name()),
-            b""
-        );
-        let displaced = fs::read(dir.join("displaced-stage")).unwrap();
-        assert!(displaced.starts_with(b"solstone.oplog.admission.v1\n"));
-        assert_eq!(
-            fs::read(
-                dir.join(
-                    fs::read_dir(&dir)
-                        .unwrap()
-                        .map(|entry| entry.unwrap().file_name())
-                        .find(|name| name.to_string_lossy().contains(".tmp"))
-                        .unwrap()
-                )
-            )
-            .unwrap(),
-            b"replacement"
-        );
+        assert_eq!(canonical_leaves(&dir).len(), 1);
+        assert!(dir.join("alias-link").exists());
     }
 
     #[test]
-    fn name_based_fallback_preserves_foreign_identity() {
+    fn stage_pathname_replacement_is_foreign_residue() {
         let temporary = temp();
         let root = temporary.path().to_path_buf();
         let health = health_at(&root);
@@ -1035,7 +1008,6 @@ mod tests {
         let dest = dest_for(id);
         let error = with_trace(
             OplogCreateTraceState {
-                name_based: true,
                 file_ids: vec![id].into(),
                 barriers: vec![(
                     OplogCreatePrimitive::AfterLeaseBeforePublish,
@@ -1063,18 +1035,18 @@ mod tests {
         expect_token(error, "oplog_create_foreign_residue");
         let dir = health_dir(&root);
         assert_eq!(fs::read(dir.join(&dest)).unwrap(), b"replacement");
-        assert_eq!(fs::read(dir.join("displaced-stage")).unwrap(), b"");
+        let displaced = fs::read(dir.join("displaced-stage")).unwrap();
+        assert!(displaced.starts_with(b"solstone.oplog.admission.v1\n"));
     }
 
     #[test]
-    fn name_based_io_after_publish_is_own_residue_and_preserves_dest() {
+    fn dest_identity_io_after_publish_is_own_residue_and_preserves_dest() {
         let temporary = temp();
         let health = health_at(temporary.path());
         let id = [0x88; 16];
         let dest = dest_for(id);
         let error = with_trace(
             OplogCreateTraceState {
-                name_based: true,
                 dest_identity_io: true,
                 file_ids: vec![id].into(),
                 ..empty_trace()
@@ -1092,13 +1064,12 @@ mod tests {
     }
 
     #[test]
-    fn name_based_non_eexist_unlinks_stage() {
+    fn publish_io_leaves_unrelated_stage_residue() {
         let temporary = temp();
         let health = health_at(temporary.path());
         let error = with_trace(
             OplogCreateTraceState {
-                name_based: true,
-                name_based_link_io: true,
+                publish_io: true,
                 ..empty_trace()
             },
             || create(&health),
@@ -1109,11 +1080,11 @@ mod tests {
         expect_token(error, "oplog_create_io");
         let dir = health_dir(temporary.path());
         assert!(canonical_leaves(&dir).is_empty());
-        assert!(!listing(&dir).iter().any(|name| name.contains(".tmp")));
+        assert_eq!(leftover_unrelated(&dir).len(), 1);
     }
 
     #[test]
-    fn name_based_eexist_unlinks_stage_and_leaves_incumbent() {
+    fn occupied_retries_leave_unrelated_stage_residue() {
         let temporary = temp();
         let health = health_at(temporary.path());
         let dir = health_dir(temporary.path());
@@ -1124,22 +1095,13 @@ mod tests {
         for incumbent in &incumbents {
             fs::write(dir.join(incumbent), b"preexisting").unwrap();
         }
-        let error = with_trace(
-            OplogCreateTraceState {
-                name_based: true,
-                file_ids: ids.into(),
-                ..empty_trace()
-            },
-            || create(&health),
-            |_| true,
-        )
-        .0
-        .unwrap_err();
+        let error = run_with_oplog_file_ids(ids, || create(&health)).unwrap_err();
         expect_token(error, "oplog_create_retry_exhausted");
         for incumbent in &incumbents {
             assert_eq!(fs::read(dir.join(incumbent)).unwrap(), b"preexisting");
         }
-        assert!(!listing(&dir).iter().any(|name| name.contains(".tmp")));
+        assert_eq!(canonical_leaves(&dir), incumbents);
+        assert_eq!(leftover_unrelated(&dir).len(), OPLOG_CREATE_ATTEMPTS);
     }
 
     #[test]
@@ -1285,7 +1247,7 @@ mod tests {
         let displaced = root.join("health-displaced");
         assert!(canonical_leaves(&displaced).is_empty());
         assert!(canonical_leaves(&outside).is_empty());
-        assert!(!listing(&displaced).iter().any(|name| name.contains(".tmp")));
+        assert_eq!(leftover_unrelated(&displaced).len(), 1);
         assert!(
             fs::symlink_metadata(health_dir(&root))
                 .unwrap()

@@ -708,6 +708,7 @@ pub fn write_bytes_exclusive_bound(
 /// The destination name is never visible with partial content. The returned
 /// `File` still refers to the published inode after the stage name is unlinked.
 #[cfg(unix)]
+#[allow(dead_code)]
 pub(crate) fn publish_open_stage_no_replace(
     directory: &impl AsFd,
     stage_name: &OsStr,

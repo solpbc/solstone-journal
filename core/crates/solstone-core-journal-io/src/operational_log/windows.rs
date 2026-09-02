@@ -85,29 +85,19 @@ pub(super) fn publish_handle_bound(
     }
 }
 
-pub(super) fn publish_name_based(
-    health: &OplogDayHealth,
-    staged: StagedFile,
-    dest: &OsStr,
-) -> Result<File, PublishOutcome> {
-    publish_handle_bound(health, staged, dest)
-}
-
 pub(super) enum PublishOutcome {
     Occupied(StagedFile),
-    #[allow(dead_code)]
-    OccupiedName {
-        identity: WindowsIdentity,
-    },
     Io(StagedFile),
-    #[allow(dead_code)]
-    NameBasedIo,
     #[allow(dead_code)]
     WrongIdentityPublished {
         file: File,
     },
     #[allow(dead_code)]
     IoAfterPublish {
+        file: File,
+    },
+    #[allow(dead_code)]
+    Aliased {
         file: File,
     },
 }
