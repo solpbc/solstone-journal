@@ -95,7 +95,7 @@ try {
         (Join-Path $sourceRoot 'tools/ci_build/build.py'), '--build_dir', (Join-Path $sourceRoot 'build/Windows'), '--config', 'Release', '--update', '--build', '--skip_tests', '--skip_submodule_sync', '--parallel', '2',
         '--build_shared_lib', '--include_ops_by_config', (Join-Path $sourceRoot 'required-operators.config'), '--disable_contrib_ops', '--disable_ml_ops',
         '--path_to_protoc_exe', $protocExe, '--cmake_path', $cmakeExe, '--ctest_path', $ctestExe, '--cmake_generator', 'Visual Studio 17 2022', '--cmake_deps_mirror_dir', $mirrorRoot,
-        '--cmake_extra_defines', 'CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL', 'onnxruntime_USE_TELEMETRY=OFF', 'onnxruntime_BUILD_UNIT_TESTS=OFF'
+        '--cmake_extra_defines', 'CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL', 'onnxruntime_USE_TELEMETRY=OFF', 'onnxruntime_BUILD_UNIT_TESTS=OFF', "Python3_EXECUTABLE=$pythonExe"
     )
     $cache = Join-Path $sourceRoot 'build/Windows/Release/CMakeCache.txt'; Require-File $cache 'ONNX Runtime CMake cache'; $cacheText = Get-Content -LiteralPath $cache -Raw
     foreach ($entry in @('onnxruntime_BUILD_SHARED_LIB=ON', 'onnxruntime_DISABLE_CONTRIB_OPS=ON', 'onnxruntime_DISABLE_ML_OPS=ON', 'onnxruntime_USE_TELEMETRY=OFF', 'CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL')) { if ($cacheText -notmatch "(?m)^$([regex]::Escape($entry.Split('=')[0]))(?::[A-Z_]+)?=$([regex]::Escape($entry.Split('=')[1]))\r?$") { throw "CMake cache does not retain $entry" } }
