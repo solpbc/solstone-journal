@@ -11,8 +11,9 @@ use solstone_core_system_health::{
     BACKLOG_DEFAULT_WINDOW, BACKLOG_STATE_COMPLETE, BACKLOG_STATE_PENDING, BACKLOG_STATE_STUCK,
     BACKLOG_STATE_UNKNOWN, BacklogDay, BacklogError, BacklogUnit, BacklogView, BackoffSummary,
     CappedDailySummary, CappedDailyUnit, FilesystemHealthLogSource, FilesystemSegmentSource,
-    HealthError, HealthLogSource, SegmentRepairSummary, SegmentSource, read_backlog_view,
-    read_backoff_summary, read_segment_repair_attempted, read_segment_repair_summary,
+    HealthError, HealthLogSource, MODALITY_INPUT_AGED_MS, SegmentRepairSummary, SegmentSource,
+    read_backlog_view, read_backoff_summary, read_segment_repair_attempted,
+    read_segment_repair_summary,
 };
 use tempfile::TempDir;
 
@@ -33,6 +34,39 @@ fn screen_segment(root: &Path, day: &str, segment: &str) -> PathBuf {
     fs::create_dir_all(&path).unwrap();
     fs::write(path.join("screen.jsonl"), "{}\n{\"timestamp\":0}\n").unwrap();
     path
+}
+
+fn raw_audio_segment(root: &Path, day: &str, segment: &str, modified: SystemTime) -> PathBuf {
+    let path = root.join("chronicle").join(day).join(segment);
+    fs::create_dir_all(&path).unwrap();
+    let audio = path.join("audio.wav");
+    fs::write(&audio, b"fixture").unwrap();
+    fs::File::open(&audio)
+        .unwrap()
+        .set_times(fs::FileTimes::new().set_modified(modified))
+        .unwrap();
+    path
+}
+
+fn pending_audio_jsonl_segment(
+    root: &Path,
+    day: &str,
+    segment: &str,
+    modified: SystemTime,
+) -> PathBuf {
+    let path = root.join("chronicle").join(day).join(segment);
+    fs::create_dir_all(&path).unwrap();
+    let jsonl = path.join("audio.jsonl");
+    fs::write(&jsonl, "{}\n").unwrap();
+    fs::File::open(&jsonl)
+        .unwrap()
+        .set_times(fs::FileTimes::new().set_modified(modified))
+        .unwrap();
+    path
+}
+
+fn ms_ago(ms_before_now: i64) -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::from_millis(u64::try_from(NOW_MS - ms_before_now).unwrap())
 }
 
 fn incomplete(root: &Path, day: &str, ms: i64) {
@@ -812,3 +846,101 @@ fn empty_strings_are_omitted_at_day_and_unit_levels() {
         assert!(!unit.contains_key(key), "unit unexpectedly contains {key}");
     }
 }
+
+#[test]
+fn in_window_raw_audio_is_not_backlog() {
+    let temporary = TempDir::new().unwrap();
+    let root = temporary.path();
+    let day = "20990101";
+    raw_audio_segment(root, day, "120000_60", ms_ago(1_000));
+    incomplete(root, day, NOW_MS - 1_000);
+    let result = view(root, 30);
+    assert_eq!(result.days[0].state, BACKLOG_STATE_COMPLETE);
+    assert_eq!(result.days[0].not_sensed, 0);
+    assert_eq!(result.days[0].segments, 0);
+    assert_eq!(result.pending_days, 0);
+}
+
+#[test]
+fn aged_raw_audio_is_pending() {
+    let temporary = TempDir::new().unwrap();
+    let root = temporary.path();
+    let day = "20990101";
+    raw_audio_segment(root, day, "120000_60", ms_ago(MODALITY_INPUT_AGED_MS));
+    incomplete(root, day, NOW_MS - MODALITY_INPUT_AGED_MS);
+    let result = view(root, 30);
+    assert_eq!(result.days[0].state, BACKLOG_STATE_PENDING);
+    assert_eq!(result.days[0].not_sensed, 1);
+    assert_eq!(result.days[0].segments, 1);
+    assert_eq!(result.pending_days, 1);
+    assert_eq!(result.oldest_pending_day.as_deref(), Some(day));
+}
+
+#[test]
+fn jsonl_only_pending_uses_file_mtime_not_directory() {
+    let temporary = TempDir::new().unwrap();
+    let root = temporary.path();
+    let fresh_day = "20990102";
+    pending_audio_jsonl_segment(root, fresh_day, "120000_60", ms_ago(1_000));
+    incomplete(root, fresh_day, NOW_MS - 1_000);
+    let aged_day = "20990101";
+    pending_audio_jsonl_segment(root, aged_day, "120000_60", ms_ago(MODALITY_INPUT_AGED_MS));
+    incomplete(root, aged_day, NOW_MS - MODALITY_INPUT_AGED_MS);
+    let result = view(root, 30);
+    let fresh = result
+        .days
+        .iter()
+        .find(|day| day.day == fresh_day)
+        .expect("fresh jsonl day");
+    let aged = result
+        .days
+        .iter()
+        .find(|day| day.day == aged_day)
+        .expect("aged jsonl day");
+    assert_eq!(fresh.state, BACKLOG_STATE_COMPLETE);
+    assert_eq!(fresh.not_sensed, 0);
+    assert_eq!(aged.state, BACKLOG_STATE_PENDING);
+    assert_eq!(aged.not_sensed, 1);
+}
+
+#[test]
+fn multi_modality_not_sensed_counts_once() {
+    let temporary = TempDir::new().unwrap();
+    let root = temporary.path();
+    let day = "20990101";
+    let path = raw_audio_segment(root, day, "120000_60", ms_ago(MODALITY_INPUT_AGED_MS));
+    let screen = path.join("screen.webm");
+    fs::write(&screen, b"fixture").unwrap();
+    fs::File::open(&screen)
+        .unwrap()
+        .set_times(fs::FileTimes::new().set_modified(ms_ago(1_000)))
+        .unwrap();
+    incomplete(root, day, NOW_MS - 1_000);
+    let result = view(root, 30);
+    assert_eq!(result.days[0].state, BACKLOG_STATE_PENDING);
+    assert_eq!(result.days[0].not_sensed, 1);
+}
+
+#[test]
+fn screen_marker_touch_does_not_mask_aged_audio() {
+    let temporary = TempDir::new().unwrap();
+    let root = temporary.path();
+    let day = "20990101";
+    let path = raw_audio_segment(root, day, "120000_60", ms_ago(MODALITY_INPUT_AGED_MS));
+    screen_segment(root, day, "120000_60");
+    // Directory mtime is not the age source; this pins that a recent
+    // directory touch from screen processing cannot hide aged audio.
+    fs::File::open(&path)
+        .unwrap()
+        .set_times(fs::FileTimes::new().set_modified(ms_ago(1_000)))
+        .unwrap();
+    incomplete(root, day, NOW_MS - 1_000);
+    let result = view(root, 30);
+    assert_eq!(result.days[0].state, BACKLOG_STATE_PENDING);
+    assert_eq!(result.days[0].not_sensed, 1);
+}
+
+// Unreadable-mtime integration coverage is omitted: making metadata
+// unreadable is not portable. `missing_input_mtime_counts_as_backlog`
+// in backlog.rs proves the None → counts-as-backlog rule at
+// `aged_not_sensed_count`, which is the layer that implements it.

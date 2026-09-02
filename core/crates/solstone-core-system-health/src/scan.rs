@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -30,6 +30,7 @@ pub struct DaySegment {
     pub end: String,
     pub types: Vec<String>,
     pub data_state: DataStateMap,
+    pub modality_input_mtime_ms: BTreeMap<String, Option<i64>>,
 }
 
 impl From<DaySegment> for SegmentInput {
@@ -88,7 +89,8 @@ pub fn scan_day<S: SegmentSource>(
             .and_then(Path::file_name)
             .and_then(|name| name.to_str())
             .unwrap_or_default();
-        let data_state = detect_data_state(segment.path(), parent_name, now)?;
+        let (data_state, modality_input_mtime_ms) =
+            detect_data_state(segment.path(), parent_name, now)?;
         let types = ["audio", "screen", "markdown", "browser"]
             .into_iter()
             .filter(|modality| data_state.0.contains_key(*modality))
@@ -122,6 +124,7 @@ pub fn scan_day<S: SegmentSource>(
             end,
             types,
             data_state,
+            modality_input_mtime_ms,
         });
     }
 
@@ -142,13 +145,16 @@ pub(crate) fn detect_data_state(
     segment_path: &Path,
     stream_parent_name: &str,
     now: DateTime<Utc>,
-) -> Result<DataStateMap, HealthError> {
+) -> Result<(DataStateMap, BTreeMap<String, Option<i64>>), HealthError> {
     let files = segment_files(segment_path)?;
     if is_markdown_only_body_card_segment(stream_parent_name, &files) {
-        return Ok(DataStateMap(std::collections::BTreeMap::from([(
-            "markdown".to_owned(),
-            DataState::Analyzed.as_str().to_owned(),
-        )])));
+        return Ok((
+            DataStateMap(BTreeMap::from([(
+                "markdown".to_owned(),
+                DataState::Analyzed.as_str().to_owned(),
+            )])),
+            BTreeMap::new(),
+        ));
     }
 
     let audio_jsonl = files
@@ -156,6 +162,10 @@ pub(crate) fn detect_data_state(
         .filter(|path| is_audio_jsonl(path))
         .cloned()
         .collect::<Vec<_>>();
+    let audio_raw_paths: Vec<&PathBuf> = files
+        .iter()
+        .filter(|path| media_kind_for(path) == Some(MediaKind::Audio))
+        .collect();
     let markdown = markdown_transcript_files(&files);
     let audio_analyzed = audio_jsonl
         .iter()
@@ -176,6 +186,10 @@ pub(crate) fn detect_data_state(
         .filter(|path| is_screen_jsonl(path))
         .cloned()
         .collect::<Vec<_>>();
+    let screen_raw_paths: Vec<&PathBuf> = files
+        .iter()
+        .filter(|path| media_kind_for(path) == Some(MediaKind::Video))
+        .collect();
     let screen_analyzed = screen_jsonl
         .iter()
         .any(|path| jsonl_has_row_with_key(path, vocab::SCREEN_ANALYSIS_ROW_KEY));
@@ -193,12 +207,29 @@ pub(crate) fn detect_data_state(
         .iter()
         .filter(|path| is_browser_jsonl(path))
         .any(|path| has_nonempty_text(path));
-    let mut states = std::collections::BTreeMap::new();
+    let mut states = BTreeMap::new();
+    let mut modality_input_mtime_ms = BTreeMap::new();
     if audio != DataState::Absent {
         states.insert("audio".to_owned(), audio.as_str().to_owned());
+        let mtime = if !audio_raw_paths.is_empty() {
+            newest_input_mtime_ms(&audio_raw_paths)
+        } else if !audio_jsonl.is_empty() {
+            newest_input_mtime_ms(&audio_jsonl.iter().collect::<Vec<_>>())
+        } else {
+            None
+        };
+        modality_input_mtime_ms.insert("audio".to_owned(), mtime);
     }
     if screen != DataState::Absent {
         states.insert("screen".to_owned(), screen.as_str().to_owned());
+        let mtime = if !screen_raw_paths.is_empty() {
+            newest_input_mtime_ms(&screen_raw_paths)
+        } else if !screen_jsonl.is_empty() {
+            newest_input_mtime_ms(&screen_jsonl.iter().collect::<Vec<_>>())
+        } else {
+            None
+        };
+        modality_input_mtime_ms.insert("screen".to_owned(), mtime);
     }
     if browser_analyzed {
         states.insert(
@@ -206,7 +237,7 @@ pub(crate) fn detect_data_state(
             DataState::Analyzed.as_str().to_owned(),
         );
     }
-    Ok(DataStateMap(states))
+    Ok((DataStateMap(states), modality_input_mtime_ms))
 }
 
 fn is_markdown_only_body_card_segment(stream_parent_name: &str, files: &[PathBuf]) -> bool {
@@ -278,6 +309,14 @@ fn has_nonempty_text(path: &Path) -> bool {
 
 fn has_raw_media(files: &[PathBuf], kind: MediaKind) -> bool {
     files.iter().any(|path| media_kind_for(path) == Some(kind))
+}
+
+fn newest_input_mtime_ms(paths: &[&PathBuf]) -> Option<i64> {
+    paths
+        .iter()
+        .filter_map(|path| fs::metadata(path).and_then(|meta| meta.modified()).ok())
+        .map(|modified| DateTime::<Utc>::from(modified).timestamp_millis())
+        .max()
 }
 
 fn is_body_content_file(path: &Path) -> bool {

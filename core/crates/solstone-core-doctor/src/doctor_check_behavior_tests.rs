@@ -13,6 +13,7 @@ use chrono::TimeZone;
 use solstone_core_sol_link::client_status::{
     ClientActivityState, ClientInspection, ClientLedgerUnavailable,
 };
+use solstone_core_system_health::MODALITY_INPUT_AGED_MS;
 use std::{
     collections::BTreeMap,
     fs,
@@ -356,6 +357,22 @@ fn stage_backlog_pending(context: &CheckContext) {
             r#"{"event":"sense.complete","ts":1,"mode":"segment","stream":"_default","segment":"120000_60","density":"active"}"#,
         ],
     );
+    incomplete(context, "20251231");
+}
+
+fn stage_raw_audio_pending(context: &CheckContext, modified: SystemTime) {
+    let path = context
+        .journal_path
+        .join("chronicle")
+        .join("20251231")
+        .join("120000_60");
+    fs::create_dir_all(&path).unwrap();
+    let audio = path.join("audio.wav");
+    fs::write(&audio, b"fixture").unwrap();
+    fs::File::open(&audio)
+        .unwrap()
+        .set_times(fs::FileTimes::new().set_modified(modified))
+        .unwrap();
     incomplete(context, "20251231");
 }
 
@@ -1328,6 +1345,31 @@ fn caught_up_native_backlog_fixture_states() {
         Some(
             "solstone catches up on its own; reprocess a day from the health surface to prioritize it"
         )
+    );
+
+    let fresh_audio = fixture();
+    stage_raw_audio_pending(
+        &fresh_audio,
+        SystemTime::UNIX_EPOCH
+            + Duration::from_millis((fresh_audio.now.timestamp_millis() - 1_000) as u64),
+    );
+    let row = result("journal_caught_up", &fresh_audio);
+    assert_eq!(row.status, Status::Ok);
+    assert_eq!(row.detail, "caught up");
+
+    let aged_audio = fixture();
+    stage_raw_audio_pending(
+        &aged_audio,
+        SystemTime::UNIX_EPOCH
+            + Duration::from_millis(
+                (aged_audio.now.timestamp_millis() - MODALITY_INPUT_AGED_MS) as u64,
+            ),
+    );
+    let row = result("journal_caught_up", &aged_audio);
+    assert_eq!(row.status, Status::Warn);
+    assert_eq!(
+        row.detail,
+        "1 day(s) pending, 0 day(s) stuck; oldest outstanding 20251231"
     );
 }
 

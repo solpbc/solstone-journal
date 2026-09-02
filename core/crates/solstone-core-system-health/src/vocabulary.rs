@@ -39,6 +39,11 @@ pub const MIN_SPAN_MS: i64 = 7_200_000;
 pub const STUCK_FAIL_THRESHOLD: usize = 3;
 pub const BACKLOG_DEFAULT_WINDOW: usize = 30;
 pub const NO_SENSE_COMPLETE_AGED_MS: i64 = 3 * 24 * 60 * 60 * 1000;
+/// Minimum time a not-yet-sensed modality's raw/jsonl input file must sit
+/// unresolved before it counts toward backlog PENDING/STUCK state in
+/// `read_backlog_view`. Independent of `NO_SENSE_COMPLETE_AGED_MS`, which
+/// gates a different, already-sensed-but-not-thought-complete concern.
+pub const MODALITY_INPUT_AGED_MS: i64 = 12 * 60 * 60 * 1000; // 12h: ~3x the ~4h median transcription lag
 
 pub const WHY_FAILED: &str = "failed";
 pub const WHY_CORRUPT_RAW: &str = "corrupt_raw";
