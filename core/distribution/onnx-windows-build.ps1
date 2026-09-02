@@ -76,6 +76,12 @@ try {
     $cmake = @(Get-ChildItem -LiteralPath $cmakeRoot -Filter cmake.exe -Recurse -File); $python = @(Get-ChildItem -LiteralPath $pythonRoot -Filter python.exe -Recurse -File); $protoc = @(Get-ChildItem -LiteralPath $protocRoot -Filter protoc.exe -Recurse -File)
     if ($cmake.Count -ne 1 -or $python.Count -ne 1 -or $protoc.Count -ne 1) { throw 'controlled tool archives did not produce exactly one cmake.exe, python.exe, and protoc.exe' }
     $cmakeExe = $cmake[0].FullName; $pythonExe = $python[0].FullName; $protocExe = $protoc[0].FullName
+    $pythonPth = @(Get-ChildItem -LiteralPath $pythonRoot -Filter 'python*._pth' -File)
+    if ($pythonPth.Count -ne 1) { throw 'controlled Python archive did not produce exactly one python*._pth file' }
+    # The embedded interpreter intentionally ignores ambient PYTHONPATH. Add
+    # only the reviewed extracted ONNX build-driver directory so build.py can
+    # import its own sibling modules; do not enable site-packages or pip.
+    Add-Content -LiteralPath $pythonPth[0].FullName -Value (Join-Path $sourceRoot 'tools/ci_build') -Encoding ascii
     $ordinal = 1; foreach ($program in @($cmakeExe, $pythonExe, $protocExe, $msbuild, $cl, $link, $git) | Select-Object -Unique) { Add-NetworkDeny $program $ordinal; $ordinal += 1 }
     Write-Host 'ONNX_WINDOWS_NETWORK_DENY=firewall-outbound-block-for-cmake-python-protoc-msbuild-cl-link-git'
     Invoke-Checked 'build reduced CPU-only ONNX Runtime' $pythonExe @(
