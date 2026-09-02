@@ -880,8 +880,61 @@ pub fn run_with_windows_detailed_atomic_faults_and_barrier<T>(
     (result, state.attempted, state.barriers.is_empty())
 }
 
+/// Run `op` with injected faults and two deterministic barrier callbacks.
 #[cfg(any(test, feature = "test-hooks"))]
-fn checkpoint(step: &'static str) -> io::Result<()> {
+pub fn run_with_windows_detailed_atomic_faults_and_two_barriers<T>(
+    faults: impl IntoIterator<Item = (&'static str, usize, i32)>,
+    first_step: &'static str,
+    first_ordinal: usize,
+    first_callback: impl FnOnce() + 'static,
+    second_step: &'static str,
+    second_ordinal: usize,
+    second_callback: impl FnOnce() + 'static,
+    op: impl FnOnce() -> T,
+) -> (T, Vec<&'static str>, usize) {
+    WINDOWS_PUBLICATION_TRACE.with(|trace| {
+        assert!(
+            trace.borrow().is_none(),
+            "Windows detailed publication trace is already active"
+        );
+        *trace.borrow_mut() = Some(WindowsPublicationTraceState {
+            attempted: Vec::new(),
+            real_moves: 0,
+            faults: faults
+                .into_iter()
+                .map(|(step, ordinal, raw_error)| WindowsPublicationFault {
+                    step,
+                    ordinal,
+                    raw_error,
+                })
+                .collect(),
+            barriers: vec![
+                WindowsPublicationBarrier {
+                    step: first_step,
+                    ordinal: first_ordinal,
+                    callback: Box::new(first_callback),
+                },
+                WindowsPublicationBarrier {
+                    step: second_step,
+                    ordinal: second_ordinal,
+                    callback: Box::new(second_callback),
+                },
+            ],
+        });
+    });
+    let result = op();
+    let state = WINDOWS_PUBLICATION_TRACE.with(|trace| {
+        trace
+            .borrow_mut()
+            .take()
+            .expect("Windows detailed publication trace remains active")
+    });
+    let barriers_fired = 2 - state.barriers.len();
+    (result, state.attempted, barriers_fired)
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub(super) fn checkpoint(step: &'static str) -> io::Result<()> {
     let (fault, barrier) = WINDOWS_PUBLICATION_TRACE.with(|trace| {
         let mut trace = trace.borrow_mut();
         let Some(state) = trace.as_mut() else {
@@ -962,7 +1015,7 @@ fn pause_at_terminal_move_receipt(parent_path: &Path, stage_name: &OsStr) {
 fn pause_at_terminal_move_receipt(_parent_path: &Path, _stage_name: &OsStr) {}
 
 #[cfg(not(any(test, feature = "test-hooks")))]
-fn checkpoint(_step: &'static str) -> io::Result<()> {
+pub(super) fn checkpoint(_step: &'static str) -> io::Result<()> {
     Ok(())
 }
 

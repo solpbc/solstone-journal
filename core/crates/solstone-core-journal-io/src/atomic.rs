@@ -41,8 +41,10 @@ use nix::unistd::{UnlinkatFlags, fsync, linkat, unlinkat};
 use crate::errors::AtomicWriteError;
 #[cfg(unix)]
 use crate::flat_directory::entry_from_stat;
+#[cfg(any(unix, windows))]
+use crate::observation::FileObservation;
 #[cfg(unix)]
-use crate::observation::{FileObservation, same_entry_metadata};
+use crate::observation::{same_entry_metadata, same_observation};
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -62,13 +64,19 @@ pub enum BoundPublicationPrimitive {
     ParentSync,
     /// Removing a stage name after it has been linked into its final name.
     StageUnlink,
+    /// Create-only `linkat` of the filled stage into the destination name.
+    ExclusivePublish,
+    /// First no-follow identity and byte observation after exclusive publication.
+    PostPublishObserve,
+    /// Completion-boundary no-follow identity and byte observation.
+    CompletionObserve,
 }
 
 #[cfg(all(unix, any(test, feature = "test-hooks")))]
 struct BoundPublicationTraceState {
     attempted: Vec<BoundPublicationPrimitive>,
-    fault: Option<BoundPublicationFault>,
-    fault_consumed: bool,
+    faults: Vec<BoundPublicationFault>,
+    faults_consumed: usize,
     barriers: Vec<BoundPublicationBarrier>,
     barriers_fired: usize,
 }
@@ -109,12 +117,12 @@ pub fn run_with_bound_publication_fault<T>(
         );
         *trace.borrow_mut() = Some(BoundPublicationTraceState {
             attempted: Vec::new(),
-            fault: Some(BoundPublicationFault {
+            faults: vec![BoundPublicationFault {
                 primitive,
                 ordinal,
                 error: Errno::from_raw(raw_errno),
-            }),
-            fault_consumed: false,
+            }],
+            faults_consumed: 0,
             barriers: Vec::new(),
             barriers_fired: 0,
         });
@@ -126,7 +134,7 @@ pub fn run_with_bound_publication_fault<T>(
             .take()
             .expect("bound publication trace remains active")
     });
-    (result, state.fault_consumed)
+    (result, state.faults_consumed == 1)
 }
 
 /// Run `op` with one deterministic bound-publication barrier callback.
@@ -144,8 +152,8 @@ pub fn run_with_bound_publication_barrier<T>(
         );
         *trace.borrow_mut() = Some(BoundPublicationTraceState {
             attempted: Vec::new(),
-            fault: None,
-            fault_consumed: false,
+            faults: Vec::new(),
+            faults_consumed: 0,
             barriers: vec![BoundPublicationBarrier {
                 primitive,
                 ordinal,
@@ -182,8 +190,8 @@ pub fn run_with_two_bound_publication_barriers<T>(
         );
         *trace.borrow_mut() = Some(BoundPublicationTraceState {
             attempted: Vec::new(),
-            fault: None,
-            fault_consumed: false,
+            faults: Vec::new(),
+            faults_consumed: 0,
             barriers: vec![
                 BoundPublicationBarrier {
                     primitive: first_primitive,
@@ -207,6 +215,85 @@ pub fn run_with_two_bound_publication_barriers<T>(
             .expect("bound publication trace remains active")
     });
     (result, state.barriers_fired)
+}
+
+/// Run `op` with one or more injected errnos at bound-publication checkpoints.
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
+pub fn run_with_bound_publication_faults<T>(
+    faults: impl IntoIterator<Item = (BoundPublicationPrimitive, usize, i32)>,
+    op: impl FnOnce() -> T,
+) -> (T, usize) {
+    BOUND_PUBLICATION_TRACE.with(|trace| {
+        assert!(
+            trace.borrow().is_none(),
+            "bound publication trace is already active"
+        );
+        *trace.borrow_mut() = Some(BoundPublicationTraceState {
+            attempted: Vec::new(),
+            faults: faults
+                .into_iter()
+                .map(|(primitive, ordinal, raw_errno)| BoundPublicationFault {
+                    primitive,
+                    ordinal,
+                    error: Errno::from_raw(raw_errno),
+                })
+                .collect(),
+            faults_consumed: 0,
+            barriers: Vec::new(),
+            barriers_fired: 0,
+        });
+    });
+    let result = op();
+    let state = BOUND_PUBLICATION_TRACE.with(|trace| {
+        trace
+            .borrow_mut()
+            .take()
+            .expect("bound publication trace remains active")
+    });
+    (result, state.faults_consumed)
+}
+
+/// Run `op` with injected bound-publication faults and one barrier callback.
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
+pub fn run_with_bound_publication_faults_and_barrier<T>(
+    faults: impl IntoIterator<Item = (BoundPublicationPrimitive, usize, i32)>,
+    barrier_primitive: BoundPublicationPrimitive,
+    barrier_ordinal: usize,
+    callback: impl FnOnce() + 'static,
+    op: impl FnOnce() -> T,
+) -> (T, usize, bool) {
+    BOUND_PUBLICATION_TRACE.with(|trace| {
+        assert!(
+            trace.borrow().is_none(),
+            "bound publication trace is already active"
+        );
+        *trace.borrow_mut() = Some(BoundPublicationTraceState {
+            attempted: Vec::new(),
+            faults: faults
+                .into_iter()
+                .map(|(primitive, ordinal, raw_errno)| BoundPublicationFault {
+                    primitive,
+                    ordinal,
+                    error: Errno::from_raw(raw_errno),
+                })
+                .collect(),
+            faults_consumed: 0,
+            barriers: vec![BoundPublicationBarrier {
+                primitive: barrier_primitive,
+                ordinal: barrier_ordinal,
+                callback: Box::new(callback),
+            }],
+            barriers_fired: 0,
+        });
+    });
+    let result = op();
+    let state = BOUND_PUBLICATION_TRACE.with(|trace| {
+        trace
+            .borrow_mut()
+            .take()
+            .expect("bound publication trace remains active")
+    });
+    (result, state.faults_consumed, state.barriers_fired == 1)
 }
 
 /// Successful publication states returned by [`atomic_replace_detailed`].
@@ -285,6 +372,84 @@ impl std::fmt::Display for DetailedAtomicError {
 impl std::error::Error for DetailedAtomicError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         Some(&self.source)
+    }
+}
+
+/// Three independently inspectable facts after a create-only publish.
+///
+/// On Windows, [`MetadataDurability::Confirmed`] is not reachable: there is no
+/// documented directory-entry metadata flush on the retained parent handle
+/// (`FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE`, plus
+/// `FILE_TRAVERSE` on the publication-path capability) — neither includes
+/// `GENERIC_WRITE`/`FILE_WRITE_DATA`, which `FlushFileBuffers` requires. This
+/// field is therefore always [`MetadataDurability::Unproven`] with
+/// `source: None` on Windows.
+#[cfg(any(unix, windows))]
+#[derive(Debug)]
+pub struct ExclusivePublication {
+    pub bytes_written: u64,
+    pub final_name: FinalNameConfirmation,
+    pub durability: MetadataDurability,
+    pub cleanup: StageCleanup,
+}
+
+#[cfg(any(unix, windows))]
+impl ExclusivePublication {
+    /// True only when all three facts are the success state. Derived; never stored.
+    /// Unreachable on Windows (durability is always Unproven there).
+    pub fn is_fully_confirmed(&self) -> bool {
+        matches!(self.final_name, FinalNameConfirmation::Confirmed { .. })
+            && matches!(self.durability, MetadataDurability::Confirmed)
+            && matches!(self.cleanup, StageCleanup::Removed)
+    }
+}
+
+#[cfg(any(unix, windows))]
+#[derive(Debug)]
+pub enum FinalNameConfirmation {
+    Confirmed {
+        observation: FileObservation,
+    },
+    Unverified {
+        destination: PathBuf,
+        reason: io::Error,
+    },
+}
+
+#[cfg(any(unix, windows))]
+#[derive(Debug)]
+pub enum MetadataDurability {
+    Confirmed,
+    /// `Some` when a durability syscall ran and failed (Unix `fsync` on the bound parent).
+    /// `None` when the platform has no documented primitive (Windows — always this case).
+    Unproven {
+        source: Option<io::Error>,
+    },
+}
+
+#[cfg(any(unix, windows))]
+#[derive(Debug)]
+pub enum StageCleanup {
+    Removed,
+    Retained { stage: OsString, source: io::Error },
+}
+
+#[cfg(any(unix, windows))]
+fn select_exclusive_final_name(
+    destination: PathBuf,
+    first: Result<FileObservation, io::Error>,
+    second: Result<FileObservation, io::Error>,
+) -> FinalNameConfirmation {
+    match (first, second) {
+        (Ok(_), Ok(observation)) => FinalNameConfirmation::Confirmed { observation },
+        (_, Err(reason)) => FinalNameConfirmation::Unverified {
+            destination,
+            reason,
+        },
+        (Err(reason), Ok(_)) => FinalNameConfirmation::Unverified {
+            destination,
+            reason,
+        },
     }
 }
 
@@ -578,6 +743,8 @@ pub use windows_create_only::{
 };
 
 #[cfg(all(windows, feature = "test-hooks"))]
+pub use windows_atomic::run_with_windows_detailed_atomic_faults_and_two_barriers;
+#[cfg(all(windows, feature = "test-hooks"))]
 pub use windows_atomic::{
     run_with_windows_detailed_atomic_backoffs, run_with_windows_detailed_atomic_barrier,
     run_with_windows_detailed_atomic_faults, run_with_windows_detailed_atomic_faults_and_barrier,
@@ -711,6 +878,410 @@ pub fn write_bytes_exclusive_bound(
     .map_err(|source| io_error(stage_path, errno_io(source)))?;
     fsync(directory).map_err(|source| io_error(path, errno_io(source)))?;
     Ok(())
+}
+
+/// Publish `contents` only when `path` does not yet exist, reporting each
+/// post-publication fact independently.
+///
+/// Unlike [`write_bytes_exclusive`], this never creates a missing parent. The
+/// parent is bound with `openat(2)` and `O_NOFOLLOW`; a missing parent is an
+/// error.
+#[cfg(unix)]
+pub fn write_bytes_exclusive_detailed(
+    path: impl AsRef<Path>,
+    contents: &[u8],
+    options: AtomicWriteOptions,
+) -> Result<ExclusivePublication, DetailedAtomicError> {
+    let path = path.as_ref();
+    if let Some(mode) = options.mode
+        && mode > 0o777
+    {
+        return Err(detailed_error(
+            path,
+            "validate mode",
+            io::Error::new(io::ErrorKind::InvalidInput, "mode exceeds 0o777"),
+        ));
+    }
+    let (directory, name) = bind_existing_parent(path)?;
+    publish_exclusive_into_bound_directory_detailed(
+        &directory,
+        name,
+        &mut io::Cursor::new(contents),
+        options.mode,
+        Some(contents),
+        path,
+    )
+}
+
+/// Publish a reader into a new dest name, reporting each post-publication fact
+/// independently.
+///
+/// Unlike [`write_reader_exclusive`], this never creates a missing parent. The
+/// parent is bound with `openat(2)` and `O_NOFOLLOW`; a missing parent is an
+/// error.
+#[cfg(unix)]
+pub fn write_reader_exclusive_detailed(
+    path: &Path,
+    reader: &mut impl Read,
+    options: AtomicWriteOptions,
+) -> Result<ExclusivePublication, DetailedAtomicError> {
+    if let Some(mode) = options.mode
+        && mode > 0o777
+    {
+        return Err(detailed_error(
+            path,
+            "validate mode",
+            io::Error::new(io::ErrorKind::InvalidInput, "mode exceeds 0o777"),
+        ));
+    }
+    let (directory, name) = bind_existing_parent(path)?;
+    publish_exclusive_into_bound_directory_detailed(
+        &directory,
+        name,
+        reader,
+        options.mode,
+        None,
+        path,
+    )
+}
+
+/// Publish `contents` only when `name` does not yet exist in `directory`,
+/// reporting each post-publication fact independently.
+#[cfg(unix)]
+pub fn write_bytes_exclusive_bound_detailed(
+    directory: &impl AsFd,
+    name: &OsStr,
+    contents: &[u8],
+    mode: u32,
+) -> Result<ExclusivePublication, DetailedAtomicError> {
+    let path = Path::new(name);
+    if mode > 0o777 {
+        return Err(detailed_error(
+            path,
+            "validate mode",
+            io::Error::new(io::ErrorKind::InvalidInput, "mode exceeds 0o777"),
+        ));
+    }
+    let name = normal_name(Some(name)).ok_or_else(|| {
+        detailed_error(
+            path,
+            "validate destination",
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "destination has no normal name",
+            ),
+        )
+    })?;
+    publish_exclusive_into_bound_directory_detailed(
+        directory,
+        name,
+        &mut io::Cursor::new(contents),
+        Some(mode),
+        Some(contents),
+        path,
+    )
+}
+
+#[cfg(unix)]
+fn bind_existing_parent(path: &Path) -> Result<(File, &OsStr), DetailedAtomicError> {
+    let parent = path
+        .parent()
+        .filter(|item| !item.as_os_str().is_empty())
+        .ok_or_else(|| {
+            detailed_error(
+                path,
+                "validate destination",
+                io::Error::new(io::ErrorKind::InvalidInput, "destination has no parent"),
+            )
+        })?;
+    let name = normal_name(path.file_name()).ok_or_else(|| {
+        detailed_error(
+            path,
+            "validate destination",
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "destination has no normal name",
+            ),
+        )
+    })?;
+    let inspected =
+        stat_parent(parent).map_err(|source| detailed_error(path, "inspect parent", source))?;
+    let directory = openat(
+        AT_FDCWD,
+        parent,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC | OFlag::O_NOFOLLOW,
+        Mode::empty(),
+    )
+    .map(File::from)
+    .map_err(|source| detailed_errno(path, "open parent", source))?;
+    let opened = fstat(&directory)
+        .map_err(|source| detailed_errno(path, "inspect opened parent", source))?;
+    if !same_identity(inspected, opened) {
+        return Err(detailed_error(
+            path,
+            "bind parent",
+            io::Error::other("parent pathname changed"),
+        ));
+    }
+    let before_publish = match stat_parent(parent) {
+        Ok(status) if same_identity(inspected, status) => Ok(()),
+        Ok(_) => Err(io::Error::other(
+            "parent pathname changed before publication",
+        )),
+        Err(source) => Err(source),
+    };
+    if let Err(source) = before_publish {
+        return Err(detailed_error(
+            path,
+            "reverify parent before publication",
+            source,
+        ));
+    }
+    Ok((directory, name))
+}
+
+#[cfg(unix)]
+fn publish_exclusive_into_bound_directory_detailed(
+    directory: &impl AsFd,
+    name: &OsStr,
+    reader: &mut impl Read,
+    mode: Option<u32>,
+    expected_bytes: Option<&[u8]>,
+    error_path: &Path,
+) -> Result<ExclusivePublication, DetailedAtomicError> {
+    match fstatat(directory, name, AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Ok(_) => {
+            return Err(detailed_error(
+                error_path,
+                "inspect destination",
+                io::Error::new(io::ErrorKind::AlreadyExists, "destination already exists"),
+            ));
+        }
+        Err(Errno::ENOENT) => {}
+        Err(source) => {
+            return Err(detailed_errno(error_path, "inspect destination", source));
+        }
+    }
+    checkpoint(BoundPublicationPrimitive::TempCreate)
+        .map_err(|source| detailed_error(error_path, "create stage", source))?;
+    let (stage_name, mut stage_file) = allocate_bound_stage(directory, name, error_path)?;
+    let prepared = (|| -> io::Result<(u64, FileObservation)> {
+        checkpoint(BoundPublicationPrimitive::Write)?;
+        let bytes_written = io::copy(reader, &mut stage_file)?;
+        if let Some(mode) = mode {
+            apply_mode(&stage_file, mode)?;
+        }
+        checkpoint(BoundPublicationPrimitive::FileSync)?;
+        sync_file(&stage_file)?;
+        let expected = match expected_bytes {
+            Some(bytes) => bytes.to_vec(),
+            None => snapshot_bound_stage(directory, stage_name.as_os_str(), &stage_file)?,
+        };
+        let status = fstat(&stage_file).map_err(errno_io)?;
+        let entry = entry_from_stat(name.to_os_string(), &status, error_path)
+            .map_err(|error| io::Error::other(error.to_string()))?;
+        Ok((
+            bytes_written,
+            FileObservation {
+                entry,
+                bytes: expected,
+            },
+        ))
+    })();
+    let (bytes_written, expected) = match prepared {
+        Ok(prepared) => prepared,
+        Err(source) => {
+            drop(stage_file);
+            return Err(cleanup_stage_error(
+                directory,
+                error_path,
+                stage_name,
+                "prepare stage",
+                source,
+            ));
+        }
+    };
+    let named = fstatat(
+        directory,
+        stage_name.as_os_str(),
+        AtFlags::AT_SYMLINK_NOFOLLOW,
+    )
+    .map_err(|source| {
+        cleanup_stage_error(
+            directory,
+            error_path,
+            stage_name.clone(),
+            "verify stage",
+            errno_io(source),
+        )
+    })?;
+    let opened = fstat(&stage_file).map_err(|source| {
+        cleanup_stage_error(
+            directory,
+            error_path,
+            stage_name.clone(),
+            "verify stage",
+            errno_io(source),
+        )
+    })?;
+    if !same_identity(named, opened) {
+        drop(stage_file);
+        return Err(cleanup_stage_error(
+            directory,
+            error_path,
+            stage_name,
+            "verify stage",
+            io::Error::other("stage identity changed before publication"),
+        ));
+    }
+    match fstatat(directory, name, AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Ok(_) => {
+            drop(stage_file);
+            return Err(cleanup_stage_error(
+                directory,
+                error_path,
+                stage_name,
+                "inspect destination",
+                io::Error::new(io::ErrorKind::AlreadyExists, "destination already exists"),
+            ));
+        }
+        Err(Errno::ENOENT) => {}
+        Err(source) => {
+            drop(stage_file);
+            return Err(cleanup_stage_error(
+                directory,
+                error_path,
+                stage_name,
+                "inspect destination",
+                errno_io(source),
+            ));
+        }
+    }
+    drop(stage_file);
+    checkpoint(BoundPublicationPrimitive::ExclusivePublish).map_err(|source| {
+        cleanup_stage_error(
+            directory,
+            error_path,
+            stage_name.clone(),
+            "publish stage",
+            source,
+        )
+    })?;
+    if let Err(source) = linkat(
+        directory,
+        stage_name.as_os_str(),
+        directory,
+        name,
+        AtFlags::empty(),
+    ) {
+        return Err(cleanup_stage_error(
+            directory,
+            error_path,
+            stage_name,
+            "publish stage",
+            errno_io(source),
+        ));
+    }
+
+    let first = match checkpoint(BoundPublicationPrimitive::PostPublishObserve) {
+        Err(source) => Err(source),
+        Ok(()) => observe_exclusive_dest(directory, name, &expected),
+    };
+    let cleanup = match checkpoint(BoundPublicationPrimitive::StageUnlink) {
+        Err(source) => StageCleanup::Retained {
+            stage: stage_name.clone(),
+            source,
+        },
+        Ok(()) => match unlinkat(
+            directory,
+            stage_name.as_os_str(),
+            UnlinkatFlags::NoRemoveDir,
+        ) {
+            Ok(()) => StageCleanup::Removed,
+            Err(source) => StageCleanup::Retained {
+                stage: stage_name.clone(),
+                source: errno_io(source),
+            },
+        },
+    };
+    let durability = match checkpoint(BoundPublicationPrimitive::ParentSync) {
+        Err(source) => MetadataDurability::Unproven {
+            source: Some(source),
+        },
+        Ok(()) => match fsync(directory) {
+            Ok(()) => MetadataDurability::Confirmed,
+            Err(source) => MetadataDurability::Unproven {
+                source: Some(errno_io(source)),
+            },
+        },
+    };
+    let second = match checkpoint(BoundPublicationPrimitive::CompletionObserve) {
+        Err(source) => Err(source),
+        Ok(()) => observe_exclusive_dest(directory, name, &expected),
+    };
+    Ok(ExclusivePublication {
+        bytes_written,
+        final_name: select_exclusive_final_name(error_path.to_path_buf(), first, second),
+        durability,
+        cleanup,
+    })
+}
+
+#[cfg(unix)]
+fn snapshot_bound_stage(
+    directory: &impl AsFd,
+    stage_name: &OsStr,
+    stage_file: &File,
+) -> io::Result<Vec<u8>> {
+    let reader = openat(
+        directory,
+        stage_name,
+        OFlag::O_RDONLY | OFlag::O_CLOEXEC | OFlag::O_NOFOLLOW,
+        Mode::empty(),
+    )
+    .map(File::from)
+    .map_err(errno_io)?;
+    let named = fstat(&reader).map_err(errno_io)?;
+    let opened = fstat(stage_file).map_err(errno_io)?;
+    if !same_identity(named, opened) {
+        return Err(io::Error::other(
+            "stage identity changed while snapshotting",
+        ));
+    }
+    let mut bytes = Vec::new();
+    let mut reader = reader;
+    reader.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+#[cfg(unix)]
+fn observe_exclusive_dest(
+    directory: &impl AsFd,
+    name: &OsStr,
+    expected: &FileObservation,
+) -> io::Result<FileObservation> {
+    let mut file = openat(
+        directory,
+        name,
+        OFlag::O_RDONLY | OFlag::O_CLOEXEC | OFlag::O_NOFOLLOW,
+        Mode::empty(),
+    )
+    .map(File::from)
+    .map_err(errno_io)?;
+    let status = fstat(&file).map_err(errno_io)?;
+    let entry = entry_from_stat(name.to_os_string(), &status, Path::new(name))
+        .map_err(|error| io::Error::other(error.to_string()))?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    let observed = FileObservation { entry, bytes };
+    if same_observation(&observed, expected) {
+        Ok(observed)
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "published destination identity or bytes changed before verification",
+        ))
+    }
 }
 
 /// Publish an already-open exclusive stage with `linkat(2)` without closing it.
@@ -997,6 +1568,28 @@ pub fn write_reader_exclusive(
     options: AtomicWriteOptions,
 ) -> Result<u64, AtomicWriteError> {
     windows_create_only::write_reader_exclusive(path, reader, options)
+}
+
+/// Publish `contents` only when `path` does not yet exist, reporting each
+/// post-publication fact independently.
+#[cfg(windows)]
+pub fn write_bytes_exclusive_detailed(
+    path: impl AsRef<Path>,
+    contents: &[u8],
+    options: AtomicWriteOptions,
+) -> Result<ExclusivePublication, DetailedAtomicError> {
+    windows_create_only::write_bytes_exclusive_detailed(path.as_ref(), contents, options)
+}
+
+/// Publish a reader into a new dest name, reporting each post-publication fact
+/// independently.
+#[cfg(windows)]
+pub fn write_reader_exclusive_detailed(
+    path: &Path,
+    reader: &mut impl Read,
+    options: AtomicWriteOptions,
+) -> Result<ExclusivePublication, DetailedAtomicError> {
+    windows_create_only::write_reader_exclusive_detailed(path, reader, options)
 }
 
 /// Publish an already-created temporary file by syncing and atomically renaming it.
@@ -1383,12 +1976,12 @@ fn checkpoint(primitive: BoundPublicationPrimitive) -> Result<(), io::Error> {
             .filter(|candidate| **candidate == primitive)
             .count();
         let inject = state
-            .fault
-            .as_ref()
-            .is_some_and(|fault| fault.primitive == primitive && fault.ordinal == ordinal);
-        if inject {
-            let fault = state.fault.take().expect("matching fault is present");
-            state.fault_consumed = true;
+            .faults
+            .iter()
+            .position(|fault| fault.primitive == primitive && fault.ordinal == ordinal);
+        if let Some(index) = inject {
+            let fault = state.faults.remove(index);
+            state.faults_consumed += 1;
             (Some(fault.error), None)
         } else {
             let barrier = state
@@ -1922,6 +2515,446 @@ mod tests {
             }) if observation.bytes == b"new" && source.kind() == io::ErrorKind::NotFound
         ));
         assert!(!target.exists());
+    }
+
+    const EXCLUSIVE_PAYLOAD: &[u8] = b"exclusive-detailed-payload";
+    const EXCLUSIVE_COMPETITOR: &[u8] = b"competitor-bytes";
+
+    fn exclusive_stage_names(parent: &Path) -> Vec<OsString> {
+        fs::read_dir(parent)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .filter(|name| {
+                let lossy = name.to_string_lossy();
+                lossy.starts_with(".tmp_") || lossy.starts_with("_.tmp_")
+            })
+            .collect()
+    }
+
+    fn assert_no_exclusive_stage(parent: &Path) {
+        let leftover = exclusive_stage_names(parent);
+        assert!(leftover.is_empty(), "stage residue remained: {leftover:?}");
+    }
+
+    fn replace_exclusive_stage_name(parent: &Path) {
+        let names = exclusive_stage_names(parent);
+        assert_eq!(names.len(), 1, "expected one stage, found {names:?}");
+        let path = parent.join(&names[0]);
+        fs::remove_file(&path).unwrap();
+        fs::write(&path, b"intruder").unwrap();
+    }
+
+    #[test]
+    fn detailed_exclusive_publication_confirmed_success() {
+        let temporary = TempDir::new();
+        let bytes_path = temporary.path().join("bytes.bin");
+        let published = write_bytes_exclusive_detailed(
+            &bytes_path,
+            EXCLUSIVE_PAYLOAD,
+            AtomicWriteOptions { mode: Some(0o600) },
+        )
+        .unwrap();
+        assert!(
+            published.is_fully_confirmed(),
+            "unix exclusive detailed success must be fully confirmed"
+        );
+        assert_eq!(published.bytes_written, EXCLUSIVE_PAYLOAD.len() as u64);
+        assert!(matches!(
+            published.final_name,
+            FinalNameConfirmation::Confirmed { ref observation }
+                if observation.bytes == EXCLUSIVE_PAYLOAD
+        ));
+        assert!(matches!(
+            published.durability,
+            MetadataDurability::Confirmed
+        ));
+        assert!(matches!(published.cleanup, StageCleanup::Removed));
+        assert_eq!(fs::read(&bytes_path).unwrap(), EXCLUSIVE_PAYLOAD);
+        assert_no_exclusive_stage(temporary.path());
+
+        let reader_path = temporary.path().join("reader.bin");
+        let mut reader = io::Cursor::new(EXCLUSIVE_PAYLOAD);
+        let published = write_reader_exclusive_detailed(
+            &reader_path,
+            &mut reader,
+            AtomicWriteOptions { mode: Some(0o600) },
+        )
+        .unwrap();
+        assert!(published.is_fully_confirmed());
+        assert_eq!(published.bytes_written, EXCLUSIVE_PAYLOAD.len() as u64);
+        assert_eq!(fs::read(&reader_path).unwrap(), EXCLUSIVE_PAYLOAD);
+
+        let directory = open_directory(temporary.path());
+        let published = write_bytes_exclusive_bound_detailed(
+            &directory,
+            OsStr::new("bound.bin"),
+            EXCLUSIVE_PAYLOAD,
+            0o600,
+        )
+        .unwrap();
+        assert!(published.is_fully_confirmed());
+        assert_eq!(
+            fs::read(temporary.path().join("bound.bin")).unwrap(),
+            EXCLUSIVE_PAYLOAD
+        );
+        assert_no_exclusive_stage(temporary.path());
+    }
+
+    #[test]
+    fn detailed_exclusive_publication_missing_parent_is_not_created() {
+        let temporary = TempDir::new();
+        let missing_parent = temporary.path().join("missing");
+        let dest = missing_parent.join("leaf.bin");
+        assert!(
+            write_bytes_exclusive_detailed(&dest, EXCLUSIVE_PAYLOAD, AtomicWriteOptions::default())
+                .is_err()
+        );
+        assert!(!missing_parent.exists());
+    }
+
+    #[test]
+    fn detailed_exclusive_publication_preexisting_dest_is_untouched() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("held.bin");
+        fs::write(&path, EXCLUSIVE_COMPETITOR).unwrap();
+        let before = fs::metadata(&path).unwrap();
+        let error =
+            write_bytes_exclusive_detailed(&path, EXCLUSIVE_PAYLOAD, AtomicWriteOptions::default())
+                .expect_err("occupied destination must refuse");
+        assert_eq!(error.source.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&path).unwrap(), EXCLUSIVE_COMPETITOR);
+        let after = fs::metadata(&path).unwrap();
+        assert_eq!(after.len(), before.len());
+        assert_eq!(after.modified().ok(), before.modified().ok());
+        assert_no_exclusive_stage(temporary.path());
+    }
+
+    #[test]
+    fn detailed_exclusive_publication_exclusive_stage_collision_preserved() {
+        let temporary = TempDir::new();
+        let directory = open_directory(temporary.path());
+        let dest = temporary.path().join("record.bin");
+        let dest_for_barrier = dest.clone();
+        let (result, fired) = run_with_bound_publication_barrier(
+            BoundPublicationPrimitive::ExclusivePublish,
+            1,
+            move || fs::write(&dest_for_barrier, EXCLUSIVE_COMPETITOR).unwrap(),
+            || {
+                write_bytes_exclusive_bound_detailed(
+                    &directory,
+                    OsStr::new("record.bin"),
+                    EXCLUSIVE_PAYLOAD,
+                    0o600,
+                )
+            },
+        );
+        assert!(fired);
+        assert!(result.is_err());
+        assert_eq!(fs::read(&dest).unwrap(), EXCLUSIVE_COMPETITOR);
+        assert_no_exclusive_stage(temporary.path());
+    }
+
+    #[test]
+    fn detailed_exclusive_publication_stage_identity_mismatch_refused() {
+        let temporary = TempDir::new();
+        let directory = open_directory(temporary.path());
+        let parent = temporary.path().to_path_buf();
+        let dest = temporary.path().join("record.bin");
+        let (result, fired) = run_with_bound_publication_barrier(
+            BoundPublicationPrimitive::FileSync,
+            1,
+            move || replace_exclusive_stage_name(&parent),
+            || {
+                write_bytes_exclusive_bound_detailed(
+                    &directory,
+                    OsStr::new("record.bin"),
+                    EXCLUSIVE_PAYLOAD,
+                    0o600,
+                )
+            },
+        );
+        assert!(fired);
+        assert!(result.is_err());
+        assert!(!dest.exists());
+    }
+
+    #[test]
+    fn detailed_exclusive_publication_race_before_observation_one_is_unverified() {
+        let temporary = TempDir::new();
+        let directory = open_directory(temporary.path());
+        let dest = temporary.path().join("record.bin");
+        let dest_for_barrier = dest.clone();
+        let (result, fired) = run_with_bound_publication_barrier(
+            BoundPublicationPrimitive::PostPublishObserve,
+            1,
+            move || fs::remove_file(&dest_for_barrier).unwrap(),
+            || {
+                write_bytes_exclusive_bound_detailed(
+                    &directory,
+                    OsStr::new("record.bin"),
+                    EXCLUSIVE_PAYLOAD,
+                    0o600,
+                )
+            },
+        );
+        assert!(fired);
+        let published = result.unwrap();
+        assert!(matches!(
+            published.final_name,
+            FinalNameConfirmation::Unverified { ref destination, ref reason }
+                if destination == Path::new("record.bin")
+                    && reason.kind() == io::ErrorKind::NotFound
+        ));
+        assert!(matches!(published.cleanup, StageCleanup::Removed));
+        assert!(!dest.exists());
+    }
+
+    #[test]
+    fn detailed_exclusive_publication_forced_durability_failure_is_unproven() {
+        let temporary = TempDir::new();
+        let directory = open_directory(temporary.path());
+        let dest = temporary.path().join("record.bin");
+        let (result, consumed) = run_with_bound_publication_fault(
+            BoundPublicationPrimitive::ParentSync,
+            1,
+            Errno::EIO as i32,
+            || {
+                write_bytes_exclusive_bound_detailed(
+                    &directory,
+                    OsStr::new("record.bin"),
+                    EXCLUSIVE_PAYLOAD,
+                    0o600,
+                )
+            },
+        );
+        assert!(consumed);
+        let published = result.unwrap();
+        assert!(matches!(
+            published.final_name,
+            FinalNameConfirmation::Confirmed { ref observation }
+                if observation.bytes == EXCLUSIVE_PAYLOAD
+        ));
+        assert!(matches!(
+            published.durability,
+            MetadataDurability::Unproven { source: Some(ref source) }
+                if source.raw_os_error() == Some(Errno::EIO as i32)
+        ));
+        assert!(matches!(published.cleanup, StageCleanup::Removed));
+        assert!(!published.is_fully_confirmed());
+        assert_eq!(fs::read(&dest).unwrap(), EXCLUSIVE_PAYLOAD);
+        assert_no_exclusive_stage(temporary.path());
+    }
+
+    #[test]
+    fn detailed_exclusive_publication_forced_cleanup_failure_is_retained() {
+        let temporary = TempDir::new();
+        let directory = open_directory(temporary.path());
+        let dest = temporary.path().join("record.bin");
+        let (result, consumed) = run_with_bound_publication_fault(
+            BoundPublicationPrimitive::StageUnlink,
+            1,
+            Errno::EIO as i32,
+            || {
+                write_bytes_exclusive_bound_detailed(
+                    &directory,
+                    OsStr::new("record.bin"),
+                    EXCLUSIVE_PAYLOAD,
+                    0o600,
+                )
+            },
+        );
+        assert!(consumed);
+        let published = result.unwrap();
+        assert!(matches!(
+            published.final_name,
+            FinalNameConfirmation::Confirmed { ref observation }
+                if observation.bytes == EXCLUSIVE_PAYLOAD
+        ));
+        assert!(matches!(
+            published.durability,
+            MetadataDurability::Confirmed
+        ));
+        assert!(matches!(
+            published.cleanup,
+            StageCleanup::Retained { ref source, .. }
+                if source.raw_os_error() == Some(Errno::EIO as i32)
+        ));
+        assert_eq!(fs::read(&dest).unwrap(), EXCLUSIVE_PAYLOAD);
+        assert_eq!(exclusive_stage_names(temporary.path()).len(), 1);
+    }
+
+    #[test]
+    fn detailed_exclusive_publication_final_observation_and_durability_combined_failure() {
+        let temporary = TempDir::new();
+        let directory = open_directory(temporary.path());
+        let dest = temporary.path().join("record.bin");
+        let dest_for_barrier = dest.clone();
+        let (result, consumed, fired) = run_with_bound_publication_faults_and_barrier(
+            [(BoundPublicationPrimitive::ParentSync, 1, Errno::EIO as i32)],
+            BoundPublicationPrimitive::CompletionObserve,
+            1,
+            move || fs::remove_file(&dest_for_barrier).unwrap(),
+            || {
+                write_bytes_exclusive_bound_detailed(
+                    &directory,
+                    OsStr::new("record.bin"),
+                    EXCLUSIVE_PAYLOAD,
+                    0o600,
+                )
+            },
+        );
+        assert_eq!(consumed, 1);
+        assert!(fired);
+        let published = result.unwrap();
+        assert!(matches!(
+            published.final_name,
+            FinalNameConfirmation::Unverified { ref reason, .. }
+                if reason.kind() == io::ErrorKind::NotFound
+        ));
+        assert!(matches!(
+            published.durability,
+            MetadataDurability::Unproven { source: Some(_) }
+        ));
+        assert!(matches!(published.cleanup, StageCleanup::Removed));
+        assert!(!dest.exists());
+    }
+
+    #[test]
+    fn detailed_exclusive_publication_observation_one_race_and_cleanup_failure() {
+        let temporary = TempDir::new();
+        let directory = open_directory(temporary.path());
+        let dest = temporary.path().join("record.bin");
+        let dest_for_barrier = dest.clone();
+        let (result, consumed, fired) = run_with_bound_publication_faults_and_barrier(
+            [(BoundPublicationPrimitive::StageUnlink, 1, Errno::EIO as i32)],
+            BoundPublicationPrimitive::PostPublishObserve,
+            1,
+            move || fs::remove_file(&dest_for_barrier).unwrap(),
+            || {
+                write_bytes_exclusive_bound_detailed(
+                    &directory,
+                    OsStr::new("record.bin"),
+                    EXCLUSIVE_PAYLOAD,
+                    0o600,
+                )
+            },
+        );
+        assert_eq!(consumed, 1);
+        assert!(fired);
+        let published = result.unwrap();
+        assert!(matches!(
+            published.final_name,
+            FinalNameConfirmation::Unverified { .. }
+        ));
+        assert!(matches!(published.cleanup, StageCleanup::Retained { .. }));
+        assert_eq!(exclusive_stage_names(temporary.path()).len(), 1);
+    }
+
+    #[test]
+    fn detailed_exclusive_publication_durability_and_cleanup_failure() {
+        let temporary = TempDir::new();
+        let directory = open_directory(temporary.path());
+        let dest = temporary.path().join("record.bin");
+        let (result, consumed) = run_with_bound_publication_faults(
+            [
+                (BoundPublicationPrimitive::StageUnlink, 1, Errno::EIO as i32),
+                (BoundPublicationPrimitive::ParentSync, 1, Errno::EIO as i32),
+            ],
+            || {
+                write_bytes_exclusive_bound_detailed(
+                    &directory,
+                    OsStr::new("record.bin"),
+                    EXCLUSIVE_PAYLOAD,
+                    0o600,
+                )
+            },
+        );
+        assert_eq!(consumed, 2);
+        let published = result.unwrap();
+        assert!(matches!(
+            published.final_name,
+            FinalNameConfirmation::Confirmed { ref observation }
+                if observation.bytes == EXCLUSIVE_PAYLOAD
+        ));
+        assert!(matches!(
+            published.durability,
+            MetadataDurability::Unproven { source: Some(_) }
+        ));
+        assert!(matches!(published.cleanup, StageCleanup::Retained { .. }));
+        assert_eq!(fs::read(&dest).unwrap(), EXCLUSIVE_PAYLOAD);
+        assert_eq!(exclusive_stage_names(temporary.path()).len(), 1);
+    }
+
+    #[test]
+    fn detailed_exclusive_publication_all_three_facts_fail() {
+        let temporary = TempDir::new();
+        let directory = open_directory(temporary.path());
+        let dest = temporary.path().join("record.bin");
+        let dest_for_barrier = dest.clone();
+        let (result, consumed, fired) = run_with_bound_publication_faults_and_barrier(
+            [
+                (BoundPublicationPrimitive::StageUnlink, 1, Errno::EIO as i32),
+                (BoundPublicationPrimitive::ParentSync, 1, Errno::EIO as i32),
+            ],
+            BoundPublicationPrimitive::PostPublishObserve,
+            1,
+            move || fs::remove_file(&dest_for_barrier).unwrap(),
+            || {
+                write_bytes_exclusive_bound_detailed(
+                    &directory,
+                    OsStr::new("record.bin"),
+                    EXCLUSIVE_PAYLOAD,
+                    0o600,
+                )
+            },
+        );
+        assert_eq!(consumed, 2);
+        assert!(fired);
+        let published = result.unwrap();
+        assert!(matches!(
+            published.final_name,
+            FinalNameConfirmation::Unverified { .. }
+        ));
+        assert!(matches!(
+            published.durability,
+            MetadataDurability::Unproven { source: Some(_) }
+        ));
+        assert!(matches!(published.cleanup, StageCleanup::Retained { .. }));
+        assert_eq!(exclusive_stage_names(temporary.path()).len(), 1);
+    }
+
+    #[test]
+    fn detailed_exclusive_publication_race_before_observation_two_is_unverified() {
+        let temporary = TempDir::new();
+        let directory = open_directory(temporary.path());
+        let dest = temporary.path().join("record.bin");
+        let dest_for_barrier = dest.clone();
+        let (result, fired) = run_with_bound_publication_barrier(
+            BoundPublicationPrimitive::CompletionObserve,
+            1,
+            move || fs::remove_file(&dest_for_barrier).unwrap(),
+            || {
+                write_bytes_exclusive_bound_detailed(
+                    &directory,
+                    OsStr::new("record.bin"),
+                    EXCLUSIVE_PAYLOAD,
+                    0o600,
+                )
+            },
+        );
+        assert!(fired);
+        let published = result.unwrap();
+        assert!(matches!(
+            published.final_name,
+            FinalNameConfirmation::Unverified { ref reason, .. }
+                if reason.kind() == io::ErrorKind::NotFound
+        ));
+        assert!(matches!(
+            published.durability,
+            MetadataDurability::Confirmed
+        ));
+        assert!(matches!(published.cleanup, StageCleanup::Removed));
+        assert!(!dest.exists());
     }
 }
 

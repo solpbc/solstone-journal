@@ -82,6 +82,8 @@ pub use append::append_jsonl;
 pub use append::append_text;
 #[cfg(unix)]
 pub use atomic::install_file;
+#[cfg(unix)]
+pub use atomic::write_bytes_exclusive_bound_detailed;
 #[cfg(any(unix, windows))]
 pub use atomic::{AtomicWriteOptions, JsonWriteOptions, atomic_replace, write_json};
 #[cfg(unix)]
@@ -97,6 +99,15 @@ pub use atomic::{DetailedAtomicError, DetailedAtomicOutcome, atomic_replace_deta
 pub use atomic::{
     WindowsCreateOnlyPrimitive, WindowsCreateOnlyTrace, run_with_windows_create_only_barrier,
     run_with_windows_create_only_faults, run_with_windows_create_only_faults_and_barrier,
+};
+#[cfg(any(unix, windows))]
+pub use atomic::{
+    ExclusivePublication, FinalNameConfirmation, MetadataDurability, StageCleanup,
+    write_bytes_exclusive_detailed, write_reader_exclusive_detailed,
+};
+#[cfg(all(unix, feature = "test-hooks"))]
+pub use atomic::{
+    run_with_bound_publication_faults, run_with_bound_publication_faults_and_barrier,
 };
 #[cfg(any(unix, windows))]
 pub use atomic::{write_bytes_exclusive, write_reader_exclusive};

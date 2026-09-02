@@ -5,7 +5,7 @@
 
 use std::ffi::{OsStr, OsString};
 use std::fs::File;
-use std::io::{self, Cursor, Read, Write};
+use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
 use std::mem::size_of;
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::{AsRawHandle, OwnedHandle, RawHandle};
@@ -24,17 +24,25 @@ use windows_sys::Win32::Foundation::{
     GENERIC_WRITE,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    DELETE, FILE_DISPOSITION_INFO, FILE_READ_ATTRIBUTES, FileDispositionInfo, FlushFileBuffers,
-    MoveFileExW, SYNCHRONIZE, SetFileInformationByHandle,
+    BY_HANDLE_FILE_INFORMATION, DELETE, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
+    FILE_ATTRIBUTE_TAG_INFO, FILE_DISPOSITION_INFO, FILE_READ_ATTRIBUTES, FILE_READ_DATA,
+    FileAttributeTagInfo, FileDispositionInfo, FlushFileBuffers, GetFileInformationByHandle,
+    GetFileInformationByHandleEx, MoveFileExW, SYNCHRONIZE, SetFileInformationByHandle,
 };
 
-use super::{ATOMIC_CANDIDATE_MARKER, TEMP_SEQUENCE, io_error, publication_candidate_name};
+use super::{
+    ATOMIC_CANDIDATE_MARKER, DetailedAtomicError, ExclusivePublication, MetadataDurability,
+    StageCleanup, TEMP_SEQUENCE, detailed_error, io_error, publication_candidate_name,
+    select_exclusive_final_name,
+};
 use crate::create_only_retry::{
     CREATE_ONLY_MAX_ATTEMPTS, CreateOnlyMoveFailure, CreateOnlyReclass, CreateOnlyRetry,
     decide_create_only_retry,
 };
 use crate::errors::{AtomicWriteError, compose_exclusive_cleanup};
 use crate::exclusive_copy::copy_exclusive;
+use crate::journal_root::JournalEntryKind;
+use crate::observation::{FileObservation, FlatDirectoryEntry, NativeMtime};
 use crate::windows_identity::{WindowsFileIdentity, file_identity};
 use crate::windows_ntcreate::{nt_create_relative, nt_create_relative_share_read_delete};
 use crate::windows_publication_path::{
@@ -329,6 +337,206 @@ pub(super) fn write_reader_exclusive(
         path,
         &stage_name,
         &stage,
+        io::Error::new(io::ErrorKind::TimedOut, "create-only publication exhausted"),
+    ))
+}
+
+pub(super) fn write_bytes_exclusive_detailed(
+    path: &Path,
+    contents: &[u8],
+    options: crate::atomic::AtomicWriteOptions,
+) -> Result<ExclusivePublication, DetailedAtomicError> {
+    let mut reader = Cursor::new(contents);
+    write_reader_exclusive_detailed(path, &mut reader, options)
+}
+
+pub(super) fn write_reader_exclusive_detailed(
+    path: &Path,
+    reader: &mut impl Read,
+    options: crate::atomic::AtomicWriteOptions,
+) -> Result<ExclusivePublication, DetailedAtomicError> {
+    if let Some(mode) = options.mode
+        && mode > 0o777
+    {
+        return Err(detailed_error(
+            path,
+            "validate mode",
+            io::Error::new(io::ErrorKind::InvalidInput, "mode exceeds 0o777"),
+        ));
+    }
+    let input = path.to_str().ok_or_else(|| {
+        detailed_error(
+            path,
+            "validate destination",
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "publication path is not valid UTF-8",
+            ),
+        )
+    })?;
+    let leaf = path.file_name().ok_or_else(|| {
+        detailed_error(
+            path,
+            "validate destination",
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "destination has no normal name",
+            ),
+        )
+    })?;
+    let stage_shape =
+        publication_candidate_name(leaf, ATOMIC_CANDIDATE_MARKER, &[u128::MAX, u128::MAX]);
+    let stage_shape = stage_shape.to_str().ok_or_else(|| {
+        detailed_error(
+            path,
+            "validate destination",
+            io::Error::new(io::ErrorKind::InvalidInput, "stage name is not valid UTF-8"),
+        )
+    })?;
+    let capability = prepare_publication_path_with_terminals(input, &[stage_shape])
+        .map_err(|error| map_prepare_error_detailed(path, error))?;
+    let dest_name = capability.leaf_name().to_os_string();
+    if destination_present(capability.terminal_parent(), &dest_name)
+        .map_err(|source| detailed_error(path, "inspect destination", source))?
+    {
+        return Err(already_exists_detailed(path));
+    }
+
+    let (stage_name, mut stage) = allocate_stage(capability.terminal_parent(), &dest_name)
+        .map_err(|source| detailed_error(path, "create stage", source))?;
+    let copied = match copy_and_flush(reader, &mut stage) {
+        Ok(copied) => copied,
+        Err(source) => {
+            return Err(fail_with_cleanup_detailed(
+                path,
+                "prepare stage",
+                capability.terminal_parent(),
+                &stage_name,
+                None,
+                source,
+            ));
+        }
+    };
+    let expected_bytes = match snapshot_stage_bytes(&mut stage) {
+        Ok(bytes) => bytes,
+        Err(source) => {
+            return Err(fail_with_cleanup_detailed(
+                path,
+                "prepare stage",
+                capability.terminal_parent(),
+                &stage_name,
+                None,
+                source,
+            ));
+        }
+    };
+    let stage_identity = match file_identity(stage.as_raw_handle()) {
+        Ok(identity) => identity,
+        Err(source) => {
+            return Err(fail_with_cleanup_detailed(
+                path,
+                "prepare stage",
+                capability.terminal_parent(),
+                &stage_name,
+                None,
+                source,
+            ));
+        }
+    };
+
+    for attempt in 1..=CREATE_ONLY_MAX_ATTEMPTS {
+        if let Err(source) = admit_before_move(&capability, &dest_name, &stage, stage_identity) {
+            return Err(fail_with_cleanup_detailed(
+                path,
+                "reverify before publication",
+                capability.terminal_parent(),
+                &stage_name,
+                Some(stage_identity),
+                source,
+            ));
+        }
+        if let Err(source) = super::windows_atomic::checkpoint("exclusive-publish") {
+            return Err(fail_with_cleanup_detailed(
+                path,
+                "publish stage",
+                capability.terminal_parent(),
+                &stage_name,
+                Some(stage_identity),
+                source,
+            ));
+        }
+        if !stage_held(capability.terminal_parent(), &stage_name, stage_identity) {
+            return Err(fail_with_cleanup_detailed(
+                path,
+                "verify stage",
+                capability.terminal_parent(),
+                &stage_name,
+                Some(stage_identity),
+                io::Error::other("stage identity changed before publication"),
+            ));
+        }
+        match move_stage(&capability, &stage_name, &dest_name) {
+            Ok(()) => {
+                return finish_published_detailed(
+                    path,
+                    &capability,
+                    &dest_name,
+                    &stage_name,
+                    &stage,
+                    stage_identity,
+                    &expected_bytes,
+                    copied,
+                );
+            }
+            Err(source) => {
+                match classify_after_failed_move(
+                    &capability,
+                    &dest_name,
+                    &stage_name,
+                    stage_identity,
+                    &source,
+                ) {
+                    AfterMove::Published => {
+                        return finish_published_detailed(
+                            path,
+                            &capability,
+                            &dest_name,
+                            &stage_name,
+                            &stage,
+                            stage_identity,
+                            &expected_bytes,
+                            copied,
+                        );
+                    }
+                    AfterMove::Retry(failure, reclass) => {
+                        match decide_create_only_retry(failure, reclass, attempt) {
+                            CreateOnlyRetry::Retry { wait: true } => {
+                                thread::sleep(PUBLICATION_RETRY_DELAY);
+                            }
+                            CreateOnlyRetry::Retry { wait: false } => {}
+                            CreateOnlyRetry::Stop => {
+                                return Err(stop_after_move_detailed(
+                                    path,
+                                    capability.terminal_parent(),
+                                    &stage_name,
+                                    stage_identity,
+                                    failure,
+                                    reclass,
+                                    source,
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Err(fail_with_cleanup_detailed(
+        path,
+        "publish stage",
+        capability.terminal_parent(),
+        &stage_name,
+        Some(stage_identity),
         io::Error::new(io::ErrorKind::TimedOut, "create-only publication exhausted"),
     ))
 }
@@ -773,4 +981,281 @@ fn already_exists(path: &Path) -> AtomicWriteError {
         path,
         io::Error::new(io::ErrorKind::AlreadyExists, "destination already exists"),
     )
+}
+
+fn already_exists_detailed(path: &Path) -> DetailedAtomicError {
+    detailed_error(
+        path,
+        "inspect destination",
+        io::Error::new(io::ErrorKind::AlreadyExists, "destination already exists"),
+    )
+}
+
+fn map_prepare_error_detailed(path: &Path, error: PublicationPathError) -> DetailedAtomicError {
+    let kind = if matches!(error, PublicationPathError::PathTooLong) {
+        io::ErrorKind::InvalidInput
+    } else {
+        io::ErrorKind::Other
+    };
+    detailed_error(
+        path,
+        "prepare publication path",
+        io::Error::new(kind, error),
+    )
+}
+
+fn snapshot_stage_bytes(stage: &mut File) -> io::Result<Vec<u8>> {
+    stage.seek(SeekFrom::Start(0))?;
+    let mut bytes = Vec::new();
+    stage.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+fn stop_after_move_detailed(
+    path: &Path,
+    parent: &OwnedHandle,
+    stage_name: &OsStr,
+    expected: WindowsFileIdentity,
+    failure: CreateOnlyMoveFailure,
+    reclass: CreateOnlyReclass,
+    source: io::Error,
+) -> DetailedAtomicError {
+    let source = if failure == CreateOnlyMoveFailure::AlreadyExists
+        || reclass == CreateOnlyReclass::DestinationOccupied
+    {
+        io::Error::new(io::ErrorKind::AlreadyExists, "destination already exists")
+    } else {
+        source
+    };
+    fail_with_cleanup_detailed(
+        path,
+        "publish stage",
+        parent,
+        stage_name,
+        Some(expected),
+        source,
+    )
+}
+
+fn fail_with_cleanup_detailed(
+    path: &Path,
+    operation: &'static str,
+    parent: &OwnedHandle,
+    stage_name: &OsStr,
+    expected: Option<WindowsFileIdentity>,
+    primary: io::Error,
+) -> DetailedAtomicError {
+    let cleanup = match expected {
+        Some(expected) => try_cleanup_stage(parent, stage_name, expected),
+        None => match inspect_stage(parent, stage_name) {
+            Ok(Some(identity)) => try_cleanup_stage(parent, stage_name, identity),
+            _ => Ok(()),
+        },
+    };
+    match cleanup {
+        Ok(()) => detailed_error(path, operation, primary),
+        Err(cleanup_error) => DetailedAtomicError {
+            path: path.to_path_buf(),
+            operation,
+            source: primary,
+            orphan_stage: Some(stage_name.to_os_string()),
+            cleanup_error: Some(cleanup_error),
+        },
+    }
+}
+
+fn try_cleanup_stage(
+    parent: &OwnedHandle,
+    stage_name: &OsStr,
+    expected: WindowsFileIdentity,
+) -> io::Result<()> {
+    match open_named(
+        parent,
+        stage_name,
+        DELETE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+    ) {
+        Ok(handle) => match file_identity(handle.as_raw_handle()) {
+            Ok(identity) if identity == expected => delete_by_handle(handle),
+            Ok(_) | Err(_) => Ok(()),
+        },
+        Err(_) => Ok(()),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn finish_published_detailed(
+    path: &Path,
+    capability: &crate::windows_publication_path::WindowsPublicationPath,
+    dest_name: &OsStr,
+    stage_name: &OsStr,
+    stage: &File,
+    stage_identity: WindowsFileIdentity,
+    expected_bytes: &[u8],
+    copied: u64,
+) -> Result<ExclusivePublication, DetailedAtomicError> {
+    let first = match capability.revalidate() {
+        Err(source) => {
+            let _ = super::windows_atomic::checkpoint("exclusive-observe-1");
+            Err(io::Error::other(source))
+        }
+        Ok(()) => match super::windows_atomic::checkpoint("exclusive-observe-1") {
+            Err(source) => Err(source),
+            Ok(()) => observe_exclusive_dest(
+                capability.terminal_parent(),
+                dest_name,
+                stage,
+                expected_bytes,
+            ),
+        },
+    };
+
+    let cleanup =
+        dispose_stage_name_if_still_ours(capability.terminal_parent(), stage_name, stage_identity);
+    let durability = MetadataDurability::Unproven { source: None };
+
+    let second = match super::windows_atomic::checkpoint("exclusive-observe-2") {
+        Err(source) => Err(source),
+        Ok(()) => observe_exclusive_dest(
+            capability.terminal_parent(),
+            dest_name,
+            stage,
+            expected_bytes,
+        ),
+    };
+
+    Ok(ExclusivePublication {
+        bytes_written: copied,
+        final_name: select_exclusive_final_name(path.to_path_buf(), first, second),
+        durability,
+        cleanup,
+    })
+}
+
+fn observe_exclusive_dest(
+    parent: &OwnedHandle,
+    dest_name: &OsStr,
+    stage: &File,
+    expected_bytes: &[u8],
+) -> io::Result<FileObservation> {
+    let live = file_identity(stage.as_raw_handle())?;
+    let handle = open_named(
+        parent,
+        dest_name,
+        FILE_READ_ATTRIBUTES | FILE_READ_DATA | SYNCHRONIZE,
+    )?;
+    let identity = file_identity(handle.as_raw_handle())?;
+    if identity != live {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "published destination identity does not match the live stage",
+        ));
+    }
+    let entry = exclusive_entry_from_handle(dest_name.to_os_string(), handle.as_raw_handle())?;
+    let mut file = File::from(handle);
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    if bytes != expected_bytes {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "published destination bytes changed before verification",
+        ));
+    }
+    Ok(FileObservation { entry, bytes })
+}
+
+const WINDOWS_TO_UNIX_EPOCH_100NS: i128 = 116_444_736_000_000_000;
+const HUNDRED_NANOSECONDS_PER_SECOND: i128 = 10_000_000;
+
+fn exclusive_entry_from_handle(
+    name: OsString,
+    handle: RawHandle,
+) -> io::Result<FlatDirectoryEntry> {
+    let attributes = exclusive_attribute_tag(handle)?;
+    if attributes.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(io::Error::other("entry is a reparse point"));
+    }
+    if attributes.FileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0 {
+        return Err(io::Error::other("entry is not a regular file"));
+    }
+    let identity = file_identity(handle)?;
+    let mut info = BY_HANDLE_FILE_INFORMATION::default();
+    // SAFETY: `info` is writable for its exact size and `handle` remains valid.
+    #[allow(unsafe_code)]
+    let result = unsafe { GetFileInformationByHandle(handle, &mut info) };
+    if result == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let last_write = ((info.ftLastWriteTime.dwHighDateTime as u64) << 32)
+        | u64::from(info.ftLastWriteTime.dwLowDateTime);
+    Ok(FlatDirectoryEntry {
+        name,
+        kind: JournalEntryKind::RegularFile,
+        device: identity.volume_serial(),
+        inode: identity.folded_file_id(),
+        size: ((info.nFileSizeHigh as u64) << 32) | u64::from(info.nFileSizeLow),
+        mtime: exclusive_native_mtime(last_write)?,
+    })
+}
+
+fn exclusive_attribute_tag(handle: RawHandle) -> io::Result<FILE_ATTRIBUTE_TAG_INFO> {
+    let mut info = FILE_ATTRIBUTE_TAG_INFO::default();
+    // SAFETY: `info` is writable for its exact buffer size and `handle` remains valid.
+    #[allow(unsafe_code)]
+    let result = unsafe {
+        GetFileInformationByHandleEx(
+            handle,
+            FileAttributeTagInfo,
+            (&mut info as *mut FILE_ATTRIBUTE_TAG_INFO).cast(),
+            size_of::<FILE_ATTRIBUTE_TAG_INFO>() as u32,
+        )
+    };
+    (result != 0)
+        .then_some(info)
+        .ok_or_else(io::Error::last_os_error)
+}
+
+fn exclusive_native_mtime(value: u64) -> io::Result<NativeMtime> {
+    let ticks = i128::from(value) - WINDOWS_TO_UNIX_EPOCH_100NS;
+    let seconds = ticks.div_euclid(HUNDRED_NANOSECONDS_PER_SECOND);
+    let nanoseconds = ticks.rem_euclid(HUNDRED_NANOSECONDS_PER_SECOND) * 100;
+    Ok(NativeMtime {
+        seconds: i64::try_from(seconds).map_err(|_| {
+            io::Error::new(io::ErrorKind::InvalidData, "modification time exceeds i64")
+        })?,
+        nanoseconds: i64::try_from(nanoseconds).expect("Windows FILETIME remainder fits i64"),
+    })
+}
+
+fn dispose_stage_name_if_still_ours(
+    parent: &OwnedHandle,
+    stage_name: &OsStr,
+    expected: WindowsFileIdentity,
+) -> StageCleanup {
+    if let Err(source) = super::windows_atomic::checkpoint("stage-cleanup") {
+        return StageCleanup::Retained {
+            stage: stage_name.to_os_string(),
+            source,
+        };
+    }
+    match open_named(
+        parent,
+        stage_name,
+        DELETE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+    ) {
+        Err(error) if is_not_found(&error) => StageCleanup::Removed,
+        Err(error) => StageCleanup::Retained {
+            stage: stage_name.to_os_string(),
+            source: error,
+        },
+        Ok(handle) => match file_identity(handle.as_raw_handle()) {
+            Ok(identity) if identity == expected => match delete_by_handle(handle) {
+                Ok(()) => StageCleanup::Removed,
+                Err(source) => StageCleanup::Retained {
+                    stage: stage_name.to_os_string(),
+                    source,
+                },
+            },
+            Ok(_) | Err(_) => StageCleanup::Removed,
+        },
+    }
 }
