@@ -5338,6 +5338,7 @@ dependencies = [
  "sha2",
  "solstone-core-assets",
  "solstone-core-brain",
+ "solstone-core-distribution",
  "solstone-core-format",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
