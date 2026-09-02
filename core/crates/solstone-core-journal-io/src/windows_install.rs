@@ -224,7 +224,7 @@ enum DestObservation {
 
 enum PreMoveFailure {
     Cleanup(io::Error),
-    NoCleanup(io::Error),
+    AliasNoCleanup(io::Error),
 }
 
 pub(super) fn install_file(
@@ -280,15 +280,7 @@ pub(super) fn install_file(
         admit_publication_path(dest_str, &[]).map_err(|error| map_prepare_error(path, error))?;
     let src_admitted: AdmittedPublicationPath =
         admit_publication_path(src_str, &[]).map_err(|error| map_prepare_error(path, error))?;
-    if dest_admitted.volume_serial() != src_admitted.volume_serial() {
-        return Err(io_error(
-            path,
-            io::Error::other("source and destination are on different volumes"),
-        ));
-    }
-    let dest_cap = dest_admitted
-        .retain_ancestors(AncestorAdmission::CreateMissing)
-        .map_err(|error| map_prepare_error(path, error))?;
+    let same_volume = src_admitted.has_same_volume_root(&dest_admitted);
     let src_cap = src_admitted
         .retain_ancestors(AncestorAdmission::ExistingOnly)
         .map_err(|error| map_prepare_error(path, error))?;
@@ -313,6 +305,27 @@ pub(super) fn install_file(
                 src_cap.leaf_name(),
                 &source_file,
                 source,
+            ));
+        }
+    };
+
+    if !same_volume {
+        return Err(fail_with_cleanup(
+            path,
+            src_cap.leaf_name(),
+            &source_file,
+            io::Error::other("source and destination are on different volumes"),
+        ));
+    }
+
+    let dest_cap = match dest_admitted.retain_ancestors(AncestorAdmission::CreateMissing) {
+        Ok(capability) => capability,
+        Err(error) => {
+            return Err(fail_with_cleanup(
+                path,
+                src_cap.leaf_name(),
+                &source_file,
+                prepare_io_error(error),
             ));
         }
     };
@@ -395,7 +408,7 @@ pub(super) fn install_file(
                     source,
                 ));
             }
-            Err(PreMoveFailure::NoCleanup(source)) => return Err(io_error(path, source)),
+            Err(PreMoveFailure::AliasNoCleanup(source)) => return Err(io_error(path, source)),
         }
         match move_source(&src_cap, &dest_cap) {
             Ok(()) => {
@@ -403,7 +416,16 @@ pub(super) fn install_file(
             }
             Err(os_error) => {
                 let failure = classify_move_error(&os_error);
-                let reclass = reclassify(&src_cap, &dest_cap, source_identity, dest_state);
+                let reclass = match reclassify(&src_cap, &dest_cap, source_identity, dest_state) {
+                    Ok(reclass) => reclass,
+                    Err(source) => {
+                        return Err(AtomicWriteError::PublicationUncertain {
+                            path: path.to_path_buf(),
+                            operation: "reconcile install after failed move",
+                            source,
+                        });
+                    }
+                };
                 match decide_install_retry(failure, reclass, attempt) {
                     InstallRetryDecision::Retry { wait: true } => {
                         sleep_or_record_backoff(INSTALL_RETRY_DELAY);
@@ -452,7 +474,7 @@ fn admit_before_move(
         .map_err(|error| PreMoveFailure::Cleanup(io::Error::other(error)))?;
     dest_cap
         .revalidate()
-        .map_err(|error| PreMoveFailure::NoCleanup(io::Error::other(error)))?;
+        .map_err(|error| PreMoveFailure::Cleanup(io::Error::other(error)))?;
 
     let live = file_identity(source_file.as_raw_handle()).map_err(PreMoveFailure::Cleanup)?;
     if live != source_identity {
@@ -462,14 +484,14 @@ fn admit_before_move(
     }
 
     let source_name = inspect_leaf(source_cap.terminal_parent(), source_cap.leaf_name())
-        .map_err(PreMoveFailure::NoCleanup)?;
+        .map_err(PreMoveFailure::Cleanup)?;
     let dest_name = inspect_leaf(dest_cap.terminal_parent(), dest_cap.leaf_name())
-        .map_err(PreMoveFailure::NoCleanup)?;
+        .map_err(PreMoveFailure::Cleanup)?;
 
     if let DestObservation::Regular(identity) = dest_name
         && identity == source_identity
     {
-        return Err(PreMoveFailure::NoCleanup(io::Error::new(
+        return Err(PreMoveFailure::AliasNoCleanup(io::Error::new(
             io::ErrorKind::InvalidInput,
             "destination already identifies the source file",
         )));
@@ -484,7 +506,7 @@ fn admit_before_move(
                 "source name is absent before publication",
             )));
         }
-        return Err(PreMoveFailure::NoCleanup(io::Error::other(
+        return Err(PreMoveFailure::Cleanup(io::Error::other(
             "source name changed before publication",
         )));
     }
@@ -527,27 +549,19 @@ fn reclassify(
     dest_cap: &WindowsPublicationPath,
     source_identity: WindowsFileIdentity,
     dest_state: DestinationState,
-) -> crate::install_retry::InstallReclass {
-    if checkpoint(WindowsInstallPrimitive::ReclassifyCapability)
-        .and_then(|()| source_cap.revalidate().map_err(io::Error::other))
-        .and_then(|()| dest_cap.revalidate().map_err(io::Error::other))
-        .is_err()
-    {
-        return crate::install_retry::InstallReclass::Uncertain;
-    }
-    let source = match checkpoint(WindowsInstallPrimitive::ReclassifySource)
-        .and_then(|()| inspect_leaf(source_cap.terminal_parent(), source_cap.leaf_name()))
-    {
-        Ok(observed) => Some(source_class(observed, source_identity)),
-        Err(_) => None,
-    };
-    let dest = match checkpoint(WindowsInstallPrimitive::ReclassifyDestination)
-        .and_then(|()| inspect_leaf(dest_cap.terminal_parent(), dest_cap.leaf_name()))
-    {
-        Ok(observed) => Some(destination_class(observed, dest_state, source_identity)),
-        Err(_) => None,
-    };
-    classify_install_names(source, dest, true)
+) -> io::Result<crate::install_retry::InstallReclass> {
+    checkpoint(WindowsInstallPrimitive::ReclassifyCapability)?;
+    source_cap.revalidate().map_err(io::Error::other)?;
+    dest_cap.revalidate().map_err(io::Error::other)?;
+    let source = checkpoint(WindowsInstallPrimitive::ReclassifySource)
+        .and_then(|()| inspect_leaf(source_cap.terminal_parent(), source_cap.leaf_name()))?;
+    let dest = checkpoint(WindowsInstallPrimitive::ReclassifyDestination)
+        .and_then(|()| inspect_leaf(dest_cap.terminal_parent(), dest_cap.leaf_name()))?;
+    Ok(classify_install_names(
+        Some(source_class(source, source_identity)),
+        Some(destination_class(dest, dest_state, source_identity)),
+        true,
+    ))
 }
 
 fn source_class(
@@ -910,10 +924,14 @@ fn sleep_or_record_backoff(delay: Duration) {
 }
 
 fn map_prepare_error(path: &Path, error: PublicationPathError) -> AtomicWriteError {
+    io_error(path, prepare_io_error(error))
+}
+
+fn prepare_io_error(error: PublicationPathError) -> io::Error {
     let kind = match &error {
         PublicationPathError::PathTooLong => io::ErrorKind::InvalidInput,
         PublicationPathError::Missing { .. } => io::ErrorKind::NotFound,
         _ => io::ErrorKind::Other,
     };
-    io_error(path, io::Error::new(kind, error))
+    io::Error::new(kind, error)
 }

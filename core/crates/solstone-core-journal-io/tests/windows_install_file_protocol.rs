@@ -3,15 +3,15 @@
 
 #![cfg(windows)]
 
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io;
 use std::path::Path;
 use std::time::Duration;
 
 use solstone_core_journal_io::{
     AtomicWriteError, AtomicWriteOptions, WindowsInstallPrimitive as Primitive,
-    WindowsInstallTrace, install_file, run_with_windows_install_faults,
-    run_with_windows_install_faults_and_barrier,
+    WindowsInstallTrace, install_file, run_with_windows_install_barrier,
+    run_with_windows_install_faults, run_with_windows_install_faults_and_barrier,
 };
 use windows_sys::Win32::Foundation::{
     ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER, ERROR_LOCK_VIOLATION, ERROR_SHARING_VIOLATION,
@@ -161,6 +161,42 @@ fn landed_when_source_name_has_a_competitor() {
 }
 
 #[test]
+fn destination_source_does_not_override_a_source_observation_failure() {
+    let temporary = temporary("install-source-observation-fault-");
+    let (source, destination) = write_pair(temporary.path());
+    let moved_from = source.clone();
+    let moved_to = destination.clone();
+    let (result, trace) = run_with_windows_install_faults_and_barrier(
+        [
+            (Primitive::Move, 1, ERROR_SHARING_VIOLATION as i32),
+            (Primitive::ReclassifySource, 1, ERROR_ACCESS_DENIED as i32),
+        ],
+        Primitive::ReclassifyCapability,
+        1,
+        move || fs::rename(&moved_from, &moved_to).unwrap(),
+        || install_file(&source, &destination, AtomicWriteOptions::default()),
+    );
+
+    match result.expect_err("unobservable source disposition must remain uncertain") {
+        AtomicWriteError::PublicationUncertain {
+            operation,
+            source: inner,
+            ..
+        } => {
+            assert_eq!(operation, "reconcile install after failed move");
+            assert_eq!(inner.raw_os_error(), Some(ERROR_ACCESS_DENIED as i32));
+        }
+        AtomicWriteError::Io { .. } => panic!("source observation failure must not clean up"),
+    }
+    assert_complete(&trace);
+    assert_eq!(count(&trace, Primitive::Move), 1, "{trace:?}");
+    assert_eq!(trace.real_moves, 0, "{trace:?}");
+    assert_eq!(count(&trace, Primitive::Cleanup), 0, "{trace:?}");
+    assert!(!source.exists());
+    assert_eq!(fs::read(&destination).unwrap(), PAYLOAD);
+}
+
+#[test]
 fn both_names_retained_is_reconcile_uncertainty_without_cleanup() {
     let temporary = temporary("install-both-names-");
     let (source, destination) = write_pair(temporary.path());
@@ -200,6 +236,109 @@ fn both_names_retained_is_reconcile_uncertainty_without_cleanup() {
     assert_eq!(trace.real_moves, 0, "{trace:?}");
     assert!(trace.backoffs.is_empty(), "{trace:?}");
     assert_eq!(fs::read(&source).unwrap(), PAYLOAD);
+    assert_eq!(fs::read(&destination).unwrap(), PAYLOAD);
+}
+
+#[test]
+fn pre_move_destination_substitution_preserves_competitor_and_cleans_source() {
+    let temporary = temporary("install-pre-move-dest-substitution-");
+    let (source, destination) = write_pair(temporary.path());
+    let competitor_at = destination.clone();
+    let (result, trace) = run_with_windows_install_barrier(
+        Primitive::BeforeMove,
+        1,
+        move || fs::write(&competitor_at, COMPETITOR).unwrap(),
+        || install_file(&source, &destination, AtomicWriteOptions::default()),
+    );
+
+    let error = result.expect_err("destination substitution must refuse before move");
+    assert!(matches!(error, AtomicWriteError::Io { .. }), "{error}");
+    assert_complete(&trace);
+    assert_eq!(count(&trace, Primitive::Move), 0, "{trace:?}");
+    assert_eq!(count(&trace, Primitive::Cleanup), 1, "{trace:?}");
+    assert!(!source.exists());
+    assert_eq!(fs::read(&destination).unwrap(), COMPETITOR);
+}
+
+#[test]
+fn pre_move_source_substitution_preserves_competitor_and_cleans_retained_file() {
+    let temporary = temporary("install-pre-move-source-substitution-");
+    let (source, destination) = write_pair(temporary.path());
+    let source_to_move = source.clone();
+    let relocated = temporary.path().join("relocated.bin");
+    let relocated_by_barrier = relocated.clone();
+    let competitor_at = source.clone();
+    let (result, trace) = run_with_windows_install_barrier(
+        Primitive::BeforeMove,
+        1,
+        move || {
+            fs::rename(&source_to_move, &relocated_by_barrier).unwrap();
+            fs::write(&competitor_at, COMPETITOR).unwrap();
+        },
+        || install_file(&source, &destination, AtomicWriteOptions::default()),
+    );
+
+    let error = result.expect_err("source substitution must refuse before move");
+    assert!(matches!(error, AtomicWriteError::Io { .. }), "{error}");
+    assert_complete(&trace);
+    assert_eq!(count(&trace, Primitive::Move), 0, "{trace:?}");
+    assert_eq!(count(&trace, Primitive::Cleanup), 1, "{trace:?}");
+    assert_eq!(fs::read(&source).unwrap(), COMPETITOR);
+    assert!(!relocated.exists());
+    assert!(!destination.exists());
+}
+
+#[test]
+fn pre_move_dynamic_alias_preserves_both_names_without_cleanup() {
+    let temporary = temporary("install-pre-move-alias-");
+    let (source, destination) = write_pair(temporary.path());
+    if fs::hard_link(&source, &destination).is_err() {
+        let _ = fs::remove_file(&destination);
+        eprintln!("skipping pre-move alias test: hard link is not viable here");
+        return;
+    }
+    fs::remove_file(&destination).unwrap();
+    let linked_from = source.clone();
+    let linked_to = destination.clone();
+    let (result, trace) = run_with_windows_install_barrier(
+        Primitive::BeforeMove,
+        1,
+        move || fs::hard_link(&linked_from, &linked_to).unwrap(),
+        || install_file(&source, &destination, AtomicWriteOptions::default()),
+    );
+
+    let error = result.expect_err("dynamic alias must refuse before move");
+    assert!(matches!(error, AtomicWriteError::Io { .. }), "{error}");
+    assert_complete(&trace);
+    assert_eq!(count(&trace, Primitive::Move), 0, "{trace:?}");
+    assert_eq!(count(&trace, Primitive::Cleanup), 0, "{trace:?}");
+    assert_eq!(fs::read(&source).unwrap(), PAYLOAD);
+    assert_eq!(fs::read(&destination).unwrap(), PAYLOAD);
+}
+
+#[test]
+fn held_source_denies_a_competing_writer_until_publication_finishes() {
+    let temporary = temporary("install-held-source-sharing-");
+    let (source, destination) = write_pair(temporary.path());
+    let held_name = source.clone();
+    let (result, trace) = run_with_windows_install_barrier(
+        Primitive::BeforeMove,
+        1,
+        move || {
+            let error = OpenOptions::new()
+                .write(true)
+                .open(&held_name)
+                .expect_err("the retained source must deny a competing writer");
+            assert_eq!(error.raw_os_error(), Some(ERROR_SHARING_VIOLATION as i32));
+        },
+        || install_file(&source, &destination, AtomicWriteOptions::default()),
+    );
+
+    result.unwrap();
+    assert_complete(&trace);
+    assert_eq!(trace.real_moves, 1, "{trace:?}");
+    assert_eq!(count(&trace, Primitive::Cleanup), 0, "{trace:?}");
+    assert!(!source.exists());
     assert_eq!(fs::read(&destination).unwrap(), PAYLOAD);
 }
 
@@ -254,9 +393,14 @@ fn flush_move_and_cleanup_faults_preserve_primary_kind() {
     match error {
         AtomicWriteError::Io { source: inner, .. } => {
             assert_eq!(inner.kind(), io::ErrorKind::PermissionDenied);
-            assert_eq!(inner.raw_os_error(), Some(ERROR_ACCESS_DENIED as i32));
             let display = inner.to_string();
             assert!(display.contains("could not remove stage"), "{display}");
+            let primary = inner
+                .get_ref()
+                .and_then(|error| std::error::Error::source(error))
+                .and_then(|error| error.downcast_ref::<io::Error>())
+                .expect("cleanup chain retains the primary io::Error as its source");
+            assert_eq!(primary.raw_os_error(), Some(ERROR_ACCESS_DENIED as i32));
         }
         AtomicWriteError::PublicationUncertain { .. } => panic!("cleanup wrapping stays on Io"),
     }
@@ -284,8 +428,13 @@ fn uncertain_reclassification_never_cleans_up_the_source() {
         );
 
         match result.expect_err("reclassification fault must be uncertain") {
-            AtomicWriteError::PublicationUncertain { operation, .. } => {
+            AtomicWriteError::PublicationUncertain {
+                operation,
+                source: inner,
+                ..
+            } => {
                 assert_eq!(operation, "reconcile install after failed move");
+                assert_eq!(inner.raw_os_error(), Some(ERROR_ACCESS_DENIED as i32));
             }
             AtomicWriteError::Io { .. } => panic!("{failed:?} must not clean up"),
         }
@@ -334,4 +483,45 @@ fn post_move_observation_failures_are_publication_uncertain() {
         assert_eq!(fs::read(&destination).unwrap(), PAYLOAD);
         assert!(!source.exists());
     }
+}
+
+#[test]
+fn cross_volume_refusal_cleans_the_held_source() {
+    let Some(refs_root) = std::env::var_os("SOLSTONE_JOURNAL_WIN_REFS_ROOT") else {
+        eprintln!("skipping cross-volume receipt without SOLSTONE_JOURNAL_WIN_REFS_ROOT");
+        return;
+    };
+    let source_parent = temporary("install-cross-volume-source-");
+    let destination_parent = tempfile::Builder::new()
+        .prefix("install-cross-volume-destination-")
+        .tempdir_in(refs_root)
+        .unwrap();
+    let source = source_parent.path().join("source.bin");
+    let uncreated_destination_parent = destination_parent.path().join("uncreated");
+    let destination = uncreated_destination_parent.join("destination.bin");
+    fs::write(&source, PAYLOAD).unwrap();
+
+    let (result, trace) =
+        run_with_windows_install_faults(std::iter::empty::<(Primitive, usize, i32)>(), || {
+            install_file(&source, &destination, AtomicWriteOptions::default())
+        });
+    let error = result.expect_err("an install spanning NTFS and ReFS must be refused");
+
+    assert!(matches!(error, AtomicWriteError::Io { .. }), "{error}");
+    assert_complete(&trace);
+    assert_eq!(count(&trace, Primitive::Move), 0, "{trace:?}");
+    assert_eq!(trace.real_moves, 0, "{trace:?}");
+    assert_eq!(count(&trace, Primitive::Cleanup), 1, "{trace:?}");
+    assert!(!source.exists(), "the admitted source must be cleaned up");
+    assert!(
+        !uncreated_destination_parent.exists(),
+        "cross-volume refusal must precede destination ancestor creation"
+    );
+}
+
+#[test]
+fn install_file_protocol_receipt_marker() {
+    println!(
+        "JOURNAL_WIN_CI_INSTALL_FILE_PROTOCOL=admission/retry/sharing/reconciliation/cleanup/uncertainty/pass"
+    );
 }

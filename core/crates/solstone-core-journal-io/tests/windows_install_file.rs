@@ -140,12 +140,14 @@ fn multi_megabyte_source_publishes() {
 fn missing_source_is_a_not_found_refusal() {
     let temporary = temporary("install-missing-source-");
     let source = temporary.path().join("source.bin");
-    let destination = temporary.path().join("destination.bin");
+    let destination_parent = temporary.path().join("uncreated-destination");
+    let destination = destination_parent.join("destination.bin");
 
     let error = install_file(&source, &destination, AtomicWriteOptions::default())
         .expect_err("missing source must refuse");
     assert_eq!(io_kind(&error), io::ErrorKind::NotFound);
     assert!(io_display(&error).contains("does not exist"), "{error}");
+    assert!(!destination_parent.exists());
     assert!(!destination.exists());
 }
 
@@ -153,13 +155,15 @@ fn missing_source_is_a_not_found_refusal() {
 fn missing_source_ancestor_is_a_not_found_refusal() {
     let temporary = temporary("install-missing-ancestor-");
     let source = temporary.path().join("absent").join("source.bin");
-    let destination = temporary.path().join("destination.bin");
+    let destination_parent = temporary.path().join("uncreated-destination");
+    let destination = destination_parent.join("destination.bin");
 
     let error = install_file(&source, &destination, AtomicWriteOptions::default())
         .expect_err("missing source ancestor must refuse");
     assert_eq!(io_kind(&error), io::ErrorKind::NotFound);
     assert!(io_display(&error).contains("does not exist"), "{error}");
     assert!(!destination.exists());
+    assert!(!destination_parent.exists());
     assert!(!temporary.path().join("absent").exists());
 }
 
@@ -169,12 +173,14 @@ fn not_directory_source_ancestor_is_refused() {
     let blocked = temporary.path().join("blocked");
     fs::write(&blocked, b"not-a-directory").unwrap();
     let source = blocked.join("source.bin");
-    let destination = temporary.path().join("destination.bin");
+    let destination_parent = temporary.path().join("uncreated-destination");
+    let destination = destination_parent.join("destination.bin");
 
     let error = install_file(&source, &destination, AtomicWriteOptions::default())
         .expect_err("file ancestor must refuse");
     assert!(io_display(&error).contains("is not a directory"), "{error}");
     assert!(!destination.exists());
+    assert!(!destination_parent.exists());
     assert_eq!(fs::read(&blocked).unwrap(), b"not-a-directory");
 }
 
@@ -190,12 +196,14 @@ fn reparse_source_ancestor_is_refused() {
         return;
     }
     let source = link.join("source.bin");
-    let destination = temporary.path().join("destination.bin");
+    let destination_parent = temporary.path().join("uncreated-destination");
+    let destination = destination_parent.join("destination.bin");
 
     let error = install_file(&source, &destination, AtomicWriteOptions::default())
         .expect_err("reparse ancestor must refuse");
     assert!(io_display(&error).contains("reparse point"), "{error}");
     assert!(!destination.exists());
+    assert!(!destination_parent.exists());
     assert_eq!(fs::read(real.join("source.bin")).unwrap(), PAYLOAD);
 }
 
@@ -205,12 +213,14 @@ fn missing_source_leaf_is_a_not_found_refusal() {
     let nested = temporary.path().join("nested");
     fs::create_dir(&nested).unwrap();
     let source = nested.join("source.bin");
-    let destination = temporary.path().join("destination.bin");
+    let destination_parent = temporary.path().join("uncreated-destination");
+    let destination = destination_parent.join("destination.bin");
 
     let error = install_file(&source, &destination, AtomicWriteOptions::default())
         .expect_err("missing source leaf must refuse");
     assert_eq!(io_kind(&error), io::ErrorKind::NotFound);
     assert!(io_display(&error).contains("does not exist"), "{error}");
+    assert!(!destination_parent.exists());
     assert!(!destination.exists());
 }
 
@@ -219,7 +229,8 @@ fn not_regular_source_leaf_is_refused() {
     let temporary = temporary("install-dir-leaf-");
     let source = temporary.path().join("source.bin");
     fs::create_dir(&source).unwrap();
-    let destination = temporary.path().join("destination.bin");
+    let destination_parent = temporary.path().join("uncreated-destination");
+    let destination = destination_parent.join("destination.bin");
 
     let error = install_file(&source, &destination, AtomicWriteOptions::default())
         .expect_err("directory source leaf must refuse");
@@ -228,6 +239,7 @@ fn not_regular_source_leaf_is_refused() {
         "{error}"
     );
     assert!(source.is_dir());
+    assert!(!destination_parent.exists());
     assert!(!destination.exists());
 }
 
@@ -241,13 +253,15 @@ fn reparse_source_leaf_is_refused() {
         eprintln!("skipping reparse source leaf test: file symlink is not viable here");
         return;
     }
-    let destination = temporary.path().join("destination.bin");
+    let destination_parent = temporary.path().join("uncreated-destination");
+    let destination = destination_parent.join("destination.bin");
 
     let error = install_file(&source, &destination, AtomicWriteOptions::default())
         .expect_err("reparse source leaf must refuse");
     assert!(io_display(&error).contains("reparse point"), "{error}");
     assert_eq!(fs::read(&target).unwrap(), PAYLOAD);
     assert!(is_reparse_point(&source));
+    assert!(!destination_parent.exists());
     assert!(!destination.exists());
 }
 
@@ -294,6 +308,23 @@ fn destination_reparse_is_refused_and_only_source_is_removed() {
     assert!(is_reparse_point(&destination));
     assert_eq!(fs::read(&target).unwrap(), PREVIOUS);
     assert_eq!(fs::read(&sibling).unwrap(), SIBLING);
+}
+
+#[test]
+fn destination_ancestor_failure_after_source_admission_cleans_only_the_source() {
+    let temporary = temporary("install-dest-ancestor-");
+    let source = temporary.path().join("source.bin");
+    let blocked = temporary.path().join("blocked");
+    let destination = blocked.join("destination.bin");
+    fs::write(&source, PAYLOAD).unwrap();
+    fs::write(&blocked, PREVIOUS).unwrap();
+
+    let error = install_file(&source, &destination, AtomicWriteOptions::default())
+        .expect_err("wrong-kind destination ancestor must refuse");
+    assert!(io_display(&error).contains("is not a directory"), "{error}");
+    assert!(!source.exists());
+    assert_eq!(fs::read(&blocked).unwrap(), PREVIOUS);
+    assert!(!destination.exists());
 }
 
 #[test]
