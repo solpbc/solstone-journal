@@ -378,8 +378,6 @@ fn exercise_oplog_open_by_id_share_probe(root: &Path, filesystem: &str) {
         .join("20260902")
         .join("health")
         .join(writer.leaf_name());
-    let bytes_before_probe =
-        fs::read(&published).expect("snapshot operational-log bytes before liveness probes");
     let reader = metadata_handle(&published).expect("open retained metadata reader");
     let original = file_identity(reader.as_raw_handle()).expect("capture full oplog identity");
     let volume = file_identity(health.health().as_handle().as_raw_handle())
@@ -413,6 +411,8 @@ fn exercise_oplog_open_by_id_share_probe(root: &Path, filesystem: &str) {
     );
 
     drop(writer);
+    let bytes_before_probe =
+        fs::read(&renamed).expect("snapshot operational-log bytes before the successful probe");
     drop(
         open_by_extended_id_for_append_probe(
             health.health().as_handle().as_raw_handle(),
