@@ -224,7 +224,7 @@ fn queue_daily(
             if let Some(facet) = facet {
                 fields.insert("facet".to_owned(), Value::String(facet.to_owned()));
             }
-            log.log("talent.dispatch", context.now_ms, fields);
+            log.log("talent.dispatch", context.event_now_ms(), fields);
             pending.push(item);
         }
         Err(DispatchFailure::NotClaimed { use_id }) => {
@@ -243,7 +243,7 @@ fn queue_daily(
                 "reason_code".to_owned(),
                 Value::String("request_lost".to_owned()),
             );
-            log.log("talent.fail", context.now_ms, fields);
+            log.log("talent.fail", context.event_now_ms(), fields);
             result.failed += 1;
             result
                 .failed_names
@@ -281,7 +281,7 @@ fn log_skip(
     if let Some(facet) = facet {
         fields.insert("facet".to_owned(), Value::String(facet.to_owned()));
     }
-    log.log("talent.skip", context.now_ms, fields);
+    log.log("talent.skip", context.event_now_ms(), fields);
 }
 
 fn drain_if_full(
@@ -329,7 +329,7 @@ fn log_daily_terminal(
             let mut fields = daily_terminal_fields(context, item, "finish");
             log.log(
                 "talent.complete",
-                context.now_ms,
+                context.event_now_ms(),
                 std::mem::take(&mut fields),
             );
         }
@@ -365,7 +365,7 @@ fn log_daily_failure(
         "reason_code".to_owned(),
         Value::String(reason_code.to_owned()),
     );
-    log.log("talent.fail", context.now_ms, fields);
+    log.log("talent.fail", context.event_now_ms(), fields);
 }
 
 fn daily_terminal_fields(

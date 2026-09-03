@@ -10,7 +10,9 @@ use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use nix::fcntl::{Flock, FlockArg};
-use solstone_core_installation_identity::{GuardFields, InstallationBinding, wrapper_guard_lines};
+use solstone_core_installation_identity::{
+    GuardFields, InstallationBinding, parse_wrapper_guard, wrapper_guard_lines,
+};
 use solstone_core_journal::resolve_identity_root_from_executable_dir;
 
 use crate::args::canonicalize_or_normalize;
@@ -42,6 +44,46 @@ fi
 exec "$SOL_BIN" "$@"
 "#;
 
+const WRAPPER_TEMPLATE_V7: &str = r#"#!/bin/bash
+# {binary} — managed by 'journal config'. Edits will be overwritten.
+# managed-version: 7
+: "${SOLSTONE_JOURNAL:={journal}}"
+export SOLSTONE_JOURNAL
+SOL_BIN='{sol_bin}'
+# Warn when pyproject.toml or uv.lock is newer than .installed.
+# Skipped silently if .installed is absent.
+REPO_ROOT="${SOL_BIN%/.venv/bin/{binary}}"
+if [ -f "$REPO_ROOT/.installed" ]; then
+  if [ "$REPO_ROOT/pyproject.toml" -nt "$REPO_ROOT/.installed" ] \
+     || [ "$REPO_ROOT/uv.lock" -nt "$REPO_ROOT/.installed" ]; then
+    echo "{binary}: WARNING — venv is stale (pyproject.toml or uv.lock changed since last install). Run: cd $REPO_ROOT && make install" >&2
+  fi
+fi
+if [ ! -x "$SOL_BIN" ]; then
+    printf '{binary}: venv binary missing or not executable: %s\n' "$SOL_BIN" >&2
+    exit 127
+fi
+exec "$SOL_BIN" "$@"
+"#;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WrapperCommand {
+    Sol,
+    Solstone,
+    Journal,
+}
+
+impl WrapperCommand {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Sol => "sol",
+            Self::Solstone => "solstone",
+            Self::Journal => "journal",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AliasState {
     Worktree,
@@ -57,6 +99,7 @@ pub struct ParsedWrapper {
     pub journal: String,
     pub sol_bin: PathBuf,
     pub version: u8,
+    pub guard: Option<GuardFields>,
 }
 
 #[derive(Debug)]
@@ -111,20 +154,27 @@ pub fn wrapper_paths(home_dir: &Path) -> WrapperPaths {
     }
 }
 
-#[must_use]
-pub fn render_wrapper(binary: &str, journal: &Path, sol_bin: &Path, guard: &GuardFields) -> String {
-    WRAPPER_TEMPLATE
-        .replace("{binary}", binary)
-        .replace("{guard}", &wrapper_guard_lines(guard))
-        .replace("{journal}", &journal.to_string_lossy())
-        .replace(
-            "{sol_bin}",
-            &sol_bin.to_string_lossy().replace('\'', "'\\''"),
-        )
+pub fn render_wrapper(
+    command: WrapperCommand,
+    journal: &Path,
+    sol_bin: &Path,
+    guard: &GuardFields,
+) -> Result<String, WrapperError> {
+    if command == WrapperCommand::Sol {
+        return Err(WrapperError(
+            "the current wrapper format does not publish the retired sol command".into(),
+        ));
+    }
+    if guard.journal_token.to_path_buf() != journal {
+        return Err(WrapperError(
+            "wrapper journal does not match its installation identity guard".into(),
+        ));
+    }
+    render_wrapper_version(command, journal, sol_bin, Some(guard), WRAPPER_VERSION)
 }
 
 #[must_use]
-pub fn parse_wrapper(content: &str) -> Option<ParsedWrapper> {
+pub fn parse_wrapper(command: WrapperCommand, content: &str) -> Option<ParsedWrapper> {
     let marker = content
         .lines()
         .find(|line| line.starts_with("# managed-version: "))?;
@@ -132,7 +182,7 @@ pub fn parse_wrapper(content: &str) -> Option<ParsedWrapper> {
         .strip_prefix("# managed-version: ")?
         .parse::<u8>()
         .ok()?;
-    if !(1..=WRAPPER_VERSION).contains(&version) {
+    if !matches!(version, 7 | 8) || (version == 8 && command == WrapperCommand::Sol) {
         return None;
     }
     let journal = content
@@ -142,18 +192,138 @@ pub fn parse_wrapper(content: &str) -> Option<ParsedWrapper> {
                 .and_then(|value| value.strip_suffix("}\""))
         })?
         .to_owned();
-    let sol_bin = content
-        .lines()
-        .find_map(|line| {
-            line.strip_prefix("SOL_BIN='")
-                .and_then(|value| value.strip_suffix('\''))
-        })?
-        .replace("'\\''", "'");
+    let encoded_sol_bin = content.lines().find_map(|line| {
+        line.strip_prefix("SOL_BIN='")
+            .and_then(|value| value.strip_suffix('\''))
+    })?;
+    let sol_bin = PathBuf::from(unescape_single_quoted(encoded_sol_bin)?);
+    validate_wrapper_inputs(command, Path::new(&journal), &sol_bin).ok()?;
+    let guard = if version == 8 {
+        parse_wrapper_guard(content).ok()?
+    } else {
+        None
+    };
+    if guard
+        .as_ref()
+        .is_some_and(|guard| guard.journal_token.as_bytes() != journal.as_bytes())
+    {
+        return None;
+    }
+    let canonical = render_wrapper_version(
+        command,
+        Path::new(&journal),
+        &sol_bin,
+        guard.as_ref(),
+        version,
+    )
+    .ok()?;
+    if canonical != content {
+        return None;
+    }
     Some(ParsedWrapper {
         journal,
-        sol_bin: PathBuf::from(sol_bin),
+        sol_bin,
         version,
+        guard,
     })
+}
+
+pub(crate) fn render_wrapper_version(
+    command: WrapperCommand,
+    journal: &Path,
+    sol_bin: &Path,
+    guard: Option<&GuardFields>,
+    version: u8,
+) -> Result<String, WrapperError> {
+    validate_wrapper_inputs(command, journal, sol_bin)?;
+    let journal = journal
+        .to_str()
+        .ok_or_else(|| WrapperError("journal path is not valid UTF-8".into()))?;
+    let sol_bin = sol_bin
+        .to_str()
+        .ok_or_else(|| WrapperError("wrapper target is not valid UTF-8".into()))?;
+    if Path::new(sol_bin)
+        .file_name()
+        .and_then(|name| name.to_str())
+        != Some(command.as_str())
+    {
+        return Err(WrapperError(format!(
+            "{} wrapper target does not name the {} executable: {sol_bin}",
+            command.as_str(),
+            command.as_str()
+        )));
+    }
+    let binary = command.as_str();
+    match version {
+        7 => Ok(WRAPPER_TEMPLATE_V7
+            .replace("{binary}", binary)
+            .replace("{journal}", journal)
+            .replace("{sol_bin}", &sol_bin.replace('\'', "'\\''"))),
+        8 => Ok(WRAPPER_TEMPLATE
+            .replace("{binary}", binary)
+            .replace(
+                "{guard}",
+                &guard.map(wrapper_guard_lines).unwrap_or_default(),
+            )
+            .replace("{journal}", journal)
+            .replace("{sol_bin}", &sol_bin.replace('\'', "'\\''"))),
+        _ => Err(WrapperError(format!(
+            "unsupported wrapper version {version}"
+        ))),
+    }
+}
+
+fn unescape_single_quoted(value: &str) -> Option<String> {
+    let mut output = String::with_capacity(value.len());
+    let mut characters = value.chars();
+    while let Some(character) = characters.next() {
+        if character != '\'' {
+            output.push(character);
+            continue;
+        }
+        if characters.next() != Some('\\')
+            || characters.next() != Some('\'')
+            || characters.next() != Some('\'')
+        {
+            return None;
+        }
+        output.push('\'');
+    }
+    Some(output)
+}
+
+pub fn validate_wrapper_inputs(
+    command: WrapperCommand,
+    journal: &Path,
+    sol_bin: &Path,
+) -> Result<(), WrapperError> {
+    validate_journal_path_for_wrapper(journal)?;
+    if !sol_bin.is_absolute() {
+        return Err(WrapperError(format!(
+            "{} wrapper target is not absolute: {}",
+            command.as_str(),
+            sol_bin.display()
+        )));
+    }
+    let sol_bin = sol_bin
+        .to_str()
+        .ok_or_else(|| WrapperError("wrapper target is not valid UTF-8".into()))?;
+    if sol_bin
+        .chars()
+        .any(|character| matches!(character, '\0' | '\n'))
+    {
+        return Err(WrapperError(
+            "wrapper target contains NUL or newline".into(),
+        ));
+    }
+    Ok(())
+}
+
+pub fn validate_wrapper_pair(journal: &Path, executable_dir: &Path) -> Result<(), WrapperError> {
+    for command in [WrapperCommand::Solstone, WrapperCommand::Journal] {
+        validate_wrapper_inputs(command, journal, &executable_dir.join(command.as_str()))?;
+    }
+    Ok(())
 }
 
 fn resolved(path: &Path) -> PathBuf {
@@ -240,7 +410,12 @@ pub fn check_alias(
     let Ok(content) = fs::read_to_string(&alias) else {
         return Ok((AliasState::Foreign, None));
     };
-    let Some(wrapper) = parse_wrapper(&content) else {
+    let command = match binary {
+        "solstone" => WrapperCommand::Solstone,
+        "journal" => WrapperCommand::Journal,
+        _ => return Ok((AliasState::Foreign, None)),
+    };
+    let Some(wrapper) = parse_wrapper(command, &content) else {
         return Ok((AliasState::Foreign, None));
     };
     let target = resolved(&wrapper.sol_bin);
@@ -518,8 +693,16 @@ pub fn wrapper_lock(home_dir: &Path) -> Result<Flock<File>, WrapperError> {
 }
 
 pub fn validate_journal_path_for_wrapper(journal: &Path) -> Result<(), WrapperError> {
-    let journal = journal.to_string_lossy();
-    for character in ['$', '`', '"', '\\', '\n'] {
+    if !journal.is_absolute() {
+        return Err(WrapperError(format!(
+            "journal path is not absolute: {}",
+            journal.display()
+        )));
+    }
+    let journal = journal
+        .to_str()
+        .ok_or_else(|| WrapperError("journal path is not valid UTF-8".into()))?;
+    for character in ['$', '`', '"', '\\', '}', '\n', '\0'] {
         if journal.contains(character) {
             return Err(WrapperError(format!(
                 "journal path contains shell-active character {character:?}: {journal:?}"
@@ -534,7 +717,7 @@ pub fn provision_wrappers(
     journal: &Path,
     binding: &InstallationBinding,
 ) -> Result<WrapperPaths, WrapperError> {
-    validate_journal_path_for_wrapper(journal)?;
+    validate_wrapper_pair(journal, &environment.executable_dir)?;
     let paths = wrapper_paths(&environment.home_dir);
     let guard = GuardFields::from_binding(binding);
     let _lock = wrapper_lock(&environment.home_dir)?;
@@ -644,20 +827,20 @@ pub fn provision_wrappers(
         (
             paths.solstone.clone(),
             render_wrapper(
-                "solstone",
+                WrapperCommand::Solstone,
                 journal,
                 &environment.executable_dir.join("solstone"),
                 &guard,
-            ),
+            )?,
         ),
         (
             paths.journal.clone(),
             render_wrapper(
-                "journal",
+                WrapperCommand::Journal,
                 journal,
                 &environment.executable_dir.join("journal"),
                 &guard,
-            ),
+            )?,
         ),
     ];
     write_wrappers_and_remove_with(
@@ -793,7 +976,9 @@ pub fn ensure_user_bin_on_path(home_dir: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
     use std::ops::Deref;
+    use std::os::unix::ffi::OsStringExt;
     use std::sync::{Arc, Barrier, mpsc};
     use std::thread;
     use std::time::Duration;
@@ -824,6 +1009,13 @@ mod tests {
 
     fn guard() -> GuardFields {
         GuardFields::from_binding(&binding())
+    }
+
+    fn guard_for(journal: &Path) -> GuardFields {
+        let mut guard = guard();
+        guard.journal_token =
+            solstone_core_installation_identity::journal_token_from_path(journal).unwrap();
+        guard
     }
 
     struct TestRoot(PathBuf);
@@ -884,12 +1076,13 @@ mod tests {
     #[test]
     fn parses_rendered_wrapper_and_unescapes_sol_bin() {
         let rendered = render_wrapper(
-            "solstone",
+            WrapperCommand::Solstone,
             Path::new("/journal"),
             Path::new("/a'quoted/.venv/bin/solstone"),
             &guard(),
-        );
-        let parsed = parse_wrapper(&rendered).unwrap();
+        )
+        .unwrap();
+        let parsed = parse_wrapper(WrapperCommand::Solstone, &rendered).unwrap();
         assert_eq!(parsed.version, 8);
         assert_eq!(parsed.journal, "/journal");
         assert_eq!(
@@ -904,38 +1097,184 @@ mod tests {
     }
 
     #[test]
-    fn wrapper_base_parser_ignores_corrupted_guard_but_guard_parser_refuses_it() {
+    fn wrapper_parser_refuses_corrupted_guard() {
         let rendered = render_wrapper(
-            "solstone",
+            WrapperCommand::Solstone,
             Path::new("/journal"),
             Path::new("/runtime/solstone"),
             &guard(),
-        );
+        )
+        .unwrap();
         let corrupted = rendered.replace(
             "# solstone-installation-id: 00112233445566778899aabbccddeeff",
             "# solstone-installation-id: invalid",
         );
-        assert!(parse_wrapper(&corrupted).is_some());
+        assert!(parse_wrapper(WrapperCommand::Solstone, &corrupted).is_none());
         assert!(solstone_core_installation_identity::parse_wrapper_guard(&corrupted).is_err());
     }
 
     #[test]
     fn v7_wrapper_has_no_identity_guard() {
-        let fields = guard();
-        let rendered = render_wrapper(
-            "solstone",
+        let legacy = render_wrapper_version(
+            WrapperCommand::Solstone,
             Path::new("/journal"),
             Path::new("/runtime/solstone"),
-            &fields,
+            None,
+            7,
+        )
+        .unwrap();
+        assert_eq!(
+            parse_wrapper(WrapperCommand::Solstone, &legacy)
+                .expect("parse v7 wrapper")
+                .version,
+            7
         );
-        let legacy = rendered
-            .replace(WRAPPER_MARKER, "# managed-version: 7")
-            .replace(&wrapper_guard_lines(&fields), "");
-        assert_eq!(parse_wrapper(&legacy).expect("parse v7 wrapper").version, 7);
         assert_eq!(
             solstone_core_installation_identity::parse_wrapper_guard(&legacy),
             Ok(None)
         );
+    }
+
+    #[test]
+    fn canonical_parser_rejects_slot_and_effective_shell_overrides() {
+        let rendered = render_wrapper(
+            WrapperCommand::Journal,
+            Path::new("/journal"),
+            Path::new("/install/versions/2/bin/journal"),
+            &guard(),
+        )
+        .unwrap();
+        assert!(parse_wrapper(WrapperCommand::Journal, &rendered).is_some());
+        assert!(parse_wrapper(WrapperCommand::Solstone, &rendered).is_none());
+        assert!(
+            parse_wrapper(
+                WrapperCommand::Journal,
+                &rendered.replace(
+                    "/install/versions/2/bin/journal",
+                    "/install/versions/2/bin/solstone"
+                )
+            )
+            .is_none()
+        );
+        assert!(
+            parse_wrapper(
+                WrapperCommand::Journal,
+                &format!("{rendered}SOL_BIN='/foreign/journal'\n")
+            )
+            .is_none()
+        );
+        assert!(
+            parse_wrapper(
+                WrapperCommand::Journal,
+                &rendered.replace("exec \"$SOL_BIN\" \"$@\"", "exec /foreign/journal \"$@\"")
+            )
+            .is_none()
+        );
+        assert!(
+            parse_wrapper(
+                WrapperCommand::Journal,
+                &rendered.replace("# managed-version: 8\n", "# managed-version: 6\n")
+            )
+            .is_none()
+        );
+        assert!(
+            parse_wrapper(
+                WrapperCommand::Journal,
+                &rendered.replace(
+                    "${SOLSTONE_JOURNAL:=/journal}",
+                    "${SOLSTONE_JOURNAL:=/different/journal}"
+                )
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn checked_renderer_preserves_utf8_and_refuses_unrepresentable_inputs() {
+        let journal = Path::new("/owner/é/e\u{301} journal=it's");
+        let target = Path::new("/install/版本/it's/bin/journal");
+        let rendered = render_wrapper(
+            WrapperCommand::Journal,
+            journal,
+            target,
+            &guard_for(journal),
+        )
+        .unwrap();
+        let parsed = parse_wrapper(WrapperCommand::Journal, &rendered).unwrap();
+        assert_eq!(parsed.journal, journal.to_str().unwrap());
+        assert_eq!(parsed.sol_bin, target);
+
+        for unsafe_journal in [
+            "/bad$path",
+            "/bad`path",
+            "/bad\"path",
+            "/bad\\path",
+            "/bad}path",
+        ] {
+            assert!(
+                render_wrapper(
+                    WrapperCommand::Journal,
+                    Path::new(unsafe_journal),
+                    target,
+                    &guard_for(Path::new(unsafe_journal)),
+                )
+                .is_err(),
+                "journal path should refuse {unsafe_journal:?}"
+            );
+        }
+        assert!(
+            render_wrapper(
+                WrapperCommand::Journal,
+                Path::new("relative"),
+                target,
+                &guard(),
+            )
+            .is_err()
+        );
+        assert!(
+            render_wrapper(
+                WrapperCommand::Journal,
+                journal,
+                Path::new("relative"),
+                &guard(),
+            )
+            .is_err()
+        );
+        assert!(
+            render_wrapper(
+                WrapperCommand::Journal,
+                journal,
+                Path::new("/target\nother"),
+                &guard(),
+            )
+            .is_err()
+        );
+        let non_utf8 = PathBuf::from(OsString::from_vec(vec![b'/', 0xff]));
+        assert!(render_wrapper(WrapperCommand::Journal, &non_utf8, target, &guard()).is_err());
+        assert!(
+            render_wrapper(
+                WrapperCommand::Journal,
+                journal,
+                &non_utf8,
+                &guard_for(journal)
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn canonical_unguarded_v8_is_syntax_evidence_not_a_guard() {
+        let content = render_wrapper_version(
+            WrapperCommand::Journal,
+            Path::new("/journal"),
+            Path::new("/install/bin/journal"),
+            None,
+            8,
+        )
+        .unwrap();
+        let parsed = parse_wrapper(WrapperCommand::Journal, &content).unwrap();
+        assert_eq!(parsed.version, 8);
+        assert_eq!(parsed.guard, None);
     }
     #[test]
     fn backup_default_is_durable_under_home_and_collision_names_increment() {
@@ -1025,7 +1364,13 @@ mod tests {
         assert!(!expected.exists());
         fs::write(
             wrapper_paths(&environment.home_dir).solstone,
-            render_wrapper("solstone", Path::new("/journal"), &expected, &guard()),
+            render_wrapper(
+                WrapperCommand::Solstone,
+                Path::new("/journal"),
+                &expected,
+                &guard(),
+            )
+            .unwrap(),
         )
         .unwrap();
         assert_eq!(
@@ -1068,11 +1413,12 @@ mod tests {
         fs::write(
             wrapper_paths(&home).journal,
             render_wrapper(
-                "journal",
+                WrapperCommand::Journal,
                 Path::new("/journal"),
                 &old_bin.join("journal"),
                 &guard(),
-            ),
+            )
+            .unwrap(),
         )
         .unwrap();
 
@@ -1094,21 +1440,23 @@ mod tests {
         fs::write(
             wrapper_paths(&env.home_dir).solstone,
             render_wrapper(
-                "solstone",
+                WrapperCommand::Solstone,
                 Path::new("/old"),
                 &env.executable_dir.join("solstone"),
-                &guard(),
-            ),
+                &guard_for(Path::new("/old")),
+            )
+            .unwrap(),
         )
         .unwrap();
         fs::write(
             wrapper_paths(&env.home_dir).journal,
             render_wrapper(
-                "journal",
+                WrapperCommand::Journal,
                 Path::new("/old"),
                 &env.executable_dir.join("journal"),
-                &guard(),
-            ),
+                &guard_for(Path::new("/old")),
+            )
+            .unwrap(),
         )
         .unwrap();
         provision_wrappers(&env, Path::new("/journal"), &binding()).unwrap();
@@ -1156,11 +1504,12 @@ mod tests {
         fs::create_dir_all(&env.curdir).unwrap();
         fs::create_dir_all(env.home_dir.join(".local/bin")).unwrap();
         let old = render_wrapper(
-            "solstone",
+            WrapperCommand::Solstone,
             Path::new("/old"),
             &env.executable_dir.join("solstone"),
-            &guard(),
-        );
+            &guard_for(Path::new("/old")),
+        )
+        .unwrap();
         fs::write(wrapper_paths(&env.home_dir).solstone, &old).unwrap();
         let blocked = root.join("blocked-backups");
         fs::write(&blocked, "not a directory").unwrap();

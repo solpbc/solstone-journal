@@ -38,7 +38,7 @@ pub fn write_deb(stage: &Path, dest: &Path, meta: DebMeta<'_>) -> io::Result<()>
 
 fn control_tar(meta: DebMeta<'_>) -> io::Result<Vec<u8>> {
     let control = format!(
-        "Package: solstone-journal\nVersion: {}\nArchitecture: {}\nMaintainer: sol pbc <support@solstone.app>\nDescription: solstone-journal\nDepends: libc6 (>= 2.27), libstdc++6, libgcc-s1\n",
+        "Package: solstone-journal\nVersion: {}\nArchitecture: {}\nMaintainer: sol pbc <support@solstone.app>\nDescription: solstone-journal\nDepends: libc6 (>= 2.27), libstdc++6, libgcc-s1, libgomp1\n",
         meta.version, meta.arch
     );
     let mut builder = Builder::new(Vec::new());
@@ -160,5 +160,28 @@ mod tests {
         assert!(entries.iter().any(|(path, kind)| {
             path == "usr/lib/solstone-core-speakers-analyze/libonnxruntime.so.1" && kind.is_file()
         }));
+    }
+
+    #[test]
+    fn control_declares_the_transcription_openmp_runtime() {
+        let bytes = control_tar(DebMeta {
+            version: "2.0.0",
+            arch: "amd64",
+        })
+        .unwrap();
+        let mut archive = tar::Archive::new(bytes.as_slice());
+        let mut control = String::new();
+        for entry in archive.entries().unwrap() {
+            let mut entry = entry.unwrap();
+            if entry.path().unwrap().as_ref() == Path::new("control") {
+                std::io::Read::read_to_string(&mut entry, &mut control).unwrap();
+            }
+        }
+        assert!(control.contains("Depends: "));
+        assert!(
+            control
+                .split([',', '\n'])
+                .any(|item| item.trim() == "libgomp1")
+        );
     }
 }

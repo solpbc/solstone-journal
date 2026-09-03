@@ -921,6 +921,7 @@ function closeDetectModal() {
 }
 
 function formatFileSize(bytes) {
+  if (bytes === null || bytes === undefined) return '-';
   if (bytes === 0) return '0 B';
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB'];
@@ -929,7 +930,7 @@ function formatFileSize(bytes) {
 }
 
 function formatDuration(minutes) {
-  if (!minutes) return '';
+  if (!minutes) return '-';
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
   if (hours > 0) {
@@ -1116,9 +1117,9 @@ function renderImportRow(imp) {
 
   let html = `<tr data-import-id="${imp.timestamp}" data-source-type="${imp.source_type || ''}" tabindex="0" role="link" onclick="window.location.href='/app/import/${imp.timestamp}'" onkeydown="if(event.key==='Enter')window.location.href='/app/import/${imp.timestamp}'">`;
   html += `<td class="nowrap">${importedAt}</td>`;
-  html += `<td>${escapeHtml(imp.original_filename || 'Unknown')}</td>`;
+  html += `<td>${escapeHtml(imp.original_filename || imp.source_display || '-')}</td>`;
   html += `<td class="source-cell">${sourceCell}</td>`;
-  html += `<td class="file-size nowrap">${formatFileSize(imp.file_size || 0)}</td>`;
+  html += `<td class="file-size nowrap">${formatFileSize(imp.file_size)}</td>`;
   html += '<td class="nowrap">';
   if (imp.target_day) {
     html += `<a href="/app/activities/${imp.target_day}" class="timestamp-link" onclick="event.stopPropagation();">${targetDay}</a>`;

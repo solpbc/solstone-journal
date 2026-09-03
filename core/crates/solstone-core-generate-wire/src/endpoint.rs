@@ -197,8 +197,7 @@ pub(crate) fn endpoint_generate_with<T: EndpointTransport>(
         Err(_) => return failure("provider_response_invalid"),
     };
     let served_window = runtime.resolve_served_window(endpoint, config, transport, now);
-    let mut prepared = match prepare_endpoint_request(request, endpoint, max_tokens, served_window)
-    {
+    let prepared = match prepare_endpoint_request(request, endpoint, max_tokens, served_window) {
         Ok(prepared) => prepared,
         Err(reason_code) => return failure(reason_code),
     };
@@ -224,34 +223,29 @@ pub(crate) fn endpoint_generate_with<T: EndpointTransport>(
                 Err(reason_code) => return failure(reason_code),
             }
         };
-        let mut attempt = 0;
-        loop {
-            let Some(remaining) = remaining_timeout(started, timeout) else {
-                return failure("local_capacity_exhausted");
-            };
-            if remaining.is_zero() {
-                return failure("local_capacity_exhausted");
-            }
-            let response = match endpoint_post(endpoint, &prepared.body, remaining, transport) {
-                Ok(response) => response,
-                Err(reason_code) => return failure(reason_code),
-            };
-            if response.status != 400 {
-                break response;
-            }
-            match endpoint_overflow_decision(&response.body, served_window, attempt) {
-                OverflowDecision::Retry(new_max_tokens) => {
-                    prepared.body["max_tokens"] = json!(new_max_tokens);
-                    if let Some(request_budget) = prepared.request_budget.as_mut() {
-                        request_budget.clamped_max_tokens = new_max_tokens;
-                    }
-                    attempt += 1;
-                }
-                OverflowDecision::Budget => return failure("context_budget_exceeded"),
-                OverflowDecision::Context => return failure("context_window_exceeded"),
-                OverflowDecision::Contract => return failure("local_endpoint_contract_failed"),
-            }
+        let Some(remaining) = remaining_timeout(started, timeout) else {
+            return failure("local_capacity_exhausted");
+        };
+        if remaining.is_zero() {
+            return failure("local_capacity_exhausted");
         }
+        let response = match endpoint_post(endpoint, &prepared.body, remaining, transport) {
+            Ok(response) => response,
+            Err(reason_code) => return failure(reason_code),
+        };
+        if response.status == 400 {
+            return match endpoint_overflow_decision(&response.body, served_window, 0) {
+                // This decision preserves the frozen parser oracle, but an endpoint's
+                // context refusal is terminal for this execution. Changing only
+                // `max_tokens` resends byte-identical input and cannot make it fit.
+                OverflowDecision::Retry(_) | OverflowDecision::Context => {
+                    failure("context_window_exceeded")
+                }
+                OverflowDecision::Budget => failure("context_budget_exceeded"),
+                OverflowDecision::Contract => failure("local_endpoint_contract_failed"),
+            };
+        }
+        response
     };
     let secret = endpoint.credential.as_deref().unwrap_or("");
     if !(200..300).contains(&response.status) {
@@ -368,7 +362,7 @@ pub(crate) fn endpoint_converse_with<T: EndpointTransport>(
         // arbitrary BYO endpoints may not support them.
         include_qwen_sampling_controls: endpoint.is_bundled || endpoint.is_confidential,
     };
-    let mut body = match build_converse_request_body(&local_request, input_budget_tokens) {
+    let body = match build_converse_request_body(&local_request, input_budget_tokens) {
         Ok(body) => body,
         Err(LocalConverseError::ContextBudgetExceeded) => {
             return converse_failure("context_budget_exceeded");
@@ -397,33 +391,26 @@ pub(crate) fn endpoint_converse_with<T: EndpointTransport>(
                 Err(reason_code) => return converse_failure(reason_code),
             }
         };
-        let mut attempt = 0;
-        loop {
-            let Some(remaining) = remaining_timeout(started, timeout) else {
-                return converse_failure("local_capacity_exhausted");
-            };
-            if remaining.is_zero() {
-                return converse_failure("local_capacity_exhausted");
-            }
-            let response = match endpoint_post(endpoint, &body, remaining, transport) {
-                Ok(response) => response,
-                Err(reason_code) => return converse_failure(reason_code),
-            };
-            if response.status != 400 {
-                break response;
-            }
-            match endpoint_overflow_decision(&response.body, served_window, attempt) {
-                OverflowDecision::Retry(new_max_tokens) => {
-                    body["max_tokens"] = json!(new_max_tokens);
-                    attempt += 1;
-                }
-                OverflowDecision::Budget => return converse_failure("context_budget_exceeded"),
-                OverflowDecision::Context => return converse_failure("context_window_exceeded"),
-                OverflowDecision::Contract => {
-                    return converse_failure("local_endpoint_contract_failed");
-                }
-            }
+        let Some(remaining) = remaining_timeout(started, timeout) else {
+            return converse_failure("local_capacity_exhausted");
+        };
+        if remaining.is_zero() {
+            return converse_failure("local_capacity_exhausted");
         }
+        let response = match endpoint_post(endpoint, &body, remaining, transport) {
+            Ok(response) => response,
+            Err(reason_code) => return converse_failure(reason_code),
+        };
+        if response.status == 400 {
+            return match endpoint_overflow_decision(&response.body, served_window, 0) {
+                OverflowDecision::Retry(_) | OverflowDecision::Context => {
+                    converse_failure("context_window_exceeded")
+                }
+                OverflowDecision::Budget => converse_failure("context_budget_exceeded"),
+                OverflowDecision::Contract => converse_failure("local_endpoint_contract_failed"),
+            };
+        }
+        response
     };
     if !(200..300).contains(&response.status) {
         let reason_code = "provider_response_invalid";
@@ -1430,7 +1417,7 @@ mod tests {
     }
 
     #[test]
-    fn overflow_reclamps_once_then_generates() {
+    fn detailed_context_overflow_is_not_reposted_for_generate() {
         let runtime = EndpointRuntime::default();
         let journal = journal_path();
         let overflow = "maximum context length of 1000 tokens: 600 tokens from the input messages and 400 tokens for the completion";
@@ -1438,7 +1425,7 @@ mod tests {
             post_script: vec![Ok(bad_request(overflow)), Ok(response())],
             ..Default::default()
         };
-        assert!(matches!(
+        assert_eq!(
             endpoint_generate_with(
                 &request(None),
                 &journal,
@@ -1448,10 +1435,10 @@ mod tests {
                 &mut transport,
                 Instant::now(),
             ),
-            EndpointResult::Generated(_)
-        ));
-        assert_eq!(transport.posts.len(), 2);
-        assert_eq!(transport.posts[1]["max_tokens"], 384);
+            failure("context_window_exceeded")
+        );
+        assert_eq!(transport.posts.len(), 1);
+        assert_eq!(transport.posts[0]["max_tokens"], 64);
         let _ = std::fs::remove_dir_all(journal);
     }
 
@@ -1495,27 +1482,32 @@ mod tests {
     }
 
     #[test]
-    fn repeated_overflow_is_context_window_exceeded_without_a_third_post() {
+    fn detailed_context_overflow_is_not_reposted_for_converse() {
         let runtime = EndpointRuntime::default();
         let journal = journal_path();
         let overflow = "maximum context length of 1000 tokens: 600 tokens from the input messages and 400 tokens for the completion";
         let mut transport = StubTransport {
-            post_script: vec![Ok(bad_request(overflow)), Ok(bad_request(overflow))],
+            post_script: vec![Ok(bad_request(overflow)), Ok(response())],
             ..Default::default()
         };
-        assert_eq!(
-            endpoint_generate_with(
-                &request(None),
-                &journal,
-                &endpoint("http://endpoint"),
-                &served_window_config(),
-                &runtime,
-                &mut transport,
-                Instant::now(),
-            ),
-            failure("context_window_exceeded")
-        );
-        assert_eq!(transport.posts.len(), 2);
+        let messages = vec![ConverseMessage::User { text: "ask".into() }];
+        let error = endpoint_converse_with(
+            EndpointConverseCall {
+                request: &request(None),
+                messages: &messages,
+                tools: &converse_tools(),
+                journal_path: &journal,
+                endpoint: &endpoint("http://endpoint"),
+                config: &served_window_config(),
+                runtime: &runtime,
+            },
+            &mut transport,
+            Instant::now(),
+        )
+        .expect_err("context refusal must terminate converse");
+        assert_eq!(error.reason_code, "context_window_exceeded");
+        assert_eq!(transport.posts.len(), 1);
+        assert_eq!(transport.posts[0]["max_tokens"], 64);
         let _ = std::fs::remove_dir_all(journal);
     }
 

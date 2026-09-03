@@ -108,8 +108,8 @@
     ],
     "first_run": [
       {
-        "body_bytes": 8099,
-        "body_sha256": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255",
+        "body_bytes": 7732,
+        "body_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "endpoint": "app:body.index",
@@ -120,8 +120,8 @@
         "why": "body overview shell"
       },
       {
-        "body_bytes": 8099,
-        "body_sha256": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255",
+        "body_bytes": 7732,
+        "body_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "endpoint": "app:body.trends_view",
@@ -132,8 +132,8 @@
         "why": "body trends shell"
       },
       {
-        "body_bytes": 8099,
-        "body_sha256": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255",
+        "body_bytes": 7732,
+        "body_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "endpoint": "app:body.day_view",
@@ -3867,8 +3867,8 @@
     ],
     "fixed": [
       {
-        "body_bytes": 8099,
-        "body_sha256": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255",
+        "body_bytes": 7732,
+        "body_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "endpoint": "app:body.index",
@@ -3879,8 +3879,8 @@
         "why": "body overview shell"
       },
       {
-        "body_bytes": 8099,
-        "body_sha256": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255",
+        "body_bytes": 7732,
+        "body_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "endpoint": "app:body.trends_view",
@@ -3891,8 +3891,8 @@
         "why": "body trends shell"
       },
       {
-        "body_bytes": 8099,
-        "body_sha256": "b54a8cede3dddefe92c9ae634be831b3945c49ca70a6daeec93e7f2f6c721255",
+        "body_bytes": 7732,
+        "body_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "endpoint": "app:body.day_view",

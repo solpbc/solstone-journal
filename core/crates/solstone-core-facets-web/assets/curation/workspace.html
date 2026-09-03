@@ -293,6 +293,14 @@ window.CUR_COPY = CUR_COPY;
     root.querySelector('.surface-state-retry')?.addEventListener('click', retry, {once: true});
   }
 
+  // Some speculative-facet names were suggested before naming guidance
+  // improved and are stored slug-style (e.g. "low_light_capture"). Never
+  // show that raw punctuation to the owner.
+  function humanizeFacetName(name) {
+    if (!name) return name;
+    return name.replace(/[_-]+/g, ' ').trim();
+  }
+
   function copyFormat(template, values) {
     let result = String(template || '');
     Object.entries(values).forEach(([key, value]) => {
@@ -354,7 +362,7 @@ window.CUR_COPY = CUR_COPY;
     const evidenceHtml = evidenceProps ? window.Drawer.render(evidenceProps) : '';
     return `
       <article class="curation-item" data-curation-item data-kind="facet_candidate" data-name-key="${escapeHtml(item.key)}">
-        <p class="curation-body">${escapeHtml(copyFormat(CUR_COPY.CUR_FACET_BODY, {name: item.name}))}</p>
+        <p class="curation-body">${escapeHtml(copyFormat(CUR_COPY.CUR_FACET_BODY, {name: humanizeFacetName(item.name)}))}</p>
         <div class="curation-actions">
           <button class="curation-button curation-button-primary" type="button" data-action="facet-accept" data-name-key="${escapeHtml(item.key)}">${escapeHtml(CUR_COPY.CUR_FACET_CREATE_ACTION)}</button>
           <button class="curation-button" type="button" data-action="facet-dismiss" data-name-key="${escapeHtml(item.key)}">${escapeHtml(CUR_COPY.CUR_FACET_DISMISS_ACTION)}</button>

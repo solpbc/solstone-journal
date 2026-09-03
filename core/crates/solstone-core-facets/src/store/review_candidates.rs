@@ -151,6 +151,17 @@ pub fn record_facet_candidates(
     })
 }
 
+/// Humanize a speculative-facet candidate name for use as a created facet's
+/// display title. Older candidates were suggested before naming guidance
+/// improved and are stored slug-style (e.g. "low_light_capture"); this never
+/// lets that raw punctuation become an owner-visible facet title.
+pub fn humanize_facet_title(name: &str) -> String {
+    name.split(['_', '-'])
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Derive the facet directory slug used by the Python facet creator.
 pub fn facet_slug(title: &str) -> String {
     let mut slug = String::new();

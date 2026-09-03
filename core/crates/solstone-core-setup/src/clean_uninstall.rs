@@ -105,6 +105,9 @@ pub fn clean_uninstall_refusal(args: &SetupArgs) -> Option<String> {
     if args.skip_wrapper {
         incompatible.push("--skip-wrapper");
     }
+    if args.skip_path {
+        incompatible.push("--skip-path");
+    }
     if args.accept_existing_journal {
         incompatible.push("--accept-existing-journal");
     }
@@ -508,7 +511,7 @@ mod tests {
     use crate::identity_evidence::gather_artifact_evidence;
     use crate::manifest::manifest_path;
     use crate::user_config::{config_path, write_user_config};
-    use crate::wrapper::{render_wrapper, wrapper_paths};
+    use crate::wrapper::{WrapperCommand, render_wrapper, wrapper_paths};
     use solstone_core_installation_identity::{
         CleanUninstallRequest, LegacyManifestEvidence, OwnerBase, PlatformTag,
         SetupAdmissionRequest, admit_clean_uninstall, admit_setup, journal_token_from_path,
@@ -733,15 +736,19 @@ mod tests {
         let runtime = root.join("bin");
         fs::create_dir_all(&runtime).unwrap();
         let guard = GuardFields::from_binding(&plan().binding);
-        for binary in ["solstone", "journal"] {
+        for (binary, command) in [
+            ("solstone", WrapperCommand::Solstone),
+            ("journal", WrapperCommand::Journal),
+        ] {
             fs::write(
                 home.join(".local/bin").join(binary),
                 crate::wrapper::render_wrapper(
-                    binary,
+                    command,
                     Path::new("/journal"),
                     &runtime.join(binary),
                     &guard,
-                ),
+                )
+                .unwrap(),
             )
             .unwrap();
         }
@@ -819,15 +826,19 @@ mod tests {
         fs::create_dir_all(home.join(".local/bin")).unwrap();
         fs::create_dir_all(&runtime).unwrap();
         let guard = GuardFields::from_binding(&plan().binding);
-        for binary in ["solstone", "journal"] {
+        for (binary, command) in [
+            ("solstone", WrapperCommand::Solstone),
+            ("journal", WrapperCommand::Journal),
+        ] {
             fs::write(
                 home.join(".local/bin").join(binary),
                 crate::wrapper::render_wrapper(
-                    binary,
+                    command,
                     Path::new("/journal"),
                     &root.join("old-bin").join(binary),
                     &guard,
-                ),
+                )
+                .unwrap(),
             )
             .unwrap();
         }
@@ -950,17 +961,19 @@ mod tests {
             fs::create_dir_all(paths.solstone.parent().unwrap()).unwrap();
             let second_guard = GuardFields::from_binding(second);
             let second_solstone = render_wrapper(
-                "solstone",
+                WrapperCommand::Solstone,
                 &second.journal_token.to_path_buf(),
                 &root.join("bin/solstone"),
                 &second_guard,
-            );
+            )
+            .unwrap();
             let second_journal = render_wrapper(
-                "journal",
+                WrapperCommand::Journal,
                 &second.journal_token.to_path_buf(),
                 &root.join("bin/journal"),
                 &second_guard,
-            );
+            )
+            .unwrap();
             fs::write(&paths.solstone, &second_solstone).unwrap();
             fs::write(&paths.journal, &second_journal).unwrap();
 

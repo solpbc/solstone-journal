@@ -5,7 +5,7 @@
 //!
 //! Pipeline semantics live beside the implementation in `pipeline_tests.rs`.
 //! This harness intentionally keeps only contracts that require a real CLI,
-//! native decode/masking, detector child, or interprocess session behavior.
+//! native decode, detector child, or interprocess session behavior.
 
 use std::fs;
 use std::io::Read;
@@ -44,12 +44,6 @@ struct FixtureFrame {
 fn corpus_path(file: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/describe_corpus")
-        .join(file)
-}
-
-fn masked_corpus_path(file: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/describe_masked")
         .join(file)
 }
 
@@ -186,43 +180,6 @@ fn frames_only_matches_the_frozen_oracle() {
         .map(|frame| serde_json::json!({"frame_id": frame.frame_id, "timestamp": frame.timestamp}))
         .collect();
     assert_eq!(actual["frames"], serde_json::json!(expected_frames));
-}
-
-#[test]
-fn describe_uses_convey_mask_for_live_handler_decode() {
-    for (file, expected_requests) in [
-        ("convey_masked_inside_screen.webm", 1),
-        ("convey_masked_outside_screen.webm", 7),
-        ("convey_skipped_screen.webm", 0),
-    ] {
-        let root = temporary_root(file);
-        let video = root.join(file);
-        fs::copy(masked_corpus_path(file), &video).expect("copy masked corpus video");
-        let request_log = root.join("requests.jsonl");
-        let output = describe(&root, &video, "generated")
-            .env("SOLSTONE_DESCRIBE_SESSION_STUB_REQUESTS_PATH", &request_log)
-            .output()
-            .expect("describe");
-        assert!(output.status.success(), "{file}");
-        let requests = if request_log.exists() {
-            read_jsonl(&request_log)
-                .into_iter()
-                .filter(|request| request["context"] == "observe.describe.frame")
-                .count()
-        } else {
-            0
-        };
-        assert_eq!(requests, expected_requests, "{file}");
-        let rows = read_jsonl(&video.with_extension("jsonl"));
-        if expected_requests == 0 {
-            assert_eq!(rows[0]["_solstone_processing"]["state"], "empty");
-            assert_eq!(
-                rows[0]["_solstone_processing"]["reason_code"],
-                "no_decodable_frames"
-            );
-        }
-        fs::remove_dir_all(root).expect("remove root");
-    }
 }
 
 #[test]

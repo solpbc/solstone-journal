@@ -235,11 +235,7 @@ impl Inputs {
         let pdf = directory.join("document.pdf");
         fs::copy(root.join("core/fixtures/pdf_corpus/text.pdf"), &pdf).expect("copy PDF fixture");
         let image = directory.join("image.png");
-        fs::copy(
-            root.join("core/fixtures/describe_fiducials/four_tags_16px.png"),
-            &image,
-        )
-        .expect("copy image fixture");
+        fs::copy(root.join("core/fixtures/import_image.png"), &image).expect("copy image fixture");
         let archive = directory.join("archive.zip");
         write_zip(
             &archive,

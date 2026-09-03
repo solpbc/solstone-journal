@@ -21,7 +21,7 @@ use solstone_core_installation_identity::{
     root_token_from_path,
 };
 use solstone_core_service_unit::{build_service_environment, render_systemd_unit};
-use solstone_core_setup::wrapper::render_wrapper;
+use solstone_core_setup::wrapper::{WrapperCommand, render_wrapper};
 
 use support::locate_workspace_binary;
 
@@ -117,21 +117,23 @@ impl Fixture {
         fs::write(
             &journal,
             render_wrapper(
-                "journal",
+                WrapperCommand::Journal,
                 &self.journal,
                 &version.join("bin/journal"),
                 guard,
-            ),
+            )
+            .unwrap(),
         )
         .expect("write journal wrapper");
         fs::write(
             &solstone,
             render_wrapper(
-                "solstone",
+                WrapperCommand::Solstone,
                 &self.journal,
                 &version.join("bin/solstone"),
                 guard,
-            ),
+            )
+            .unwrap(),
         )
         .expect("write solstone wrapper");
         for wrapper in [journal, solstone] {
@@ -461,11 +463,12 @@ fn repair_refuses_foreign_malformed_unguarded_ambiguous_and_exact_v1_without_mut
     let guard = unguarded.install_owned_tuple();
     let unguarded_journal = unguarded.wrappers().0;
     let wrapper = render_wrapper(
-        "journal",
+        WrapperCommand::Journal,
         &unguarded.journal,
         &unguarded.first_version.join("bin/journal"),
         &guard,
     )
+    .unwrap()
     .lines()
     .filter(|line| !line.starts_with("# solstone-installation-"))
     .collect::<Vec<_>>()

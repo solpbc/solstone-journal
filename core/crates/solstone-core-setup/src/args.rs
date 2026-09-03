@@ -19,6 +19,7 @@ pub const USAGE: &str = concat!(
     "                     [--variant {auto,cpu,cuda,coreml}] [--step-timeout-seconds INT]\n",
     "                     [-y] [--dry-run] [--jsonl] [--explain] [--skip-models]\n",
     "                     [--skip-brain] [--skip-skills] [--skip-service] [--skip-wrapper]\n",
+    "                     [--skip-path]\n",
     "                     [--accept-existing-journal] [--force] [--clean-uninstall]\n",
 );
 
@@ -46,9 +47,12 @@ pub struct SetupArgs {
     pub skip_skills: bool,
     pub skip_service: bool,
     pub skip_wrapper: bool,
+    pub skip_path: bool,
     pub accept_existing_journal: bool,
     pub force: bool,
     pub clean_uninstall: bool,
+    /// Private phase marker used by the archive installer transaction.
+    pub(crate) installer_transaction: bool,
     supplied: SuppliedFlags,
 }
 
@@ -113,9 +117,11 @@ pub fn parse_args_at(arguments: &[OsString], cwd: &Path) -> Result<SetupArgs, Us
         skip_skills: false,
         skip_service: false,
         skip_wrapper: false,
+        skip_path: false,
         accept_existing_journal: false,
         force: false,
         clean_uninstall: false,
+        installer_transaction: false,
         supplied: SuppliedFlags::default(),
     };
     let mut index = 0;
@@ -172,6 +178,10 @@ pub fn parse_args_at(arguments: &[OsString], cwd: &Path) -> Result<SetupArgs, Us
             parsed.skip_service = true;
         } else if argument == OsStr::new("--skip-wrapper") {
             parsed.skip_wrapper = true;
+        } else if argument == OsStr::new("--skip-path") {
+            parsed.skip_path = true;
+        } else if argument == OsStr::new("--installer-transaction") {
+            parsed.installer_transaction = true;
         } else if argument == OsStr::new("--accept-existing-journal") {
             parsed.accept_existing_journal = true;
         } else if argument == OsStr::new("--force") {
@@ -345,6 +355,10 @@ pub fn resolve_setup(args: &SetupArgs, context: &ResolutionContext) -> ResolvedS
     values.insert(
         "skip_wrapper",
         resolved(json!(args.skip_wrapper), source(args.skip_wrapper)),
+    );
+    values.insert(
+        "skip_path",
+        resolved(json!(args.skip_path), source(args.skip_path)),
     );
     values.insert(
         "accept_existing_journal",
@@ -581,7 +595,7 @@ mod tests {
         let resolved = resolve_setup(&parsed, &context);
         assert_eq!(resolved.journal_path, PathBuf::from("/from-env"));
         assert_eq!(resolved.journal_source, "env");
-        assert_eq!(resolved.args_resolved.len(), 17);
+        assert_eq!(resolved.args_resolved.len(), 18);
         assert_eq!(resolved.args_resolved["port"]["value"], 5016);
         assert_eq!(resolved.args_resolved["port"]["source"], "cli");
         assert_eq!(resolved.args_resolved["variant"]["value"], "cpu");

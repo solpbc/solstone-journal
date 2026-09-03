@@ -193,6 +193,14 @@ mod tests {
         fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("make executable");
     }
 
+    fn v7_journal_wrapper(journal: &Path, target: &Path) -> String {
+        format!(
+            "#!/bin/bash\n# journal — managed by 'journal config'. Edits will be overwritten.\n# managed-version: 7\n: \"${{SOLSTONE_JOURNAL:={}}}\"\nexport SOLSTONE_JOURNAL\nSOL_BIN='{}'\n# Warn when pyproject.toml or uv.lock is newer than .installed.\n# Skipped silently if .installed is absent.\nREPO_ROOT=\"${{SOL_BIN%/.venv/bin/journal}}\"\nif [ -f \"$REPO_ROOT/.installed\" ]; then\n  if [ \"$REPO_ROOT/pyproject.toml\" -nt \"$REPO_ROOT/.installed\" ] \\\n     || [ \"$REPO_ROOT/uv.lock\" -nt \"$REPO_ROOT/.installed\" ]; then\n    echo \"journal: WARNING — venv is stale (pyproject.toml or uv.lock changed since last install). Run: cd $REPO_ROOT && make install\" >&2\n  fi\nfi\nif [ ! -x \"$SOL_BIN\" ]; then\n    printf 'journal: venv binary missing or not executable: %s\\n' \"$SOL_BIN\" >&2\n    exit 127\nfi\nexec \"$SOL_BIN\" \"$@\"\n",
+            journal.display(),
+            target.display().to_string().replace('\'', "'\\''")
+        )
+    }
+
     #[test]
     fn resolves_linux_managed_wrappers_and_reports_malformed_units() {
         let staged = context();
@@ -202,11 +210,8 @@ mod tests {
         let wrapper = staged.home_dir.join(".local/bin/journal");
         fs::create_dir_all(wrapper.parent().expect("wrapper parent"))
             .expect("create wrapper parent");
-        fs::write(
-            &wrapper,
-            format!("# managed-version: 7\nSOL_BIN='{}'\n", journal.display()),
-        )
-        .expect("write managed wrapper");
+        fs::write(&wrapper, v7_journal_wrapper(&staged.journal_path, &journal))
+            .expect("write managed wrapper");
         let unit = staged
             .home_dir
             .join(".config/systemd/user/solstone.service");

@@ -20,7 +20,7 @@ use solstone_core_journal_io::bounded_read::{JournalReadError, MAX_BYTES, read_t
 use crate::talent_outputs;
 
 const SHELL: &[u8] = include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html");
-const WORKSPACE: &str = "<section class=\"search-app\"><p>search lives in the CLI with <code>solstone call journal search</code></p></section>";
+const WORKSPACE: &str = "<style>.search-app { padding: 1.5rem 2rem 2rem; max-width: 1200px; margin: 0 auto; font-size: 0.95rem; color: #444; }</style><section class=\"search-app\"><p>search lives in the CLI with <code>solstone call journal search</code></p></section>";
 
 pub fn router(journal_root: PathBuf) -> Router {
     let search_root = journal_root.clone();

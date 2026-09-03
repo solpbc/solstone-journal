@@ -4182,6 +4182,27 @@ async fn accept_facet_candidate_creates_facet_and_marks_candidate_accepted() {
 }
 
 #[tokio::test]
+async fn accept_facet_candidate_humanizes_a_slug_style_suggested_name() {
+    let j = Journal::new();
+    seed_facet_candidate(j.path(), "low_light_capture", "low_light_capture", "open");
+
+    let (status, response) = post(
+        j.path(),
+        "/app/curation/api/facet/accept",
+        json!({"name_key":"low_light_capture"}),
+    )
+    .await;
+
+    assert_eq!(status, 200);
+    assert_eq!(response["status"], "accepted");
+    assert_eq!(response["facet_slug"], "low-light-capture");
+    let declaration = j.path().join("facets/low-light-capture/facet.json");
+    assert!(declaration.is_file());
+    let saved: Value = serde_json::from_slice(&fs::read(declaration).unwrap()).unwrap();
+    assert_eq!(saved["title"], "low light capture");
+}
+
+#[tokio::test]
 async fn accept_facet_candidate_refuses_existing_facet_without_overwriting_it() {
     let j = Journal::new();
     write(

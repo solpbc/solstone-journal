@@ -580,8 +580,19 @@ const Dashboard = (function() {
   }
 
   function reasonCopy(day, C) {
-    if (day.reason === 'corrupt_raw') return C.REASON_CORRUPT_RAW;
-    return C.REASON_FAILING_STEP;
+    const REASON_COPY_KEYS = {
+      corrupt_raw: 'REASON_CORRUPT_RAW',
+      catchup_backoff: 'REASON_CATCHUP_BACKOFF',
+      segment_repair_progressing: 'REASON_SEGMENT_REPAIR_PROGRESSING',
+      segment_repair_degraded: 'REASON_SEGMENT_REPAIR_DEGRADED',
+      segment_repair_stuck: 'REASON_SEGMENT_REPAIR_STUCK',
+      segment_repair_unknown: 'REASON_SEGMENT_REPAIR_UNKNOWN',
+    };
+    const key = REASON_COPY_KEYS[day.reason];
+    // "failing_step" and any other/unrecognized reason keep the generic
+    // failing-step copy -- it's the one reason where "keeps failing, try
+    // again" is actually accurate.
+    return (key && C[key]) || C.REASON_FAILING_STEP;
   }
 
   function backlogErrorForDay(day, bl) {

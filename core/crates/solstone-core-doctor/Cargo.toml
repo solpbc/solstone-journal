@@ -22,6 +22,7 @@ solstone-core-brain.workspace = true
 solstone-core-sol-link = { workspace = true, features = ["host"] }
 solstone-core-transcribe.workspace = true
 solstone-core-skill-state.workspace = true
+solstone-core-setup.workspace = true
 plist.workspace = true
 rustix = { workspace = true, features = ["process"] }
 tokio = { workspace = true, features = ["net", "rt", "sync", "time"] }

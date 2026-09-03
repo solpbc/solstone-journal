@@ -58,13 +58,13 @@ The dominant activity type observed:
 - **idle**: No meaningful activity
 
 ### activity_summary
-Describe what $preferred did during this segment using action verbs. Be specific — name the tools, people, projects, and actions. Ban passive words: never use "reviewing", "monitoring", "tracking", "checking", "observing", "maintaining", "managing." Use instead: wrote, sent, discussed, created, switched to, typed, said, decided, asked, proposed.
+Describe what you did during this segment using action verbs, writing directly to the owner in second person ("you wrote...", "you discussed..."). Never refer to the owner as "the user," "the session," "this person," or in the third person — this text is shown directly to them. Be specific — name the tools, people, projects, and actions. Ban passive words: never use "reviewing", "monitoring", "tracking", "checking", "observing", "maintaining", "managing." Use instead: wrote, sent, discussed, created, switched to, typed, said, decided, asked, proposed.
 
 ### entities
-Extract ALL named entities mentioned in the content. Be thorough — extract every entity you can identify, not just the most prominent ones. Four types only:
+Extract ALL named entities mentioned in the content. Be thorough — extract every entity you can identify, not just the most prominent ones. Write each `name` in natural reading order, exactly as it would normally be written — never move a leading article ("The", "A", "An") to a parenthetical suffix (write "The Gallery at Reunion", never "Gallery At Reunion (The)"). Four types only:
 - **Person**: Individual people by name. Prefer full names. Consolidate variants ("AN" + "Avery Nguyen" → one entity "Avery Nguyen"). ALWAYS skip first-name-only references unless the same segment locks the identity with surrounding context (role, organization, or full-name introduction). NEVER include generic speaker labels like "Speaker 1", "Speaker 2", "Colleague", "Person A" — these belong only in the `speakers` array when `meeting_detected=true`. Include historical figures, authors, scientists, politicians — anyone mentioned by full name.
 - **Company**: Businesses and organizations. Include companies, government agencies (NASA, NOAA), universities, media outlets. Use the official or most common name, consolidating variants ("MS" / "MSFT" → "Microsoft").
-- **Project**: Named projects, products, or codebases. Include missions (OSIRIS-REx), initiatives, specific product models. EXCLUDE generic git/file identifiers ("main", "dev", "staging", "src", "tmp"), file extensions, path components, and one-word lowercase tokens that are likely branch or directory names rather than named projects.
+- **Project**: Named projects, products, or codebases. Include missions (OSIRIS-REx), initiatives, specific product models. EXCLUDE generic git/file identifiers ("main", "dev", "staging", "src", "tmp"), file extensions, path components, and one-word lowercase tokens that are likely branch or directory names rather than named projects. Also EXCLUDE raw software-tracking tokens that are never real-world entities on their own: bare team/task shorthand like "cfo:reimbur" or "vpe:migrate", bare ticket or request IDs like "req_llenu42m", and anything containing a literal backslash-escaped underscore (`\_`) — that is unrendered markdown source, not a name. If the surrounding text describes a real thing worth extracting, use its plain description, never the raw tracking token.
 - **Tool**: Software applications and services. Include websites (Fox News, Wikipedia, Amazon), browser extensions, developer tools, hardware products mentioned by name.
 
 **For screen content specifically:** Extract entities from visible text in screen descriptions — article headlines, page titles, product names, people mentioned in articles, organizations referenced. If the user is browsing a website about the Renaissance, extract the specific historical figures, art movements, and institutions mentioned.
@@ -107,7 +107,7 @@ Emit a proposed name ONLY when every configured-facet match is weak: every entry
 
 This field is purely additive and never changes routing: `facets[]` still must classify the segment into the closest configured facet exactly as described above. Invented names belong ONLY in `speculative_facet`, NEVER in `facets[]`.
 
-The proposed name must be specific and grounded in the observed activity. $facet_naming
+The proposed name must be specific and grounded in the observed activity. Write it the way a person would title a folder: a short natural phrase or Title Case name (like the owner's existing facets — "Personal", "Ping Identity", "sol pbc"). Never emit snake_case, kebab-case, or any other identifier-style formatting.
 
 ### meeting_detected
 `true` ONLY if you can identify distinct, named participants in a live multi-person interaction:

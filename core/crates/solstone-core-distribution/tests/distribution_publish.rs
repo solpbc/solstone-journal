@@ -414,6 +414,15 @@ fi
     let mut permissions = fs::metadata(&curl).expect("curl metadata").permissions();
     permissions.set_mode(0o755);
     fs::set_permissions(&curl, permissions).expect("chmod curl");
+    // Signature semantics have their own integration matrix. This origin test
+    // needs only a verifier-shaped executable so it can reach extraction.
+    let minisign = bin.join("minisign");
+    fs::write(&minisign, "#!/bin/sh\nexit 0\n").expect("fake minisign");
+    let mut permissions = fs::metadata(&minisign)
+        .expect("minisign metadata")
+        .permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&minisign, permissions).expect("chmod minisign");
     let prefix = fixture.root.join("prefix");
     let install = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../distribution/install.sh");
     let output = std::process::Command::new("sh")

@@ -2,10 +2,12 @@
 // Copyright (c) 2026 sol pbc
 
 use std::fs;
-use std::io::{self, Read};
+use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
 use std::os::unix::net::UnixListener;
 
+use chrono::NaiveDate;
 use serde_json::{Map, Value};
+use solstone_core_journal_io::{JournalRoot, operational_log::catalog_oplogs};
 
 const STATUS_LINE: &[u8] =
     b"{\"tract\":\"think\",\"event\":\"status\",\"ts\":1785000000000,\"mode\":\"daily\"}\n";
@@ -68,4 +70,47 @@ fn think_runtime_can_connect_a_unix_socket() {
             .expect("think runtime must enable IO");
     });
     drop(listener);
+}
+
+#[test]
+fn segment_dispatch_uses_one_timestamp_for_callosum_and_the_run_log() {
+    let journal = tempfile::tempdir().expect("think journal");
+    let health = journal.path().join("health");
+    fs::create_dir_all(&health).expect("create health directory");
+    let listener = UnixListener::bind(health.join("callosum.sock")).expect("bind listener");
+
+    assert!(
+        solstone_core_think_cli::test_support::emit_segment_dispatch(
+            journal.path(),
+            "20260813",
+            1_785_000_200_000,
+        )
+        .expect("write segment dispatch")
+    );
+
+    let (mut stream, _) = listener.accept().expect("accept segment dispatch");
+    let mut received = String::new();
+    stream
+        .read_to_string(&mut received)
+        .expect("read segment dispatch");
+    let callosum: Value = serde_json::from_str(received.trim_end()).expect("Callosum JSON");
+    let day = NaiveDate::parse_from_str("20260813", "%Y%m%d").unwrap();
+    let dispatch = catalog_oplogs(JournalRoot::open(journal.path()).unwrap(), &[day])
+        .unwrap()
+        .into_catalogued_entries()
+        .into_iter()
+        .flat_map(|(entry, mut file)| {
+            file.seek(SeekFrom::Start(entry.payload_offset() as u64))
+                .unwrap();
+            BufReader::new(file)
+                .lines()
+                .map_while(Result::ok)
+                .filter_map(|line| serde_json::from_str::<Value>(&line).ok())
+                .collect::<Vec<_>>()
+        })
+        .find(|record| record["event"] == "talent.dispatch")
+        .expect("talent.dispatch record");
+    assert_eq!(callosum["event"], "talent_started");
+    assert_eq!(callosum["ts"], dispatch["ts"]);
+    assert_eq!(dispatch["ts"], 1_785_000_200_000_i64);
 }

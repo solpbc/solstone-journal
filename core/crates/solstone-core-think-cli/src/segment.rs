@@ -216,22 +216,7 @@ pub(crate) fn run(
     if let Some(sense_use) = sense_use.as_ref() {
         // Source-derived, not measured: thinking.py:1648-1675 records the
         // per-talent dispatch lifecycle before draining the Sense use.
-        let fields = segment_event(
-            context,
-            segment,
-            stream,
-            Map::from_iter([
-                ("name".to_owned(), Value::String("sense".to_owned())),
-                ("use_id".to_owned(), Value::String(sense_use.use_id.clone())),
-            ]),
-        );
-        let _ = helpers::emit(
-            &context.journal,
-            context.now_ms,
-            "talent_started",
-            fields.clone(),
-        );
-        log.log("talent.dispatch", context.now_ms, fields);
+        log_dispatch(log, context, segment, stream, sense_use);
         context.status.update(segment_status_with_current(
             context,
             segment,
@@ -1022,11 +1007,12 @@ fn persist_ended_activities(
                 );
                 continue;
             }
-            let mut prompt_context = ThinkContext::new(
+            let mut prompt_context = ThinkContext::new_with_event_clock(
                 &context.journal,
                 routing_day.to_owned(),
                 context.journal.join("chronicle").join(routing_day),
                 context.now_ms,
+                context.event_clock(),
             )?;
             prompt_context.talent_root = context.talent_root.clone();
             prompt_context.apps_root = context.apps_root.clone();
@@ -1217,7 +1203,7 @@ fn log_use_terminal(
             ("state".to_owned(), Value::String(state.to_owned())),
         ]),
     );
-    log.log(event, context.now_ms, fields);
+    log.log(event, context.event_now_ms(), fields);
 }
 
 fn log_dispatch(
@@ -1236,13 +1222,19 @@ fn log_dispatch(
             ("use_id".to_owned(), Value::String(item.use_id.clone())),
         ]),
     );
-    let _ = helpers::emit(
-        &context.journal,
-        context.now_ms,
-        "talent_started",
-        fields.clone(),
-    );
-    log.log("talent.dispatch", context.now_ms, fields);
+    let event_ms = context.event_now_ms();
+    write_dispatch_event(&context.journal, log, event_ms, fields);
+}
+
+pub(super) fn write_dispatch_event(
+    journal: &std::path::Path,
+    log: &mut RunLogWriter,
+    event_ms: i64,
+    fields: Map<String, Value>,
+) -> bool {
+    let emitted = helpers::emit(journal, event_ms, "talent_started", fields.clone());
+    log.log("talent.dispatch", event_ms, fields);
+    emitted
 }
 
 fn merge(into: &mut ModeResult, from: ModeResult) {
@@ -1267,7 +1259,7 @@ fn log_skip(
     if let Some(stream) = stream {
         fields.insert("stream".to_owned(), Value::String(stream.to_owned()));
     }
-    log.log("talent.skip", context.now_ms, fields);
+    log.log("talent.skip", context.event_now_ms(), fields);
 }
 fn log_sense(
     log: &mut RunLogWriter,
@@ -1285,7 +1277,7 @@ fn log_sense(
     if let Some(stream) = stream {
         fields.insert("stream".to_owned(), Value::String(stream.to_owned()));
     }
-    log.log("sense.complete", context.now_ms, fields);
+    log.log("sense.complete", context.event_now_ms(), fields);
 }
 fn log_change(
     log: &mut RunLogWriter,
@@ -1303,7 +1295,7 @@ fn log_change(
     if let Some(stream) = stream {
         fields.insert("stream".to_owned(), Value::String(stream.to_owned()));
     }
-    log.log("sense.change_detect", context.now_ms, fields);
+    log.log("sense.change_detect", context.event_now_ms(), fields);
 }
 
 fn empty_input_sense_output() -> Map<String, Value> {
@@ -1509,7 +1501,11 @@ fn log_request_lost(
             ("state".to_owned(), Value::String("request_lost".to_owned())),
         ]),
     );
-    log.log("talent.fail", context.now_ms, std::mem::take(&mut fields));
+    log.log(
+        "talent.fail",
+        context.event_now_ms(),
+        std::mem::take(&mut fields),
+    );
 }
 
 fn complete(

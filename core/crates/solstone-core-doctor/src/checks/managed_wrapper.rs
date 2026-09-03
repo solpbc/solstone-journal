@@ -6,47 +6,16 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+use solstone_core_setup::wrapper::{WrapperCommand, parse_wrapper};
+
 /// Extract the `SOL_BIN` target from a managed source-install wrapper.
 ///
-/// This intentionally recognizes only the marker grammar emitted by
-/// `install_guard.py`: a version-1 through version-8 marker and a
-/// single-quoted `SOL_BIN` assignment with shell-style embedded quote escapes.
 pub(crate) fn parse_sol_bin(content: &str) -> Option<PathBuf> {
-    let has_marker = content.lines().any(|line| {
-        line.strip_prefix("# managed-version: ")
-            .is_some_and(|version| matches!(version.as_bytes(), [b'1'..=b'8']))
-    });
-    if !has_marker {
-        return None;
-    }
-    let value = content.lines().find_map(|line| {
-        line.strip_prefix("SOL_BIN='")
-            .and_then(|value| value.strip_suffix('\''))
-    })?;
-    unescape_single_quoted(value).map(PathBuf::from)
+    parse_wrapper(WrapperCommand::Journal, content).map(|wrapper| wrapper.sol_bin)
 }
 
 pub(crate) fn resolve_non_strict(path: &Path) -> PathBuf {
     fs::canonicalize(path).unwrap_or_else(|_| lexical_absolute(path))
-}
-
-fn unescape_single_quoted(value: &str) -> Option<String> {
-    let mut output = String::with_capacity(value.len());
-    let mut characters = value.chars();
-    while let Some(character) = characters.next() {
-        if character != '\'' {
-            output.push(character);
-            continue;
-        }
-        if characters.next() != Some('\\')
-            || characters.next() != Some('\'')
-            || characters.next() != Some('\'')
-        {
-            return None;
-        }
-        output.push('\'');
-    }
-    Some(output)
 }
 
 fn lexical_absolute(path: &Path) -> PathBuf {
@@ -74,19 +43,24 @@ fn lexical_absolute(path: &Path) -> PathBuf {
 mod tests {
     use super::*;
 
+    fn v7_journal_wrapper(target: &str) -> String {
+        format!(
+            "#!/bin/bash\n# journal — managed by 'journal config'. Edits will be overwritten.\n# managed-version: 7\n: \"${{SOLSTONE_JOURNAL:=/journal}}\"\nexport SOLSTONE_JOURNAL\nSOL_BIN='{target}'\n# Warn when pyproject.toml or uv.lock is newer than .installed.\n# Skipped silently if .installed is absent.\nREPO_ROOT=\"${{SOL_BIN%/.venv/bin/journal}}\"\nif [ -f \"$REPO_ROOT/.installed\" ]; then\n  if [ \"$REPO_ROOT/pyproject.toml\" -nt \"$REPO_ROOT/.installed\" ] \\\n     || [ \"$REPO_ROOT/uv.lock\" -nt \"$REPO_ROOT/.installed\" ]; then\n    echo \"journal: WARNING — venv is stale (pyproject.toml or uv.lock changed since last install). Run: cd $REPO_ROOT && make install\" >&2\n  fi\nfi\nif [ ! -x \"$SOL_BIN\" ]; then\n    printf 'journal: venv binary missing or not executable: %s\\n' \"$SOL_BIN\" >&2\n    exit 127\nfi\nexec \"$SOL_BIN\" \"$@\"\n"
+        )
+    }
+
     #[test]
     fn parses_only_marked_wrappers_and_unescapes_sol_bin() {
         assert_eq!(
-            parse_sol_bin("# managed-version: 7\nSOL_BIN='/tmp/it'\\''s/bin/journal'\n"),
+            parse_sol_bin(&v7_journal_wrapper("/tmp/it'\\''s/bin/journal")),
             Some(PathBuf::from("/tmp/it's/bin/journal"))
         );
         assert_eq!(parse_sol_bin("SOL_BIN='/tmp/bin/journal'\n"), None);
         assert_eq!(
-            parse_sol_bin("# managed-version: 8\nSOL_BIN='/tmp/bin/journal'\n"),
-            Some(PathBuf::from("/tmp/bin/journal"))
-        );
-        assert_eq!(
-            parse_sol_bin("# managed-version: 9\nSOL_BIN='/tmp/bin/journal'\n"),
+            parse_sol_bin(&format!(
+                "{}SOL_BIN='/tmp/other/journal'\n",
+                v7_journal_wrapper("/tmp/bin/journal")
+            )),
             None
         );
     }

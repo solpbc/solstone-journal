@@ -5,9 +5,10 @@
 
 use std::env;
 use std::ffi::OsString;
+use std::fs::{self, OpenOptions};
 use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
-use std::process::ExitCode;
+use std::process::{Command, ExitCode};
 
 pub mod args;
 pub mod clean_uninstall;
@@ -39,9 +40,9 @@ use identity_evidence::{
 use manifest::{legacy_manifest_evidence, manifest_path};
 use solstone_core_installation_identity::{
     ArtifactBindingEvidence, CleanUninstallRequest, CleanUninstallSession, IdentityError,
-    OwnerBase, PlatformTag, SetupAdmission, SetupAdmissionRequest, admit_clean_uninstall,
-    admit_setup, journal_token_from_path, load_installation_binding, namespace_name,
-    root_token_from_path,
+    JournalToken, OwnerBase, PlatformTag, SetupAdmission, SetupAdmissionRequest,
+    admit_clean_uninstall, admit_setup, admit_setup_with_effective_journal_validator,
+    journal_token_from_path, load_installation_binding, namespace_name, root_token_from_path,
 };
 use solstone_core_journal::{
     resolve_checkout_root_from_executable_dir, resolve_identity_root_from_executable_dir,
@@ -97,6 +98,133 @@ fn terminal_confirm() -> bool {
 
 fn utc_now() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
+
+fn package_install_receipt_path(home_dir: &std::path::Path) -> PathBuf {
+    home_dir.join(".local/share/solstone/package-install-receipt")
+}
+
+/// Write the package route's owner receipt after setup succeeds.
+///
+/// Packages deliberately have no maintainer scripts, so `/usr/bin` setup is
+/// the first owner-scoped step that can record the installed route. This file
+/// is diagnostic dispatch data only; package database state remains the route
+/// authority.
+fn write_package_install_receipt(
+    home_dir: &std::path::Path,
+    executable_dir: &std::path::Path,
+) -> io::Result<()> {
+    if !package_database_owns_journal(executable_dir) {
+        return Ok(());
+    }
+    write_owned_package_install_receipt(home_dir)
+}
+
+fn package_database_owns_journal(executable_dir: &std::path::Path) -> bool {
+    if executable_dir != std::path::Path::new("/usr/bin") {
+        return false;
+    }
+    let journal = "/usr/bin/journal";
+    if let Ok(output) = Command::new("/usr/bin/dpkg-query")
+        .args(["-S", journal])
+        .output()
+        && output.status.success()
+        && dpkg_query_names_journal_package(&String::from_utf8_lossy(&output.stdout), journal)
+    {
+        return true;
+    }
+    Command::new("/usr/bin/rpm")
+        .args(["-qf", "--qf", "%{NAME}\n", journal])
+        .output()
+        .is_ok_and(|output| {
+            output.status.success()
+                && String::from_utf8_lossy(&output.stdout).trim() == "solstone-journal"
+        })
+}
+
+fn dpkg_query_names_journal_package(output: &str, journal: &str) -> bool {
+    output.lines().any(|line| {
+        line.rsplit_once(": ").is_some_and(|(package, path)| {
+            path == journal && package.split(':').next() == Some("solstone-journal")
+        })
+    })
+}
+
+fn write_owned_package_install_receipt(home_dir: &std::path::Path) -> io::Result<()> {
+    let path = package_install_receipt_path(home_dir);
+    let parent = path
+        .parent()
+        .ok_or_else(|| io::Error::other("package receipt has no parent"))?;
+    let mut directory = home_dir.to_path_buf();
+    for component in [".local", "share", "solstone"] {
+        directory.push(component);
+        match fs::symlink_metadata(&directory) {
+            Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+                return Err(io::Error::other(format!(
+                    "package receipt directory is not a real directory: {}",
+                    directory.display()
+                )));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                fs::create_dir(&directory)?;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    debug_assert_eq!(directory, parent);
+    match fs::symlink_metadata(&path) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+            return Err(io::Error::other(
+                "package receipt target is not a regular file",
+            ));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    let architecture = match env::consts::ARCH {
+        "x86_64" => "linux-x86_64",
+        "aarch64" => "linux-aarch64",
+        other => other,
+    };
+    // `/usr/bin` selects the package-route receipt location, but it does not
+    // prove which package manager (if any) owns this executable. Keep every
+    // unobserved provenance field conservative; the package database remains
+    // authoritative when the installer later detects a package route.
+    let contents = format!(
+        "schema_version=1\njournal_version={}\nlane=unknown\norigin=unknown\narchitecture={}\ninstaller_revision=unknown\nroute=package\nsignature_verification=unverified\n",
+        env!("CARGO_PKG_VERSION"),
+        architecture,
+    );
+    for attempt in 0..16_u8 {
+        let partial = parent.join(format!(
+            ".package-install-receipt-{}-{attempt}",
+            std::process::id()
+        ));
+        let mut file = match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&partial)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        };
+        if let Err(error) = file
+            .write_all(contents.as_bytes())
+            .and_then(|()| file.sync_all())
+            .and_then(|()| fs::rename(&partial, &path))
+        {
+            let _ = fs::remove_file(partial);
+            return Err(error);
+        }
+        return Ok(());
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "could not allocate package receipt staging file",
+    ))
 }
 
 fn identity_error_code(error: &IdentityError) -> events::ErrorCode {
@@ -265,6 +393,7 @@ fn admit_setup_identity(
     executable_dir: &std::path::Path,
     project_root: &std::path::Path,
     resolved: &args::ResolvedSetup,
+    validate_wrapper_journal: bool,
 ) -> Result<SetupIdentityAdmission, IdentityError> {
     let root = resolve_identity_root(executable_dir, project_root);
     let root_token = root_token_from_path(&root)?;
@@ -306,14 +435,19 @@ fn admit_setup_identity(
             source,
         })?;
     }
-    let admission = admit_setup(SetupAdmissionRequest {
+    let request = SetupAdmissionRequest {
         owner,
         root_token,
         journal_token: journal_token_from_path(&resolved.journal_path)?,
         journal_is_explicit: matches!(resolved.journal_source.as_str(), "cli" | "env"),
         legacy_manifest: manifest,
         artifacts: artifacts.artifacts().clone(),
-    })?;
+    };
+    let admission = if validate_wrapper_journal {
+        admit_setup_with_effective_journal_validator(request, validate_effective_wrapper_journal)?
+    } else {
+        admit_setup(request)?
+    };
     let mut repair_steps = artifacts.repair_steps(admission.binding());
     if wrapper_targets_drifted(home_dir, executable_dir) {
         // A version swap since the last setup run: the wrapper's own
@@ -332,6 +466,14 @@ fn admit_setup_identity(
         admission,
         repair_steps,
         legacy_replacement,
+    })
+}
+
+fn validate_effective_wrapper_journal(journal: &JournalToken) -> Result<(), IdentityError> {
+    wrapper::validate_journal_path_for_wrapper(&journal.to_path_buf()).map_err(|_| {
+        IdentityError::AdmissionRefused(
+            "effective journal path cannot be represented safely in managed wrappers",
+        )
     })
 }
 
@@ -415,6 +557,7 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
     stdout: &mut W,
     stderr: &mut E,
 ) -> ExitCode {
+    let receipt_executable_dir = executable_dir.clone();
     // Setup's `project_root` is a REPOSITORY root wherever there is one: the
     // wrapper step joins `.venv/bin` onto it and reads `.git` beside it to
     // recognise a worktree, and neither is true of the payload root the
@@ -529,43 +672,62 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
     }
     let resolved = resolve_setup(&args, &resolution);
     let mode = resolve_mode(&args, stdin_is_tty, stdout_is_tty);
+    if !resolved.should_short_circuit()
+        && !args.skip_wrapper
+        && let Err(error) = wrapper::validate_wrapper_pair(&resolved.journal_path, &executable_dir)
+    {
+        let _ = writeln!(stderr, "journal setup: refused before mutation: {error}");
+        return ExitCode::from(1);
+    }
     let mut effective_resolved = resolved.clone();
-    let (admission, identity_guard_repair_steps, legacy_replacement) =
-        if resolved.should_short_circuit() {
-            (None, Vec::new(), false)
-        } else {
-            let identity_admission =
-                match admit_setup_identity(&home_dir, &executable_dir, &project_root, &resolved) {
-                    Ok(admission) => admission,
-                    Err(error) => {
-                        return report_identity_failure(
-                            args.jsonl,
-                            stdout,
-                            stderr,
-                            &error,
-                            &home_dir,
-                            setup_identity_namespace(&executable_dir, &project_root).as_deref(),
-                        );
-                    }
-                };
-            let effective_journal = identity_admission
-                .admission
-                .effective_journal()
-                .to_path_buf();
-            if effective_journal != effective_resolved.journal_path {
-                effective_resolved.journal_path = effective_journal.clone();
-                if let Some(serde_json::Value::Object(journal)) =
-                    effective_resolved.args_resolved.get_mut("journal")
-                {
-                    journal.insert("value".into(), serde_json::json!(effective_journal));
-                }
+    let (admission, identity_guard_repair_steps, legacy_replacement) = if resolved
+        .should_short_circuit()
+    {
+        (None, Vec::new(), false)
+    } else {
+        let identity_admission = match admit_setup_identity(
+            &home_dir,
+            &executable_dir,
+            &project_root,
+            &resolved,
+            !args.skip_wrapper,
+        ) {
+            Ok(admission) => admission,
+            Err(error) => {
+                return report_identity_failure(
+                    args.jsonl,
+                    stdout,
+                    stderr,
+                    &error,
+                    &home_dir,
+                    setup_identity_namespace(&executable_dir, &project_root).as_deref(),
+                );
             }
-            (
-                Some(identity_admission.admission),
-                identity_admission.repair_steps,
-                identity_admission.legacy_replacement,
-            )
         };
+        let effective_journal = identity_admission
+            .admission
+            .effective_journal()
+            .to_path_buf();
+        if effective_journal != effective_resolved.journal_path {
+            effective_resolved.journal_path = effective_journal.clone();
+            if let Some(serde_json::Value::Object(journal)) =
+                effective_resolved.args_resolved.get_mut("journal")
+            {
+                journal.insert("value".into(), serde_json::json!(effective_journal));
+            }
+        }
+        if !args.skip_wrapper
+            && let Err(error) = wrapper::validate_wrapper_pair(&effective_journal, &executable_dir)
+        {
+            let _ = writeln!(stderr, "journal setup: refused before mutation: {error}");
+            return ExitCode::from(1);
+        }
+        (
+            Some(identity_admission.admission),
+            identity_admission.repair_steps,
+            identity_admission.legacy_replacement,
+        )
+    };
     if !args.jsonl && resolved.should_short_circuit() {
         let plan_context = SetupContext {
             args: &args,
@@ -631,6 +793,16 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
         };
         run_setup(&mut context, &step_specs())
     };
+    if outcome.exit_code == 0
+        && !args.dry_run
+        && !args.explain
+        && let Err(error) = write_package_install_receipt(&home_dir, &receipt_executable_dir)
+    {
+        let _ = writeln!(
+            stderr,
+            "journal setup: warning: package receipt was not written: {error}"
+        );
+    }
     if let Some(dead_end) = outcome.dead_end {
         if args.jsonl
             && let (Some(step_name), Some(error_code)) = (dead_end.step_name, dead_end.error_code)
@@ -666,7 +838,15 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
             let _ = writeln!(stderr, "{}", dead_end.message);
         }
     }
-    ExitCode::from(outcome.exit_code as u8)
+    let exit_code = if args.installer_transaction && outcome.exit_code != 0 {
+        // Crossing into `run_setup` means setup may have mutated owner state.
+        // The archive installer may roll back only failures returned before
+        // this boundary; code 3 is its explicit leave-the-candidate marker.
+        3
+    } else {
+        outcome.exit_code
+    };
+    ExitCode::from(exit_code as u8)
 }
 
 pub fn run_owner_args(
@@ -725,9 +905,9 @@ mod tests {
         write_wrappers_atomically_with,
     };
     use solstone_core_installation_identity::{
-        ArtifactBindingEvidence, GuardFields, LegacyManifestEvidence, OwnerBase, PlatformTag,
-        SetupAdmissionRequest, admit_setup, journal_token_from_path, namespace_name,
-        root_token_from_path,
+        ArtifactBindingEvidence, GuardFields, LegacyManifestEvidence, LifecycleState, OwnerBase,
+        PlatformTag, SetupAdmissionRequest, admit_setup, decode_record, encode_record,
+        journal_token_from_path, namespace_name, root_token_from_path,
     };
     use std::collections::VecDeque;
     use std::fs;
@@ -972,6 +1152,7 @@ mod tests {
         let args = parsed(
             &[
                 "--yes".into(),
+                "--installer-transaction".into(),
                 "--journal".into(),
                 journal.display().to_string(),
             ],
@@ -990,7 +1171,11 @@ mod tests {
             &mut stdout,
             &mut stderr,
         );
-        assert_eq!(exit, ExitCode::from(2));
+        assert_eq!(
+            exit,
+            ExitCode::from(3),
+            "an installer transaction must mark every failure after entering the setup run loop as potentially mutating"
+        );
         assert_eq!(
             String::from_utf8(stderr).unwrap(),
             format!(
@@ -1258,9 +1443,15 @@ mod tests {
         for flag in ["--dry-run", "--explain"] {
             let root = root(flag.trim_start_matches("--"));
             let home = root.join("home");
-            let executable_dir = root.join("bin");
+            let executable_dir = if flag == "--explain" {
+                PathBuf::from("/usr/bin")
+            } else {
+                root.join("bin")
+            };
             let journal = root.join("journal");
-            fs::create_dir_all(&executable_dir).unwrap();
+            if executable_dir != Path::new("/usr/bin") {
+                fs::create_dir_all(&executable_dir).unwrap();
+            }
             let args = parsed(
                 &[
                     flag.into(),
@@ -1291,6 +1482,10 @@ mod tests {
                     .expect("identity owner")
                     .path()
                     .exists()
+            );
+            assert!(
+                !package_install_receipt_path(&home).exists(),
+                "{flag} must not claim a package install completed"
             );
         }
     }
@@ -1348,6 +1543,133 @@ mod tests {
         );
     }
 
+    #[test]
+    fn unsafe_wrapper_input_refuses_before_identity_or_setup_mutation() {
+        let root = root("wrapper-preflight");
+        let home = root.join("home");
+        let executable_dir = root.join("bin");
+        fs::create_dir_all(&executable_dir).unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let args = parsed(
+            &[
+                "--yes".into(),
+                "--installer-transaction".into(),
+                "--journal".into(),
+                root.join("bad}journal").display().to_string(),
+            ],
+            &root,
+        );
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let exit = run_owner_setup_with_io(
+            args,
+            home.clone(),
+            executable_dir,
+            root.to_path_buf(),
+            false,
+            false,
+            Seams {
+                runner: Box::new(CountingRunner(calls.clone())),
+                service_ops: Box::new(Service),
+                check_report_builder: Box::new(Check),
+                already_keeps_journal_probe: no_probe,
+                prompt: Box::new(Prompt),
+                confirm_clean_uninstall: Box::new(|| true),
+            },
+            &mut stdout,
+            &mut stderr,
+        );
+        assert_eq!(exit, ExitCode::from(1));
+        assert_eq!(calls.load(Ordering::Relaxed), 0);
+        assert!(stdout.is_empty());
+        assert!(
+            String::from_utf8(stderr)
+                .unwrap()
+                .contains("refused before mutation")
+        );
+        assert!(
+            !OwnerBase::at_home(home, PlatformTag::current())
+                .unwrap()
+                .path()
+                .exists()
+        );
+    }
+
+    #[test]
+    fn unsafe_prepared_journal_refuses_without_adopting_identity() {
+        let root = root("wrapper-preflight-prepared");
+        let home = root.join("home");
+        let executable_dir = root.join("bin");
+        let safe_journal = root.join("safe-journal");
+        let unsafe_journal = root.join("old}journal");
+        fs::create_dir_all(&home).unwrap();
+        fs::create_dir_all(&executable_dir).unwrap();
+
+        let root_token = root_token_from_path(&executable_dir).unwrap();
+        let namespace = namespace_name(PlatformTag::current(), &root_token);
+        let owner = OwnerBase::at_home(home.clone(), PlatformTag::current()).unwrap();
+        let initial = admit_setup(SetupAdmissionRequest {
+            owner: owner.clone(),
+            root_token,
+            journal_token: journal_token_from_path(&safe_journal).unwrap(),
+            journal_is_explicit: true,
+            legacy_manifest: LegacyManifestEvidence::Absent,
+            artifacts: ArtifactBindingEvidence::Fresh,
+        })
+        .unwrap();
+        drop(initial);
+
+        let namespace_path = owner.path().join("namespaces").join(namespace.as_hex());
+        let record_path = namespace_path.join("record");
+        let marker_path = namespace_path.join("adoption.marker");
+        let mut record = decode_record(&fs::read(&record_path).unwrap()).unwrap();
+        record.state = LifecycleState::Prepared;
+        record.journal_token = journal_token_from_path(&unsafe_journal).unwrap();
+        fs::write(&record_path, encode_record(&record).unwrap()).unwrap();
+        fs::remove_file(&marker_path).unwrap();
+        let record_before = fs::read(&record_path).unwrap();
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let args = parsed(
+            &[
+                "--yes".into(),
+                "--journal".into(),
+                safe_journal.display().to_string(),
+            ],
+            &root,
+        );
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let exit = run_owner_setup_with_io(
+            args,
+            home,
+            executable_dir,
+            root.to_path_buf(),
+            false,
+            false,
+            Seams {
+                runner: Box::new(CountingRunner(calls.clone())),
+                service_ops: Box::new(Service),
+                check_report_builder: Box::new(Check),
+                already_keeps_journal_probe: no_probe,
+                prompt: Box::new(Prompt),
+                confirm_clean_uninstall: Box::new(|| true),
+            },
+            &mut stdout,
+            &mut stderr,
+        );
+        assert_eq!(exit, ExitCode::from(2));
+        assert_eq!(calls.load(Ordering::Relaxed), 0);
+        assert!(stdout.is_empty());
+        assert!(
+            String::from_utf8(stderr)
+                .unwrap()
+                .contains("cannot be represented safely")
+        );
+        assert_eq!(fs::read(&record_path).unwrap(), record_before);
+        assert!(!marker_path.exists());
+    }
+
     /// Negative twin for the version-swap fix: a wrapper that is
     /// well-formed and guarded, but bound to a genuinely different
     /// installation's namespace, must still refuse rather than be silently
@@ -1377,11 +1699,12 @@ mod tests {
         };
         let wrapper_path = home.join(".local/bin/journal");
         let wrapper_before = crate::wrapper::render_wrapper(
-            "journal",
-            Path::new("/journal"),
+            crate::wrapper::WrapperCommand::Journal,
+            &root.join("journal"),
             &executable_dir.join("journal"),
             &foreign_guard,
-        );
+        )
+        .unwrap();
         fs::write(&wrapper_path, &wrapper_before).unwrap();
 
         let calls = Arc::new(AtomicUsize::new(0));
@@ -1819,20 +2142,22 @@ mod tests {
                     (
                         paths.solstone.clone(),
                         crate::wrapper::render_wrapper(
-                            "solstone",
+                            crate::wrapper::WrapperCommand::Solstone,
                             &journal_two,
                             &executable_dir.join("solstone"),
                             &updated_guard,
-                        ),
+                        )
+                        .unwrap(),
                     ),
                     (
                         paths.journal.clone(),
                         crate::wrapper::render_wrapper(
-                            "journal",
+                            crate::wrapper::WrapperCommand::Journal,
                             &journal_two,
                             &executable_dir.join("journal"),
                             &updated_guard,
-                        ),
+                        )
+                        .unwrap(),
                     ),
                 ],
                 |_from, _to| Err(io::Error::other("injected wrapper replacement failure")),
@@ -1858,5 +2183,157 @@ mod tests {
             gather_wrapper_artifact_evidence(&home, &namespace),
             ArtifactBindingEvidence::Guarded(updated_guard)
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn setup_after_current_flip_admits_old_sibling_wrappers_and_repoints_them() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+
+        let root = root("identity-version-swap-integration");
+        let home = root.join("home");
+        let prefix = root.join("prefix");
+        let old_bin = prefix.join("versions/2.0.0-aaaaaaaaaaaa/bin");
+        let new_bin = prefix.join("versions/2.0.1-bbbbbbbbbbbb/bin");
+        let journal = root.join("journal");
+        let service_path = service_artifact_path(&home).expect("linux service artifact");
+        for bin in [&old_bin, &new_bin] {
+            fs::create_dir_all(bin).unwrap();
+            for name in ["journal", "solstone"] {
+                let path = bin.join(name);
+                fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
+                fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+            }
+        }
+        symlink("versions/2.0.0-aaaaaaaaaaaa", prefix.join("current")).unwrap();
+        let setup_args = || {
+            parsed(
+                &[
+                    "--yes".into(),
+                    "--journal".into(),
+                    journal.display().to_string(),
+                    "--skip-models".into(),
+                    "--skip-skills".into(),
+                    "--skip-brain".into(),
+                ],
+                &root,
+            )
+        };
+        let run = |args: SetupArgs, executable_dir: PathBuf| {
+            let mut stdout = Vec::new();
+            let mut stderr = Vec::new();
+            let exit = run_owner_setup_with_io_with_resolution_env(
+                args,
+                home.clone(),
+                executable_dir,
+                root.to_path_buf(),
+                None,
+                None,
+                false,
+                false,
+                Seams {
+                    runner: Box::new(ServiceArtifactRunner::new(service_path.clone())),
+                    service_ops: Box::new(HealthyService),
+                    check_report_builder: Box::new(Check),
+                    already_keeps_journal_probe: no_probe,
+                    prompt: Box::new(Prompt),
+                    confirm_clean_uninstall: Box::new(|| true),
+                },
+                &mut stdout,
+                &mut stderr,
+            );
+            (exit, stderr)
+        };
+
+        let (initial, initial_stderr) = run(setup_args(), old_bin.clone());
+        assert_eq!(initial, ExitCode::SUCCESS, "{initial_stderr:?}");
+        fs::remove_file(prefix.join("current")).unwrap();
+        symlink("versions/2.0.1-bbbbbbbbbbbb", prefix.join("current")).unwrap();
+
+        let (upgraded, upgraded_stderr) = run(setup_args(), new_bin.clone());
+        assert_eq!(
+            upgraded,
+            ExitCode::SUCCESS,
+            "the post-flip setup must not classify its own old sibling wrappers as Foreign: {}",
+            String::from_utf8_lossy(&upgraded_stderr)
+        );
+        for (path, command) in [
+            (
+                wrapper_paths(&home).journal,
+                crate::wrapper::WrapperCommand::Journal,
+            ),
+            (
+                wrapper_paths(&home).solstone,
+                crate::wrapper::WrapperCommand::Solstone,
+            ),
+        ] {
+            let content = fs::read_to_string(path).unwrap();
+            let parsed = crate::wrapper::parse_wrapper(command, &content).unwrap();
+            assert_eq!(parsed.sol_bin.parent(), Some(new_bin.as_path()));
+        }
+    }
+
+    #[test]
+    fn successful_package_setup_receipt_has_the_dispatch_fields() {
+        let root = root("package-install-receipt");
+        let home = root.join("home");
+        fs::create_dir_all(&home).unwrap();
+        write_owned_package_install_receipt(&home).unwrap();
+        let receipt = fs::read_to_string(package_install_receipt_path(&home)).unwrap();
+        for field in [
+            "schema_version=1",
+            concat!("journal_version=", env!("CARGO_PKG_VERSION")),
+            "lane=unknown",
+            "origin=unknown",
+            "route=package",
+            "installer_revision=unknown",
+            "signature_verification=unverified",
+        ] {
+            assert!(receipt.lines().any(|line| line == field), "{field}");
+        }
+        assert!(
+            receipt
+                .lines()
+                .any(|line| line.starts_with("architecture="))
+        );
+
+        let other_home = root.join("other-home");
+        write_package_install_receipt(&other_home, &root.join("tree/bin")).unwrap();
+        assert!(!package_install_receipt_path(&other_home).exists());
+
+        let symlink_home = root.join("symlink-home");
+        let outside = root.join("outside");
+        fs::create_dir_all(&symlink_home).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&outside, symlink_home.join(".local")).unwrap();
+            assert!(write_owned_package_install_receipt(&symlink_home).is_err());
+            assert!(
+                !outside
+                    .join("share/solstone/package-install-receipt")
+                    .exists()
+            );
+        }
+    }
+
+    #[test]
+    fn package_database_output_requires_the_exact_journal_package_and_path() {
+        assert!(dpkg_query_names_journal_package(
+            "solstone-journal: /usr/bin/journal\n",
+            "/usr/bin/journal"
+        ));
+        assert!(dpkg_query_names_journal_package(
+            "solstone-journal:amd64: /usr/bin/journal\n",
+            "/usr/bin/journal"
+        ));
+        assert!(!dpkg_query_names_journal_package(
+            "another-package: /usr/bin/journal\n",
+            "/usr/bin/journal"
+        ));
+        assert!(!dpkg_query_names_journal_package(
+            "solstone-journal: /opt/journal\n",
+            "/usr/bin/journal"
+        ));
     }
 }

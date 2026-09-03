@@ -14,7 +14,6 @@ ffmpeg-next = { version = "9.0.0", default-features = false, features = ["format
 # baseline; decode calls stay within ffmpeg-next's safe API.
 ffmpeg-sys-next = { version = "9.0.0", default-features = false, features = ["build-portable"] }
 image.workspace = true
-imageproc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 solstone-core-describe-categories.workspace = true

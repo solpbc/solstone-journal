@@ -20,6 +20,13 @@ pub(crate) struct ResolvedEntity {
     pub(crate) r#type: String,
     pub(crate) aka: Vec<String>,
     pub(crate) is_self: bool,
+    /// Whether the owner has blocked this entity.
+    ///
+    /// Reported, never filtered on. A blocked entity still resolves and still
+    /// returns a profile; deciding what to do about the status belongs to the
+    /// caller or the web interface, not to this crate. Founder ruling
+    /// 2026-09-03.
+    pub(crate) blocked: bool,
 }
 
 pub(crate) fn resolve_target(
@@ -42,6 +49,7 @@ pub(crate) fn resolve_target(
         r#type: entity.entity_type().unwrap_or_default().to_owned(),
         aka: resolution.aka,
         is_self: entity.is_principal(),
+        blocked: resolution.blocked,
         name,
         entity,
     }))
@@ -53,6 +61,9 @@ fn entity_candidate(entity: &JournalEntity) -> EntityNameCandidate {
         name,
         aka,
         emails,
+        // The matcher's candidate shape carries no blocked flag, and it must not:
+        // admission is the caller's decision, not the matcher's. The entity's own
+        // blocked status is reported on `ResolvedEntity` instead.
         blocked: _,
     } = entity.resolution_entity();
     EntityNameCandidate {
@@ -77,6 +88,38 @@ mod tests {
 
     use super::resolve_target;
     use crate::test_support::{journal, write_json};
+
+    /// Founder ruling 2026-09-03: a blocked entity is always returned by the
+    /// API, with its status. Filtering belongs to the web interface or the
+    /// caller, never to the backend.
+    #[test]
+    fn a_blocked_entity_still_resolves_and_reports_its_status() {
+        let temporary = journal();
+        write_json(
+            temporary.path(),
+            "entities/blocked_pat/entity.json",
+            json!({"id":"blocked_pat","name":"Pat Blocked","type":"Person","blocked":true}),
+        );
+        write_json(
+            temporary.path(),
+            "entities/plain_sam/entity.json",
+            json!({"id":"plain_sam","name":"Sam Plain","type":"Person"}),
+        );
+
+        let blocked = resolve_target(temporary.path(), "Pat Blocked")
+            .expect("resolution")
+            .expect("a blocked entity must still resolve, not vanish");
+        assert_eq!(blocked.entity_id, "blocked_pat");
+        assert!(blocked.blocked, "the status has to reach the caller");
+
+        let plain = resolve_target(temporary.path(), "Sam Plain")
+            .expect("resolution")
+            .expect("match");
+        assert!(
+            !plain.blocked,
+            "an unblocked entity must not be reported as blocked"
+        );
+    }
 
     #[test]
     fn resolves_exact_id_name_aka_and_fuzzy_queries() {

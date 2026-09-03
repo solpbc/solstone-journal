@@ -23,7 +23,7 @@ use solstone_core_installation_identity::{
     root_token_from_path,
 };
 use solstone_core_service_unit::{build_service_environment, render_systemd_unit};
-use solstone_core_setup::wrapper::render_wrapper;
+use solstone_core_setup::wrapper::{WrapperCommand, render_wrapper};
 
 use support::locate_workspace_binary;
 
@@ -107,15 +107,19 @@ impl Fixture {
 
     fn write_wrappers(&self, guard: &GuardFields, version: &Path) {
         let bin = self.home.join(".local/bin");
-        for command in ["journal", "solstone"] {
+        for (command, wrapper_command) in [
+            ("journal", WrapperCommand::Journal),
+            ("solstone", WrapperCommand::Solstone),
+        ] {
             fs::write(
                 bin.join(command),
                 render_wrapper(
-                    command,
+                    wrapper_command,
                     &self.journal,
                     &version.join("bin").join(command),
                     guard,
-                ),
+                )
+                .unwrap(),
             )
             .expect("write managed wrapper");
         }
@@ -328,11 +332,12 @@ fn inspection_reports_each_route_artifact_independently() {
     let guard = unguarded.install_owned_tuple();
     let wrapper = unguarded.home.join(".local/bin/journal");
     let unguarded_wrapper = render_wrapper(
-        "journal",
+        WrapperCommand::Journal,
         &unguarded.journal,
         &unguarded.first_version.join("bin/journal"),
         &guard,
     )
+    .unwrap()
     .lines()
     .filter(|line| !line.starts_with("# solstone-installation-"))
     .collect::<Vec<_>>()

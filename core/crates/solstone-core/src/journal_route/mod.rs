@@ -21,7 +21,7 @@ use solstone_core_setup::identity_evidence::{
     ArtifactSlotEvidence, ServiceSlotEvidence, WrapperSlotEvidence, gather_setup_artifact_evidence,
 };
 use solstone_core_setup::wrapper::{
-    render_wrapper, wrapper_lock, wrapper_paths, write_wrappers_atomically,
+    WrapperCommand, render_wrapper, wrapper_lock, wrapper_paths, write_wrappers_atomically,
 };
 
 use crate::{discover_binary_home, service};
@@ -425,18 +425,25 @@ fn rewrite_drifted_wrappers(
     if journal_state == "drifted" {
         contents.push((
             paths.journal.clone(),
-            render_wrapper("journal", &journal, &executable_dir.join("journal"), &guard),
+            render_wrapper(
+                WrapperCommand::Journal,
+                &journal,
+                &executable_dir.join("journal"),
+                &guard,
+            )
+            .map_err(|error| error.to_string())?,
         ));
     }
     if solstone_state == "drifted" {
         contents.push((
             paths.solstone.clone(),
             render_wrapper(
-                "solstone",
+                WrapperCommand::Solstone,
                 &journal,
                 &executable_dir.join("solstone"),
                 &guard,
-            ),
+            )
+            .map_err(|error| error.to_string())?,
         ));
     }
     let _lock = wrapper_lock(home).map_err(|error| error.to_string())?;

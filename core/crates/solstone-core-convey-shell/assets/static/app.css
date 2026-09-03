@@ -27,11 +27,6 @@
   animation-timing-function: ease-in-out;
 }
 
-/* Other fixed elements that should persist */
-.corner-tags {
-  view-transition-name: corner-tags;
-}
-
 .notification-center {
   view-transition-name: notification-center;
 }
@@ -43,8 +38,6 @@
 /* Keep structural elements stable (no animation) */
 ::view-transition-old(app-rail),
 ::view-transition-new(app-rail),
-::view-transition-old(corner-tags),
-::view-transition-new(corner-tags),
 ::view-transition-old(notification-center),
 ::view-transition-new(notification-center),
 ::view-transition-old(status-pane),
@@ -82,7 +75,6 @@ html {
   --z-bars: 100;          /* Rail and dock */
   --z-modals: 200;        /* Modal overlays */
   --z-notifications: 300; /* Notifications, status pane, error log */
-  --z-tags: 400;          /* Corner tags - topmost layer */
   /*
    * Above .skip-link (9999) and presentation-mode body::after (9998);
    * inert cannot disable that click-to-exit pseudo-element.
@@ -494,12 +486,6 @@ body.has-managed-dialog .workspace {
   text-transform: none;
   letter-spacing: normal;
   color: #333;
-}
-
-.status-pane-content p {
-  margin: 0;
-  font-size: 14px;
-  color: #666;
 }
 
 .status-pane-detail {
@@ -1189,30 +1175,6 @@ a.notification-card:active {
 .close:active {
   transform: scale(0.9);
 }
-
-/* Corner Tags - fixed markers for screen region detection */
-.corner-tags {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: var(--z-tags);
-}
-
-.corner-tag {
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  background: var(--orange-ink);
-  mask-size: contain;
-  -webkit-mask-size: contain;
-  image-rendering: pixelated;
-  image-rendering: crisp-edges; /* Firefox fallback */
-}
-
-.corner-tag-tl { top: 0; left: 0; mask-image: url('tags/tag-6.png'); -webkit-mask-image: url('tags/tag-6.png'); }
-.corner-tag-tr { top: 0; right: 0; mask-image: url('tags/tag-7.png'); -webkit-mask-image: url('tags/tag-7.png'); }
-.corner-tag-bl { bottom: 32px; left: 0; mask-image: url('tags/tag-4.png'); -webkit-mask-image: url('tags/tag-4.png'); }
-.corner-tag-br { bottom: 32px; right: 0; mask-image: url('tags/tag-2.png'); -webkit-mask-image: url('tags/tag-2.png'); }
 
 /* Button reset for a11y-converted controls */
 button.status-icon,

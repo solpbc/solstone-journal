@@ -446,6 +446,11 @@ fn summarize_yesterday_processing(context: &HomeContext, journal_age_days: i64) 
             .take(2)
             .map(|activity| Value::String(format_activity_label(activity))),
     );
+    let failed_run_count = if mode == "degraded" {
+        crate::formatting::count_failed_runs(&pipeline)
+    } else {
+        0
+    };
     Some(json!({
         "title": if mode == "degraded" { "⚠ Yesterday's processing" } else { "Yesterday's processing" },
         "mode": mode,
@@ -454,6 +459,7 @@ fn summarize_yesterday_processing(context: &HomeContext, journal_age_days: i64) 
         "summary_line": format_processing_summary(mode, successful, attempted, briefing_valid),
         "details": details,
         "gap_links": if mode == "degraded" { Value::Array(format_gap_links(&pipeline, briefing_valid, &yesterday, &today)) } else { Value::Array(Vec::new()) },
+        "failed_run_count": failed_run_count,
         "sparse_lines": Value::Null,
         "status_reasons": reasons,
     }))
@@ -801,6 +807,9 @@ mod tests {
                 .iter()
                 .any(|link| link["text"] == "…and 1 more didn't finish.")
         );
+        // The honest total (21) survives even though the anomalies array
+        // format_gap_links groups from is itself capped at 20.
+        assert_eq!(crate::formatting::count_failed_runs(&pipeline), 21);
     }
 
     #[test]

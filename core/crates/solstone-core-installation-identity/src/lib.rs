@@ -1064,6 +1064,20 @@ pub fn admit_installation_binding(
 /// reacquires the owner lock before it creates the marker, adopts, and returns
 /// this session.
 pub fn admit_setup(request: SetupAdmissionRequest) -> Result<SetupAdmission, IdentityError> {
+    admit_setup_with_effective_journal_validator(request, |_| Ok(()))
+}
+
+/// Admits setup after validating the journal that this invocation would make
+/// effective, while the provider locks are held and before any identity record
+/// or adoption marker is created or replaced.
+///
+/// This lets a caller enforce an artifact-specific representation boundary
+/// without teaching the identity provider about that artifact's encoding.
+pub fn admit_setup_with_effective_journal_validator(
+    request: SetupAdmissionRequest,
+    validate_effective_journal: fn(&JournalToken) -> Result<(), IdentityError>,
+) -> Result<SetupAdmission, IdentityError> {
+    validate_effective_journal(&request.journal_token)?;
     validate_setup_evidence(&request.artifacts, request.legacy_manifest)?;
     let namespace_name = namespace_name(request.owner.platform, &request.root_token);
 
@@ -1073,7 +1087,13 @@ pub fn admit_setup(request: SetupAdmissionRequest) -> Result<SetupAdmission, Ide
         let provider = open_provider(&request.owner, true)?;
         let owner_admission =
             linux_owner_admission(&provider, gate, OwnerAdmissionMode::Exclusive)?;
-        admit_setup_linux(request, namespace_name, provider, owner_admission)
+        admit_setup_linux(
+            request,
+            namespace_name,
+            provider,
+            owner_admission,
+            validate_effective_journal,
+        )
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -1094,7 +1114,7 @@ pub fn admit_setup(request: SetupAdmissionRequest) -> Result<SetupAdmission, Ide
                 snapshot.clone(),
                 owner_admission,
                 owner_lock,
-                &registry,
+                validate_effective_journal,
             );
         }
 
@@ -1130,6 +1150,7 @@ fn admit_setup_linux(
     namespace_name: NamespaceName,
     provider: SecureDir,
     owner_admission: OwnerAdmissionLease,
+    validate_effective_journal: fn(&JournalToken) -> Result<(), IdentityError>,
 ) -> Result<SetupAdmission, IdentityError> {
     loop {
         let owner_lock = lock_owner(&provider)?;
@@ -1146,7 +1167,7 @@ fn admit_setup_linux(
                 snapshot.clone(),
                 owner_admission,
                 owner_lock,
-                &registry,
+                validate_effective_journal,
             );
         }
 
@@ -1987,7 +2008,7 @@ fn admit_existing_setup(
     snapshot: NamespaceSnapshot,
     owner_admission: OwnerAdmissionLease,
     owner_lock: IdentityLock,
-    _registry: &BTreeMap<NamespaceName, NamespaceSnapshot>,
+    validate_effective_journal: fn(&JournalToken) -> Result<(), IdentityError>,
 ) -> Result<SetupAdmission, IdentityError> {
     let mut record = snapshot
         .record
@@ -1999,6 +2020,13 @@ fn admit_existing_setup(
     }
     let mut binding = InstallationBinding::from_record(namespace_name, &record);
     validate_existing_evidence(&request.artifacts, &binding)?;
+    let effective_journal = match record.state {
+        LifecycleState::Prepared => &record.journal_token,
+        LifecycleState::Adopted if request.journal_is_explicit => &request.journal_token,
+        LifecycleState::Adopted => &record.journal_token,
+        LifecycleState::Tombstoned => &request.journal_token,
+    };
+    validate_effective_journal(effective_journal)?;
     match record.state {
         LifecycleState::Prepared => {
             let marker_lock = create_or_lock_marker(&namespace)?;
