@@ -127,6 +127,8 @@ try {
 
     $buildCommand = 'call "{0}" x64 >nul && set "PATH={1};{2};%PATH%;{3}" && set "LIBCLANG_PATH={4}" && set "SOLSTONE_FFMPEG_SOURCE_ARCHIVE={5}" && set "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER={6}" && set "SOLSTONE_DISTRIBUTION_OFFLINE=1" && set "FFMPEG_MARCH=" && set "FFMPEG_MTUNE=" && set "CC=cl" && cargo build --manifest-path core\Cargo.toml -p solstone-core --bin solstone-core --release --locked --offline && cargo build --manifest-path core\Cargo.toml -p solstone-core-describe --bin solstone-core-describe --release --locked --offline' -f $vcvars, $toolBin, $nasmDir, $msysBin, $llvmBin, $SourceArchive, $link
     Invoke-Checked 'network-denied MSVC build of the two FFmpeg-bearing executables' 'cmd.exe' @('/d', '/s', '/c', $buildCommand)
+    $corpusCommand = 'call "{0}" x64 >nul && set "PATH={1};{2};%PATH%;{3}" && set "LIBCLANG_PATH={4}" && set "SOLSTONE_FFMPEG_SOURCE_ARCHIVE={5}" && set "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER={6}" && set "SOLSTONE_DISTRIBUTION_OFFLINE=1" && set "FFMPEG_MARCH=" && set "FFMPEG_MTUNE=" && set "CC=cl" && cargo test --manifest-path core\Cargo.toml -p solstone-core-import-host --lib --release --locked --offline native_remux_preserves_long_form_audio_packets_without_unbounded_buffers' -f $vcvars, $toolBin, $nasmDir, $msysBin, $llvmBin, $SourceArchive, $link
+    Invoke-Checked 'network-denied native FFmpeg long remux corpus' 'cmd.exe' @('/d', '/s', '/c', $corpusCommand)
 
     $targetRoot = Join-Path $RepositoryRoot 'core/target/release'
     $core = Join-Path $targetRoot 'solstone-core.exe'; $describe = Join-Path $targetRoot 'solstone-core-describe.exe'
@@ -162,6 +164,7 @@ try {
         "source_sha256=$(Get-Sha256 $SourceArchive)", "msys2_sha256=$(Get-Sha256 $Msys2Archive)", "make_sha256=$(Get-Sha256 $MakeArchive)",
         "nasm_sha256=$(Get-Sha256 $NasmArchive)", "llvm_sha256=$(Get-Sha256 $LlvmArchive)",
         'network_access=denied-by-firewall-for-cargo-rustc-msys-make-nasm-msvc',
+        'native_remux_corpus=pass',
         "audio_evidence_dir=$($audioEvidence[0])", "video_evidence_dir=$($videoEvidence[0])"
     ) + $importLines | Set-Content -LiteralPath $validation -Encoding utf8
     $toolchain = "MSVC $((Get-Item -LiteralPath $cl).VersionInfo.ProductVersion); NASM $((& $nasm -v).Trim()); LLVM libclang $((Get-Item -LiteralPath $libclang).VersionInfo.ProductVersion)"
