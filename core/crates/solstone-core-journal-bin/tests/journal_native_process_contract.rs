@@ -2847,25 +2847,53 @@ fn native_think_cadence_run_reaches_the_talent_plane_without_python() {
         "journal think --cadence is still refusing at the unavailable-run boundary"
     );
 
-    let recorded = think_mode_events(context.journal, "cadence");
-    assert!(
-        !recorded.is_empty(),
-        "expected a cadence run log under {}; stderr={}",
+    let logs = cadence_run_logs(context.journal);
+    assert_eq!(
+        logs.len(),
+        1,
+        "expected exactly one cadence run log under {}; stderr={}",
         context.journal.display(),
         String::from_utf8_lossy(&output.stderr)
     );
-    let start = recorded
-        .iter()
-        .find(|event| event["event"] == "run.start")
-        .expect("cadence log contains its run-start event");
+    let recorded = fs::read_to_string(&logs[0]).expect("read cadence run log");
+    let start: serde_json::Value = recorded
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("parse canonical run-log record"))
+        .find(|event: &serde_json::Value| event.get("event").is_some())
+        .expect("canonical run log contains an event after its admission record");
     assert_eq!(start["event"], "run.start");
     assert_eq!(start["mode"], "cadence");
     for name in ["pulse", "steward"] {
         assert!(
-            recorded.iter().any(|event| event["name"] == name),
-            "{name}: cadence run never reached the talent plane; log={recorded:?}"
+            recorded
+                .lines()
+                .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+                .any(|event| event["name"] == name),
+            "{name}: cadence run never reached the talent plane; log={recorded}"
         );
     }
+}
+
+/// Collect canonical JSONL operational logs under `chronicle/<day>/health/`.
+fn cadence_run_logs(journal: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let Ok(days) = fs::read_dir(journal.join("chronicle")) else {
+        return found;
+    };
+    for day in days.filter_map(Result::ok) {
+        let Ok(entries) = fs::read_dir(day.path().join("health")) else {
+            continue;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let leaf = entry.file_name();
+            let leaf = leaf.to_string_lossy();
+            if leaf.starts_with("oplog--") && leaf.ends_with(".jsonl") {
+                found.push(entry.path());
+            }
+        }
+    }
+    found.sort();
+    found
 }
 
 /// Make `root` look like a source checkout to the installation resolver and
@@ -2902,8 +2930,6 @@ fn seed_think_install(context: &VerdictContext<'_>, talents: &[(&str, &str)]) {
 }
 
 fn think_mode_events(journal: &Path, mode: &str) -> Vec<serde_json::Value> {
-    let source_prefix = "oplog--think~";
-    let run_marker = format!("--{mode}~");
     let mut logs = Vec::new();
     let chronicle = journal.join("chronicle");
     let Ok(days) = fs::read_dir(chronicle) else {
@@ -2914,30 +2940,17 @@ fn think_mode_events(journal: &Path, mode: &str) -> Vec<serde_json::Value> {
             continue;
         };
         for entry in entries.filter_map(Result::ok) {
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if !name.starts_with(source_prefix) || !name.contains(&run_marker) {
-                continue;
+            let leaf = entry.file_name();
+            let leaf = leaf.to_string_lossy();
+            if leaf.starts_with("oplog--") && leaf.ends_with(".jsonl") {
+                logs.extend(
+                    fs::read_to_string(entry.path())
+                        .expect("read think mode sidecar")
+                        .lines()
+                        .map(|line| serde_json::from_str(line).expect("parse think sidecar event"))
+                        .filter(|event: &serde_json::Value| event["mode"] == mode),
+                );
             }
-            let bytes = fs::read(entry.path()).expect("read think invocation oplog");
-            let header_end = bytes
-                .iter()
-                .position(|byte| *byte == b'\n')
-                .expect("think invocation oplog has an admission header");
-            let (header, payload) = bytes.split_at(header_end);
-            let payload = &payload[1..];
-            let header: serde_json::Value =
-                serde_json::from_slice(header).expect("parse think invocation admission header");
-            assert!(
-                header.get("_solstone_oplog_v").is_some(),
-                "think invocation file was not an admitted oplog: {name}"
-            );
-            logs.extend(
-                std::str::from_utf8(payload)
-                    .expect("think invocation oplog payload is UTF-8")
-                    .lines()
-                    .map(|line| serde_json::from_str(line).expect("parse think invocation event")),
-            );
         }
     }
     logs

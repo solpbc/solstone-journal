@@ -79,29 +79,28 @@ impl Fixture {
     }
 
     fn health_log(&self, day: &str, run: &str, rows: &[Value]) {
-        let day = NaiveDate::parse_from_str(day, "%Y%m%d").expect("valid test day");
+        let day = NaiveDate::parse_from_str(day, "%Y%m%d").expect("health-log day");
         let opened = FixedOffset::east_opt(0)
-            .expect("UTC offset")
-            .from_local_datetime(&day.and_hms_opt(12, 0, 0).expect("valid noon"))
+            .expect("UTC")
+            .from_local_datetime(&day.and_hms_opt(12, 0, 0).expect("noon"))
             .single()
-            .expect("unique UTC test instant");
+            .expect("unambiguous UTC instant");
         let mut writer = create_oplog_at(
-            JournalRoot::open(self.root.path()).expect("fixture journal root"),
+            JournalRoot::open(self.root.path()).expect("journal root"),
             "think",
             run,
             OplogFormat::Jsonl,
             opened,
         )
-        .expect("canonical think oplog");
+        .expect("canonical health log");
         for row in rows {
             writeln!(
                 writer,
                 "{}",
-                serde_json::to_string(row).expect("fixture JSON row")
+                serde_json::to_string(row).expect("health-log row")
             )
-            .expect("write fixture oplog row");
+            .expect("write health-log row");
         }
-        writer.flush().expect("flush fixture oplog");
     }
 
     fn screen_segment(&self, day: &str, segment: &str) {

@@ -461,6 +461,32 @@ struct CollisionWitness {
     file: std::fs::File,
 }
 
+#[cfg(test)]
+thread_local! {
+    static LIVE_COLLISION_WITNESSES: std::cell::Cell<usize> = const {
+        std::cell::Cell::new(0)
+    };
+}
+
+impl CollisionWitness {
+    fn new(ordinal: u8, identity: OplogFileIdentity, file: std::fs::File) -> Self {
+        #[cfg(test)]
+        LIVE_COLLISION_WITNESSES.with(|count| count.set(count.get() + 1));
+        Self {
+            ordinal,
+            identity,
+            file,
+        }
+    }
+}
+
+#[cfg(test)]
+impl Drop for CollisionWitness {
+    fn drop(&mut self) {
+        LIVE_COLLISION_WITNESSES.with(|count| count.set(count.get() - 1));
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn handle_occupied(
     health: &OplogDayHealth,
@@ -499,11 +525,7 @@ fn handle_occupied(
             ));
             evidence.observe(OplogIdentityObservation::foreign_landed(verified_at));
             debug_assert!(witnesses.len() < OPLOG_CREATE_ATTEMPTS);
-            witnesses.push(CollisionWitness {
-                ordinal,
-                identity,
-                file,
-            });
+            witnesses.push(CollisionWitness::new(ordinal, identity, file));
             barrier(OplogCreatePrimitive::AfterForeignCollision);
             if let Err(reason) = checkpoint(OplogCreatePrimitive::AfterForeignCollision) {
                 return OccupiedAction::Fail(reason);
@@ -1839,21 +1861,8 @@ mod tests {
             .collect()
     }
 
-    #[cfg(unix)]
-    fn open_fd_count_for(path: &Path) -> usize {
-        let target = match fs::canonicalize(path) {
-            Ok(path) => path,
-            Err(_) => return 0,
-        };
-        fs::read_dir("/proc/self/fd")
-            .unwrap()
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| {
-                fs::read_link(entry.path())
-                    .ok()
-                    .is_some_and(|linked| linked == target)
-            })
-            .count()
+    fn live_collision_witnesses() -> usize {
+        LIVE_COLLISION_WITNESSES.with(std::cell::Cell::get)
     }
 
     fn leftover_unrelated(path: &Path) -> Vec<String> {
@@ -4334,27 +4343,23 @@ mod tests {
         assert!(production.contains("error.create_stage()"));
     }
 
-    #[cfg(unix)]
     #[test]
     fn eight_collision_exhaustion_closes_witness_fds_while_error_is_live() {
         let temporary = temp();
         let ids = ids_from(0x24);
         occupy(temporary.path(), ids.iter().copied());
         let dir = health_dir(temporary.path());
-        let first = dir.join(dest_for(ids[0]));
-        assert_eq!(open_fd_count_for(&first), 0);
+        assert_eq!(live_collision_witnesses(), 0);
         let error = create_with_ids(temporary.path(), ids.clone()).unwrap_err();
         expect_token(&error, "oplog_create_destination_exhaustion");
         assert_eq!(error.collisions().len(), 8);
-        assert_eq!(open_fd_count_for(&first), 0);
+        assert_eq!(live_collision_witnesses(), 0);
         for id in &ids {
-            assert_eq!(open_fd_count_for(&dir.join(dest_for(*id))), 0);
             fs::remove_file(dir.join(dest_for(*id))).unwrap();
         }
         create_with_ids(temporary.path(), ids_from(0x30)).unwrap();
     }
 
-    #[cfg(unix)]
     #[test]
     fn success_after_one_collision_closes_witness_fd() {
         let temporary = temp();
@@ -4364,25 +4369,22 @@ mod tests {
         let incumbent = dest_for(first_id);
         let path = health_dir(temporary.path()).join(&incumbent);
         fs::write(&path, b"incumbent").unwrap();
-        assert_eq!(open_fd_count_for(&path), 0);
+        assert_eq!(live_collision_witnesses(), 0);
         let writer =
             run_with_oplog_file_ids(vec![first_id, second_id], || create(temporary.path()))
                 .unwrap();
         assert_eq!(writer.leaf_name(), dest_for(second_id));
         assert_eq!(fs::read(&path).unwrap(), b"incumbent");
-        assert_eq!(open_fd_count_for(&path), 0);
+        assert_eq!(live_collision_witnesses(), 0);
     }
 
-    #[cfg(unix)]
     #[test]
     fn early_failure_after_one_collision_closes_witness_fd() {
         let temporary = temp();
         let root = temporary.path().to_path_buf();
         let ids = ids_from(0x25);
         occupy(&root, [ids[0]]);
-        let dest_name = dest_for(ids[0]);
-        let first = health_dir(&root).join(&dest_name);
-        assert_eq!(open_fd_count_for(&first), 0);
+        assert_eq!(live_collision_witnesses(), 0);
         let error = with_trace(
             OplogCreateTraceState {
                 file_ids: ids.into(),
@@ -4405,8 +4407,7 @@ mod tests {
         .unwrap_err();
         expect_token(&error, "oplog_create_ancestor_revalidation");
         assert_eq!(error.collisions().len(), 1);
-        let displaced = temporary.path().join("health-displaced").join(dest_name);
-        assert_eq!(open_fd_count_for(&displaced), 0);
+        assert_eq!(live_collision_witnesses(), 0);
     }
 
     #[test]
