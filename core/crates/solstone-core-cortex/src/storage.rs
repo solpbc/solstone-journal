@@ -5,7 +5,6 @@ use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::thread;
 
 use chrono::{Local, TimeZone};
 use serde_json::{Map, Value, json};
@@ -145,13 +144,6 @@ impl CortexStore {
             .active_path(name, use_id)
             .with_file_name(format!("{use_id}.jsonl"));
         let Some(request) = request else { return };
-        let link = self
-            .talents
-            .join(format!("{}.log", talent_directory_name(name)));
-        atomic_symlink(
-            &link,
-            &format!("{}/{use_id}.jsonl", talent_directory_name(name)),
-        );
         self.append_day_index(use_id, request, &completed);
     }
 
@@ -581,32 +573,6 @@ fn is_day_key(day: &str) -> bool {
     day.len() == 8 && day.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-pub(crate) fn atomic_symlink(path: &Path, target: &str) {
-    let Some(parent) = path.parent() else { return };
-    if fs::create_dir_all(parent).is_err() {
-        return;
-    }
-    let temporary = temporary_link_path(path);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::symlink;
-        if symlink(target, &temporary).is_ok() {
-            let _ = fs::rename(&temporary, path);
-        }
-    }
-    if temporary.exists() || temporary.is_symlink() {
-        let _ = fs::remove_file(temporary);
-    }
-}
-
-fn temporary_link_path(path: &Path) -> PathBuf {
-    path.with_extension(format!(
-        "tmp{}_{:?}",
-        std::process::id(),
-        thread::current().id()
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -773,7 +739,7 @@ mod tests {
     }
 
     #[test]
-    fn recovery_creates_day_index_but_does_not_repoint_symlink() {
+    fn recovery_creates_day_index_without_touching_unrelated_talent_leaves() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
         let request = recovery_request("one");
@@ -782,15 +748,17 @@ mod tests {
             .unwrap()
             .unwrap()
             .0;
-        let link = store.talents().join("chat.log");
-        atomic_symlink(&link, "chat/old.jsonl");
-        let before = fs::read_link(&link).unwrap();
+        let unrelated = store.talents().join("chat.log");
+        fs::write(&unrelated, "preserve this unrelated leaf").unwrap();
         let report = store.recover().unwrap();
         assert!(active.with_file_name("one.jsonl").exists());
         let rows = day_rows(&store, "19700101");
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0]["use_id"], "one");
-        assert_eq!(fs::read_link(link).unwrap(), before);
+        assert_eq!(
+            fs::read_to_string(unrelated).unwrap(),
+            "preserve this unrelated leaf"
+        );
         assert!(
             solstone_core_journal_io::cortex_use::format_cortex_use_summary(
                 solstone_core_journal_io::cortex_use::CortexUseOperation::Recovery,
@@ -810,7 +778,6 @@ mod tests {
             .unwrap();
         store.complete("one", "conversation", identity, None);
         assert!(active.with_file_name("one.jsonl").exists());
-        assert!(!store.talents().join("chat.log").exists());
         assert!(!store.talents().join("19700101.jsonl").exists());
     }
 
@@ -1039,36 +1006,6 @@ mod tests {
                 .unwrap()
         );
         assert!(!active.exists());
-    }
-
-    #[test]
-    fn atomic_symlink_cleans_dangling_temporary() {
-        let directory = tempdir().unwrap();
-        let link = directory.path().join("chat.log");
-        let temporary = temporary_link_path(&link);
-        #[cfg(unix)]
-        std::os::unix::fs::symlink("missing", &temporary).unwrap();
-        assert!(!temporary.exists());
-        assert!(temporary.is_symlink());
-        atomic_symlink(&link, "chat/one.jsonl");
-        assert!(!temporary.is_symlink());
-        assert!(!link.exists());
-    }
-
-    #[test]
-    fn temporary_link_names_are_thread_unique() {
-        let directory = tempdir().unwrap();
-        let link = directory.path().join("chat.log");
-        let (first_tx, first_rx) = std::sync::mpsc::channel();
-        let (second_tx, second_rx) = std::sync::mpsc::channel();
-        let first_link = link.clone();
-        let second_link = link.clone();
-        let first = thread::spawn(move || first_tx.send(temporary_link_path(&first_link)).unwrap());
-        let second =
-            thread::spawn(move || second_tx.send(temporary_link_path(&second_link)).unwrap());
-        first.join().unwrap();
-        second.join().unwrap();
-        assert_ne!(first_rx.recv().unwrap(), second_rx.recv().unwrap());
     }
 
     #[test]

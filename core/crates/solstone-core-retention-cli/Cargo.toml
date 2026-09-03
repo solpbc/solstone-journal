@@ -21,6 +21,7 @@ solstone-core-indexer-store = { workspace = true }
 solstone-core-retention = { workspace = true }
 
 [dev-dependencies]
+solstone-core-journal-io.workspace = true
 
 [lints]
 workspace = true

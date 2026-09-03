@@ -19,9 +19,12 @@
 use std::fs;
 use std::path::PathBuf;
 
-use chrono::NaiveDate;
-use solstone_core_retention::door::remove_logs;
+use chrono::{FixedOffset, NaiveDate, TimeZone};
+use solstone_core_journal_io::JournalRoot;
+use solstone_core_journal_io::operational_log::{OplogFormat, create_oplog_at};
+use solstone_core_retention::door::{remove_logs, remove_planned_oplogs};
 use solstone_core_retention::logs::{CLASSES, EntryKind, Kept, LogPolicy, LogTarget, plan};
+use solstone_core_retention::oplog_retention::{OplogRetentionKept, plan_oplog_retention};
 
 struct Bed {
     root: PathBuf,
@@ -68,6 +71,30 @@ impl Bed {
 
 fn date(text: &str) -> NaiveDate {
     NaiveDate::parse_from_str(text, "%Y-%m-%d").expect("a date")
+}
+
+fn oplog_instant(year: i32, month: u32, day: u32) -> chrono::DateTime<FixedOffset> {
+    FixedOffset::east_opt(0)
+        .expect("UTC")
+        .with_ymd_and_hms(year, month, day, 12, 0, 0)
+        .single()
+        .expect("oplog instant")
+}
+
+fn create_oplog(
+    bed: &Bed,
+    year: i32,
+    month: u32,
+    day: u32,
+) -> solstone_core_journal_io::operational_log::OplogWriter {
+    create_oplog_at(
+        JournalRoot::open(&bed.root).expect("journal root"),
+        "source",
+        "run",
+        OplogFormat::Log,
+        oplog_instant(year, month, day),
+    )
+    .expect("oplog")
 }
 
 fn teardown(bed: &Bed) {
@@ -223,6 +250,156 @@ fn chronicle_oplog_prefix_leaves_are_exempt_even_when_malformed() {
     teardown(&bed);
 }
 
+/// Generic health-log retention must never bypass the canonical oplog lease gate.
+/// The dedicated planner below owns released canonical leaves instead.
+#[test]
+fn canonical_oplogs_are_liveness_gated_and_unavailable_days_are_isolated() {
+    let bed = Bed::new("canonical-oplogs");
+    let released_leaf = {
+        let writer = create_oplog(&bed, 2026, 1, 1);
+        writer.leaf_name().to_owned()
+    };
+    let recent_leaf = {
+        let writer = create_oplog(&bed, 2026, 8, 4);
+        writer.leaf_name().to_owned()
+    };
+    let malformed_peer_leaf = {
+        let writer = create_oplog(&bed, 2026, 1, 3);
+        writer.leaf_name().to_owned()
+    };
+    bed.file(
+        "chronicle/20260103/health/oplog--malformed.log",
+        b"not a canonical oplog",
+    );
+    let wrong_kind_leaf = {
+        let writer = create_oplog(&bed, 2026, 1, 4);
+        writer.leaf_name().to_owned()
+    };
+    let wrong_kind = bed
+        .root
+        .join("chronicle/20260104/health")
+        .join(&wrong_kind_leaf);
+    fs::remove_file(&wrong_kind).expect("replace the oplog with a directory");
+    fs::create_dir(&wrong_kind).expect("wrong-kind oplog candidate");
+
+    {
+        let active = create_oplog(&bed, 2026, 1, 2);
+        let active_leaf = active.leaf_name().to_owned();
+        let planned = plan_oplog_retention(
+            &bed.root,
+            &LogPolicy {
+                days: 7,
+                enabled: true,
+            },
+            date("2026-08-05"),
+        );
+
+        assert_eq!(
+            planned
+                .prunable
+                .iter()
+                .map(|target| target.rel())
+                .collect::<Vec<_>>(),
+            vec![format!("chronicle/20260101/health/{released_leaf}")],
+            "only the released old day is admitted: {planned:?}"
+        );
+        assert!(planned.retained.iter().any(|retained| {
+            retained.day() == date("2026-08-04")
+                && retained.leaf().is_none()
+                && retained.reason() == &OplogRetentionKept::TooYoung
+        }));
+        assert!(planned.retained.iter().any(|retained| {
+            retained.day() == date("2026-01-02")
+                && retained.leaf() == Some(active_leaf.as_str())
+                && retained.reason() == &OplogRetentionKept::Active
+        }));
+        assert!(planned.retained.iter().any(|retained| {
+            retained.day() == date("2026-01-03")
+                && retained.leaf().is_none()
+                && retained.reason().detail() == Some("oplog_catalog_malformed")
+        }));
+        assert!(planned.retained.iter().any(|retained| {
+            retained.day() == date("2026-01-04")
+                && retained.leaf().is_none()
+                && retained.reason().detail() == Some("oplog_catalog_unsafe")
+        }));
+        assert!(
+            planned
+                .prunable
+                .iter()
+                .all(|target| target.leaf() != malformed_peer_leaf),
+            "a malformed peer makes its complete day unavailable"
+        );
+        assert!(
+            planned
+                .prunable
+                .iter()
+                .all(|target| target.leaf() != recent_leaf),
+            "recent partitions are not catalogued for deletion"
+        );
+    }
+    teardown(&bed);
+}
+
+#[test]
+fn canonical_oplog_removal_revalidates_identity_before_unlinking() {
+    let bed = Bed::new("oplog-identity-race");
+    let first_leaf = {
+        let writer = create_oplog(&bed, 2026, 1, 1);
+        writer.leaf_name().to_owned()
+    };
+    let second_leaf = {
+        let writer = create_oplog(&bed, 2026, 1, 1);
+        writer.leaf_name().to_owned()
+    };
+    let planned = plan_oplog_retention(
+        &bed.root,
+        &LogPolicy {
+            days: 7,
+            enabled: true,
+        },
+        date("2026-08-05"),
+    );
+    assert_eq!(planned.prunable.len(), 2, "{planned:?}");
+
+    let raced = planned.prunable[0].clone();
+    let raced_path = bed.root.join(raced.rel());
+    let replacement = fs::read(&raced_path).expect("original oplog bytes");
+    fs::remove_file(&raced_path).expect("replace planned oplog");
+    fs::write(&raced_path, replacement).expect("replacement oplog");
+    let unchanged = planned
+        .prunable
+        .iter()
+        .find(|target| target.rel() != raced.rel())
+        .expect("second planned oplog")
+        .rel();
+
+    let outcome = remove_planned_oplogs(&bed.root, &planned.prunable);
+    assert_eq!(outcome.targets.len(), 1, "{outcome:?}");
+    assert!(outcome.targets[0].not_removed.iter().any(|entry| {
+        entry.entry == raced.rel() && entry.reason.contains("changed before removal")
+    }));
+    assert!(
+        outcome.targets[0]
+            .removed
+            .iter()
+            .any(|removed| removed.as_str() == unchanged),
+        "the unchanged planned identity is removed: {outcome:?}"
+    );
+    assert!(raced_path.exists(), "the replacement survives");
+    assert!(
+        !bed.root.join(&unchanged).exists(),
+        "the original target was removed"
+    );
+    assert!(
+        [first_leaf, second_leaf]
+            .iter()
+            .any(|leaf| raced.rel().ends_with(leaf)),
+        "the raced target is one of the canonical leaves"
+    );
+    teardown(&bed);
+}
+
 /// Epoch-millisecond stems, and the exemption that protects a live run.
 #[test]
 fn a_live_talent_run_log_is_exempt_however_old() {
@@ -349,7 +526,7 @@ fn the_cache_class_removes_directories_by_mtime() {
     teardown(&bed);
 }
 
-/// A file-class symlink is an entry to unlink, while an escaping parent is refused.
+/// A file-class symlink is an entry to unlink, while an escaping parent is not a root.
 #[test]
 fn file_classes_unlink_leaf_symlinks_but_refuse_escaping_parents() {
     use std::os::unix::fs::symlink;
@@ -391,25 +568,64 @@ fn file_classes_unlink_leaf_symlinks_but_refuse_escaping_parents() {
     symlink(&external_dir, bed.root.join("tokens")).expect("escaping token directory");
 
     let built = bed.plan(7, "2026-08-05");
-    let target = built.by_class("tokens");
-    assert_eq!(
-        target.len(),
-        1,
-        "the root still plans a dated file: {built:?}"
-    );
-    let outcome = remove_logs(&bed.root, &[target[0].clone()]);
     assert!(
-        outcome.targets[0]
-            .not_removed
-            .iter()
-            .any(|entry| entry.entry == "tokens/20260101.jsonl"),
-        "the escaping parent is refused: {outcome:?}"
+        built.by_class("tokens").is_empty(),
+        "the escaping parent is not scanned: {built:?}"
     );
+    assert!(built.absent_classes.contains(&"tokens"), "{built:?}");
     assert!(external_child.is_file(), "the external file survives");
 
     fs::remove_file(bed.root.join("tokens")).expect("remove token link");
     fs::remove_file(&external_file).expect("external file teardown");
     fs::remove_dir_all(&external_dir).expect("external directory teardown");
+    teardown(&bed);
+}
+
+#[cfg(unix)]
+#[test]
+fn class_roots_do_not_follow_fixed_or_expanded_health_symlinks() {
+    use std::os::unix::fs::symlink;
+
+    let bed = Bed::new("symlinked-class-roots");
+    let external = tempfile::tempdir().expect("external directory");
+    let fixed_health = external.path().join("fixed-health");
+    fs::create_dir(&fixed_health).expect("fixed health directory");
+    fs::write(fixed_health.join("heartbeat.log"), b"outside journal").expect("fixed health leaf");
+    symlink(&fixed_health, bed.root.join("health")).expect("fixed health link");
+
+    let day = bed.root.join("chronicle/20260101");
+    fs::create_dir_all(&day).expect("chronicle day");
+    let expanded_health = external.path().join("expanded-health");
+    fs::create_dir(&expanded_health).expect("expanded health directory");
+    fs::write(expanded_health.join("observer.log"), b"outside journal")
+        .expect("expanded health leaf");
+    symlink(&expanded_health, day.join("health")).expect("expanded health link");
+
+    let built = bed.plan(7, "2026-08-05");
+    assert!(
+        built.by_class("health_diagnostic_logs").is_empty(),
+        "{built:?}"
+    );
+    assert!(
+        built.by_class("chronicle_health_logs").is_empty(),
+        "{built:?}"
+    );
+    assert!(
+        built.absent_classes.contains(&"health_diagnostic_logs"),
+        "{built:?}"
+    );
+    assert!(
+        built.absent_classes.contains(&"chronicle_health_logs"),
+        "{built:?}"
+    );
+    assert!(
+        !built.retained.iter().any(|kept| {
+            kept.rel == "health/heartbeat.log"
+                || kept.rel == "chronicle/20260101/health/observer.log"
+        }),
+        "external entries were not examined: {built:?}"
+    );
+
     teardown(&bed);
 }
 
@@ -465,6 +681,226 @@ fn filetime_set(path: &std::path::Path, when: std::time::SystemTime) {
     let file = fs::File::open(path).expect("open");
     file.set_times(fs::FileTimes::new().set_modified(when))
         .expect("set mtime");
+}
+
+fn filetime_set_day(path: &std::path::Path, day: &str) {
+    let seconds = date(day)
+        .and_hms_opt(0, 0, 0)
+        .expect("midnight")
+        .and_utc()
+        .timestamp();
+    filetime_set(
+        path,
+        std::time::SystemTime::UNIX_EPOCH
+            + std::time::Duration::from_secs(u64::try_from(seconds).expect("post-epoch day")),
+    );
+}
+
+#[test]
+fn root_task_log_ages_by_whole_file_mtime() {
+    let bed = Bed::new("root-task-log");
+    let task_log = bed.file("task_log.txt", b"old task log");
+    filetime_set_day(&task_log, "2026-01-01");
+
+    let built = bed.plan(7, "2026-08-05");
+    assert_eq!(
+        built
+            .by_class("root_task_log")
+            .iter()
+            .map(|target| target.rel())
+            .collect::<Vec<_>>(),
+        vec!["task_log.txt"]
+    );
+
+    filetime_set_day(&task_log, "2026-08-04");
+    let built = bed.plan(7, "2026-08-05");
+    assert!(built.by_class("root_task_log").is_empty(), "{built:?}");
+    assert!(built.retained.iter().any(|kept| {
+        kept.class == "root_task_log"
+            && kept.rel == "task_log.txt"
+            && matches!(kept.reason, Kept::TooYoung(_))
+    }));
+    teardown(&bed);
+}
+
+#[test]
+fn health_diagnostic_logs_match_only_declared_whole_files() {
+    let bed = Bed::new("health-diagnostic-logs");
+    let mut paths = Vec::new();
+    for name in [
+        "heartbeat.log",
+        "steward.log",
+        "retention.log",
+        "service.log",
+    ] {
+        let path = bed.file(&format!("health/{name}"), b"diagnostic");
+        filetime_set_day(&path, "2026-01-01");
+        paths.push(path);
+    }
+    bed.file("health/unrelated.log", b"unrelated");
+
+    let built = bed.plan(7, "2026-08-05");
+    assert_eq!(
+        rels(
+            &built
+                .by_class("health_diagnostic_logs")
+                .into_iter()
+                .cloned()
+                .collect::<Vec<_>>(),
+        ),
+        vec![
+            "health/heartbeat.log",
+            "health/retention.log",
+            "health/service.log",
+            "health/steward.log",
+        ]
+    );
+    assert!(built.retained.iter().any(|kept| {
+        kept.class == "health_diagnostic_logs"
+            && kept.rel == "health/unrelated.log"
+            && kept.reason == Kept::NotAMatch
+    }));
+
+    for path in paths {
+        filetime_set_day(&path, "2026-08-04");
+    }
+    let built = bed.plan(7, "2026-08-05");
+    assert!(
+        built.by_class("health_diagnostic_logs").is_empty(),
+        "{built:?}"
+    );
+    assert_eq!(
+        built
+            .retained
+            .iter()
+            .filter(|kept| {
+                kept.class == "health_diagnostic_logs" && matches!(kept.reason, Kept::TooYoung(_))
+            })
+            .count(),
+        4
+    );
+    teardown(&bed);
+}
+
+#[test]
+fn supervisor_logs_match_the_live_log_and_numbered_backups_only() {
+    let bed = Bed::new("supervisor-logs");
+    let live = bed.file("supervisor.log", b"live");
+    let backup = bed.file("supervisor.3", b"backup");
+    let temporary = bed.file("supervisor.log.compact", b"temporary");
+    for path in [&live, &backup, &temporary] {
+        filetime_set_day(path, "2026-01-01");
+    }
+
+    let built = bed.plan(7, "2026-08-05");
+    assert_eq!(
+        rels(
+            &built
+                .by_class("supervisor_logs")
+                .into_iter()
+                .cloned()
+                .collect::<Vec<_>>(),
+        ),
+        vec!["supervisor.3", "supervisor.log"]
+    );
+    assert!(built.retained.iter().any(|kept| {
+        kept.class == "supervisor_logs"
+            && kept.rel == "supervisor.log.compact"
+            && kept.reason == Kept::NotAMatch
+    }));
+
+    for path in [&live, &backup] {
+        filetime_set_day(path, "2026-08-04");
+    }
+    let built = bed.plan(7, "2026-08-05");
+    assert!(built.by_class("supervisor_logs").is_empty(), "{built:?}");
+    assert_eq!(
+        built
+            .retained
+            .iter()
+            .filter(|kept| {
+                kept.class == "supervisor_logs" && matches!(kept.reason, Kept::TooYoung(_))
+            })
+            .count(),
+        2
+    );
+    teardown(&bed);
+}
+
+#[test]
+fn chronicle_task_logs_age_by_containing_day() {
+    let bed = Bed::new("chronicle-task-log");
+    let old_day = bed.file("chronicle/20260101/task_log.txt", b"old day, young mtime");
+    filetime_set_day(&old_day, "2026-08-04");
+    let young_day = bed.file("chronicle/20260804/task_log.txt", b"young day, old mtime");
+    filetime_set_day(&young_day, "2026-01-01");
+    let invalid_day = bed.file("chronicle/not-a-day/task_log.txt", b"invalid day");
+    filetime_set_day(&invalid_day, "2026-01-01");
+
+    let built = bed.plan(7, "2026-08-05");
+    assert_eq!(
+        built
+            .by_class("chronicle_task_log")
+            .iter()
+            .map(|target| target.rel())
+            .collect::<Vec<_>>(),
+        vec!["chronicle/20260101/task_log.txt"]
+    );
+    assert!(built.retained.iter().any(|kept| {
+        kept.class == "chronicle_task_log"
+            && kept.rel == "chronicle/20260804/task_log.txt"
+            && matches!(kept.reason, Kept::TooYoung(_))
+    }));
+    assert!(built.retained.iter().any(|kept| {
+        kept.class == "chronicle_task_log"
+            && kept.rel == "chronicle/not-a-day/task_log.txt"
+            && kept.reason == Kept::Undateable
+    }));
+    teardown(&bed);
+}
+
+#[cfg(unix)]
+#[test]
+fn exact_name_classes_keep_symlink_leaves_without_following_them() {
+    use std::os::unix::fs::symlink;
+
+    let bed = Bed::new("exact-name-symlinks");
+    let external = std::env::temp_dir().join(format!(
+        "retention-exact-name-target-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos()
+    ));
+    fs::write(&external, b"outside the journal").expect("external file");
+    let cases = [
+        ("task_log.txt", "root_task_log"),
+        ("health/heartbeat.log", "health_diagnostic_logs"),
+        ("supervisor.log", "supervisor_logs"),
+        ("chronicle/20260101/task_log.txt", "chronicle_task_log"),
+    ];
+    for (rel, _) in cases {
+        let path = bed.root.join(rel);
+        fs::create_dir_all(path.parent().expect("parent")).expect("parent");
+        symlink(&external, path).expect("link");
+    }
+
+    let built = bed.plan(7, "2026-08-05");
+    for (rel, class) in cases {
+        assert!(built.by_class(class).is_empty(), "{class}: {built:?}");
+        assert!(built.retained.iter().any(|kept| {
+            kept.class == class && kept.rel == rel && kept.reason == Kept::NotAMatch
+        }));
+        assert!(
+            bed.root.join(rel).symlink_metadata().is_ok(),
+            "{rel} survives"
+        );
+    }
+    assert!(external.is_file(), "the target was not followed or removed");
+
+    fs::remove_file(&external).expect("external teardown");
+    teardown(&bed);
 }
 
 /// ⛔ An undateable entry is kept and named, never assumed old.
@@ -573,10 +1009,12 @@ fn absent_classes_are_named_rather_than_silently_skipped() {
     assert_eq!(built.prunable.len(), 1);
     assert_eq!(
         built.absent_classes.len(),
-        CLASSES.len() - 1,
-        "every class but tokens is absent from this journal: {built:?}"
+        CLASSES.len() - 3,
+        "the journal root classes and tokens are present: {built:?}"
     );
     assert!(!built.absent_classes.contains(&"tokens"));
+    assert!(!built.absent_classes.contains(&"root_task_log"));
+    assert!(!built.absent_classes.contains(&"supervisor_logs"));
     teardown(&bed);
 }
 
@@ -584,6 +1022,13 @@ fn absent_classes_are_named_rather_than_silently_skipped() {
 #[test]
 fn every_class_in_the_table_can_produce_a_target() {
     let bed = Bed::new("every-class");
+    let root_task = bed.file("task_log.txt", b"a");
+    filetime_set_day(&root_task, "2026-01-01");
+    let diagnostic = bed.file("health/heartbeat.log", b"a");
+    filetime_set_day(&diagnostic, "2026-01-01");
+    let supervisor = bed.file("supervisor.log", b"a");
+    filetime_set_day(&supervisor, "2026-01-01");
+    bed.file("chronicle/20260101/task_log.txt", b"a");
     bed.file("chronicle/20260101/health/x.log", b"a");
     bed.file("talents/scribe/1767225600000.jsonl", b"a");
     bed.file("talents/20260101.jsonl", b"{\"ts\":1767225600000}\n");
@@ -687,14 +1132,12 @@ fn compactions(
     days: u32,
     today: &str,
 ) -> Vec<solstone_core_retention::logs::Compaction> {
-    plan_compactions(
-        &bed.root,
-        &LogPolicy {
-            days,
-            enabled: true,
-        },
-        date(today),
-    )
+    let policy = LogPolicy {
+        days,
+        enabled: true,
+    };
+    let built = plan(&bed.root, &policy, date(today));
+    plan_compactions(&bed.root, &policy, date(today), &built)
 }
 
 /// 🔴 The second never-pruned log: JSONL despite its `.log` extension.
@@ -724,62 +1167,15 @@ fn the_retention_log_is_compacted_by_its_json_timestamp() {
     teardown(&bed);
 }
 
-/// The root task log's format is different: TSV with a leading epoch.
 #[test]
-fn the_root_task_log_is_compacted_by_its_leading_epoch() {
+fn task_log_is_whole_file_retained_not_compacted() {
     let bed = Bed::new("task-log");
-    // 2026-01-01 and 2026-08-04 in epoch seconds.
-    bed.file(
-        "task_log.txt",
-        b"1767225600\tan old task\n1786492800\ta recent task\n",
-    );
+    let task_log = bed.file("task_log.txt", b"1767225600\tan old task\n");
+    filetime_set_day(&task_log, "2026-01-01");
 
-    let planned = compactions(&bed, 7, "2026-08-05");
-    assert_eq!(planned.len(), 1, "{planned:?}");
-    assert_eq!(planned[0].name(), "root_task_log");
-    assert_eq!(planned[0].lines_dropped, 1);
-
-    let outcome = compact_log(&bed.root, &planned[0]);
-    assert!(outcome.targets[0].not_removed.is_empty(), "{outcome:?}");
-    let after = fs::read_to_string(bed.root.join("task_log.txt")).expect("read");
-    assert_eq!(after, "1786492800\ta recent task\n");
-    teardown(&bed);
-}
-
-/// ⛔ An undateable line is KEPT and counted, never dropped.
-#[test]
-fn an_undateable_line_survives_compaction_and_is_counted() {
-    let bed = Bed::new("undateable-lines");
-    bed.file(
-        "task_log.txt",
-        b"not a dated line at all\n\
-          1767225600\tan old task\n\
-          \tno epoch but a tab\n\
-          also-not-dated\n\
-          1767225600\n",
-    );
-
-    let planned = compactions(&bed, 7, "2026-08-05");
-    assert_eq!(planned.len(), 1);
-    assert_eq!(planned[0].lines_dropped, 1, "only the dated old line goes");
-    // ⛔ The last line is a VALID epoch with no tab. A reader that did not require
-    // the separator would date it and drop it, silently truncating an undated log.
-    assert_eq!(planned[0].undateable_kept, 4);
-
-    let performed = compact_log(&bed.root, &planned[0]);
-    assert!(
-        performed.targets[0].not_removed.is_empty(),
-        "the compaction must succeed for this assertion to mean anything: {performed:?}"
-    );
-    let after = fs::read_to_string(bed.root.join("task_log.txt")).expect("read");
-    assert!(after.contains("not a dated line at all"));
-    assert!(after.contains("no epoch but a tab"));
-    assert!(after.contains("also-not-dated"));
-    assert!(
-        after.contains("1767225600\n"),
-        "a tab-less line must survive even when it parses as an epoch"
-    );
-    assert!(!after.contains("an old task"));
+    let built = bed.plan(7, "2026-08-05");
+    assert_eq!(built.by_class("root_task_log").len(), 1, "{built:?}");
+    assert!(compactions(&bed, 7, "2026-08-05").is_empty());
     teardown(&bed);
 }
 
@@ -804,7 +1200,10 @@ fn a_malformed_json_line_is_kept() {
 #[test]
 fn a_log_with_nothing_old_is_left_untouched() {
     let bed = Bed::new("no-op");
-    let path = bed.file("task_log.txt", b"1786492800\ta recent task\n");
+    let path = bed.file(
+        "health/retention.log",
+        b"{\"timestamp\": \"2026-08-04T00:00:00\"}\n",
+    );
     let before = fs::metadata(&path).expect("metadata").modified().ok();
 
     assert!(
@@ -823,14 +1222,16 @@ fn a_log_with_nothing_old_is_left_untouched() {
 fn planning_a_compaction_does_not_rewrite() {
     let bed = Bed::new("plan-only");
     let path = bed.file(
-        "task_log.txt",
-        b"1767225600\tan old task\n1786492800\ta recent task\n",
+        "health/retention.log",
+        b"{\"timestamp\": \"2026-01-01T00:00:00\"}\n\
+          {\"timestamp\": \"2026-08-04T00:00:00\"}\n",
     );
     let planned = compactions(&bed, 7, "2026-08-05");
     assert_eq!(planned.len(), 1);
     assert_eq!(
         fs::read_to_string(&path).expect("read"),
-        "1767225600\tan old task\n1786492800\ta recent task\n",
+        "{\"timestamp\": \"2026-01-01T00:00:00\"}\n\
+          {\"timestamp\": \"2026-08-04T00:00:00\"}\n",
         "the plan is a value; nothing is written until it is performed"
     );
     teardown(&bed);
@@ -843,8 +1244,9 @@ fn compaction_preserves_a_tightened_mode() {
 
     let bed = Bed::new("mode");
     let path = bed.file(
-        "task_log.txt",
-        b"1767225600\tan old task\n1786492800\ta recent task\n",
+        "health/retention.log",
+        b"{\"timestamp\": \"2026-01-01T00:00:00\"}\n\
+          {\"timestamp\": \"2026-08-04T00:00:00\"}\n",
     );
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("chmod");
 
@@ -866,19 +1268,21 @@ fn compaction_preserves_a_tightened_mode() {
 #[test]
 fn a_disabled_window_compacts_nothing() {
     let bed = Bed::new("disabled-compact");
-    bed.file("task_log.txt", b"1767225600\tan old task\n");
-    assert!(plan_compactions(&bed.root, &LogPolicy::default(), date("2026-08-05")).is_empty());
+    bed.file(
+        "health/retention.log",
+        b"{\"timestamp\": \"2026-01-01T00:00:00\"}\n",
+    );
+    let disabled = LogPolicy::default();
+    let disabled_plan = plan(&bed.root, &disabled, date("2026-08-05"));
+    assert!(plan_compactions(&bed.root, &disabled, date("2026-08-05"), &disabled_plan).is_empty());
+    let unset = LogPolicy {
+        days: 0,
+        enabled: true,
+    };
+    let unset_plan = plan(&bed.root, &unset, date("2026-08-05"));
     assert!(
-        plan_compactions(
-            &bed.root,
-            &LogPolicy {
-                days: 0,
-                enabled: true
-            },
-            date("2026-08-05")
-        )
-        .is_empty(),
-        "days: 0 must not empty the journal's task log"
+        plan_compactions(&bed.root, &unset, date("2026-08-05"), &unset_plan).is_empty(),
+        "days: 0 must not compact the journal's retention log"
     );
     teardown(&bed);
 }
@@ -891,11 +1295,10 @@ fn an_absent_append_only_log_is_skipped() {
     teardown(&bed);
 }
 
-/// Both append-only logs are reachable, so neither row is dead.
+/// The historical retention log remains compactable when it is not whole-file stale.
 #[test]
 fn every_compactable_log_can_produce_a_plan() {
-    let bed = Bed::new("both-compact");
-    bed.file("task_log.txt", b"1767225600\tan old task\n");
+    let bed = Bed::new("retention-compact");
     bed.file(
         "health/retention.log",
         b"{\"timestamp\": \"2026-01-01T00:00:00\"}\n",
@@ -910,5 +1313,40 @@ fn every_compactable_log_can_produce_a_plan() {
             log.name
         );
     }
+    teardown(&bed);
+}
+
+#[test]
+fn stale_retention_log_is_deleted_instead_of_compacted() {
+    let bed = Bed::new("retention-delete-not-compact");
+    let retention = bed.file(
+        "health/retention.log",
+        b"{\"timestamp\": \"2026-01-01T00:00:00\"}\n",
+    );
+    filetime_set_day(&retention, "2026-01-01");
+
+    let policy = LogPolicy {
+        days: 7,
+        enabled: true,
+    };
+    let built = plan(&bed.root, &policy, date("2026-08-05"));
+    assert_eq!(
+        built.by_class("health_diagnostic_logs").len(),
+        1,
+        "{built:?}"
+    );
+    assert!(
+        plan_compactions(&bed.root, &policy, date("2026-08-05"), &built).is_empty(),
+        "a file planned for deletion must not also be rewritten"
+    );
+
+    filetime_set_day(&retention, "2026-08-04");
+    let built = plan(&bed.root, &policy, date("2026-08-05"));
+    let planned = plan_compactions(&bed.root, &policy, date("2026-08-05"), &built);
+    assert_eq!(
+        planned.len(),
+        1,
+        "young retention log still compacts: {planned:?}"
+    );
     teardown(&bed);
 }

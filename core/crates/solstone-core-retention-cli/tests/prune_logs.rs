@@ -16,6 +16,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
+use chrono::{FixedOffset, TimeZone};
+use solstone_core_journal_io::JournalRoot;
+use solstone_core_journal_io::operational_log::{OplogFormat, create_oplog_at};
+
 struct Journal {
     root: PathBuf,
 }
@@ -102,8 +106,64 @@ fn populate_all_classes(journal: &Journal) {
     );
 }
 
+fn released_old_oplog(journal: &Journal) -> String {
+    let instant = FixedOffset::east_opt(0)
+        .expect("UTC")
+        .with_ymd_and_hms(2026, 1, 1, 12, 0, 0)
+        .single()
+        .expect("oplog instant");
+    let writer = create_oplog_at(
+        JournalRoot::open(&journal.root).expect("journal root"),
+        "source",
+        "run",
+        OplogFormat::Log,
+        instant,
+    )
+    .expect("oplog");
+    writer.leaf_name().to_owned()
+}
+
 #[test]
-fn prune_logs_removes_every_class_compacts_both_logs_and_keeps_negative_twins() {
+fn prune_logs_reports_and_removes_the_same_released_canonical_oplog() {
+    let journal = Journal::new("canonical-oplog");
+    let leaf = released_old_oplog(&journal);
+    let rel = format!("chronicle/20260101/health/{leaf}");
+
+    let preview = run(&journal, false);
+    assert!(preview.status.success(), "{preview:?}");
+    let preview_receipt: serde_json::Value =
+        serde_json::from_slice(&preview.stdout).expect("preview JSON receipt");
+    assert_eq!(
+        preview_receipt["plan"]["oplogs"]["prunable"]
+            .as_array()
+            .map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(
+        preview_receipt["plan"]["oplogs"]["prunable"][0]["path"],
+        rel
+    );
+
+    let execute = run(&journal, true);
+    assert!(execute.status.success(), "{execute:?}");
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&execute.stdout).expect("execute JSON receipt");
+    assert_eq!(
+        receipt["detail"]["plan"]["oplogs"]["prunable"][0]["path"],
+        rel
+    );
+    assert_eq!(
+        receipt["detail"]["plan"]["oplogs"]["prunable"][0]["removed"],
+        true
+    );
+    assert!(
+        !journal.root.join(rel).exists(),
+        "the planned oplog was removed"
+    );
+}
+
+#[test]
+fn prune_logs_removes_every_existing_class_compacts_retention_log_and_keeps_negative_twins() {
     let journal = Journal::new("all-classes");
     populate_all_classes(&journal);
     journal.file("tokens/20260804.jsonl", b"recent token\n");
@@ -116,14 +176,6 @@ fn prune_logs_removes_every_class_compacts_both_logs_and_keeps_negative_twins() 
     let preview_receipt: serde_json::Value =
         serde_json::from_slice(&preview.stdout).expect("preview JSON receipt");
     assert_eq!(
-        preview_receipt["plan"]["compactions"]["root_task_log"]["exists"],
-        true
-    );
-    assert_eq!(
-        preview_receipt["plan"]["compactions"]["root_task_log"]["planned"],
-        true
-    );
-    assert_eq!(
         preview_receipt["plan"]["compactions"]["retention_log"]["planned"],
         true
     );
@@ -135,11 +187,7 @@ fn prune_logs_removes_every_class_compacts_both_logs_and_keeps_negative_twins() 
         receipt["detail"]["plan"]["by_class"]
             .as_object()
             .map(|map| map.len()),
-        Some(10)
-    );
-    assert_eq!(
-        receipt["detail"]["plan"]["compactions"]["root_task_log"]["rewritten"],
-        true
+        Some(14)
     );
     assert_eq!(
         receipt["detail"]["plan"]["compactions"]["retention_log"]["rewritten"],
@@ -178,7 +226,7 @@ fn prune_logs_removes_every_class_compacts_both_logs_and_keeps_negative_twins() 
     }
     assert_eq!(
         fs::read(journal.root.join("task_log.txt")).expect("task log"),
-        b"1786492800\trecent task\nnot a dated task\n"
+        b"1767225600\told task\n1786492800\trecent task\nnot a dated task\n"
     );
     assert_eq!(
         fs::read(journal.root.join("health/retention.log")).expect("retention log"),

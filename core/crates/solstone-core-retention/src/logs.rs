@@ -36,7 +36,7 @@
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Datelike, NaiveDate, Utc};
-use solstone_core_journal_io::paths::{DirEntryKind, list_dir_entries};
+use solstone_core_journal_io::paths::{DirEntryKind, is_day_key, list_dir_entries};
 
 /// Where a class's entries live, relative to the journal root.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -77,17 +77,61 @@ pub enum EntryKind {
     Directory,
 }
 
+/// Which leaves in a class root are eligible for retention.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LeafMatcher {
+    /// Extensions an entry must carry, or empty for any extension.
+    ///
+    /// ⚠ Extensions rather than glob patterns: every existing pattern is `*.<ext>`,
+    /// and a glob engine here would be a second place for a path to be interpreted.
+    Extensions(&'static [&'static str]),
+    /// A finite set of exact leaf names.
+    Exact(&'static [&'static str]),
+    /// Exact leaves plus numbered rotated backups.
+    ExactAndNumberedBackups {
+        exact: &'static [&'static str],
+        numbered_prefix: &'static str,
+    },
+}
+
+impl LeafMatcher {
+    fn matches(self, name: &str, extension: Option<&str>) -> bool {
+        match self {
+            Self::Extensions(extensions) => {
+                extensions.is_empty()
+                    || extension.is_some_and(|extension| {
+                        extensions
+                            .iter()
+                            .any(|wanted| wanted.eq_ignore_ascii_case(extension))
+                    })
+            }
+            Self::Exact(names) => names.contains(&name),
+            Self::ExactAndNumberedBackups {
+                exact,
+                numbered_prefix,
+            } => {
+                exact.contains(&name)
+                    || name.strip_prefix(numbered_prefix).is_some_and(|suffix| {
+                        !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+                    })
+            }
+        }
+    }
+
+    /// Existing extension classes explicitly allow file symlinks so the removal door
+    /// can unlink the leaf without following it. Exact legacy-log classes retain every
+    /// symlink: only a real regular file can be an old whole-file log.
+    fn permits_file_symlink(self) -> bool {
+        matches!(self, Self::Extensions(_))
+    }
+}
+
 /// One class of prunable operational data.
 #[derive(Clone, Copy, Debug)]
 pub struct Class {
     pub name: &'static str,
     pub location: Location,
-    /// Extensions an entry must carry, or empty for any.
-    ///
-    /// ⚠ Extensions rather than glob patterns: every pattern the reference uses is
-    /// `*.<ext>`, and a glob engine here would be a second place for a path to be
-    /// interpreted.
-    pub extensions: &'static [&'static str],
+    pub leaf: LeafMatcher,
     pub dated_by: DatedBy,
     pub entry: EntryKind,
     /// Stem suffixes never pruned, however old.
@@ -96,22 +140,69 @@ pub struct Class {
     pub exempt_leaf_prefixes: &'static [&'static str],
 }
 
-/// Every class, mirroring the reference's `CLASS_NAMES` plus the one it omitted.
+/// Every class, mirroring the reference's `CLASS_NAMES` plus legacy whole-file logs.
 ///
-/// ⚠ The reference declares **ten** classes and performs an eleventh operation
-/// (compacting the root task log) that is not one. The count matters only because a
-/// plan asserts it covered every row.
+/// The count matters only because a plan asserts it covered every row.
 pub const CLASSES: &[Class] = &[
+    Class {
+        name: "root_task_log",
+        location: Location::Fixed(""),
+        leaf: LeafMatcher::Exact(&["task_log.txt"]),
+        dated_by: DatedBy::Mtime,
+        entry: EntryKind::File,
+        exempt_stem_suffixes: &[],
+        exempt_leaf_prefixes: &[],
+    },
+    Class {
+        name: "health_diagnostic_logs",
+        location: Location::Fixed("health"),
+        leaf: LeafMatcher::Exact(&[
+            "retention.log",
+            "heartbeat.log",
+            "steward.log",
+            "service.log",
+        ]),
+        dated_by: DatedBy::Mtime,
+        entry: EntryKind::File,
+        exempt_stem_suffixes: &[],
+        exempt_leaf_prefixes: &[],
+    },
+    Class {
+        name: "supervisor_logs",
+        location: Location::Fixed(""),
+        leaf: LeafMatcher::ExactAndNumberedBackups {
+            exact: &["supervisor.log"],
+            numbered_prefix: "supervisor.",
+        },
+        dated_by: DatedBy::Mtime,
+        entry: EntryKind::File,
+        exempt_stem_suffixes: &[],
+        exempt_leaf_prefixes: &[],
+    },
+    Class {
+        name: "chronicle_task_log",
+        location: Location::Expand {
+            base: "chronicle",
+            tail: None,
+        },
+        leaf: LeafMatcher::Exact(&["task_log.txt"]),
+        dated_by: DatedBy::ExpandedDir,
+        entry: EntryKind::File,
+        exempt_stem_suffixes: &[],
+        exempt_leaf_prefixes: &[],
+    },
     Class {
         name: "chronicle_health_logs",
         location: Location::Expand {
             base: "chronicle",
             tail: Some("health"),
         },
-        extensions: &["log", "jsonl"],
+        leaf: LeafMatcher::Extensions(&["log", "jsonl"]),
         dated_by: DatedBy::ExpandedDir,
         entry: EntryKind::File,
         exempt_stem_suffixes: &[],
+        // Canonical oplogs require a descriptor-bound lease probe before removal;
+        // `oplog_retention` owns that separate liveness-gated pass.
         exempt_leaf_prefixes: &["oplog--"],
     },
     Class {
@@ -120,7 +211,7 @@ pub const CLASSES: &[Class] = &[
             base: "talents",
             tail: None,
         },
-        extensions: &["jsonl"],
+        leaf: LeafMatcher::Extensions(&["jsonl"]),
         dated_by: DatedBy::StemEpochMillis,
         entry: EntryKind::File,
         // ⛔ A live run's log. Deleting it truncates a talent mid-run.
@@ -130,7 +221,7 @@ pub const CLASSES: &[Class] = &[
     Class {
         name: "talent_day_index",
         location: Location::Fixed("talents"),
-        extensions: &["jsonl"],
+        leaf: LeafMatcher::Extensions(&["jsonl"]),
         dated_by: DatedBy::Stem,
         entry: EntryKind::File,
         exempt_stem_suffixes: &[],
@@ -139,7 +230,7 @@ pub const CLASSES: &[Class] = &[
     Class {
         name: "cogitate_history_cache",
         location: Location::Fixed(".cache/cogitate-history"),
-        extensions: &[],
+        leaf: LeafMatcher::Extensions(&[]),
         dated_by: DatedBy::Mtime,
         entry: EntryKind::Directory,
         // ⚠ A cache session may be a symlink, but the contained removal door
@@ -151,7 +242,7 @@ pub const CLASSES: &[Class] = &[
     Class {
         name: "tokens",
         location: Location::Fixed("tokens"),
-        extensions: &["jsonl"],
+        leaf: LeafMatcher::Extensions(&["jsonl"]),
         dated_by: DatedBy::Stem,
         entry: EntryKind::File,
         exempt_stem_suffixes: &[],
@@ -160,7 +251,7 @@ pub const CLASSES: &[Class] = &[
     Class {
         name: "local_inference",
         location: Location::Fixed("health/local-inference"),
-        extensions: &["jsonl"],
+        leaf: LeafMatcher::Extensions(&["jsonl"]),
         dated_by: DatedBy::Stem,
         entry: EntryKind::File,
         exempt_stem_suffixes: &[],
@@ -169,7 +260,7 @@ pub const CLASSES: &[Class] = &[
     Class {
         name: "awareness_logs",
         location: Location::Fixed("awareness"),
-        extensions: &["jsonl"],
+        leaf: LeafMatcher::Extensions(&["jsonl"]),
         dated_by: DatedBy::Stem,
         entry: EntryKind::File,
         exempt_stem_suffixes: &[],
@@ -178,7 +269,7 @@ pub const CLASSES: &[Class] = &[
     Class {
         name: "config_actions",
         location: Location::Fixed("config/actions"),
-        extensions: &["jsonl"],
+        leaf: LeafMatcher::Extensions(&["jsonl"]),
         dated_by: DatedBy::Stem,
         entry: EntryKind::File,
         exempt_stem_suffixes: &[],
@@ -190,7 +281,7 @@ pub const CLASSES: &[Class] = &[
             base: "facets",
             tail: Some("logs"),
         },
-        extensions: &["jsonl"],
+        leaf: LeafMatcher::Extensions(&["jsonl"]),
         dated_by: DatedBy::Stem,
         entry: EntryKind::File,
         exempt_stem_suffixes: &[],
@@ -200,7 +291,7 @@ pub const CLASSES: &[Class] = &[
     Class {
         name: "pruning_runs",
         location: Location::Fixed("health/pruning-runs"),
-        extensions: &["jsonl"],
+        leaf: LeafMatcher::Extensions(&["jsonl"]),
         dated_by: DatedBy::Stem,
         entry: EntryKind::File,
         exempt_stem_suffixes: &[],
@@ -314,6 +405,29 @@ fn parse_day(text: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(text, "%Y%m%d").ok()
 }
 
+/// Valid direct Chronicle day directories, without following a replaced root or day.
+pub(crate) fn chronicle_days(journal: &Path) -> Vec<NaiveDate> {
+    let chronicle = journal.join("chronicle");
+    if !is_real_directory(&chronicle) {
+        return Vec::new();
+    }
+    let Ok(entries) = list_dir_entries(&chronicle) else {
+        return Vec::new();
+    };
+    entries
+        .into_iter()
+        .filter(|entry| entry.kind == DirEntryKind::Directory)
+        .filter_map(|entry| entry.name.into_string().ok())
+        .filter(|name| is_day_key(name))
+        .filter_map(|name| parse_day(&name))
+        .collect()
+}
+
+/// Whether `path` is an actual directory rather than a symlink to one.
+fn is_real_directory(path: &Path) -> bool {
+    matches!(path.symlink_metadata(), Ok(metadata) if metadata.file_type().is_dir())
+}
+
 /// Parse an epoch-millisecond stem into a UTC date.
 ///
 /// ⚠ The reference reads this in local time. This reads UTC, which can differ by one
@@ -408,11 +522,11 @@ fn class_roots(journal: &Path, class: &Class) -> Option<Vec<(PathBuf, Option<Str
     match class.location {
         Location::Fixed(rel) => {
             let path = journal.join(rel);
-            path.is_dir().then(|| vec![(path, None)])
+            is_real_directory(&path).then(|| vec![(path, None)])
         }
         Location::Expand { base, tail } => {
             let base_path = journal.join(base);
-            if !base_path.is_dir() {
+            if !is_real_directory(&base_path) {
                 return None;
             }
             let entries = list_dir_entries(&base_path).ok()?;
@@ -431,7 +545,7 @@ fn class_roots(journal: &Path, class: &Class) -> Option<Vec<(PathBuf, Option<Str
                     Some(tail) => entry.path.join(tail),
                     None => entry.path.clone(),
                 };
-                if path.is_dir() {
+                if is_real_directory(&path) {
                     roots.push((path, Some(name.to_owned())));
                 }
             }
@@ -479,6 +593,7 @@ pub fn plan(journal: &Path, policy: &LogPolicy, today: NaiveDate) -> LogPlan {
                     EntryKind::Directory => DirEntryKind::Directory,
                 };
                 let matches_file_symlink = class.entry == EntryKind::File
+                    && class.leaf.permits_file_symlink()
                     && entry.kind == DirEntryKind::Other
                     && matches!(entry.path.symlink_metadata(), Ok(meta) if meta.file_type().is_symlink())
                     // A link to a directory is not a file target. Keep the directory
@@ -489,14 +604,7 @@ pub fn plan(journal: &Path, policy: &LogPolicy, today: NaiveDate) -> LogPlan {
                     continue;
                 }
                 let (stem, extension) = split_name(name);
-                if !class.extensions.is_empty()
-                    && !extension.is_some_and(|extension| {
-                        class
-                            .extensions
-                            .iter()
-                            .any(|wanted| wanted.eq_ignore_ascii_case(extension))
-                    })
-                {
+                if !class.leaf.matches(name, extension) {
                     built.retained.push(retained(Kept::NotAMatch));
                     continue;
                 }
@@ -589,14 +697,10 @@ pub fn day_key(day: NaiveDate) -> String {
 
 /// How a line in an append-only log carries its date.
 ///
-/// ⚠ Two historical formats, and neither is guessable from the filename:
-/// `task_log.txt` is tab-separated with a leading epoch-second field, and
-/// `health/retention.log` is **JSONL despite its extension**, carrying an ISO-8601
-/// `timestamp`.
+/// The historical `health/retention.log` is **JSONL despite its extension**, carrying
+/// an ISO-8601 `timestamp`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LineDate {
-    /// A leading epoch-second field, tab-separated.
-    LeadingEpochTsv,
     /// A JSON object with an ISO-8601 `timestamp` field.
     JsonTimestampField,
 }
@@ -610,22 +714,11 @@ pub struct Compactable {
 }
 
 /// Every append-only log this pass compacts.
-///
-/// 🔴 `health/retention.log` is a historical root-level log. Unlike
-/// `health/pruning-runs/`, it is one file rather than a set of dated ones, so deleting
-/// pre-migration content would discard the whole history instead of its old end.
-pub const COMPACTABLE: &[Compactable] = &[
-    Compactable {
-        name: "root_task_log",
-        rel: "task_log.txt",
-        line_date: LineDate::LeadingEpochTsv,
-    },
-    Compactable {
-        name: "retention_log",
-        rel: "health/retention.log",
-        line_date: LineDate::JsonTimestampField,
-    },
-];
+pub const COMPACTABLE: &[Compactable] = &[Compactable {
+    name: "retention_log",
+    rel: "health/retention.log",
+    line_date: LineDate::JsonTimestampField,
+}];
 
 /// A proposed rewrite of one append-only log.
 ///
@@ -663,17 +756,6 @@ impl Compaction {
 /// The date a line carries, or `None` if it carries none this reader understands.
 fn line_day(line: &[u8], format: LineDate) -> Option<NaiveDate> {
     match format {
-        LineDate::LeadingEpochTsv => {
-            let text = std::str::from_utf8(line).ok()?;
-            let (epoch, rest) = text.split_once('\t')?;
-            // ⛔ A separator is required: a line with no tab is not a dated record,
-            // and reading its whole content as an epoch would date arbitrary prose.
-            if rest.is_empty() && epoch.is_empty() {
-                return None;
-            }
-            let seconds: i64 = epoch.trim().parse().ok()?;
-            DateTime::from_timestamp(seconds, 0).map(|when| when.date_naive())
-        }
         LineDate::JsonTimestampField => {
             let row: serde_json::Value = serde_json::from_slice(line).ok()?;
             let stamped = row.get("timestamp")?.as_str()?;
@@ -693,12 +775,20 @@ fn line_day(line: &[u8], format: LineDate) -> Option<NaiveDate> {
 ///
 /// Returns an entry only where something would actually change, so a caller cannot
 /// rewrite a file to identical bytes and reset its mtime for nothing.
-pub fn plan_compactions(journal: &Path, policy: &LogPolicy, today: NaiveDate) -> Vec<Compaction> {
+pub fn plan_compactions(
+    journal: &Path,
+    policy: &LogPolicy,
+    today: NaiveDate,
+    plan: &LogPlan,
+) -> Vec<Compaction> {
     let Some(cutoff) = cutoff(policy, today) else {
         return Vec::new();
     };
     let mut planned = Vec::new();
     for log in COMPACTABLE {
+        if plan.prunable.iter().any(|target| target.rel() == log.rel) {
+            continue;
+        }
         let path = journal.join(log.rel);
         let Ok(original) = std::fs::read(&path) else {
             continue;

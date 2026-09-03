@@ -11,8 +11,6 @@ use serde_json::{Map, Value};
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TalentRunLogMigrationReport {
     pub moved: usize,
-    pub symlinks_removed: usize,
-    pub symlinks_created: usize,
     pub day_index_entries: usize,
     pub skipped: usize,
     pub errors: usize,
@@ -26,15 +24,6 @@ pub fn migrate_agent_run_logs(
     if !agents.exists() {
         return Ok(report);
     }
-    for path in sorted(&agents)? {
-        if symlink(&path) && path.extension().and_then(|v| v.to_str()) == Some("jsonl") {
-            if !dry_run {
-                fs::remove_file(&path).map_err(io)?;
-            }
-            report.symlinks_removed += 1;
-        }
-    }
-    let mut latest = BTreeMap::<String, (u64, String)>::new();
     let mut indexes = BTreeMap::<String, Vec<Value>>::new();
     for path in sorted(&agents)? {
         if symlink(&path)
@@ -68,15 +57,7 @@ pub fn migrate_agent_run_logs(
             fs::rename(&path, &dest).map_err(io)?;
         }
         report.moved += 1;
-        if !active && let Ok(number) = id.parse::<u64>() {
-            latest
-                .entry(name.to_owned())
-                .and_modify(|old| {
-                    if number > old.0 {
-                        *old = (number, id.to_owned())
-                    }
-                })
-                .or_insert((number, id.to_owned()));
+        if !active && id.parse::<u64>().is_ok() {
             let day = first
                 .get("day")
                 .and_then(Value::as_str)
@@ -122,14 +103,6 @@ pub fn migrate_agent_run_logs(
                 report.day_index_entries += 1;
             }
         }
-    }
-    for (name, (_, id)) in latest {
-        let safe = name.replace(':', "--");
-        let link = agents.join(format!("{safe}.log"));
-        if !dry_run {
-            create_link(&format!("{safe}/{id}.jsonl"), &link)?;
-        }
-        report.symlinks_created += 1;
     }
     for (day, entries) in indexes {
         if dry_run {
@@ -220,18 +193,6 @@ fn symlink(path: &Path) -> bool {
 fn symlink(_: &Path) -> bool {
     false
 }
-#[cfg(unix)]
-fn create_link(target: &str, link: &Path) -> Result<(), TalentStorageError> {
-    use std::os::unix::fs::symlink;
-    let temporary = link.with_extension("log.tmp");
-    let _ = fs::remove_file(&temporary);
-    symlink(target, &temporary).map_err(io)?;
-    fs::rename(temporary, link).map_err(io)
-}
-#[cfg(not(unix))]
-fn create_link(_: &str, _: &Path) -> Result<(), TalentStorageError> {
-    Ok(())
-}
 fn io(error: std::io::Error) -> TalentStorageError {
     TalentStorageError(error.to_string())
 }
@@ -240,7 +201,7 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
     #[test]
-    fn moves_log_creates_link_and_index() {
+    fn moves_log_and_creates_day_index() {
         let temp = tempdir().unwrap();
         let agents = temp.path().join("agents");
         fs::create_dir_all(&agents).unwrap();
@@ -251,8 +212,9 @@ mod tests {
         .unwrap();
         let report = migrate_agent_run_logs(temp.path(), false).unwrap();
         assert_eq!(report.moved, 1);
+        assert_eq!(report.day_index_entries, 1);
         assert!(agents.join("chat/1700000000000.jsonl").exists());
-        assert!(agents.join("chat.log").exists());
+        assert!(!agents.join("chat.log").exists());
     }
     #[test]
     fn day_index_reports_error_status_and_runtime_from_the_tail_event() {

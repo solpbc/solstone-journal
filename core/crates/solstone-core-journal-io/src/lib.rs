@@ -33,6 +33,7 @@ pub mod inventory_budget;
 pub mod journal_root;
 #[cfg(any(unix, windows))]
 pub mod lease;
+pub mod legacy_log_alias;
 #[cfg(any(unix, windows))]
 pub mod locking;
 mod managed_log_field_admission;
@@ -163,6 +164,12 @@ pub use lease::probe_exclusive_flock_no_release;
 pub use lease::{
     DEFAULT_LEASE_ATTEMPTS, DEFAULT_LEASE_MODE, DEFAULT_LEASE_RETRY_MAX, FileLease, LeaseOptions,
     acquire_file_lease,
+};
+pub use legacy_log_alias::{
+    LegacyAliasCleanupError, LegacyAliasCleanupReport, LegacyAliasDisposition,
+    LegacyAliasObservation, LegacyAliasObservationResult, LegacyAliasRefusal, LegacyAliasRefused,
+    LegacyAliasTarget, cleanup_legacy_log_aliases, observe_legacy_alias_symlink,
+    remove_observed_legacy_alias_symlink,
 };
 #[cfg(any(unix, windows))]
 pub use locking::lock_is_held;

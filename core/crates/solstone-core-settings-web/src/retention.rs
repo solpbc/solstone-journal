@@ -146,7 +146,6 @@ fn empty_prune_result(enabled: bool, dry_run: Value, days: i64) -> Option<Value>
         "bytes_freed_human": "0 B",
         "by_class": {},
         "by_day": {},
-        "root_task_log": {},
         "retention_log": {},
         "errors": [],
         "audit_written": false,
@@ -210,7 +209,7 @@ fn prune_result_from_receipt(receipt: &Value, dry_run: Value, days: i64) -> Opti
             }),
         );
     }
-    let errors = plan
+    let mut errors = plan
         .get("errors")
         .and_then(Value::as_array)
         .into_iter()
@@ -228,14 +227,52 @@ fn prune_result_from_receipt(receipt: &Value, dry_run: Value, days: i64) -> Opti
             })
         })
         .collect::<Vec<_>>();
+    if let Some(oplogs) = plan.get("oplogs").and_then(Value::as_object) {
+        let mut files_deleted = 0i64;
+        let mut bytes_freed = 0i64;
+        let mut oplog_errors = Vec::new();
+        for target in oplogs
+            .get("prunable")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let bytes = count(target.get("bytes"));
+            let removed =
+                dry_run_truthy || python_truthy(target.get("removed").unwrap_or(&Value::Null));
+            if removed {
+                files_deleted = files_deleted.saturating_add(1);
+                bytes_freed = bytes_freed.saturating_add(bytes);
+            }
+            let Some(reason) = target.get("error").and_then(Value::as_str) else {
+                continue;
+            };
+            let path = target.get("path").cloned().unwrap_or(Value::Null);
+            let day = target.get("day").cloned().unwrap_or(Value::Null);
+            let error = json!({
+                "class": "oplog_retention",
+                "path": path,
+                "day": day,
+                "reason": reason,
+                "message": reason,
+                "hint": Value::Null,
+            });
+            oplog_errors.push(Value::String(reason.to_owned()));
+            errors.push(error);
+        }
+        by_class.insert(
+            "oplog_retention".to_owned(),
+            json!({
+                "files_deleted": files_deleted,
+                "bytes_freed": bytes_freed,
+                "dirs_deleted": 0,
+                "skipped": 0,
+                "errors": oplog_errors,
+            }),
+        );
+    }
     let partial_error = !errors.is_empty();
     let compactions = plan.get("compactions").and_then(Value::as_object);
-    let root_task_log = compaction_result(
-        compactions
-            .and_then(|compactions| compactions.get("root_task_log"))
-            .and_then(Value::as_object),
-        dry_run_truthy,
-    );
     let retention_log = compaction_result(
         compactions
             .and_then(|compactions| compactions.get("retention_log"))
@@ -254,7 +291,6 @@ fn prune_result_from_receipt(receipt: &Value, dry_run: Value, days: i64) -> Opti
         .values()
         .map(|stats| count(stats.get("bytes_freed")))
         .sum::<i64>()
-        + count(root_task_log.get("bytes_freed"))
         + count(retention_log.get("bytes_freed"));
     Some(json!({
         "enabled": true,
@@ -267,7 +303,6 @@ fn prune_result_from_receipt(receipt: &Value, dry_run: Value, days: i64) -> Opti
         "bytes_freed_human": human_bytes(bytes_freed),
         "by_class": by_class,
         "by_day": by_day,
-        "root_task_log": root_task_log,
         "retention_log": retention_log,
         "errors": errors,
         "audit_written": false,
@@ -624,5 +659,83 @@ pub async fn prune_logs(journal_root: PathBuf, body: Bytes) -> Response {
         // Reference contract: an unavailable executor is the generic envelope.
         // Do not unify this with the receipt-bearing refusal arm above.
         Err(ExecutorError::Unavailable(_)) => settings_operation_failed(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::prune_result_from_receipt;
+
+    #[test]
+    fn oplog_receipt_entries_flow_through_the_generic_class_totals() {
+        let receipt = json!({
+            "plan": {
+                "by_class": {},
+                "by_day": {},
+                "errors": [],
+                "compactions": {},
+                "oplogs": {
+                    "prunable": [{
+                        "day": "20260101",
+                        "leaf": "oplog--source--run--20260101T000000Z--id.log",
+                        "path": "chronicle/20260101/health/oplog--source--run--20260101T000000Z--id.log",
+                        "bytes": 42,
+                        "removed": false,
+                        "error": null,
+                    }],
+                    "retained": [],
+                    "bytes": 42,
+                },
+            },
+        });
+        let preview = prune_result_from_receipt(&receipt, json!(true), 7).expect("preview");
+        assert_eq!(preview["files_deleted"], 1);
+        assert_eq!(preview["bytes_freed"], 42);
+        assert_eq!(preview["by_class"]["oplog_retention"]["files_deleted"], 1);
+        assert!(preview.get("root_task_log").is_none());
+
+        let executed_receipt = json!({
+            "detail": {
+                "plan": {
+                    "by_class": {},
+                    "by_day": {},
+                    "errors": [],
+                    "compactions": {},
+                    "oplogs": {
+                        "prunable": [
+                            {
+                                "day": "20260101",
+                                "leaf": "removed.log",
+                                "path": "chronicle/20260101/health/removed.log",
+                                "bytes": 42,
+                                "removed": true,
+                                "error": null,
+                            },
+                            {
+                                "day": "20260102",
+                                "leaf": "raced.log",
+                                "path": "chronicle/20260102/health/raced.log",
+                                "bytes": 24,
+                                "removed": false,
+                                "error": "the oplog changed before removal",
+                            }
+                        ],
+                        "retained": [],
+                        "bytes": 66,
+                    },
+                },
+            },
+        });
+        let executed =
+            prune_result_from_receipt(&executed_receipt, json!(false), 7).expect("execution");
+        assert_eq!(executed["files_deleted"], 1);
+        assert_eq!(executed["bytes_freed"], 42);
+        assert_eq!(
+            executed["by_class"]["oplog_retention"]["errors"],
+            json!(["the oplog changed before removal"])
+        );
+        assert_eq!(executed["partial_error"], true);
     }
 }
