@@ -4045,6 +4045,7 @@ dependencies = [
  "solstone-core-journal",
  "solstone-core-journal-config",
  "solstone-core-skill-state",
+ "solstone-core-setup",
  "solstone-core-sol-link",
  "solstone-core-system",
  "solstone-core-system-health",

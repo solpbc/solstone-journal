@@ -21,7 +21,8 @@ use solstone_core_setup::{
     identity_evidence::gather_wrapper_artifact_evidence,
     manifest::{legacy_manifest_evidence, manifest_path},
     wrapper::{
-        parse_wrapper, render_wrapper, wrapper_lock, wrapper_paths, write_wrappers_atomically,
+        WrapperCommand, parse_wrapper, render_wrapper, validate_wrapper_inputs, wrapper_lock,
+        wrapper_paths, write_wrappers_atomically,
     },
 };
 
@@ -472,6 +473,11 @@ enum RewriteError {
     Install(String),
 }
 
+struct WrapperTargets {
+    solstone: PathBuf,
+    journal: PathBuf,
+}
+
 fn legacy_manifest_for_rewrite(
     change: &JournalChange,
 ) -> solstone_core_installation_identity::LegacyManifestEvidence {
@@ -485,7 +491,7 @@ fn legacy_manifest_for_rewrite(
     legacy_manifest_evidence(&manifest_path(journal))
 }
 
-fn rewrite(change: &JournalChange) -> Result<PathBuf, RewriteError> {
+fn read_wrapper_targets(change: &JournalChange) -> Result<WrapperTargets, RewriteError> {
     let sol_alias = change.alias.clone();
     let journal_alias = sol_alias.with_file_name("journal");
     let sol_content = fs::read_to_string(&sol_alias).map_err(|e| {
@@ -494,12 +500,12 @@ fn rewrite(change: &JournalChange) -> Result<PathBuf, RewriteError> {
             sol_alias.display()
         ))
     })?;
-    let Some(sol_wrapper) = parse_wrapper(&sol_content) else {
+    let Some(sol_wrapper) = parse_wrapper(WrapperCommand::Solstone, &sol_content) else {
         return Err(RewriteError::Refusal(wrapper_refusal(&sol_alias)));
     };
-    let sol_bin = sol_wrapper.sol_bin;
+    let solstone = sol_wrapper.sol_bin;
     let journal_bin = if !journal_alias.exists() && !journal_alias.is_symlink() {
-        sol_bin.with_file_name("journal")
+        solstone.with_file_name("journal")
     } else if journal_alias.is_symlink() {
         return Err(RewriteError::Refusal(wrapper_refusal(&journal_alias)));
     } else {
@@ -509,11 +515,30 @@ fn rewrite(change: &JournalChange) -> Result<PathBuf, RewriteError> {
                 journal_alias.display()
             ))
         })?;
-        match parse_wrapper(&content) {
+        match parse_wrapper(WrapperCommand::Journal, &content) {
             Some(wrapper) => wrapper.sol_bin,
             None => return Err(RewriteError::Refusal(wrapper_refusal(&journal_alias))),
         }
     };
+    for (command, target) in [
+        (WrapperCommand::Solstone, solstone.as_path()),
+        (WrapperCommand::Journal, journal_bin.as_path()),
+    ] {
+        validate_wrapper_inputs(command, &change.target_path, target)
+            .map_err(|error| RewriteError::Refusal(error.to_string()))?;
+    }
+    Ok(WrapperTargets {
+        solstone,
+        journal: journal_bin,
+    })
+}
+
+fn rewrite_preflighted(
+    change: &JournalChange,
+    targets: &WrapperTargets,
+) -> Result<PathBuf, RewriteError> {
+    let sol_alias = change.alias.clone();
+    let journal_alias = sol_alias.with_file_name("journal");
     let root_token = root_token_from_path(&change.identity_root).map_err(|error| {
         RewriteError::Refusal(format!("journal config: identity root refused: {error}"))
     })?;
@@ -538,22 +563,49 @@ fn rewrite(change: &JournalChange) -> Result<PathBuf, RewriteError> {
         ))
     })?;
     let guard = solstone_core_installation_identity::GuardFields::from_binding(admission.binding());
-    let _wrapper_lock =
-        wrapper_lock(&change.home_dir).map_err(|error| RewriteError::Install(error.to_string()))?;
     write_wrappers_atomically(&[
         (
             sol_alias,
-            render_wrapper("solstone", &change.target_path, &sol_bin, &guard),
+            render_wrapper(
+                WrapperCommand::Solstone,
+                &change.target_path,
+                &targets.solstone,
+                &guard,
+            )
+            .map_err(|error| RewriteError::Refusal(error.to_string()))?,
         ),
         (
             journal_alias,
-            render_wrapper("journal", &change.target_path, &journal_bin, &guard),
+            render_wrapper(
+                WrapperCommand::Journal,
+                &change.target_path,
+                &targets.journal,
+                &guard,
+            )
+            .map_err(|error| RewriteError::Refusal(error.to_string()))?,
         ),
     ])
     .map_err(|error| RewriteError::Install(error.to_string()))?;
-    Ok(journal_bin)
+    Ok(targets.journal.clone())
+}
+
+#[cfg(test)]
+fn rewrite(change: &JournalChange) -> Result<PathBuf, RewriteError> {
+    let _wrapper_lock =
+        wrapper_lock(&change.home_dir).map_err(|error| RewriteError::Install(error.to_string()))?;
+    let targets = read_wrapper_targets(change)?;
+    rewrite_preflighted(change, &targets)
 }
 fn execute(c: &JournalChange, d: &Decision, service: &dyn ServiceCommandRunner) -> u8 {
+    for (command, target) in [
+        (WrapperCommand::Solstone, c.sol_bin.as_path()),
+        (WrapperCommand::Journal, c.service_bin.as_path()),
+    ] {
+        if let Err(error) = validate_wrapper_inputs(command, &c.target_path, target) {
+            eprintln!("journal config: refused before mutation: {error}");
+            return 1;
+        }
+    }
     if c.action == Some(RequestedAction::Force) {
         eprintln!(
             "journal config: warning: --force bypasses confirmation and target activity checks"
@@ -584,6 +636,24 @@ fn execute(c: &JournalChange, d: &Decision, service: &dyn ServiceCommandRunner) 
     }
 }
 fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
+    let _wrapper_lock = match wrapper_lock(&c.home_dir) {
+        Ok(lock) => lock,
+        Err(error) => {
+            eprintln!("journal config: refused: cannot lock managed wrappers: {error}");
+            return 1;
+        }
+    };
+    let targets = match read_wrapper_targets(c) {
+        Ok(targets) => targets,
+        Err(RewriteError::Refusal(message)) => {
+            eprintln!("{message}");
+            return 1;
+        }
+        Err(RewriteError::Install(error)) => {
+            eprintln!("journal config: refused: cannot inspect managed wrappers: {error}");
+            return 1;
+        }
+    };
     if let Err(e) = fs::create_dir_all(&c.target_path) {
         eprintln!(
             "journal config: refused: cannot create {}: {e}",
@@ -591,7 +661,7 @@ fn run_switch(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
         );
         return 1;
     }
-    let restart = match rewrite(c) {
+    let restart = match rewrite_preflighted(c, &targets) {
         Ok(v) => v,
         Err(RewriteError::Refusal(message)) => {
             eprintln!("{message}");
@@ -668,6 +738,24 @@ fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
         eprintln!("{}", cross_filesystem(c));
         return 1;
     }
+    let _wrapper_lock = match wrapper_lock(&c.home_dir) {
+        Ok(lock) => lock,
+        Err(error) => {
+            eprintln!("journal config: refused: cannot lock managed wrappers: {error}");
+            return 1;
+        }
+    };
+    let targets = match read_wrapper_targets(c) {
+        Ok(targets) => targets,
+        Err(RewriteError::Refusal(message)) => {
+            eprintln!("{message}");
+            return 1;
+        }
+        Err(RewriteError::Install(error)) => {
+            eprintln!("journal config: refused: cannot inspect managed wrappers: {error}");
+            return 1;
+        }
+    };
     if c.service_running {
         match service.run(&c.service_bin, ServiceCommand::Stop) {
             ServiceCommandResult::Exited { code: 0 } => {}
@@ -687,7 +775,7 @@ fn run_move(c: &JournalChange, service: &dyn ServiceCommandRunner) -> u8 {
         eprintln!("journal config: move failed: {e}");
         return 1;
     }
-    let restart = match rewrite(c) {
+    let restart = match rewrite_preflighted(c, &targets) {
         Ok(v) => v,
         Err(RewriteError::Refusal(message)) => {
             eprintln!("{message}");
@@ -743,7 +831,7 @@ fn wrapper_status(alias: &Path) -> (&'static str, Option<String>) {
     } else {
         fs::read_to_string(alias)
             .ok()
-            .and_then(|text| parse_wrapper(&text))
+            .and_then(|text| parse_wrapper(WrapperCommand::Solstone, &text))
             .map_or(("foreign", None), |wrapper| {
                 ("managed", Some(wrapper.journal))
             })
@@ -788,7 +876,7 @@ fn journal(o: ConfigJournalOptions) -> ExitCode {
     let target = resolve_non_strict(Path::new(&o.path));
     if o.path
         .chars()
-        .any(|c| matches!(c, '$' | '`' | '"' | '\\' | '\n'))
+        .any(|c| matches!(c, '$' | '`' | '"' | '\\' | '}' | '\n' | '\0'))
     {
         eprintln!(
             "journal config: refused: journal path contains shell-active character: {:?}",
@@ -829,7 +917,7 @@ fn journal(o: ConfigJournalOptions) -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    let Some(wrapper) = parse_wrapper(&content) else {
+    let Some(wrapper) = parse_wrapper(WrapperCommand::Solstone, &content) else {
         eprintln!("{}", wrapper_refusal(&alias));
         return ExitCode::from(1);
     };
@@ -996,9 +1084,9 @@ mod tests {
 
     fn legacy_wrapper(binary: &str, journal: &Path, sol_bin: &Path) -> String {
         format!(
-            "#!/bin/bash\n# {binary} — managed by 'journal config'. Edits will be overwritten.\n# managed-version: 7\n: \"${{SOLSTONE_JOURNAL:={}}}\"\nexport SOLSTONE_JOURNAL\nSOL_BIN='{}'\nexec \"$SOL_BIN\" \"$@\"\n",
+            "#!/bin/bash\n# {binary} — managed by 'journal config'. Edits will be overwritten.\n# managed-version: 7\n: \"${{SOLSTONE_JOURNAL:={}}}\"\nexport SOLSTONE_JOURNAL\nSOL_BIN='{}'\n# Warn when pyproject.toml or uv.lock is newer than .installed.\n# Skipped silently if .installed is absent.\nREPO_ROOT=\"${{SOL_BIN%/.venv/bin/{binary}}}\"\nif [ -f \"$REPO_ROOT/.installed\" ]; then\n  if [ \"$REPO_ROOT/pyproject.toml\" -nt \"$REPO_ROOT/.installed\" ] \\\n     || [ \"$REPO_ROOT/uv.lock\" -nt \"$REPO_ROOT/.installed\" ]; then\n    echo \"{binary}: WARNING — venv is stale (pyproject.toml or uv.lock changed since last install). Run: cd $REPO_ROOT && make install\" >&2\n  fi\nfi\nif [ ! -x \"$SOL_BIN\" ]; then\n    printf '{binary}: venv binary missing or not executable: %s\\n' \"$SOL_BIN\" >&2\n    exit 127\nfi\nexec \"$SOL_BIN\" \"$@\"\n",
             journal.display(),
-            sol_bin.display()
+            sol_bin.display().to_string().replace('\'', "'\\''")
         )
     }
 
@@ -1209,6 +1297,19 @@ mod tests {
     }
 
     #[test]
+    fn execute_refuses_unsafe_wrapper_input_before_move_or_service() {
+        let root = test_root("unsafe-wrapper-preflight");
+        let mut c = move_change(&root);
+        c.target_path = root.join("bad}journal");
+        let service = FakeServiceRunner::new([]);
+        let decision = decision(Action::Move, 0);
+        assert_eq!(execute(&c, &decision, &service), 1);
+        assert!(c.current_path.exists());
+        assert!(!c.target_path.exists());
+        assert!(service.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
     fn move_uses_service_bin_to_stop_and_journal_wrapper_bin_to_start() {
         let root = test_root("service-bins");
         let mut c = move_change(&root);
@@ -1269,8 +1370,22 @@ mod tests {
             ServiceCommandResult::Exited { code: 0 },
         ]);
         assert_eq!(run_move(&c, &service), 1);
-        assert_eq!(service.calls.lock().unwrap().len(), 2);
-        assert_eq!(service.calls.lock().unwrap()[1].1, ServiceCommand::Start);
+        assert!(service.calls.lock().unwrap().is_empty());
+        assert!(c.current_path.exists());
+        assert!(!c.target_path.exists());
+    }
+
+    #[test]
+    fn switch_refuses_a_foreign_journal_wrapper_before_creating_the_target() {
+        let root = test_root("switch-wrapper-preflight");
+        let mut c = move_change(&root);
+        c.action = Some(RequestedAction::Switch);
+        c.service_running = true;
+        fs::write(c.alias.with_file_name("journal"), "foreign wrapper").unwrap();
+        let service = FakeServiceRunner::new([]);
+        assert_eq!(run_switch(&c, &service), 1);
+        assert!(!c.target_path.exists());
+        assert!(service.calls.lock().unwrap().is_empty());
     }
 
     #[test]
@@ -1414,10 +1529,7 @@ mod tests {
         let legacy = legacy_wrapper("solstone", Path::new("/legacy"), Path::new("/bin/solstone"))
             .replace("# managed-version: 7", "# managed-version: 5");
         fs::write(&alias, legacy).unwrap();
-        assert_eq!(
-            wrapper_status(&alias),
-            ("managed", Some("/legacy".to_owned()))
-        );
+        assert_eq!(wrapper_status(&alias), ("foreign", None));
     }
 
     #[test]
@@ -1483,17 +1595,20 @@ mod tests {
     }
 
     #[test]
-    fn parser_accepts_all_historical_marker_versions() {
-        for version in 1..=8 {
-            let content = format!(
-                "# managed-version: {version}\n: \"${{SOLSTONE_JOURNAL:=/journal}}\"\nSOL_BIN='/bin/it'\\''s'\n"
-            );
-            let wrapper = parse_wrapper(&content).unwrap();
-            assert_eq!(wrapper.journal, "/journal");
-            assert_eq!(wrapper.sol_bin, PathBuf::from("/bin/it's"));
-            assert_eq!(wrapper.version, version);
-        }
-        assert!(parse_wrapper("# managed-version: 9\nSOL_BIN='/bin/sol'\n").is_none());
+    fn parser_accepts_only_canonical_supported_wrapper_syntax() {
+        let content = legacy_wrapper("solstone", Path::new("/journal"), Path::new("/bin/it's"));
+        let wrapper = parse_wrapper(WrapperCommand::Solstone, &content).unwrap();
+        assert_eq!(wrapper.journal, "/journal");
+        assert_eq!(wrapper.sol_bin, PathBuf::from("/bin/it's"));
+        assert_eq!(wrapper.version, 7);
+        assert!(parse_wrapper(WrapperCommand::Journal, &content).is_none());
+        assert!(
+            parse_wrapper(
+                WrapperCommand::Solstone,
+                "# managed-version: 9\nSOL_BIN='/bin/solstone'\n"
+            )
+            .is_none()
+        );
     }
 
     #[test]

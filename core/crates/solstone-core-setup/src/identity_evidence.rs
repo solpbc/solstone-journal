@@ -9,13 +9,13 @@ use std::path::{Path, PathBuf};
 
 use solstone_core_installation_identity::{
     ArtifactBindingEvidence, GuardFields, InstallationBinding, NamespaceName,
-    parse_service_guard_environment, parse_wrapper_guard,
+    parse_service_guard_environment,
 };
 
 use crate::events::StepName;
 use crate::legacy_launcher;
 use crate::steps::service_artifact_path;
-use crate::wrapper::{parse_wrapper, wrapper_paths};
+use crate::wrapper::{WrapperCommand, parse_wrapper, wrapper_paths};
 
 const SERVICE_GUARD_KEYS: [&str; 4] = [
     "SOLSTONE_INSTALLATION_NAMESPACE",
@@ -172,8 +172,8 @@ pub fn gather_wrapper_artifact_evidence(
     expected_namespace: &NamespaceName,
 ) -> ArtifactBindingEvidence {
     let paths = wrapper_paths(home_dir);
-    let mut solstone = wrapper_slot(read_wrapper(&paths.solstone));
-    let mut journal = wrapper_slot(read_wrapper(&paths.journal));
+    let mut solstone = wrapper_slot(read_wrapper(&paths.solstone, WrapperCommand::Solstone));
+    let mut journal = wrapper_slot(read_wrapper(&paths.journal, WrapperCommand::Journal));
     let mut service = service_slot(Ok(None));
     classify_slots(
         &mut solstone,
@@ -260,11 +260,16 @@ pub fn gather_setup_artifact_evidence(
 #[must_use]
 pub fn wrapper_targets_drifted(home_dir: &Path, executable_dir: &Path) -> bool {
     let paths = wrapper_paths(home_dir);
-    [paths.solstone, paths.journal].into_iter().any(|path| {
+    [
+        (paths.solstone, WrapperCommand::Solstone),
+        (paths.journal, WrapperCommand::Journal),
+    ]
+    .into_iter()
+    .any(|(path, command)| {
         fs::read_to_string(&path)
             .ok()
             .as_deref()
-            .and_then(parse_wrapper)
+            .and_then(|content| parse_wrapper(command, content))
             .is_some_and(|wrapper| wrapper.sol_bin.parent() != Some(executable_dir))
     })
 }
@@ -285,7 +290,12 @@ fn read_setup_wrapper(
             }));
         }
     }
-    let mut wrapper = read_wrapper(path)?;
+    let command = match command {
+        "solstone" => WrapperCommand::Solstone,
+        "journal" => WrapperCommand::Journal,
+        _ => return Err(()),
+    };
+    let mut wrapper = read_wrapper(path, command)?;
     if allow_legacy_launchers
         && matches!(
             wrapper.as_ref().map(|wrapper| &wrapper.artifact),
@@ -300,20 +310,19 @@ fn read_setup_wrapper(
     Ok(wrapper)
 }
 
-fn read_wrapper(path: &Path) -> Result<Option<ReadWrapper>, ()> {
+fn read_wrapper(path: &Path, command: WrapperCommand) -> Result<Option<ReadWrapper>, ()> {
     if !path.exists() && !path.is_symlink() {
         return Ok(None);
     }
     let content = fs::read_to_string(path).map_err(|_| ())?;
-    let wrapper = parse_wrapper(&content).ok_or(())?;
-    parse_wrapper_guard(&content)
-        .map(|guard| ReadWrapper {
-            artifact: guard.map_or(PresentArtifact::Unguarded, PresentArtifact::Guarded),
-            target: Some(wrapper.sol_bin),
-            setup_rejected: false,
-        })
-        .map(Some)
-        .map_err(|_| ())
+    let wrapper = parse_wrapper(command, &content).ok_or(())?;
+    Ok(Some(ReadWrapper {
+        artifact: wrapper
+            .guard
+            .map_or(PresentArtifact::Unguarded, PresentArtifact::Guarded),
+        target: Some(wrapper.sol_bin),
+        setup_rejected: false,
+    }))
 }
 
 fn read_service(path: &Path) -> Result<Option<PresentArtifact>, ()> {
@@ -619,21 +628,23 @@ mod tests {
         fs::write(
             bin.join("journal"),
             crate::wrapper::render_wrapper(
-                "journal",
+                WrapperCommand::Journal,
                 Path::new("/journal"),
                 &old_executable_dir.join("journal"),
                 &guard,
-            ),
+            )
+            .unwrap(),
         )
         .unwrap();
         fs::write(
             bin.join("solstone"),
             crate::wrapper::render_wrapper(
-                "solstone",
+                WrapperCommand::Solstone,
                 Path::new("/journal"),
                 &old_executable_dir.join("solstone"),
                 &guard,
-            ),
+            )
+            .unwrap(),
         )
         .unwrap();
 
@@ -722,16 +733,17 @@ mod tests {
         fs::write(
             &path,
             crate::wrapper::render_wrapper(
-                "journal",
+                WrapperCommand::Journal,
                 std::path::Path::new("/journal"),
                 std::path::Path::new("/owner-authored/journal"),
                 &fields(),
-            ),
+            )
+            .unwrap(),
         )
         .unwrap();
 
         assert!(matches!(
-            read_wrapper(&path),
+            read_wrapper(&path, WrapperCommand::Journal),
             Ok(Some(wrapper)) if matches!(wrapper.artifact, PresentArtifact::Guarded(_))
         ));
         assert!(matches!(
@@ -753,15 +765,16 @@ mod tests {
         fs::create_dir_all(&bin).unwrap();
         fs::create_dir_all(&runtime).unwrap();
         let guard = fields();
-        for command in ["journal", "solstone"] {
+        for command in [WrapperCommand::Journal, WrapperCommand::Solstone] {
             fs::write(
-                bin.join(command),
+                bin.join(command.as_str()),
                 crate::wrapper::render_wrapper(
                     command,
                     Path::new("/journal"),
-                    &runtime.join(command),
+                    &runtime.join(command.as_str()),
                     &guard,
-                ),
+                )
+                .unwrap(),
             )
             .unwrap();
         }
@@ -815,11 +828,12 @@ mod tests {
         fs::write(
             bin.join("journal"),
             crate::wrapper::render_wrapper(
-                "journal",
+                WrapperCommand::Journal,
                 Path::new("/journal"),
                 &runtime.join("journal"),
                 &foreign_guard,
-            ),
+            )
+            .unwrap(),
         )
         .unwrap();
         let foreign = gather_setup_artifact_evidence(&home, &guard.namespace, false);
@@ -835,21 +849,23 @@ mod tests {
         fs::write(
             bin.join("solstone"),
             crate::wrapper::render_wrapper(
-                "solstone",
+                WrapperCommand::Solstone,
                 Path::new("/journal"),
                 &runtime.join("solstone"),
                 &guard,
-            ),
+            )
+            .unwrap(),
         )
         .unwrap();
         fs::write(
             bin.join("journal"),
             crate::wrapper::render_wrapper(
-                "journal",
+                WrapperCommand::Journal,
                 Path::new("/journal"),
                 &runtime.join("journal"),
                 &guard,
-            ),
+            )
+            .unwrap(),
         )
         .unwrap();
         let ambiguous_guard = GuardFields {

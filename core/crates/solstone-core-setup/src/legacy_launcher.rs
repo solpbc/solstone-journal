@@ -7,7 +7,7 @@ use std::fs;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
-use crate::wrapper::parse_wrapper;
+use crate::wrapper::{WrapperCommand, parse_wrapper};
 
 const LAUNCHER_LIMIT: u64 = 32 * 1024;
 
@@ -186,10 +186,13 @@ fn managed_v1_wrapper(
         return None;
     }
     let text = std::str::from_utf8(bytes).ok()?;
-    let parsed = parse_wrapper(text)?;
-    if parsed.version != 7
-        || text != managed_python_wrapper_bytes(command, &parsed.journal, &parsed.sol_bin)
-    {
+    let wrapper_command = match command {
+        "sol" => WrapperCommand::Sol,
+        "journal" => WrapperCommand::Journal,
+        _ => return None,
+    };
+    let parsed = parse_wrapper(wrapper_command, text)?;
+    if parsed.version != 7 {
         return None;
     }
     let resolved_target = fs::canonicalize(&parsed.sol_bin).ok()?;
@@ -218,36 +221,6 @@ fn managed_v1_wrapper(
         .parent()
         .map(Path::to_path_buf)
         .map(|installation_bin| (family, installation_bin))
-}
-
-fn managed_python_wrapper_bytes(command: &str, journal: &str, target: &Path) -> String {
-    format!(
-        concat!(
-            "#!/bin/bash\n",
-            "# {command} — managed by 'journal config'. Edits will be overwritten.\n",
-            "# managed-version: 7\n",
-            ": \"${{SOLSTONE_JOURNAL:={journal}}}\"\n",
-            "export SOLSTONE_JOURNAL\n",
-            "SOL_BIN='{}'\n",
-            "# Warn when pyproject.toml or uv.lock is newer than .installed.\n",
-            "# Skipped silently if .installed is absent.\n",
-            "REPO_ROOT=\"${{SOL_BIN%/.venv/bin/{command}}}\"\n",
-            "if [ -f \"$REPO_ROOT/.installed\" ]; then\n",
-            "  if [ \"$REPO_ROOT/pyproject.toml\" -nt \"$REPO_ROOT/.installed\" ] \\\n",
-            "     || [ \"$REPO_ROOT/uv.lock\" -nt \"$REPO_ROOT/.installed\" ]; then\n",
-            "    echo \"{command}: WARNING — venv is stale (pyproject.toml or uv.lock changed since last install). Run: cd $REPO_ROOT && make install\" >&2\n",
-            "  fi\n",
-            "fi\n",
-            "if [ ! -x \"$SOL_BIN\" ]; then\n",
-            "    printf '{command}: venv binary missing or not executable: %s\\n' \"$SOL_BIN\" >&2\n",
-            "    exit 127\n",
-            "fi\n",
-            "exec \"$SOL_BIN\" \"$@\"\n",
-        ),
-        target.to_string_lossy().replace('\'', "'\\''"),
-        command = command,
-        journal = journal,
-    )
 }
 
 fn python_launcher(command: &str, bytes: &[u8]) -> bool {
@@ -435,7 +408,14 @@ mod tests {
         let public = home.join(".local/bin/journal");
         write_executable(
             &public,
-            &managed_python_wrapper_bytes("journal", "/home/owner/journal", &target),
+            &crate::wrapper::render_wrapper_version(
+                WrapperCommand::Journal,
+                Path::new("/home/owner/journal"),
+                &target,
+                None,
+                7,
+            )
+            .unwrap(),
         );
 
         let found = classify(&home, &public, "journal").unwrap().unwrap();
@@ -448,7 +428,14 @@ mod tests {
         let sol_public = home.join(".local/bin/sol");
         write_executable(
             &sol_public,
-            &managed_python_wrapper_bytes("sol", "/home/owner/journal", &sol_target),
+            &crate::wrapper::render_wrapper_version(
+                WrapperCommand::Sol,
+                Path::new("/home/owner/journal"),
+                &sol_target,
+                None,
+                7,
+            )
+            .unwrap(),
         );
         let sol = classify(&home, &sol_public, "sol").unwrap().unwrap();
         assert_eq!(sol.family, LegacyLauncherFamily::NativeRoot);
