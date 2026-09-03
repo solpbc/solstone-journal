@@ -752,6 +752,7 @@ pub enum Command {
     Maintenance(Vec<OsString>),
     TalentWorker(Vec<OsString>),
     ParentLossCoordinator(Vec<OsString>),
+    JournalRouteInspect,
     Reprocess(Vec<OsString>),
     JournalStats(Vec<OsString>),
     Talent(Vec<OsString>),
@@ -1596,6 +1597,10 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, ..] if command == OsStr::new("__parent-loss-coordinator") => {
             Ok(Command::ParentLossCoordinator(args.to_vec()))
         }
+        [command] if command == OsStr::new("__journal-route-inspect") => {
+            Ok(Command::JournalRouteInspect)
+        }
+        [command, ..] if command == OsStr::new("__journal-route-inspect") => Err(UsageError),
         [command, rest @ ..] if command == OsStr::new("reprocess") => {
             Ok(Command::Reprocess(rest.to_vec()))
         }
@@ -8733,5 +8738,14 @@ mod tests {
             evaluate_args(&args(&["mcp", "--help"])),
             Ok(Command::McpHelp)
         );
+    }
+
+    #[test]
+    fn journal_route_inspect_is_hidden_and_accepts_no_arguments() {
+        assert_eq!(
+            evaluate_args(&args(&["__journal-route-inspect"])),
+            Ok(Command::JournalRouteInspect)
+        );
+        assert!(evaluate_args(&args(&["__journal-route-inspect", "--help"])).is_err());
     }
 }

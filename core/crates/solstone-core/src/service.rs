@@ -35,7 +35,7 @@ use crate::{discover_binary_home, resolve_process_journal_path};
 
 const LABEL: &str = "org.solpbc.solstone";
 const UNIT: &str = "solstone.service";
-const LOCK_NAME: &str = ".solstone-service.lock";
+pub(crate) const LOCK_NAME: &str = ".solstone-service.lock";
 const UNIT_LIMIT: u64 = 1024 * 1024;
 const OUTPUT_LIMIT: u64 = 256 * 1024;
 const OBSERVATION_TIMEOUT: Duration = Duration::from_secs(15);
@@ -54,13 +54,13 @@ const SERVICE_GUARD_ENVIRONMENT_NAMES: [&str; 4] = [
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Platform {
+pub(crate) enum Platform {
     Linux,
     Darwin,
 }
 
 #[derive(Debug)]
-enum UnitTruth {
+pub(crate) enum UnitTruth {
     Absent,
     Managed(UnitSnapshot),
     Foreign,
@@ -68,14 +68,14 @@ enum UnitTruth {
 }
 
 #[derive(Clone, Debug)]
-struct UnitSnapshot {
+pub(crate) struct UnitSnapshot {
     device: u64,
     inode: u64,
     bytes: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum RuntimeTruth {
+pub(crate) enum RuntimeTruth {
     Absent,
     Managed {
         active: bool,
@@ -206,7 +206,7 @@ fn service_install_recovery(detail: String) -> String {
     installation_recovery_copy(&detail)
 }
 
-fn platform() -> Result<Platform, String> {
+pub(crate) fn platform() -> Result<Platform, String> {
     if cfg!(target_os = "linux") {
         Ok(Platform::Linux)
     } else if cfg!(target_os = "macos") {
@@ -219,7 +219,7 @@ fn platform() -> Result<Platform, String> {
 /// Per-user unit path (`systemd --user` / LaunchAgents). The loopback port the
 /// unit starts is machine-wide and shared across logins; do not derive a
 /// per-user port from this.
-fn unit_path(platform: Platform, home: &Path) -> PathBuf {
+pub(crate) fn unit_path(platform: Platform, home: &Path) -> PathBuf {
     match platform {
         Platform::Linux => home.join(".config/systemd/user").join(UNIT),
         Platform::Darwin => home
@@ -647,7 +647,9 @@ fn print_no_supervisor_sync_diagnosis() {
     }
 }
 
-fn service_lock(home: &Path) -> Result<solstone_core_journal_io::ExistingParentLock, String> {
+pub(crate) fn service_lock(
+    home: &Path,
+) -> Result<solstone_core_journal_io::ExistingParentLock, String> {
     acquire_existing_parent_lock(
         home,
         OsStr::new(LOCK_NAME),
@@ -657,7 +659,7 @@ fn service_lock(home: &Path) -> Result<solstone_core_journal_io::ExistingParentL
     .map_err(|error| format!("service lock: {error}"))
 }
 
-fn classify_unit(platform: Platform, path: &Path) -> Result<UnitTruth, String> {
+pub(crate) fn classify_unit(platform: Platform, path: &Path) -> Result<UnitTruth, String> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error)
@@ -1353,7 +1355,10 @@ fn parse_hex(
     Some(value)
 }
 
-fn observe_runtime(platform: Platform, canonical: &Path) -> Result<RuntimeTruth, String> {
+pub(crate) fn observe_runtime(
+    platform: Platform,
+    canonical: &Path,
+) -> Result<RuntimeTruth, String> {
     let launchers = expected_launchers(platform, canonical)
         .ok_or_else(|| "service unit has no trusted home ancestor".to_owned())?;
     match platform {
@@ -1970,7 +1975,7 @@ fn safe(value: &str) -> String {
 /// only flips the symlink is enough and a stale unit can no longer pin an old build.
 /// A directory that is not in the versioned layout (a dev build, a test tree) is
 /// returned unchanged.
-fn version_independent_runtime_dir(runtime_dir: &Path) -> PathBuf {
+pub(crate) fn version_independent_runtime_dir(runtime_dir: &Path) -> PathBuf {
     let mut components: Vec<_> = runtime_dir.components().collect();
     // Expect the tail to be `versions/<version>/bin`.
     if components.len() < 3 {

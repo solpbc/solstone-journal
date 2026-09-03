@@ -58,6 +58,7 @@ mod identity;
 mod import_sources;
 mod install_models;
 mod install_provider;
+mod journal_route;
 mod navigate;
 mod service;
 #[cfg(unix)]
@@ -337,6 +338,7 @@ fn main() -> ExitCode {
             ExitCode::from(2)
         }
         Ok(Command::Setup(args)) => run_setup(args),
+        Ok(Command::JournalRouteInspect) => journal_route::inspect(),
         Ok(Command::SetupHelp) => {
             print!("{}", solstone_core_setup::args::USAGE);
             ExitCode::SUCCESS

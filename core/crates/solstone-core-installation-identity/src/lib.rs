@@ -2284,7 +2284,7 @@ fn parse_generation(value: &str) -> Result<Generation, IdentityError> {
     )
 }
 
-fn lower_hex(bytes: &[u8]) -> String {
+pub fn lower_hex(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut output = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
@@ -2294,7 +2294,7 @@ fn lower_hex(bytes: &[u8]) -> String {
     output
 }
 
-fn parse_lower_hex(
+pub fn parse_lower_hex(
     value: &str,
     bytes: usize,
     label: &'static str,

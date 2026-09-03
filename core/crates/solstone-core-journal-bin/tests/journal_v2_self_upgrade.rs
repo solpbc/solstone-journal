@@ -26,30 +26,9 @@ use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-fn locate_workspace_binary(package: &str, binary: &str) -> PathBuf {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace_manifest = manifest_dir
-        .parent()
-        .expect("crates dir")
-        .parent()
-        .expect("core dir")
-        .join("Cargo.toml");
-    let status = Command::new(env!("CARGO"))
-        .args(["build", "--manifest-path"])
-        .arg(&workspace_manifest)
-        .args(["-p", package, "--bin", binary])
-        .status()
-        .expect("run cargo build");
-    assert!(
-        status.success(),
-        "cargo build -p {package} --bin {binary} failed"
-    );
-    workspace_manifest
-        .parent()
-        .expect("core dir")
-        .join("target/debug")
-        .join(binary)
-}
+mod support;
+
+use support::locate_workspace_binary;
 
 fn write_layout_anchors(share: &Path) {
     for relative in [
