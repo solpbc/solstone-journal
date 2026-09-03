@@ -141,12 +141,21 @@ fn parse_day_args(args: &[String]) -> Result<DayOptions, String> {
                 if !is_day(day) {
                     return Err("argument --day: day must be YYYYMMDD".to_owned());
                 }
+                if options.day.is_some() {
+                    return Err("day may only be specified once".to_owned());
+                }
                 options.day = Some(day.to_owned());
                 index += 1;
             }
             "--commit" => options.commit = true,
             "--force" => options.force = true,
             "--dry-run" => options.dry_run = true,
+            value if is_day(value) => {
+                if options.day.is_some() {
+                    return Err("day may only be specified once".to_owned());
+                }
+                options.day = Some(value.to_owned());
+            }
             value => return Err(format!("unrecognized arguments: {value}")),
         }
         index += 1;
@@ -1570,7 +1579,7 @@ fn failure(error: String) -> CliRun {
 fn usage_error(id: &str, detail: &str) -> CliRun {
     let usage = match id {
         "timeline:rollup" | "timeline:rollup-day" => {
-            " [--day YYYYMMDD] [--commit | --dry-run] [--force] [--top TOP] [--jobs JOBS]"
+            " [DAY | --day YYYYMMDD] [--commit | --dry-run] [--force] [--top TOP] [--jobs JOBS]"
         }
         _ => " [--commit | --dry-run] [--force] [--top TOP] [--jobs JOBS] [--months MONTHS]",
     };
@@ -1593,7 +1602,7 @@ fn usage_error(id: &str, detail: &str) -> CliRun {
 mod tests {
     use super::{
         SegmentRow, day_curation_jobs, day_source_digest, load_day_segments, master_curation_jobs,
-        master_digest, pick_entries, run,
+        master_digest, parse_day_args, pick_entries, run,
     };
     use crate::timezone::HostTimezoneSource;
     use crate::{RollupPicker, RollupPickerError, TimelineServices};
@@ -2264,6 +2273,33 @@ mod tests {
         }
         assert_eq!(picker.call_count(), 0);
         assert_eq!(std::fs::read_dir(journal.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn day_accepts_the_documented_positional_form_and_rejects_duplicate_days() {
+        let positional =
+            parse_day_args(&["20260301".to_owned(), "--top".to_owned(), "3".to_owned()]).unwrap();
+        let named = parse_day_args(&[
+            "--day".to_owned(),
+            "20260301".to_owned(),
+            "--top".to_owned(),
+            "3".to_owned(),
+        ])
+        .unwrap();
+        assert_eq!(positional.day, named.day);
+        assert_eq!(positional.top, named.top);
+        assert_eq!(positional.jobs, named.jobs);
+
+        for args in [
+            ["20260301", "--day", "20260302", "--top"],
+            ["--day", "20260301", "20260302", "--top"],
+            ["--day", "20260301", "--day", "20260302"],
+        ] {
+            assert_eq!(
+                parse_day_args(&args.map(str::to_owned)).err().unwrap(),
+                "day may only be specified once"
+            );
+        }
     }
 
     #[test]
