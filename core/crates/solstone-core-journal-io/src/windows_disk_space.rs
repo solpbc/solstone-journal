@@ -59,8 +59,8 @@ mod tests {
         assert!(space.total_bytes > 0);
         assert!(space.available_bytes <= space.total_bytes);
         assert_eq!(
-            windows_available_disk_bytes(temporary.path()),
-            Ok(space.available_bytes)
+            windows_available_disk_bytes(temporary.path()).expect("available capacity"),
+            space.available_bytes
         );
     }
 }
