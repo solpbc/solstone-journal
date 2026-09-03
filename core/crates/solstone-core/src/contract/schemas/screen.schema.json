@@ -27,7 +27,6 @@
         "analysis": {"type": "object", "additionalProperties": true},
         "content": {"type": "object", "additionalProperties": true},
         "detections": {"type": "object", "additionalProperties": true},
-        "aruco": {},
         "enhanced": {"type": "boolean"},
         "error": {"type": "string"},
         "requests": {"type": "array"}

@@ -369,7 +369,7 @@ fn screen_chunks(
         });
         let time = wall_time(context.key, offset);
         let participants = participants(source.get("content"));
-        chunks.push(json!({"type":"screen","time":time,"timestamp":day_timestamp(context.day, &time, chunk.occurrence_time_ms.map(|value| value.0).unwrap_or(0)),"markdown":chunk.content,"source_ref":{"frame_id":source.get("frame_id"),"filename":name,"raw":source_raw,"media_kind":kind,"monitor":monitor,"offset":source.get("timestamp"),"box_2d":source.get("box_2d"),"analysis":source.get("analysis"),"participants":if participants.is_empty(){Value::Null}else{json!(participants)},"aruco":source.get("aruco")},"basic":source.get("analysis").is_none() && source.get("content").is_none_or(|value| value.is_null() || value.as_object().is_some_and(Map::is_empty))}));
+        chunks.push(json!({"type":"screen","time":time,"timestamp":day_timestamp(context.day, &time, chunk.occurrence_time_ms.map(|value| value.0).unwrap_or(0)),"markdown":chunk.content,"source_ref":{"frame_id":source.get("frame_id"),"filename":name,"raw":source_raw,"media_kind":kind,"monitor":monitor,"offset":source.get("timestamp"),"box_2d":source.get("box_2d"),"analysis":source.get("analysis"),"participants":if participants.is_empty(){Value::Null}else{json!(participants)}},"basic":source.get("analysis").is_none() && source.get("content").is_none_or(|value| value.is_null() || value.as_object().is_some_and(Map::is_empty))}));
     }
 }
 

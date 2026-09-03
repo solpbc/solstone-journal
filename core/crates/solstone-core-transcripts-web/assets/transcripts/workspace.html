@@ -1391,20 +1391,6 @@
   animation: tr-pulse 1.5s ease-in-out infinite;
 }
 
-.tr-modal-img-wrap canvas.tr-masked-canvas {
-  cursor: pointer;
-  transition: opacity 0.15s ease;
-}
-
-.tr-modal-img-wrap canvas.tr-masked-canvas:hover {
-  opacity: 0.9;
-}
-
-.tr-modal-badge-masked {
-  background: rgba(239, 68, 68, 0.3);
-  color: #fca5a5;
-}
-
 .tr-modal-description {
   padding: 12px 20px 20px;
   color: rgba(255,255,255,0.8);
@@ -2811,7 +2797,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
     // Draw full-resolution frame to canvas (no caching)
     async drawFull(canvas, videoUrl, frameId, options = {}) {
-      const { boxCoords, participants, aruco } = options;
+      const { boxCoords, participants } = options;
 
       try {
         const bitmap = await this.captureFullFrame(videoUrl, frameId);
@@ -2831,7 +2817,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         const ctx = canvas.getContext('2d');
         ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
 
-        this._applyOverlays(ctx, canvas, bitmap.width, bitmap.height, { boxCoords, participants, aruco });
+        this._applyOverlays(ctx, canvas, bitmap.width, bitmap.height, { boxCoords, participants });
 
         if (bitmap && typeof bitmap.close === 'function') {
           bitmap.close();
@@ -2845,48 +2831,10 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       }
     }
 
-    // Compute mask polygon from ArUco corner tag markers
-    // Corner tag IDs: 6=TL, 7=TR, 2=BR, 4=BL
-    // Each marker has corners in order [TL, TR, BR, BL]
-    _computeArucoMaskPolygon(aruco) {
-      if (!aruco || !aruco.masked || !aruco.markers) return null;
-
-      const cornerTagIds = { 6: 0, 7: 1, 2: 2, 4: 3 }; // id -> which corner to use
-      const tagCorners = {};
-
-      for (const marker of aruco.markers) {
-        if (marker.id in cornerTagIds && marker.corners?.length === 4) {
-          const cornerIdx = cornerTagIds[marker.id];
-          tagCorners[marker.id] = marker.corners[cornerIdx];
-        }
-      }
-
-      // Need all 4 corner tags
-      if (!(6 in tagCorners && 7 in tagCorners && 2 in tagCorners && 4 in tagCorners)) {
-        return null;
-      }
-
-      // Return polygon: TL, TR, BR, BL
-      return [tagCorners[6], tagCorners[7], tagCorners[2], tagCorners[4]];
-    }
-
     _applyOverlays(ctx, canvas, sourceWidth, sourceHeight, options = {}) {
-      const { boxCoords, participants, aruco } = options;
+      const { boxCoords, participants } = options;
       const scaleX = canvas.width / sourceWidth;
       const scaleY = canvas.height / sourceHeight;
-
-      // Apply ArUco mask first (so other overlays draw on top)
-      const maskPolygon = this._computeArucoMaskPolygon(aruco);
-      if (maskPolygon) {
-        ctx.fillStyle = '#000000';
-        ctx.beginPath();
-        ctx.moveTo(maskPolygon[0][0] * scaleX, maskPolygon[0][1] * scaleY);
-        for (let i = 1; i < maskPolygon.length; i++) {
-          ctx.lineTo(maskPolygon[i][0] * scaleX, maskPolygon[i][1] * scaleY);
-        }
-        ctx.closePath();
-        ctx.fill();
-      }
 
       if (boxCoords && boxCoords.length === 4) {
         const [xMin, yMin, xMax, yMax] = boxCoords;
@@ -5439,7 +5387,6 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     if (frameIndex < 0 || frameIndex >= allScreenFrames.length) return;
 
     currentFrameIndex = frameIndex;
-    let maskHidden = false; // Track if user has revealed masked content
     const triggerElement = document.activeElement;
     const prevOverflow = document.body.style.overflow;
 
@@ -5450,18 +5397,16 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     modal.setAttribute('aria-modal', 'true');
     modal.setAttribute('aria-label', 'Screenshot viewer');
 
-    const drawFrame = (canvas, f, showMask) => {
+    const drawFrame = (canvas, f) => {
       const videoUrl = getVideoUrlForChunk(f);
       const frameId = f.source_ref?.frame_id;
       const boxCoords = f.source_ref?.box_2d;
-      const aruco = f.source_ref?.aruco;
       const participants = f.source_ref?.participants || [];
 
       if (videoUrl && frameId) {
         frameCapture.drawFull(canvas, videoUrl, frameId, {
           boxCoords,
-          participants,
-          aruco: showMask ? aruco : null // Pass null to skip mask
+          participants
         });
       } else {
         canvas.classList.remove('loading');
@@ -5476,8 +5421,6 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       const category = analysis.primary || '';
       const description = analysis.visual_description || '';
       const imageUrl = getImageUrlForChunk(f);
-      const aruco = f.source_ref?.aruco;
-      const isMasked = aruco?.masked && !maskHidden;
       const hasPrev = currentFrameIndex > 0;
       const hasNext = currentFrameIndex < allScreenFrames.length - 1;
 
@@ -5489,13 +5432,12 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
           <div class="tr-modal-header">
             ${monitorPos ? `<span class="tr-modal-badge tr-modal-badge-monitor">${monitorPos}</span>` : ''}
             ${category ? `<span class="tr-modal-badge tr-modal-badge-category">${escapeHtml(category)}</span>` : ''}
-            ${isMasked ? '<span class="tr-modal-badge tr-modal-badge-masked" title="click image to reveal">masked</span>' : ''}
             <button class="tr-modal-close" title="close (esc)" aria-label="close">&times;</button>
           </div>
           <div class="tr-modal-img-wrap">
             ${imageUrl
               ? `<img id="trModalImage" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(description || 'screen image')}">`
-              : `<canvas id="trModalCanvas" class="loading${isMasked ? ' tr-masked-canvas' : ''}"></canvas>`}
+              : '<canvas id="trModalCanvas" class="loading"></canvas>'}
           </div>
           ${description ? `<div class="tr-modal-description">${escapeHtml(description)}</div>` : ''}
         </div>
@@ -5507,20 +5449,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       // Draw video frames to modal canvas. Still images are loaded directly.
       const canvas = modal.querySelector('#trModalCanvas');
       if (canvas) {
-        drawFrame(canvas, f, !maskHidden);
-      }
-
-      // Add click-to-reveal handler for masked frames
-      if (aruco?.masked && canvas) {
-        canvas.addEventListener('click', () => {
-          if (!maskHidden) {
-            maskHidden = true;
-            canvas.classList.remove('tr-masked-canvas');
-            canvas.classList.add('loading');
-            modal.querySelector('.tr-modal-badge-masked')?.remove();
-            drawFrame(canvas, f, false);
-          }
-        });
+        drawFrame(canvas, f);
       }
     };
 
@@ -5528,7 +5457,6 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       const newIndex = currentFrameIndex + delta;
       if (newIndex >= 0 && newIndex < allScreenFrames.length) {
         currentFrameIndex = newIndex;
-        maskHidden = false; // Reset mask state when navigating
         updateModalContent();
         modal.querySelector('.tr-modal-close')?.focus();
       }

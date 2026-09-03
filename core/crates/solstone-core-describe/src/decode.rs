@@ -7,19 +7,18 @@ use std::path::Path;
 use ffmpeg_next as ffmpeg;
 use image::{DynamicImage, ImageBuffer, ImageFormat, Rgb, imageops::FilterType};
 
-use crate::{
-    ArucoFrame, HashedFrame, WinnowConfig, WinnowCounters, WinnowState, WinnowVerdict, dhash,
-};
+use crate::hash::dhash;
+use crate::{HashedFrame, WinnowConfig, WinnowCounters, WinnowState, WinnowVerdict};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RgbFrame {
-    pub width: u32,
-    pub height: u32,
-    pub pixels: Vec<u8>,
+pub(crate) struct RgbFrame {
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) pixels: Vec<u8>,
 }
 
 impl RgbFrame {
-    pub fn new(width: u32, height: u32, pixels: Vec<u8>) -> Option<Self> {
+    pub(crate) fn new(width: u32, height: u32, pixels: Vec<u8>) -> Option<Self> {
         let expected = usize::try_from(width)
             .ok()?
             .checked_mul(usize::try_from(height).ok()?)?
@@ -33,35 +32,9 @@ impl RgbFrame {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum PreHashOutcome {
-    Apply { aruco: Option<ArucoFrame> },
-    Reject(PreHashRejectReason),
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PreHashRejectReason {
-    FiducialMask,
-    Other,
-}
-
-pub trait PreHashTransform {
-    fn apply(&mut self, frame_id: u64, timestamp: f64, frame: &mut RgbFrame) -> PreHashOutcome;
-}
-
-#[derive(Default)]
-pub struct IdentityTransform;
-
-impl PreHashTransform for IdentityTransform {
-    fn apply(&mut self, _frame_id: u64, _timestamp: f64, _frame: &mut RgbFrame) -> PreHashOutcome {
-        PreHashOutcome::Apply { aruco: None }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub struct QualifiedFrame {
     pub frame_id: u64,
     pub timestamp: f64,
-    pub aruco: Option<ArucoFrame>,
     /// Inline PNG bytes cross the generate boundary; never materialized as a file.
     pub png: Vec<u8>,
 }
@@ -73,7 +46,6 @@ pub struct WinnowMetrics {
     pub scene_cut: usize,
     pub stride_dropped: usize,
     pub kept: usize,
-    pub mask_skipped: usize,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -89,46 +61,19 @@ pub struct DescribeResult {
     pub winnow: Option<WinnowMetrics>,
 }
 
-pub fn process_video(path: &Path) -> DescribeResult {
-    let mut transform = IdentityTransform;
-    process_video_with_transform(path, &mut transform, WinnowConfig::default())
+pub fn process_video(path: &Path, config: WinnowConfig) -> DescribeResult {
+    process_video_inner(path, config, true)
 }
 
 /// Decode and winnow a video without materializing PNG payloads.
 ///
 /// The returned frame metadata is complete, but every [`QualifiedFrame::png`]
 /// is empty. Use this when the caller does not cross the generate boundary.
-pub fn process_video_metadata(path: &Path) -> DescribeResult {
-    let mut transform = IdentityTransform;
-    process_video_with_transform_metadata(path, &mut transform, WinnowConfig::default())
+pub fn process_video_metadata(path: &Path, config: WinnowConfig) -> DescribeResult {
+    process_video_inner(path, config, false)
 }
 
-pub fn process_video_with_transform<T: PreHashTransform>(
-    path: &Path,
-    transform: &mut T,
-    config: WinnowConfig,
-) -> DescribeResult {
-    process_video_with_transform_inner(path, transform, config, true)
-}
-
-/// Decode and winnow a video without materializing PNG payloads.
-///
-/// The returned frame metadata is complete, but every [`QualifiedFrame::png`]
-/// is empty. Use this when the caller does not cross the generate boundary.
-pub fn process_video_with_transform_metadata<T: PreHashTransform>(
-    path: &Path,
-    transform: &mut T,
-    config: WinnowConfig,
-) -> DescribeResult {
-    process_video_with_transform_inner(path, transform, config, false)
-}
-
-fn process_video_with_transform_inner<T: PreHashTransform>(
-    path: &Path,
-    transform: &mut T,
-    config: WinnowConfig,
-    encode_payloads: bool,
-) -> DescribeResult {
+fn process_video_inner(path: &Path, config: WinnowConfig, encode_payloads: bool) -> DescribeResult {
     let mut result = DescribeResult::default();
     if ffmpeg::init().is_err() {
         result.decode_failed = true;
@@ -167,7 +112,6 @@ fn process_video_with_transform_inner<T: PreHashTransform>(
     let mut frame_id = 0_u64;
     let mut state = WinnowState::new(config);
     let mut raw = 0_usize;
-    let mut mask_skipped = 0_usize;
 
     loop {
         let mut packet = ffmpeg::Packet::empty();
@@ -181,11 +125,9 @@ fn process_video_with_transform_inner<T: PreHashTransform>(
                         &mut decoder,
                         &mut scaler,
                         time_base,
-                        transform,
                         encode_payloads,
                         &mut frame_id,
                         &mut raw,
-                        &mut mask_skipped,
                         &mut state,
                         &mut result,
                     )
@@ -204,11 +146,9 @@ fn process_video_with_transform_inner<T: PreHashTransform>(
             &mut decoder,
             &mut scaler,
             time_base,
-            transform,
             encode_payloads,
             &mut frame_id,
             &mut raw,
-            &mut mask_skipped,
             &mut state,
             &mut result,
         )
@@ -219,7 +159,7 @@ fn process_video_with_transform_inner<T: PreHashTransform>(
 
     let counters = state.counters();
     result.qualified_count = result.qualified_frames.len();
-    result.winnow = Some(metrics(raw, mask_skipped, counters));
+    result.winnow = Some(metrics(raw, counters));
     result
 }
 
@@ -248,15 +188,13 @@ fn rgb_scaler_for<'a>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn receive_frames<T: PreHashTransform>(
+fn receive_frames(
     decoder: &mut ffmpeg::decoder::Video,
     scaler: &mut Option<ffmpeg::software::scaling::context::Context>,
     time_base: ffmpeg::Rational,
-    transform: &mut T,
     encode_payloads: bool,
     frame_id: &mut u64,
     raw: &mut usize,
-    mask_skipped: &mut usize,
     state: &mut WinnowState,
     result: &mut DescribeResult,
 ) -> Result<(), ffmpeg::Error> {
@@ -272,16 +210,7 @@ fn receive_frames<T: PreHashTransform>(
                 let timestamp = pts as f64 * f64::from(time_base);
                 let mut rgb = ffmpeg::frame::Video::empty();
                 rgb_scaler_for(scaler, &decoded)?.run(&decoded, &mut rgb)?;
-                let mut frame = rgb_frame(&rgb).ok_or(ffmpeg::Error::InvalidData)?;
-                let aruco = match transform.apply(*frame_id, timestamp, &mut frame) {
-                    PreHashOutcome::Apply { aruco } => aruco,
-                    PreHashOutcome::Reject(PreHashRejectReason::FiducialMask) => {
-                        *mask_skipped += 1;
-                        continue;
-                    }
-                    PreHashOutcome::Reject(PreHashRejectReason::Other) => continue,
-                };
-
+                let frame = rgb_frame(&rgb).ok_or(ffmpeg::Error::InvalidData)?;
                 let hash = dhash(&frame);
                 let verdict = state.decide(HashedFrame { timestamp, hash });
                 if matches!(verdict, WinnowVerdict::Kept | WinnowVerdict::SceneCut) {
@@ -292,7 +221,6 @@ fn receive_frames<T: PreHashTransform>(
                     result.qualified_frames.push(QualifiedFrame {
                         frame_id: *frame_id,
                         timestamp,
-                        aruco,
                         png: if encode_payloads {
                             encode_png(&frame).ok_or(ffmpeg::Error::InvalidData)?
                         } else {
@@ -370,14 +298,13 @@ fn rgb_frame(frame: &ffmpeg::frame::Video) -> Option<RgbFrame> {
     RgbFrame::new(frame.width(), frame.height(), pixels)
 }
 
-fn metrics(raw: usize, mask_skipped: usize, counters: WinnowCounters) -> WinnowMetrics {
+fn metrics(raw: usize, counters: WinnowCounters) -> WinnowMetrics {
     WinnowMetrics {
         raw,
         dhash_qualified: counters.dhash_qualified,
         scene_cut: counters.scene_cut,
         stride_dropped: counters.stride_dropped,
         kept: counters.kept,
-        mask_skipped,
     }
 }
 

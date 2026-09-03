@@ -8,7 +8,6 @@ pub mod categories;
 mod decode;
 pub mod detect;
 pub mod extraction;
-mod fiducial;
 mod hash;
 mod merge;
 mod notify;
@@ -19,14 +18,8 @@ pub mod session;
 mod winnow;
 
 pub use decode::{
-    DescribeResult, IdentityTransform, PreHashOutcome, PreHashRejectReason, PreHashTransform,
-    QualifiedFrame, RgbFrame, WinnowMetrics, process_video, process_video_metadata,
-    process_video_with_transform, process_video_with_transform_metadata, resize_for_vlm,
-    resize_for_vlm_png,
+    DescribeResult, QualifiedFrame, WinnowMetrics, process_video, process_video_metadata,
+    resize_for_vlm, resize_for_vlm_png,
 };
-pub use fiducial::{
-    AREA_RELATIVE_TOLERANCE, ArucoFrame, ArucoMarker, ConveyFiducialMask, MASK_SKIP_THRESHOLD,
-    MAX_MARKER_PERIMETER_RATE, MIN_MARKER_PERIMETER_RATE,
-};
-pub use hash::{dhash, format_dhash};
+pub use hash::format_dhash;
 pub use winnow::{HashedFrame, WinnowConfig, WinnowCounters, WinnowState, WinnowVerdict, winnow};
