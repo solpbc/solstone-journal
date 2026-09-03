@@ -9,6 +9,8 @@ mod clock;
 mod darwin_parent_watch;
 #[cfg(unix)]
 mod hosted_service;
+#[cfg(windows)]
+mod hosted_service_windows;
 mod parent;
 #[cfg(unix)]
 mod parent_loss_admission;
@@ -46,6 +48,11 @@ pub use clock::AdmissionWaitClock;
 pub use darwin_parent_watch::{DarwinParentExitWatcher, DarwinParentWatchError};
 #[cfg(unix)]
 pub use hosted_service::{
+    HostedServiceAdmissionFailure, HostedServiceParentLossError, HostedServiceParentRuntime,
+    HostedServiceShutdownEvidence, HostedServiceWatchError, admit_hosted_service_parent,
+};
+#[cfg(windows)]
+pub use hosted_service_windows::{
     HostedServiceAdmissionFailure, HostedServiceParentLossError, HostedServiceParentRuntime,
     HostedServiceShutdownEvidence, HostedServiceWatchError, admit_hosted_service_parent,
 };
