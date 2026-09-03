@@ -8,7 +8,10 @@ use std::ffi::OsStr;
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Read};
+#[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
+#[cfg(windows)]
+use std::os::windows::fs::OpenOptionsExt;
 use std::path::Path;
 
 use rusqlite::{Connection, OpenFlags, params};
@@ -660,10 +663,31 @@ fn hash_raw_reader(
     Ok((total, format!("sha256:{:x}", digest.finalize())))
 }
 
+#[cfg(unix)]
 fn open_nofollow(path: &Path) -> std::io::Result<File> {
     let file = OpenOptions::new()
         .read(true)
         .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK | nix::libc::O_CLOEXEC)
+        .open(path)?;
+    if !file.metadata()?.file_type().is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "body bundle entry is not a regular file",
+        ));
+    }
+    Ok(file)
+}
+
+#[cfg(windows)]
+fn open_nofollow(path: &Path) -> std::io::Result<File> {
+    // Open the reparse point itself. Its handle metadata then refuses a link
+    // instead of resolving an attacker-controlled target between inspection
+    // and the read.
+    const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
         .open(path)?;
     if !file.metadata()?.file_type().is_file() {
         return Err(std::io::Error::new(
