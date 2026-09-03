@@ -122,6 +122,9 @@ impl InspectRecord {
         self.record.set(key, value);
     }
 
+    // This file is also compiled as a library-only protocol test module, where
+    // the binary's route-record trait is absent. The binary uses this method.
+    #[allow(dead_code)]
     pub fn set_path_hex(&mut self, key: &'static str, path: Option<&Path>) {
         self.record.set_path_hex(key, path);
     }
@@ -182,11 +185,17 @@ impl RepairRecord {
         self.record.set(key, value);
     }
 
+    // See `InspectRecord::set_path_hex`: this is live in the binary and unused
+    // only in the library-only protocol-test compilation.
+    #[allow(dead_code)]
     pub fn set_path_hex(&mut self, key: &'static str, path: Option<&Path>) {
         self.record.set_path_hex(key, path);
     }
 
     #[must_use]
+    // The binary does not read repair fields after encoding, but keeping this
+    // symmetric protocol accessor avoids a second record API.
+    #[allow(dead_code)]
     pub fn get(&self, key: &str) -> Option<&str> {
         self.record.get(key)
     }
@@ -235,6 +244,8 @@ impl OrderedRecord {
         self.values[index] = value;
     }
 
+    // Used through the binary-only route-record trait; see the public wrappers.
+    #[allow(dead_code)]
     fn set_path_hex(&mut self, key: &'static str, path: Option<&Path>) {
         self.set(key, path.map_or_else(String::new, path_hex));
     }
@@ -273,6 +284,7 @@ impl OrderedRecord {
     }
 }
 
+#[allow(dead_code)] // Reached by the binary-only `set_path_hex` path.
 #[cfg(unix)]
 fn path_hex(path: &Path) -> String {
     use std::os::unix::ffi::OsStrExt;
@@ -280,6 +292,7 @@ fn path_hex(path: &Path) -> String {
     lower_hex(path.as_os_str().as_bytes())
 }
 
+#[allow(dead_code)] // Reached by the binary-only `set_path_hex` path.
 #[cfg(not(unix))]
 fn path_hex(path: &Path) -> String {
     lower_hex(path.as_os_str().to_string_lossy().as_bytes())

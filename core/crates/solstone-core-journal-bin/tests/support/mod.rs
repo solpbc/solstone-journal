@@ -36,10 +36,10 @@ pub fn locate_workspace_binary(package: &str, binary: &str) -> PathBuf {
             && target["kind"]
                 .as_array()
                 .is_some_and(|kinds| kinds.iter().any(|kind| kind.as_str() == Some("bin")));
-        if is_binary {
-            if let Some(executable) = message.get("executable").and_then(|value| value.as_str()) {
-                return PathBuf::from(executable);
-            }
+        if is_binary
+            && let Some(executable) = message.get("executable").and_then(|value| value.as_str())
+        {
+            return PathBuf::from(executable);
         }
     }
     panic!("cargo build did not report a {binary} binary artifact");

@@ -673,18 +673,20 @@ impl Drop for TempDir {
     }
 }
 
-/// Records that cargo produced this artifact during this test-binary run,
-/// which is what makes the probe below evidence about the current tree rather
-/// than about whatever was last left in `target/`.
+/// Snapshots an artifact that Cargo produced during this test-binary run. The
+/// process-owned bytes remain stable if another CI suite subsequently rebuilds
+/// the shared Cargo target.
 #[derive(Clone)]
 struct Artifact {
-    path: PathBuf,
+    bytes: Arc<[u8]>,
 }
 
 /// The three sibling helpers are built once for this integration-test binary.
-/// Every harness still copies those verified artifacts into its own private
-/// directory, so the probe's filesystem and PATH isolation remain per-test.
+/// Their fresh outputs are snapshotted before any harness needs them, so every
+/// harness can preserve its own filesystem and PATH isolation without trusting
+/// a mutable shared target directory.
 static WORKSPACE_BINARY_ARTIFACTS: OnceLock<BTreeMap<&'static str, Artifact>> = OnceLock::new();
+static WORKSPACE_DISPATCHER_ARTIFACT: OnceLock<Artifact> = OnceLock::new();
 
 struct Harness {
     _temp: TempDir,
@@ -716,21 +718,22 @@ impl Harness {
         let sibling_dir = temp.path.join("bin");
         fs::create_dir(&sibling_dir).expect("create binary directory");
 
-        let dispatcher_source = PathBuf::from(env!("CARGO_BIN_EXE_solstone-core-journal"));
+        let dispatcher_artifact = workspace_dispatcher_artifact().clone();
         let sibling_artifacts = workspace_binary_artifacts().clone();
-        let core_source = &sibling_artifacts["solstone-core"].path;
-        let depict_source = &sibling_artifacts["solstone-core-depict"].path;
-        let describe_source = &sibling_artifacts["solstone-core-describe"].path;
-
-        let dispatcher_artifact = artifact(&dispatcher_source);
+        let core_artifact = &sibling_artifacts["solstone-core"];
+        let depict_artifact = &sibling_artifacts["solstone-core-depict"];
+        let describe_artifact = &sibling_artifacts["solstone-core-describe"];
 
         let dispatcher = sibling_dir.join("solstone-core-journal");
-        copy_executable(&dispatcher_source, &dispatcher);
+        copy_artifact(&dispatcher_artifact, &dispatcher);
         std::os::unix::fs::symlink(&dispatcher, sibling_dir.join("journal"))
             .expect("link journal command to dispatcher sibling");
-        copy_executable(core_source, &sibling_dir.join("solstone-core"));
-        copy_executable(depict_source, &sibling_dir.join("solstone-core-depict"));
-        copy_executable(describe_source, &sibling_dir.join("solstone-core-describe"));
+        copy_artifact(core_artifact, &sibling_dir.join("solstone-core"));
+        copy_artifact(depict_artifact, &sibling_dir.join("solstone-core-depict"));
+        copy_artifact(
+            describe_artifact,
+            &sibling_dir.join("solstone-core-describe"),
+        );
         let speakers_helper = sibling_dir.join("solstone-core-speakers-analyze");
         fs::write(&speakers_helper, "#!/bin/sh\nexit 1\n")
             .expect("write speakers-analyze placeholder");
@@ -774,7 +777,9 @@ impl Harness {
 
 fn artifact(path: &Path) -> Artifact {
     Artifact {
-        path: path.to_path_buf(),
+        bytes: fs::read(path)
+            .unwrap_or_else(|error| panic!("read built artifact {}: {error}", path.display()))
+            .into(),
     }
 }
 
@@ -794,13 +799,43 @@ fn workspace_binary_artifacts() -> &'static BTreeMap<&'static str, Artifact> {
             ),
         ]
         .into_iter()
-        .map(|(name, package, binary)| (name, artifact(&locate_workspace_binary(package, binary))))
+        .map(|(name, package, binary)| (name, snapshot_workspace_binary(package, binary)))
         .collect()
     })
 }
 
+fn workspace_dispatcher_artifact() -> &'static Artifact {
+    WORKSPACE_DISPATCHER_ARTIFACT.get_or_init(|| {
+        snapshot_workspace_binary("solstone-core-journal-bin", "solstone-core-journal")
+    })
+}
+
+fn snapshot_workspace_binary(package: &str, binary: &str) -> Artifact {
+    for attempt in 0..2 {
+        let source = locate_workspace_binary(package, binary);
+        match fs::read(&source) {
+            Ok(bytes) => {
+                return Artifact {
+                    bytes: bytes.into(),
+                };
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound && attempt == 0 => continue,
+            Err(error) => panic!(
+                "read built {package}/{binary} artifact {}: {error}",
+                source.display()
+            ),
+        }
+    }
+    unreachable!("two snapshot attempts either return or report their read error")
+}
+
 fn copy_executable(source: &Path, destination: &Path) {
     fs::copy(source, destination).expect("copy executable");
+    make_executable(destination);
+}
+
+fn copy_artifact(source: &Artifact, destination: &Path) {
+    fs::write(destination, source.bytes.as_ref()).expect("write copied executable");
     make_executable(destination);
 }
 
@@ -1484,7 +1519,7 @@ fn native_maintenance_bodies_reach_real_native_owners_without_python() {
             "prune-logs: disabled",
         ),
         (
-            ["run", "timeline:rollup-day", "20260301"].as_slice(),
+            ["run", "timeline:rollup-day", "--day", "20260301"].as_slice(),
             66,
             "no verified segment timeline.json found",
         ),
@@ -2273,7 +2308,7 @@ fn missing_native_sibling_is_a_guard_verdict_without_a_spawn() {
     let dispatcher = temp.path.join("dispatcher-not-run");
     let empty_artifacts = BTreeMap::new();
     let dispatcher_artifact = Artifact {
-        path: dispatcher.clone(),
+        bytes: Arc::<[u8]>::from([]),
     };
     let poison_marker = temp.path.join("poison-not-run");
     let probe_stderr = temp.path.join("probe-stderr-not-run");
@@ -2574,7 +2609,7 @@ fn unregistered_native_probe_is_a_guard_verdict_without_a_spawn() {
     let dispatcher = temp.path.join("dispatcher-not-run");
     let empty_artifacts = BTreeMap::new();
     let dispatcher_artifact = Artifact {
-        path: dispatcher.clone(),
+        bytes: Arc::<[u8]>::from([]),
     };
     let poison_marker = temp.path.join("poison-not-run");
     let probe_stderr = temp.path.join("probe-stderr-not-run");
@@ -2667,16 +2702,9 @@ fn stderr_anchor_mismatch_is_a_guard_verdict() {
     let sibling = sibling_dir.join("synthetic-native");
     fs::write(&sibling, "#!/bin/sh\nexit 0\n").expect("write sibling");
     make_executable(&sibling);
-    let dispatcher_artifact = Artifact {
-        path: dispatcher.clone(),
-    };
+    let dispatcher_artifact = artifact(&dispatcher);
     let mut sibling_artifacts = BTreeMap::new();
-    sibling_artifacts.insert(
-        "synthetic-native",
-        Artifact {
-            path: sibling.clone(),
-        },
-    );
+    sibling_artifacts.insert("synthetic-native", artifact(&sibling));
     let poison_marker = temp.path.join("poison-not-run");
     let probe_stderr = temp.path.join("probe-stderr");
     let home = temp.path.join("home");

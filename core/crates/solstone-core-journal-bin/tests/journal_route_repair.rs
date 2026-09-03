@@ -16,8 +16,9 @@ use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use solstone_core_installation_identity::{
-    ArtifactBindingEvidence, GuardFields, InstallationId, LegacyManifestEvidence, OwnerBase,
-    PlatformTag, SetupAdmissionRequest, admit_setup, journal_token_from_path, root_token_from_path,
+    ArtifactBindingEvidence, Generation, GuardFields, InstallationId, LegacyManifestEvidence,
+    OwnerBase, PlatformTag, SetupAdmissionRequest, admit_setup, journal_token_from_path,
+    root_token_from_path,
 };
 use solstone_core_service_unit::{build_service_environment, render_systemd_unit};
 use solstone_core_setup::wrapper::render_wrapper;
@@ -140,15 +141,16 @@ impl Fixture {
     }
 
     fn write_service(&self, guard: &GuardFields) {
+        self.write_service_for(guard, &self.prefix.join("current/bin"));
+    }
+
+    fn write_service_for(&self, guard: &GuardFields, runtime: &Path) {
         let path = self.service_path();
         fs::create_dir_all(path.parent().expect("service parent")).expect("create service parent");
         let environment = build_service_environment(
             self.home.to_str().expect("utf8 home"),
             Some("/usr/bin:/bin"),
-            self.prefix
-                .join("current/bin")
-                .to_str()
-                .expect("utf8 runtime"),
+            runtime.to_str().expect("utf8 runtime"),
             guard,
         );
         fs::write(
@@ -193,19 +195,6 @@ impl Fixture {
             .env("SOLSTONE_JOURNAL", &self.journal)
             .output()
             .expect("run route repair")
-    }
-
-    fn run_repair_with_missing_user_manager(&self, token: &str) -> Output {
-        Command::new(self.dispatcher())
-            .args(["__journal-route-repair", "--route-lock-owner", token])
-            .env("HOME", &self.home)
-            .env("SOLSTONE_JOURNAL", &self.journal)
-            .env(
-                "DBUS_SESSION_BUS_ADDRESS",
-                format!("unix:path={}", self.root.join("missing-user-bus").display()),
-            )
-            .output()
-            .expect("run route repair without a user manager")
     }
 }
 
@@ -340,16 +329,15 @@ fn repair_repoints_owned_drift_and_is_idempotent() {
 }
 
 #[test]
-fn repair_attempts_service_refresh_for_runtime_drift() {
-    let fixture = Fixture::new("runtime-drift");
-    fixture.install_owned_tuple();
+fn repair_refuses_conflicting_guard_generations_without_mutating() {
+    let fixture = Fixture::new("static-drift");
+    let guard = fixture.install_owned_tuple();
+    let mut stale_guard = guard.clone();
+    stale_guard.generation = Generation::new(2).expect("stale nonzero generation");
+    fixture.write_service_for(&stale_guard, &fixture.prefix.join("current/bin"));
     fixture.acquire_route_lock(TOKEN);
 
-    let fields = parse_record(fixture.run_repair_with_missing_user_manager(TOKEN), 3);
-    assert_eq!(fields["service_state"], "runtime-drifted");
-    assert_eq!(fields["repair_wrapper"], "unchanged");
-    assert_eq!(fields["repair_service"], "rewritten");
-    assert_eq!(fields["outcome"], "partial-failure");
+    assert_repair_refusal_preserves_artifacts(&fixture, "artifact-ambiguous");
 }
 
 #[test]

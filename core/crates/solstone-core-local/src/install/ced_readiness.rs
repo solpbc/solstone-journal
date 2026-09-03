@@ -291,10 +291,7 @@ mod tests {
     fn windows_requires_a_verified_package_engine() {
         let journal = tempfile::tempdir().unwrap();
         match evaluate_ced_readiness(journal.path(), "windows", "x86_64") {
-            CedVerdict::Degraded(CapabilityStatus::ResourceOrOwnerScopeUnavailable {
-                detail,
-                ..
-            }) => {}
+            CedVerdict::Degraded(CapabilityStatus::ResourceOrOwnerScopeUnavailable { .. }) => {}
             other => panic!("expected package-engine refusal, got {other:?}"),
         }
         match evaluate_ced_readiness(journal.path(), "macos", "aarch64") {
@@ -389,7 +386,7 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
     fn absent_sidecar_is_absent() {
         let journal = tempfile::tempdir().unwrap();
         match evaluate_ced_readiness(journal.path(), "linux", "x86_64") {
-            CedVerdict::Degraded(CapabilityStatus::Absent { detail, .. }) => {}
+            CedVerdict::Degraded(CapabilityStatus::Absent { .. }) => {}
             other => panic!("expected absent, got {other:?}"),
         }
     }
@@ -399,7 +396,7 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
         let journal = tempfile::tempdir().unwrap();
         write_complete_ced_install(journal.path(), "linux-cpu-x64").unwrap();
         match evaluate_ced_readiness(journal.path(), "linux", "x86_64") {
-            CedVerdict::Degraded(CapabilityStatus::IntegrityInvalid { detail, .. }) => {}
+            CedVerdict::Degraded(CapabilityStatus::IntegrityInvalid { .. }) => {}
             other => panic!("expected integrity-invalid, got {other:?}"),
         }
     }

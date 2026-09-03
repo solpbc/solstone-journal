@@ -826,6 +826,29 @@ fn load_authorized_for_mutation(path: &Path) -> Result<Clients, AuthorizedClient
 }
 
 fn read_authorized(path: &Path) -> Result<Option<Clients>, AuthorizedClientsLoadError> {
+    // The authorization ledger is a bounded local JSON document. Reject special
+    // files before opening them: a FIFO, device, or directory can otherwise
+    // leave a caller indefinitely blocked in `fs::read`, which is especially
+    // unsafe on a per-request authorization path.
+    match fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() => {}
+        Ok(_) => {
+            return Err(AuthorizedClientsLoadError::Unreadable {
+                path: path.to_path_buf(),
+                source: io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "authorized clients ledger is not a regular file",
+                ),
+            });
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(source) => {
+            return Err(AuthorizedClientsLoadError::Unreadable {
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    }
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),

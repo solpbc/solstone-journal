@@ -3964,7 +3964,7 @@ async fn ac4_each_carrier_snapshots_a_fresh_ledger_read() {
 }
 
 #[tokio::test]
-async fn ac5b_hung_handshake_read_fails_closed_and_recovers() {
+async fn ac5b_non_regular_handshake_ledger_fails_closed_and_recovers() {
     let fixture = Fixture::established(1);
     let (sender, _) = watch::channel(DeviceDoorAuthorization::from(
         AuthorizedClientsRead::Missing,
@@ -3992,11 +3992,11 @@ async fn ac5b_hung_handshake_read_fails_closed_and_recovers() {
         tls_handshake(fixture.client_config(0), port).await
     };
     assert!(
-        started.elapsed() < Duration::from_secs(5),
-        "hung read is bounded"
+        started.elapsed() < Duration::from_secs(1),
+        "non-regular ledger must be rejected before it can block"
     );
     assert_tls_alert(result, rustls::AlertDescription::CertificateUnknown);
-    assert!(warn_capture::contains(
+    assert!(!warn_capture::contains(
         "handshake authorization read timed out"
     ));
 
@@ -4005,7 +4005,7 @@ async fn ac5b_hung_handshake_read_fails_closed_and_recovers() {
     drop(live_carrier(&fixture, port).await);
     assert!(
         !warn_capture::contains("handshake authorization read timed out"),
-        "completed read must not emit the handshake timeout warning"
+        "restored regular ledger must not emit the timeout warning"
     );
     handle.shutdown();
 }

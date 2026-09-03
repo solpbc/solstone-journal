@@ -397,6 +397,9 @@ fn ac21_only_operational_log_module_names_write_primitives() {
     assert!(LOG.contains("JournalRoot::open"));
     assert!(LOG.contains("create_oplog_at"));
     assert!(LOG.contains("OplogFormat::Log"));
+    assert!(LOG.contains("writer.write_all"));
+    assert!(LOG.contains("writer.flush"));
+    assert!(LOG.contains("join(\"health\")"));
     assert!(LOG.contains("CHRONICLE_DIR"));
     assert!(LIFECYCLE_STATE.contains("OpenOptions"));
     assert!(LIFECYCLE_STATE.contains("create_dir_all"));
