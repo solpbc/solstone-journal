@@ -3029,7 +3029,11 @@ mod tests {
         fs::create_dir_all(resolved.journal_path.join("config")).expect("existing journal config");
         let alias = resolved.journal_path.join("health/heartbeat.log");
         fs::create_dir_all(alias.parent().expect("health directory")).expect("health directory");
-        symlink("missing", &alias).expect("retired diagnostic alias");
+        symlink(
+            "../chronicle/20240101/health/launch-1_heartbeat.log",
+            &alias,
+        )
+        .expect("retired managed-process alias");
         assert!(
             non_empty_journal(&resolved.journal_path),
             "the pre-creation journal is classified as existing"
