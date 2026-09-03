@@ -229,9 +229,39 @@ pub fn validate_journal_path_for_wrapper(_journal: &Path) -> Result<(), WrapperE
     Ok(())
 }
 
-/// Windows packages do not create POSIX wrappers. The setup preflight keeps
-/// this no-op so the shared lifecycle flow can reach its Windows skip step.
-pub fn validate_wrapper_pair(_journal: &Path, _executable_dir: &Path) -> Result<(), WrapperError> {
+pub fn validate_wrapper_inputs(
+    command: WrapperCommand,
+    journal: &Path,
+    sol_bin: &Path,
+) -> Result<(), WrapperError> {
+    validate_journal_path_for_wrapper(journal)?;
+    if !sol_bin.is_absolute() {
+        return Err(WrapperError(format!(
+            "{} wrapper target is not absolute: {}",
+            command.as_str(),
+            sol_bin.display()
+        )));
+    }
+    let sol_bin = sol_bin
+        .to_str()
+        .ok_or_else(|| WrapperError("wrapper target is not valid UTF-8".into()))?;
+    if sol_bin
+        .chars()
+        .any(|character| matches!(character, '\0' | '\n'))
+    {
+        return Err(WrapperError(
+            "wrapper target contains NUL or newline".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Keep the shared setup preflight validation intact; the Windows wrapper step
+/// itself still skips all POSIX wrapper provisioning.
+pub fn validate_wrapper_pair(journal: &Path, executable_dir: &Path) -> Result<(), WrapperError> {
+    for command in [WrapperCommand::Solstone, WrapperCommand::Journal] {
+        validate_wrapper_inputs(command, journal, &executable_dir.join(command.as_str()))?;
+    }
     Ok(())
 }
 
