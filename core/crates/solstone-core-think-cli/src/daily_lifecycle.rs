@@ -82,7 +82,7 @@ impl PhaseBudget {
 /// Execute the ordered whole-day catchup lifecycle.
 pub(crate) fn run(
     context: &ThinkContext,
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &mut RunLogWriter,
     args: &ThinkArgs,
     default_segment_workers: usize,
     timeout: Option<Duration>,
@@ -101,7 +101,7 @@ pub(crate) fn run(
 
 fn run_with_phase_process(
     context: &ThinkContext,
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &mut RunLogWriter,
     args: &ThinkArgs,
     default_segment_workers: usize,
     timeout: Option<Duration>,
@@ -181,6 +181,7 @@ fn run_with_phase_process(
                 // before the later daily/index/stats phases may observe it.
                 segment_outcome.replace(run_segment_repair_phase(
                     context,
+                    phase_log,
                     refresh,
                     jobs,
                     segment_workers,
@@ -293,6 +294,7 @@ fn run_process_phase(
 #[allow(clippy::too_many_arguments)] // Explicit lifecycle inputs keep the production/test seam narrow.
 fn run_segment_repair_phase(
     context: &ThinkContext,
+    log: &mut RunLogWriter,
     refresh: bool,
     jobs: i64,
     segment_workers: usize,
@@ -336,6 +338,7 @@ fn run_segment_repair_phase(
     }
     let mut result = match segment::run_repair_batch_with_activity(
         context,
+        log,
         repair_segments,
         refresh,
         jobs,
@@ -415,11 +418,11 @@ fn skipped_phase(phase: &str, reason: &'static str) -> ModeResult {
 }
 
 fn run_required_phases(
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &mut RunLogWriter,
     context: &ThinkContext,
     phases: &[&str],
     phase_budget: impl Fn(&str) -> Option<PhaseBudget>,
-    mut execute: impl FnMut(&str, &mut RunLogWriter<std::fs::File>) -> ModeResult,
+    mut execute: impl FnMut(&str, &mut RunLogWriter) -> ModeResult,
     mut skip: impl FnMut(&str) -> Option<&'static str>,
 ) -> ModeResult {
     let mut total = ModeResult::default();
@@ -559,7 +562,7 @@ fn timed_out_phase(phase: &str, cleanup_error: Option<&str>) -> ModeResult {
 #[allow(clippy::too_many_arguments)] // Completion folding keeps its admitted state and emit seam explicit.
 fn maybe_finalize_completion(
     context: &ThinkContext,
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &mut RunLogWriter,
     scope: CompletionScope,
     daily: &ModeResult,
     segment_blockers: &BTreeSet<SegmentIdentity>,
@@ -689,7 +692,7 @@ fn capped_unit_payload(context: &ThinkContext, daily: &ModeResult) -> Result<Vec
 }
 
 fn log_completion_fold(
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &mut RunLogWriter,
     context: &ThinkContext,
     complete: bool,
     scoped_stream: bool,
@@ -701,7 +704,7 @@ fn log_completion_fold(
         .iter()
         .map(|(name, facet)| crate::dispatch::item_label(name, facet.as_deref()))
         .collect::<Vec<_>>();
-    log.log_event(
+    log.log(
         "daily.completion",
         context.now_ms,
         Map::from_iter([
@@ -726,8 +729,8 @@ fn log_completion_fold(
     );
 }
 
-fn log_phase_start(log: &mut RunLogWriter<std::fs::File>, context: &ThinkContext, phase: &str) {
-    log.log_event(
+fn log_phase_start(log: &mut RunLogWriter, context: &ThinkContext, phase: &str) {
+    log.log(
         "phase.start",
         context.now_ms,
         Map::from_iter([
@@ -746,7 +749,7 @@ fn skip_reason_code(result: &ModeResult) -> Option<&str> {
 }
 
 fn log_phase_complete(
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &mut RunLogWriter,
     context: &ThinkContext,
     phase: &str,
     duration: Duration,
@@ -793,7 +796,7 @@ fn log_phase_complete(
     } else if result.failed != 0 {
         fields.insert("reason_code".to_owned(), Value::String("failed".to_owned()));
     }
-    log.log_event("phase.complete", context.now_ms, fields);
+    log.log("phase.complete", context.now_ms, fields);
 }
 
 fn unix_seconds_f64() -> f64 {
@@ -807,6 +810,7 @@ fn unix_seconds_f64() -> f64 {
 mod tests {
     use std::collections::{BTreeSet, VecDeque};
     use std::fs;
+    use std::io::{BufRead, BufReader, Seek, SeekFrom};
     use std::sync::Arc;
     use std::sync::Mutex;
 
@@ -814,7 +818,8 @@ mod tests {
         CortexRequest, UseCompletion, UseEndState, WaitForUsesReport,
     };
     use solstone_core_journal_io::{
-        HealthMarkerKind, HealthMarkerState, bump_stream_marker, read_health_marker,
+        HealthMarkerKind, HealthMarkerState, JournalRoot, bump_stream_marker,
+        operational_log::catalog_oplogs, read_health_marker,
     };
     use tempfile::tempdir;
 
@@ -903,17 +908,12 @@ mod tests {
             .with_talent_roots(talent_root, apps_root)
     }
 
-    fn log(journal: &std::path::Path) -> RunLogWriter<std::fs::File> {
-        RunLogWriter::open(&journal.join("chronicle").join(DAY).join("lifecycle.jsonl"))
+    fn log(journal: &std::path::Path) -> RunLogWriter {
+        RunLogWriter::open(journal, DAY, "daily")
     }
 
-    fn health_log(journal: &std::path::Path) -> RunLogWriter<std::fs::File> {
-        RunLogWriter::open(
-            &journal
-                .join("chronicle")
-                .join(DAY)
-                .join("health/lifecycle.jsonl"),
-        )
+    fn health_log(journal: &std::path::Path) -> RunLogWriter {
+        RunLogWriter::open(journal, DAY, "daily")
     }
 
     fn complete_daily() -> ModeResult {
@@ -992,19 +992,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(result.failed, 0);
-        let rows = fs::read_to_string(
-            journal
-                .path()
-                .join("chronicle")
-                .join(DAY)
-                .join("lifecycle.jsonl"),
-        )
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .filter(|row| row["event"] == "phase.start")
-        .map(|row| row["phase"].as_str().unwrap().to_owned())
-        .collect::<Vec<_>>();
+        let rows = lifecycle_rows(journal.path(), "phase.start")
+            .iter()
+            .map(|row| row["phase"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
         assert_eq!(
             rows,
             [
@@ -1015,18 +1006,7 @@ mod tests {
                 "journal_stats"
             ]
         );
-        let completions = fs::read_to_string(
-            journal
-                .path()
-                .join("chronicle")
-                .join(DAY)
-                .join("lifecycle.jsonl"),
-        )
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .filter(|row| row["event"] == "phase.complete")
-        .collect::<Vec<_>>();
+        let completions = lifecycle_rows(journal.path(), "phase.complete");
         assert_eq!(completions[0]["timeout_scope"], "aggregate");
         assert_eq!(completions[1]["timeout_scope"], "per_segment");
         assert_eq!(completions[2]["timeout_scope"], "per_priority_group");
@@ -1089,17 +1069,7 @@ mod tests {
 
         assert!(result.failed > 0);
         assert_eq!(marker_generation(journal.path()), None);
-        let rows = fs::read_to_string(
-            journal
-                .path()
-                .join("chronicle")
-                .join(DAY)
-                .join("health/lifecycle.jsonl"),
-        )
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .collect::<Vec<_>>();
+        let rows = lifecycle_rows(journal.path(), "talent.fail");
         assert!(rows.iter().any(|row| {
             row["event"] == "talent.fail"
                 && row["mode"] == "daily"
@@ -1162,18 +1132,10 @@ mod tests {
         );
         assert_eq!(marker_generation(journal.path()), Some(1));
         assert_eq!(events, 1);
-        let completion = fs::read_to_string(
-            journal
-                .path()
-                .join("chronicle")
-                .join(DAY)
-                .join("lifecycle.jsonl"),
-        )
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .find(|row| row["event"] == "daily.completion")
-        .unwrap();
+        let completion = lifecycle_rows(journal.path(), "daily.completion")
+            .into_iter()
+            .next()
+            .unwrap();
         assert_eq!(completion["complete"], true);
         let emitted = emitted.expect("completion payload");
         assert_eq!(emitted["day"], DAY);
@@ -1400,18 +1362,10 @@ mod tests {
         assert_eq!(marker_generation(journal.path()), None);
         assert_eq!(events, 0);
         assert_eq!(total.failed, 1);
-        let completion = fs::read_to_string(
-            journal
-                .path()
-                .join("chronicle")
-                .join(DAY)
-                .join("lifecycle.jsonl"),
-        )
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .find(|row| row["event"] == "daily.completion")
-        .unwrap();
+        let completion = lifecycle_rows(journal.path(), "daily.completion")
+            .into_iter()
+            .next()
+            .unwrap();
         assert_eq!(completion["complete"], false);
         assert!(matches!(
             read_health_marker(journal.path(), DAY, HealthMarkerKind::Stream).unwrap(),
@@ -1520,17 +1474,31 @@ mod tests {
     }
 
     fn lifecycle_rows(journal: &std::path::Path, event: &str) -> Vec<Value> {
-        fs::read_to_string(journal.join("chronicle").join(DAY).join("lifecycle.jsonl"))
+        let day = chrono::NaiveDate::parse_from_str(DAY, "%Y%m%d").unwrap();
+        catalog_oplogs(JournalRoot::open(journal).unwrap(), &[day])
             .unwrap()
-            .lines()
-            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .into_catalogued_entries()
+            .into_iter()
+            .filter(|(entry, _)| {
+                entry.name().source().display_slug() == "think"
+                    && entry.name().run().display_slug() == "daily"
+            })
+            .flat_map(|(entry, mut file)| {
+                file.seek(SeekFrom::Start(entry.payload_offset() as u64))
+                    .unwrap();
+                BufReader::new(file)
+                    .lines()
+                    .map_while(Result::ok)
+                    .filter_map(|line| serde_json::from_str(&line).ok())
+                    .collect::<Vec<Value>>()
+            })
             .filter(|row| row["event"] == event)
             .collect()
     }
 
     fn policy_run(
         context: &ThinkContext,
-        log: &mut RunLogWriter<std::fs::File>,
+        log: &mut RunLogWriter,
         repair: SegmentPhaseOutcome,
         mut execute: impl FnMut(&str) -> ModeResult,
     ) -> (ModeResult, Vec<String>) {

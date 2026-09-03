@@ -20,7 +20,7 @@ use crate::run_log::RunLogWriter;
 /// run sorted priority batches with the fixed 610-second deadline.
 pub(crate) fn run(
     context: &ThinkContext,
-    log: &RunLogWriter<std::fs::File>,
+    log: &mut RunLogWriter,
     activity_id: &str,
     facet: &str,
     refresh: bool,
@@ -82,12 +82,12 @@ pub(crate) fn run(
     );
     context.status.update(start.clone());
     let _ = helpers::emit(&context.journal, context.now_ms, "started", start.clone());
-    log.log_event("started", context.now_ms, start);
+    log.log("started", context.now_ms, start);
 
     let runtime = runtime()?;
     let mut total = ModeResult::default();
     for (priority, configs) in groups {
-        log.log_event(
+        log.log(
             "group.start",
             context.now_ms,
             fields(
@@ -106,7 +106,7 @@ pub(crate) fn run(
             if skip_low_level_work(&config.key, kind, &record) {
                 // Source-derived, not measured: thinking.py:3330-3343 skips
                 // `work` below 0.4 for browsing and reading activities.
-                log.log_event(
+                log.log(
                     "talent.skip",
                     context.now_ms,
                     fields(
@@ -185,7 +185,7 @@ pub(crate) fn run(
             &mut group,
             drain_activity(context, log, &runtime, pending, activity_id, facet),
         );
-        log.log_event(
+        log.log(
             "group.complete",
             context.now_ms,
             fields(
@@ -223,11 +223,9 @@ pub(crate) fn run(
         "completed",
         completed.clone(),
     );
-    helpers::day_log(
-        &context.journal,
-        &context.day,
+    log.summary(
         context.now_ms,
-        &format!(
+        format!(
             "think --activity {activity_id}{}",
             if total.failed == 0 {
                 String::new()
@@ -236,7 +234,7 @@ pub(crate) fn run(
             }
         ),
     );
-    log.log_event("completed", context.now_ms, completed);
+    log.log("completed", context.now_ms, completed);
     Ok(total)
 }
 
@@ -354,7 +352,7 @@ fn iso_day(day: &str) -> String {
 
 fn drain_activity(
     context: &ThinkContext,
-    log: &RunLogWriter<std::fs::File>,
+    log: &mut RunLogWriter,
     runtime: &tokio::runtime::Runtime,
     pending: Vec<PendingUse>,
     activity_id: &str,
@@ -491,7 +489,7 @@ fn fields(
 }
 
 fn log_dispatch(
-    log: &RunLogWriter<std::fs::File>,
+    log: &mut RunLogWriter,
     context: &ThinkContext,
     name: &str,
     activity: &str,
@@ -509,12 +507,12 @@ fn log_dispatch(
     );
     // Source-derived, not measured: thinking.py:3403-3417 records both the
     // accepted start and the durable `talent.dispatch` sidecar event.
-    log.log_event("talent.started", context.now_ms, base.clone());
-    log.log_event("talent.dispatch", context.now_ms, base);
+    log.log("talent.started", context.now_ms, base.clone());
+    log.log("talent.dispatch", context.now_ms, base);
 }
 
 fn log_complete(
-    log: &RunLogWriter<std::fs::File>,
+    log: &mut RunLogWriter,
     context: &ThinkContext,
     activity: &str,
     facet: &str,
@@ -532,12 +530,12 @@ fn log_complete(
             ("state".to_owned(), Value::String(state.to_owned())),
         ]),
     );
-    log.log_event("talent.completed", context.now_ms, base.clone());
-    log.log_event("talent.complete", context.now_ms, base);
+    log.log("talent.completed", context.now_ms, base.clone());
+    log.log("talent.complete", context.now_ms, base);
 }
 
 fn log_fail(
-    log: &RunLogWriter<std::fs::File>,
+    log: &mut RunLogWriter,
     context: &ThinkContext,
     activity: &str,
     facet: &str,
@@ -553,8 +551,8 @@ fn log_fail(
         extra.insert("use_id".to_owned(), Value::String(use_id.to_owned()));
     }
     let base = fields(context, activity, facet, extra);
-    log.log_event("talent.completed", context.now_ms, base.clone());
-    log.log_event("talent.fail", context.now_ms, base);
+    log.log("talent.completed", context.now_ms, base.clone());
+    log.log("talent.fail", context.now_ms, base);
 }
 
 fn merge(into: &mut ModeResult, from: ModeResult) {

@@ -12,9 +12,13 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::thread;
 
-use chrono::{Local, Utc};
+use chrono::{Local, NaiveDate, Utc};
 use nix::fcntl::{Flock, FlockArg};
 use serde_json::Value;
+use solstone_core_journal_io::{
+    JournalRoot,
+    operational_log::{OplogFormat, create_oplog_at},
+};
 
 const BINARY: &str = env!("CARGO_BIN_EXE_solstone-core");
 const SPECIES: &str = include_str!("../../../fixtures/native-identity/species-preamble.md");
@@ -79,6 +83,28 @@ fn run_input(journal: &TestJournal, args: &[&str], input: &[u8]) -> Output {
         .write_all(input)
         .expect("write stdin");
     child.wait_with_output().expect("wait identity")
+}
+
+fn write_daily_completion(journal: &TestJournal, day: &str, ts: i64) {
+    let instant = NaiveDate::parse_from_str(day, "%Y%m%d")
+        .unwrap()
+        .and_hms_opt(12, 0, 0)
+        .unwrap()
+        .and_utc()
+        .fixed_offset();
+    let mut writer = create_oplog_at(
+        JournalRoot::open(journal.path()).unwrap(),
+        "think",
+        "daily",
+        OplogFormat::Jsonl,
+        instant,
+    )
+    .unwrap();
+    writeln!(
+        writer,
+        "{{\"event\":\"daily.completion\",\"complete\":true,\"ts\":{ts}}}"
+    )
+    .unwrap();
 }
 
 fn write(path: impl AsRef<Path>, text: &str) {
@@ -412,12 +438,7 @@ fn refresh_short_circuits_when_the_existing_health_is_fresh() {
     let today = Local::now().format("%Y%m%d").to_string();
     let stamp = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
     write(journal.identity().join("health.md"), &health_body(&stamp));
-    write(
-        journal
-            .path()
-            .join(format!("chronicle/{today}/health/today_daily.jsonl")),
-        "{\"event\":\"run.complete\",\"ts\":0}\n",
-    );
+    write_daily_completion(&journal, &today, 0);
 
     let output = run_skipped(&journal, &["identity", "health", "--refresh"]);
 
@@ -455,12 +476,7 @@ fn refresh_checks_the_steward_lock_before_freshness() {
     let today = Local::now().format("%Y%m%d").to_string();
     let stamp = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
     write(journal.identity().join("health.md"), &health_body(&stamp));
-    write(
-        journal
-            .path()
-            .join(format!("chronicle/{today}/health/today_daily.jsonl")),
-        "{\"event\":\"run.complete\",\"ts\":0}\n",
-    );
+    write_daily_completion(&journal, &today, 0);
     let lock_path = journal.path().join("health/.steward.lock");
     fs::create_dir_all(lock_path.parent().unwrap()).unwrap();
     let file = OpenOptions::new()

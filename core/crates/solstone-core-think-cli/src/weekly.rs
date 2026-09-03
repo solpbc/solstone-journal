@@ -15,7 +15,7 @@ use crate::run_log::RunLogWriter;
 /// expansion, stream exclusion, bounded batches, and a final group drain.
 pub(crate) fn run(
     context: &ThinkContext,
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &mut RunLogWriter,
     force: bool,
     stream: Option<&str>,
     max_concurrency: i64,
@@ -56,7 +56,7 @@ pub(crate) fn run(
         start.insert("day".to_owned(), Value::String(context.day.clone()));
         start.insert("priority".to_owned(), Value::from(priority));
         start.insert("count".to_owned(), Value::from(group.len()));
-        log.log_event("group.start", context.now_ms, start);
+        log.log("group.start", context.now_ms, start);
         let mut pending = Vec::new();
         let mut group_result = ModeResult::default();
         for config in group {
@@ -119,7 +119,7 @@ pub(crate) fn run(
         complete.insert("priority".to_owned(), Value::from(priority));
         complete.insert("success".to_owned(), Value::from(group_result.success));
         complete.insert("failed".to_owned(), Value::from(group_result.failed));
-        log.log_event("group.complete", context.now_ms, complete);
+        log.log("group.complete", context.now_ms, complete);
         merge(&mut total, group_result);
     }
     context.status.update(Map::from_iter([(
@@ -137,11 +137,9 @@ pub(crate) fn run(
             ("failed".to_owned(), Value::from(total.failed)),
         ]),
     );
-    helpers::day_log(
-        &context.journal,
-        &context.day,
+    log.summary(
         context.now_ms,
-        &format!(
+        format!(
             "think --weekly{}",
             if total.failed == 0 {
                 String::new()
@@ -159,7 +157,7 @@ pub(crate) fn run(
 )]
 fn queue(
     context: &ThinkContext,
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &mut RunLogWriter,
     runtime: &tokio::runtime::Runtime,
     config: &TalentConfig,
     facet: Option<&str>,
@@ -178,7 +176,7 @@ fn queue(
             if let Some(facet) = facet {
                 fields.insert("facet".to_owned(), Value::String(facet.to_owned()));
             }
-            log.log_event("talent.dispatch", context.now_ms, fields);
+            log.log("talent.dispatch", context.now_ms, fields);
             pending.push(item);
         }
         Err(DispatchFailure::NotClaimed { use_id }) => {
@@ -193,7 +191,7 @@ fn queue(
             if let Some(facet) = facet {
                 fields.insert("facet".to_owned(), Value::String(facet.to_owned()));
             }
-            log.log_event("talent.fail", context.now_ms, fields);
+            log.log("talent.fail", context.now_ms, fields);
             result.failed += 1;
             result
                 .failed_names
@@ -207,7 +205,7 @@ fn queue(
 }
 
 fn log_skip(
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &mut RunLogWriter,
     context: &ThinkContext,
     name: &str,
     reason: &str,
@@ -221,7 +219,7 @@ fn log_skip(
     if let Some(facet) = facet {
         fields.insert("facet".to_owned(), Value::String(facet.to_owned()));
     }
-    log.log_event("talent.skip", context.now_ms, fields);
+    log.log("talent.skip", context.now_ms, fields);
 }
 fn drain_if_full(
     context: &ThinkContext,

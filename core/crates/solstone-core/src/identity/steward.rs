@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Seek, SeekFrom};
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
@@ -19,6 +19,10 @@ use serde_json::{Map, Value};
 use solstone_core_cortex_client::{
     CortexClientError, CortexRequest, CortexRequestClient, CortexRequestPolicy, DispatchError,
     UseEndState,
+};
+use solstone_core_journal_io::{
+    JournalRoot,
+    operational_log::{OplogFormat, catalog_oplogs},
 };
 
 use super::EXIT_FAILURE;
@@ -298,53 +302,41 @@ fn generated_at_ms(stamp: &str) -> Option<i64> {
 }
 
 fn latest_daily_run_complete_ts(journal: &Path, today: &str) -> Option<i64> {
-    let previous = NaiveDate::parse_from_str(today, "%Y%m%d")
-        .ok()?
-        .pred_opt()?
-        .format("%Y%m%d")
-        .to_string();
+    let today = NaiveDate::parse_from_str(today, "%Y%m%d").ok()?;
+    let previous = today.pred_opt()?;
+    let snapshot = catalog_oplogs(JournalRoot::open(journal).ok()?, &[previous, today]).ok()?;
     let mut latest = None;
-    for day in [today, previous.as_str()] {
-        let Ok(day_path) = solstone_core_journal_io::day_path(journal, Some(day), false) else {
+    for (entry, mut file) in snapshot.into_catalogued_entries() {
+        if entry.name().source().display_slug() != "think"
+            || entry.name().run().display_slug() != "daily"
+            || entry.name().format() != OplogFormat::Jsonl
+        {
             continue;
-        };
-        let health_dir = day_path.join("health");
-        let Ok(entries) = fs::read_dir(&health_dir) else {
+        }
+        if file
+            .seek(SeekFrom::Start(entry.payload_offset() as u64))
+            .is_err()
+        {
             continue;
-        };
-        let mut paths = entries
-            .filter_map(Result::ok)
-            .map(|entry| entry.path())
-            .filter(|path| {
-                path.is_file()
-                    && path
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .is_some_and(|name| name.ends_with("_daily.jsonl"))
-            })
-            .collect::<Vec<_>>();
-        paths.sort();
-        for path in paths {
-            let Ok(file) = File::open(path) else {
+        }
+        for line in BufReader::new(file).lines().map_while(Result::ok) {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let Ok(Value::Object(row)) = serde_json::from_str::<Value>(line) else {
                 continue;
             };
-            for line in BufReader::new(file).lines().map_while(Result::ok) {
-                let line = line.trim();
-                if line.is_empty() {
-                    continue;
-                }
-                let Ok(Value::Object(row)) = serde_json::from_str::<Value>(line) else {
-                    continue;
-                };
-                if row.get("event").and_then(Value::as_str) != Some("run.complete") {
-                    continue;
-                }
-                // Daily writers emit numeric timestamps; strings are intentionally ignored.
-                let Some(ts) = row.get("ts").and_then(Value::as_i64) else {
-                    continue;
-                };
-                latest = Some(latest.map_or(ts, |current: i64| current.max(ts)));
+            if row.get("event").and_then(Value::as_str) != Some("daily.completion")
+                || row.get("complete").and_then(Value::as_bool) != Some(true)
+            {
+                continue;
             }
+            // Daily writers emit numeric timestamps; strings are intentionally ignored.
+            let Some(ts) = row.get("ts").and_then(Value::as_i64) else {
+                continue;
+            };
+            latest = Some(latest.map_or(ts, |current: i64| current.max(ts)));
         }
     }
     latest
@@ -384,7 +376,12 @@ mod tests {
         is_already_fresh, latest_daily_run_complete_ts, modified_ns, steward_request,
     };
     use solstone_core_cortex_client::CortexRequest;
+    use solstone_core_journal_io::{
+        JournalRoot,
+        operational_log::{OplogFormat, create_oplog_at},
+    };
     use std::fs::{self, FileTimes};
+    use std::io::Write;
     use std::path::Path;
     use std::time::{Duration, UNIX_EPOCH};
 
@@ -396,14 +393,32 @@ mod tests {
         )
     }
 
-    fn write_daily_run_complete(journal: &Path, day: &str, ts: i64) {
-        let path = journal.join(format!("chronicle/{day}/health/run_daily.jsonl"));
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(
-            path,
-            format!("{{\"event\":\"run.complete\",\"ts\":{ts}}}\n"),
+    fn write_oplog(journal: &Path, day: &str, source: &str, run: &str, body: &str) {
+        let instant = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap()
+            .and_utc()
+            .fixed_offset();
+        let mut writer = create_oplog_at(
+            JournalRoot::open(journal).unwrap(),
+            source,
+            run,
+            OplogFormat::Jsonl,
+            instant,
         )
         .unwrap();
+        writer.write_all(body.as_bytes()).unwrap();
+    }
+
+    fn write_daily_run_complete(journal: &Path, day: &str, ts: i64) {
+        write_oplog(
+            journal,
+            day,
+            "think",
+            "daily",
+            &format!("{{\"event\":\"daily.completion\",\"complete\":true,\"ts\":{ts}}}\n"),
+        );
     }
 
     #[test]
@@ -424,25 +439,27 @@ mod tests {
     #[test]
     fn daily_reader_uses_two_days_and_only_daily_logs() {
         let journal = tempfile::tempdir().unwrap();
-        let yesterday = journal.path().join("chronicle/20260525/health");
-        let today = journal.path().join("chronicle/20260526/health");
-        fs::create_dir_all(&yesterday).unwrap();
-        fs::create_dir_all(&today).unwrap();
-        fs::write(
-            yesterday.join("one_daily.jsonl"),
-            "{\"event\":\"run.complete\",\"ts\":4}\n",
-        )
-        .unwrap();
-        fs::write(
-            today.join("other.jsonl"),
-            "{\"event\":\"run.complete\",\"ts\":9}\n",
-        )
-        .unwrap();
-        fs::write(
-            today.join("two_daily.jsonl"),
-            "bad\n{\"event\":\"run.complete\",\"ts\":8}\n",
-        )
-        .unwrap();
+        write_oplog(
+            journal.path(),
+            "20260525",
+            "think",
+            "daily",
+            "{\"event\":\"daily.completion\",\"complete\":true,\"ts\":4}\n",
+        );
+        write_oplog(
+            journal.path(),
+            "20260526",
+            "think",
+            "weekly",
+            "{\"event\":\"daily.completion\",\"complete\":true,\"ts\":9}\n",
+        );
+        write_oplog(
+            journal.path(),
+            "20260526",
+            "think",
+            "daily",
+            "bad\n{\"event\":\"daily.completion\",\"complete\":false,\"ts\":10}\n{\"event\":\"daily.completion\",\"complete\":true,\"ts\":8}\n",
+        );
         assert_eq!(
             latest_daily_run_complete_ts(journal.path(), "20260526"),
             Some(8)
