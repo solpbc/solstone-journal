@@ -4,15 +4,20 @@
 //! Black-box contracts for native `solstone call health` journal-data routes.
 
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 
 use axum::{
     body::{Body, to_bytes},
     http::{HeaderMap, Request, StatusCode, header},
 };
-use chrono::{Duration, Utc};
+use chrono::{Duration, FixedOffset, NaiveDate, TimeZone, Utc};
 use serde_json::{Value, json};
 use solstone_core_convey_shell::router;
+use solstone_core_journal_io::{
+    JournalRoot,
+    operational_log::{OplogFormat, create_oplog_at},
+};
 use tower::ServiceExt;
 
 struct Fixture {
@@ -73,17 +78,30 @@ impl Fixture {
         }
     }
 
-    fn health_log(&self, day: &str, name: &str, rows: &[Value]) {
-        write_jsonl(
-            &self
-                .root
-                .path()
-                .join("chronicle")
-                .join(day)
-                .join("health")
-                .join(name),
-            rows,
-        );
+    fn health_log(&self, day: &str, run: &str, rows: &[Value]) {
+        let day = NaiveDate::parse_from_str(day, "%Y%m%d").expect("valid test day");
+        let opened = FixedOffset::east_opt(0)
+            .expect("UTC offset")
+            .from_local_datetime(&day.and_hms_opt(12, 0, 0).expect("valid noon"))
+            .single()
+            .expect("unique UTC test instant");
+        let mut writer = create_oplog_at(
+            JournalRoot::open(self.root.path()).expect("fixture journal root"),
+            "think",
+            run,
+            OplogFormat::Jsonl,
+            opened,
+        )
+        .expect("canonical think oplog");
+        for row in rows {
+            writeln!(
+                writer,
+                "{}",
+                serde_json::to_string(row).expect("fixture JSON row")
+            )
+            .expect("write fixture oplog row");
+        }
+        writer.flush().expect("flush fixture oplog");
     }
 
     fn screen_segment(&self, day: &str, segment: &str) {
@@ -469,7 +487,7 @@ async fn segment_fixture_variation_changes_only_backlog_fields() {
     fixture.talent_guards(now);
     let (_, _, baseline) = get(&format!("/api/health/summary?day={day}"), &fixture).await;
     fixture.screen_segment(&day, "120000_60");
-    fixture.health_log(&day, "001.jsonl", &[json!({"event":"sense.complete","ts":1,"mode":"segment","stream":"_default","segment":"120000_60","density":"active"})]);
+    fixture.health_log(&day, "segment", &[json!({"event":"sense.complete","ts":1,"mode":"segment","stream":"_default","segment":"120000_60","density":"active"})]);
     let marker = fixture
         .root
         .path()
@@ -496,12 +514,12 @@ async fn pipeline_route_returns_fixture_values_not_zero_defaults() {
     let day = Utc::now().format("%Y%m%d").to_string();
     fixture.health_log(
         &day,
-        "001_daily.jsonl",
+        "daily",
         &[json!({"event":"run.complete","day":day,"mode":"daily","duration_ms":20})],
     );
     fixture.health_log(
         &day,
-        "001_activity.jsonl",
+        "activity",
         &[
             json!({"event":"run.complete","day":day,"mode":"activity","duration_ms":30}),
             json!({"event":"talent.dispatch","day":day,"mode":"activity","name":"schedule"}),
