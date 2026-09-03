@@ -385,15 +385,27 @@
       (yesterday.sparse_lines || []).forEach(function (line) {
         html += '<p>' + esc(line) + '</p>';
       });
-    } else if ((yesterday.gap_links || []).length || (yesterday.details || []).length) {
-      html += '<ul class="pulse-yesterday-details">';
-      (yesterday.gap_links || []).forEach(function (link) {
-        html += '<li><a href="' + esc(link.href || '#') + '">' + esc(link.text || '') + '</a></li>';
-      });
-      (yesterday.details || []).forEach(function (line) {
-        html += '<li>' + esc(line) + '</li>';
-      });
-      html += '</ul>';
+    } else {
+      const gapLinks = yesterday.gap_links || [];
+      const details = yesterday.details || [];
+      const gapListHtml = gapLinks.map(function (link) {
+        return '<li><a href="' + esc(link.href || '#') + '">' + esc(link.text || '') + '</a></li>';
+      }).join('');
+      const detailsListHtml = details.map(function (line) {
+        return '<li>' + esc(line) + '</li>';
+      }).join('');
+      if (gapLinks.length && details.length) {
+        // Two different kinds of signal — what broke vs. neutral summary —
+        // read as one undifferentiated list otherwise. Split them.
+        const count = Number(yesterday.failed_run_count || 0);
+        const countLabel = count > 0 ? ' · ' + count + (count === 1 ? ' run' : ' runs') : '';
+        html += '<div class="pulse-yesterday-shelf-label">what didn\'t finish' + countLabel + '</div>'
+          + '<ul class="pulse-yesterday-details">' + gapListHtml + '</ul>'
+          + '<div class="pulse-yesterday-shelf-label pulse-yesterday-shelf-label-spaced">everything else</div>'
+          + '<ul class="pulse-yesterday-details">' + detailsListHtml + '</ul>';
+      } else if (gapLinks.length || details.length) {
+        html += '<ul class="pulse-yesterday-details">' + gapListHtml + detailsListHtml + '</ul>';
+      }
     }
     html += '</div></section>';
     return html;
