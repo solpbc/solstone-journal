@@ -15,7 +15,10 @@ use solstone_core_home::{
     HomeContext,
     readers::{collect_anticipated_activities, read_latest},
 };
-use solstone_core_system_health::find_segment_dir;
+use solstone_core_timeline::{
+    SegmentSelectorV1, SegmentTimelineV1, resolve_segment_binding, segment_timeline_path,
+    validate_segment_timeline,
+};
 
 use crate::contract::{CommitPlan, GateDecision, ParsedOutput, PrePostState};
 use crate::writers::WriteIntent;
@@ -334,20 +337,40 @@ fn read_segment_timeline(
         .get("stream")
         .map(|value| string_or(Some(value), ""))
         .filter(|value| !value.is_empty());
-    let directory = find_segment_dir(&context.journal, day, &segment, stream.as_deref())
-        .or_else(|| find_segment_dir(&context.journal, day, &segment, None));
-    let Some(directory) = directory else {
-        gaps.push(format!("no timeline.json found for segment {segment}"));
-        return None;
+    let binding = match resolve_segment_binding(
+        &context.journal,
+        &SegmentSelectorV1 {
+            day: day.to_owned(),
+            segment: segment.clone(),
+            stream: stream.clone(),
+        },
+    ) {
+        Ok(binding) => binding,
+        Err(error) => {
+            gaps.push(format!(
+                "could not resolve timeline for segment {segment}: {error}"
+            ));
+            return None;
+        }
     };
-    let path = directory.join("timeline.json");
-    let data = match fs::read_to_string(&path)
+    let path = match segment_timeline_path(&context.journal, &binding) {
+        Ok(path) => path,
+        Err(error) => {
+            gaps.push(format!(
+                "could not resolve timeline for segment {segment}: {error}"
+            ));
+            return None;
+        }
+    };
+    let timeline = match fs::read(&path)
         .ok()
-        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .and_then(|bytes| serde_json::from_slice::<SegmentTimelineV1>(&bytes).ok())
     {
-        Some(Value::Object(data)) => data,
+        Some(timeline) if validate_segment_timeline(&timeline).is_ok() => timeline,
         Some(_) => {
-            gaps.push(format!("timeline for segment {segment} was not an object"));
+            gaps.push(format!(
+                "timeline for segment {segment} was not a valid V1 artifact"
+            ));
             return None;
         }
         None => {
@@ -355,8 +378,12 @@ fn read_segment_timeline(
             return None;
         }
     };
+    if timeline.binding != binding {
+        gaps.push(format!("timeline binding did not match segment {segment}"));
+        return None;
+    }
     Some(
-        json!({"segment": segment, "stream": stream, "ts": unit.get("ts").cloned().unwrap_or(Value::Null), "title": string_or(data.get("title"), "Untitled segment"), "description": string_or(data.get("description"), "")}),
+        json!({"segment": segment, "stream": stream, "ts": unit.get("ts").cloned().unwrap_or(Value::Null), "title": if timeline.summary.title.is_empty() { "Untitled segment" } else { &timeline.summary.title }, "description": timeline.summary.description}),
     )
 }
 

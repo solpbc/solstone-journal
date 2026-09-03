@@ -105,7 +105,7 @@ fn is_char_literal(bytes: &[u8], index: usize) -> bool {
 /// Blank every comment, string, and char literal to same-length spaces, keeping newlines, so brace
 /// matching cannot be derailed by a `"{"` literal or a commented-out block. Byte offsets are
 /// preserved, so ranges computed against the mask slice the original source directly.
-fn mask_literals_and_comments(source: &str) -> Vec<u8> {
+pub(super) fn mask_literals_and_comments(source: &str) -> Vec<u8> {
     let bytes = source.as_bytes();
     let mut masked = vec![b' '; bytes.len()];
     let mut index = 0;
@@ -232,7 +232,7 @@ fn find_fn_keyword(masked: &[u8], from: usize) -> Option<usize> {
 /// `read_dir`, an `extension`/`"md"` response-format label, and a `join("talent")` in a test
 /// fixture co-occur in files that never touch talent frontmatter. Only their co-occurrence *within
 /// one production scope* is evidence of a reimplemented reader.
-fn production_scopes(source: &str) -> Vec<String> {
+pub(super) fn production_scopes(source: &str) -> Vec<String> {
     let masked = mask_literals_and_comments(source);
     let excluded = cfg_test_ranges(&masked);
     let mut bodies: Vec<Range<usize>> = Vec::new();

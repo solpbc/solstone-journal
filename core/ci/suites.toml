@@ -1634,6 +1634,17 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
+id = "package::solstone-core-timeline"
+package = "solstone-core-timeline"
+set = "component"
+areas = ["cognition"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-top"
 package = "solstone-core-top"
 set = "component"
