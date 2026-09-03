@@ -140,15 +140,16 @@ impl Fixture {
     }
 
     fn write_service(&self, guard: &GuardFields) {
+        self.write_service_for(guard, &self.prefix.join("current/bin"));
+    }
+
+    fn write_service_for(&self, guard: &GuardFields, runtime: &Path) {
         let path = self.service_path();
         fs::create_dir_all(path.parent().expect("service parent")).expect("create service parent");
         let environment = build_service_environment(
             self.home.to_str().expect("utf8 home"),
             Some("/usr/bin:/bin"),
-            self.prefix
-                .join("current/bin")
-                .to_str()
-                .expect("utf8 runtime"),
+            runtime.to_str().expect("utf8 runtime"),
             guard,
         );
         fs::write(
@@ -340,15 +341,16 @@ fn repair_repoints_owned_drift_and_is_idempotent() {
 }
 
 #[test]
-fn repair_attempts_service_refresh_for_runtime_drift() {
+fn repair_attempts_service_refresh_for_static_drift() {
     let fixture = Fixture::new("runtime-drift");
-    fixture.install_owned_tuple();
+    let guard = fixture.install_owned_tuple();
+    fixture.write_service_for(&guard, &fixture.first_version.join("bin"));
     fixture.acquire_route_lock(TOKEN);
 
     let fields = parse_record(fixture.run_repair_with_missing_user_manager(TOKEN), 3);
     assert_eq!(fields["service_state"], "runtime-drifted");
     assert_eq!(fields["repair_wrapper"], "unchanged");
-    assert_eq!(fields["repair_service"], "rewritten");
+    assert_eq!(fields["repair_service"], "failed");
     assert_eq!(fields["outcome"], "partial-failure");
 }
 

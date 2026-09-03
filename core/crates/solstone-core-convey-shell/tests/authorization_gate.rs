@@ -2,7 +2,6 @@
 // Copyright (c) 2026 sol pbc
 
 use std::fs::{self, File, OpenOptions};
-use std::io::Write;
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -156,23 +155,6 @@ impl Drop for BlockingAuthorizationFifo {
     }
 }
 
-fn write_fifo_after_delay(
-    path: PathBuf,
-    bytes: Vec<u8>,
-    delay: Duration,
-) -> std::thread::JoinHandle<()> {
-    std::thread::spawn(move || {
-        std::thread::sleep(delay);
-        let mut writer = OpenOptions::new()
-            .write(true)
-            .open(path)
-            .expect("authorization FIFO writer opens");
-        writer
-            .write_all(&bytes)
-            .expect("authorization FIFO writer writes");
-    })
-}
-
 fn door_port(outcome: &DoorOutcome) -> u16 {
     match outcome {
         DoorOutcome::Bound(address) => address.port(),
@@ -277,7 +259,7 @@ async fn ac5_missing_access_basis_refuses_before_the_route() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn ac6_gate_read_timeout_warns_and_completed_reads_do_not() {
+async fn ac6_gate_rejects_non_regular_ledger_without_blocking() {
     let fixture = Fixture::established(1);
     let listed = linked_device(&fixture, 0);
     let (_, receiver) = watch::channel(DeviceDoorAuthorization::from(
@@ -298,24 +280,6 @@ async fn ac6_gate_read_timeout_warns_and_completed_reads_do_not() {
         "normal ledger read must not emit the timeout warning"
     );
 
-    let bytes = fs::read(&path).expect("authorization fixture reads");
-    remove_authorization_path(&path);
-    mkfifo(&path, Mode::S_IRUSR | Mode::S_IWUSR).expect("delayed authorization FIFO creates");
-    let writer = write_fifo_after_delay(path.clone(), bytes, Duration::from_millis(300));
-    warn_capture::clear();
-    let delayed_started = Instant::now();
-    let (status, _) = request(app.clone(), "/api/system/status", Some(listed.clone())).await;
-    writer.join().expect("delayed authorization writer joins");
-    assert!(
-        delayed_started.elapsed() >= Duration::from_millis(200),
-        "the completing FIFO read waited for its delayed writer"
-    );
-    assert_eq!(status, StatusCode::OK);
-    assert!(
-        !warn_capture::contains("authorization read timed out"),
-        "completed delayed ledger read must not emit the timeout warning"
-    );
-    fs::remove_file(&path).expect("delayed authorization FIFO removes");
     induce_posture(&fixture, DiskPosture::Missing);
     let (_, expected_body) =
         request_bytes(app.clone(), "/api/system/status", Some(listed.clone())).await;
@@ -332,15 +296,18 @@ async fn ac6_gate_read_timeout_warns_and_completed_reads_do_not() {
         request_bytes(app, "/api/system/status", Some(listed)).await
     };
     assert!(
-        started.elapsed() < Duration::from_secs(5),
-        "hung read must be bounded"
+        started.elapsed() < Duration::from_secs(1),
+        "non-regular ledger must be rejected before it can block"
     );
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(
         body, expected_body,
-        "timeout refusal body is byte-identical"
+        "non-regular ledger refusal body is byte-identical"
     );
-    assert!(warn_capture::contains("authorization read timed out"));
+    assert!(
+        !warn_capture::contains("authorization read timed out"),
+        "rejection happens before the timeout path"
+    );
 }
 
 #[tokio::test]

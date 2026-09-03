@@ -211,6 +211,20 @@ fn apply_permanent_devices_shell_divergence(expected: &mut Value) {
 }
 
 fn apply_client_capture_projection_rename(expected: &mut Value) {
+    let version = expected["version"]
+        .as_object_mut()
+        .expect("frozen system status contains version");
+    for field in ["current", "latest"] {
+        assert_eq!(
+            version.get(field),
+            Some(&Value::String("1.0.22".to_owned())),
+            "frozen system status contains the v1.0.22 {field} projection"
+        );
+        version.insert(
+            field.to_owned(),
+            Value::String(env!("CARGO_PKG_VERSION").to_owned()),
+        );
+    }
     let capture = expected["capture"]
         .as_object_mut()
         .expect("frozen system status contains capture");
@@ -219,6 +233,11 @@ fn apply_client_capture_projection_rename(expected: &mut Value) {
         .expect("frozen system status contains observers");
     capture.insert("clients".to_owned(), observers);
     capture.insert("status".to_owned(), Value::String("no_clients".to_owned()));
+    capture.insert("unassessed".to_owned(), Value::Array(Vec::new()));
+    capture.insert(
+        "registry".to_owned(),
+        Value::String("registry_empty".to_owned()),
+    );
 }
 
 /// Permanent documented divergence, introduced 2026-08-24, with no expiry
