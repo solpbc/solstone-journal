@@ -291,6 +291,7 @@ fn run_follow_with_sleep(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_source_follower_with_sleep(
     mut follower: OplogFollower,
     journal_root: &Path,
