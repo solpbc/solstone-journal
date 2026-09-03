@@ -344,6 +344,85 @@ fn install(platform: Platform, home: &Path, port: &str, guard: &GuardFields) -> 
     Ok(0)
 }
 
+/// Republishes an already-classified Linux unit for journal-route repair.
+///
+/// The caller owns [`service_lock`] for this entire operation. The unit is
+/// reloaded after publication and restarted only when it was already active,
+/// preserving an intentionally inactive service.
+pub(crate) fn republish_linux_unit_for_route_repair(
+    home: &Path,
+    executable_dir: &Path,
+    guard: &GuardFields,
+    initial_runtime: &RuntimeTruth,
+) -> Result<(), String> {
+    let target = unit_path(Platform::Linux, home);
+    let initial = classify_unit(Platform::Linux, &target)?;
+    let UnitTruth::Managed(snapshot) = &initial else {
+        return Err(truth_error("route repair", &target, &initial));
+    };
+    let launcher = home.join(".local/bin/journal");
+    let launcher_metadata = fs::metadata(&launcher)
+        .map_err(|error| format!("route repair service launcher is unavailable: {error}"))?;
+    if !launcher_metadata.is_file() || launcher_metadata.permissions().mode() & 0o111 == 0 {
+        return Err("route repair service launcher is not an executable regular file".to_owned());
+    }
+    let port = systemd_route_repair_port(snapshot, &launcher)?;
+    let runtime_dir = version_independent_runtime_dir(executable_dir);
+    let environment = build_service_environment(
+        path_text(home)?,
+        std::env::var("PATH").ok().as_deref(),
+        path_text(&runtime_dir)?,
+        guard,
+    );
+    let bytes = render_systemd_unit(&environment, path_text(&launcher)?, &port).into_bytes();
+    revalidate_initial(Platform::Linux, &target, &initial)?;
+    require_published(atomic_replace_detailed(&target, &bytes, 0o644))?;
+    refresh_linux_route_repair_runtime(initial_runtime, |args, timeout| {
+        run_fixed(systemctl(args), timeout)
+    })
+}
+
+fn refresh_linux_route_repair_runtime<F>(
+    initial_runtime: &RuntimeTruth,
+    mut run: F,
+) -> Result<(), String>
+where
+    F: FnMut(&[&str], Duration) -> Result<CommandResult, String>,
+{
+    require_success(
+        run(&["--user", "daemon-reload"], MUTATION_TIMEOUT)?,
+        "reload systemd for route repair",
+    )?;
+    if matches!(initial_runtime, RuntimeTruth::Managed { active: true }) {
+        require_success(
+            run(&["--user", "restart", UNIT], START_TIMEOUT)?,
+            "restart service for route repair",
+        )?;
+    }
+    Ok(())
+}
+
+fn systemd_route_repair_port(snapshot: &UnitSnapshot, launcher: &Path) -> Result<String, String> {
+    let text = std::str::from_utf8(&snapshot.bytes)
+        .map_err(|_| "route repair service unit is not UTF-8".to_owned())?;
+    let exec = text
+        .lines()
+        .find_map(|line| line.strip_prefix("ExecStart="))
+        .ok_or_else(|| "route repair service unit has no ExecStart".to_owned())?;
+    let arguments = systemd_unit_arguments(exec, launcher)
+        .ok_or_else(|| "route repair service unit has an invalid ExecStart".to_owned())?;
+    match arguments.as_slice() {
+        [_, verb, port]
+            if matches!(verb.as_str(), "start" | "supervisor")
+                && solstone_core_operational_logs::parse_service_port(port).is_ok() =>
+        {
+            Ok(port.clone())
+        }
+        [_, verb] if verb == "supervisor" => Ok("5015".to_owned()),
+        _ => Err("route repair service unit has an invalid command tail".to_owned()),
+    }
+}
+
 fn uninstall(platform: Platform, home: &Path) -> Result<u8, String> {
     let _lock = service_lock(home)?;
     let target = unit_path(platform, home);
@@ -2306,6 +2385,47 @@ mod tests {
         assert!(systemd_managed(systemd.as_bytes(), launcher));
         let plist = render_launchd_plist(&environment, path_text(launcher).unwrap(), port);
         assert!(launchd_managed(&plist, launcher, LABEL));
+    }
+
+    #[test]
+    fn route_repair_reloads_and_restarts_only_an_active_service() {
+        fn successful_command() -> CommandResult {
+            CommandResult {
+                code: 0,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            }
+        }
+
+        let mut active_calls = Vec::new();
+        refresh_linux_route_repair_runtime(&RuntimeTruth::Managed { active: true }, |args, _| {
+            active_calls.push(args.iter().map(ToString::to_string).collect::<Vec<_>>());
+            Ok(successful_command())
+        })
+        .expect("active route repair manager refresh");
+        assert_eq!(
+            active_calls,
+            vec![
+                vec!["--user".to_owned(), "daemon-reload".to_owned()],
+                vec!["--user".to_owned(), "restart".to_owned(), UNIT.to_owned()],
+            ]
+        );
+
+        for runtime in [
+            RuntimeTruth::Absent,
+            RuntimeTruth::Managed { active: false },
+        ] {
+            let mut calls = Vec::new();
+            refresh_linux_route_repair_runtime(&runtime, |args, _| {
+                calls.push(args.iter().map(ToString::to_string).collect::<Vec<_>>());
+                Ok(successful_command())
+            })
+            .expect("inactive route repair manager refresh");
+            assert_eq!(
+                calls,
+                vec![vec!["--user".to_owned(), "daemon-reload".to_owned()]]
+            );
+        }
     }
 
     #[test]

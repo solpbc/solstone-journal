@@ -4,6 +4,7 @@
 //! Read-only inspection for the managed journal launch route.
 
 use std::env;
+use std::ffi::OsStr;
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
@@ -19,11 +20,39 @@ use solstone_core_journal::{
 use solstone_core_setup::identity_evidence::{
     ArtifactSlotEvidence, ServiceSlotEvidence, WrapperSlotEvidence, gather_setup_artifact_evidence,
 };
-use solstone_core_setup::wrapper::wrapper_paths;
+use solstone_core_setup::wrapper::{
+    render_wrapper, wrapper_lock, wrapper_paths, write_wrappers_atomically,
+};
 
 use crate::{discover_binary_home, service};
 
+mod coordination_lock;
 mod record;
+
+trait RouteRecord {
+    fn set(&mut self, key: &'static str, value: impl Into<String>);
+    fn set_path_hex(&mut self, key: &'static str, path: Option<&Path>);
+}
+
+impl RouteRecord for record::InspectRecord {
+    fn set(&mut self, key: &'static str, value: impl Into<String>) {
+        record::InspectRecord::set(self, key, value);
+    }
+
+    fn set_path_hex(&mut self, key: &'static str, path: Option<&Path>) {
+        record::InspectRecord::set_path_hex(self, key, path);
+    }
+}
+
+impl RouteRecord for record::RepairRecord {
+    fn set(&mut self, key: &'static str, value: impl Into<String>) {
+        record::RepairRecord::set(self, key, value);
+    }
+
+    fn set_path_hex(&mut self, key: &'static str, path: Option<&Path>) {
+        record::RepairRecord::set_path_hex(self, key, path);
+    }
+}
 
 /// Inspect the current installation's wrapper/service route without mutating it.
 pub fn inspect() -> ExitCode {
@@ -133,6 +162,384 @@ pub fn inspect() -> ExitCode {
     emit(record, ExitCode::SUCCESS)
 }
 
+/// Repair an already-owned route after the caller's shell acquired the route lock.
+pub fn repair(lock_owner: &str) -> ExitCode {
+    let mut record = record::RepairRecord::success();
+    let executable_dir = match env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+    {
+        Some(directory) => directory,
+        None => return emit_repair_refusal(record, "observation-failed"),
+    };
+    let Some(prefix) = resolve_identity_root_from_executable_dir(&executable_dir)
+        .or_else(|| resolve_installation_root_from_executable_dir(&executable_dir))
+        .or_else(|| route_prefix_for_unselected_version(&executable_dir))
+    else {
+        return emit_repair_refusal(record, "observation-failed");
+    };
+    record.set_path_hex("prefix_hex", Some(&prefix));
+    let current_bin = prefix.join("current/bin");
+    record.set_path_hex("current_bin_hex", Some(&current_bin));
+    let current_state = current_selection_state(&current_bin, &executable_dir);
+    record.set("current_state", current_state);
+
+    let platform = match service::platform() {
+        Ok(platform) => platform,
+        Err(_) => {
+            record.set("platform", "unsupported-not-applicable");
+            record.set("current_state", "not-applicable");
+            record.set("tuple_state", "not-applicable");
+            return emit_repair_refusal(record, "unsupported-platform");
+        }
+    };
+    record.set(
+        "platform",
+        match platform {
+            service::Platform::Linux => "linux",
+            service::Platform::Darwin => "darwin",
+        },
+    );
+    if current_state != "selected" {
+        return emit_repair_refusal(record, "not-current");
+    }
+
+    let lock_state = coordination_lock::validate(&prefix, lock_owner);
+    record.set("route_lock_state", route_lock_state(lock_state));
+    if lock_state != coordination_lock::RouteLockState::Validated {
+        return emit_repair_refusal(record, route_lock_refusal(lock_state));
+    }
+
+    let root_token = match root_token_from_path(&prefix) {
+        Ok(token) => token,
+        Err(_) => return emit_repair_refusal(record, "observation-failed"),
+    };
+    let namespace = namespace_name(PlatformTag::current(), &root_token);
+    let home = match discover_binary_home() {
+        Ok(home) => home,
+        Err(_) => return emit_repair_refusal(record, "observation-failed"),
+    };
+    let owner = match OwnerBase::at_home(home.clone(), PlatformTag::current()) {
+        Ok(owner) => owner,
+        Err(_) => return emit_repair_refusal(record, "observation-failed"),
+    };
+    let binding = match load_installation_binding(&owner, &root_token) {
+        Ok(binding) => {
+            record_binding(&mut record, &binding);
+            record.set("identity_state", "present");
+            Some(binding)
+        }
+        Err(error) => {
+            record.set("identity_state", identity_state(&error));
+            None
+        }
+    };
+    let evidence = gather_setup_artifact_evidence(&home, &namespace, true);
+    let paths = wrapper_paths(&home);
+    record_wrapper_observation(
+        &mut record,
+        "journal_wrapper",
+        evidence.journal_wrapper(),
+        &paths.journal,
+        &binding,
+        &prefix,
+        &executable_dir,
+    );
+    record_wrapper_observation(
+        &mut record,
+        "solstone_wrapper",
+        evidence.solstone_wrapper(),
+        &paths.solstone,
+        &binding,
+        &prefix,
+        &executable_dir,
+    );
+    let service_path = service::unit_path(platform, &home);
+    record_service_observation(
+        &mut record,
+        evidence.service(),
+        &service_path,
+        &paths.journal,
+        platform,
+        &binding,
+        &executable_dir,
+    );
+    let journal_state = record
+        .get("journal_wrapper_state")
+        .expect("wrapper record state")
+        .to_owned();
+    let solstone_state = record
+        .get("solstone_wrapper_state")
+        .expect("wrapper record state")
+        .to_owned();
+    let service_state = record
+        .get("service_state")
+        .expect("service record state")
+        .to_owned();
+    record.set(
+        "tuple_state",
+        tuple_state(
+            binding.is_some(),
+            &journal_state,
+            &solstone_state,
+            &service_state,
+        ),
+    );
+
+    let Some(initial_binding) = binding else {
+        return emit_repair_refusal(record, "missing-identity");
+    };
+    if all_artifacts_missing(&journal_state, &solstone_state, &service_state) {
+        record.set("tuple_state", "not-applicable");
+        record.set("terminal_identity_state", "matched");
+        return emit_repair(record, ExitCode::SUCCESS);
+    }
+    if platform != service::Platform::Linux {
+        return emit_repair_refusal(record, "unsupported-platform");
+    }
+    if let Some(refusal) =
+        repair_eligibility_refusal(&journal_state, &solstone_state, &service_state)
+    {
+        return emit_repair_refusal(record, refusal);
+    }
+
+    let repair_wrappers = journal_state == "drifted" || solstone_state == "drifted";
+    // Runtime observation can be indeterminate even while the parsed, owned
+    // unit is safe to republish (for example a fixture has no user manager).
+    // It does not itself trigger a static rewrite; wrapper drift does, so the
+    // republished unit follows the wrapper update without making a second,
+    // otherwise-idempotent run touch the manager definition.
+    let repair_service =
+        service_state == "drifted" || (repair_wrappers && service_state != "missing");
+    let initial_runtime = repair_service.then(|| {
+        service::observe_runtime(platform, &service_path)
+            .unwrap_or_else(service::RuntimeTruth::Unknown)
+    });
+    record.set(
+        "repair_wrapper",
+        if repair_wrappers {
+            "not-run"
+        } else {
+            "unchanged"
+        },
+    );
+    record.set(
+        "repair_service",
+        if service_state == "missing" || repair_service {
+            "not-run"
+        } else {
+            "unchanged"
+        },
+    );
+
+    let mut runtime_state_preserved = true;
+    if repair_wrappers || repair_service {
+        let _service_lock = match service::service_lock(&home) {
+            Ok(lock) => lock,
+            Err(_) => return emit_repair_refusal(record, "service-lock-unavailable"),
+        };
+        if repair_wrappers {
+            if rewrite_drifted_wrappers(
+                &home,
+                &paths,
+                &initial_binding,
+                &executable_dir,
+                &journal_state,
+                &solstone_state,
+            )
+            .is_err()
+            {
+                return emit_repair_partial(record, "failed", "not-run");
+            }
+            record.set("repair_wrapper", "rewritten");
+        }
+        if repair_service
+            && service::republish_linux_unit_for_route_repair(
+                &home,
+                &executable_dir,
+                &GuardFields::from_binding(&initial_binding),
+                initial_runtime
+                    .as_ref()
+                    .expect("service repair has an initial runtime observation"),
+            )
+            .is_err()
+        {
+            record.set("repair_service", "failed");
+            record.set("outcome", "partial-failure");
+            return emit_repair(record, ExitCode::from(3));
+        }
+        if repair_service {
+            record.set("repair_service", "rewritten");
+            runtime_state_preserved = matches!(
+                (
+                    initial_runtime
+                        .as_ref()
+                        .expect("service repair has an initial runtime observation"),
+                    service::observe_runtime(platform, &service_path),
+                ),
+                (
+                    service::RuntimeTruth::Managed { active: true },
+                    Ok(service::RuntimeTruth::Managed { active: true }),
+                ) | (
+                    service::RuntimeTruth::Managed { active: false }
+                        | service::RuntimeTruth::Absent,
+                    Ok(service::RuntimeTruth::Managed { active: false }
+                        | service::RuntimeTruth::Absent,),
+                ) | (
+                    service::RuntimeTruth::Foreign(_) | service::RuntimeTruth::Unknown(_),
+                    _
+                )
+            );
+        }
+    }
+
+    match load_installation_binding(&owner, &root_token) {
+        Ok(terminal) if terminal == initial_binding => {
+            record.set("terminal_identity_state", "matched");
+            if runtime_state_preserved {
+                emit_repair(record, ExitCode::SUCCESS)
+            } else {
+                record.set("outcome", "partial-failure");
+                emit_repair(record, ExitCode::from(3))
+            }
+        }
+        _ => {
+            record.set("terminal_identity_state", "changed");
+            record.set("outcome", "partial-failure");
+            emit_repair(record, ExitCode::from(3))
+        }
+    }
+}
+
+fn rewrite_drifted_wrappers(
+    home: &Path,
+    paths: &solstone_core_setup::wrapper::WrapperPaths,
+    binding: &InstallationBinding,
+    executable_dir: &Path,
+    journal_state: &str,
+    solstone_state: &str,
+) -> Result<(), String> {
+    let journal = crate::resolve_process_journal_path()
+        .map_err(|_| "route repair could not resolve journal".to_owned())?
+        .path;
+    let guard = GuardFields::from_binding(binding);
+    let mut contents = Vec::new();
+    if journal_state == "drifted" {
+        contents.push((
+            paths.journal.clone(),
+            render_wrapper("journal", &journal, &executable_dir.join("journal"), &guard),
+        ));
+    }
+    if solstone_state == "drifted" {
+        contents.push((
+            paths.solstone.clone(),
+            render_wrapper(
+                "solstone",
+                &journal,
+                &executable_dir.join("solstone"),
+                &guard,
+            ),
+        ));
+    }
+    let _lock = wrapper_lock(home).map_err(|error| error.to_string())?;
+    write_wrappers_atomically(&contents).map_err(|error| error.to_string())
+}
+
+// The shared resolver intentionally refuses an orphaned version directory so
+// it cannot borrow a stable identity. Repair needs only enough shape evidence
+// to report `not-current` before it opens a lock or reads identity state.
+fn route_prefix_for_unselected_version(executable_dir: &Path) -> Option<std::path::PathBuf> {
+    (executable_dir.file_name()? == OsStr::new("bin")).then_some(())?;
+    let version = executable_dir.parent()?;
+    let versions = version.parent()?;
+    (versions.file_name()? == OsStr::new("versions")).then_some(())?;
+    let prefix = versions.parent()?;
+    fs::symlink_metadata(prefix.join("current"))
+        .ok()?
+        .file_type()
+        .is_symlink()
+        .then(|| prefix.to_path_buf())
+}
+
+fn all_artifacts_missing(journal: &str, solstone: &str, service: &str) -> bool {
+    [journal, solstone, service]
+        .iter()
+        .all(|state| *state == "missing")
+}
+
+fn repair_eligibility_refusal(
+    journal: &str,
+    solstone: &str,
+    service: &str,
+) -> Option<&'static str> {
+    for state in [journal, solstone, service] {
+        match state {
+            "foreign" => return Some("artifact-foreign"),
+            "malformed" => return Some("artifact-malformed"),
+            "unguarded" => return Some("artifact-unguarded"),
+            "ambiguous" => return Some("artifact-ambiguous"),
+            "exact-v1" => return Some("artifact-exact-v1"),
+            _ => {}
+        }
+    }
+    if matches!(journal, "missing") || matches!(solstone, "missing") {
+        return Some("tuple-not-repair-eligible");
+    }
+    if !matches!(journal, "aligned" | "drifted")
+        || !matches!(solstone, "aligned" | "drifted")
+        || !matches!(
+            service,
+            "aligned" | "drifted" | "runtime-drifted" | "missing"
+        )
+    {
+        return Some("tuple-not-repair-eligible");
+    }
+    None
+}
+
+fn route_lock_state(state: coordination_lock::RouteLockState) -> &'static str {
+    match state {
+        coordination_lock::RouteLockState::Validated => "validated",
+        coordination_lock::RouteLockState::Missing => "missing",
+        coordination_lock::RouteLockState::Invalid => "invalid",
+        coordination_lock::RouteLockState::OwnerMismatch => "owner-mismatch",
+    }
+}
+
+fn route_lock_refusal(state: coordination_lock::RouteLockState) -> &'static str {
+    match state {
+        coordination_lock::RouteLockState::Missing => "lock-missing",
+        coordination_lock::RouteLockState::Invalid => "lock-invalid",
+        coordination_lock::RouteLockState::OwnerMismatch => "lock-owner-mismatch",
+        coordination_lock::RouteLockState::Validated => unreachable!("validated lock proceeds"),
+    }
+}
+
+fn emit_repair_refusal(mut record: record::RepairRecord, refusal: &str) -> ExitCode {
+    record.set("outcome", "refused");
+    record.set("refusal", refusal);
+    emit_repair(record, ExitCode::from(2))
+}
+
+fn emit_repair_partial(
+    mut record: record::RepairRecord,
+    wrapper: &'static str,
+    service: &'static str,
+) -> ExitCode {
+    record.set("repair_wrapper", wrapper);
+    record.set("repair_service", service);
+    record.set("outcome", "partial-failure");
+    emit_repair(record, ExitCode::from(3))
+}
+
+fn emit_repair(record: record::RepairRecord, code: ExitCode) -> ExitCode {
+    let encoded = record.encode();
+    if io::stdout().lock().write_all(encoded.as_bytes()).is_err() {
+        return ExitCode::from(3);
+    }
+    code
+}
+
 fn emit_refusal(mut record: record::InspectRecord, refusal: &str) -> ExitCode {
     record.set("outcome", "refused");
     record.set("refusal", refusal);
@@ -171,9 +578,9 @@ fn identity_state(error: &IdentityError) -> &'static str {
     }
 }
 
-fn record_binding(record: &mut record::InspectRecord, binding: &InstallationBinding) {
-    record.set("identity_namespace", binding.namespace.as_hex());
-    record.set("identity_id", binding.id.as_hex());
+fn record_binding<R: RouteRecord>(record: &mut R, binding: &InstallationBinding) {
+    record.set("identity_namespace", binding.namespace.as_hex().to_owned());
+    record.set("identity_id", binding.id.as_hex().to_owned());
     record.set("identity_generation", binding.generation.get().to_string());
     record.set(
         "identity_journal_token_hex",
@@ -181,7 +588,7 @@ fn record_binding(record: &mut record::InspectRecord, binding: &InstallationBind
     );
 }
 
-fn record_guard(record: &mut record::InspectRecord, prefix: &str, guard: Option<&GuardFields>) {
+fn record_guard<R: RouteRecord>(record: &mut R, prefix: &str, guard: Option<&GuardFields>) {
     let Some(guard) = guard else {
         return;
     };
@@ -192,7 +599,7 @@ fn record_guard(record: &mut record::InspectRecord, prefix: &str, guard: Option<
             "service" => "service_guard_namespace",
             _ => unreachable!("known route artifact prefix"),
         },
-        guard.namespace.as_hex(),
+        guard.namespace.as_hex().to_owned(),
     );
     record.set(
         match prefix {
@@ -201,7 +608,7 @@ fn record_guard(record: &mut record::InspectRecord, prefix: &str, guard: Option<
             "service" => "service_guard_id",
             _ => unreachable!("known route artifact prefix"),
         },
-        guard.id.as_hex(),
+        guard.id.as_hex().to_owned(),
     );
     record.set(
         match prefix {
@@ -223,8 +630,8 @@ fn record_guard(record: &mut record::InspectRecord, prefix: &str, guard: Option<
     );
 }
 
-fn record_wrapper_observation(
-    record: &mut record::InspectRecord,
+fn record_wrapper_observation<R: RouteRecord>(
+    record: &mut R,
     name: &'static str,
     slot: &WrapperSlotEvidence,
     path: &Path,
@@ -300,8 +707,8 @@ fn wrapper_state(
     }
 }
 
-fn record_service_observation(
-    record: &mut record::InspectRecord,
+fn record_service_observation<R: RouteRecord>(
+    record: &mut R,
     slot: &ServiceSlotEvidence,
     path: &Path,
     launcher: &Path,

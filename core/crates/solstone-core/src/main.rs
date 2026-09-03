@@ -339,6 +339,7 @@ fn main() -> ExitCode {
         }
         Ok(Command::Setup(args)) => run_setup(args),
         Ok(Command::JournalRouteInspect) => journal_route::inspect(),
+        Ok(Command::JournalRouteRepair { lock_owner }) => journal_route::repair(&lock_owner),
         Ok(Command::SetupHelp) => {
             print!("{}", solstone_core_setup::args::USAGE);
             ExitCode::SUCCESS

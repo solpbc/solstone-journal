@@ -753,6 +753,7 @@ pub enum Command {
     TalentWorker(Vec<OsString>),
     ParentLossCoordinator(Vec<OsString>),
     JournalRouteInspect,
+    JournalRouteRepair { lock_owner: String },
     Reprocess(Vec<OsString>),
     JournalStats(Vec<OsString>),
     Talent(Vec<OsString>),
@@ -1601,6 +1602,16 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             Ok(Command::JournalRouteInspect)
         }
         [command, ..] if command == OsStr::new("__journal-route-inspect") => Err(UsageError),
+        [command, flag, owner]
+            if command == OsStr::new("__journal-route-repair")
+                && flag == OsStr::new("--route-lock-owner")
+                && owner.to_str().is_some_and(is_route_lock_owner_token) =>
+        {
+            Ok(Command::JournalRouteRepair {
+                lock_owner: owner.to_string_lossy().into_owned(),
+            })
+        }
+        [command, ..] if command == OsStr::new("__journal-route-repair") => Err(UsageError),
         [command, rest @ ..] if command == OsStr::new("reprocess") => {
             Ok(Command::Reprocess(rest.to_vec()))
         }
@@ -1771,6 +1782,13 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         )),
         _ => Err(UsageError),
     }
+}
+
+fn is_route_lock_owner_token(value: &str) -> bool {
+    value.len() == 32
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
 }
 
 enum EngageParse {
@@ -8747,5 +8765,35 @@ mod tests {
             Ok(Command::JournalRouteInspect)
         );
         assert!(evaluate_args(&args(&["__journal-route-inspect", "--help"])).is_err());
+    }
+
+    #[test]
+    fn journal_route_repair_requires_one_lowercase_lock_owner() {
+        assert_eq!(
+            evaluate_args(&args(&[
+                "__journal-route-repair",
+                "--route-lock-owner",
+                "0123456789abcdef0123456789abcdef",
+            ])),
+            Ok(Command::JournalRouteRepair {
+                lock_owner: "0123456789abcdef0123456789abcdef".to_owned(),
+            })
+        );
+        for invalid in [
+            args(&["__journal-route-repair"]),
+            args(&[
+                "__journal-route-repair",
+                "--route-lock-owner",
+                "0123456789ABCDEF0123456789ABCDEF",
+            ]),
+            args(&[
+                "__journal-route-repair",
+                "--route-lock-owner",
+                "0123456789abcdef0123456789abcdef",
+                "extra",
+            ]),
+        ] {
+            assert!(evaluate_args(&invalid).is_err());
+        }
     }
 }

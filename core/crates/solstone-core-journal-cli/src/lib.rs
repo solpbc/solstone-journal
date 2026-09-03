@@ -155,7 +155,7 @@ pub fn evaluate_args(args: &[OsString]) -> JournalCommand {
     let Some(value) = first.to_str() else {
         return JournalCommand::Unknown;
     };
-    if value == "__journal-route-inspect" {
+    if matches!(value, "__journal-route-inspect" | "__journal-route-repair") {
         return JournalCommand::HiddenNative {
             argv: std::iter::once(first.clone())
                 .chain(rest.iter().cloned())
@@ -632,7 +632,7 @@ mod tests {
     }
 
     #[test]
-    fn hidden_route_inspection_preserves_its_closed_owner_argv() {
+    fn hidden_route_commands_preserve_their_closed_owner_argv() {
         assert_eq!(
             evaluate_args(&args(&["__journal-route-inspect"])),
             JournalCommand::HiddenNative {
@@ -643,6 +643,20 @@ mod tests {
             evaluate_args(&args(&["__journal-route-inspect", "extra"])),
             JournalCommand::HiddenNative {
                 argv: args(&["__journal-route-inspect", "extra"]),
+            }
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "__journal-route-repair",
+                "--route-lock-owner",
+                "0123456789abcdef0123456789abcdef",
+            ])),
+            JournalCommand::HiddenNative {
+                argv: args(&[
+                    "__journal-route-repair",
+                    "--route-lock-owner",
+                    "0123456789abcdef0123456789abcdef",
+                ]),
             }
         );
     }
