@@ -31,6 +31,7 @@ use solstone_core_system::process::{
     BoxedTerminateFn, Disposition, LaunchAuthority, LaunchError, launch,
 };
 
+#[cfg(unix)]
 use crate::speakers_installation::validate_speakers_analyze_runtime;
 
 const REQUEST_SCHEMA: &str = "solstone-speaker-analyze-request-v1";

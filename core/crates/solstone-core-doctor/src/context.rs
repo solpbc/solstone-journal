@@ -82,6 +82,8 @@ impl CheckContext {
         .path;
         let platform = if cfg!(target_os = "macos") {
             Platform::Darwin
+        } else if cfg!(windows) {
+            Platform::Windows
         } else {
             Platform::Linux
         };

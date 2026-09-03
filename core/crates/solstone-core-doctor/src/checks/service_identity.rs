@@ -15,7 +15,22 @@ use crate::{
 const REPAIR: &str = "run journal setup to reinstall the service";
 
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
-    let path = service_path(context);
+    if context.platform == crate::vocabulary::Platform::Windows {
+        return Ok(make_result(
+            check,
+            Status::Skip,
+            "not supported on windows",
+            None::<String>,
+        ));
+    }
+    let Some(path) = service_path(context) else {
+        return Ok(make_result(
+            check,
+            Status::Skip,
+            "not supported on windows",
+            None::<String>,
+        ));
+    };
     if !path.exists() {
         return Ok(make_result(
             check,
@@ -27,6 +42,14 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     let parts = match context.platform {
         crate::vocabulary::Platform::Darwin => launchd_program_arguments(&path),
         crate::vocabulary::Platform::Linux => systemd_exec_start_parts(&path),
+        crate::vocabulary::Platform::Windows => {
+            return Ok(make_result(
+                check,
+                Status::Skip,
+                "not supported on windows",
+                None::<String>,
+            ));
+        }
     };
     let Some(parts) = parts.filter(|parts| !parts.is_empty()) else {
         return Ok(make_result(
@@ -65,14 +88,19 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     ))
 }
 
-fn service_path(context: &CheckContext) -> PathBuf {
+fn service_path(context: &CheckContext) -> Option<PathBuf> {
     match context.platform {
-        crate::vocabulary::Platform::Darwin => context
-            .home_dir
-            .join("Library/LaunchAgents/org.solpbc.solstone.plist"),
-        crate::vocabulary::Platform::Linux => context
-            .home_dir
-            .join(".config/systemd/user/solstone.service"),
+        crate::vocabulary::Platform::Darwin => Some(
+            context
+                .home_dir
+                .join("Library/LaunchAgents/org.solpbc.solstone.plist"),
+        ),
+        crate::vocabulary::Platform::Linux => Some(
+            context
+                .home_dir
+                .join(".config/systemd/user/solstone.service"),
+        ),
+        crate::vocabulary::Platform::Windows => None,
     }
 }
 
@@ -150,7 +178,7 @@ fn resolve_service_target(raw: &str) -> PathBuf {
     resolve_non_strict(path)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::{fs, os::unix::fs::PermissionsExt};
 

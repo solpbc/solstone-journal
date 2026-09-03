@@ -299,6 +299,7 @@ pub(crate) fn validate_speakers_analyze_runtime() -> Result<ValidatedInstallatio
 }
 
 /// Paths used for one validated helper invocation.
+#[cfg_attr(not(unix), allow(dead_code))]
 #[derive(Debug)]
 pub(crate) struct ValidatedInstallation {
     pub(crate) helper: PathBuf,

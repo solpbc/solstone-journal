@@ -5,7 +5,15 @@ use crate::{
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
 fn writable(path: &std::path::Path) -> bool {
-    nix::unistd::access(path, nix::unistd::AccessFlags::W_OK).is_ok()
+    #[cfg(unix)]
+    {
+        nix::unistd::access(path, nix::unistd::AccessFlags::W_OK).is_ok()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        false
+    }
 }
 fn ancestor(path: &std::path::Path) -> &std::path::Path {
     let mut current = path;
@@ -18,6 +26,14 @@ fn ancestor(path: &std::path::Path) -> &std::path::Path {
     current
 }
 pub fn shared(context: &CheckContext, check: Check) -> RunnerResult {
+    if context.platform == crate::vocabulary::Platform::Windows {
+        return Ok(make_result(
+            check,
+            Status::Skip,
+            "not supported on windows",
+            None::<String>,
+        ));
+    }
     let path = &context.journal_path;
     if path.is_dir() {
         return Ok(if writable(path) {

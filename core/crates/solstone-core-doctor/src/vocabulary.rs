@@ -53,12 +53,14 @@ pub enum Status {
 pub enum Platform {
     Linux,
     Darwin,
+    Windows,
 }
 impl Platform {
     pub fn tag(self) -> &'static str {
         match self {
             Self::Linux => "linux",
             Self::Darwin => "darwin",
+            Self::Windows => "windows",
         }
     }
 }
