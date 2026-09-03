@@ -3287,6 +3287,13 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
   }
 
+  // seg.stream is a raw internal identifier (e.g. "device_watch-audio",
+  // "iphone.mobile") — never show it verbatim in owner-facing text.
+  function humanizeStreamName(stream) {
+    if (!stream) return '';
+    return stream.replace(/[._-]+/g, ' ').trim();
+  }
+
   // Build range text with cost and total media size
   function updateRangeText() {
     if (!selectedSegment || !segmentData) return;
@@ -3611,8 +3618,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       const segmentStatusLabel = hasAnalyzingAdvertised ? 'analyzing' : hasPendingAdvertised ? 'pending' : seg.think === 'awaiting' ? AWAITING_THINKING_LABEL : '';
       const statusSuffix = segmentStatusLabel ? ' · ' + segmentStatusLabel : '';
       const ariaStatusSuffix = segmentStatusLabel ? ', ' + segmentStatusLabel : '';
-      pill.title = seg.start + ' – ' + seg.end + ' · ' + duration + ' min · ' + typeDesc + ' · ' + seg.stream + statusSuffix;
-      pill.setAttribute('aria-label', 'Segment ' + seg.start + ' \u2013 ' + seg.end + ', ' + typeLabel + ', ' + seg.stream + ariaStatusSuffix);
+      pill.title = seg.start + ' – ' + seg.end + ' · ' + duration + ' min · ' + typeDesc + ' · ' + humanizeStreamName(seg.stream) + statusSuffix;
+      pill.setAttribute('aria-label', 'Segment ' + seg.start + ' \u2013 ' + seg.end + ', ' + typeLabel + ', ' + humanizeStreamName(seg.stream) + ariaStatusSuffix);
       pill.dataset.key = seg.key;
 
       pill.addEventListener('click', () => selectSegment(seg));
@@ -3655,7 +3662,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       pill.classList.toggle('tr-active', pill.dataset.key === seg.key);
     });
 
-    titleEl.textContent = seg.stream;
+    titleEl.textContent = humanizeStreamName(seg.stream);
     rangeText.textContent = `${seg.start} - ${seg.end}`;
 
     // Show delete button when segment is selected
@@ -5841,7 +5848,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       : '';
 
     deleteSegmentModalBody.innerHTML = `
-      <p class="tr-delete-segment-meta"><strong>${escapeHtml(seg.stream)}</strong> · <strong>${escapeHtml(day)}</strong> · <strong>${escapeHtml(seg.start)} - ${escapeHtml(seg.end)}</strong></p>
+      <p class="tr-delete-segment-meta"><strong>${escapeHtml(humanizeStreamName(seg.stream))}</strong> · <strong>${escapeHtml(day)}</strong> · <strong>${escapeHtml(seg.start)} - ${escapeHtml(seg.end)}</strong></p>
       <p>You'll have about 10 seconds to undo this after confirming.</p>
       <p>This removes:</p>
       <ul class="tr-delete-segment-list">
