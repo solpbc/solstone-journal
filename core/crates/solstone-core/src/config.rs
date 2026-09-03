@@ -1596,10 +1596,14 @@ mod tests {
 
     #[test]
     fn parser_accepts_only_canonical_supported_wrapper_syntax() {
-        let content = legacy_wrapper("solstone", Path::new("/journal"), Path::new("/bin/it's"));
+        let content = legacy_wrapper(
+            "solstone",
+            Path::new("/journal"),
+            Path::new("/bin/it's/solstone"),
+        );
         let wrapper = parse_wrapper(WrapperCommand::Solstone, &content).unwrap();
         assert_eq!(wrapper.journal, "/journal");
-        assert_eq!(wrapper.sol_bin, PathBuf::from("/bin/it's"));
+        assert_eq!(wrapper.sol_bin, PathBuf::from("/bin/it's/solstone"));
         assert_eq!(wrapper.version, 7);
         assert!(parse_wrapper(WrapperCommand::Journal, &content).is_none());
         assert!(
