@@ -946,8 +946,9 @@ fn processing_outcome(record: &AudioImportRecord) -> ProcessingWaitOutcome {
     }
 }
 
-#[cfg(test)]
-mod native_long_audio_remux_tests {
+#[cfg(feature = "native-remux-corpus")]
+#[doc(hidden)]
+pub mod native_long_audio_remux_corpus {
     use std::collections::hash_map::DefaultHasher;
     use std::fs;
     use std::hash::{Hash, Hasher};
@@ -1081,8 +1082,7 @@ mod native_long_audio_remux_tests {
         }
     }
 
-    #[test]
-    fn native_remux_preserves_long_form_audio_packets_without_unbounded_buffers() {
+    pub fn run() {
         for case in LONG_REMUX_CASES {
             let source = fixture_path(case.name);
             assert_eq!(
@@ -1110,9 +1110,8 @@ mod native_long_audio_remux_tests {
             ));
 
             for (chunk_index, start_seconds) in [0.0, 300.0, 600.0].into_iter().enumerate() {
-                let expected_duration = (source_duration - start_seconds)
-                    .min(CHUNK_DURATION_SECONDS)
-                    .max(0.0);
+                let expected_duration =
+                    (source_duration - start_seconds).clamp(0.0, CHUNK_DURATION_SECONDS);
                 let expected = packets_in_slice(&source, start_seconds, expected_duration);
                 let output = temporary
                     .path()
