@@ -293,7 +293,7 @@ pub fn read_jsonl_with_report<T: DeserializeOwned>(
             malformed_line_count: 0,
         });
     }
-    let (payload, first_line) = oplog_payload(&path, &contents).unwrap_or((&contents, 1));
+    let (payload, first_line) = oplog_payload(path, &contents).unwrap_or((&contents, 1));
     let mut records = Vec::new();
     let mut malformed_line_count = 0;
     for (index, line) in payload.split(|byte| *byte == b'\n').enumerate() {
