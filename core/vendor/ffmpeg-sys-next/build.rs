@@ -942,6 +942,19 @@ fn captured_configure(configure: &Command) -> CapturedConfigure {
     }
 }
 
+fn configure_log_tail() -> String {
+    const MAX_LINES: usize = 160;
+    let path = source().join("ffbuild/config.log");
+    match fs::read_to_string(&path) {
+        Ok(contents) => {
+            let mut lines = contents.lines().rev().take(MAX_LINES).collect::<Vec<_>>();
+            lines.reverse();
+            lines.join("\n")
+        }
+        Err(error) => format!("could not read {}: {error}", path.display()),
+    }
+}
+
 fn build(mut configure: Command) -> io::Result<CapturedConfigure> {
     if !source().join("configure").is_file() {
         return Err(io::Error::other("missing required: FFmpeg configure"));
@@ -961,6 +974,7 @@ fn build(mut configure: Command) -> io::Result<CapturedConfigure> {
             "configure stderr: {}",
             String::from_utf8_lossy(&output.stderr)
         );
+        println!("configure config.log tail: {}", configure_log_tail());
 
         return Err(io::Error::other(format!(
             "configure failed {}",
