@@ -51,6 +51,11 @@ pub(crate) fn merge_mode_result(into: &mut ModeResult, from: ModeResult) {
     into.capped_units.extend(from.capped_units);
 }
 
+pub(crate) fn record_followup_failure(result: &mut ModeResult, label: &str, error: &str) {
+    result.failed += 1;
+    result.failed_names.push(format!("{label} ({error})"));
+}
+
 fn use_log_error(journal: &Path, use_id: &str) -> Option<String> {
     let events = read_use_events(journal, use_id).ok()?;
     events.iter().rev().find_map(|event| {

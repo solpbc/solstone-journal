@@ -684,11 +684,12 @@ pub(crate) fn run_repair_batch(
     if segments.is_empty() {
         return Ok(ModeResult::default());
     }
-    let log = Arc::new(
-        RunLogWriter::create_unique(&context.day_dir.join("health"), context.now_ms, "segments")
-            .map_err(|error| error.to_string())?,
-    );
-    run_repair_batch_with_log(
+    let log = Arc::new(RunLogWriter::create_unique_retaining_failure(
+        &context.day_dir.join("health"),
+        context.now_ms,
+        "segments",
+    ));
+    let result = run_repair_batch_with_log(
         context,
         segments,
         refresh,
@@ -696,8 +697,9 @@ pub(crate) fn run_repair_batch(
         segment_workers,
         timeout,
         &skip_talents,
-        log,
-    )
+        Arc::clone(&log),
+    );
+    finish_repair_log(log.as_ref(), result)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -777,10 +779,11 @@ pub(crate) fn run_repair_batch_with_activity(
     skip_talents: Vec<String>,
     no_activity_prompts: bool,
 ) -> Result<ModeResult, String> {
-    let log = Arc::new(
-        RunLogWriter::create_unique(&context.day_dir.join("health"), context.now_ms, "segments")
-            .map_err(|error| error.to_string())?,
-    );
+    let log = Arc::new(RunLogWriter::create_unique_retaining_failure(
+        &context.day_dir.join("health"),
+        context.now_ms,
+        "segments",
+    ));
     let result = run_repair_batch_with_log(
         context,
         segments.clone(),
@@ -790,17 +793,38 @@ pub(crate) fn run_repair_batch_with_activity(
         timeout,
         &skip_talents,
         Arc::clone(&log),
-    )?;
-    replay_activity_state(
-        context,
-        log.as_ref(),
-        &segments,
-        refresh,
-        max_concurrency,
-        no_activity_prompts,
-        false,
-    )?;
-    Ok(result)
+    )
+    .map(|mut result| {
+        if let Err(error) = replay_activity_state(
+            context,
+            log.as_ref(),
+            &segments,
+            refresh,
+            max_concurrency,
+            no_activity_prompts,
+            false,
+        ) {
+            crate::dispatch::record_followup_failure(&mut result, "activity replay", &error);
+        }
+        result
+    });
+    finish_repair_log(log.as_ref(), result)
+}
+
+fn finish_repair_log(
+    log: &RunLogWriter<std::fs::File>,
+    result: Result<ModeResult, String>,
+) -> Result<ModeResult, String> {
+    match (result, log.finish().err()) {
+        (Ok(result), None) => Ok(result),
+        (Ok(mut result), Some(log_error)) => {
+            result.failed += 1;
+            result.failed_names.push(format!("run log ({log_error})"));
+            Ok(result)
+        }
+        (Err(error), None) => Err(error),
+        (Err(error), Some(log_error)) => Err(format!("{error}; {log_error}")),
+    }
 }
 
 /// Replay durable Sense output through the activity-state tail.

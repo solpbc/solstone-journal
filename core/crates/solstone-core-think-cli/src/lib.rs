@@ -230,9 +230,8 @@ where
                 });
             }
             let mut log = open_run_log(&parsed, &day_dir, now_ms, &selected_day);
-            let result = cadence::run(&context, configs, &mut log, parsed.refresh)
-                .map_err(|message| CliError::InvalidDay { message })?;
-            return Ok(mode_outcome(result));
+            let result = cadence::run(&context, configs, &mut log, parsed.refresh);
+            return logged_mode_outcome(log, result);
         }
 
         if let Some(activity_id) = parsed.activity.as_deref() {
@@ -244,9 +243,8 @@ where
                 parsed.facet.as_deref().expect("validated activity facet"),
                 parsed.refresh,
                 parsed.jobs,
-            )
-            .map_err(|message| CliError::InvalidDay { message })?;
-            return Ok(mode_outcome(result));
+            );
+            return logged_mode_outcome(log, result);
         }
         if parsed.flush {
             let mut log = open_run_log(&parsed, &day_dir, now_ms, &selected_day);
@@ -255,9 +253,8 @@ where
                 &mut log,
                 parsed.segment.as_deref().expect("validated flush segment"),
                 parsed.stream.as_deref(),
-            )
-            .map_err(|message| CliError::InvalidDay { message })?;
-            return Ok(mode_outcome(result));
+            );
+            return logged_mode_outcome(log, result);
         }
         if parsed.segments {
             let source = solstone_core_system_health::FilesystemSegmentSource;
@@ -318,21 +315,24 @@ where
                 timeout,
                 parsed.live,
                 &skip_talents,
-            )
-            .map_err(|message| CliError::InvalidDay { message })?;
+            );
             // Source-derived, not measured: thinking.py:2021-2030 advances
             // activity state after every direct segment Sense run.
-            segment::replay_activity_state(
-                &context,
-                &log,
-                &[(segment.to_owned(), parsed.stream.clone())],
-                parsed.refresh,
-                parsed.jobs,
-                parsed.no_activity_prompts,
-                true,
-            )
-            .map_err(|message| CliError::InvalidDay { message })?;
-            return Ok(mode_outcome(result));
+            let result = result.map(|mut result| {
+                if let Err(error) = segment::replay_activity_state(
+                    &context,
+                    &log,
+                    &[(segment.to_owned(), parsed.stream.clone())],
+                    parsed.refresh,
+                    parsed.jobs,
+                    parsed.no_activity_prompts,
+                    true,
+                ) {
+                    dispatch::record_followup_failure(&mut result, "activity replay", &error);
+                }
+                result
+            });
+            return logged_mode_outcome(log, result);
         }
         let mut log = open_run_log(&parsed, &day_dir, now_ms, &selected_day);
         let result = if parsed.weekly {
@@ -352,9 +352,8 @@ where
                 timeout,
                 sense_child_environment,
             )
-        }
-        .map_err(|message| CliError::InvalidDay { message })?;
-        Ok(mode_outcome(result))
+        };
+        logged_mode_outcome(log, result)
     })();
     match result {
         Ok(run) => run,
@@ -403,6 +402,27 @@ fn mode_outcome(result: dispatch::ModeResult) -> CliRun {
         stdout: String::new(),
         stderr,
         exit_code: 1,
+    }
+}
+
+fn logged_mode_outcome(
+    log: run_log::RunLogWriter<std::fs::File>,
+    result: Result<dispatch::ModeResult, String>,
+) -> Result<CliRun, CliError> {
+    let log_error = log.finish().err().map(|error| error.to_string());
+    match (result, log_error) {
+        (Ok(result), None) => Ok(mode_outcome(result)),
+        (Ok(result), Some(log_error)) => {
+            let mut run = mode_outcome(result);
+            run.exit_code = 1;
+            run.stderr
+                .push_str(&format!("journal think: {log_error}\n"));
+            Ok(run)
+        }
+        (Err(message), None) => Err(CliError::InvalidDay { message }),
+        (Err(message), Some(log_error)) => Err(CliError::InvalidDay {
+            message: format!("{message}; {log_error}"),
+        }),
     }
 }
 
@@ -944,6 +964,40 @@ mod tests {
             reported.stderr,
             "journal think: 2 failed\ndaily_summary (send)\nfacts (gpu-unavailable)\n"
         );
+
+        let mut followed = dispatch::ModeResult {
+            success: 2,
+            success_names: vec!["sense".to_owned(), "documents".to_owned()],
+            ..dispatch::ModeResult::default()
+        };
+        dispatch::record_followup_failure(&mut followed, "activity replay", "disk full");
+        assert_eq!(followed.success, 2);
+        assert_eq!(followed.success_names, ["sense", "documents"]);
+        assert_eq!(followed.failed, 1);
+        assert_eq!(followed.failed_names, ["activity replay (disk full)"]);
+    }
+
+    #[test]
+    fn run_log_failure_reports_after_preserving_primary_success() {
+        let root = tempdir().unwrap();
+        let blocked_parent = root.path().join("blocked");
+        fs::write(&blocked_parent, b"not a directory").unwrap();
+        let log = run_log::RunLogWriter::open(&blocked_parent.join("run.jsonl"));
+        let run = logged_mode_outcome(
+            log,
+            Ok(dispatch::ModeResult {
+                success: 1,
+                success_names: vec!["sense".to_owned()],
+                ..dispatch::ModeResult::default()
+            }),
+        )
+        .unwrap();
+        assert_eq!(run.exit_code, 1);
+        assert!(
+            run.stderr
+                .starts_with("journal think: 1 completed\nsense\n")
+        );
+        assert!(run.stderr.contains("think run log"));
     }
 
     #[test]
@@ -1739,8 +1793,8 @@ mod tests {
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
         let context = context.with_talent_roots(talent_root, apps_root);
         let path = journal.path().join("activity.jsonl");
-        let mut log = run_log::RunLogWriter::open(&path);
-        let result = activity::run(&context, &mut log, "reading_1", "work", false, 2).unwrap();
+        let log = run_log::RunLogWriter::open(&path);
+        let result = activity::run(&context, &log, "reading_1", "work", false, 2).unwrap();
         assert_eq!((result.success, result.failed), (3, 0));
         let requests = recorder.requests.lock().unwrap();
         assert_eq!(
@@ -1836,8 +1890,8 @@ mod tests {
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, "output").unwrap();
         }
-        let mut log = run_log::RunLogWriter::open(&journal.path().join("activity.jsonl"));
-        activity::run(&context, &mut log, "reading_1", "work", false, 0).unwrap();
+        let log = run_log::RunLogWriter::open(&journal.path().join("activity.jsonl"));
+        activity::run(&context, &log, "reading_1", "work", false, 0).unwrap();
         assert_eq!(
             recorder
                 .waits
@@ -1926,8 +1980,8 @@ mod tests {
             "20260813",
             serde_json::json!({"id":"low", "activity":"reading", "segments":["090000"], "level_avg":0.39}),
         );
-        let mut log = run_log::RunLogWriter::open(&journal.path().join("low.jsonl"));
-        let low = activity::run(&context, &mut log, "low", "work", false, 2).unwrap();
+        let log = run_log::RunLogWriter::open(&journal.path().join("low.jsonl"));
+        let low = activity::run(&context, &log, "low", "work", false, 2).unwrap();
         assert_eq!((low.success, low.failed), (0, 0));
         assert!(recorder.requests.lock().unwrap().is_empty());
         assert!(
@@ -1942,8 +1996,8 @@ mod tests {
             "20260813",
             serde_json::json!({"id":"full", "activity":"reading", "segments":["090000"], "level_avg":0.4}),
         );
-        let mut log = run_log::RunLogWriter::open(&journal.path().join("full.jsonl"));
-        let full = activity::run(&context, &mut log, "full", "work", false, 2).unwrap();
+        let log = run_log::RunLogWriter::open(&journal.path().join("full.jsonl"));
+        let full = activity::run(&context, &log, "full", "work", false, 2).unwrap();
         assert_eq!((full.success, full.failed), (1, 0));
         assert_eq!(recorder.requests.lock().unwrap().len(), 1);
     }
@@ -2452,28 +2506,27 @@ mod tests {
     }
 
     #[test]
-    fn criterion_seventeen_failed_open_warns_once_then_is_silent() {
-        let _log_guard = capture_logs();
+    fn criterion_seventeen_failed_open_is_retained_after_later_events() {
         let root = tempdir().unwrap();
         let blocked_parent = root.path().join("blocked");
         fs::write(&blocked_parent, b"not a directory").unwrap();
         let writer = run_log::RunLogWriter::open(&blocked_parent.join("run.jsonl"));
-        assert_eq!(warnings().len(), 1);
         writer.log_event("talent.skip", 9, Map::<String, Value>::new());
         writer.log_event("talent.skip", 10, Map::<String, Value>::new());
-        assert_eq!(warnings().len(), 1);
+        let error = writer.finish().unwrap_err().to_string();
+        assert!(error.contains("run.jsonl"));
+        assert!(error.contains("think run log"));
     }
 
     #[test]
-    fn criterion_seventeen_open_sink_write_failures_warn_per_failure() {
-        let _log_guard = capture_logs();
+    fn criterion_seventeen_open_sink_write_failure_is_retained_once() {
         let root = tempdir().unwrap();
         let path = run_log::path(root.path(), 9, "daily");
         let writer = run_log::RunLogWriter::with_sink(path, Failing);
         writer.log_event("talent.skip", 9, Map::<String, Value>::new());
         writer.log_event("talent.skip", 10, Map::<String, Value>::new());
         assert_eq!(writer.skip_count(), 2);
-        assert_eq!(warnings().len(), 2);
+        assert!(writer.finish().unwrap_err().to_string().contains("fail"));
     }
 
     fn segment_dir(journal: &Path, day: &str, segment: &str) -> std::path::PathBuf {
@@ -2543,10 +2596,10 @@ mod tests {
         timeout: Option<std::time::Duration>,
         skip_talents: &[String],
     ) -> dispatch::ModeResult {
-        let mut log = run_log::RunLogWriter::open(&journal.join("segment.jsonl"));
+        let log = run_log::RunLogWriter::open(&journal.join("segment.jsonl"));
         segment::run(
             context,
-            &mut log,
+            &log,
             segment,
             refresh,
             Some("default"),
@@ -2923,19 +2976,17 @@ mod tests {
             fs::create_dir_all(&path).unwrap();
             fs::write(path.join("sense.json"), serde_json::to_vec(&sense).unwrap()).unwrap();
         }
-        let mut log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
+        let log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
         let segments = vec![
             ("090000_300".to_owned(), Some("default".to_owned())),
             ("090500_300".to_owned(), Some("default".to_owned())),
         ];
-        segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, true)
-            .unwrap();
+        segment::replay_activity_state(&context, &log, &segments, false, 2, false, true).unwrap();
         assert!(journal
             .path()
             .join("chronicle/20260813/health/talent-provenance/activity-inputs/work/work_090000_300.json")
             .is_file());
-        segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, true)
-            .unwrap();
+        segment::replay_activity_state(&context, &log, &segments, false, 2, false, true).unwrap();
         let records =
             fs::read_to_string(journal.path().join("facets/work/activities/20260813.jsonl"))
                 .unwrap();
@@ -2987,10 +3038,10 @@ mod tests {
             fs::create_dir_all(&path).unwrap();
             fs::write(path.join("sense.json"), serde_json::to_vec(&sense).unwrap()).unwrap();
         }
-        let mut log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
+        let log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
         segment::replay_activity_state(
             &context,
-            &mut log,
+            &log,
             &[
                 ("090000_300".to_owned(), Some("default".to_owned())),
                 ("090500_300".to_owned(), Some("default".to_owned())),
@@ -3048,10 +3099,10 @@ mod tests {
             br#"{"density":"idle","content_type":"idle"}"#,
         )
         .unwrap();
-        let mut log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
+        let log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
         segment::replay_activity_state(
             &context,
-            &mut log,
+            &log,
             &[("000000_300".to_owned(), Some("default".to_owned()))],
             false,
             2,
@@ -3112,10 +3163,10 @@ mod tests {
             fs::create_dir_all(&path).unwrap();
             fs::write(path.join("sense.json"), serde_json::to_vec(&sense).unwrap()).unwrap();
         }
-        let mut log = run_log::RunLogWriter::open(&journal.path().join("segments.jsonl"));
+        let log = run_log::RunLogWriter::open(&journal.path().join("segments.jsonl"));
         segment::replay_activity_state(
             &context,
-            &mut log,
+            &log,
             &[
                 ("090000_300".to_owned(), Some("import.audio".to_owned())),
                 ("100000_300".to_owned(), Some("default".to_owned())),
@@ -3171,16 +3222,13 @@ mod tests {
             ("090000_300".to_owned(), Some("default".to_owned())),
             ("090500_300".to_owned(), Some("default".to_owned())),
         ];
-        let mut log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
-        segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, true)
-            .unwrap();
-        segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, true)
-            .unwrap();
+        let log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
+        segment::replay_activity_state(&context, &log, &segments, false, 2, false, true).unwrap();
+        segment::replay_activity_state(&context, &log, &segments, false, 2, false, true).unwrap();
         assert_eq!(recorder.requests.lock().unwrap().len(), 1);
         let path = segment_dir(journal.path(), "20260813", "090000_300").join("talents/sense.json");
         fs::write(path, br#"{"density":"active","content_type":"work","activity_summary":"changed","facets":[{"facet":"work"}]}"#).unwrap();
-        segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, true)
-            .unwrap();
+        segment::replay_activity_state(&context, &log, &segments, false, 2, false, true).unwrap();
         assert_eq!(recorder.requests.lock().unwrap().len(), 2);
     }
 
@@ -3217,10 +3265,10 @@ mod tests {
             fs::create_dir_all(&path).unwrap();
             fs::write(path.join("sense.json"), sense).unwrap();
         }
-        let mut log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
+        let log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
         segment::replay_activity_state(
             &context,
-            &mut log,
+            &log,
             &[
                 ("090000_300".to_owned(), Some("default".to_owned())),
                 ("090500_300".to_owned(), Some("default".to_owned())),
@@ -3253,10 +3301,10 @@ mod tests {
             serde_json::to_vec(&serde_json::json!({"density":"active","content_type":"work","activity_summary":"work","facets":[{"facet":"work"}]})).unwrap(),
         )
         .unwrap();
-        let mut log = run_log::RunLogWriter::open(&journal.path().join("segments.jsonl"));
+        let log = run_log::RunLogWriter::open(&journal.path().join("segments.jsonl"));
         segment::replay_activity_state(
             &context,
-            &mut log,
+            &log,
             &[("090000_300".to_owned(), Some("default".to_owned()))],
             false,
             2,
@@ -4260,10 +4308,10 @@ mod tests {
             serde_json::json!({"density":"active","content_type":"work"}),
         );
         let log_path = run_log::path(&context.day_dir, context.now_ms, "segment");
-        let mut log = run_log::RunLogWriter::open(&log_path);
+        let log = run_log::RunLogWriter::open(&log_path);
         let result = segment::run(
             &context,
-            &mut log,
+            &log,
             "090000_300",
             false,
             Some("default"),
@@ -4328,8 +4376,7 @@ mod tests {
     }
 
     #[test]
-    fn unopenable_segment_sidecar_keeps_mode_result_warns_and_folds_awaiting() {
-        let _log_guard = capture_logs();
+    fn unopenable_segment_sidecar_is_retained_after_primary_work() {
         let journal = tempdir().unwrap();
         let roots = tempdir().unwrap();
         let (context, _) = floor_context(journal.path(), roots.path());
@@ -4342,11 +4389,10 @@ mod tests {
         let health = context.day_dir.join("health");
         fs::write(&health, b"not a directory").unwrap();
         let log_path = run_log::path(&context.day_dir, context.now_ms, "segment");
-        let mut log = run_log::RunLogWriter::open(&log_path);
-        assert_eq!(warnings().len(), 1);
+        let log = run_log::RunLogWriter::open(&log_path);
         let result = segment::run(
             &context,
-            &mut log,
+            &log,
             "090000_300",
             false,
             Some("default"),
@@ -4357,10 +4403,26 @@ mod tests {
         )
         .unwrap();
         assert_eq!((result.success, result.failed), (2, 0));
-        assert_eq!(warnings().len(), 1);
+        assert!(log.finish().is_err());
         assert_eq!(
             segment_think(journal.path(), "20260813", "090000_300").as_deref(),
             Some("awaiting")
         );
+
+        let result = segment::run_repair_batch(
+            &context,
+            vec![("090000_300".to_owned(), Some("default".to_owned()))],
+            false,
+            2,
+            1,
+            Some(std::time::Duration::from_secs(610)),
+            Vec::new(),
+        )
+        .unwrap();
+        assert_eq!(result.success, 2);
+        assert_eq!(result.failed, 1);
+        assert_eq!(result.success_names, ["sense", "documents"]);
+        assert_eq!(result.failed_names.len(), 1);
+        assert!(result.failed_names[0].contains("run log"));
     }
 }
