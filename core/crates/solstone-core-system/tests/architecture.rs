@@ -391,8 +391,8 @@ fn ac21_only_operational_log_module_names_write_primitives() {
             "catchup must not write journal data through {primitive}"
         );
     }
-    assert!(LOG.contains("OpenOptions"));
-    assert!(LOG.contains("create_dir_all"));
+    assert!(LOG.contains("JournalRoot::open"));
+    assert!(LOG.contains("create_oplog_at"));
     assert!(LOG.contains("join(\"health\")"));
     assert!(LOG.contains("CHRONICLE_DIR"));
     assert!(LIFECYCLE_STATE.contains("OpenOptions"));

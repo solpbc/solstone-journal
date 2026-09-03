@@ -2512,7 +2512,7 @@ fn native_health_dispatch_reaches_both_real_bodies_without_python() {
         .expect("dispatch native health logs body");
     assert_eq!(logs.status.code(), Some(0));
     assert!(logs.stdout.is_empty());
-    assert_eq!(logs.stderr, b"No health directory found.\n");
+    assert_eq!(logs.stderr, b"No log files found.\n");
     assert!(!context.poison_marker.exists());
 }
 

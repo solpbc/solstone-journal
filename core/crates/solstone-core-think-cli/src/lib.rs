@@ -1739,8 +1739,8 @@ mod tests {
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
         let context = context.with_talent_roots(talent_root, apps_root);
         let path = journal.path().join("activity.jsonl");
-        let mut log = run_log::RunLogWriter::open(&path);
-        let result = activity::run(&context, &mut log, "reading_1", "work", false, 2).unwrap();
+        let log = run_log::RunLogWriter::open(&path);
+        let result = activity::run(&context, &log, "reading_1", "work", false, 2).unwrap();
         assert_eq!((result.success, result.failed), (3, 0));
         let requests = recorder.requests.lock().unwrap();
         assert_eq!(
@@ -1836,8 +1836,8 @@ mod tests {
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, "output").unwrap();
         }
-        let mut log = run_log::RunLogWriter::open(&journal.path().join("activity.jsonl"));
-        activity::run(&context, &mut log, "reading_1", "work", false, 0).unwrap();
+        let log = run_log::RunLogWriter::open(&journal.path().join("activity.jsonl"));
+        activity::run(&context, &log, "reading_1", "work", false, 0).unwrap();
         assert_eq!(
             recorder
                 .waits
@@ -1926,8 +1926,8 @@ mod tests {
             "20260813",
             serde_json::json!({"id":"low", "activity":"reading", "segments":["090000"], "level_avg":0.39}),
         );
-        let mut log = run_log::RunLogWriter::open(&journal.path().join("low.jsonl"));
-        let low = activity::run(&context, &mut log, "low", "work", false, 2).unwrap();
+        let log = run_log::RunLogWriter::open(&journal.path().join("low.jsonl"));
+        let low = activity::run(&context, &log, "low", "work", false, 2).unwrap();
         assert_eq!((low.success, low.failed), (0, 0));
         assert!(recorder.requests.lock().unwrap().is_empty());
         assert!(
@@ -1942,8 +1942,8 @@ mod tests {
             "20260813",
             serde_json::json!({"id":"full", "activity":"reading", "segments":["090000"], "level_avg":0.4}),
         );
-        let mut log = run_log::RunLogWriter::open(&journal.path().join("full.jsonl"));
-        let full = activity::run(&context, &mut log, "full", "work", false, 2).unwrap();
+        let log = run_log::RunLogWriter::open(&journal.path().join("full.jsonl"));
+        let full = activity::run(&context, &log, "full", "work", false, 2).unwrap();
         assert_eq!((full.success, full.failed), (1, 0));
         assert_eq!(recorder.requests.lock().unwrap().len(), 1);
     }
@@ -2543,10 +2543,10 @@ mod tests {
         timeout: Option<std::time::Duration>,
         skip_talents: &[String],
     ) -> dispatch::ModeResult {
-        let mut log = run_log::RunLogWriter::open(&journal.join("segment.jsonl"));
+        let log = run_log::RunLogWriter::open(&journal.join("segment.jsonl"));
         segment::run(
             context,
-            &mut log,
+            &log,
             segment,
             refresh,
             Some("default"),
@@ -2804,19 +2804,17 @@ mod tests {
             fs::create_dir_all(&path).unwrap();
             fs::write(path.join("sense.json"), serde_json::to_vec(&sense).unwrap()).unwrap();
         }
-        let mut log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
+        let log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
         let segments = vec![
             ("090000_300".to_owned(), Some("default".to_owned())),
             ("090500_300".to_owned(), Some("default".to_owned())),
         ];
-        segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, true)
-            .unwrap();
+        segment::replay_activity_state(&context, &log, &segments, false, 2, false, true).unwrap();
         assert!(journal
             .path()
             .join("chronicle/20260813/health/talent-provenance/activity-inputs/work/work_090000_300.json")
             .is_file());
-        segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, true)
-            .unwrap();
+        segment::replay_activity_state(&context, &log, &segments, false, 2, false, true).unwrap();
         let records =
             fs::read_to_string(journal.path().join("facets/work/activities/20260813.jsonl"))
                 .unwrap();
@@ -2868,10 +2866,10 @@ mod tests {
             fs::create_dir_all(&path).unwrap();
             fs::write(path.join("sense.json"), serde_json::to_vec(&sense).unwrap()).unwrap();
         }
-        let mut log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
+        let log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
         segment::replay_activity_state(
             &context,
-            &mut log,
+            &log,
             &[
                 ("090000_300".to_owned(), Some("default".to_owned())),
                 ("090500_300".to_owned(), Some("default".to_owned())),
@@ -2929,10 +2927,10 @@ mod tests {
             br#"{"density":"idle","content_type":"idle"}"#,
         )
         .unwrap();
-        let mut log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
+        let log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
         segment::replay_activity_state(
             &context,
-            &mut log,
+            &log,
             &[("000000_300".to_owned(), Some("default".to_owned()))],
             false,
             2,
@@ -2993,10 +2991,10 @@ mod tests {
             fs::create_dir_all(&path).unwrap();
             fs::write(path.join("sense.json"), serde_json::to_vec(&sense).unwrap()).unwrap();
         }
-        let mut log = run_log::RunLogWriter::open(&journal.path().join("segments.jsonl"));
+        let log = run_log::RunLogWriter::open(&journal.path().join("segments.jsonl"));
         segment::replay_activity_state(
             &context,
-            &mut log,
+            &log,
             &[
                 ("090000_300".to_owned(), Some("import.audio".to_owned())),
                 ("100000_300".to_owned(), Some("default".to_owned())),
@@ -3052,16 +3050,13 @@ mod tests {
             ("090000_300".to_owned(), Some("default".to_owned())),
             ("090500_300".to_owned(), Some("default".to_owned())),
         ];
-        let mut log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
-        segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, true)
-            .unwrap();
-        segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, true)
-            .unwrap();
+        let log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
+        segment::replay_activity_state(&context, &log, &segments, false, 2, false, true).unwrap();
+        segment::replay_activity_state(&context, &log, &segments, false, 2, false, true).unwrap();
         assert_eq!(recorder.requests.lock().unwrap().len(), 1);
         let path = segment_dir(journal.path(), "20260813", "090000_300").join("talents/sense.json");
         fs::write(path, br#"{"density":"active","content_type":"work","activity_summary":"changed","facets":[{"facet":"work"}]}"#).unwrap();
-        segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, true)
-            .unwrap();
+        segment::replay_activity_state(&context, &log, &segments, false, 2, false, true).unwrap();
         assert_eq!(recorder.requests.lock().unwrap().len(), 2);
     }
 
@@ -3098,10 +3093,10 @@ mod tests {
             fs::create_dir_all(&path).unwrap();
             fs::write(path.join("sense.json"), sense).unwrap();
         }
-        let mut log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
+        let log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
         segment::replay_activity_state(
             &context,
-            &mut log,
+            &log,
             &[
                 ("090000_300".to_owned(), Some("default".to_owned())),
                 ("090500_300".to_owned(), Some("default".to_owned())),
@@ -3134,10 +3129,10 @@ mod tests {
             serde_json::to_vec(&serde_json::json!({"density":"active","content_type":"work","activity_summary":"work","facets":[{"facet":"work"}]})).unwrap(),
         )
         .unwrap();
-        let mut log = run_log::RunLogWriter::open(&journal.path().join("segments.jsonl"));
+        let log = run_log::RunLogWriter::open(&journal.path().join("segments.jsonl"));
         segment::replay_activity_state(
             &context,
-            &mut log,
+            &log,
             &[("090000_300".to_owned(), Some("default".to_owned()))],
             false,
             2,
@@ -4141,10 +4136,10 @@ mod tests {
             serde_json::json!({"density":"active","content_type":"work"}),
         );
         let log_path = run_log::path(&context.day_dir, context.now_ms, "segment");
-        let mut log = run_log::RunLogWriter::open(&log_path);
+        let log = run_log::RunLogWriter::open(&log_path);
         let result = segment::run(
             &context,
-            &mut log,
+            &log,
             "090000_300",
             false,
             Some("default"),
@@ -4223,11 +4218,11 @@ mod tests {
         let health = context.day_dir.join("health");
         fs::write(&health, b"not a directory").unwrap();
         let log_path = run_log::path(&context.day_dir, context.now_ms, "segment");
-        let mut log = run_log::RunLogWriter::open(&log_path);
+        let log = run_log::RunLogWriter::open(&log_path);
         assert_eq!(warnings().len(), 1);
         let result = segment::run(
             &context,
-            &mut log,
+            &log,
             "090000_300",
             false,
             Some("default"),

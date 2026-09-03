@@ -284,7 +284,7 @@ fn health_and_service_log_real_native_bodies_survive_live_interpreter_poisons() 
                     harness.journal.display()
                 ),
             ),
-            "health-logs" => (Vec::new(), "No health directory found.\n".to_owned()),
+            "health-logs" => (Vec::new(), "No log files found.\n".to_owned()),
             "service-logs" => (b"=== service.log === (not found)\n".to_vec(), String::new()),
             other => panic!("unregistered probe {other}"),
         };

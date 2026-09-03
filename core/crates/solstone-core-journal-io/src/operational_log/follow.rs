@@ -667,6 +667,7 @@ mod tests {
                 .1,
             "late"
         );
+        drop(log);
         std::fs::OpenOptions::new()
             .write(true)
             .open(path)
