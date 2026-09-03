@@ -58,6 +58,7 @@ pub fn diagnose_timeline_divergence(
     let SegmentScan {
         artifacts: segments,
         eligible_paths: eligible_segment_paths,
+        unreadable_days,
     } = read_segment_artifacts(journal, &day_directories)?;
 
     if is_empty_inventory(&master, &days, &segments, &state) {
@@ -68,6 +69,24 @@ pub fn diagnose_timeline_divergence(
     if !invalid.is_empty() {
         return Ok(TimelineDivergenceDiagnosis::Stale {
             detail: invalid.join("; "),
+        });
+    }
+
+    // Divergence is a completeness-dependent claim: "the day says N segments, the
+    // source has M" is only meaningful if the source was fully enumerated. When a day
+    // could not be read, skipping it silently makes its segments look *missing* and
+    // reports a false `Diverged`. Say the population is incomplete instead, and say
+    // which days -- an operator can act on that; a fabricated divergence wastes them.
+    //
+    // Artifact validity above is unaffected: it judges only what was actually read.
+    if !unreadable_days.is_empty() {
+        return Ok(TimelineDivergenceDiagnosis::Uncertain {
+            detail: format!(
+                "read {} of {} chronicle day(s); could not enumerate segment bindings for {}",
+                day_directories.len().saturating_sub(unreadable_days.len()),
+                day_directories.len(),
+                unreadable_days.join("; ")
+            ),
         });
     }
 
@@ -108,6 +127,15 @@ struct DayDirectory {
 struct SegmentScan {
     artifacts: Vec<(PathBuf, ArtifactRead<SegmentTimelineV1>)>,
     eligible_paths: BTreeSet<PathBuf>,
+    /// Days whose segment bindings could not be enumerated, with the reason.
+    ///
+    /// 🔴 These used to abort the whole diagnosis. A journal accumulates historical
+    /// shapes the current identity grammar cannot spell -- suze carries 21 `_default`
+    /// stream directories from 2026-01-08..02-13 holding 982 segments -- and one of
+    /// them made `journal doctor` report the entire timeline check as a hard error,
+    /// hiding every day it *could* read. Coverage that is partial is reported as
+    /// partial; it is not grounds for refusing to look at the rest.
+    unreadable_days: Vec<String>,
 }
 
 fn read_master(journal: &Path) -> Result<ArtifactRead<MasterTimelineV1>, TimelineHealthError> {
@@ -204,6 +232,7 @@ fn read_segment_artifacts(
 ) -> Result<SegmentScan, TimelineHealthError> {
     let mut paths = BTreeSet::new();
     let mut eligible_paths = BTreeSet::new();
+    let mut unreadable_days = Vec::new();
     for directory in directories {
         let entries =
             fs::read_dir(&directory.path).map_err(|source| TimelineHealthError::Directory {
@@ -245,22 +274,32 @@ fn read_segment_artifacts(
         }
     }
     for directory in directories {
-        let bindings = discover_day_segment_bindings(journal, &directory.day)
-            .map_err(TimelineHealthError::Source)?;
+        let bindings = match discover_day_segment_bindings(journal, &directory.day) {
+            Ok(bindings) => bindings,
+            Err(error) => {
+                unreadable_days.push(format!("{}: {error}", directory.day));
+                continue;
+            }
+        };
         for binding in bindings {
             match resolve_eligible_activity_source(journal, &binding) {
-                Ok(Some(_)) => {
-                    let path = segment_timeline_path(journal, &binding)
-                        .map_err(TimelineHealthError::Source)?;
-                    eligible_paths.insert(path.clone());
-                    paths.insert(path);
-                }
-                Err(_) => {
-                    paths.insert(
-                        segment_timeline_path(journal, &binding)
-                            .map_err(TimelineHealthError::Source)?,
-                    );
-                }
+                Ok(Some(_)) => match segment_timeline_path(journal, &binding) {
+                    Ok(path) => {
+                        eligible_paths.insert(path.clone());
+                        paths.insert(path);
+                    }
+                    Err(error) => {
+                        unreadable_days.push(format!("{}: {error}", directory.day));
+                    }
+                },
+                Err(_) => match segment_timeline_path(journal, &binding) {
+                    Ok(path) => {
+                        paths.insert(path);
+                    }
+                    Err(error) => {
+                        unreadable_days.push(format!("{}: {error}", directory.day));
+                    }
+                },
                 Ok(None) => {}
             }
         }
@@ -290,6 +329,7 @@ fn read_segment_artifacts(
     Ok(SegmentScan {
         artifacts,
         eligible_paths,
+        unreadable_days,
     })
 }
 
@@ -744,6 +784,37 @@ mod tests {
     fn diagnose(root: &Path) -> TimelineDivergenceDiagnosis {
         diagnose_timeline_divergence(root, Utc.with_ymd_and_hms(2026, 6, 1, 0, 0, 0).unwrap())
             .expect("diagnosis")
+    }
+
+    /// A journal accumulates historical stream shapes the current identity grammar
+    /// cannot spell. On the founder's journal that is 21 `_default` stream directories
+    /// (2026-01-08..02-13, 982 segments), and one of them made `journal doctor` report
+    /// the whole timeline check as a hard error -- hiding every day it could read.
+    ///
+    /// Partial coverage must be reported as partial, never as a refusal to look.
+    #[test]
+    fn an_unspellable_legacy_stream_directory_yields_uncertain_not_a_hard_error() {
+        let root = tempfile::tempdir().expect("root");
+        write_clean(root.path());
+        // The exact shape from the live journal: chronicle/<day>/_default/<segment>/
+        let legacy = root
+            .path()
+            .join("chronicle")
+            .join(DAY)
+            .join("_default")
+            .join("100414_304");
+        fs::create_dir_all(&legacy).expect("legacy stream directory");
+
+        match diagnose_timeline_divergence(
+            root.path(),
+            Utc.with_ymd_and_hms(2026, 6, 1, 0, 0, 0).unwrap(),
+        ) {
+            Ok(TimelineDivergenceDiagnosis::Uncertain { detail }) => {
+                assert!(detail.contains("_default"), "{detail}");
+                assert!(detail.contains("could not enumerate"), "{detail}");
+            }
+            other => panic!("expected Uncertain naming the unreadable day, got {other:?}"),
+        }
     }
 
     #[test]
