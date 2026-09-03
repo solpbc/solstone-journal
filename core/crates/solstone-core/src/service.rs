@@ -71,7 +71,9 @@ struct UnitSnapshot {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum RuntimeTruth {
     Absent,
-    Managed { active: bool },
+    Managed {
+        active: bool,
+    },
     /// The registration exists but is not the one journal manages. The payload names
     /// which check rejected it, because the bare refusal is unactionable: an operator
     /// who added a drop-in deliberately cannot tell that from a corrupted unit, and
@@ -1382,7 +1384,9 @@ fn classify_systemd_runtime(
         ));
     };
     if *id != UNIT {
-        return Ok(RuntimeTruth::Foreign("a different unit answers to this name"));
+        return Ok(RuntimeTruth::Foreign(
+            "a different unit answers to this name",
+        ));
     }
     if *load_state == "not-found" {
         return if values.keys().copied().collect::<BTreeSet<_>>() == absent_keys
@@ -1918,7 +1922,6 @@ fn safe(value: &str) -> String {
     solstone_core_system_health::sanitize_for_terminal(value)
 }
 
-
 /// Rewrite `<root>/versions/<version>/bin` to `<root>/current/bin`.
 ///
 /// 🔴 This unit's `PATH` is written once, at setup, and read forever after. Baking the
@@ -2336,7 +2339,10 @@ mod tests {
                 .into_bytes(),
             stderr: Vec::new(),
         };
-        assert!(matches!(classify_systemd_runtime(&near_twin, canonical, &launchers).unwrap(), RuntimeTruth::Foreign(_)));
+        assert!(matches!(
+            classify_systemd_runtime(&near_twin, canonical, &launchers).unwrap(),
+            RuntimeTruth::Foreign(_)
+        ));
         let drop_in = CommandResult {
             code: 0,
             stdout: loaded_stdout
@@ -2344,7 +2350,10 @@ mod tests {
                 .into_bytes(),
             stderr: Vec::new(),
         };
-        assert!(matches!(classify_systemd_runtime(&drop_in, canonical, &launchers).unwrap(), RuntimeTruth::Foreign(_)));
+        assert!(matches!(
+            classify_systemd_runtime(&drop_in, canonical, &launchers).unwrap(),
+            RuntimeTruth::Foreign(_)
+        ));
         assert!(!trusted_systemd_vendor_drop_in(Path::new(
             "/etc/systemd/user/service.d/foreign.conf"
         )));
@@ -2425,7 +2434,10 @@ mod tests {
             stdout: stdout.replace("\t\t5015\n", "\t\t--foreign\n").into_bytes(),
             stderr: Vec::new(),
         };
-        assert!(matches!(classify_launchd_runtime(&foreign, LABEL, canonical, &launchers, 501, false).unwrap(), RuntimeTruth::Foreign(_)));
+        assert!(matches!(
+            classify_launchd_runtime(&foreign, LABEL, canonical, &launchers, 501, false).unwrap(),
+            RuntimeTruth::Foreign(_)
+        ));
         let pending = CommandResult {
             code: 0,
             stdout: stdout

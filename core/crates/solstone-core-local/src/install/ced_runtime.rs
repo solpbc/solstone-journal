@@ -407,8 +407,8 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
         // this flaky: under parallel test load, spawning the shell stub alone could
         // exceed the budget and the call returned `Timeout` instead of the malformed
         // response it exists to check. `timeout_kills_the_helper` covers the deadline.
-        let error = invoke_ced_analyze(&explicit(path), &Value::Null, Duration::from_secs(60))
-            .unwrap_err();
+        let error =
+            invoke_ced_analyze(&explicit(path), &Value::Null, Duration::from_secs(60)).unwrap_err();
         assert!(matches!(error, CedAnalyzeError::MalformedResponse { .. }));
     }
 
