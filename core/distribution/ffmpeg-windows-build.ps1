@@ -112,7 +112,7 @@ try {
     Require-File $zstd 'carried MSYS zstd'
     Require-File $tar 'carried MSYS tar'
     $makeMsys = Convert-ToMsysPath $MakeArchive; $msysRootMsys = Convert-ToMsysPath $msysRoot
-    Invoke-Checked 'extract verified GNU make package with carried MSYS tools' $bash @('--noprofile', '--norc', '-c', "zstd -d -c '$makeMsys' | tar -x -C '$msysRootMsys'")
+    Invoke-Checked 'extract verified GNU make package with carried MSYS tools' $bash @('--noprofile', '--norc', '-c', "'/usr/bin/zstd' -d -c '$makeMsys' | '/usr/bin/tar' -x -C '$msysRootMsys'")
     $make = Join-Path $msysBin 'make.exe'; Require-File $make 'carried GNU make'
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $nasmRoot = Join-Path $toolsRoot 'nasm'; [IO.Compression.ZipFile]::ExtractToDirectory($NasmArchive, $nasmRoot)
