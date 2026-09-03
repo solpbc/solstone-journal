@@ -152,6 +152,14 @@ pub fn resolve_activity_source(
     Ok(None)
 }
 
+pub fn resolve_eligible_activity_source(
+    journal: &Path,
+    binding: &SegmentBindingV1,
+) -> Result<Option<ActivitySourceSnapshot>, TimelineError> {
+    Ok(resolve_activity_source(journal, binding)?
+        .filter(|snapshot| !snapshot.text.trim().is_empty()))
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -264,5 +272,31 @@ mod tests {
             ),
             Err(TimelineError::InvalidSourceEvidence { detail }) if detail.contains("not UTF-8")
         ));
+    }
+
+    #[test]
+    fn only_nonblank_activity_is_eligible_for_timeline_generation() {
+        let journal = tempfile::tempdir().unwrap();
+        segment(journal.path(), None, "080000_300");
+        let binding = resolve_segment_binding(journal.path(), &selector(None)).unwrap();
+        let path = journal
+            .path()
+            .join("chronicle/20260401/080000_300/talents/activity.md");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+
+        fs::write(&path, " \n").unwrap();
+        assert_eq!(
+            resolve_eligible_activity_source(journal.path(), &binding).unwrap(),
+            None
+        );
+
+        fs::write(&path, "owner activity").unwrap();
+        assert_eq!(
+            resolve_eligible_activity_source(journal.path(), &binding)
+                .unwrap()
+                .unwrap()
+                .text,
+            "owner activity"
+        );
     }
 }

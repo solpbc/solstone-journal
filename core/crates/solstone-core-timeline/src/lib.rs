@@ -14,7 +14,8 @@ mod store;
 
 pub use binding::{
     ActivitySourceSnapshot, activity_source_relative_paths, discover_day_segment_bindings,
-    origin_for_binding, resolve_activity_source, resolve_segment_binding, segment_directory,
+    origin_for_binding, resolve_activity_source, resolve_eligible_activity_source,
+    resolve_segment_binding, segment_directory,
 };
 pub use currentness::{ArtifactCurrentness, artifact_sha256, evaluate_artifact_currentness};
 pub use error::{
