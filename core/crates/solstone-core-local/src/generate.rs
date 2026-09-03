@@ -176,18 +176,6 @@ pub trait GenerateTransport {
     ) -> Result<HttpResponse, String>;
 }
 
-fn serialize_generate_http_body(body: &Value) -> String {
-    serde_json::to_string(body).expect("JSON value serializes")
-}
-
-/// Test-only observation of the exact serializer used by the production Ureq
-/// transport.
-#[cfg(feature = "test-hooks")]
-#[doc(hidden)]
-pub fn serialize_generate_http_body_for_test(body: &Value) -> String {
-    serialize_generate_http_body(body)
-}
-
 #[derive(Default)]
 pub struct UreqTransport;
 
@@ -974,7 +962,7 @@ fn request(
         ("post", Some(body)) => agent
             .post(&url)
             .header("Content-Type", "application/json")
-            .send(serialize_generate_http_body(body)),
+            .send(serde_json::to_string(body).expect("JSON value serializes")),
         _ => unreachable!("generate transport uses GET or JSON POST"),
     }
     .map_err(|error| error.to_string())?;

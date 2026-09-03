@@ -210,7 +210,7 @@ mod tests {
     use solstone_core_local::connect::ConnectedServer;
     use solstone_core_local::{
         GenerateTransport, HttpResponse, admission::acquire_local_slot, admission::admission_dir,
-        generate_with, serialize_generate_http_body_for_test,
+        generate_with,
     };
 
     use super::*;
@@ -528,7 +528,7 @@ mod tests {
             let (base_url, path, body) = &transport.posts[0];
             assert_eq!(base_url, "http://127.0.0.1:1234", "case={name}");
             assert_eq!(path, "/v1/chat/completions", "case={name}");
-            let actual = serialize_generate_http_body_for_test(body);
+            let actual = serde_json::to_string(body).expect("production-built body serializes");
             let expected =
                 serde_json::to_string(&oracle_case(name)["body"]).expect("oracle body serializes");
             assert_eq!(actual, expected, "case={name}");
@@ -604,7 +604,7 @@ mod tests {
         assert_eq!(path, "/v1/chat/completions");
         let expected_body = oracle_case("tool-roundtrip-wire")["body"].clone();
         assert_eq!(
-            crate::endpoint::serialize_endpoint_http_body(body),
+            serde_json::to_string(body).expect("production-built body serializes"),
             serde_json::to_string(&expected_body).expect("oracle body serializes")
         );
 

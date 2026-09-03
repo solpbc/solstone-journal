@@ -889,7 +889,7 @@ fn endpoint_request(
             if let Some(credential) = credential {
                 request = request.header("Authorization", &format!("Bearer {credential}"));
             }
-            request.send(serialize_endpoint_http_body(body))
+            request.send(serde_json::to_string(body).expect("JSON value serializes"))
         }
         _ => unreachable!("endpoint transport uses GET or JSON POST"),
     }
@@ -900,10 +900,6 @@ fn endpoint_request(
         .read_to_string()
         .map_err(classify_ureq_error)?;
     Ok(HttpResponse { status, body })
-}
-
-pub(crate) fn serialize_endpoint_http_body(body: &Value) -> String {
-    serde_json::to_string(body).expect("JSON value serializes")
 }
 
 fn classify_ureq_error(error: ureq::Error) -> EndpointTransportError {
