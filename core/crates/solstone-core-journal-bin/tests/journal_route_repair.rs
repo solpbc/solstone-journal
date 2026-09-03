@@ -16,8 +16,9 @@ use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use solstone_core_installation_identity::{
-    ArtifactBindingEvidence, GuardFields, InstallationId, LegacyManifestEvidence, OwnerBase,
-    PlatformTag, SetupAdmissionRequest, admit_setup, journal_token_from_path, root_token_from_path,
+    ArtifactBindingEvidence, Generation, GuardFields, InstallationId, LegacyManifestEvidence,
+    OwnerBase, PlatformTag, SetupAdmissionRequest, admit_setup, journal_token_from_path,
+    root_token_from_path,
 };
 use solstone_core_service_unit::{build_service_environment, render_systemd_unit};
 use solstone_core_setup::wrapper::render_wrapper;
@@ -342,13 +343,15 @@ fn repair_repoints_owned_drift_and_is_idempotent() {
 
 #[test]
 fn repair_attempts_service_refresh_for_static_drift() {
-    let fixture = Fixture::new("runtime-drift");
+    let fixture = Fixture::new("static-drift");
     let guard = fixture.install_owned_tuple();
-    fixture.write_service_for(&guard, &fixture.first_version.join("bin"));
+    let mut stale_guard = guard.clone();
+    stale_guard.generation = Generation::new(2).expect("stale nonzero generation");
+    fixture.write_service_for(&stale_guard, &fixture.prefix.join("current/bin"));
     fixture.acquire_route_lock(TOKEN);
 
     let fields = parse_record(fixture.run_repair_with_missing_user_manager(TOKEN), 3);
-    assert_eq!(fields["service_state"], "runtime-drifted");
+    assert_eq!(fields["service_state"], "drifted");
     assert_eq!(fields["repair_wrapper"], "unchanged");
     assert_eq!(fields["repair_service"], "failed");
     assert_eq!(fields["outcome"], "partial-failure");
