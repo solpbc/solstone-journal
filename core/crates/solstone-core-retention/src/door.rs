@@ -397,6 +397,22 @@ pub fn remove_planned_oplogs(
     }
 }
 
+#[cfg(unix)]
+fn existing_mode(path: &Path) -> Option<u32> {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::metadata(path)
+        .ok()
+        .map(|meta| meta.permissions().mode() & 0o777)
+}
+
+#[cfg(not(unix))]
+fn existing_mode(_path: &Path) -> Option<u32> {
+    // Windows has no Unix permission mode to preserve. The Windows atomic
+    // publisher validates a supplied mode but otherwise treats it as inert.
+    None
+}
+
 /// Perform a planned log compaction.
 ///
 /// ⛔ Writes the bytes the plan carries, published atomically with the file's existing
@@ -422,9 +438,7 @@ pub fn compact_log(journal: &Path, planned: &crate::logs::Compaction) -> Outcome
             };
         }
     };
-    let mode = std::fs::metadata(&path)
-        .ok()
-        .map(|meta| std::os::unix::fs::PermissionsExt::mode(&meta.permissions()) & 0o777);
+    let mode = existing_mode(&path);
     match atomic_replace(&path, planned.contents(), AtomicWriteOptions { mode }) {
         Ok(()) => Outcome {
             targets: vec![TargetOutcome {
