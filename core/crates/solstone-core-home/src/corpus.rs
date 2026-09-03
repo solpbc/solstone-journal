@@ -247,7 +247,7 @@ fn replay_convey_home_corpus() {
         if cta_divergence_case {
             // Four named corpus cases retain the reference CTA, verdict, and
             // severity. Count both sides of each patched field:
-            // 2146 + 4×2 href + 4×2 verdict + 4×2 severity = 2170.
+            // 2147 + 4×2 href + 4×2 verdict + 4×2 severity = 2171.
             assert_eq!(
                 expected.pointer("/cta/href"),
                 Some(&json!("/app/observer/"))
@@ -287,7 +287,7 @@ fn replay_convey_home_corpus() {
         );
         asserted += 1;
     }
-    assert_eq!(asserted, 2170);
+    assert_eq!(asserted, 2171);
 }
 
 fn rewrite_sol_urls_in_value(value: &mut Value) {

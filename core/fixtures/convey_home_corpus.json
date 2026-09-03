@@ -5,7 +5,7 @@
         "input": {
           "activity": {}
         },
-        "output": "I took notes on untitled activity for 0 min in unknown."
+        "output": "I spent 0 min taking notes in unknown: untitled activity."
       },
       {
         "input": {
@@ -15,7 +15,7 @@
             "title": "wrote the spec"
           }
         },
-        "output": "I took notes on wrote the spec for 0 min in work."
+        "output": "I spent 0 min taking notes in work: wrote the spec."
       },
       {
         "input": {
@@ -25,7 +25,7 @@
             "title": "wrote the spec"
           }
         },
-        "output": "I took notes on wrote the spec for 45 min in work."
+        "output": "I spent 45 min taking notes in work: wrote the spec."
       },
       {
         "input": {
@@ -35,7 +35,7 @@
             "title": "wrote the spec"
           }
         },
-        "output": "I took notes on wrote the spec for 1.5 hours in work."
+        "output": "I spent 1.5 hours taking notes in work: wrote the spec."
       },
       {
         "input": {
@@ -45,7 +45,17 @@
             "title": "wrote the spec"
           }
         },
-        "output": "I took notes on wrote the spec for 2.1 hours in life."
+        "output": "I spent 2.1 hours taking notes in life: wrote the spec."
+      },
+      {
+        "input": {
+          "activity": {
+            "duration_minutes": 30,
+            "facet": "solstone",
+            "title": "Discussion involves Solstone-related projects, along with general AI agent infrastructure."
+          }
+        },
+        "output": "I spent 30 min taking notes in solstone: Discussion involves Solstone-related projects, along with general AI agent infrastructure."
       }
     ],
     "activity_title": [

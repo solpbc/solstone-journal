@@ -126,7 +126,8 @@ pub fn format_activity_label(activity: &Value) -> String {
     let title = activity
         .get("title")
         .and_then(Value::as_str)
-        .unwrap_or("untitled activity");
+        .unwrap_or("untitled activity")
+        .trim();
     let duration = activity
         .get("duration_minutes")
         .and_then(Value::as_f64)
@@ -135,8 +136,17 @@ pub fn format_activity_label(activity: &Value) -> String {
         .get("facet")
         .and_then(Value::as_str)
         .unwrap_or("unknown");
+    // `title` can be a short phrase ("wrote the spec") or a full sentence
+    // pulled from a talent-generated description ("Discussion involves...").
+    // Putting it last, after a colon, reads naturally either way; embedding
+    // it mid-sentence produced run-ons when title was already a sentence.
+    let terminator = if title.ends_with(['.', '!', '?']) {
+        ""
+    } else {
+        "."
+    };
     format!(
-        "I took notes on {title} for {} in {facet}.",
+        "I spent {} taking notes in {facet}: {title}{terminator}",
         format_duration(duration)
     )
 }
@@ -285,7 +295,10 @@ pub fn format_gap_links(
                 .then_with(|| left["use_id"].as_str().cmp(&right["use_id"].as_str()))
         });
         let count = rows.len();
-        let label = name.replace('_', " ");
+        // Talent names are internal identifiers and can be namespaced with a
+        // colon (e.g. "entities:detection"); sanitize both separators so the
+        // raw identifier never leaks into owner-facing copy.
+        let label = name.replace(['_', ':'], " ");
         let lost = rows
             .iter()
             .all(|row| row.get("state").and_then(Value::as_str) == Some("request_lost"));
@@ -425,6 +438,26 @@ mod tests {
         assert_eq!(
             links[0]["href"],
             "/app/thinking/#runs/20260813/daily_summary/z"
+        );
+    }
+
+    #[test]
+    fn failure_gap_link_label_strips_colon_namespacing() {
+        let links = format_gap_links(
+            &json!({"anomalies":[
+                {"kind":"talent_failure","name":"entities:detection","mode":"daily","use_id":"a","state":"failed"}
+            ]}),
+            true,
+            "20260813",
+            "20260814",
+        );
+        assert_eq!(
+            links[0]["text"],
+            "The entities detection run didn't finish."
+        );
+        assert_eq!(
+            links[0]["href"],
+            "/app/thinking/#runs/20260813/entities:detection/a"
         );
     }
 }
