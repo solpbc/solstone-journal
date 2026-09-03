@@ -553,15 +553,13 @@ mod tests {
         assert_eq!(parsed.text, "thinkingdone");
     }
 
-    /// The exact bytes the founder's SPP lane returns.
-    ///
-    /// Captured verbatim 2026-09-01 via a shape dump: Qwen 3.5 writes an XML-ish
-    /// block, not JSON, and SGLang without a tool-call parser passes it through.
-
-    /// 🔒 Negative twins for the XML spelling -- strict, never guessed at.
-
-    /// 🔒 Negative twins. Recovery must stay conservative: a malformed block keeps the
-    /// original refusal, because guessing at a tool call is worse than failing.
+    // The exact bytes the founder's SPP lane returns. Captured verbatim
+    // 2026-09-01 via a shape dump: Qwen 3.5 writes an XML-ish block, not JSON,
+    // and SGLang without a tool-call parser passes it through.
+    //
+    // Negative twins for the XML spelling are strict, never guessed at. Recovery
+    // must stay conservative: a malformed block keeps the original refusal,
+    // because guessing at a tool call is worse than failing.
 
     #[test]
     fn parser_handles_text_tool_and_mixed_turns() {
