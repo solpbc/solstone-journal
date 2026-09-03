@@ -11,9 +11,10 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use solstone_core_timeline::{
-    AttemptOutcome, DayTimelineV1, MasterTimelineV1, SegmentTimelineV1, TimelineError,
-    TimelineStateV1, day_subject_key, day_timeline_path, load_timeline_state, master_subject_key,
-    master_timeline_path, segment_subject_key, validate_day_timeline, validate_master_timeline,
+    ArtifactCurrentness, AttemptOutcome, DayTimelineV1, MasterTimelineV1, SegmentTimelineV1,
+    TimelineError, TimelineStateV1, day_subject_key, day_timeline_path,
+    evaluate_artifact_currentness, load_timeline_state, master_subject_key, master_timeline_path,
+    segment_subject_key, validate_day_timeline, validate_master_timeline,
     validate_segment_timeline,
 };
 use thiserror::Error;
@@ -43,7 +44,7 @@ pub enum TimelineHealthError {
 /// it does not rescan source activity or recompute curation input digests.
 pub fn diagnose_timeline_divergence(
     journal: &Path,
-    now: DateTime<Utc>,
+    _now: DateTime<Utc>,
 ) -> Result<TimelineDivergenceDiagnosis, TimelineHealthError> {
     let state = load_timeline_state(journal).map_err(TimelineHealthError::State)?;
     let day_directories = chronicle_day_directories(journal)?;
@@ -76,7 +77,7 @@ pub fn diagnose_timeline_divergence(
         return Ok(TimelineDivergenceDiagnosis::Diverged { detail });
     }
 
-    let stale = stale_reasons(&master, &segments, &state, &observed, now);
+    let stale = stale_reasons(journal, &master, &days, &segments, &state, &observed)?;
     if !stale.is_empty() {
         return Ok(TimelineDivergenceDiagnosis::Stale {
             detail: stale.join("; "),
@@ -317,14 +318,8 @@ fn uncertain_attempt(
             return None;
         }
         let subject = attempt_subject(key, &attempt.attempt_id)?;
-        let confirmed = state
-            .artifacts
-            .get(subject)
-            .is_some_and(|artifact| artifact.input_digest == attempt.input_digest)
-            && observed
-                .get(subject)
-                .is_some_and(|digest| digest == &attempt.input_digest);
-        (!confirmed).then(|| format!("{subject} publication was not durably confirmed"))
+        (!observed.contains_key(subject))
+            .then(|| format!("{subject} publication was not durably confirmed"))
     })
 }
 
@@ -361,24 +356,49 @@ fn day_master_divergence(
 }
 
 fn stale_reasons(
+    journal: &Path,
     master: &ArtifactRead<MasterTimelineV1>,
+    days: &BTreeMap<String, ArtifactRead<DayTimelineV1>>,
     segments: &[(PathBuf, ArtifactRead<SegmentTimelineV1>)],
     state: &TimelineStateV1,
     observed: &BTreeMap<String, String>,
-    now: DateTime<Utc>,
-) -> Vec<String> {
+) -> Result<Vec<String>, TimelineHealthError> {
     let mut stale = Vec::new();
     if matches!(master, ArtifactRead::Missing) {
         stale.push("master timeline artifact is missing".to_owned());
     }
-    for subject in observed.keys() {
-        let Some(actual) = observed.get(subject) else {
-            continue;
-        };
-        match state.artifacts.get(subject) {
-            Some(record) if record.input_digest == *actual => {}
-            Some(_) => stale.push(format!("{subject} digest does not match durable state")),
-            None => stale.push(format!("{subject} has no durable state record")),
+    if let ArtifactRead::Valid(timeline) = master {
+        append_currentness_reason(
+            &mut stale,
+            journal,
+            &master_timeline_path(journal),
+            master_subject_key(),
+            &timeline.source_digest,
+            timeline.generated_at_ms,
+        )?;
+    }
+    for artifact in days.values() {
+        if let ArtifactRead::Valid(timeline) = artifact {
+            append_currentness_reason(
+                &mut stale,
+                journal,
+                &day_timeline_path(journal, &timeline.day),
+                &day_subject_key(&timeline.day),
+                &timeline.source_digest,
+                timeline.generated_at_ms,
+            )?;
+        }
+    }
+    for (path, artifact) in segments {
+        if let ArtifactRead::Valid(timeline) = artifact {
+            append_currentness_reason(
+                &mut stale,
+                journal,
+                path,
+                &segment_subject_key(&timeline.binding),
+                &timeline.input_digest,
+                timeline.generated_at_ms,
+            )?;
         }
     }
     for subject in state.artifacts.keys() {
@@ -393,25 +413,42 @@ fn stale_reasons(
             stale.push("segment timeline artifact is missing".to_owned());
         }
     }
-    if let Some(detail) = failed_newer_attempt(state, now) {
-        stale.push(detail);
-    }
-    stale
+    Ok(stale)
 }
 
-fn failed_newer_attempt(state: &TimelineStateV1, now: DateTime<Utc>) -> Option<String> {
-    state.attempts.iter().find_map(|(key, attempt)| {
-        if attempt.outcome != AttemptOutcome::Failed
-            || attempt.started_at_ms > now.timestamp_millis()
-        {
-            return None;
+fn append_currentness_reason(
+    stale: &mut Vec<String>,
+    journal: &Path,
+    path: &Path,
+    subject: &str,
+    input_digest: &str,
+    generated_at_ms: i64,
+) -> Result<(), TimelineHealthError> {
+    let artifact_text =
+        fs::read_to_string(path).map_err(|source| TimelineHealthError::Artifact {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    match evaluate_artifact_currentness(
+        journal,
+        subject,
+        input_digest,
+        generated_at_ms,
+        &artifact_text,
+    )
+    .map_err(TimelineHealthError::State)?
+    {
+        ArtifactCurrentness::Current => {}
+        ArtifactCurrentness::Stale => {
+            stale.push(format!(
+                "{subject} does not match durable publication state"
+            ));
         }
-        let subject = attempt_subject(key, &attempt.attempt_id)?;
-        let artifact = state.artifacts.get(subject)?;
-        (artifact.published_at_ms <= attempt.started_at_ms
-            && artifact.input_digest != attempt.input_digest)
-            .then(|| format!("{subject} has a newer failed re-curation attempt"))
-    })
+        ArtifactCurrentness::Missing => {
+            stale.push(format!("{subject} has no durable state record"));
+        }
+    }
+    Ok(())
 }
 
 fn attempt_subject<'a>(key: &'a str, attempt_id: &str) -> Option<&'a str> {
@@ -514,10 +551,12 @@ mod tests {
         }
     }
 
-    fn artifact(input_digest: &str) -> ArtifactStateV1 {
+    fn artifact(input_digest: &str, timeline: &impl Serialize) -> ArtifactStateV1 {
         ArtifactStateV1 {
             input_digest: input_digest.to_owned(),
-            artifact_sha256: "sha256".to_owned(),
+            artifact_sha256: solstone_core_timeline::artifact_sha256(
+                &serde_json::to_string(timeline).expect("timeline JSON"),
+            ),
             published_at_ms: 1,
             generation: 1,
         }
@@ -547,12 +586,12 @@ mod tests {
             artifacts: BTreeMap::from([
                 (
                     master_subject_key().to_owned(),
-                    artifact(&master.source_digest),
+                    artifact(&master.source_digest, &master),
                 ),
-                (day_subject_key(DAY), artifact(&day.source_digest)),
+                (day_subject_key(DAY), artifact(&day.source_digest, &day)),
                 (
                     segment_subject_key(&segment.binding),
-                    artifact(&segment.input_digest),
+                    artifact(&segment.input_digest, &segment),
                 ),
             ]),
             attempts: BTreeMap::new(),
@@ -592,6 +631,32 @@ mod tests {
     }
 
     #[test]
+    fn stale_names_newer_failed_attempt_for_a_different_input() {
+        let root = tempfile::tempdir().expect("root");
+        write_clean(root.path());
+        let path = timeline_state_path(root.path());
+        let mut state: solstone_core_timeline::TimelineStateV1 =
+            serde_json::from_slice(&fs::read(&path).expect("state")).expect("state JSON");
+        state.attempts.insert(
+            "master:newer-failed".to_owned(),
+            AttemptStateV1 {
+                attempt_id: "newer-failed".to_owned(),
+                input_digest: "new-master-input".to_owned(),
+                started_at_ms: 2,
+                finished_at_ms: Some(2),
+                outcome: AttemptOutcome::Failed,
+                detail: "fixture failure".to_owned(),
+            },
+        );
+        write_json(&path, &state);
+
+        assert!(matches!(
+            diagnose(root.path()),
+            TimelineDivergenceDiagnosis::Stale { detail } if detail.contains("master")
+        ));
+    }
+
+    #[test]
     fn diverged_names_disagreement_between_master_and_standalone_day() {
         let root = tempfile::tempdir().expect("root");
         let standalone = day("standalone-digest");
@@ -605,9 +670,12 @@ mod tests {
             artifacts: BTreeMap::from([
                 (
                     master_subject_key().to_owned(),
-                    artifact(&master.source_digest),
+                    artifact(&master.source_digest, &master),
                 ),
-                (day_subject_key(DAY), artifact(&standalone.source_digest)),
+                (
+                    day_subject_key(DAY),
+                    artifact(&standalone.source_digest, &standalone),
+                ),
             ]),
             attempts: BTreeMap::new(),
         };

@@ -1,12 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, to_value};
 use solstone_core_brain::{CanonicalInput, canonical_fingerprint_preserving_array_order};
 
 use crate::{
     CURRENT_SCHEMA_VERSION, CurationRequestV1, SegmentBindingV1, TimelineEntryV1, TimelineError,
 };
+
+/// One curation request performed while producing a rollup artifact.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CurationJobV1 {
+    pub scope: String,
+    pub candidates: Vec<TimelineEntryV1>,
+    pub request: CurationRequestV1,
+}
 
 pub fn curation_input_digest(
     candidates: &[TimelineEntryV1],
@@ -19,60 +29,62 @@ pub fn curation_input_digest(
     );
     envelope.insert("candidates".to_owned(), to_value(candidates)?);
     envelope.insert("request".to_owned(), to_value(request)?);
-    Ok(canonical_fingerprint_preserving_array_order(
-        &CanonicalInput::Json(Value::Object(envelope)),
-    )?)
+    fingerprint_envelope(envelope)
+}
+
+/// Fingerprint the complete ordered set of curation jobs that make up a rollup.
+pub fn curation_jobs_digest(jobs: &[CurationJobV1]) -> Result<String, TimelineError> {
+    let mut envelope = base_envelope();
+    envelope.insert("jobs".to_owned(), to_value(jobs)?);
+    fingerprint_envelope(envelope)
 }
 
 pub fn segment_input_digest(
     binding: &SegmentBindingV1,
     activity_source: &str,
 ) -> Result<String, TimelineError> {
-    let mut envelope = Map::new();
-    envelope.insert(
-        "schema_version".to_owned(),
-        Value::from(CURRENT_SCHEMA_VERSION),
-    );
+    let mut envelope = base_envelope();
     envelope.insert("binding".to_owned(), to_value(binding)?);
     envelope.insert(
         "activity_source".to_owned(),
         Value::String(activity_source.to_owned()),
     );
-    Ok(canonical_fingerprint_preserving_array_order(
-        &CanonicalInput::Json(Value::Object(envelope)),
-    )?)
+    fingerprint_envelope(envelope)
 }
 
 pub fn continuation_input_digest(
     binding: &SegmentBindingV1,
     predecessor_segment_key: &str,
 ) -> Result<String, TimelineError> {
-    let mut envelope = Map::new();
-    envelope.insert(
-        "schema_version".to_owned(),
-        Value::from(CURRENT_SCHEMA_VERSION),
-    );
+    let mut envelope = base_envelope();
     envelope.insert("binding".to_owned(), to_value(binding)?);
     envelope.insert(
         "predecessor_segment_key".to_owned(),
         Value::String(predecessor_segment_key.to_owned()),
     );
-    Ok(canonical_fingerprint_preserving_array_order(
-        &CanonicalInput::Json(Value::Object(envelope)),
-    )?)
+    fingerprint_envelope(envelope)
 }
 
 pub fn master_source_digest(
     day_sources: &[(String, String)],
-    request: &CurationRequestV1,
+    jobs: &[CurationJobV1],
 ) -> Result<String, TimelineError> {
+    let mut envelope = base_envelope();
+    envelope.insert("day_sources".to_owned(), to_value(day_sources)?);
+    envelope.insert("jobs".to_owned(), to_value(jobs)?);
+    fingerprint_envelope(envelope)
+}
+
+fn base_envelope() -> Map<String, Value> {
     let mut envelope = Map::new();
     envelope.insert(
         "schema_version".to_owned(),
         Value::from(CURRENT_SCHEMA_VERSION),
     );
-    envelope.insert("day_sources".to_owned(), to_value(day_sources)?);
-    envelope.insert("request".to_owned(), to_value(request)?);
+    envelope
+}
+
+fn fingerprint_envelope(envelope: Map<String, Value>) -> Result<String, TimelineError> {
     Ok(canonical_fingerprint_preserving_array_order(
         &CanonicalInput::Json(Value::Object(envelope)),
     )?)
@@ -167,8 +179,35 @@ mod tests {
         let second = vec![first[1].clone(), first[0].clone()];
 
         assert_ne!(
-            master_source_digest(&first, &request()).unwrap(),
-            master_source_digest(&second, &request()).unwrap()
+            master_source_digest(&first, &jobs()).unwrap(),
+            master_source_digest(&second, &jobs()).unwrap()
         );
+    }
+
+    #[test]
+    fn curation_jobs_digest_covers_each_scoped_request() {
+        let baseline = jobs();
+        let mut changed = baseline.clone();
+        changed[1].request.system_instruction = Some("Changed hour prompt".to_owned());
+
+        assert_ne!(
+            curation_jobs_digest(&baseline).unwrap(),
+            curation_jobs_digest(&changed).unwrap()
+        );
+    }
+
+    fn jobs() -> Vec<CurationJobV1> {
+        vec![
+            CurationJobV1 {
+                scope: "hour:09".to_owned(),
+                candidates: vec![entry("first")],
+                request: request(),
+            },
+            CurationJobV1 {
+                scope: "day".to_owned(),
+                candidates: vec![entry("first"), entry("second")],
+                request: request(),
+            },
+        ]
     }
 }

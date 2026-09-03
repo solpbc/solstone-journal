@@ -1,9 +1,9 @@
 /*
 Timeline background service: listens for rollup completion and refreshes
 the visible view in place. Emit signatures verified against:
-  - cortex finish:      solstone/think/cortex.py:436-458
+  - cortex finish:      core/crates/solstone-core-talent-runtime/src/timeline.rs
   - supervisor stopped: core/crates/solstone-core/src/supervisor/bus.rs:110-126
-  - scheduler ref:      solstone/think/scheduler.py:418
+  - scheduler ref:      core/crates/solstone-core-maintenance/src/schedule_sync.rs
                         sched:<schedule-name>:<now_ms>
                         schedule-name is maintenance:timeline:rollup
 */

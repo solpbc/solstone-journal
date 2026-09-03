@@ -4,6 +4,7 @@
 //! Versioned timeline artifacts and their durable publication primitives.
 
 mod binding;
+mod currentness;
 mod error;
 mod fingerprint;
 mod locks;
@@ -14,9 +15,11 @@ mod store;
 pub use binding::{
     discover_day_segment_bindings, origin_for_binding, resolve_segment_binding, segment_directory,
 };
+pub use currentness::{ArtifactCurrentness, artifact_sha256, evaluate_artifact_currentness};
 pub use error::{InvalidSelectionReason, TimelineCurationStage, TimelineError};
 pub use fingerprint::{
-    continuation_input_digest, curation_input_digest, master_source_digest, segment_input_digest,
+    CurationJobV1, continuation_input_digest, curation_input_digest, curation_jobs_digest,
+    master_source_digest, segment_input_digest,
 };
 pub use locks::{
     TimelineLockRequest, TimelineLockSet, TimelineLockSubject, acquire_timeline_locks,

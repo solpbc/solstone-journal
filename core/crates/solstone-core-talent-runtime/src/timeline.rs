@@ -10,10 +10,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use serde_json::{Map, Value};
 use solstone_core_talent_config::is_truthy;
 use solstone_core_timeline::{
-    AttemptOutcome, AttemptStateV1, CURRENT_SCHEMA_VERSION, GenerationProvenanceV1,
-    SegmentBindingV1, SegmentSelectorV1, SegmentSummaryV1, SegmentTimelineV1, TimelineError,
-    TimelineKind, origin_for_binding, publish_segment_timeline, resolve_segment_binding,
-    segment_directory, segment_input_digest,
+    ArtifactCurrentness, AttemptOutcome, AttemptStateV1, CURRENT_SCHEMA_VERSION,
+    GenerationProvenanceV1, SegmentBindingV1, SegmentSelectorV1, SegmentSummaryV1,
+    SegmentTimelineV1, TimelineError, TimelineKind, evaluate_artifact_currentness,
+    origin_for_binding, publish_segment_timeline, resolve_segment_binding, segment_directory,
+    segment_input_digest, segment_subject_key, validate_segment_timeline,
 };
 
 use crate::contract::{CommitPlan, GateDecision, ParsedOutput, PrePostState};
@@ -90,16 +91,40 @@ pub fn gate(
             error.to_string(),
         )
     })?;
-    let Some((_, segment_dir, activity_path)) = resolved else {
+    let Some((binding, segment_dir, activity_path)) = resolved else {
         return Ok(GateDecision::Skip("no_activity_md".to_owned()));
     };
-    if segment_dir.join("timeline.json").exists()
-        && !prepared.config.get("refresh").is_some_and(is_truthy)
-    {
-        return Ok(GateDecision::Skip("timeline_exists".to_owned()));
-    }
-    if fs::read_to_string(activity_path).is_err() {
+    let Ok(activity_text) = fs::read_to_string(activity_path) else {
         return Ok(GateDecision::Skip("no_activity_md".to_owned()));
+    };
+    let input_digest = segment_input_digest(&binding, &activity_text).map_err(|error| {
+        stage_error(
+            "gate",
+            "timeline:segment_summary",
+            prepared,
+            error.to_string(),
+        )
+    })?;
+    if !prepared.config.get("refresh").is_some_and(is_truthy) {
+        let timeline_path = segment_dir.join("timeline.json");
+        if let Ok(text) = fs::read_to_string(timeline_path)
+            && let Ok(timeline) = serde_json::from_str::<SegmentTimelineV1>(&text)
+            && validate_segment_timeline(&timeline).is_ok()
+            && timeline.binding == binding
+            && timeline.input_digest == input_digest
+            && matches!(
+                evaluate_artifact_currentness(
+                    &context.journal,
+                    &segment_subject_key(&binding),
+                    &timeline.input_digest,
+                    timeline.generated_at_ms,
+                    &text,
+                ),
+                Ok(ArtifactCurrentness::Current)
+            )
+        {
+            return Ok(GateDecision::Skip("timeline_current".to_owned()));
+        }
     }
     Ok(GateDecision::Proceed)
 }
@@ -389,10 +414,14 @@ mod tests {
         assert_eq!(provenance.inference, Value::Null);
         assert_eq!(provenance.usage, json!({}));
         assert!(!timeline.input_digest.is_empty());
+        assert_eq!(
+            gate(&prepared, &context).unwrap(),
+            GateDecision::Skip("timeline_current".to_owned())
+        );
     }
 
     #[test]
-    fn gate_skips_missing_activity_and_existing_timeline_without_refresh() {
+    fn gate_skips_missing_activity_and_rebuilds_legacy_timeline_without_refresh() {
         // Derived from solstone/apps/timeline/talent/segment_summary.py:189-205.
         let root = tempfile::tempdir().unwrap();
         let context = ExecutionContext {
@@ -410,7 +439,7 @@ mod tests {
         fs::write(timeline, "{}\n").unwrap();
         assert_eq!(
             gate(&prepared(false), &context).unwrap(),
-            GateDecision::Skip("timeline_exists".to_owned())
+            GateDecision::Proceed
         );
         assert_eq!(
             gate(&prepared(true), &context).unwrap(),

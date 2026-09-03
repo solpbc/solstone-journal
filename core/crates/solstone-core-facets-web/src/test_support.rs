@@ -190,7 +190,8 @@ fn write_timeline_artifacts(root: &Path, day_path: &Path) {
         },
         "day_curation": timeline_curation("day-input", 3, vec![default.clone()], "One seeded day.", "corpus-day-model"),
     });
-    write_json(&day_path.join("timeline.json"), &day);
+    let day_text = write_json(&day_path.join("timeline.json"), &day);
+    let mut segment_texts = std::collections::BTreeMap::new();
     for (path, digest, title, description, stream, segment) in [
         (
             day_path.join("100000_300/timeline.json"),
@@ -218,23 +219,22 @@ fn write_timeline_artifacts(root: &Path, day_path: &Path) {
         ),
     ] {
         let summary = entry(title, description, stream, segment);
-        write_json(
-            &path,
-            &serde_json::json!({
-                "schema_version": 1,
-                "kind": "segment",
-                "binding": summary["binding"],
-                "input_digest": digest,
-                "generated_at_ms": 1770000050000_i64,
-                "summary": {
-                    "title": summary["title"],
-                    "description": summary["description"],
-                    "origin": summary["origin"],
-                    "continuation_of": null,
-                },
-                "provenance": provenance("corpus-segment-model"),
-            }),
-        );
+        let timeline = serde_json::json!({
+            "schema_version": 1,
+            "kind": "segment",
+            "binding": summary["binding"],
+            "input_digest": digest,
+            "generated_at_ms": 1770000050000_i64,
+            "summary": {
+                "title": summary["title"],
+                "description": summary["description"],
+                "origin": summary["origin"],
+                "continuation_of": null,
+            },
+            "provenance": provenance("corpus-segment-model"),
+        });
+        let timeline_text = write_json(&path, &timeline);
+        segment_texts.insert(digest, timeline_text);
     }
     let master = serde_json::json!({
         "schema_version": 1,
@@ -257,18 +257,18 @@ fn write_timeline_artifacts(root: &Path, day_path: &Path) {
         "year_top": [{"month": "202605", "entry": default.clone()}],
         "year_curation": timeline_curation("master-input", 1, vec![default], "One seeded month.", "corpus-master-model"),
     });
-    write_json(&root.join("timeline.json"), &master);
+    let master_text = write_json(&root.join("timeline.json"), &master);
     write_json(
         &root.join("health/timeline/state.json"),
         &serde_json::json!({
             "schema_version": 1,
             "revision": 1,
             "artifacts": {
-                "master": artifact("master-input"),
-                "day:20260510": artifact("day-input"),
-                "segment:20260510/_default/100000_300": artifact("segment-default-input"),
-                "segment:20260510/_default/103000_300": artifact("segment-second-input"),
-                "segment:20260510/workstation.browser/140000_300": artifact("segment-browser-input"),
+                "master": artifact("master-input", &master_text),
+                "day:20260510": artifact("day-input", &day_text),
+                "segment:20260510/_default/100000_300": artifact("segment-default-input", &segment_texts["segment-default-input"]),
+                "segment:20260510/_default/103000_300": artifact("segment-second-input", &segment_texts["segment-second-input"]),
+                "segment:20260510/workstation.browser/140000_300": artifact("segment-browser-input", &segment_texts["segment-browser-input"]),
             },
             "attempts": {},
         }),
@@ -329,15 +329,17 @@ fn provenance(model: &str) -> serde_json::Value {
     })
 }
 
-fn artifact(input_digest: &str) -> serde_json::Value {
+fn artifact(input_digest: &str, artifact_text: &str) -> serde_json::Value {
     serde_json::json!({
         "input_digest": input_digest,
-        "artifact_sha256": "fixture",
+        "artifact_sha256": solstone_core_timeline::artifact_sha256(artifact_text),
         "published_at_ms": 1770000000000_i64,
         "generation": 1,
     })
 }
 
-fn write_json(path: &Path, value: &serde_json::Value) {
-    write(path, &serde_json::to_string(value).expect("timeline JSON"));
+fn write_json(path: &Path, value: &serde_json::Value) -> String {
+    let text = serde_json::to_string(value).expect("timeline JSON");
+    write(path, &text);
+    text
 }

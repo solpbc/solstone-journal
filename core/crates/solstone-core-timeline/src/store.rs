@@ -3,16 +3,15 @@
 
 use std::path::{Path, PathBuf};
 
-use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{DetailedAtomicOutcome, atomic_replace_detailed};
 
 use crate::{
     ArtifactStateV1, AttemptOutcome, AttemptStateV1, CURRENT_SCHEMA_VERSION, DayTimelineV1,
     MasterTimelineV1, SegmentBindingV1, SegmentSummaryV1, SegmentTimelineV1, TimelineError,
-    TimelineLockRequest, TimelineLockSubject, acquire_timeline_locks, bounded_diagnostic_detail,
-    load_timeline_state, origin_for_binding, record_artifact_published, record_attempt_outcome,
-    record_attempt_started, segment_directory, validate_day_timeline, validate_master_timeline,
-    validate_segment_timeline,
+    TimelineLockRequest, TimelineLockSubject, acquire_timeline_locks, artifact_sha256,
+    bounded_diagnostic_detail, load_timeline_state, origin_for_binding, record_artifact_published,
+    record_attempt_outcome, record_attempt_started, segment_directory, validate_day_timeline,
+    validate_master_timeline, validate_segment_timeline,
 };
 
 pub fn segment_timeline_path(
@@ -41,15 +40,14 @@ pub fn publish_segment_timeline(
     record_attempt_started(journal, &subject, attempt.clone())?;
 
     let path = segment_timeline_path(journal, binding)?;
-    let mut bytes = serde_json::to_vec(timeline)?;
-    bytes.push(b'\n');
+    let serialized = serialize_timeline(timeline)?;
     publish_timeline(
         journal,
         &subject,
         path,
         &timeline.input_digest,
         timeline.generated_at_ms,
-        bytes,
+        serialized,
         attempt,
     )
 }
@@ -66,15 +64,14 @@ pub fn publish_day_timeline(
     validate_day_timeline(timeline)?;
     let subject = day_subject_key(&timeline.day);
     record_attempt_started(journal, &subject, attempt.clone())?;
-    let mut bytes = serde_json::to_vec(timeline)?;
-    bytes.push(b'\n');
+    let serialized = serialize_timeline(timeline)?;
     publish_timeline(
         journal,
         &subject,
         day_timeline_path(journal, &timeline.day),
         &timeline.source_digest,
         timeline.generated_at_ms,
-        bytes,
+        serialized,
         attempt,
     )
 }
@@ -91,15 +88,14 @@ pub fn publish_master_timeline(
     validate_master_timeline(timeline)?;
     let subject = master_subject_key();
     record_attempt_started(journal, subject, attempt.clone())?;
-    let mut bytes = serde_json::to_vec(timeline)?;
-    bytes.push(b'\n');
+    let serialized = serialize_timeline(timeline)?;
     publish_timeline(
         journal,
         subject,
         master_timeline_path(journal),
         &timeline.source_digest,
         timeline.generated_at_ms,
-        bytes,
+        serialized,
         attempt,
     )
 }
@@ -110,10 +106,10 @@ fn publish_timeline(
     path: PathBuf,
     input_digest: &str,
     generated_at_ms: i64,
-    bytes: Vec<u8>,
+    serialized: String,
     attempt: AttemptStateV1,
 ) -> Result<(), TimelineError> {
-    let publication = atomic_replace_detailed(&path, &bytes, 0o600);
+    let publication = atomic_replace_detailed(&path, serialized.as_bytes(), 0o600);
     match publication {
         Err(error) => {
             let detail = bounded_diagnostic_detail(&error.to_string());
@@ -135,7 +131,7 @@ fn publish_timeline(
                 .unwrap_or(1);
             let artifact = ArtifactStateV1 {
                 input_digest: input_digest.to_owned(),
-                artifact_sha256: sha256_hex(&bytes),
+                artifact_sha256: artifact_sha256(&serialized),
                 published_at_ms: generated_at_ms,
                 generation,
             };
@@ -234,9 +230,10 @@ pub const fn master_subject_key() -> &'static str {
     "master"
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+fn serialize_timeline<T: serde::Serialize>(timeline: &T) -> Result<String, TimelineError> {
+    let mut serialized = serde_json::to_string(timeline)?;
+    serialized.push('\n');
+    Ok(serialized)
 }
 
 #[cfg(test)]

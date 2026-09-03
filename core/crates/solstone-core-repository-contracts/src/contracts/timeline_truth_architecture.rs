@@ -15,6 +15,10 @@ const TIMELINE_SOURCES: &[(&str, &str)] = &[
         include_str!("../../../solstone-core-timeline/src/binding.rs"),
     ),
     (
+        "currentness",
+        include_str!("../../../solstone-core-timeline/src/currentness.rs"),
+    ),
+    (
         "error",
         include_str!("../../../solstone-core-timeline/src/error.rs"),
     ),
@@ -84,7 +88,28 @@ fn has_direct_timeline_publication(scope: &str) -> bool {
 fn has_raw_timeline_value_reader(scope: &str) -> bool {
     let masked = mask_literals_and_comments(scope);
     let code = String::from_utf8(masked).expect("Rust source remains UTF-8 after masking");
-    scope.contains("timeline.json") && code.contains("serde_json::from_str::<Value>")
+    let raw_value_read = [
+        "serde_json::from_str::<Value>",
+        "serde_json::from_slice::<Value>",
+        "serde_json::from_reader::<Value>",
+    ]
+    .iter()
+    .any(|surface| code.contains(surface));
+    scope.contains("timeline.json")
+        && raw_value_read
+        && !is_maintenance_shape_classifier(scope, &code)
+}
+
+fn is_maintenance_shape_classifier(scope: &str, code: &str) -> bool {
+    let segment_classifier = code.contains("serde_json::from_slice::<Value>")
+        && code.contains("serde_json::from_value::<SegmentTimelineV1>")
+        && scope.contains("discover_day_segment_bindings")
+        && scope.contains("malformed_json");
+    let day_classifier = code.contains("serde_json::from_slice::<Value>")
+        && code.contains("serde_json::from_slice::<DayTimelineV1>")
+        && scope.contains("master_scan_failure")
+        && scope.contains("malformed_json");
+    segment_classifier || day_classifier
 }
 
 fn visit_production_sources(
@@ -224,16 +249,28 @@ fn timeline_readers_are_typed_and_validated() {
                 "{name} lacks typed reader {required}"
             );
         }
-        assert!(
-            !source.contains("serde_json::from_str::<Value>"),
-            "{name} parses a timeline artifact as an untyped Value"
-        );
+        if name != "maintenance" {
+            assert!(
+                ![
+                    "serde_json::from_str::<Value>",
+                    "serde_json::from_slice::<Value>",
+                    "serde_json::from_reader::<Value>",
+                ]
+                .iter()
+                .any(|surface| source.contains(surface)),
+                "{name} parses a timeline artifact as an untyped Value"
+            );
+        }
     }
 
     // Maintenance parses a Value only to report malformed JSON separately from a wrong V1 shape,
     // then immediately deserializes to and validates the typed artifact before accepting it.
     assert!(MAINTENANCE_TIMELINE.contains("serde_json::from_value::<SegmentTimelineV1>"));
     assert!(MAINTENANCE_TIMELINE.contains("serde_json::from_slice::<DayTimelineV1>"));
+    assert!(
+        MAINTENANCE_TIMELINE.contains("serde_json::from_slice::<Value>"),
+        "maintenance must keep its narrow malformed-versus-wrong-shape classifier"
+    );
     assert!(
         DOCTOR_TIMELINE_DIVERGENCE.contains("diagnose_timeline_divergence"),
         "Doctor must delegate its timeline reads to the independent system-health diagnosis"
@@ -311,4 +348,21 @@ fn publication_predicate_catches_the_legacy_continuation_writer() {
             .any(|scope| has_direct_timeline_publication(scope)),
         "comments are not production artifact writers"
     );
+}
+
+#[test]
+fn raw_reader_predicate_catches_slice_and_reader_variants() {
+    for reader in [
+        "serde_json::from_slice::<Value>(bytes)",
+        "serde_json::from_reader::<Value>(reader)",
+    ] {
+        let source =
+            format!("fn read() {{ let path = root.join(\"timeline.json\"); let _ = {reader}; }}");
+        assert!(
+            production_scopes(&source)
+                .iter()
+                .any(|scope| has_raw_timeline_value_reader(scope)),
+            "raw reader {reader} must be rejected"
+        );
+    }
 }

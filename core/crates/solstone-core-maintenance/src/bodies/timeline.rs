@@ -11,16 +11,17 @@ use serde_json::{Map, Value, json};
 use solstone_core_generate::{ContentPart, GenerateRequest, GeneratedResponse};
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_timeline::{
-    AttemptOutcome, AttemptStateV1, CURRENT_SCHEMA_VERSION, CurationContentPartV1,
-    CurationRecordV1, CurationRequestV1, DayTimelineV1, GenerationProvenanceV1, HourTimelineV1,
-    InvalidSelectionReason, MasterTimelineV1, MonthTimelineEntryV1, MonthTimelineV1,
-    SegmentBindingV1, SegmentTimelineV1, TimelineCurationStage, TimelineEntryV1, TimelineError,
-    TimelineKind, TimelineLockRequest, TimelineLockSet, TimelineLockSubject,
-    acquire_timeline_locks, bounded_diagnostic_detail, curation_input_digest, day_subject_key,
-    day_timeline_path, discover_day_segment_bindings, load_timeline_state, master_source_digest,
+    ArtifactCurrentness, AttemptOutcome, AttemptStateV1, CURRENT_SCHEMA_VERSION,
+    CurationContentPartV1, CurationJobV1, CurationRecordV1, CurationRequestV1, DayTimelineV1,
+    GenerationProvenanceV1, HourTimelineV1, InvalidSelectionReason, MasterTimelineV1,
+    MonthTimelineEntryV1, MonthTimelineV1, SegmentBindingV1, SegmentTimelineV1,
+    TimelineCurationStage, TimelineEntryV1, TimelineError, TimelineKind, TimelineLockRequest,
+    TimelineLockSet, TimelineLockSubject, acquire_timeline_locks, bounded_diagnostic_detail,
+    curation_input_digest, curation_jobs_digest, day_subject_key, day_timeline_path,
+    discover_day_segment_bindings, evaluate_artifact_currentness, master_source_digest,
     master_subject_key, master_timeline_path, publish_day_timeline, publish_master_timeline,
-    record_attempt_outcome, segment_directory, validate_day_timeline, validate_master_timeline,
-    validate_segment_timeline,
+    record_attempt_outcome, segment_directory, segment_subject_key, validate_day_timeline,
+    validate_master_timeline, validate_segment_timeline,
 };
 
 use crate::timezone::{default_rollup_day, resolve_owner_timezone};
@@ -422,17 +423,39 @@ fn verified_day_entries(day: &str, scan: DayScan) -> Result<Vec<SegmentRow>, Str
 }
 
 fn day_source_digest(rows: &[SegmentRow], top: usize) -> Result<String, TimelineError> {
+    curation_jobs_digest(&day_curation_jobs(rows, top))
+}
+
+fn day_curation_jobs(rows: &[SegmentRow], top: usize) -> Vec<CurationJobV1> {
+    let mut jobs = group_by_hour(rows)
+        .into_iter()
+        .map(|(hour, rows)| {
+            let candidates = rows
+                .into_iter()
+                .map(|row| row.entry.clone())
+                .collect::<Vec<_>>();
+            CurationJobV1 {
+                scope: format!("hour:{hour}"),
+                request: curation_request(&entry_rollup_request(&candidates, top, "hour")),
+                candidates,
+            }
+        })
+        .collect::<Vec<_>>();
     let candidates = rows.iter().map(|row| row.entry.clone()).collect::<Vec<_>>();
-    let request = entry_rollup_request(&candidates, top, "day");
-    curation_input_digest(&candidates, &curation_request(&request))
+    jobs.push(CurationJobV1 {
+        scope: "day".to_owned(),
+        request: curation_request(&entry_rollup_request(&candidates, top, "day")),
+        candidates,
+    });
+    jobs
 }
 
 fn day_is_current(journal: &Path, day: &str, source_digest: &str) -> bool {
     let path = day_timeline_path(journal, day);
-    let timeline = std::fs::read(&path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<DayTimelineV1>(&bytes).ok());
-    let Some(timeline) = timeline else {
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    let Ok(timeline) = serde_json::from_str::<DayTimelineV1>(&text) else {
         return false;
     };
     if validate_day_timeline(&timeline).is_err()
@@ -441,10 +464,16 @@ fn day_is_current(journal: &Path, day: &str, source_digest: &str) -> bool {
     {
         return false;
     }
-    load_timeline_state(journal)
-        .ok()
-        .and_then(|state| state.artifacts.get(&day_subject_key(day)).cloned())
-        .is_some_and(|artifact| artifact.input_digest == source_digest)
+    matches!(
+        evaluate_artifact_currentness(
+            journal,
+            &day_subject_key(day),
+            &timeline.source_digest,
+            timeline.generated_at_ms,
+            &text,
+        ),
+        Ok(ArtifactCurrentness::Current)
+    )
 }
 
 fn curation_record(candidate_count: usize, picked: EntryPickResult) -> CurationRecordV1 {
@@ -517,8 +546,7 @@ fn rollup_master(
     if candidates.is_empty() {
         return empty_master_candidates();
     }
-    let year_request = entry_rollup_request(&candidates, options.top, "year");
-    let source_digest = match master_digest(&days, &year_request) {
+    let source_digest = match master_digest(&days, options.top) {
         Ok(digest) => digest,
         Err(error) => return failure(error.to_string()),
     };
@@ -614,8 +642,7 @@ fn master_preview(journal: &Path, days: &BTreeMap<String, DayTimelineV1>, top: u
     if candidates.is_empty() {
         return empty_master_candidates();
     }
-    let request = entry_rollup_request(&candidates, top, "year");
-    let digest = match master_digest(days, &request) {
+    let digest = match master_digest(days, top) {
         Ok(digest) => digest,
         Err(error) => return failure(error.to_string()),
     };
@@ -711,29 +738,59 @@ fn master_candidates(days: &BTreeMap<String, DayTimelineV1>) -> Vec<TimelineEntr
 
 fn master_digest(
     days: &BTreeMap<String, DayTimelineV1>,
-    request: &GenerateRequest,
+    top: usize,
 ) -> Result<String, TimelineError> {
     let sources = days
         .iter()
         .map(|(day, timeline)| (day.clone(), timeline.source_digest.clone()))
         .collect::<Vec<_>>();
-    master_source_digest(&sources, &curation_request(request))
+    master_source_digest(&sources, &master_curation_jobs(days, top))
+}
+
+fn master_curation_jobs(days: &BTreeMap<String, DayTimelineV1>, top: usize) -> Vec<CurationJobV1> {
+    let mut jobs = group_by_month(days)
+        .into_iter()
+        .map(|(month, day_keys)| {
+            let candidates = day_keys
+                .iter()
+                .flat_map(|day| days[day].day_curation.picks.iter().cloned())
+                .collect::<Vec<_>>();
+            CurationJobV1 {
+                scope: format!("month:{month}"),
+                request: curation_request(&entry_rollup_request(&candidates, top, "month")),
+                candidates,
+            }
+        })
+        .collect::<Vec<_>>();
+    let candidates = master_candidates(days);
+    jobs.push(CurationJobV1 {
+        scope: "year".to_owned(),
+        request: curation_request(&entry_rollup_request(&candidates, top, "year")),
+        candidates,
+    });
+    jobs
 }
 
 fn master_is_current(journal: &Path, source_digest: &str) -> bool {
-    let timeline = std::fs::read(master_timeline_path(journal))
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<MasterTimelineV1>(&bytes).ok());
-    let Some(timeline) = timeline else {
+    let Ok(text) = std::fs::read_to_string(master_timeline_path(journal)) else {
+        return false;
+    };
+    let Ok(timeline) = serde_json::from_str::<MasterTimelineV1>(&text) else {
         return false;
     };
     if validate_master_timeline(&timeline).is_err() || timeline.source_digest != source_digest {
         return false;
     }
-    load_timeline_state(journal)
-        .ok()
-        .and_then(|state| state.artifacts.get(master_subject_key()).cloned())
-        .is_some_and(|artifact| artifact.input_digest == source_digest)
+    matches!(
+        evaluate_artifact_currentness(
+            journal,
+            master_subject_key(),
+            &timeline.source_digest,
+            timeline.generated_at_ms,
+            &text,
+        ),
+        Ok(ArtifactCurrentness::Current)
+    )
 }
 
 fn master_attempt(input_digest: &str, started_at_ms: i64) -> AttemptStateV1 {
@@ -1065,6 +1122,46 @@ fn load_day_segments(journal: &Path, day: &str) -> Result<DayScan, String> {
             ));
             continue;
         }
+        let artifact_text = match std::str::from_utf8(&bytes) {
+            Ok(text) => text,
+            Err(error) => {
+                failures.push(scan_failure(binding, "malformed_json", error.to_string()));
+                continue;
+            }
+        };
+        match evaluate_artifact_currentness(
+            journal,
+            &segment_subject_key(&binding),
+            &timeline.input_digest,
+            timeline.generated_at_ms,
+            artifact_text,
+        ) {
+            Ok(ArtifactCurrentness::Current) => {}
+            Ok(ArtifactCurrentness::Stale) => {
+                failures.push(scan_failure(
+                    binding,
+                    "stale",
+                    "artifact does not match durable publication state".to_owned(),
+                ));
+                continue;
+            }
+            Ok(ArtifactCurrentness::Missing) => {
+                failures.push(scan_failure(
+                    binding,
+                    "state_missing",
+                    "artifact has no durable publication state".to_owned(),
+                ));
+                continue;
+            }
+            Err(error) => {
+                failures.push(scan_failure(
+                    binding,
+                    "state_unavailable",
+                    error.to_string(),
+                ));
+                continue;
+            }
+        }
         let title = timeline.summary.title.trim().to_owned();
         let description = timeline.summary.description.trim().to_owned();
         if title.is_empty() && description.is_empty() {
@@ -1199,6 +1296,50 @@ fn load_day_rollups(journal: &Path) -> Result<MasterScan, String> {
             ));
             continue;
         }
+        let artifact_text = match std::str::from_utf8(&bytes) {
+            Ok(text) => text,
+            Err(error) => {
+                failures.push(master_scan_failure(
+                    day,
+                    "malformed_json",
+                    error.to_string(),
+                ));
+                continue;
+            }
+        };
+        match evaluate_artifact_currentness(
+            journal,
+            &day_subject_key(&day),
+            &timeline.source_digest,
+            timeline.generated_at_ms,
+            artifact_text,
+        ) {
+            Ok(ArtifactCurrentness::Current) => {}
+            Ok(ArtifactCurrentness::Stale) => {
+                failures.push(master_scan_failure(
+                    day,
+                    "stale",
+                    "artifact does not match durable publication state".to_owned(),
+                ));
+                continue;
+            }
+            Ok(ArtifactCurrentness::Missing) => {
+                failures.push(master_scan_failure(
+                    day,
+                    "state_missing",
+                    "artifact has no durable publication state".to_owned(),
+                ));
+                continue;
+            }
+            Err(error) => {
+                failures.push(master_scan_failure(
+                    day,
+                    "state_unavailable",
+                    error.to_string(),
+                ));
+                continue;
+            }
+        }
         rollups.insert(day, timeline);
     }
     Ok(MasterScan {
@@ -1280,7 +1421,10 @@ fn usage_error(id: &str, detail: &str) -> CliRun {
     reason = "temporary journals and canned model responses are test-only"
 )]
 mod tests {
-    use super::{day_source_digest, load_day_segments, pick_entries, run};
+    use super::{
+        SegmentRow, day_curation_jobs, day_source_digest, load_day_segments, master_curation_jobs,
+        master_digest, pick_entries, run,
+    };
     use crate::timezone::HostTimezoneSource;
     use crate::{RollupPicker, TimelineServices};
     use chrono::{TimeZone, Utc};
@@ -1288,7 +1432,9 @@ mod tests {
     use solstone_core_generate::{ContentPart, GenerateRequest, GeneratedResponse};
     use solstone_core_timeline::{
         AttemptOutcome, CURRENT_SCHEMA_VERSION, CurationRecordV1, DayTimelineV1, SegmentBindingV1,
-        SegmentSummaryV1, SegmentTimelineV1, TimelineEntryV1, TimelineKind, load_timeline_state,
+        SegmentSummaryV1, SegmentTimelineV1, TimelineEntryV1, TimelineKind, curation_jobs_digest,
+        load_timeline_state, publish_day_timeline, publish_segment_timeline,
+        record_attempt_outcome, segment_subject_key,
     };
     use std::collections::{BTreeMap, VecDeque};
     use std::path::{Path, PathBuf};
@@ -1617,7 +1763,7 @@ mod tests {
             "080000_1",
             json!({"title":"Preview", "description":"must not write"}),
         );
-        std::fs::create_dir_all(journal.path().join("health/timeline")).unwrap();
+        std::fs::remove_dir_all(journal.path().join("health/timeline/locks")).unwrap();
         std::fs::write(
             journal.path().join("health/timeline/locks"),
             b"not a directory",
@@ -1873,6 +2019,93 @@ mod tests {
         );
         assert_eq!(invalid.exit_code, 2);
         assert!(invalid.stderr.contains("day must be YYYYMMDD"));
+    }
+
+    #[test]
+    fn day_preview_names_a_segment_with_a_newer_failed_input_as_stale() {
+        let journal = tempfile::tempdir().unwrap();
+        let day = "20260301";
+        let stream = "field.audio";
+        let segment = "080000_1";
+        write_segment(
+            journal.path(),
+            day,
+            stream,
+            segment,
+            json!({"title":"Current", "description":"event"}),
+        );
+        let picker = Picker::canned([]);
+        let model = Model::new("model");
+        assert_eq!(
+            run(
+                "timeline:rollup-day",
+                &["--day".to_owned(), day.to_owned(), "--commit".to_owned()],
+                journal.path(),
+                &services(&picker, &model),
+            )
+            .exit_code,
+            0
+        );
+        let binding = SegmentBindingV1 {
+            day: day.to_owned(),
+            stream: stream.to_owned(),
+            segment: segment.to_owned(),
+        };
+        let attempt = solstone_core_timeline::AttemptStateV1 {
+            attempt_id: "newer-failed".to_owned(),
+            input_digest: "changed-input".to_owned(),
+            started_at_ms: 2,
+            finished_at_ms: None,
+            outcome: AttemptOutcome::Running,
+            detail: String::new(),
+        };
+        record_attempt_outcome(
+            journal.path(),
+            &segment_subject_key(&binding),
+            attempt,
+            AttemptOutcome::Failed,
+            "fixture failure",
+            3,
+        )
+        .unwrap();
+
+        let preview = run(
+            "timeline:rollup-day",
+            &["--day".to_owned(), day.to_owned(), "--dry-run".to_owned()],
+            journal.path(),
+            &services(&picker, &model),
+        );
+        assert_eq!(preview.exit_code, 1);
+        assert!(preview.stderr.contains("stale"));
+    }
+
+    #[test]
+    fn day_source_digest_covers_each_hour_request() {
+        let rows = vec![
+            SegmentRow {
+                binding: SegmentBindingV1 {
+                    day: "20260301".to_owned(),
+                    stream: "_default".to_owned(),
+                    segment: "080000_1".to_owned(),
+                },
+                hour: "08".to_owned(),
+                entry: entry("One", "event", "one", "080000_1"),
+            },
+            SegmentRow {
+                binding: SegmentBindingV1 {
+                    day: "20260301".to_owned(),
+                    stream: "_default".to_owned(),
+                    segment: "090000_1".to_owned(),
+                },
+                hour: "09".to_owned(),
+                entry: entry("Two", "event", "two", "090000_1"),
+            },
+        ];
+        let baseline = day_source_digest(&rows, 1).unwrap();
+        let mut jobs = day_curation_jobs(&rows, 1);
+        jobs[0].request.system_instruction = Some("changed hour prompt".to_owned());
+
+        assert_ne!(baseline, curation_jobs_digest(&jobs).unwrap());
     }
 
     #[test]
@@ -2194,6 +2427,43 @@ mod tests {
         );
     }
 
+    #[test]
+    fn master_source_digest_covers_each_month_request() {
+        let journal = tempfile::tempdir().unwrap();
+        write_day_rollup(
+            journal.path(),
+            "20260101",
+            vec![day_entry("20260101", "January", "first", "080000_1")],
+        );
+        write_day_rollup(
+            journal.path(),
+            "20260201",
+            vec![day_entry("20260201", "February", "second", "080000_2")],
+        );
+        let days = ["20260101", "20260201"]
+            .into_iter()
+            .map(|day| {
+                let timeline = serde_json::from_slice::<DayTimelineV1>(
+                    &std::fs::read(
+                        journal
+                            .path()
+                            .join("chronicle")
+                            .join(day)
+                            .join("timeline.json"),
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+                (day.to_owned(), timeline)
+            })
+            .collect::<BTreeMap<_, _>>();
+        let baseline = master_digest(&days, 1).unwrap();
+        let mut jobs = master_curation_jobs(&days, 1);
+        jobs[0].request.system_instruction = Some("changed month prompt".to_owned());
+
+        assert_ne!(baseline, curation_jobs_digest(&jobs).unwrap());
+    }
+
     fn write_segment(journal: &Path, day: &str, stream: &str, segment: &str, value: Value) {
         let path = journal
             .join("chronicle")
@@ -2233,7 +2503,19 @@ mod tests {
             },
             provenance: None,
         };
-        std::fs::write(path, serde_json::to_vec(&timeline).unwrap()).unwrap();
+        publish_segment_timeline(
+            journal,
+            &timeline,
+            solstone_core_timeline::AttemptStateV1 {
+                attempt_id: format!("fixture-segment-{day}-{stream}-{segment}"),
+                input_digest: timeline.input_digest.clone(),
+                started_at_ms: timeline.generated_at_ms,
+                finished_at_ms: None,
+                outcome: AttemptOutcome::Running,
+                detail: String::new(),
+            },
+        )
+        .unwrap();
     }
 
     fn create_segment_dir(journal: &Path, day: &str, stream: &str, segment: &str) {
@@ -2313,7 +2595,19 @@ mod tests {
             hours: BTreeMap::new(),
             day_curation: curation,
         };
-        std::fs::write(path, serde_json::to_vec(&timeline).unwrap()).unwrap();
+        publish_day_timeline(
+            journal,
+            &timeline,
+            solstone_core_timeline::AttemptStateV1 {
+                attempt_id: format!("fixture-day-{day}"),
+                input_digest: timeline.source_digest.clone(),
+                started_at_ms: timeline.generated_at_ms,
+                finished_at_ms: None,
+                outcome: AttemptOutcome::Running,
+                detail: String::new(),
+            },
+        )
+        .unwrap();
     }
 
     fn write_config(journal: &Path, config: Value) {

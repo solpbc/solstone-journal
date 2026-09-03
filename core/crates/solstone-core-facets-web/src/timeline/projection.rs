@@ -5,10 +5,10 @@ use std::fs;
 use std::path::Path;
 
 use solstone_core_timeline::{
-    DayTimelineV1, MasterTimelineV1, SegmentBindingV1, SegmentTimelineV1, TimelineError,
-    day_subject_key, day_timeline_path, load_timeline_state, master_subject_key,
-    master_timeline_path, segment_subject_key, segment_timeline_path, validate_day_timeline,
-    validate_master_timeline, validate_segment_timeline,
+    ArtifactCurrentness, DayTimelineV1, MasterTimelineV1, SegmentBindingV1, SegmentTimelineV1,
+    TimelineError, day_subject_key, day_timeline_path, evaluate_artifact_currentness,
+    master_subject_key, master_timeline_path, segment_subject_key, segment_timeline_path,
+    validate_day_timeline, validate_master_timeline, validate_segment_timeline,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,8 +67,9 @@ pub(super) fn master(root: &Path) -> ArtifactProjection<MasterTimelineV1> {
         &master_timeline_path(root),
         master_subject_key(),
         |value: &MasterTimelineV1| &value.source_digest,
-        |bytes| {
-            let value = serde_json::from_slice(bytes)?;
+        |value: &MasterTimelineV1| value.generated_at_ms,
+        |text| {
+            let value = serde_json::from_str(text)?;
             validate_master_timeline(&value)?;
             Ok(value)
         },
@@ -81,8 +82,9 @@ pub(super) fn day(root: &Path, day: &str) -> ArtifactProjection<DayTimelineV1> {
         &day_timeline_path(root, day),
         &day_subject_key(day),
         |value: &DayTimelineV1| &value.source_digest,
-        |bytes| {
-            let value = serde_json::from_slice(bytes)?;
+        |value: &DayTimelineV1| value.generated_at_ms,
+        |text| {
+            let value = serde_json::from_str(text)?;
             validate_day_timeline(&value)?;
             Ok(value)
         },
@@ -102,8 +104,9 @@ pub(super) fn segment(
         &path,
         &segment_subject_key(binding),
         |value: &SegmentTimelineV1| &value.input_digest,
-        |bytes| {
-            let value = serde_json::from_slice(bytes)?;
+        |value: &SegmentTimelineV1| value.generated_at_ms,
+        |text| {
+            let value = serde_json::from_str(text)?;
             validate_segment_timeline(&value)?;
             Ok(value)
         },
@@ -115,11 +118,12 @@ fn read_artifact<T>(
     path: &Path,
     subject: &str,
     digest: impl Fn(&T) -> &str,
-    parse: impl FnOnce(&[u8]) -> Result<T, TimelineError>,
+    generated_at_ms: impl Fn(&T) -> i64,
+    parse: impl FnOnce(&str) -> Result<T, TimelineError>,
     root: &Path,
 ) -> ArtifactProjection<T> {
-    let bytes = match fs::read(path) {
-        Ok(bytes) => bytes,
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return ArtifactProjection {
                 value: None,
@@ -129,17 +133,21 @@ fn read_artifact<T>(
         }
         Err(_) => return stale_without_value(ArtifactOutcome::Unreadable),
     };
-    let value = match parse(&bytes) {
+    let value = match parse(&text) {
         Ok(value) => value,
         Err(TimelineError::Serde(_)) => return stale_without_value(ArtifactOutcome::Malformed),
         Err(_) => return stale_without_value(ArtifactOutcome::Invalid),
     };
-    let outcome = match load_timeline_state(root) {
-        Ok(state) => match state.artifacts.get(subject) {
-            Some(artifact) if artifact.input_digest == digest(&value) => ArtifactOutcome::Current,
-            Some(_) => ArtifactOutcome::DigestMismatch,
-            None => ArtifactOutcome::StateMissing,
-        },
+    let outcome = match evaluate_artifact_currentness(
+        root,
+        subject,
+        digest(&value),
+        generated_at_ms(&value),
+        &text,
+    ) {
+        Ok(ArtifactCurrentness::Current) => ArtifactOutcome::Current,
+        Ok(ArtifactCurrentness::Stale) => ArtifactOutcome::DigestMismatch,
+        Ok(ArtifactCurrentness::Missing) => ArtifactOutcome::StateMissing,
         Err(_) => ArtifactOutcome::StateUnavailable,
     };
     ArtifactProjection {
