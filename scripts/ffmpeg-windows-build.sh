@@ -95,7 +95,12 @@ remote_msys2="$WIN_REMOTE_HOME\\ffmpeg-msys2-$EXPECTED_WIN_COMMIT.tar.xz"
 remote_make="$WIN_REMOTE_HOME\\ffmpeg-make-$EXPECTED_WIN_COMMIT.pkg.tar.zst"
 remote_nasm="$WIN_REMOTE_HOME\\ffmpeg-nasm-$EXPECTED_WIN_COMMIT.zip"
 remote_llvm="$WIN_REMOTE_HOME\\ffmpeg-llvm-$EXPECTED_WIN_COMMIT.tar.xz"
-remote_guard="foreach (\$path in @('$remote_source', '$remote_msys2', '$remote_make', '$remote_nasm', '$remote_llvm', '$remote_slot')) { if (Test-Path -LiteralPath \$path) { throw \"remote FFmpeg slot path already exists: \$path\" } }"
+remote_guard="if (Test-Path -LiteralPath '$remote_source') { throw 'remote FFmpeg source archive path already exists' }
+if (Test-Path -LiteralPath '$remote_msys2') { throw 'remote FFmpeg MSYS2 archive path already exists' }
+if (Test-Path -LiteralPath '$remote_make') { throw 'remote FFmpeg make archive path already exists' }
+if (Test-Path -LiteralPath '$remote_nasm') { throw 'remote FFmpeg NASM archive path already exists' }
+if (Test-Path -LiteralPath '$remote_llvm') { throw 'remote FFmpeg LLVM archive path already exists' }
+if (Test-Path -LiteralPath '$remote_slot') { throw 'remote FFmpeg build slot path already exists' }"
 "$SSH" "$WIN_REMOTE_HOST" "powershell -NoProfile -Command \"$remote_guard\""
 
 remote_cleanup="\$ErrorActionPreference = 'Stop'
