@@ -153,7 +153,7 @@ try {
         $dependents = (& $dumpbin /dependents $exe 2>&1 | Out-String)
         if ($LASTEXITCODE -ne 0) { throw "dumpbin /dependents failed for $exe" }
         $matches = @($dependents -split "`r?`n" | Where-Object { $_ -match '(?i)\b(avcodec|avdevice|avfilter|avformat|avutil|avresample|postproc|swresample|swscale|ffmpeg)[a-z0-9_.-]*\.dll\b' })
-        if ($matches.Count -ne 0) { throw "FFmpeg dynamic DLL import retained by $exe: $($matches -join '; ')" }
+        if ($matches.Count -ne 0) { throw "FFmpeg dynamic DLL import retained by ${exe}: $($matches -join '; ')" }
         $importLines += "$([IO.Path]::GetFileName($exe))=no-ffmpeg-dynamic-import"
     }
     $validation = Join-Path $ReportRoot 'ffmpeg-build-validation.log'
