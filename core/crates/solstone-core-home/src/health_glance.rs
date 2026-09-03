@@ -21,7 +21,8 @@ const NO_ELIGIBLE_HEADLINE: &str =
     "none of your devices have the solstone app set up to add to your journal right now.";
 const RUNNING_REACH_SENTENCE: &str =
     "the app is still running, but it isn't adding to your journal.";
-const ASLEEP_REACH_SENTENCE: &str = "the device appears offline and may just be asleep.";
+const ASLEEP_REACH_SENTENCE: &str =
+    "the device hasn't been reachable — it could be asleep, off, or having trouble connecting.";
 const STALE_ISSUE: &str =
     "the solstone app on one of your devices has not added anything to your journal recently.";
 const OFFLINE_ISSUE: &str = "the solstone app hasn't added anything to your journal recently.";
