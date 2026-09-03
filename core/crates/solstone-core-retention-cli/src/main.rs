@@ -47,7 +47,8 @@ use chrono::{DateTime, NaiveDate, Utc};
 use solstone_core_indexer_store::RetentionIndex;
 use solstone_core_retention::content::{ClosedHandlerSet, JournalMedia};
 use solstone_core_retention::door::{
-    compact_log, notify_index, recover, release_raw, remove_logs, remove_segments,
+    compact_log, notify_index, recover, release_raw, remove_logs, remove_planned_oplogs,
+    remove_segments,
 };
 use solstone_core_retention::eligibility::{RawRelease, resolve};
 use solstone_core_retention::logs::{
@@ -58,6 +59,7 @@ use solstone_core_retention::marks::{
     Failure, MarkId, Proposal, RemovalClass, decline, load, preflight, reconcile,
     reconcile_recovered, record_failure, resolve_offload, upsert_offload,
 };
+use solstone_core_retention::oplog_retention::{OplogRetentionPlan, plan_oplog_retention};
 use solstone_core_retention::policy::Policy;
 use solstone_core_retention::receipt::{Outcome, Target};
 use solstone_core_retention::remove_marked::remove_marked;
@@ -592,6 +594,7 @@ fn add_skip(classes: &mut BTreeMap<String, ClassCounts>, class: &str) {
 fn log_plan_json(
     journal: &Path,
     plan: &LogPlan,
+    oplogs: &OplogRetentionPlan,
     compactions: &[Compaction],
     outcome: Option<&Outcome>,
     executed: bool,
@@ -706,7 +709,61 @@ fn log_plan_json(
         "by_class": classes,
         "by_day": days,
         "errors": errors,
+        "oplogs": oplog_plan_json(oplogs, outcome, executed),
         "compactions": compaction_rows,
+    })
+}
+
+fn oplog_plan_json(
+    plan: &OplogRetentionPlan,
+    outcome: Option<&Outcome>,
+    executed: bool,
+) -> serde_json::Value {
+    let outcomes = outcome
+        .into_iter()
+        .flat_map(|outcome| outcome.targets.iter())
+        .find(|target| target.target.dir == "oplog_retention");
+    let failures: BTreeMap<&str, &str> = outcomes
+        .into_iter()
+        .flat_map(|target| target.not_removed.iter())
+        .map(|failure| (failure.entry.as_str(), failure.reason.as_str()))
+        .collect();
+    let removed = outcomes
+        .into_iter()
+        .flat_map(|target| target.removed.iter())
+        .map(|path| path.as_str())
+        .collect::<Vec<_>>();
+    let prunable = plan
+        .prunable
+        .iter()
+        .map(|target| {
+            let rel = target.rel();
+            serde_json::json!({
+                "day": day_key(target.day()),
+                "leaf": target.leaf(),
+                "path": rel,
+                "bytes": target.bytes(),
+                "removed": executed && removed.contains(&rel.as_str()),
+                "error": failures.get(rel.as_str()),
+            })
+        })
+        .collect::<Vec<_>>();
+    let retained = plan
+        .retained
+        .iter()
+        .map(|retained| {
+            serde_json::json!({
+                "day": day_key(retained.day()),
+                "leaf": retained.leaf(),
+                "reason": retained.reason().label(),
+                "detail": retained.reason().detail(),
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "prunable": prunable,
+        "retained": retained,
+        "bytes": plan.bytes(),
     })
 }
 
@@ -1135,8 +1192,9 @@ fn run_prune_logs(args: &Args) -> ExitCode {
         enabled: true,
     };
     let plan = plan_logs(&journal, &policy, today);
-    let compactions = plan_compactions(&journal, &policy, today);
-    let described = log_plan_json(&journal, &plan, &compactions, None, false);
+    let oplogs = plan_oplog_retention(&journal, &policy, today);
+    let compactions = plan_compactions(&journal, &policy, today, &plan);
+    let described = log_plan_json(&journal, &plan, &oplogs, &compactions, None, false);
     if !args.has("--execute") {
         return emit(
             serde_json::json!({ "ok": true, "verb": "prune-logs", "executed": false, "plan": described }),
@@ -1144,6 +1202,11 @@ fn run_prune_logs(args: &Args) -> ExitCode {
         );
     }
     let mut outcome = remove_logs(&journal, &plan.prunable);
+    let oplog_outcome = remove_planned_oplogs(&journal, &oplogs.prunable);
+    outcome.targets.extend(oplog_outcome.targets);
+    if outcome.halted.is_none() {
+        outcome.halted = oplog_outcome.halted;
+    }
     for compaction in &compactions {
         let compacted = compact_log(&journal, compaction);
         outcome.targets.extend(compacted.targets);
@@ -1151,7 +1214,7 @@ fn run_prune_logs(args: &Args) -> ExitCode {
             outcome.halted = compacted.halted;
         }
     }
-    let described = log_plan_json(&journal, &plan, &compactions, Some(&outcome), true);
+    let described = log_plan_json(&journal, &plan, &oplogs, &compactions, Some(&outcome), true);
     finish(
         &journal,
         outcome,

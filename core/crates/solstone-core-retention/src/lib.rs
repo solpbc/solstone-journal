@@ -58,6 +58,7 @@ pub mod layout;
 pub mod logs;
 pub mod marks;
 pub mod notify;
+pub mod oplog_retention;
 pub mod policy;
 pub mod receipt;
 pub mod remove_marked;
@@ -69,13 +70,17 @@ pub mod tombstone;
 
 pub use class::{MediaClass, classify};
 pub use content::{ContentName, HandlerRegistry, MediaClassifier};
-pub use door::{EvidenceTally, release_raw};
+pub use door::{EvidenceTally, release_raw, remove_planned_oplogs};
 pub use eligibility::{Blocker, Evidence, FoundContent, ProvenRaw, RawRelease, SidecarFacts};
 pub use marks::{
     Failure, Mark, MarkId, MarkState, Proposal, Register, RemovalClass, resolve_offload,
     upsert_offload,
 };
 pub use notify::{IndexNotify, NoIndex, NotifyError, PruneCounts};
+pub use oplog_retention::{
+    OplogRetentionKept, OplogRetentionPlan, OplogRetentionTarget, RetainedOplog,
+    plan_oplog_retention,
+};
 pub use policy::{Anchor, Days, Eligibility, Policy, Rule, SegmentAge};
 pub use receipt::{
     NotRemoved, Outcome, PostCommitFailure, RemovedPath, RunHalt, Target, TargetOutcome,

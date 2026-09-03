@@ -3,6 +3,8 @@
 
 #[path = "support/installation_binding.rs"]
 mod installation_binding;
+#[path = "support/speakers_analyze_stub.rs"]
+mod speakers_analyze_stub;
 #[path = "supervisor_boot.rs"]
 mod supervisor_boot;
 #[path = "support/supervisor_guard.rs"]

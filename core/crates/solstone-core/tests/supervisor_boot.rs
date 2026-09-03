@@ -6,6 +6,7 @@
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io::Read;
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Output, Stdio};
@@ -31,8 +32,9 @@ use solstone_core_system::process::{
 
 #[path = "support/hostile_binary.rs"]
 mod hostile_binary;
-
-use super::{supervisor_guard::SupervisorGuard, temporary_root::temporary_root};
+use super::{
+    speakers_analyze_stub, supervisor_guard::SupervisorGuard, temporary_root::temporary_root,
+};
 use hostile_binary::{copied_binary, hostile_binary};
 
 struct TempJournal(PathBuf);
@@ -134,6 +136,7 @@ fn start_with_convey_argv(journal: &TempJournal, convey_argv: Option<String>) ->
     if let Some(argv) = convey_argv {
         command.env("SOLSTONE_SUPERVISOR_APP_CONVEY_ARGV", argv);
     }
+    speakers_analyze_stub::apply(&mut command);
     SupervisorGuard::new(command.spawn().expect("supervisor starts"))
 }
 
@@ -171,6 +174,7 @@ fn start_paused_before_readiness_with_args(
             marker,
         );
     command.args(extra_args);
+    speakers_analyze_stub::apply(&mut command);
     SupervisorGuard::new(command.spawn().expect("paused supervisor starts"))
 }
 
@@ -258,30 +262,31 @@ fn start_hosted_with_home(
     let child_pid = journal.0.join("hosted-child.pid");
     let outcome = journal.0.join("hosted.outcome");
     let nonce = next_receipt_nonce(&outcome);
-    let launcher = Command::new(env!(
+    let mut command = Command::new(env!(
         "CARGO_BIN_EXE_solstone-core-hosted-supervisor-fixture"
-    ))
-    .args(["launcher"])
-    .arg(&journal.0)
-    .arg(&child_pid)
-    .arg(&outcome)
-    .arg(&nonce)
-    .stdin(Stdio::null())
-    .stdout(Stdio::null())
-    .stderr(Stdio::piped())
-    .env("HOME", home)
-    .env(
-        "SOLSTONE_LOCAL_BINARY",
-        env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
-    )
-    .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
-    .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
-    .env(
-        "SOLSTONE_SUPERVISOR_APP_BINARY",
-        env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
-    )
-    .spawn()
-    .expect("hosted launcher starts");
+    ));
+    command
+        .args(["launcher"])
+        .arg(&journal.0)
+        .arg(&child_pid)
+        .arg(&outcome)
+        .arg(&nonce)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .env("HOME", home)
+        .env(
+            "SOLSTONE_LOCAL_BINARY",
+            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+        )
+        .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
+        .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
+        .env(
+            "SOLSTONE_SUPERVISOR_APP_BINARY",
+            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+        );
+    speakers_analyze_stub::apply(&mut command);
+    let launcher = command.spawn().expect("hosted launcher starts");
     (launcher, child_pid, outcome, nonce)
 }
 
@@ -374,36 +379,97 @@ fn wait_for_outcome(path: &Path, expected_nonce: &str) -> SupervisorHostOutcome 
 fn run_hosted_with_parent(journal: &TempJournal, pid: u32, ticks: u64) -> SupervisorHostOutcome {
     let outcome = journal.0.join("declared-parent.outcome");
     let nonce = next_receipt_nonce(&outcome);
-    let status = Command::new(env!(
+    let mut command = Command::new(env!(
         "CARGO_BIN_EXE_solstone-core-hosted-supervisor-fixture"
-    ))
-    .args(["host-with-parent"])
-    .arg(&journal.0)
-    .arg(&outcome)
-    .arg(&nonce)
-    .arg(pid.to_string())
-    .arg(ticks.to_string())
-    .stdin(Stdio::null())
-    .stdout(Stdio::null())
-    .stderr(Stdio::null())
-    .env("HOME", super::installation_binding::admit_for(&journal.0))
-    .env(
-        "SOLSTONE_LOCAL_BINARY",
-        env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
-    )
-    .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
-    .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
-    .env(
-        "SOLSTONE_SUPERVISOR_APP_BINARY",
-        env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
-    )
-    .status()
-    .expect("declared-parent host runs");
+    ));
+    command
+        .args(["host-with-parent"])
+        .arg(&journal.0)
+        .arg(&outcome)
+        .arg(&nonce)
+        .arg(pid.to_string())
+        .arg(ticks.to_string())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .env("HOME", super::installation_binding::admit_for(&journal.0))
+        .env(
+            "SOLSTONE_LOCAL_BINARY",
+            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+        )
+        .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
+        .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
+        .env(
+            "SOLSTONE_SUPERVISOR_APP_BINARY",
+            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+        );
+    speakers_analyze_stub::apply(&mut command);
+    let status = command.status().expect("declared-parent host runs");
     assert_eq!(status.code(), Some(75));
     let result = wait_for_outcome(&outcome, &nonce);
     assert!(!journal.0.join("health/supervisor.pid").exists());
     assert!(!journal.0.join("health/supervisor.ready").exists());
     result
+}
+
+#[test]
+fn legacy_log_cleanup_failure_refuses_before_lifecycle_activation() {
+    let journal = TempJournal::new();
+    let unreadable_chronicle = journal.0.join("chronicle");
+    fs::create_dir(&unreadable_chronicle).expect("chronicle directory");
+    fs::set_permissions(&unreadable_chronicle, fs::Permissions::from_mode(0o000))
+        .expect("make chronicle unreadable");
+    let outcome = journal.0.join("legacy-log-cleanup.outcome");
+    let nonce = next_receipt_nonce(&outcome);
+    let mut command = Command::new(env!(
+        "CARGO_BIN_EXE_solstone-core-hosted-supervisor-fixture"
+    ));
+    command
+        .args(["host"])
+        .arg(&journal.0)
+        .arg(&outcome)
+        .arg(&nonce)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .env("HOME", super::installation_binding::admit_for(&journal.0))
+        .env(
+            "SOLSTONE_LOCAL_BINARY",
+            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+        )
+        .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
+        .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
+        .env(
+            "SOLSTONE_SUPERVISOR_APP_BINARY",
+            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+        );
+    speakers_analyze_stub::apply(&mut command);
+    let status = command.status().expect("hosted supervisor fixture runs");
+    fs::set_permissions(&unreadable_chronicle, fs::Permissions::from_mode(0o700))
+        .expect("restore chronicle permissions");
+
+    assert_eq!(status.code(), Some(75));
+    let result = wait_for_outcome(&outcome, &nonce);
+    assert!(
+        matches!(
+            result,
+            SupervisorHostOutcome::Refused {
+                reason: SupervisorBootRefusal::LegacyLogCleanup(_)
+            }
+        ),
+        "{result:?}"
+    );
+    assert!(!journal.0.join("health/supervisor.pid").exists());
+    assert!(!journal.0.join("health/supervisor.ready").exists());
+    for service in ["convey", "sense", "cortex", "spl"] {
+        assert!(
+            !journal
+                .0
+                .join(format!("health/fixture-{service}.marker"))
+                .exists(),
+            "cleanup refusal must precede spawning the {service} fixture"
+        );
+    }
 }
 
 #[test]
@@ -485,34 +551,35 @@ fn ac4_parent_loss_before_readiness_aborts_the_pre_ready_lifecycle() {
     let child_pid = journal.0.join("hosted-child.pid");
     let outcome = journal.0.join("hosted.outcome");
     let nonce = next_receipt_nonce(&outcome);
-    let mut launcher = Command::new(env!(
+    let mut command = Command::new(env!(
         "CARGO_BIN_EXE_solstone-core-hosted-supervisor-fixture"
-    ))
-    .args(["launcher"])
-    .arg(&journal.0)
-    .arg(&child_pid)
-    .arg(&outcome)
-    .arg(&nonce)
-    .stdin(Stdio::null())
-    .stdout(Stdio::null())
-    .stderr(Stdio::null())
-    .env("HOME", home)
-    .env(
-        "SOLSTONE_LOCAL_BINARY",
-        env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
-    )
-    .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
-    .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
-    .env(
-        "SOLSTONE_SUPERVISOR_APP_BINARY",
-        env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
-    )
-    .env(
-        "SOLSTONE_SUPERVISOR_HOSTED_PAUSE_BEFORE_FINAL_PARENT_CHECK",
-        &marker,
-    )
-    .spawn()
-    .expect("paused hosted launcher starts");
+    ));
+    command
+        .args(["launcher"])
+        .arg(&journal.0)
+        .arg(&child_pid)
+        .arg(&outcome)
+        .arg(&nonce)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .env("HOME", home)
+        .env(
+            "SOLSTONE_LOCAL_BINARY",
+            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+        )
+        .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
+        .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
+        .env(
+            "SOLSTONE_SUPERVISOR_APP_BINARY",
+            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+        )
+        .env(
+            "SOLSTONE_SUPERVISOR_HOSTED_PAUSE_BEFORE_FINAL_PARENT_CHECK",
+            &marker,
+        );
+    speakers_analyze_stub::apply(&mut command);
+    let mut launcher = command.spawn().expect("paused hosted launcher starts");
     for _ in 0..1_600 {
         if marker.exists() {
             break;
@@ -653,7 +720,8 @@ fn ac7_second_instance_refused_first_survives() {
         .trim()
         .parse::<i32>()
         .expect("numeric pid");
-    let second = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
+    command
         .args(["supervisor", "--journal"])
         .arg(&journal.0)
         .stdin(Stdio::null())
@@ -669,9 +737,9 @@ fn ac7_second_instance_refused_first_survives() {
         .env(
             "SOLSTONE_SUPERVISOR_APP_BINARY",
             env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
-        )
-        .status()
-        .expect("second supervisor runs");
+        );
+    speakers_analyze_stub::apply(&mut command);
+    let second = command.status().expect("second supervisor runs");
     // The second instance's speakers-analyze generation acquisition contends
     // with the first's held lease and fails, refusing boot with
     // EXIT_SPEAKERS_ANALYZE_GENERATION_REFUSED=78 (main.rs) rather than the
@@ -754,6 +822,7 @@ fn ac8_live_foreign_writer_blocks_boot_without_pid() {
             "SOLSTONE_SUPERVISOR_APP_BINARY",
             env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
         );
+    speakers_analyze_stub::apply(&mut command);
     let status = wait_for_bounded_status(
         SupervisorGuard::new(command.spawn().expect("supervisor runs")),
         Duration::from_secs(30),

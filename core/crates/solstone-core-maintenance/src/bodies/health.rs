@@ -10,11 +10,12 @@ use chrono::NaiveDate;
 use serde_json::{Map, Value};
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_retention::content::{ClosedHandlerSet, JournalMedia};
-use solstone_core_retention::door::{compact_log, remove_logs};
+use solstone_core_retention::door::{compact_log, remove_logs, remove_planned_oplogs};
 use solstone_core_retention::logs::{
     Compaction, EntryKind, Kept, LogPlan, LogPolicy, day_key, plan as plan_logs, plan_compactions,
 };
 use solstone_core_retention::marks::{Proposal, RemovalClass, load, reconcile};
+use solstone_core_retention::oplog_retention::{OplogRetentionPlan, plan_oplog_retention};
 use solstone_core_retention::policy::{policy_from_retention, policy_would_release};
 use solstone_core_retention::receipt::Outcome;
 use solstone_core_retention::sweep::plan as plan_sweep;
@@ -187,11 +188,17 @@ fn prune_logs(args: &[String], journal: &Path, services: &HealthServices<'_>) ->
         enabled: true,
     };
     let plan = plan_logs(journal, &policy, today);
-    let compactions = plan_compactions(journal, &policy, today);
+    let oplogs = plan_oplog_retention(journal, &policy, today);
+    let compactions = plan_compactions(journal, &policy, today, &plan);
     if dry_run {
-        return render_prune(today, days, true, &plan, &compactions);
+        return render_prune(today, days, true, &plan, &oplogs, &compactions);
     }
     let mut outcome = remove_logs(journal, &plan.prunable);
+    let oplog_outcome = remove_planned_oplogs(journal, &oplogs.prunable);
+    outcome.targets.extend(oplog_outcome.targets);
+    if outcome.halted.is_none() {
+        outcome.halted = oplog_outcome.halted;
+    }
     for compaction in &compactions {
         let compacted = compact_log(journal, compaction);
         outcome.targets.extend(compacted.targets);
@@ -207,7 +214,7 @@ fn prune_logs(args: &[String], journal: &Path, services: &HealthServices<'_>) ->
     {
         return prune_refused(&outcome);
     }
-    render_prune(today, days, false, &plan, &compactions)
+    render_prune(today, days, false, &plan, &oplogs, &compactions)
 }
 
 fn read_config(journal: &Path) -> Result<Map<String, Value>, String> {
@@ -306,6 +313,7 @@ fn render_prune(
     days: u32,
     dry_run: bool,
     plan: &LogPlan,
+    oplogs: &OplogRetentionPlan,
     compactions: &[Compaction],
 ) -> CliRun {
     let mut stats = BTreeMap::<String, PruneStats>::new();
@@ -319,6 +327,12 @@ fn render_prune(
             EntryKind::File => entry.files = entry.files.saturating_add(1),
             EntryKind::Directory => entry.dirs = entry.dirs.saturating_add(1),
         }
+        entry.bytes = entry.bytes.saturating_add(target.bytes());
+        total_bytes = total_bytes.saturating_add(target.bytes());
+    }
+    for target in &oplogs.prunable {
+        let entry = stats.entry("oplog_retention".to_owned()).or_default();
+        entry.files = entry.files.saturating_add(1);
         entry.bytes = entry.bytes.saturating_add(target.bytes());
         total_bytes = total_bytes.saturating_add(target.bytes());
     }
@@ -344,17 +358,11 @@ fn render_prune(
             });
         }
     }
-    let mut root_lines = 0usize;
-    let mut root_bytes = 0u64;
     for compaction in compactions {
         let freed = compaction
             .bytes_before
             .saturating_sub(compaction.bytes_after);
         total_bytes = total_bytes.saturating_add(freed);
-        if compaction.name() == "root_task_log" {
-            root_lines = compaction.lines_dropped;
-            root_bytes = freed;
-        }
     }
     let action = if dry_run { "would prune" } else { "pruned" };
     let cutoff = today
@@ -374,17 +382,6 @@ fn render_prune(
                 human_bytes(entry.bytes)
             ));
         }
-    }
-    if root_lines > 0 {
-        let action = if dry_run {
-            "would compact"
-        } else {
-            "compacted"
-        };
-        output.push_str(&format!(
-            "  root_task_log: {action} {root_lines} line(s), {}\n",
-            human_bytes(root_bytes)
-        ));
     }
     for error in errors {
         let hint = error
@@ -493,8 +490,10 @@ mod tests {
     };
     use crate::HealthServices;
     use crate::timezone::HostTimezoneSource;
-    use chrono::{TimeZone, Utc};
+    use chrono::{FixedOffset, TimeZone, Utc};
     use serde_json::{Map, Value, json};
+    use solstone_core_journal_io::JournalRoot;
+    use solstone_core_journal_io::operational_log::{OplogFormat, create_oplog_at};
     use solstone_core_retention::Target;
     use solstone_core_retention::marks::load;
     use solstone_core_retention::receipt::{NotRemoved, Outcome, RunHalt, TargetOutcome};
@@ -738,6 +737,57 @@ mod tests {
                 .starts_with("prune-logs: pruned 1 operational-log file(s)")
         );
         assert!(!token.exists());
+    }
+
+    #[test]
+    fn prune_logs_plans_and_removes_released_canonical_oplogs() {
+        let journal = tempfile::tempdir().unwrap();
+        let instant = FixedOffset::east_opt(0)
+            .unwrap()
+            .with_ymd_and_hms(2026, 1, 1, 12, 0, 0)
+            .single()
+            .unwrap();
+        let leaf = {
+            let writer = create_oplog_at(
+                JournalRoot::open(journal.path()).unwrap(),
+                "source",
+                "run",
+                OplogFormat::Log,
+                instant,
+            )
+            .unwrap();
+            writer.leaf_name().to_owned()
+        };
+        let path = journal.path().join("chronicle/20260101/health").join(&leaf);
+        let host = Host;
+        let services = HealthServices {
+            now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
+            host_timezone: &host,
+        };
+
+        let dry_run = run(
+            "health:prune-logs",
+            &["--dry-run".to_owned()],
+            journal.path(),
+            &services,
+        );
+        assert_eq!(dry_run.exit_code, 0);
+        assert!(
+            dry_run
+                .stdout
+                .contains("would prune 1 operational-log file(s)")
+        );
+        assert!(dry_run.stdout.contains("oplog_retention: 1 file(s)"));
+        assert!(path.exists(), "dry-run keeps the planned oplog");
+
+        let executed = run("health:prune-logs", &[], journal.path(), &services);
+        assert_eq!(executed.exit_code, 0);
+        assert!(executed.stdout.contains("pruned 1 operational-log file(s)"));
+        assert!(executed.stdout.contains("oplog_retention: 1 file(s)"));
+        assert!(
+            !path.exists(),
+            "the daily health routine removed the planned oplog"
+        );
     }
 
     #[test]

@@ -16,7 +16,7 @@ use solstone_core_check::{Severity, gather_host_inputs};
 use solstone_core_installation_identity::{GuardFields, SetupAdmission, service_guard_environment};
 use solstone_core_journal_config::get_journal_config_path;
 use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
-use solstone_core_journal_io::LockOptions;
+use solstone_core_journal_io::{LockOptions, legacy_log_alias::cleanup_legacy_log_aliases};
 
 use crate::args::{ResolvedSetup, SetupArgs, SetupMode, resolve_expanded_path};
 use crate::events::{ErrorCode, EventSink, EventType, SkipReason, StepName};
@@ -1325,10 +1325,8 @@ fn step_journal(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
             &context.home_dir,
             &context.current_dir,
         );
-    if non_empty_journal(&context.journal_path)
-        && !context.args.accept_existing_journal
-        && !persisted_matches
-    {
+    let existing_journal = non_empty_journal(&context.journal_path);
+    if existing_journal && !context.args.accept_existing_journal && !persisted_matches {
         if context.mode == SetupMode::NonInteractive {
             return Err(StepExecutionError::DeadEnd {
                 message: existing_journal_message(&context.journal_path),
@@ -1364,6 +1362,13 @@ fn step_journal(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
     }
     ensure_journal_config(&context.journal_path)
         .map_err(|error| StepExecutionError::Unhandled { message: error })?;
+    if existing_journal {
+        cleanup_legacy_log_aliases(&context.journal_path).map_err(|error| {
+            StepExecutionError::Unhandled {
+                message: format!("legacy log alias cleanup failed: {error}"),
+            }
+        })?;
+    }
     Ok(StepResult::new(
         StepName::Journal,
         StepStatus::Ok,
@@ -2030,6 +2035,8 @@ mod tests {
     use std::collections::VecDeque;
     use std::ffi::OsString;
     use std::io;
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
 
     struct FakeRunner {
         outputs: VecDeque<Result<CommandOutput, String>>,
@@ -3013,6 +3020,67 @@ mod tests {
         assert_eq!(fs::read_to_string(config_path(&home)).unwrap(), existing);
         assert!(get_journal_config_path(&resolved.journal_path).is_file());
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn existing_journal_converges_retired_log_aliases() {
+        let (args, resolved, root, home) =
+            fixture("journal-legacy-alias", &["--accept-existing-journal"]);
+        fs::create_dir_all(resolved.journal_path.join("config")).expect("existing journal config");
+        let alias = resolved.journal_path.join("health/heartbeat.log");
+        fs::create_dir_all(alias.parent().expect("health directory")).expect("health directory");
+        symlink("missing", &alias).expect("retired diagnostic alias");
+        assert!(
+            non_empty_journal(&resolved.journal_path),
+            "the pre-creation journal is classified as existing"
+        );
+
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        let result = step_journal(&mut context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        ))
+        .expect("existing journal setup");
+
+        assert_eq!(result.status, StepStatus::Ok);
+        assert!(
+            alias.symlink_metadata().is_err(),
+            "retired alias was removed"
+        );
+    }
+
+    #[test]
+    fn fresh_journal_does_not_create_legacy_alias_namespaces() {
+        let (args, resolved, root, home) = fixture("journal-fresh-no-cleanup", &[]);
+        assert!(!resolved.journal_path.exists(), "the journal starts absent");
+
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        step_journal(&mut context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        ))
+        .expect("fresh journal setup");
+
+        for namespace in ["health", "chronicle", "talents", "agents"] {
+            assert!(
+                !resolved.journal_path.join(namespace).exists(),
+                "fresh setup does not create {namespace} for legacy cleanup"
+            );
+        }
+    }
+
     #[test]
     fn journal_fresh_write_replaces_user_config_and_config_bootstrap_preserves_existing() {
         let (args, resolved, root, home) = fixture("journal-fresh", &["--accept-existing-journal"]);

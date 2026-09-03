@@ -26,13 +26,16 @@ use std::path::Path;
 
 use solstone_core_journal_io::atomic::atomic_replace;
 use solstone_core_journal_io::entry::{Removed, remove_file, rename_within, sync_dir};
+use solstone_core_journal_io::operational_log::{
+    LeaseProbe, catalog_oplogs, probe_retained_oplog_lease,
+};
 use solstone_core_journal_io::paths::{
     DirEntryKind, contained_path, list_dir_entries, path_lexists,
 };
 use solstone_core_journal_io::removal::remove_dir_all;
 use solstone_core_journal_io::{
-    AtomicWriteOptions, HealthMarkerKind, LockOptions, bump_stream_marker, health_marker_path,
-    hold_lock, write_bytes_exclusive,
+    AtomicWriteOptions, HealthMarkerKind, JournalRoot, LockOptions, bump_stream_marker,
+    health_marker_path, hold_lock, write_bytes_exclusive,
 };
 
 use crate::eligibility::{Evidence, ProvenRaw};
@@ -292,6 +295,104 @@ pub fn remove_logs(journal: &Path, targets: &[crate::logs::LogTarget]) -> Outcom
     }
     Outcome {
         targets: by_class,
+        halted: None,
+    }
+}
+
+/// Remove canonical oplogs that a liveness-gated plan admitted.
+///
+/// Every target is catalogued again for its one containing day before removal. This
+/// confirms the planned identity and re-probes its retained descriptor, so a path
+/// replacement or a newly active writer is reported rather than unlinked.
+pub fn remove_planned_oplogs(
+    journal: &Path,
+    targets: &[crate::oplog_retention::OplogRetentionTarget],
+) -> Outcome {
+    if targets.is_empty() {
+        return Outcome {
+            targets: Vec::new(),
+            halted: None,
+        };
+    }
+    let target = Target {
+        day: String::new(),
+        stream: String::new(),
+        dir: "oplog_retention".to_owned(),
+    };
+    let mut row = TargetOutcome {
+        target: target.clone(),
+        removed: Vec::new(),
+        not_removed: Vec::new(),
+        post_commit_failure: None,
+    };
+
+    for planned in targets {
+        let rel = planned.rel();
+        let root = match JournalRoot::open(journal) {
+            Ok(root) => root,
+            Err(_) => {
+                row.not_removed.push(NotRemoved {
+                    entry: rel,
+                    reason: "the oplog could not be revalidated before removal".to_owned(),
+                    staged: None,
+                });
+                continue;
+            }
+        };
+        let snapshot = match catalog_oplogs(root, &[planned.day()]) {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                row.not_removed.push(NotRemoved {
+                    entry: rel,
+                    reason: format!(
+                        "the oplog changed before removal and its day could not be recatalogued: {}",
+                        error.kind()
+                    ),
+                    staged: None,
+                });
+                continue;
+            }
+        };
+        let found = snapshot
+            .into_catalogued_entries()
+            .into_iter()
+            .find(|(entry, _)| entry.leaf() == std::ffi::OsStr::new(planned.leaf()));
+        let Some((entry, file)) = found else {
+            // An absent target is idempotent success, like an already-absent log
+            // entry in the ordinary log door.
+            row.removed.push(RemovedPath::confirmed(rel));
+            continue;
+        };
+        if entry.identity() != planned.identity() {
+            row.not_removed.push(NotRemoved {
+                entry: rel,
+                reason: "the oplog changed before removal".to_owned(),
+                staged: None,
+            });
+            continue;
+        }
+        match probe_retained_oplog_lease(&file, entry.identity()) {
+            LeaseProbe::Released => match remove_file(journal, &rel) {
+                Ok(Removed::Unlinked | Removed::AlreadyAbsent) => {
+                    row.removed.push(RemovedPath::confirmed(rel));
+                }
+                Err(error) => row.not_removed.push(NotRemoved {
+                    entry: rel,
+                    reason: format!("the oplog could not be removed: {error}"),
+                    staged: None,
+                }),
+            },
+            LeaseProbe::Active | LeaseProbe::Indeterminate => row.not_removed.push(NotRemoved {
+                entry: rel,
+                reason: "the oplog changed before removal because its lease is no longer released"
+                    .to_owned(),
+                staged: None,
+            }),
+        }
+    }
+
+    Outcome {
+        targets: vec![row],
         halted: None,
     }
 }

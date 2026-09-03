@@ -720,7 +720,6 @@ fn prune_logs_disabled_is_a_noop_without_an_executor() {
             "bytes_freed_human": "0 B",
             "by_class": {},
             "by_day": {},
-            "root_task_log": {},
             "retention_log": {},
             "errors": [],
             "audit_written": false,

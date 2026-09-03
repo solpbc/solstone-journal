@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use crate::args::ListOptions;
 use crate::emit;
-use crate::last_run::format_last_run;
+use crate::last_run::{LastRunOutcome, format_last_run};
 use solstone_core_talent_config::TalentConfig;
 use solstone_core_talent_config::is_truthy;
 
@@ -54,7 +54,11 @@ pub(crate) fn render(
                     .unwrap_or(""),
                 28,
             );
-            let (last_run, failed) = format_last_run(&config.key, journal_root, now);
+            let (last_run, failed) = match format_last_run(&config.key, journal_root, now) {
+                LastRunOutcome::NoRuns => ("-".to_owned(), false),
+                LastRunOutcome::Unavailable => ("unavailable".to_owned(), false),
+                LastRunOutcome::Found { display, failed } => (display, failed),
+            };
             let tags = tags(&config.metadata, failed);
             let source = if config.metadata.get("source").and_then(Value::as_str) == Some("app") {
                 format!(

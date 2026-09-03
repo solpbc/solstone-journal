@@ -17,6 +17,7 @@ use solstone_core_installation_identity::{
     Generation, IdentityError, journal_token_from_path, load_installation_binding,
     root_token_from_path,
 };
+use solstone_core_journal_io::legacy_log_alias::cleanup_legacy_log_aliases;
 use solstone_core_system::lifecycle::{
     ADMISSION_WAIT_ACTIVE_COPY, AdmissionWaitTerminalReason, ArtifactClearOutcome, DeclaredParent,
     LifecycleError, ParentAdmissionFailure, ParentLossReason, ParentWatch, ShutdownDisposition,
@@ -114,6 +115,8 @@ pub enum SupervisorBootRefusal {
     /// installation-generation acquisition. Distinct from `_generation`
     /// (installation-binding) and the parent-loss lifecycle generation.
     SpeakersAnalyzeGeneration(String),
+    /// The retired-alias convergence pass could not safely inspect the journal.
+    LegacyLogCleanup(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -235,6 +238,11 @@ pub async fn run_hosted(
         },
         None => None,
     };
+    if let Err(error) = cleanup_legacy_log_aliases(journal) {
+        return SupervisorHostOutcome::Refused {
+            reason: SupervisorBootRefusal::LegacyLogCleanup(error.to_string()),
+        };
+    }
     let lifecycle = match admission.activate() {
         Ok(lifecycle) => lifecycle,
         Err(error) => {

@@ -4900,6 +4900,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-indexer-store",
+ "solstone-core-journal-io",
  "solstone-core-retention",
 ]
 
@@ -5393,6 +5394,7 @@ dependencies = [
  "solstone-core-format",
  "solstone-core-journal",
  "solstone-core-journal-config",
+ "solstone-core-journal-io",
  "solstone-core-talent-config",
  "tempfile",
 ]

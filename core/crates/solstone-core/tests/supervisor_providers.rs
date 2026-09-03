@@ -14,7 +14,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde_json::{Value, json};
 use solstone_core_local::install::{archive, manifest, pins};
 
-use super::{supervisor_guard::SupervisorGuard, temporary_root::temporary_root};
+use super::{
+    speakers_analyze_stub, supervisor_guard::SupervisorGuard, temporary_root::temporary_root,
+};
 
 struct TempJournal(PathBuf);
 impl TempJournal {
@@ -97,22 +99,21 @@ impl Drop for TempJournal {
 
 fn start(journal: &TempJournal, fixture: &str) -> SupervisorGuard {
     let home = super::installation_binding::admit_for(&journal.0);
-    SupervisorGuard::new(
-        Command::new(env!("CARGO_BIN_EXE_solstone-core"))
-            .args(["supervisor", "--journal"])
-            .arg(&journal.0)
-            .env("SOLSTONE_LOCAL_BINARY", fixture)
-            .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
-            .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
-            .env("SOLSTONE_SUPERVISOR_APP_BINARY", fixture)
-            .env("SOLSTONE_SUPERVISOR_PARAKEET_FIXTURE", "1")
-            .env("HOME", home)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("supervisor starts"),
-    )
+    let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
+    command
+        .args(["supervisor", "--journal"])
+        .arg(&journal.0)
+        .env("SOLSTONE_LOCAL_BINARY", fixture)
+        .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
+        .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
+        .env("SOLSTONE_SUPERVISOR_APP_BINARY", fixture)
+        .env("SOLSTONE_SUPERVISOR_PARAKEET_FIXTURE", "1")
+        .env("HOME", home)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    speakers_analyze_stub::apply(&mut command);
+    SupervisorGuard::new(command.spawn().expect("supervisor starts"))
 }
 
 fn wait_for_provider_records(journal: &TempJournal, child: &mut SupervisorGuard) -> [Value; 2] {
