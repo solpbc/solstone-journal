@@ -717,6 +717,10 @@ mod tests {
                 .1,
             "late"
         );
+        // The admitted writer intentionally withholds write sharing on
+        // Windows. Release it before this test simulates an external shrink;
+        // the follower's retained descriptor itself permits that mutation.
+        drop(log);
         std::fs::OpenOptions::new()
             .write(true)
             .open(path)
