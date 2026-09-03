@@ -107,7 +107,7 @@ Emit a proposed name ONLY when every configured-facet match is weak: every entry
 
 This field is purely additive and never changes routing: `facets[]` still must classify the segment into the closest configured facet exactly as described above. Invented names belong ONLY in `speculative_facet`, NEVER in `facets[]`.
 
-The proposed name must be specific and grounded in the observed activity. $facet_naming
+The proposed name must be specific and grounded in the observed activity. Write it the way a person would title a folder: a short natural phrase or Title Case name (like the owner's existing facets — "Personal", "Ping Identity", "sol pbc"). Never emit snake_case, kebab-case, or any other identifier-style formatting.
 
 ### meeting_detected
 `true` ONLY if you can identify distinct, named participants in a live multi-person interaction:
