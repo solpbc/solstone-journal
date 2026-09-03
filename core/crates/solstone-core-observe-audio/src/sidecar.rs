@@ -3,6 +3,7 @@
 
 use std::fs::{self, OpenOptions};
 use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
@@ -10,10 +11,11 @@ use crate::AudioError;
 
 /// Creates a durable, exclusive little-endian f32 sidecar.
 pub fn write_f32le_exclusive(path: &Path, audio: &[f32]) -> Result<(), AudioError> {
-    let file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let file = options
         .open(path)
         .map_err(|source| AudioError::SidecarCreate {
             path: path.to_path_buf(),
@@ -52,6 +54,7 @@ fn remove_on_error(path: &Path, result: Result<(), AudioError>) -> Result<(), Au
 #[cfg(test)]
 mod tests {
     use std::fs;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -76,6 +79,7 @@ mod tests {
             fs::read(&path).expect("read sidecar"),
             [0, 0, 128, 63, 0, 0, 0, 191]
         );
+        #[cfg(unix)]
         assert_eq!(
             fs::metadata(&path)
                 .expect("stat sidecar")
