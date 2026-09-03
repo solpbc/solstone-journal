@@ -256,11 +256,16 @@
       img.setAttribute('aria-hidden', 'true');
       img.width = 22;
       img.height = 22;
+      // The one icon meant to convey connectivity is itself fetched over the
+      // network, so it can fail to load exactly when it matters most. Hide it
+      // rather than let the browser's broken-image glyph stand in for "offline".
+      img.onerror = () => { img.style.visibility = 'hidden'; };
       statusIcon.insertBefore(img, badge || statusIcon.firstChild);
     }
 
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
     const stem = mark.connecting && !reduced ? 'mark-connecting-animated' : mark.variant;
+    img.style.visibility = '';
     img.src = '/static/sol-status/' + stem + '.svg';
     img.classList.toggle('status-indicator--connecting', mark.connecting);
     lastRenderedVariant = mark.variant;

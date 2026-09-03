@@ -38,6 +38,7 @@ window.whenShellReady(() => {
       window.updateStatusLabel();
 
       if (statusPaneOpen) {
+        window.AppServices?.notifications?._syncStatusPaneOffset?.();
         statusPane.classList.add('visible');
         statusPane.focus();
         window.AppServices?.quietNotifs?.markViewed();

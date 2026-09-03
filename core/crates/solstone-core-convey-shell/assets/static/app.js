@@ -302,6 +302,19 @@ window.SurfaceState = (() => {
 })();
 
 /**
+ * Translate a raw browser network-failure message (e.g. "Failed to fetch",
+ * "NetworkError when attempting to fetch resource", "Load failed") into a
+ * plain-language reason. A background task's own errors (a real HTTP status,
+ * a server-provided message) pass through unchanged.
+ */
+function toOwnerFacingTaskError(message) {
+  if (/failed to fetch|networkerror|load failed|err_/i.test(String(message || ''))) {
+    return "couldn't reach your journal. some background updates are paused.";
+  }
+  return message;
+}
+
+/**
  * App Services Framework
  * Global API for apps to register background services, update badges, and show notifications
  */
@@ -399,7 +412,7 @@ window.AppServices = {
           this.notifications.show({
             app: 'system',
             title: `${String(appName).toLowerCase()} background task`,
-            message,
+            message: toOwnerFacingTaskError(message),
             dismissible: true,
             autoDismiss: false,
             buttons: [
@@ -802,6 +815,26 @@ window.AppServices = {
         clearInterval(this._updateInterval);
         this._updateInterval = null;
       }
+
+      this._syncStatusPaneOffset();
+    },
+
+    /**
+     * The notification stack and the status pane share the same fixed
+     * top-right anchor. Push the status pane below any active cards so it
+     * never renders underneath them (F6/F15: accumulating cards otherwise
+     * bury the pane's own state/version/activity content out of view).
+     * @private
+     */
+    _syncStatusPaneOffset() {
+      if (!this._container) return;
+      const hasActiveCard = !!this._container.querySelector('.notification-card:not(.notification-card--dismissing)');
+      if (!hasActiveCard) {
+        document.documentElement.style.removeProperty('--status-pane-top');
+        return;
+      }
+      const rect = this._container.getBoundingClientRect();
+      document.documentElement.style.setProperty('--status-pane-top', `${rect.top + this._container.scrollHeight + 12}px`);
     },
 
     /**

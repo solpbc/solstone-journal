@@ -192,10 +192,13 @@ body.has-managed-dialog .workspace {
   height: 22px;
 }
 
-/* Status pane opens below the top-right instrument. */
+/* Status pane opens below the top-right instrument. When active notification
+ * cards share this corner, app.js pushes --status-pane-top down past them so
+ * the pane's own state/version/activity content is never rendered underneath
+ * the notification stack. */
 .status-pane {
   position: fixed;
-  top: calc(var(--status-instrument-inset) + var(--status-instrument-size) + var(--chrome-gap));
+  top: var(--status-pane-top, calc(var(--status-instrument-inset) + var(--status-instrument-size) + var(--chrome-gap)));
   right: var(--status-instrument-inset);
   width: var(--status-pane-width);
   background: white;
