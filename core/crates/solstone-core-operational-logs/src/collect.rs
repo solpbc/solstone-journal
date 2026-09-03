@@ -8,7 +8,7 @@ use std::path::Path;
 use chrono::NaiveDateTime;
 use solstone_core_journal_io::{
     JournalRoot,
-    operational_log::{OplogCatalogEntry, catalog_oplogs},
+    operational_log::{OplogCatalogEntry, OplogFormat, catalog_oplogs},
 };
 use solstone_core_system::operational_log_parse::{ParsedHealthLogRow, parse_health_log_row};
 use solstone_core_system_health::GrepPattern;
@@ -57,8 +57,8 @@ impl SourceTailSnapshot {
     }
 }
 
-/// Collect today's raw tail for one canonical source and retain its exact
-/// descriptor frontiers for a subsequent follow handoff.
+/// Collect today's raw `.log` tail for one canonical source and retain its
+/// exact descriptor frontiers for a subsequent follow handoff.
 pub fn collect_source_tail_snapshot(
     journal_root: &Path,
     now: NaiveDateTime,
@@ -70,7 +70,9 @@ pub fn collect_source_tail_snapshot(
     let mut tail = Vec::new();
     let mut entries = Vec::new();
     for (entry, mut file) in snapshot.into_catalogued_entries() {
-        if entry.name().source().display_slug() != source_slug {
+        if entry.name().source().display_slug() != source_slug
+            || entry.name().format() != OplogFormat::Log
+        {
             continue;
         }
         let frontier = file.metadata().map_err(|_| CollectError::CatalogIo)?.len();

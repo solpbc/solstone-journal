@@ -11,7 +11,7 @@ use chrono::Local;
 use solstone_core_cli::ServiceLogsArgs;
 use solstone_core_operational_logs::{
     CollectError, FollowFatalError, SourceTailSnapshot, collect_source_tail_snapshot,
-    run_follow_from_snapshot,
+    normalize_raw_stream, run_follow_from_snapshot,
 };
 use solstone_core_system_health::{sanitize_for_terminal, sanitize_os_bytes_for_terminal};
 
@@ -70,7 +70,6 @@ pub(super) fn run(args: ServiceLogsArgs) -> ExitCode {
         &|| stopped.load(Ordering::Relaxed),
         &mut stdout,
         is_tty,
-        &mut |_| {},
     ) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => failure(&mut stderr, follow_error_message(error)),
@@ -85,14 +84,8 @@ fn render_snapshot(
     if !snapshot.has_descriptors() {
         return output.write_all(b"=== service logs === (no oplog leaves)\n");
     }
-    let decoded = String::from_utf8_lossy(snapshot.tail());
-    let normalized = decoded.replace("\r\n", "\n").replace('\r', "\n");
-    let tail = final_codepoints(&normalized, TAIL_CODEPOINT_LIMIT);
-    let body = if is_tty {
-        sanitize_preserving_lf(tail)
-    } else {
-        tail.to_owned()
-    };
+    let normalized = normalize_raw_stream(snapshot.tail(), is_tty);
+    let body = final_codepoints(&normalized, TAIL_CODEPOINT_LIMIT);
     let mut staged = Vec::with_capacity("=== service logs ===\n".len() + body.len() + 1);
     staged.extend_from_slice(b"=== service logs ===\n");
     staged.extend_from_slice(body.as_bytes());
@@ -145,20 +138,6 @@ fn final_codepoints(value: &str, count: usize) -> &str {
         .rev()
         .nth(count.saturating_sub(1))
         .map_or(value, |(offset, _)| &value[offset..])
-}
-
-fn sanitize_preserving_lf(value: &str) -> String {
-    let mut output = String::with_capacity(value.len());
-    let mut start = 0;
-    for (offset, scalar) in value.char_indices() {
-        if scalar == '\n' {
-            output.push_str(&sanitize_for_terminal(&value[start..offset]));
-            output.push('\n');
-            start = offset + 1;
-        }
-    }
-    output.push_str(&sanitize_for_terminal(&value[start..]));
-    output
 }
 
 fn failure(stderr: &mut impl Write, message: SafeDiagnostic) -> ExitCode {

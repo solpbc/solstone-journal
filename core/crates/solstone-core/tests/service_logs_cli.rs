@@ -165,7 +165,50 @@ fn follow_keeps_the_core_process_and_handoffs_without_a_gap_or_duplicate() {
 }
 
 #[test]
-fn service_segments_remain_a_continuous_source_stream() {
+fn follow_renders_unterminated_non_utf8_service_output() {
+    let journal = TestJournal::new();
+    let mut writer = journal.service_writer();
+    writer.write_all(b"before\n").unwrap();
+    writer.flush().unwrap();
+
+    let capture = tempfile::tempdir().unwrap();
+    let stdout_path = capture.path().join("stdout");
+    let stderr_path = capture.path().join("stderr");
+    let stdout = fs::File::create(&stdout_path).unwrap();
+    let stderr = fs::File::create(&stderr_path).unwrap();
+    let mut child = Command::new(BINARY)
+        .args(["service", "logs", "--follow"])
+        .env("SOLSTONE_JOURNAL", journal.path())
+        .stdin(Stdio::null())
+        .stdout(stdout)
+        .stderr(stderr)
+        .spawn()
+        .expect("start raw service follower");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    wait_until(deadline, || {
+        service_output(&stdout_path)
+            .windows(7)
+            .any(|row| row == b"before\n")
+    });
+
+    writer.write_all(b"progress:\xff").unwrap();
+    writer.flush().unwrap();
+    let expected = "progress:\u{fffd}".as_bytes();
+    wait_until(deadline, || {
+        service_output(&stdout_path)
+            .windows(expected.len())
+            .any(|row| row == expected)
+    });
+    let pid = Pid::from_raw(i32::try_from(child.id()).unwrap());
+    kill(pid, Signal::SIGTERM).unwrap();
+    let status = child.wait().unwrap();
+
+    assert_eq!(status.code(), Some(0));
+    assert!(fs::read(stderr_path).unwrap().is_empty());
+}
+
+#[test]
+fn multiple_service_oplog_leaves_form_a_continuous_one_shot_stream() {
     let journal = TestJournal::new();
     let mut before_rollover = journal.service_writer();
     before_rollover.write_all(b"before rollover\n").unwrap();

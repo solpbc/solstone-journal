@@ -21,4 +21,4 @@ pub use count::{
 pub use error::CollectError;
 pub use follow::{FollowFatalError, run_follow, run_follow_from_snapshot};
 pub use read::{StdTailFileOpener, TailFileOpener, tail_reverse_text};
-pub use render::render_collected;
+pub use render::{normalize_raw_stream, render_collected, render_raw_stream};

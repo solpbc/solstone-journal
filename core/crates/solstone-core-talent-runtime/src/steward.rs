@@ -307,6 +307,48 @@ mod tests {
     }
 
     #[test]
+    fn rejected_health_invocations_create_distinct_intact_pre_hook_oplogs() {
+        let root = tempfile::tempdir().unwrap();
+        let health = root.path().join("identity/health.md");
+        fs::create_dir_all(health.parent().unwrap()).unwrap();
+        fs::write(&health, b"owner health content\n").unwrap();
+        set_rendered_body(Some("rejected body"));
+        let first = build(&mut prepared(false), &context(&root));
+        let second = build(&mut prepared(false), &context(&root));
+        set_rendered_body(None);
+
+        assert!(first.is_ok());
+        assert!(second.is_ok());
+        let today = Local::now().date_naive();
+        let snapshot = catalog_oplogs(JournalRoot::open(root.path()).unwrap(), &[today]).unwrap();
+        let entries = snapshot
+            .entries()
+            .iter()
+            .filter(|entry| {
+                entry.name().source().display_slug() == "steward"
+                    && entry.name().run().display_slug() == "pre-hook"
+                    && entry.name().format() == OplogFormat::Jsonl
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 2);
+        assert_ne!(entries[0].leaf(), entries[1].leaf());
+        for entry in entries {
+            let report = read_jsonl_with_report::<Value>(
+                root.path()
+                    .join("chronicle")
+                    .join(entry.day())
+                    .join("health")
+                    .join(entry.leaf()),
+                Vec::new(),
+                MalformedPolicy::Raise,
+            )
+            .unwrap();
+            assert_eq!(report.records.len(), 1);
+            assert_eq!(report.records[0].value["event"], "render.failed");
+        }
+    }
+
+    #[test]
     fn rejected_health_oplog_failure_is_a_skip() {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("chronicle"), b"not a directory").unwrap();

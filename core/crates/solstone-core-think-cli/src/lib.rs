@@ -2460,6 +2460,42 @@ mod tests {
     }
 
     #[test]
+    fn daily_invocations_create_distinct_intact_oplogs() {
+        let root = tempdir().unwrap();
+        let first = run_at(root.path(), &[]);
+        let second = run_at(root.path(), &[]);
+        assert_eq!(first.exit_code, 1);
+        assert_eq!(second.exit_code, 1);
+
+        let day = today().pred_opt().unwrap();
+        let snapshot = catalog_oplogs(JournalRoot::open(root.path()).unwrap(), &[day]).unwrap();
+        let mut leaves = snapshot
+            .into_catalogued_entries()
+            .into_iter()
+            .filter(|(entry, _)| {
+                entry.name().source().display_slug() == "think"
+                    && entry.name().run().display_slug() == "daily"
+                    && entry.name().format() == OplogFormat::Jsonl
+            })
+            .map(|(entry, mut file)| {
+                file.seek(SeekFrom::Start(entry.payload_offset() as u64))
+                    .unwrap();
+                let values = BufReader::new(file)
+                    .lines()
+                    .map_while(Result::ok)
+                    .map(|line| serde_json::from_str::<Value>(&line).unwrap())
+                    .collect::<Vec<_>>();
+                assert!(values.iter().any(|value| value["event"] == "run.start"));
+                assert!(values.iter().any(|value| value["event"] == "run.summary"));
+                entry.leaf().to_owned()
+            })
+            .collect::<Vec<_>>();
+        leaves.sort();
+        assert_eq!(leaves.len(), 2);
+        assert_ne!(leaves[0], leaves[1]);
+    }
+
+    #[test]
     fn daily_run_log_create_failure_is_best_effort() {
         let _log_guard = capture_logs();
         let root = tempdir().unwrap();

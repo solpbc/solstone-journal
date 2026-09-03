@@ -16,14 +16,13 @@
 //!
 //! # 🔴 The subsystem that prunes logs did not prune its own
 //!
-//! `health/pruning-runs/<day>.jsonl` is written by raw-media pruning and offload, but
-//! `chronicle_health_logs` walks `chronicle/<day>/health/` rather than the journal
-//! root's `health/`. It is therefore a separate **row in the table below**, so the
-//! audit records do not grow without bound.
+//! `health/pruning-runs/<day>.jsonl` is a pre-oplog raw-media audit location. New
+//! offload audits use canonical leaves under `chronicle/<day>/health/`, but this
+//! separate **row in the table below** still ages out historical root-level files.
 //!
-//! ⚠ `health/retention.log` is one append-only file rather than a set of dated ones,
-//! so it needs line-date compaction rather than deletion. It is a [`Compactable`]
-//! below and `prune-logs` executes its planned rewrite.
+//! ⚠ `health/retention.log` is a historical append-only file rather than a set of
+//! dated ones, so any pre-migration content needs line-date compaction rather than
+//! deletion. It remains a [`Compactable`] below for that deferred cleanup.
 //!
 //! # ⛔ Two classes reach inside the chronicle
 //!
@@ -197,7 +196,7 @@ pub const CLASSES: &[Class] = &[
         exempt_stem_suffixes: &[],
         exempt_leaf_prefixes: &[],
     },
-    // 🔴 The row the reference does not have.
+    // Historical root-level pruning audit files, retained for deferred cleanup.
     Class {
         name: "pruning_runs",
         location: Location::Fixed("health/pruning-runs"),
@@ -590,9 +589,10 @@ pub fn day_key(day: NaiveDate) -> String {
 
 /// How a line in an append-only log carries its date.
 ///
-/// ⚠ Two formats, and neither is guessable from the filename: `task_log.txt` is
-/// tab-separated with a leading epoch-second field, and `health/retention.log` is
-/// **JSONL despite its extension**, carrying an ISO-8601 `timestamp`.
+/// ⚠ Two historical formats, and neither is guessable from the filename:
+/// `task_log.txt` is tab-separated with a leading epoch-second field, and
+/// `health/retention.log` is **JSONL despite its extension**, carrying an ISO-8601
+/// `timestamp`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LineDate {
     /// A leading epoch-second field, tab-separated.
@@ -611,9 +611,9 @@ pub struct Compactable {
 
 /// Every append-only log this pass compacts.
 ///
-/// 🔴 `health/retention.log` is the second log the plate wrote and never pruned. Unlike
+/// 🔴 `health/retention.log` is a historical root-level log. Unlike
 /// `health/pruning-runs/`, it is one file rather than a set of dated ones, so deleting
-/// it would discard the whole history instead of its old end.
+/// pre-migration content would discard the whole history instead of its old end.
 pub const COMPACTABLE: &[Compactable] = &[
     Compactable {
         name: "root_task_log",
