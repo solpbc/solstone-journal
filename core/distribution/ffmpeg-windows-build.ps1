@@ -125,7 +125,7 @@ try {
     foreach ($program in @($cargo, $rustc, $bash, $sh, $make, $nasm, $cl, $link, $dumpbin) | Select-Object -Unique) { Add-NetworkDeny $program $ordinal; $ordinal += 1 }
     Write-Host 'FFMPEG_WINDOWS_NETWORK_DENY=firewall-outbound-block-for-cargo-rustc-msys-make-nasm-msvc'
 
-    $buildCommand = 'call "{0}" x64 >nul && set "PATH={1};%PATH%;{2}" && set "LIBCLANG_PATH={3}" && set "SOLSTONE_FFMPEG_SOURCE_ARCHIVE={4}" && set "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER={5}" && set "SOLSTONE_DISTRIBUTION_OFFLINE=1" && set "FFMPEG_MARCH=" && set "FFMPEG_MTUNE=" && set "CC=cl" && cargo build --manifest-path core\Cargo.toml -p solstone-core --bin solstone-core --release --locked --offline && cargo build --manifest-path core\Cargo.toml -p solstone-core-describe --bin solstone-core-describe --release --locked --offline' -f $vcvars, $nasmDir, $msysBin, $llvmBin, $SourceArchive, $link
+    $buildCommand = 'call "{0}" x64 >nul && set "PATH={1};{2};%PATH%;{3}" && set "LIBCLANG_PATH={4}" && set "SOLSTONE_FFMPEG_SOURCE_ARCHIVE={5}" && set "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER={6}" && set "SOLSTONE_DISTRIBUTION_OFFLINE=1" && set "FFMPEG_MARCH=" && set "FFMPEG_MTUNE=" && set "CC=cl" && cargo build --manifest-path core\Cargo.toml -p solstone-core --bin solstone-core --release --locked --offline && cargo build --manifest-path core\Cargo.toml -p solstone-core-describe --bin solstone-core-describe --release --locked --offline' -f $vcvars, $toolBin, $nasmDir, $msysBin, $llvmBin, $SourceArchive, $link
     Invoke-Checked 'network-denied MSVC build of the two FFmpeg-bearing executables' 'cmd.exe' @('/d', '/s', '/c', $buildCommand)
 
     $targetRoot = Join-Path $RepositoryRoot 'core/target/release'
