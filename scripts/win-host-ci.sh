@@ -231,8 +231,8 @@ require_native_receipt JOURNAL_WIN_CI_CORTEX_USE_NTFS NTFS
 require_native_receipt JOURNAL_WIN_CI_CORTEX_USE_REFS ReFS
 require_cortex_namespace_receipts NTFS NTFS
 require_cortex_namespace_receipts REFS ReFS
-require_native_receipt JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE NTFS
-require_native_receipt JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE ReFS
+require_native_receipt JOURNAL_WIN_CI_NTFS_OPERATIONAL_LOG_DISCOVERY NTFS
+require_native_receipt JOURNAL_WIN_CI_REFS_OPERATIONAL_LOG_DISCOVERY ReFS
 require_native_receipt JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP NTFS
 require_native_receipt JOURNAL_WIN_CI_REFS_STALE_HEARTBEAT_CLEANUP ReFS
 head_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_HEAD=/ { count++ } END { print count + 0 }')
@@ -324,4 +324,4 @@ if [ "$refs_publication" -eq 1 ]; then
   fi
 fi
 
-echo "JOURNAL_WIN_HOST_CI_VERIFIED commit=$snapshot_sha cargo_lock_sha256=$cargo_lock_sha256 cloud_sync_evidence=$expected_cloud_evidence ordinary_owner_evidence=passed launch_environment_preparation=executed/pass launch_path_preparation=executed/pass job_list_no_handle_inheritance=executed/pass job_process_owner=executed/pass job_last_handle_negative=executed/pass managed_process_facade=executed/pass windows_payload=executed/pass windows_create_only=executed/pass windows_create_only_protocol=executed/pass windows_install_file=executed/pass windows_install_file_protocol=executed/pass windows_oplog_namespace=executed/pass windows_oplog_liveness=executed/pass ntfs_publication=executed/pass refs_publication=executed/pass ntfs_cortex_use=executed/pass refs_cortex_use=executed/pass ntfs_stale_heartbeat_cleanup=executed/pass refs_stale_heartbeat_cleanup=executed/pass"
+echo "JOURNAL_WIN_HOST_CI_VERIFIED commit=$snapshot_sha cargo_lock_sha256=$cargo_lock_sha256 cloud_sync_evidence=$expected_cloud_evidence ordinary_owner_evidence=passed launch_environment_preparation=executed/pass launch_path_preparation=executed/pass job_list_no_handle_inheritance=executed/pass job_process_owner=executed/pass job_last_handle_negative=executed/pass managed_process_facade=executed/pass windows_payload=executed/pass windows_create_only=executed/pass windows_create_only_protocol=executed/pass windows_install_file=executed/pass windows_install_file_protocol=executed/pass windows_oplog_namespace=executed/pass windows_oplog_liveness=executed/pass ntfs_publication=executed/pass refs_publication=executed/pass ntfs_cortex_use=executed/pass refs_cortex_use=executed/pass ntfs_operational_log_discovery=executed/pass refs_operational_log_discovery=executed/pass ntfs_stale_heartbeat_cleanup=executed/pass refs_stale_heartbeat_cleanup=executed/pass"

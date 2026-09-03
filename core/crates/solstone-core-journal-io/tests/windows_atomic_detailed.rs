@@ -3,9 +3,10 @@
 
 #![cfg(windows)]
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::mem::size_of;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::os::windows::fs::MetadataExt;
@@ -16,6 +17,7 @@ use std::process::{Child, Command, ExitStatus, Output};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use chrono::{FixedOffset, NaiveDate, TimeZone};
 use solstone_core_journal_io::atomic::{
     atomic_replace_detailed, run_with_windows_detailed_atomic_backoffs,
     run_with_windows_detailed_atomic_barrier, run_with_windows_detailed_atomic_faults,
@@ -29,13 +31,14 @@ use solstone_core_journal_io::cortex_use::{
     inspect_cortex_use_root, parse_cortex_lifecycle_name, read_cortex_use_request,
     run_with_cortex_census_barrier,
 };
+use solstone_core_journal_io::operational_log::{
+    LeaseProbe, OplogFormat, catalog_oplogs, classify_oplog_name, create_oplog_at,
+    probe_retained_oplog_lease,
+};
 use solstone_core_journal_io::{
     DetailedAtomicOutcome, ExistingParentLockError, JournalRoot, WindowsLockFileExSubstitution,
-    acquire_existing_parent_lock, exercise_windows_managed_log_logical_coordinates,
-    exercise_windows_managed_log_reference_substrate, hold_managed_log_alias_then_publish,
-    list_windows_flat_directory, publish_test_managed_log_alias, root_test_managed_log_alias_name,
+    acquire_existing_parent_lock, list_windows_flat_directory,
     run_with_forced_post_lock_identity_mismatch, run_with_windows_lock_file_ex_substitution,
-    try_test_managed_log_alias_lock,
 };
 use windows_sys::Win32::Foundation::{
     ERROR_ACCESS_DENIED, ERROR_DISK_FULL, ERROR_INVALID_FUNCTION, ERROR_LOCK_VIOLATION,
@@ -57,24 +60,6 @@ const CORTEX_LOCK_CHILD_EXPECT_ENV: &str = "JOURNAL_WIN_CI_CORTEX_LOCK_EXPECT";
 const CORTEX_LOCK_CHILD_ROOT_ENV: &str = "JOURNAL_WIN_CI_CORTEX_LOCK_ROOT";
 const CORTEX_LOCK_CHILD_BUSY: &str = "CORTEX_LOCK_CHILD_BUSY";
 const CORTEX_LOCK_CHILD_ACQUIRED: &str = "CORTEX_LOCK_CHILD_ACQUIRED";
-const LOGICAL_FIELD_SHAPES: &[&str] = &[
-    "maintenance:backup:run",
-    "/leading",
-    "embedded/slash",
-    r"embedded\backslash",
-    ".",
-    "..",
-    "<",
-    ">",
-    "\"",
-    "|",
-    "?",
-    "*",
-    "CON",
-    "COM1",
-    "trailing.",
-    "trailing ",
-];
 
 fn wide(value: &OsStr) -> Vec<u16> {
     value.encode_wide().chain(Some(0)).collect()
@@ -2108,138 +2093,151 @@ fn refs_cortex_use_receipt() {
     println!("JOURNAL_WIN_CI_CORTEX_USE_REFS_FILESYSTEM=ReFS");
 }
 
-fn managed_log_reference_receipt(root: &Path) {
-    let single_process = root.join("single-process");
-    fs::create_dir(&single_process).unwrap();
-    exercise_windows_managed_log_reference_substrate(&single_process);
-
-    let logical_coordinates = root.join("logical-coordinates");
-    fs::create_dir(&logical_coordinates).unwrap();
-    let mut index = 0;
-    for shape in LOGICAL_FIELD_SHAPES {
-        for (reference, name) in [(*shape, "stream"), ("writer", *shape)] {
-            let pair_root = logical_coordinates.join(format!("logical-{index}"));
-            fs::create_dir(&pair_root).unwrap();
-            exercise_windows_managed_log_logical_coordinates(&pair_root, reference, name);
-            index += 1;
-        }
+fn operational_log_discovery_receipt(root: &Path) {
+    let instant = FixedOffset::east_opt(0)
+        .unwrap()
+        .with_ymd_and_hms(2026, 9, 3, 12, 0, 0)
+        .single()
+        .unwrap();
+    let day = NaiveDate::from_ymd_opt(2026, 9, 3).unwrap();
+    let mut writers = Vec::new();
+    for (source, run, format, payload) in [
+        (
+            "sync-engine",
+            "startup-a",
+            OplogFormat::Log,
+            b"sync-a\n".as_slice(),
+        ),
+        (
+            "sync-engine",
+            "startup-b",
+            OplogFormat::Log,
+            b"sync-b\n".as_slice(),
+        ),
+        (
+            "maintenance-runner",
+            "cleanup-a",
+            OplogFormat::Jsonl,
+            b"{\"run\":\"a\"}\n".as_slice(),
+        ),
+        (
+            "maintenance-runner",
+            "cleanup-b",
+            OplogFormat::Jsonl,
+            b"{\"run\":\"b\"}\n".as_slice(),
+        ),
+    ] {
+        let mut writer = create_oplog_at(
+            JournalRoot::open(root).unwrap(),
+            source,
+            run,
+            format,
+            instant,
+        )
+        .unwrap();
+        writer.write_all(payload).unwrap();
+        writer.flush().unwrap();
+        writers.push(writer);
     }
 
-    let process_root = root.join("process-boundary");
-    fs::create_dir(&process_root).unwrap();
-    let ready = process_root.join("old-parent-ready");
-    let release = process_root.join("release-old-parent");
-    let outcome = process_root.join("old-parent-outcome");
-    let logical_name = "shared-process-alias";
-    let mut child = Command::new(std::env::current_exe().unwrap())
-        .args([
-            "--ignored",
-            "--exact",
-            "managed_log_split_lock_child",
-            "--nocapture",
-        ])
-        .env("SOLSTONE_MANAGED_LOG_CHILD_ROOT", &process_root)
-        .env("SOLSTONE_MANAGED_LOG_CHILD_NAME", logical_name)
-        .env("SOLSTONE_MANAGED_LOG_CHILD_READY", &ready)
-        .env("SOLSTONE_MANAGED_LOG_CHILD_RELEASE", &release)
-        .env("SOLSTONE_MANAGED_LOG_CHILD_OUTCOME", &outcome)
-        .spawn()
-        .unwrap();
-    wait_for_marker(&ready, "ready");
-
-    assert!(
-        !try_test_managed_log_alias_lock(&process_root, logical_name, Duration::from_millis(150),),
-        "a second process acquired the same persistent alias lock"
-    );
-    assert!(
-        try_test_managed_log_alias_lock(
-            &process_root,
-            "independent-process-alias",
-            Duration::from_millis(150),
-        ),
-        "an independent alias was blocked by a global lock"
-    );
-
-    let aliases = process_root.join("aliases");
-    let retired = process_root.join("aliases-retired");
-    let rename_error = fs::rename(&aliases, &retired).unwrap_err();
+    let expected_leaves = writers
+        .iter()
+        .map(|writer| writer.leaf_name().into())
+        .collect::<BTreeSet<std::ffi::OsString>>();
     assert_eq!(
-        rename_error.raw_os_error(),
-        Some(ERROR_ACCESS_DENIED as i32),
-        "Windows did not fail closed while the persistent child lock was live"
+        expected_leaves.len(),
+        4,
+        "every run must have a distinct canonical leaf"
     );
-    fs::write(&release, b"release").unwrap();
-    let status = child.wait().unwrap();
-    assert!(status.success(), "split-lock child failed: {status}");
-    assert_eq!(fs::read(&outcome).unwrap(), b"old-parent-published");
 
-    fs::rename(&aliases, &retired).unwrap();
-    fs::create_dir(&aliases).unwrap();
-    publish_test_managed_log_alias(&process_root, logical_name, b"fresh-parent-published");
+    let snapshot = catalog_oplogs(JournalRoot::open(root).unwrap(), &[day]).unwrap();
+    let catalog_leaves = snapshot
+        .entries()
+        .iter()
+        .map(|entry| entry.leaf().to_os_string())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(catalog_leaves, expected_leaves, "catalog must be complete");
 
-    let alias_name = root_test_managed_log_alias_name(logical_name);
+    let sources =
+        snapshot
+            .entries()
+            .iter()
+            .fold(BTreeMap::<String, usize>::new(), |mut counts, entry| {
+                *counts
+                    .entry(entry.name().source().display_slug().to_owned())
+                    .or_default() += 1;
+                counts
+            });
     assert_eq!(
-        fs::read(aliases.join(&alias_name)).unwrap(),
-        b"fresh-parent-published"
+        sources,
+        BTreeMap::from([
+            ("maintenance-runner".to_owned(), 2),
+            ("sync-engine".to_owned(), 2),
+        ]),
+        "catalog must preserve multiple segments from multiple sources"
     );
-    assert!(
-        fs::read(retired.join(&alias_name)).unwrap() == b"old-parent-published",
-        "the retained parent did not contain exactly the child's publication"
-    );
-    assert!(
-        fs::read_dir(&retired).unwrap().any(|entry| entry
-            .unwrap()
-            .file_name()
-            .to_string_lossy()
-            .ends_with(".lock")),
-        "the old parent did not retain its persistent alias lock"
-    );
-    assert!(
-        fs::read_dir(&aliases).unwrap().any(|entry| entry
-            .unwrap()
-            .file_name()
-            .to_string_lossy()
-            .ends_with(".lock")),
-        "the fresh parent did not retain its persistent alias lock"
-    );
-}
 
-#[test]
-#[ignore = "invoked only as a child by the managed-log native receipt"]
-fn managed_log_split_lock_child() {
-    hold_managed_log_alias_then_publish(
-        &PathBuf::from(std::env::var_os("SOLSTONE_MANAGED_LOG_CHILD_ROOT").unwrap()),
-        &std::env::var("SOLSTONE_MANAGED_LOG_CHILD_NAME").unwrap(),
-        &PathBuf::from(std::env::var_os("SOLSTONE_MANAGED_LOG_CHILD_READY").unwrap()),
-        &PathBuf::from(std::env::var_os("SOLSTONE_MANAGED_LOG_CHILD_RELEASE").unwrap()),
-        &PathBuf::from(std::env::var_os("SOLSTONE_MANAGED_LOG_CHILD_OUTCOME").unwrap()),
-    );
+    let health = root.join("chronicle/20260903/health");
+    let mut visible_leaves = BTreeSet::new();
+    for entry in fs::read_dir(&health).unwrap() {
+        let entry = entry.unwrap();
+        let leaf = entry.file_name();
+        let metadata = fs::symlink_metadata(entry.path()).unwrap();
+        assert_eq!(
+            metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT,
+            0,
+            "operational-log namespace must not contain a reparse point: {leaf:?}"
+        );
+        if leaf == OsStr::new(".oplog-namespace.lock") {
+            continue;
+        }
+        assert!(
+            matches!(
+                classify_oplog_name(&leaf),
+                solstone_core_journal_io::operational_log::OplogNameClassification::Candidate(Ok(
+                    _
+                ))
+            ),
+            "operational-log namespace must contain no alias or pointer: {leaf:?}"
+        );
+        visible_leaves.insert(leaf);
+    }
+    assert_eq!(visible_leaves, expected_leaves);
+
+    let catalogued = snapshot.into_catalogued_entries();
+    assert!(catalogued.iter().all(|(entry, file)| {
+        probe_retained_oplog_lease(file, entry.identity()) == LeaseProbe::Active
+    }));
+    drop(writers);
+    assert!(catalogued.iter().all(|(entry, file)| {
+        probe_retained_oplog_lease(file, entry.identity()) == LeaseProbe::Released
+    }));
 }
 
 #[test]
 #[ignore = "requires a native NTFS filesystem"]
-fn ntfs_managed_log_reference_receipt() {
+fn ntfs_operational_log_discovery_receipt() {
     let root = tempfile::tempdir().unwrap();
     assert_eq!(filesystem_name(root.path()).unwrap(), "NTFS");
-    managed_log_reference_receipt(root.path());
-    println!("JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE=executed/pass");
-    println!("JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE_FILESYSTEM=NTFS");
+    operational_log_discovery_receipt(root.path());
+    println!("JOURNAL_WIN_CI_NTFS_OPERATIONAL_LOG_DISCOVERY=executed/pass");
+    println!("JOURNAL_WIN_CI_NTFS_OPERATIONAL_LOG_DISCOVERY_FILESYSTEM=NTFS");
 }
 
 #[test]
 #[ignore = "requires the native ReFS fixture selected by win-ci.cmd"]
-fn refs_managed_log_reference_receipt() {
+fn refs_operational_log_discovery_receipt() {
     let root = std::env::var_os("SOLSTONE_JOURNAL_WIN_REFS_ROOT")
         .map(PathBuf::from)
-        .expect("ReFS managed-log receipt requires SOLSTONE_JOURNAL_WIN_REFS_ROOT");
+        .expect("ReFS operational-log receipt requires SOLSTONE_JOURNAL_WIN_REFS_ROOT");
     assert_eq!(filesystem_name(&root).unwrap(), "ReFS");
     let temporary = tempfile::Builder::new()
-        .prefix("solstone-refs-managed-log-reference-")
+        .prefix("solstone-refs-oplog-discovery-")
         .tempdir_in(&root)
         .unwrap();
-    managed_log_reference_receipt(temporary.path());
-    println!("JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE=executed/pass");
-    println!("JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE_FILESYSTEM=ReFS");
+    operational_log_discovery_receipt(temporary.path());
+    println!("JOURNAL_WIN_CI_REFS_OPERATIONAL_LOG_DISCOVERY=executed/pass");
+    println!("JOURNAL_WIN_CI_REFS_OPERATIONAL_LOG_DISCOVERY_FILESYSTEM=ReFS");
 }
 
 fn file_identity(path: &Path) -> (u64, [u8; 16]) {

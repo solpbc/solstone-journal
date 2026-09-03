@@ -36,9 +36,6 @@ pub mod lease;
 pub mod legacy_log_alias;
 #[cfg(any(unix, windows))]
 pub mod locking;
-mod managed_log_field_admission;
-mod managed_log_lock_boundary;
-mod managed_log_names;
 pub mod name_admission;
 pub mod observation;
 #[cfg(any(unix, windows))]
@@ -56,16 +53,6 @@ mod windows_identity;
 pub mod windows_inventory;
 #[cfg(windows)]
 mod windows_lock;
-#[cfg(windows)]
-mod windows_managed_log_lock;
-#[cfg(windows)]
-mod windows_managed_log_open;
-#[cfg(windows)]
-mod windows_managed_log_record;
-#[cfg(windows)]
-mod windows_managed_log_resolve;
-#[cfg(all(windows, feature = "test-hooks"))]
-mod windows_managed_log_test_hooks;
 #[cfg(windows)]
 mod windows_ntcreate;
 // Parser is host-neutral (AC1); Windows prepare/revalidate are cfg'd inside.
@@ -228,13 +215,6 @@ pub use windows_lock::{
     WindowsLockFileExSubstitution, WindowsUnlockFileExObservation,
     run_with_forced_post_lock_identity_mismatch, run_with_windows_lock_file_ex_substitution,
     run_with_windows_lock_file_ex_trace, run_with_windows_unlock_file_ex_observation,
-};
-#[cfg(all(windows, feature = "test-hooks"))]
-pub use windows_managed_log_test_hooks::{
-    exercise_windows_managed_log_logical_coordinates,
-    exercise_windows_managed_log_reference_substrate, hold_managed_log_alias_then_publish,
-    publish_test_managed_log_alias, root_test_managed_log_alias_name,
-    try_test_managed_log_alias_lock,
 };
 #[cfg(windows)]
 pub use windows_sync_dir::{

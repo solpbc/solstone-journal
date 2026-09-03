@@ -1796,7 +1796,7 @@ fn write_transport_scp_shim(temp: &TempDir) -> (PathBuf, PathBuf) {
     (shim, log)
 }
 
-const VALID_NATIVE_RECEIPTS: [(&str, &str); 23] = [
+const VALID_NATIVE_RECEIPTS: [(&str, &str); 25] = [
     (
         "JOURNAL_WIN_CI_LAUNCH_ENVIRONMENT_PREPARATION",
         "executed/pass",
@@ -1808,6 +1808,7 @@ const VALID_NATIVE_RECEIPTS: [(&str, &str); 23] = [
     ),
     ("JOURNAL_WIN_CI_JOB_PROCESS_OWNER", "executed/pass"),
     ("JOURNAL_WIN_CI_JOB_LAST_HANDLE_NEGATIVE", "executed/pass"),
+    ("JOURNAL_WIN_CI_MANAGED_PROCESS_FACADE", "executed/pass"),
     ("JOURNAL_WIN_CI_TARGET_WINDOWS_PAYLOAD", "executed/pass"),
     ("JOURNAL_WIN_CI_TARGET_WINDOWS_CREATE_ONLY", "executed/pass"),
     (
@@ -1826,6 +1827,10 @@ const VALID_NATIVE_RECEIPTS: [(&str, &str); 23] = [
         "JOURNAL_WIN_CI_TARGET_WINDOWS_OPLOG_NAMESPACE",
         "executed/pass",
     ),
+    (
+        "JOURNAL_WIN_CI_TARGET_WINDOWS_OPLOG_LIVENESS",
+        "executed/pass",
+    ),
     ("JOURNAL_WIN_CI_NTFS_PUBLICATION", "executed/pass"),
     ("JOURNAL_WIN_CI_NTFS_PUBLICATION_FILESYSTEM", "NTFS"),
     ("JOURNAL_WIN_CI_REFS_PUBLICATION", "executed/pass"),
@@ -1834,14 +1839,20 @@ const VALID_NATIVE_RECEIPTS: [(&str, &str); 23] = [
     ("JOURNAL_WIN_CI_CORTEX_USE_NTFS_FILESYSTEM", "NTFS"),
     ("JOURNAL_WIN_CI_CORTEX_USE_REFS", "executed/pass"),
     ("JOURNAL_WIN_CI_CORTEX_USE_REFS_FILESYSTEM", "ReFS"),
-    ("JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE", "executed/pass"),
     (
-        "JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE_FILESYSTEM",
+        "JOURNAL_WIN_CI_NTFS_OPERATIONAL_LOG_DISCOVERY",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_NTFS_OPERATIONAL_LOG_DISCOVERY_FILESYSTEM",
         "NTFS",
     ),
-    ("JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE", "executed/pass"),
     (
-        "JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE_FILESYSTEM",
+        "JOURNAL_WIN_CI_REFS_OPERATIONAL_LOG_DISCOVERY",
+        "executed/pass",
+    ),
+    (
+        "JOURNAL_WIN_CI_REFS_OPERATIONAL_LOG_DISCOVERY_FILESYSTEM",
         "ReFS",
     ),
 ];
@@ -1983,7 +1994,7 @@ struct NativeReceiptScenario {
 }
 
 #[derive(Clone, Copy, Debug)]
-enum CortexReceiptMutation {
+enum ReceiptMutation {
     Omit,
     Duplicate,
     Replace(&'static str),
@@ -1999,11 +2010,11 @@ fn valid_native_receipts() -> Vec<String> {
         .collect()
 }
 
-fn cortex_receipt_scenario(
+fn receipt_scenario(
     name: &str,
     key: &'static str,
     diagnostic_key: &'static str,
-    mutation: CortexReceiptMutation,
+    mutation: ReceiptMutation,
 ) -> NativeReceiptScenario {
     let valid = valid_native_receipts();
     let prefix = format!("{key}=");
@@ -2023,13 +2034,13 @@ fn cortex_receipt_scenario(
     let mut before = valid.clone();
     let mut after = Vec::new();
     match mutation {
-        CortexReceiptMutation::Omit => {
+        ReceiptMutation::Omit => {
             before.remove(index);
             let mut restored = before.clone();
             restored.insert(index, original);
             assert_eq!(restored, valid, "omit scenario changed another receipt");
         }
-        CortexReceiptMutation::Duplicate => {
+        ReceiptMutation::Duplicate => {
             before.insert(index + 1, original.clone());
             let mut restored = before.clone();
             assert_eq!(restored.remove(index + 1), original);
@@ -2038,7 +2049,7 @@ fn cortex_receipt_scenario(
                 "duplicate scenario changed another receipt"
             );
         }
-        CortexReceiptMutation::Replace(replacement) => {
+        ReceiptMutation::Replace(replacement) => {
             before[index] = format!("{key}={replacement}");
             assert_eq!(
                 before
@@ -2050,7 +2061,7 @@ fn cortex_receipt_scenario(
                 "replacement scenario changed more than one receipt"
             );
         }
-        CortexReceiptMutation::MoveAfterAcknowledgement => {
+        ReceiptMutation::MoveAfterAcknowledgement => {
             after.push(before.remove(index));
             assert_eq!(after, vec![original.clone()]);
             let mut restored = before.clone();
@@ -2133,31 +2144,55 @@ fn native_receipt_scenarios() -> Vec<NativeReceiptScenario> {
             "JOURNAL_WIN_CI_CORTEX_USE_REFS",
             "NTFS",
         ),
+        (
+            "oplog-ntfs-execution",
+            "JOURNAL_WIN_CI_NTFS_OPERATIONAL_LOG_DISCOVERY",
+            "JOURNAL_WIN_CI_NTFS_OPERATIONAL_LOG_DISCOVERY",
+            "fixture-invalid",
+        ),
+        (
+            "oplog-ntfs-filesystem",
+            "JOURNAL_WIN_CI_NTFS_OPERATIONAL_LOG_DISCOVERY_FILESYSTEM",
+            "JOURNAL_WIN_CI_NTFS_OPERATIONAL_LOG_DISCOVERY",
+            "ReFS",
+        ),
+        (
+            "oplog-refs-execution",
+            "JOURNAL_WIN_CI_REFS_OPERATIONAL_LOG_DISCOVERY",
+            "JOURNAL_WIN_CI_REFS_OPERATIONAL_LOG_DISCOVERY",
+            "fixture-invalid",
+        ),
+        (
+            "oplog-refs-filesystem",
+            "JOURNAL_WIN_CI_REFS_OPERATIONAL_LOG_DISCOVERY_FILESYSTEM",
+            "JOURNAL_WIN_CI_REFS_OPERATIONAL_LOG_DISCOVERY",
+            "NTFS",
+        ),
     ] {
         scenarios.extend([
-            cortex_receipt_scenario(
-                &format!("cortex-{short}-omit"),
+            receipt_scenario(
+                &format!("receipt-{short}-omit"),
                 key,
                 diagnostic_key,
-                CortexReceiptMutation::Omit,
+                ReceiptMutation::Omit,
             ),
-            cortex_receipt_scenario(
-                &format!("cortex-{short}-duplicate"),
+            receipt_scenario(
+                &format!("receipt-{short}-duplicate"),
                 key,
                 diagnostic_key,
-                CortexReceiptMutation::Duplicate,
+                ReceiptMutation::Duplicate,
             ),
-            cortex_receipt_scenario(
-                &format!("cortex-{short}-wrong-value"),
+            receipt_scenario(
+                &format!("receipt-{short}-wrong-value"),
                 key,
                 diagnostic_key,
-                CortexReceiptMutation::Replace(wrong_value),
+                ReceiptMutation::Replace(wrong_value),
             ),
-            cortex_receipt_scenario(
-                &format!("cortex-{short}-post"),
+            receipt_scenario(
+                &format!("receipt-{short}-post"),
                 key,
                 diagnostic_key,
-                CortexReceiptMutation::MoveAfterAcknowledgement,
+                ReceiptMutation::MoveAfterAcknowledgement,
             ),
         ]);
     }
@@ -2169,29 +2204,29 @@ fn native_receipt_scenarios() -> Vec<NativeReceiptScenario> {
             _ => "fixture-invalid",
         };
         scenarios.extend([
-            cortex_receipt_scenario(
+            receipt_scenario(
                 &format!("cortex-namespace-{index}-omit"),
                 key,
                 diagnostic_key,
-                CortexReceiptMutation::Omit,
+                ReceiptMutation::Omit,
             ),
-            cortex_receipt_scenario(
+            receipt_scenario(
                 &format!("cortex-namespace-{index}-duplicate"),
                 key,
                 diagnostic_key,
-                CortexReceiptMutation::Duplicate,
+                ReceiptMutation::Duplicate,
             ),
-            cortex_receipt_scenario(
+            receipt_scenario(
                 &format!("cortex-namespace-{index}-wrong-value"),
                 key,
                 diagnostic_key,
-                CortexReceiptMutation::Replace(wrong_value),
+                ReceiptMutation::Replace(wrong_value),
             ),
-            cortex_receipt_scenario(
+            receipt_scenario(
                 &format!("cortex-namespace-{index}-post"),
                 key,
                 diagnostic_key,
-                CortexReceiptMutation::MoveAfterAcknowledgement,
+                ReceiptMutation::MoveAfterAcknowledgement,
             ),
         ]);
     }
@@ -2289,6 +2324,8 @@ fn windows_native_driver_requires_all_source_originated_receipt_pairs() {
         if scenario.name == "valid" {
             let stdout = String::from_utf8_lossy(&output.stdout);
             assert!(stdout.contains("JOURNAL_WIN_HOST_CI_VERIFIED"));
+            assert!(stdout.contains("ntfs_operational_log_discovery=executed/pass"));
+            assert!(stdout.contains("refs_operational_log_discovery=executed/pass"));
             let forwarded = fs::read_to_string(&ssh_log).expect("read native receipt SSH command");
             assert!(forwarded.contains("$env:SOLSTONE_JOURNAL_WIN_REFS_ROOT = 'C:\\refs'"));
             assert!(!forwarded.contains("JOURNAL_WIN_CI_REQUIRE_REFS_PUBLICATION"));
@@ -2306,12 +2343,13 @@ fn windows_native_runner_uses_only_mandatory_source_receipts() {
         "windows_job_list_no_handle_inheritance_receipt",
         "windows_job_process_owner_receipt",
         "windows_job_last_handle_negative_receipt",
+        "windows_managed_process_facade_receipt",
         "ntfs_publication_receipt",
         "refs_publication_receipt",
         "ntfs_cortex_use_receipt",
         "refs_cortex_use_receipt",
-        "ntfs_managed_log_reference_receipt",
-        "refs_managed_log_reference_receipt",
+        "ntfs_operational_log_discovery_receipt",
+        "refs_operational_log_discovery_receipt",
         "ntfs_stale_heartbeat_cleanup_receipt",
         "refs_stale_heartbeat_cleanup_receipt",
     ] {
@@ -2326,12 +2364,20 @@ fn windows_native_runner_uses_only_mandatory_source_receipts() {
         "JOURNAL_WIN_CI_JOB_LIST_NO_HANDLE_INHERITANCE",
         "JOURNAL_WIN_CI_JOB_PROCESS_OWNER",
         "JOURNAL_WIN_CI_JOB_LAST_HANDLE_NEGATIVE",
+        "JOURNAL_WIN_CI_MANAGED_PROCESS_FACADE",
+        "JOURNAL_WIN_CI_TARGET_WINDOWS_PAYLOAD",
+        "JOURNAL_WIN_CI_TARGET_WINDOWS_CREATE_ONLY",
+        "JOURNAL_WIN_CI_TARGET_WINDOWS_CREATE_ONLY_PROTOCOL",
+        "JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE",
+        "JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE_PROTOCOL",
+        "JOURNAL_WIN_CI_TARGET_WINDOWS_OPLOG_NAMESPACE",
+        "JOURNAL_WIN_CI_TARGET_WINDOWS_OPLOG_LIVENESS",
         "JOURNAL_WIN_CI_NTFS_PUBLICATION",
         "JOURNAL_WIN_CI_REFS_PUBLICATION",
         "JOURNAL_WIN_CI_CORTEX_USE_NTFS",
         "JOURNAL_WIN_CI_CORTEX_USE_REFS",
-        "JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE",
-        "JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE",
+        "JOURNAL_WIN_CI_NTFS_OPERATIONAL_LOG_DISCOVERY",
+        "JOURNAL_WIN_CI_REFS_OPERATIONAL_LOG_DISCOVERY",
         "JOURNAL_WIN_CI_NTFS_STALE_HEARTBEAT_CLEANUP",
         "JOURNAL_WIN_CI_REFS_STALE_HEARTBEAT_CLEANUP",
     ] {
@@ -2363,7 +2409,32 @@ fn windows_native_runner_uses_only_mandatory_source_receipts() {
             "driver missing Cortex namespace receipt fragment {fragment}"
         );
     }
+    for gate in [
+        "-p solstone-core-journal-config --lib",
+        "-p solstone-core-journal-io --lib",
+        "--test windows_health_marker_protocol",
+        "--test windows_snapshot_protocol",
+        "--test windows_staged_protocol",
+        "--test journal_io_lock_component",
+        "--test windows_atomic_detailed",
+        "\"windows_create_only\"",
+        "\"windows_create_only_protocol\"",
+        "\"windows_install_file\"",
+        "\"windows_install_file_protocol\"",
+        "\"windows_oplog_namespace\"",
+        "\"windows_oplog_liveness\"",
+        "-p solstone-core-journal --lib",
+    ] {
+        assert!(
+            runner.contains(gate),
+            "runner missing retained Windows gate {gate}"
+        );
+    }
     for retired in [
+        "ntfs_managed_log_reference_receipt",
+        "refs_managed_log_reference_receipt",
+        "JOURNAL_WIN_CI_NTFS_MANAGED_LOG_REFERENCE",
+        "JOURNAL_WIN_CI_REFS_MANAGED_LOG_REFERENCE",
         "JOURNAL_WIN_CI_REQUIRE_REFS_PUBLICATION",
         "run_refs_matrix",
         "JOURNAL_WIN_CI_REFS_ENUMERATION_EVIDENCE",
