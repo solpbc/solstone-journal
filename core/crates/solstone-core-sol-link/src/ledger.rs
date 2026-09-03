@@ -20,6 +20,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value, json};
 use solstone_core_journal_io::{JsonWriteOptions, LockError, LockOptions, hold_lock, write_json};
+#[cfg(windows)]
+use solstone_core_journal_io::{WindowsFileIdentity, windows_file_identity};
 use time::{OffsetDateTime, UtcOffset, format_description::well_known::Rfc3339};
 
 use crate::pairing_identity::{PairingIdentityFields, Platform};
@@ -437,7 +439,10 @@ impl Clients {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ReloadKey {
+    #[cfg(unix)]
     inode: u64,
+    #[cfg(windows)]
+    identity: WindowsFileIdentity,
     mtime_ns: i128,
     size: u64,
 }
@@ -1303,9 +1308,10 @@ fn reload_key(path: &Path) -> Option<ReloadKey> {
 
 #[cfg(windows)]
 fn reload_key(path: &Path) -> Option<ReloadKey> {
-    let metadata = fs::metadata(path).ok()?;
+    let file = fs::File::open(path).ok()?;
+    let metadata = file.metadata().ok()?;
     Some(ReloadKey {
-        inode: metadata.file_index(),
+        identity: windows_file_identity(&file).ok()?,
         mtime_ns: i128::from(metadata.last_write_time()),
         size: metadata.file_size(),
     })

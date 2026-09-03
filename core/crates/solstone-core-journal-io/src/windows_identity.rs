@@ -3,16 +3,18 @@
 
 //! Windows file-identity queries shared by no-follow I/O primitives.
 
+use std::fs::File;
 use std::io;
 use std::mem::size_of;
-use std::os::windows::io::RawHandle;
+use std::os::windows::io::{AsRawHandle, RawHandle};
 
 use windows_sys::Win32::Storage::FileSystem::{
     FILE_ID_INFO, FILE_STANDARD_INFO, FileIdInfo, FileStandardInfo, GetFileInformationByHandleEx,
 };
 
+/// Opaque volume-aware identity for one Windows filesystem object.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct WindowsFileIdentity {
+pub struct WindowsFileIdentity {
     volume_serial: u64,
     file_id: [u8; 16],
 }
@@ -72,6 +74,14 @@ pub(crate) fn file_identity(handle: RawHandle) -> io::Result<WindowsFileIdentity
         .ok_or_else(io::Error::last_os_error)
 }
 
+/// Query the opaque, stable identity of an already-open Windows file handle.
+///
+/// The identity is suitable for equality checks within the volume-aware
+/// Windows I/O contract. Callers retain ownership of `file` for the query.
+pub fn windows_file_identity(file: &File) -> io::Result<WindowsFileIdentity> {
+    file_identity(file.as_raw_handle())
+}
+
 pub(crate) fn file_link_count(handle: RawHandle) -> io::Result<u64> {
     let mut info = FILE_STANDARD_INFO {
         AllocationSize: 0,
@@ -119,5 +129,18 @@ mod windows_tests {
 
         let handle = File::open(&original).unwrap();
         assert_eq!(file_link_count(handle.as_raw_handle()).unwrap(), 2);
+    }
+
+    #[test]
+    fn public_file_identity_queries_the_opened_handle() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("identity.bin");
+        fs::write(&path, b"content").unwrap();
+
+        let file = File::open(&path).unwrap();
+        assert_eq!(
+            windows_file_identity(&file).unwrap(),
+            file_identity(file.as_raw_handle()).unwrap()
+        );
     }
 }

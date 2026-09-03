@@ -201,6 +201,8 @@ pub use strict_segment::{
     resolve_segment_exact, resolve_segment_locator_exact, resolve_stream_exact,
 };
 #[cfg(windows)]
+pub use windows_identity::{WindowsFileIdentity, windows_file_identity};
+#[cfg(windows)]
 pub use windows_inventory::{
     WindowsCheckedReadSession, WindowsInventory, WindowsInventoryEntry, WindowsInventoryError,
     enumerate_windows_inventory, read_windows_inventory_file,
