@@ -222,13 +222,29 @@ fn render_full(profile: &Value) -> Vec<String> {
         })
         .unwrap_or_else(|| "-".to_string());
     let cadence = &profile["cadence"];
+    // `blocked` and `detached_facets` are reported by the API rather than filtered
+    // there (founder ruling 2026-09-03), so this renderer -- a caller -- is where
+    // they have to become visible. Dropping them here would expose the status on
+    // the wire and hide it from every agent reading the default output.
+    let detached_label = profile
+        .get("detached_facets")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .map(display_value)
+                .collect::<Vec<_>>()
+                .join(",")
+        })
+        .filter(|label| !label.is_empty());
     let mut lines = vec![
         format!(
-            "{} \u{00b7} {} \u{00b7} facets={} \u{00b7} self={}",
+            "{} \u{00b7} {} \u{00b7} facets={} \u{00b7} self={} \u{00b7} blocked={}",
             field(profile, "name"),
             field(profile, "type"),
             facets_label,
-            field(profile, "is_self")
+            field(profile, "is_self"),
+            field(profile, "blocked")
         ),
         String::new(),
         "Cadence:".to_string(),
@@ -245,6 +261,9 @@ fn render_full(profile: &Value) -> Vec<String> {
         String::new(),
         "Open loops".to_string(),
     ];
+    if let Some(detached_label) = detached_label {
+        lines.insert(1, format!("detached facets: {detached_label}"));
+    }
     let open = profile
         .get("open_with_them")
         .and_then(Value::as_array)

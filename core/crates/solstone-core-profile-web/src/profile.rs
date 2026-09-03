@@ -10,7 +10,9 @@ use chrono::{DateTime, Duration, Utc};
 use crate::cadence::{compute_cadence, list_active_entity_ids};
 use crate::error::ProfileResult;
 use crate::ledger_fold::{DecisionQuery, LedgerListQuery, LedgerState, decisions, list};
-use crate::relationships::{description_for, load_facet_descriptions, selected_facets};
+use crate::relationships::{
+    description_for, detached_facets, load_facet_descriptions, selected_facets,
+};
 use crate::resolution::resolve_target;
 use crate::types::{Cadence, Profile, ProfileBrief};
 
@@ -58,7 +60,9 @@ pub(crate) fn full(
         r#type: target.r#type,
         aka: target.aka,
         is_self: target.is_self,
+        blocked: target.blocked,
         facets: selected_facets(&descriptions, facets),
+        detached_facets: detached_facets(&descriptions),
         description: description_for(&descriptions, facets),
         cadence,
         open_with_them,
@@ -101,6 +105,7 @@ pub(crate) fn brief(
         entity_id: target.entity_id,
         name: target.name,
         r#type: target.r#type,
+        blocked: target.blocked,
         description: description_for(&descriptions, None),
         last_seen: cadence.last_seen,
         open_loop_count,
