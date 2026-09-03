@@ -4,6 +4,7 @@
 //! Host-input collection around the shared pure STT backend choice.
 
 pub(crate) mod confidential;
+#[cfg(unix)]
 pub(crate) mod parakeet_coreml;
 pub(crate) mod parakeet_cpp;
 
