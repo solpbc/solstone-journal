@@ -18,7 +18,16 @@ use solstone_core_journal_io::cortex_use::{
 };
 use solstone_core_journal_io::journal_root::{JournalEntryKind, JournalRoot};
 
-const MAXIMUM_RECOVERY_ENTRIES: usize = 64 * 1024;
+// The recovery census walks every entry under `talents/`, cumulatively, to find
+// orphaned in-progress uses. A long-running journal accumulates a large body of
+// ordinary completed talent output in that same tree, so this bound has to clear
+// real historical corpus size, not just the in-flight working set. Measured on a
+// journal in continuous use for over a year: ~600k entries total, with several
+// single talent directories alone past 65k. The prior 64Ki bound made every
+// startup census fail. This is a generous multiple of that measurement, not an
+// unbounded value: it still catches a genuinely pathological (e.g. runaway or
+// corrupted) namespace rather than let recovery spin unbounded.
+const MAXIMUM_RECOVERY_ENTRIES: usize = 4 * 1024 * 1024;
 
 pub struct CortexStore {
     journal: PathBuf,
