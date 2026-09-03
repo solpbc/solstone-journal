@@ -36,6 +36,9 @@ pub enum JournalCommand {
         rest: Vec<OsString>,
         verbose: bool,
     },
+    HiddenNative {
+        argv: Vec<OsString>,
+    },
     RetiredExport,
     DottedModule,
     Unknown,
@@ -152,6 +155,13 @@ pub fn evaluate_args(args: &[OsString]) -> JournalCommand {
     let Some(value) = first.to_str() else {
         return JournalCommand::Unknown;
     };
+    if matches!(value, "__journal-route-inspect" | "__journal-route-repair") {
+        return JournalCommand::HiddenNative {
+            argv: std::iter::once(first.clone())
+                .chain(rest.iter().cloned())
+                .collect(),
+        };
+    }
     if let Some(token) = manifest::known_token(value) {
         if matches!(
             manifest::primitive_for(token),
@@ -233,12 +243,32 @@ pub fn dispatch(command: JournalCommand, spawner: &dyn ProcessSpawner) -> Outcom
             None => dispatch_process(token, &rest, verbose, spawner),
         },
         JournalCommand::Local { token, rest, .. } => local_ops::dispatch(token, &rest),
+        JournalCommand::HiddenNative { argv } => dispatch_hidden_native(&argv, spawner),
         JournalCommand::RetiredExport => Outcome::LocalFailure {
             stdout: String::new(),
             stderr: format!("{JOURNAL_EXPORT_TOMBSTONE}\n"),
             exit: 64,
         },
         JournalCommand::DottedModule | JournalCommand::Unknown => Outcome::Rejected,
+    }
+}
+
+fn dispatch_hidden_native(owner_argv: &[OsString], spawner: &dyn ProcessSpawner) -> Outcome {
+    let executable = match runner::sibling_native_for_current_executable("solstone-core") {
+        Ok(executable) => executable,
+        Err(error) => {
+            return Outcome::ProcessFailure {
+                stderr: format!("native journal process launch failed: {error}\n"),
+                exit: 70,
+            };
+        }
+    };
+    match spawner.spawn(executable.as_os_str(), owner_argv) {
+        Ok(()) => Outcome::ProcessLaunched,
+        Err(error) => Outcome::ProcessFailure {
+            stderr: format!("native journal process launch failed: {error}\n"),
+            exit: 70,
+        },
     }
 }
 
@@ -598,6 +628,36 @@ mod tests {
         assert_eq!(
             help::version_line(),
             format!("journal (solstone) {}\n", env!("CARGO_PKG_VERSION"))
+        );
+    }
+
+    #[test]
+    fn hidden_route_commands_preserve_their_closed_owner_argv() {
+        assert_eq!(
+            evaluate_args(&args(&["__journal-route-inspect"])),
+            JournalCommand::HiddenNative {
+                argv: args(&["__journal-route-inspect"]),
+            }
+        );
+        assert_eq!(
+            evaluate_args(&args(&["__journal-route-inspect", "extra"])),
+            JournalCommand::HiddenNative {
+                argv: args(&["__journal-route-inspect", "extra"]),
+            }
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "__journal-route-repair",
+                "--route-lock-owner",
+                "0123456789abcdef0123456789abcdef",
+            ])),
+            JournalCommand::HiddenNative {
+                argv: args(&[
+                    "__journal-route-repair",
+                    "--route-lock-owner",
+                    "0123456789abcdef0123456789abcdef",
+                ]),
+            }
         );
     }
 }

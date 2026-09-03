@@ -168,7 +168,6 @@ fn inspect_from_linux_stat(stat: &str, btime: u64, clk_tck: u64, uid: u32) -> In
     }
 }
 
-#[cfg(target_os = "linux")]
 /// Why a `/proc/<pid>/status` uid read did not produce a uid.
 ///
 /// ⚠ The distinction is load-bearing. `linux_uid` used to collapse every failure

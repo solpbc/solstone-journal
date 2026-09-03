@@ -1043,9 +1043,9 @@ mod tests {
         WindowsFlatDirectory, create_or_open_windows_flat_directory_bound,
     };
 
-    const LOCK_NAME: &str = "!solstone-ml-l-r-bound-test.lock";
-    const DESTINATION_NAME: &str = "!solstone-ml-r-bound-test.ref";
-    const PUBLISHED_BYTES: &[u8] = b"bound pointer record";
+    const LOCK_NAME: &str = ".bound-publication-test.lock";
+    const DESTINATION_NAME: &str = "bound-publication-test.dat";
+    const PUBLISHED_BYTES: &[u8] = b"bound publication record";
 
     fn root_handle(path: &Path) -> std::fs::File {
         open_windows_path(
@@ -1065,10 +1065,10 @@ mod tests {
     ) {
         let temporary = TempDir::new();
         let root = root_handle(temporary.path());
-        let parent_path = temporary.path().join("aliases");
+        let parent_path = temporary.path().join("publication-parent");
         let parent = create_or_open_windows_flat_directory_bound(
             &root,
-            OsStr::new("aliases"),
+            OsStr::new("publication-parent"),
             temporary.path(),
         )
         .unwrap();

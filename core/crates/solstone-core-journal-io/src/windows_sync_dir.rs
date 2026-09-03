@@ -72,38 +72,56 @@ impl WindowsFlatDirectory {
     }
 
     /// Revalidate the retained directory before a descriptor-relative operation.
-    #[allow(dead_code, reason = "used by the inactive managed-log substrate")]
+    #[allow(
+        dead_code,
+        reason = "retained for generic capability-bound file operations"
+    )]
     pub(crate) fn revalidate_bound(&self) -> Result<(), FlatDirectoryError> {
         self.revalidate()
     }
 
     /// Full identity captured when this directory was bound.
-    #[allow(dead_code, reason = "used by the inactive managed-log substrate")]
+    #[allow(
+        dead_code,
+        reason = "retained for generic capability-bound file operations"
+    )]
     pub(crate) const fn identity(&self) -> WindowsFileIdentity {
         self.identity
     }
 
     /// Retained directory handle used as the authority for relative operations.
-    #[allow(dead_code, reason = "used by the inactive managed-log substrate")]
+    #[allow(
+        dead_code,
+        reason = "retained for generic capability-bound file operations"
+    )]
     pub(crate) fn handle(&self) -> &OwnedHandle {
         &self.directory
     }
 
     /// Diagnostic path only; it is never authority for a child operation.
-    #[allow(dead_code, reason = "used by the inactive managed-log substrate")]
+    #[allow(
+        dead_code,
+        reason = "retained for generic capability-bound file operations"
+    )]
     pub(crate) fn diagnostic_path(&self) -> &Path {
         &self.diagnostic_path
     }
 
     /// Diagnostic path for one direct child.
-    #[allow(dead_code, reason = "used by the inactive managed-log substrate")]
+    #[allow(
+        dead_code,
+        reason = "retained for generic capability-bound file operations"
+    )]
     pub(crate) fn diagnostic_entry_path(&self, name: &OsStr) -> PathBuf {
         self.diagnostic_entry(name)
     }
 }
 
 /// Validate an already-opened child as a direct regular non-reparse file.
-#[allow(dead_code, reason = "used by the inactive managed-log substrate")]
+#[allow(
+    dead_code,
+    reason = "retained for generic capability-bound file operations"
+)]
 pub(crate) fn validate_windows_regular_handle(
     handle: std::os::windows::io::RawHandle,
     path: &Path,

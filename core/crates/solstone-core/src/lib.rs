@@ -6,6 +6,15 @@
 pub mod installation_context;
 pub mod supervisor;
 
+// The route command is owned by the binary, but these protocol and lock units
+// have no binary-only dependencies and belong in the crate's routine unit gate.
+#[cfg(test)]
+#[path = "journal_route/coordination_lock.rs"]
+mod journal_route_coordination_lock;
+#[cfg(test)]
+#[path = "journal_route/record.rs"]
+mod journal_route_record;
+
 #[cfg(all(unix, feature = "journal-mcp-endpoint"))]
 pub use solstone_core_mcp_endpoint::{
     CreatedPairingCode, McpEndpointTlsService, McpServiceError, OAuthClientSummary, OAuthStore,

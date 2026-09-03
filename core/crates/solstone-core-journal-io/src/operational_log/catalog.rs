@@ -30,9 +30,7 @@ use crate::journal_root::{JournalEntryKind, JournalRoot};
 use crate::observation::FlatDirectoryEntry;
 use crate::paths::is_day_key;
 #[cfg(windows)]
-use crate::windows_sync_dir::{
-    WindowsFlatDirectory, list_windows_flat_directory, open_windows_flat_directory_bound,
-};
+use crate::windows_sync_dir::{list_windows_flat_directory, open_windows_flat_directory_bound};
 
 const CHRONICLE_DIR: &str = "chronicle";
 const HEALTH_DIR: &str = "health";

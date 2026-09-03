@@ -86,6 +86,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "core",
+        "journal_route",
+        include_str!("../../../solstone-core/src/journal_route/mod.rs"),
+    ),
+    (
+        "core",
         "navigate",
         include_str!("../../../solstone-core/src/navigate.rs"),
     ),

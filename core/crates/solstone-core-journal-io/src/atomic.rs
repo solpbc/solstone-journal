@@ -607,7 +607,7 @@ pub fn atomic_replace_detailed(
 #[cfg(windows)]
 #[allow(
     dead_code,
-    reason = "the managed-log substrate is intentionally inactive"
+    reason = "retained for the generic capability-bound publication primitive"
 )]
 #[derive(Debug)]
 pub(crate) enum BoundAtomicPublishError {
@@ -643,7 +643,7 @@ impl std::error::Error for BoundAtomicPublishError {
 #[cfg(windows)]
 #[allow(
     dead_code,
-    reason = "the managed-log substrate is intentionally inactive"
+    reason = "retained as the generic capability-bound publication primitive"
 )]
 pub(crate) fn atomic_replace_detailed_bound(
     parent: &crate::windows_sync_dir::WindowsFlatDirectory,
@@ -659,75 +659,6 @@ pub(crate) fn atomic_replace_detailed_bound(
         contents,
         mode,
     )
-}
-
-/// An initial construction must distinguish every landed-but-unverified result.
-#[cfg(windows)]
-#[allow(
-    dead_code,
-    reason = "the managed-log substrate is intentionally inactive"
-)]
-#[derive(Debug)]
-pub(crate) enum StrictManagedLogPublication {
-    Published,
-    Outcome(DetailedAtomicOutcome),
-}
-
-/// Apply the strict initial-publication policy without deleting or repairing outcomes.
-#[cfg(windows)]
-#[allow(
-    dead_code,
-    reason = "the managed-log substrate is intentionally inactive"
-)]
-pub(crate) fn require_strict_managed_log_publication(
-    result: Result<DetailedAtomicOutcome, BoundAtomicPublishError>,
-) -> Result<StrictManagedLogPublication, BoundAtomicPublishError> {
-    match result? {
-        DetailedAtomicOutcome::Published => Ok(StrictManagedLogPublication::Published),
-        outcome => Ok(StrictManagedLogPublication::Outcome(outcome)),
-    }
-}
-
-#[cfg(all(test, windows))]
-mod managed_log_windows_tests {
-    use super::*;
-
-    #[test]
-    fn strict_initial_publication_preserves_every_nonexact_outcome() {
-        assert!(matches!(
-            require_strict_managed_log_publication(Ok(DetailedAtomicOutcome::Published)),
-            Ok(StrictManagedLogPublication::Published)
-        ));
-        assert!(matches!(
-            require_strict_managed_log_publication(Ok(
-                DetailedAtomicOutcome::PublishedParentPathRaced { sync_error: None }
-            )),
-            Ok(StrictManagedLogPublication::Outcome(
-                DetailedAtomicOutcome::PublishedParentPathRaced { .. }
-            ))
-        ));
-        assert!(matches!(
-            require_strict_managed_log_publication(Ok(
-                DetailedAtomicOutcome::PublishedDurabilityUncertain {
-                    source: io::Error::other("durability")
-                }
-            )),
-            Ok(StrictManagedLogPublication::Outcome(
-                DetailedAtomicOutcome::PublishedDurabilityUncertain { .. }
-            ))
-        ));
-        assert!(matches!(
-            require_strict_managed_log_publication(Ok(
-                DetailedAtomicOutcome::PublishedParentPathUnverified {
-                    observation: io::Error::other("observation"),
-                    sync_error: None,
-                }
-            )),
-            Ok(StrictManagedLogPublication::Outcome(
-                DetailedAtomicOutcome::PublishedParentPathUnverified { .. }
-            ))
-        ));
-    }
 }
 
 #[cfg(windows)]

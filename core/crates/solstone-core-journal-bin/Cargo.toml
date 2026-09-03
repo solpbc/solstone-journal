@@ -22,6 +22,8 @@ solstone-core-setup.workspace = true
 
 [dev-dependencies]
 solstone-core-journal.workspace = true
+solstone-core-installation-identity.workspace = true
+solstone-core-service-unit.workspace = true
 rusqlite = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

@@ -4526,8 +4526,10 @@ dependencies = [
  "serde_json",
  "sha2",
  "solstone-core-cli",
+ "solstone-core-installation-identity",
  "solstone-core-journal",
  "solstone-core-journal-cli",
+ "solstone-core-service-unit",
  "solstone-core-setup",
  "zip",
 ]

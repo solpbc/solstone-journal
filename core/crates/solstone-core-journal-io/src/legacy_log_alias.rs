@@ -22,22 +22,15 @@ use crate::paths::{DirEntry, DirEntryKind, is_day_key, list_dir_entries};
 #[cfg(windows)]
 use crate::windows_identity::{WindowsFileIdentity, file_identity};
 
-const RETIRED_OUTPUT_NAMES: &[&str] = &[
-    "task_log.txt",
-    "heartbeat.log",
-    "steward.log",
-    "retention.log",
-    "pruning-runs",
-    "service.log",
-];
-
 /// The expected shape of one retired alias.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LegacyAliasTarget {
+    /// A former day-local managed-process alias pointing to its run payload.
+    ManagedDayLog { alias_name: OsString },
+    /// A former root managed-process alias pointing into a valid day partition.
+    ManagedRootLog { alias_name: OsString },
     /// A former talent-run alias pointing to a completed numeric use.
     TalentRun { talent_directory: OsString },
-    /// A retired diagnostic alias whose leaf name is its complete authority.
-    KnownName(&'static str),
 }
 
 /// Why an alias candidate was deliberately preserved.
@@ -49,6 +42,8 @@ pub enum LegacyAliasRefusal {
     WrongLeafName,
     /// A talent-run alias did not have the retired relative target shape.
     UnexpectedTarget,
+    /// The entry is a link, but not a file symlink that the retired writers made.
+    UnsupportedLinkKind,
     /// The observed link was replaced before it could be removed.
     ChangedBeforeRemoval,
 }
@@ -147,6 +142,8 @@ enum NoFollowIdentity {
 #[derive(Debug, Eq, PartialEq)]
 pub struct LegacyAliasObservation {
     path: PathBuf,
+    parent: PathBuf,
+    parent_identity: NoFollowIdentity,
     identity: NoFollowIdentity,
     target: PathBuf,
 }
@@ -164,6 +161,9 @@ pub fn observe_legacy_alias_symlink(
     path: &Path,
     expected: &LegacyAliasTarget,
 ) -> Result<LegacyAliasObservationResult, LegacyAliasCleanupError> {
+    let Some((parent, parent_identity)) = nofollow_parent_identity(path)? else {
+        return Ok(LegacyAliasObservationResult::Absent);
+    };
     let Some(metadata) = nofollow_metadata(path)? else {
         return Ok(LegacyAliasObservationResult::Absent);
     };
@@ -171,6 +171,11 @@ pub fn observe_legacy_alias_symlink(
     if !is_symbolic_link(&metadata) {
         return Ok(LegacyAliasObservationResult::Refused(
             LegacyAliasRefusal::NotSymlink(kind),
+        ));
+    }
+    if !is_file_symbolic_link(&metadata) {
+        return Ok(LegacyAliasObservationResult::Refused(
+            LegacyAliasRefusal::UnsupportedLinkKind,
         ));
     }
     if !leaf_matches(path, expected) {
@@ -191,9 +196,16 @@ pub fn observe_legacy_alias_symlink(
     let Some(identity) = nofollow_identity(path, &metadata)? else {
         return Ok(LegacyAliasObservationResult::Absent);
     };
+    if !parent_identity_matches(&parent, &parent_identity)? {
+        return Ok(LegacyAliasObservationResult::Refused(
+            LegacyAliasRefusal::ChangedBeforeRemoval,
+        ));
+    }
     Ok(LegacyAliasObservationResult::Observed(
         LegacyAliasObservation {
             path: path.to_path_buf(),
+            parent,
+            parent_identity,
             identity,
             target,
         },
@@ -204,10 +216,15 @@ pub fn observe_legacy_alias_symlink(
 pub fn remove_observed_legacy_alias_symlink(
     observed: &LegacyAliasObservation,
 ) -> Result<LegacyAliasDisposition, LegacyAliasCleanupError> {
+    if !parent_identity_matches(&observed.parent, &observed.parent_identity)? {
+        return Ok(LegacyAliasDisposition::Refused(
+            LegacyAliasRefusal::ChangedBeforeRemoval,
+        ));
+    }
     let Some(metadata) = nofollow_metadata(&observed.path)? else {
         return Ok(LegacyAliasDisposition::AlreadyAbsent);
     };
-    if !is_symbolic_link(&metadata) {
+    if !is_file_symbolic_link(&metadata) {
         return Ok(LegacyAliasDisposition::Refused(
             LegacyAliasRefusal::ChangedBeforeRemoval,
         ));
@@ -238,6 +255,22 @@ pub fn remove_observed_legacy_alias_symlink(
             LegacyAliasRefusal::ChangedBeforeRemoval,
         ));
     }
+    if !parent_identity_matches(&observed.parent, &observed.parent_identity)? {
+        return Ok(LegacyAliasDisposition::Refused(
+            LegacyAliasRefusal::ChangedBeforeRemoval,
+        ));
+    }
+    let Some(metadata) = nofollow_metadata(&observed.path)? else {
+        return Ok(LegacyAliasDisposition::AlreadyAbsent);
+    };
+    let Some(identity) = nofollow_identity(&observed.path, &metadata)? else {
+        return Ok(LegacyAliasDisposition::AlreadyAbsent);
+    };
+    if !is_file_symbolic_link(&metadata) || identity != observed.identity {
+        return Ok(LegacyAliasDisposition::Refused(
+            LegacyAliasRefusal::ChangedBeforeRemoval,
+        ));
+    }
     match fs::remove_file(&observed.path) {
         Ok(()) => Ok(LegacyAliasDisposition::Removed),
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
@@ -256,7 +289,7 @@ pub fn cleanup_legacy_log_aliases(
     journal: &Path,
 ) -> Result<LegacyAliasCleanupReport, LegacyAliasCleanupError> {
     let mut report = LegacyAliasCleanupReport::default();
-    cleanup_known_names(&journal.join("health"), &mut report)?;
+    cleanup_managed_log_aliases(&journal.join("health"), true, &mut report)?;
 
     for day in nofollow_directory_entries(&journal.join("chronicle"))? {
         if day.kind != DirEntryKind::Directory || !is_valid_day(&day.name) {
@@ -268,7 +301,7 @@ pub fn cleanup_legacy_log_aliases(
                 entry.name == OsStr::new("health") && entry.kind == DirEntryKind::Directory
             });
         if let Some(health) = health {
-            cleanup_known_names(&health.path, &mut report)?;
+            cleanup_managed_log_aliases(&health.path, false, &mut report)?;
         }
     }
 
@@ -277,21 +310,25 @@ pub fn cleanup_legacy_log_aliases(
     Ok(report)
 }
 
-fn cleanup_known_names(
+fn cleanup_managed_log_aliases(
     directory: &Path,
+    root_alias: bool,
     report: &mut LegacyAliasCleanupReport,
 ) -> Result<(), LegacyAliasCleanupError> {
     for entry in nofollow_directory_entries(directory)? {
-        let Some(name) = entry.name.to_str() else {
+        if Path::new(&entry.name).extension() != Some(OsStr::new("log")) {
             continue;
-        };
-        if let Some(&known_name) = RETIRED_OUTPUT_NAMES.iter().find(|known| **known == name) {
-            apply_candidate(
-                &entry.path,
-                &LegacyAliasTarget::KnownName(known_name),
-                report,
-            )?;
         }
+        let expected = if root_alias {
+            LegacyAliasTarget::ManagedRootLog {
+                alias_name: entry.name,
+            }
+        } else {
+            LegacyAliasTarget::ManagedDayLog {
+                alias_name: entry.name,
+            }
+        };
+        apply_candidate(&entry.path, &expected, report)?;
     }
     Ok(())
 }
@@ -376,6 +413,37 @@ fn nofollow_metadata(path: &Path) -> Result<Option<Metadata>, LegacyAliasCleanup
     }
 }
 
+fn nofollow_parent_identity(
+    path: &Path,
+) -> Result<Option<(PathBuf, NoFollowIdentity)>, LegacyAliasCleanupError> {
+    let Some(parent) = path.parent() else {
+        return Ok(None);
+    };
+    let Some(metadata) = nofollow_metadata(parent)? else {
+        return Ok(None);
+    };
+    if journal_entry_kind(&metadata) != JournalEntryKind::Directory {
+        return Ok(None);
+    }
+    let Some(identity) = nofollow_identity(parent, &metadata)? else {
+        return Ok(None);
+    };
+    Ok(Some((parent.to_path_buf(), identity)))
+}
+
+fn parent_identity_matches(
+    parent: &Path,
+    expected: &NoFollowIdentity,
+) -> Result<bool, LegacyAliasCleanupError> {
+    let Some(metadata) = nofollow_metadata(parent)? else {
+        return Ok(false);
+    };
+    if journal_entry_kind(&metadata) != JournalEntryKind::Directory {
+        return Ok(false);
+    }
+    Ok(nofollow_identity(parent, &metadata)?.as_ref() == Some(expected))
+}
+
 fn is_valid_day(name: &OsStr) -> bool {
     let Some(day) = name.to_str() else {
         return false;
@@ -394,7 +462,10 @@ fn talent_directory_from_alias(name: &OsStr) -> Option<OsString> {
 
 fn leaf_matches(path: &Path, expected: &LegacyAliasTarget) -> bool {
     match expected {
-        LegacyAliasTarget::KnownName(name) => path.file_name() == Some(OsStr::new(name)),
+        LegacyAliasTarget::ManagedDayLog { alias_name }
+        | LegacyAliasTarget::ManagedRootLog { alias_name } => {
+            path.file_name() == Some(alias_name.as_os_str())
+        }
         LegacyAliasTarget::TalentRun { talent_directory } => {
             let mut alias = talent_directory.clone();
             alias.push(".log");
@@ -404,16 +475,59 @@ fn leaf_matches(path: &Path, expected: &LegacyAliasTarget) -> bool {
 }
 
 fn target_matches(target: &Path, expected: &LegacyAliasTarget) -> bool {
-    let LegacyAliasTarget::TalentRun { talent_directory } = expected else {
-        return true;
-    };
-    let mut components = target.components();
-    let (Some(Component::Normal(directory)), Some(Component::Normal(run)), None) =
-        (components.next(), components.next(), components.next())
-    else {
+    match expected {
+        LegacyAliasTarget::ManagedDayLog { alias_name } => {
+            let mut components = target.components();
+            let (Some(Component::Normal(payload)), None) = (components.next(), components.next())
+            else {
+                return false;
+            };
+            managed_payload_matches(alias_name, payload)
+        }
+        LegacyAliasTarget::ManagedRootLog { alias_name } => {
+            let mut components = target.components();
+            let (
+                Some(Component::ParentDir),
+                Some(Component::Normal(chronicle)),
+                Some(Component::Normal(day)),
+                Some(Component::Normal(health)),
+                Some(Component::Normal(payload)),
+                None,
+            ) = (
+                components.next(),
+                components.next(),
+                components.next(),
+                components.next(),
+                components.next(),
+                components.next(),
+            )
+            else {
+                return false;
+            };
+            chronicle == OsStr::new("chronicle")
+                && is_valid_day(day)
+                && health == OsStr::new("health")
+                && managed_payload_matches(alias_name, payload)
+        }
+        LegacyAliasTarget::TalentRun { talent_directory } => {
+            let mut components = target.components();
+            let (Some(Component::Normal(directory)), Some(Component::Normal(run)), None) =
+                (components.next(), components.next(), components.next())
+            else {
+                return false;
+            };
+            directory == talent_directory.as_os_str() && numeric_jsonl_name(run)
+        }
+    }
+}
+
+fn managed_payload_matches(alias: &OsStr, payload: &OsStr) -> bool {
+    let (Some(alias), Some(payload)) = (alias.to_str(), payload.to_str()) else {
         return false;
     };
-    directory == talent_directory.as_os_str() && numeric_jsonl_name(run)
+    payload
+        .strip_suffix(alias)
+        .is_some_and(|reference_prefix| reference_prefix.ends_with('_'))
 }
 
 fn numeric_jsonl_name(name: &OsStr) -> bool {
@@ -440,25 +554,29 @@ fn is_symbolic_link(metadata: &Metadata) -> bool {
     }
 }
 
-fn journal_entry_kind(metadata: &Metadata) -> JournalEntryKind {
+fn is_file_symbolic_link(metadata: &Metadata) -> bool {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::MetadataExt;
-
-        JournalEntryKind::from_mode(nix::sys::stat::SFlag::from_bits_truncate(metadata.mode()))
+        metadata.file_type().is_symlink()
     }
     #[cfg(windows)]
     {
-        let file_type = metadata.file_type();
-        if is_symbolic_link(metadata) {
-            JournalEntryKind::Symlink
-        } else if file_type.is_file() {
-            JournalEntryKind::RegularFile
-        } else if file_type.is_dir() {
-            JournalEntryKind::Directory
-        } else {
-            JournalEntryKind::Other
-        }
+        use std::os::windows::fs::FileTypeExt;
+
+        metadata.file_type().is_symlink_file()
+    }
+}
+
+fn journal_entry_kind(metadata: &Metadata) -> JournalEntryKind {
+    let file_type = metadata.file_type();
+    if is_symbolic_link(metadata) {
+        JournalEntryKind::Symlink
+    } else if file_type.is_file() {
+        JournalEntryKind::RegularFile
+    } else if file_type.is_dir() {
+        JournalEntryKind::Directory
+    } else {
+        JournalEntryKind::Other
     }
 }
 
@@ -517,15 +635,16 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn known_name_removes_a_dangling_alias_but_preserves_regular_entries() {
+    fn managed_day_alias_requires_exact_leaf_and_target_shape() {
         let directory = tempdir().unwrap();
-        let alias = directory.path().join("heartbeat.log");
-        symlink("missing", &alias).unwrap();
-        let observed =
-            observe_legacy_alias_symlink(&alias, &LegacyAliasTarget::KnownName("heartbeat.log"))
-                .unwrap();
+        let alias = directory.path().join("convey.log");
+        let expected = LegacyAliasTarget::ManagedDayLog {
+            alias_name: OsString::from("convey.log"),
+        };
+        symlink("launch-1_convey.log", &alias).unwrap();
+        let observed = observe_legacy_alias_symlink(&alias, &expected).unwrap();
         let LegacyAliasObservationResult::Observed(observed) = observed else {
-            panic!("dangling known alias must be observed");
+            panic!("dangling managed alias must be observed");
         };
         assert_eq!(
             remove_observed_legacy_alias_symlink(&observed).unwrap(),
@@ -535,11 +654,17 @@ mod tests {
 
         fs::write(&alias, "regular log").unwrap();
         assert_eq!(
-            observe_legacy_alias_symlink(&alias, &LegacyAliasTarget::KnownName("heartbeat.log"))
-                .unwrap(),
+            observe_legacy_alias_symlink(&alias, &expected).unwrap(),
             LegacyAliasObservationResult::Refused(LegacyAliasRefusal::NotSymlink(
                 JournalEntryKind::RegularFile
             ))
+        );
+
+        fs::remove_file(&alias).unwrap();
+        symlink("other.log", &alias).unwrap();
+        assert_eq!(
+            observe_legacy_alias_symlink(&alias, &expected).unwrap(),
+            LegacyAliasObservationResult::Refused(LegacyAliasRefusal::UnexpectedTarget)
         );
     }
 
@@ -583,6 +708,64 @@ mod tests {
     }
 
     #[test]
+    fn parent_replacement_after_observation_preserves_both_namespaces() {
+        let directory = tempdir().unwrap();
+        let health = directory.path().join("health");
+        let retired = directory.path().join("health-retired");
+        fs::create_dir(&health).unwrap();
+        let alias = health.join("convey.log");
+        symlink("launch-1_convey.log", &alias).unwrap();
+        let expected = LegacyAliasTarget::ManagedDayLog {
+            alias_name: OsString::from("convey.log"),
+        };
+        let observed = observe_legacy_alias_symlink(&alias, &expected).unwrap();
+        let LegacyAliasObservationResult::Observed(observed) = observed else {
+            panic!("valid alias must be observed");
+        };
+
+        fs::rename(&health, &retired).unwrap();
+        fs::create_dir(&health).unwrap();
+        symlink("launch-1_convey.log", &alias).unwrap();
+
+        assert_eq!(
+            remove_observed_legacy_alias_symlink(&observed).unwrap(),
+            LegacyAliasDisposition::Refused(LegacyAliasRefusal::ChangedBeforeRemoval)
+        );
+        assert!(fs::symlink_metadata(&alias).is_ok());
+        assert!(fs::symlink_metadata(retired.join("convey.log")).is_ok());
+    }
+
+    #[test]
+    fn cleanup_reports_regular_files_and_directories_without_removing_them() {
+        let directory = tempdir().unwrap();
+        let health = directory.path().join("health");
+        fs::create_dir_all(&health).unwrap();
+        fs::create_dir(health.join("folder.log")).unwrap();
+        fs::write(health.join("service.log"), "ordinary log").unwrap();
+
+        let report = cleanup_legacy_log_aliases(directory.path()).unwrap();
+        assert_eq!(report.removed, 0);
+        assert_eq!(
+            report.refused,
+            vec![
+                LegacyAliasRefused {
+                    path: health.join("folder.log"),
+                    reason: LegacyAliasRefusal::NotSymlink(JournalEntryKind::Directory),
+                },
+                LegacyAliasRefused {
+                    path: health.join("service.log"),
+                    reason: LegacyAliasRefusal::NotSymlink(JournalEntryKind::RegularFile),
+                },
+            ]
+        );
+        assert!(health.join("folder.log").is_dir());
+        assert_eq!(
+            fs::read_to_string(health.join("service.log")).unwrap(),
+            "ordinary log"
+        );
+    }
+
+    #[test]
     fn cleanup_visits_only_declared_roots_and_valid_day_health_directories() {
         let directory = tempdir().unwrap();
         let journal = directory.path();
@@ -599,11 +782,22 @@ mod tests {
         fs::create_dir_all(journal.join("agents")).unwrap();
         fs::create_dir_all(&outside).unwrap();
         fs::create_dir(root_health.join("pruning-runs")).unwrap();
-        symlink("missing", root_health.join("service.log")).unwrap();
-        symlink("missing", valid_health.join("heartbeat.log")).unwrap();
-        symlink("missing", invalid_health.join("heartbeat.log")).unwrap();
-        symlink("missing", invalid_calendar_health.join("heartbeat.log")).unwrap();
-        symlink("missing", outside.join("heartbeat.log")).unwrap();
+        let payload = valid_health.join("launch-1_convey.log");
+        fs::write(&payload, "managed payload").unwrap();
+        symlink(
+            "../chronicle/20240101/health/launch-1_convey.log",
+            root_health.join("convey.log"),
+        )
+        .unwrap();
+        symlink("launch-1_convey.log", valid_health.join("convey.log")).unwrap();
+        symlink("missing", root_health.join("heartbeat.log")).unwrap();
+        symlink("launch-1_convey.log", invalid_health.join("convey.log")).unwrap();
+        symlink(
+            "launch-1_convey.log",
+            invalid_calendar_health.join("convey.log"),
+        )
+        .unwrap();
+        symlink("launch-1_convey.log", outside.join("convey.log")).unwrap();
         symlink("chat/1700000000000.jsonl", journal.join("talents/chat.log")).unwrap();
         symlink(
             "agent/1700000000001.jsonl",
@@ -615,21 +809,33 @@ mod tests {
         assert_eq!(report.removed, 4);
         assert_eq!(
             report.refused,
-            vec![LegacyAliasRefused {
-                path: root_health.join("pruning-runs"),
-                reason: LegacyAliasRefusal::NotSymlink(JournalEntryKind::Directory),
-            }]
+            vec![
+                LegacyAliasRefused {
+                    path: root_health.join("heartbeat.log"),
+                    reason: LegacyAliasRefusal::UnexpectedTarget,
+                },
+                LegacyAliasRefused {
+                    path: payload.clone(),
+                    reason: LegacyAliasRefusal::NotSymlink(JournalEntryKind::RegularFile),
+                },
+            ]
         );
         for removed in [
-            root_health.join("service.log"),
-            valid_health.join("heartbeat.log"),
+            root_health.join("convey.log"),
+            valid_health.join("convey.log"),
             journal.join("talents/chat.log"),
             journal.join("agents/agent.log"),
         ] {
             assert!(fs::symlink_metadata(removed).is_err());
         }
-        assert!(fs::symlink_metadata(invalid_health.join("heartbeat.log")).is_ok());
-        assert!(fs::symlink_metadata(invalid_calendar_health.join("heartbeat.log")).is_ok());
-        assert!(fs::symlink_metadata(outside.join("heartbeat.log")).is_ok());
+        assert_eq!(fs::read_to_string(payload).unwrap(), "managed payload");
+        assert!(fs::symlink_metadata(root_health.join("heartbeat.log")).is_ok());
+        assert!(fs::symlink_metadata(invalid_health.join("convey.log")).is_ok());
+        assert!(fs::symlink_metadata(invalid_calendar_health.join("convey.log")).is_ok());
+        assert!(fs::symlink_metadata(outside.join("convey.log")).is_ok());
+
+        let second = cleanup_legacy_log_aliases(journal).unwrap();
+        assert_eq!(second.removed, 0);
+        assert_eq!(second.refused, report.refused);
     }
 }

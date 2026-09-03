@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use solstone_core_installation_identity::{
     ArtifactBindingEvidence, GuardFields, InstallationBinding, NamespaceName,
@@ -31,14 +31,83 @@ enum PresentArtifact {
     Guarded(GuardFields),
 }
 
+/// Per-artifact identity evidence retained before the setup-wide fold.
+///
+/// This is public because native owner callers in other crates need the measured
+/// state of each artifact. Construction remains private to this module.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ArtifactSlotEvidence {
+    Fresh,
+    LegacyUnguarded,
+    Guarded(GuardFields),
+    Foreign,
+    Malformed,
+    Ambiguous,
+}
+
+#[derive(Clone, Debug)]
+pub struct WrapperSlotEvidence {
+    evidence: ArtifactSlotEvidence,
+    guard: Option<GuardFields>,
+    target: Option<PathBuf>,
+    exact_v1: bool,
+    setup_rejected: bool,
+}
+
+impl WrapperSlotEvidence {
+    #[must_use]
+    pub const fn evidence(&self) -> &ArtifactSlotEvidence {
+        &self.evidence
+    }
+
+    #[must_use]
+    pub fn guard(&self) -> Option<&GuardFields> {
+        self.guard.as_ref()
+    }
+
+    #[must_use]
+    pub fn target(&self) -> Option<&Path> {
+        self.target.as_deref()
+    }
+
+    #[must_use]
+    pub const fn exact_v1(&self) -> bool {
+        self.exact_v1
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ServiceSlotEvidence {
+    evidence: ArtifactSlotEvidence,
+    guard: Option<GuardFields>,
+}
+
+impl ServiceSlotEvidence {
+    #[must_use]
+    pub const fn evidence(&self) -> &ArtifactSlotEvidence {
+        &self.evidence
+    }
+
+    #[must_use]
+    pub fn guard(&self) -> Option<&GuardFields> {
+        self.guard.as_ref()
+    }
+}
+
+#[derive(Clone, Debug)]
+struct ReadWrapper {
+    artifact: PresentArtifact,
+    target: Option<PathBuf>,
+    setup_rejected: bool,
+}
+
 /// Setup artifact evidence plus the guard-bearing artifacts that may need repair.
 #[derive(Debug)]
 pub struct SetupArtifactEvidence {
     artifacts: ArtifactBindingEvidence,
-    wrapper_guards: Vec<GuardFields>,
-    service_guard: Option<GuardFields>,
-    wrapper_unguarded: bool,
-    service_unguarded: bool,
+    solstone_wrapper: WrapperSlotEvidence,
+    journal_wrapper: WrapperSlotEvidence,
+    service: ServiceSlotEvidence,
     legacy_transition: bool,
 }
 
@@ -49,22 +118,40 @@ impl SetupArtifactEvidence {
     }
 
     #[must_use]
+    pub const fn solstone_wrapper(&self) -> &WrapperSlotEvidence {
+        &self.solstone_wrapper
+    }
+
+    #[must_use]
+    pub const fn journal_wrapper(&self) -> &WrapperSlotEvidence {
+        &self.journal_wrapper
+    }
+
+    #[must_use]
+    pub const fn service(&self) -> &ServiceSlotEvidence {
+        &self.service
+    }
+
+    #[must_use]
     pub fn repair_steps(&self, binding: &InstallationBinding) -> Vec<StepName> {
         let expected = GuardFields::from_binding(binding);
         let mut steps = Vec::new();
-        if self.wrapper_unguarded
-            || self
-                .wrapper_guards
-                .iter()
-                .any(|guard| guard.same_identity(&expected) && guard != &expected)
+        if [&self.solstone_wrapper, &self.journal_wrapper]
+            .into_iter()
+            .any(|slot| {
+                matches!(slot.evidence, ArtifactSlotEvidence::LegacyUnguarded)
+                    || slot
+                        .guard()
+                        .is_some_and(|guard| guard.same_identity(&expected) && guard != &expected)
+            })
         {
             steps.push(StepName::Wrapper);
         }
         if self.legacy_transition
-            || self.service_unguarded
+            || matches!(self.service.evidence, ArtifactSlotEvidence::LegacyUnguarded)
             || self
-                .service_guard
-                .as_ref()
+                .service
+                .guard()
                 .is_some_and(|guard| guard.same_identity(&expected) && guard != &expected)
         {
             steps.push(StepName::Service);
@@ -85,11 +172,15 @@ pub fn gather_wrapper_artifact_evidence(
     expected_namespace: &NamespaceName,
 ) -> ArtifactBindingEvidence {
     let paths = wrapper_paths(home_dir);
-    let artifacts = match (read_wrapper(&paths.solstone), read_wrapper(&paths.journal)) {
-        (Ok(solstone), Ok(journal)) => solstone.into_iter().chain(journal).collect(),
-        _ => return ArtifactBindingEvidence::Malformed,
-    };
-    classify(Ok(artifacts), expected_namespace)
+    let mut solstone = wrapper_slot(read_wrapper(&paths.solstone));
+    let mut journal = wrapper_slot(read_wrapper(&paths.journal));
+    let mut service = service_slot(Ok(None));
+    classify_slots(
+        &mut solstone,
+        &mut journal,
+        &mut service,
+        expected_namespace,
+    )
 }
 
 /// Classifies every setup-owned artifact currently present for this owner.
@@ -122,51 +213,32 @@ pub fn gather_setup_artifact_evidence(
     let service = service_artifact_path(home_dir)
         .map(|path| read_service(&path))
         .unwrap_or(Ok(None));
-    let (solstone, journal, service) = match (solstone, journal, service) {
-        (Ok(solstone), Ok(journal), Ok(service)) => (solstone, journal, service),
-        _ => {
-            return SetupArtifactEvidence {
-                artifacts: ArtifactBindingEvidence::Malformed,
-                wrapper_guards: Vec::new(),
-                service_guard: None,
-                wrapper_unguarded: false,
-                service_unguarded: false,
-                legacy_transition: false,
-            };
-        }
-    };
-    let wrapper_guards = [&solstone, &journal]
-        .into_iter()
-        .filter_map(|artifact| match artifact {
-            Some(PresentArtifact::Guarded(guard)) => Some(guard.clone()),
-            _ => None,
-        })
-        .collect();
-    let service_guard = match &service {
-        Some(PresentArtifact::Guarded(guard)) => Some(guard.clone()),
-        _ => None,
-    };
-    let wrapper_unguarded = [&solstone, &journal].into_iter().any(|artifact| {
-        matches!(
-            artifact,
-            Some(PresentArtifact::Unguarded | PresentArtifact::LegacyLauncher)
-        )
-    });
-    let service_unguarded = matches!(&service, Some(PresentArtifact::Unguarded));
-    let legacy_transition = [&solstone, &journal]
-        .into_iter()
-        .any(|artifact| matches!(artifact, Some(PresentArtifact::LegacyLauncher)));
-    let artifacts = solstone
-        .into_iter()
-        .chain(journal)
-        .chain(service)
-        .collect::<Vec<_>>();
+    let mut solstone_wrapper = wrapper_slot(solstone);
+    let mut journal_wrapper = wrapper_slot(journal);
+    let mut service = service_slot(service);
+    let legacy_transition = ![
+        solstone_wrapper.evidence(),
+        journal_wrapper.evidence(),
+        service.evidence(),
+    ]
+    .into_iter()
+    .any(|slot| matches!(slot, ArtifactSlotEvidence::Malformed))
+        && !solstone_wrapper.setup_rejected
+        && !journal_wrapper.setup_rejected
+        && [&solstone_wrapper, &journal_wrapper]
+            .into_iter()
+            .any(WrapperSlotEvidence::exact_v1);
+    let artifacts = classify_slots(
+        &mut solstone_wrapper,
+        &mut journal_wrapper,
+        &mut service,
+        expected_namespace,
+    );
     SetupArtifactEvidence {
-        artifacts: classify(Ok(artifacts), expected_namespace),
-        wrapper_guards,
-        service_guard,
-        wrapper_unguarded,
-        service_unguarded,
+        artifacts,
+        solstone_wrapper,
+        journal_wrapper,
+        service,
         legacy_transition,
     }
 }
@@ -202,31 +274,44 @@ fn read_setup_wrapper(
     path: &Path,
     command: &str,
     allow_legacy_launchers: bool,
-) -> Result<Option<PresentArtifact>, ()> {
+) -> Result<Option<ReadWrapper>, ()> {
     if allow_legacy_launchers {
         let classified = legacy_launcher::classify(home_dir, path, command).map_err(|_| ())?;
         if classified.is_some() {
-            return Ok(Some(PresentArtifact::LegacyLauncher));
+            return Ok(Some(ReadWrapper {
+                artifact: PresentArtifact::LegacyLauncher,
+                target: None,
+                setup_rejected: false,
+            }));
         }
     }
-    let wrapper = read_wrapper(path);
-    match wrapper {
-        Ok(Some(PresentArtifact::Unguarded)) if allow_legacy_launchers => Err(()),
-        Ok(artifact) => Ok(artifact),
-        Err(()) => Err(()),
+    let mut wrapper = read_wrapper(path)?;
+    if allow_legacy_launchers
+        && matches!(
+            wrapper.as_ref().map(|wrapper| &wrapper.artifact),
+            Some(PresentArtifact::Unguarded)
+        )
+    {
+        wrapper
+            .as_mut()
+            .expect("matched wrapper is present")
+            .setup_rejected = true;
     }
+    Ok(wrapper)
 }
 
-fn read_wrapper(path: &Path) -> Result<Option<PresentArtifact>, ()> {
+fn read_wrapper(path: &Path) -> Result<Option<ReadWrapper>, ()> {
     if !path.exists() && !path.is_symlink() {
         return Ok(None);
     }
     let content = fs::read_to_string(path).map_err(|_| ())?;
-    if parse_wrapper(&content).is_none() {
-        return Err(());
-    }
+    let wrapper = parse_wrapper(&content).ok_or(())?;
     parse_wrapper_guard(&content)
-        .map(|guard| guard.map_or(PresentArtifact::Unguarded, PresentArtifact::Guarded))
+        .map(|guard| ReadWrapper {
+            artifact: guard.map_or(PresentArtifact::Unguarded, PresentArtifact::Guarded),
+            target: Some(wrapper.sol_bin),
+            setup_rejected: false,
+        })
         .map(Some)
         .map_err(|_| ())
 }
@@ -243,36 +328,135 @@ fn read_service(path: &Path) -> Result<Option<PresentArtifact>, ()> {
         .map_err(|_| ())
 }
 
-fn classify(
-    artifacts: Result<Vec<PresentArtifact>, ()>,
+fn wrapper_slot(value: Result<Option<ReadWrapper>, ()>) -> WrapperSlotEvidence {
+    match value {
+        Err(()) => WrapperSlotEvidence {
+            evidence: ArtifactSlotEvidence::Malformed,
+            guard: None,
+            target: None,
+            exact_v1: false,
+            setup_rejected: false,
+        },
+        Ok(None) => WrapperSlotEvidence {
+            evidence: ArtifactSlotEvidence::Fresh,
+            guard: None,
+            target: None,
+            exact_v1: false,
+            setup_rejected: false,
+        },
+        Ok(Some(ReadWrapper {
+            artifact: PresentArtifact::Unguarded,
+            target,
+            setup_rejected,
+        })) => WrapperSlotEvidence {
+            evidence: ArtifactSlotEvidence::LegacyUnguarded,
+            guard: None,
+            target,
+            exact_v1: false,
+            setup_rejected,
+        },
+        Ok(Some(ReadWrapper {
+            artifact: PresentArtifact::LegacyLauncher,
+            target,
+            setup_rejected,
+        })) => WrapperSlotEvidence {
+            evidence: ArtifactSlotEvidence::LegacyUnguarded,
+            guard: None,
+            target,
+            exact_v1: true,
+            setup_rejected,
+        },
+        Ok(Some(ReadWrapper {
+            artifact: PresentArtifact::Guarded(guard),
+            target,
+            setup_rejected,
+        })) => WrapperSlotEvidence {
+            evidence: ArtifactSlotEvidence::Guarded(guard.clone()),
+            guard: Some(guard),
+            target,
+            exact_v1: false,
+            setup_rejected,
+        },
+    }
+}
+
+fn service_slot(value: Result<Option<PresentArtifact>, ()>) -> ServiceSlotEvidence {
+    match value {
+        Err(()) => ServiceSlotEvidence {
+            evidence: ArtifactSlotEvidence::Malformed,
+            guard: None,
+        },
+        Ok(None) => ServiceSlotEvidence {
+            evidence: ArtifactSlotEvidence::Fresh,
+            guard: None,
+        },
+        Ok(Some(PresentArtifact::Unguarded | PresentArtifact::LegacyLauncher)) => {
+            ServiceSlotEvidence {
+                evidence: ArtifactSlotEvidence::LegacyUnguarded,
+                guard: None,
+            }
+        }
+        Ok(Some(PresentArtifact::Guarded(guard))) => ServiceSlotEvidence {
+            evidence: ArtifactSlotEvidence::Guarded(guard.clone()),
+            guard: Some(guard),
+        },
+    }
+}
+
+fn classify_slots(
+    solstone: &mut WrapperSlotEvidence,
+    journal: &mut WrapperSlotEvidence,
+    service: &mut ServiceSlotEvidence,
     expected_namespace: &NamespaceName,
 ) -> ArtifactBindingEvidence {
-    let Ok(artifacts) = artifacts else {
+    if solstone.setup_rejected || journal.setup_rejected {
         return ArtifactBindingEvidence::Malformed;
-    };
-    if artifacts.is_empty() {
+    }
+    let states = [&solstone.evidence, &journal.evidence, &service.evidence];
+    if states
+        .iter()
+        .any(|state| matches!(state, ArtifactSlotEvidence::Malformed))
+    {
+        return ArtifactBindingEvidence::Malformed;
+    }
+    let active = states
+        .iter()
+        .filter(|state| !matches!(state, ArtifactSlotEvidence::Fresh))
+        .collect::<Vec<_>>();
+    if active.is_empty() {
         return ArtifactBindingEvidence::Fresh;
     }
-    if artifacts.iter().all(|artifact| {
-        matches!(
-            artifact,
-            PresentArtifact::Unguarded | PresentArtifact::LegacyLauncher
-        )
-    }) {
+    if active
+        .iter()
+        .all(|state| matches!(state, ArtifactSlotEvidence::LegacyUnguarded))
+    {
         return ArtifactBindingEvidence::LegacyUnguarded;
     }
-    let guards = artifacts
-        .iter()
-        .filter_map(|artifact| match artifact {
-            PresentArtifact::Guarded(fields) => Some(fields),
-            PresentArtifact::Unguarded | PresentArtifact::LegacyLauncher => None,
-        })
+    let guards = [&solstone.guard, &journal.guard, &service.guard]
+        .into_iter()
+        .filter_map(Option::as_ref)
         .collect::<Vec<_>>();
     let first = guards[0];
     if guards.iter().any(|guard| !guard.same_identity(first)) {
+        for slot in [&mut solstone.evidence, &mut journal.evidence] {
+            if matches!(slot, ArtifactSlotEvidence::Guarded(_)) {
+                *slot = ArtifactSlotEvidence::Ambiguous;
+            }
+        }
+        if matches!(service.evidence, ArtifactSlotEvidence::Guarded(_)) {
+            service.evidence = ArtifactSlotEvidence::Ambiguous;
+        }
         return ArtifactBindingEvidence::Ambiguous;
     }
     if first.namespace != *expected_namespace {
+        for slot in [&mut solstone.evidence, &mut journal.evidence] {
+            if matches!(slot, ArtifactSlotEvidence::Guarded(_)) {
+                *slot = ArtifactSlotEvidence::Foreign;
+            }
+        }
+        if matches!(service.evidence, ArtifactSlotEvidence::Guarded(_)) {
+            service.evidence = ArtifactSlotEvidence::Foreign;
+        }
         return ArtifactBindingEvidence::Foreign;
     }
     ArtifactBindingEvidence::Guarded(first.clone())
@@ -384,12 +568,26 @@ mod tests {
                 .expect("changed journal"),
             ..original.clone()
         };
+        let mut solstone = WrapperSlotEvidence {
+            evidence: ArtifactSlotEvidence::Guarded(original.clone()),
+            guard: Some(original.clone()),
+            target: None,
+            exact_v1: false,
+            setup_rejected: false,
+        };
+        let mut journal = WrapperSlotEvidence {
+            evidence: ArtifactSlotEvidence::Guarded(changed.clone()),
+            guard: Some(changed),
+            target: None,
+            exact_v1: false,
+            setup_rejected: false,
+        };
+        let mut service = service_slot(Ok(None));
         assert_eq!(
-            classify(
-                Ok(vec![
-                    PresentArtifact::Guarded(original.clone()),
-                    PresentArtifact::Guarded(changed),
-                ]),
+            classify_slots(
+                &mut solstone,
+                &mut journal,
+                &mut service,
                 &original.namespace,
             ),
             ArtifactBindingEvidence::Guarded(original)
@@ -534,11 +732,146 @@ mod tests {
 
         assert!(matches!(
             read_wrapper(&path),
-            Ok(Some(PresentArtifact::Guarded(_)))
+            Ok(Some(wrapper)) if matches!(wrapper.artifact, PresentArtifact::Guarded(_))
         ));
         assert!(matches!(
             read_setup_wrapper(&home_dir, &path, "journal", true),
             Err(())
+        ));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn named_slot_accessors_preserve_each_artifact_before_the_aggregate_fold() {
+        let root =
+            std::env::temp_dir().join(format!("solstone-identity-slots-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let home = root.join("home");
+        let bin = home.join(".local/bin");
+        let runtime = root.join("runtime");
+        fs::create_dir_all(&bin).unwrap();
+        fs::create_dir_all(&runtime).unwrap();
+        let guard = fields();
+        for command in ["journal", "solstone"] {
+            fs::write(
+                bin.join(command),
+                crate::wrapper::render_wrapper(
+                    command,
+                    Path::new("/journal"),
+                    &runtime.join(command),
+                    &guard,
+                ),
+            )
+            .unwrap();
+        }
+        let service_path = service_artifact_path(&home).expect("supported test platform");
+        fs::create_dir_all(service_path.parent().unwrap()).unwrap();
+        let service = solstone_core_installation_identity::service_guard_environment(&guard)
+            .into_iter()
+            .map(|(key, value)| format!("Environment={key}={value}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(&service_path, service).unwrap();
+
+        let evidence = gather_setup_artifact_evidence(&home, &guard.namespace, false);
+        assert!(matches!(
+            evidence.journal_wrapper().evidence(),
+            ArtifactSlotEvidence::Guarded(_)
+        ));
+        let journal_target = runtime.join("journal");
+        assert_eq!(
+            evidence.journal_wrapper().target(),
+            Some(journal_target.as_path())
+        );
+        assert!(matches!(
+            evidence.solstone_wrapper().evidence(),
+            ArtifactSlotEvidence::Guarded(_)
+        ));
+        assert!(matches!(
+            evidence.service().evidence(),
+            ArtifactSlotEvidence::Guarded(_)
+        ));
+
+        fs::remove_file(bin.join("solstone")).unwrap();
+        let missing = gather_setup_artifact_evidence(&home, &guard.namespace, false);
+        assert!(matches!(
+            missing.journal_wrapper().evidence(),
+            ArtifactSlotEvidence::Guarded(_)
+        ));
+        assert!(matches!(
+            missing.solstone_wrapper().evidence(),
+            ArtifactSlotEvidence::Fresh
+        ));
+
+        fs::remove_file(&service_path).unwrap();
+        let foreign_guard = GuardFields {
+            namespace: NamespaceName::parse(
+                "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+            )
+            .unwrap(),
+            ..guard.clone()
+        };
+        fs::write(
+            bin.join("journal"),
+            crate::wrapper::render_wrapper(
+                "journal",
+                Path::new("/journal"),
+                &runtime.join("journal"),
+                &foreign_guard,
+            ),
+        )
+        .unwrap();
+        let foreign = gather_setup_artifact_evidence(&home, &guard.namespace, false);
+        assert!(matches!(
+            foreign.journal_wrapper().evidence(),
+            ArtifactSlotEvidence::Foreign
+        ));
+        assert!(matches!(
+            foreign.solstone_wrapper().evidence(),
+            ArtifactSlotEvidence::Fresh
+        ));
+
+        fs::write(
+            bin.join("solstone"),
+            crate::wrapper::render_wrapper(
+                "solstone",
+                Path::new("/journal"),
+                &runtime.join("solstone"),
+                &guard,
+            ),
+        )
+        .unwrap();
+        fs::write(
+            bin.join("journal"),
+            crate::wrapper::render_wrapper(
+                "journal",
+                Path::new("/journal"),
+                &runtime.join("journal"),
+                &guard,
+            ),
+        )
+        .unwrap();
+        let ambiguous_guard = GuardFields {
+            id: InstallationId::parse("ffeeddccbbaa99887766554433221100").unwrap(),
+            ..guard.clone()
+        };
+        let service =
+            solstone_core_installation_identity::service_guard_environment(&ambiguous_guard)
+                .into_iter()
+                .map(|(key, value)| format!("Environment={key}={value}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+        fs::create_dir_all(service_path.parent().unwrap()).unwrap();
+        fs::write(&service_path, service).unwrap();
+        let ambiguous = gather_setup_artifact_evidence(&home, &guard.namespace, false);
+        assert!(matches!(
+            ambiguous.service().evidence(),
+            ArtifactSlotEvidence::Ambiguous
+        ));
+        assert!(matches!(
+            ambiguous.journal_wrapper().evidence(),
+            ArtifactSlotEvidence::Ambiguous
         ));
 
         let _ = fs::remove_dir_all(root);
