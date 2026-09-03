@@ -3879,7 +3879,6 @@ mod resolution_tests {
         let journal = tempfile::tempdir().unwrap();
         for argv in [
             args(&["prune"]),
-            args(&["restore"]),
             args(&["recovery-key", "rotate"]),
             args(&["off", "--yes"]),
             args(&["offload", "run"]),
@@ -3896,6 +3895,24 @@ mod resolution_tests {
             );
             assert_resolved_restic(&runner.programs.borrow(), &expected, &decoy);
         }
+
+        // `restore` is JSON-on-stdin. Exercising its command body here blocks
+        // the unit harness while stdin stays open, so prove its resolver
+        // boundary directly; restore payload tests cover the command body.
+        let restore = args(&["restore"]);
+        assert_eq!(classify_tool_resolution(&restore), Some(false));
+        let runner = RecordingRunner::new();
+        let tools = resolve_operational_tools(
+            &runner,
+            &PanicDownload,
+            journal.path(),
+            false,
+            dirs(restic_dir.path(), None),
+        )
+        .expect("restore resolves its pinned restic dependency");
+        assert_eq!(tools.restic_path, expected);
+        assert!(tools.rclone_path.is_none());
+        assert_resolved_restic(&runner.programs.borrow(), &expected, &decoy);
     }
 
     #[test]
