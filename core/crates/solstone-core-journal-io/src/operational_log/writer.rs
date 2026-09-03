@@ -147,6 +147,14 @@ impl OplogWriter {
         self.identity
     }
 
+    /// Borrow the Unix descriptor for this published oplog while its lease is held.
+    #[cfg(unix)]
+    pub fn as_raw_fd(&self) -> std::os::fd::RawFd {
+        use std::os::fd::AsRawFd as _;
+
+        self.file.as_raw_fd()
+    }
+
     /// Duplicate this writer for in-process stdout/stderr capture.
     ///
     /// The duplicate shares the open file description (Unix) or access mask
@@ -180,6 +188,13 @@ impl OplogWriter {
         command.stdout(std::process::Stdio::from(stdout));
         command.stderr(std::process::Stdio::from(stderr));
         Ok(OplogChildCapture { command })
+    }
+}
+
+#[cfg(unix)]
+impl std::os::fd::AsFd for OplogWriter {
+    fn as_fd(&self) -> std::os::fd::BorrowedFd<'_> {
+        self.file.as_fd()
     }
 }
 
@@ -222,6 +237,27 @@ impl Write for OplogWriteHandle {
 
     fn flush(&mut self) -> io::Result<()> {
         self.file.flush()
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::os::fd::AsRawFd;
+
+    use crate::JournalRoot;
+    use crate::operational_log::{OplogFormat, create_oplog};
+
+    #[test]
+    fn raw_fd_borrows_the_live_published_writer_descriptor() {
+        let journal = tempfile::tempdir().unwrap();
+        let writer = create_oplog(
+            JournalRoot::open(journal.path()).unwrap(),
+            "writer",
+            "raw-fd",
+            OplogFormat::Log,
+        )
+        .unwrap();
+        assert_eq!(writer.as_raw_fd(), writer.file.as_raw_fd());
     }
 }
 

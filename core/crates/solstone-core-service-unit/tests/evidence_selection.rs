@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use base64::Engine;
 use serde_json::Value;
-use solstone_core_service_legacy_evidence::{embedded, sha256_hex};
+use solstone_core_service_legacy_evidence::embedded;
 use solstone_core_service_unit::{render_launchd_plist, render_systemd_unit};
 
 mod support;
@@ -107,24 +107,23 @@ fn selected_evidence_cohort_is_exact_and_raw_captures_are_intact() {
                 &environment_from_inputs(&raw["inputs"]),
                 &launcher_from_raw_plist(&plist),
                 &port,
-                text(&raw["inputs"], "journal_path"),
-            )
-            .expect("fixture journal path is valid");
-            assert_eq!(
-                support::parse_plist(&rendered),
-                support::parse_plist(&plist),
-                "plist semantics match {platform}/{profile}"
             );
-            let mut captured = plist;
-            captured.push(0);
-            captured.extend_from_slice(text(&raw["raw"], "systemd_unit").as_bytes());
-            assert_eq!(sha256_hex(&captured), text(&raw["raw"], "sha256"));
+            let parsed = support::parse_plist(&rendered);
+            let dictionary = parsed.as_dictionary().expect("modern plist dictionary");
+            assert!(
+                !dictionary.contains_key("StandardOutPath"),
+                "{platform}/{profile}"
+            );
+            assert!(
+                !dictionary.contains_key("StandardErrorPath"),
+                "{platform}/{profile}"
+            );
         }
     }
 }
 
 #[test]
-fn default_linux_systemd_rendering_remains_byte_identical_to_history() {
+fn default_linux_systemd_rendering_omits_historical_output_directives() {
     let path = format!("core/fixtures/service_legacy_evidence/raw/{BLOB}/linux/default.json");
     let raw = fixture(&path);
     let inputs = &raw["inputs"];
@@ -141,8 +140,7 @@ fn default_linux_systemd_rendering_remains_byte_identical_to_history() {
             .expect("integer port")
             .to_string()
             .as_str(),
-        text(inputs, "journal_path"),
-    )
-    .expect("fixture journal path is valid");
-    assert_eq!(rendered, text(&raw["raw"], "systemd_unit"));
+    );
+    assert!(!rendered.contains("StandardOutput="));
+    assert!(!rendered.contains("StandardError="));
 }

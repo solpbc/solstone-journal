@@ -15,6 +15,7 @@ use solstone_core_journal_io::{
     },
 };
 
+use crate::SourceTailSnapshot;
 use crate::render::render_stream_row;
 
 /// Fatal canonical-follow failure with a safe source path for CLI diagnostics.
@@ -66,6 +67,59 @@ pub fn run_follow(
     )
 }
 
+/// Follow one source after emitting a [`SourceTailSnapshot`]. The snapshot's
+/// retained descriptor frontiers become the follower's committed offsets, so
+/// bytes already rendered are not replayed and later bytes are not skipped.
+pub fn run_follow_from_snapshot(
+    snapshot: SourceTailSnapshot,
+    journal_root: &Path,
+    stop: &dyn Fn() -> bool,
+    output: &mut dyn Write,
+    is_tty: bool,
+    warn: &mut dyn FnMut(String),
+) -> Result<(), FollowFatalError> {
+    run_follow_from_snapshot_with_sleep(
+        snapshot,
+        journal_root,
+        stop,
+        output,
+        is_tty,
+        warn,
+        &std::thread::sleep,
+    )
+}
+
+fn run_follow_from_snapshot_with_sleep(
+    snapshot: SourceTailSnapshot,
+    journal_root: &Path,
+    stop: &dyn Fn() -> bool,
+    output: &mut dyn Write,
+    is_tty: bool,
+    _warn: &mut dyn FnMut(String),
+    sleep: &dyn Fn(std::time::Duration),
+) -> Result<(), FollowFatalError> {
+    let source_slug = snapshot.source_slug().to_owned();
+    let follower = OplogFollower::from_catalogued_frontiers(
+        &source_slug,
+        snapshot.into_catalogued_frontiers(),
+    )
+    .map_err(|error| catalog_error(journal_root, error))?;
+    let source = CatalogSource {
+        root: journal_root.to_path_buf(),
+    };
+    let clock = LocalClock;
+    run_source_follower_with_sleep(
+        follower,
+        journal_root,
+        &source,
+        &clock,
+        stop,
+        output,
+        is_tty,
+        sleep,
+    )
+}
+
 fn run_follow_with_sleep(
     journal_root: &Path,
     stop: &dyn Fn() -> bool,
@@ -84,11 +138,33 @@ fn run_follow_with_sleep(
         warn("No log files found.".to_owned());
         return Ok(());
     }
-    let mut follower = OplogFollower::from_state(initial.state);
+    let follower = OplogFollower::from_state(initial.state);
+    run_source_follower_with_sleep(
+        follower,
+        journal_root,
+        &source,
+        &clock,
+        stop,
+        output,
+        is_tty,
+        sleep,
+    )
+}
+
+fn run_source_follower_with_sleep(
+    mut follower: OplogFollower,
+    journal_root: &Path,
+    source: &dyn OplogSnapshotSource,
+    clock: &dyn OplogClock,
+    stop: &dyn Fn() -> bool,
+    output: &mut dyn Write,
+    is_tty: bool,
+    sleep: &dyn Fn(std::time::Duration),
+) -> Result<(), FollowFatalError> {
     let mut last_service = None;
     while !stop() {
         let tick = follower
-            .tick(&source, &clock, stop)
+            .tick(source, clock, stop)
             .map_err(|error| catalog_error(journal_root, error))?;
         let Some(rows) = tick.into_rows() else {
             return Ok(());
@@ -130,6 +206,8 @@ mod tests {
     use std::cell::Cell;
 
     use solstone_core_journal_io::operational_log::{OplogFormat, create_oplog};
+
+    use crate::collect::collect_source_tail_snapshot;
 
     use super::*;
 
@@ -184,5 +262,59 @@ mod tests {
             1
         );
         assert_eq!(sleeps.get(), 0);
+    }
+
+    #[test]
+    fn snapshot_handoff_emits_only_bytes_appended_after_the_frontier() {
+        struct StopAfterWrite<'a> {
+            bytes: Vec<u8>,
+            stop: &'a Cell<bool>,
+        }
+
+        impl Write for StopAfterWrite<'_> {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                self.bytes.extend_from_slice(bytes);
+                self.stop.set(true);
+                Ok(bytes.len())
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let temporary = tempfile::tempdir().unwrap();
+        let opened = Local::now().fixed_offset();
+        let mut writer = solstone_core_journal_io::operational_log::create_oplog_at(
+            JournalRoot::open(temporary.path()).unwrap(),
+            "service",
+            "supervisor",
+            OplogFormat::Log,
+            opened,
+        )
+        .unwrap();
+        writeln!(writer, "before").unwrap();
+        let snapshot =
+            collect_source_tail_snapshot(temporary.path(), opened.naive_local(), "service", 1024)
+                .unwrap();
+        assert_eq!(snapshot.tail(), b"before\n");
+        writeln!(writer, "after").unwrap();
+
+        let stop = Cell::new(false);
+        let mut output = StopAfterWrite {
+            bytes: Vec::new(),
+            stop: &stop,
+        };
+        run_follow_from_snapshot_with_sleep(
+            snapshot,
+            temporary.path(),
+            &|| stop.get(),
+            &mut output,
+            false,
+            &mut |_| {},
+            &|_| {},
+        )
+        .unwrap();
+        assert_eq!(output.bytes, b"after\n");
     }
 }

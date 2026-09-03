@@ -46,6 +46,12 @@ const READY_TIMEOUT: Duration = Duration::from_secs(120);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 const SERVICE_SYNC_DIAGNOSTIC_FILENAME: &str = "service-diagnostic.check";
 const READY_TIMEOUT_MESSAGE: &str = "service did not become ready within 120 seconds";
+const SERVICE_GUARD_ENVIRONMENT_NAMES: [&str; 4] = [
+    "SOLSTONE_INSTALLATION_NAMESPACE",
+    "SOLSTONE_INSTALLATION_ID",
+    "SOLSTONE_INSTALLATION_GENERATION",
+    "SOLSTONE_INSTALLATION_JOURNAL_TOKEN",
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Platform {
@@ -158,6 +164,44 @@ fn load_existing_installation_guard(home: &Path) -> Result<GuardFields, String> 
     Ok(GuardFields::from_binding(&binding))
 }
 
+/// Whether this process inherited the complete installation guard for the
+/// executable and owner that launched it. Invalid, partial, stale, or missing
+/// values deliberately remain indistinguishable from an unguarded foreground
+/// invocation.
+pub(crate) fn current_process_has_matching_installation_guard() -> bool {
+    let environment = SERVICE_GUARD_ENVIRONMENT_NAMES
+        .into_iter()
+        .filter_map(|name| {
+            std::env::var(name)
+                .ok()
+                .map(|value| (name.to_owned(), value))
+        })
+        .collect();
+    environment_matches_installation_guard(
+        &environment,
+        discover_binary_home,
+        load_existing_installation_guard,
+    )
+}
+
+fn environment_matches_installation_guard<Discover, Load, DiscoverError, LoadError>(
+    environment: &BTreeMap<String, String>,
+    discover_home: Discover,
+    load_guard: Load,
+) -> bool
+where
+    Discover: FnOnce() -> Result<PathBuf, DiscoverError>,
+    Load: FnOnce(&Path) -> Result<GuardFields, LoadError>,
+{
+    let Ok(Some(inherited)) = parse_service_guard_environment(&environment) else {
+        return false;
+    };
+    let Ok(home) = discover_home() else {
+        return false;
+    };
+    load_guard(&home).is_ok_and(|expected| inherited == expected)
+}
+
 fn service_install_recovery(detail: String) -> String {
     installation_recovery_copy(&detail)
 }
@@ -255,21 +299,11 @@ fn install(platform: Platform, home: &Path, port: &str, guard: &GuardFields) -> 
         guard,
     );
     let bytes = match platform {
-        Platform::Linux => render_systemd_unit(
-            &environment,
-            path_text(&launcher)?,
-            port,
-            path_text(&journal)?,
-        )
-        .map(String::into_bytes),
-        Platform::Darwin => render_launchd_plist(
-            &environment,
-            path_text(&launcher)?,
-            port,
-            path_text(&journal)?,
-        ),
-    }
-    .map_err(|error| format!("service unit render failed: {error}"))?;
+        Platform::Linux => {
+            render_systemd_unit(&environment, path_text(&launcher)?, port).into_bytes()
+        }
+        Platform::Darwin => render_launchd_plist(&environment, path_text(&launcher)?, port),
+    };
 
     if matches!(runtime, RuntimeTruth::Managed { .. }) {
         remove_runtime_registration(platform, &target)?;
@@ -2063,19 +2097,90 @@ mod tests {
     }
 
     #[test]
+    fn matching_inherited_guard_activates_service_capture() {
+        let expected = test_guard();
+        let environment = solstone_core_installation_identity::service_guard_environment(&expected);
+        assert!(environment_matches_installation_guard(
+            &environment,
+            || Ok::<_, ()>(PathBuf::from("/home/owner")),
+            |home| {
+                assert_eq!(home, Path::new("/home/owner"));
+                Ok::<_, ()>(expected)
+            },
+        ));
+    }
+
+    #[test]
+    fn partial_inherited_guard_does_not_activate_service_capture() {
+        let environment =
+            solstone_core_installation_identity::service_guard_environment(&test_guard());
+        for missing_mask in 1..(1 << SERVICE_GUARD_ENVIRONMENT_NAMES.len()) {
+            let mut partial = environment.clone();
+            for (index, name) in SERVICE_GUARD_ENVIRONMENT_NAMES.into_iter().enumerate() {
+                if missing_mask & (1 << index) != 0 {
+                    partial.remove(name);
+                }
+            }
+            assert!(!environment_matches_installation_guard(
+                &partial,
+                || -> Result<PathBuf, ()> { panic!("partial guard must not resolve a home") },
+                |_| -> Result<GuardFields, ()> { panic!("partial guard must not load a binding") },
+            ));
+        }
+    }
+
+    #[test]
+    fn malformed_inherited_guard_does_not_activate_service_capture() {
+        let mut environment =
+            solstone_core_installation_identity::service_guard_environment(&test_guard());
+        environment.insert(
+            "SOLSTONE_INSTALLATION_GENERATION".to_owned(),
+            "not-a-generation".to_owned(),
+        );
+        assert!(!environment_matches_installation_guard(
+            &environment,
+            || -> Result<PathBuf, ()> { panic!("malformed guard must not resolve a home") },
+            |_| -> Result<GuardFields, ()> { panic!("malformed guard must not load a binding") },
+        ));
+    }
+
+    #[test]
+    fn mismatched_inherited_guard_does_not_activate_service_capture() {
+        let expected = test_guard();
+        let environment = solstone_core_installation_identity::service_guard_environment(&expected);
+        for (name, value) in [
+            ("SOLSTONE_INSTALLATION_GENERATION", "2"),
+            ("SOLSTONE_INSTALLATION_JOURNAL_TOKEN", "3f6a6f75726e616c"),
+        ] {
+            let mut mismatched = environment.clone();
+            mismatched.insert(name.to_owned(), value.to_owned());
+            assert!(!environment_matches_installation_guard(
+                &mismatched,
+                || Ok::<_, ()>(PathBuf::from("/home/owner")),
+                |_| Ok::<_, ()>(expected.clone()),
+            ));
+        }
+    }
+
+    #[test]
+    fn unavailable_installation_binding_does_not_activate_service_capture() {
+        let environment =
+            solstone_core_installation_identity::service_guard_environment(&test_guard());
+        assert!(!environment_matches_installation_guard(
+            &environment,
+            || Ok::<_, ()>(PathBuf::from("/home/owner")),
+            |_| Err::<GuardFields, _>(()),
+        ));
+    }
+
+    #[test]
     fn unit_truth_accepts_current_renderers_and_rejects_extensions() {
         let environment = BTreeMap::from([
             ("HOME".to_owned(), "/home/owner".to_owned()),
             ("PATH".to_owned(), "/usr/bin:/bin".to_owned()),
             ("PYTHONUNBUFFERED".to_owned(), "1".to_owned()),
         ]);
-        let systemd = render_systemd_unit(
-            &environment,
-            "/home/owner/.local/bin/journal",
-            "5015",
-            "/srv/journal",
-        )
-        .unwrap();
+        let systemd = render_systemd_unit(&environment, "/home/owner/.local/bin/journal", "5015");
         let launcher = Path::new("/home/owner/.local/bin/journal");
         assert!(systemd_managed(systemd.as_bytes(), launcher));
         assert!(!systemd_managed(
@@ -2099,13 +2204,7 @@ mod tests {
                 .as_bytes(),
             launcher,
         ));
-        let plist = render_launchd_plist(
-            &environment,
-            "/home/owner/.local/bin/journal",
-            "5015",
-            "/srv/journal",
-        )
-        .unwrap();
+        let plist = render_launchd_plist(&environment, "/home/owner/.local/bin/journal", "5015");
         assert!(launchd_managed(&plist, launcher, LABEL));
         let hostile_launcher = Path::new("/tmp/foreign/journal");
         assert!(!launchd_managed(&plist, hostile_launcher, LABEL));
@@ -2115,13 +2214,7 @@ mod tests {
     fn guarded_units_are_managed_only_with_a_complete_valid_guard() {
         let environment = guarded_environment();
         let launcher = Path::new("/home/owner/.local/bin/journal");
-        let systemd = render_systemd_unit(
-            &environment,
-            path_text(launcher).unwrap(),
-            "5015",
-            "/srv/journal",
-        )
-        .unwrap();
+        let systemd = render_systemd_unit(&environment, path_text(launcher).unwrap(), "5015");
         assert!(systemd_managed(systemd.as_bytes(), launcher));
         assert!(systemd_unit_has_installation_guard(systemd.as_bytes()));
         assert!(!systemd_managed(
@@ -2133,13 +2226,7 @@ mod tests {
                 .as_bytes(),
             launcher,
         ));
-        let plist = render_launchd_plist(
-            &environment,
-            path_text(launcher).unwrap(),
-            "5015",
-            "/srv/journal",
-        )
-        .unwrap();
+        let plist = render_launchd_plist(&environment, path_text(launcher).unwrap(), "5015");
         assert!(launchd_managed(&plist, launcher, LABEL));
         let mut partial = plist::Value::from_reader_xml(plist.as_slice()).unwrap();
         partial
@@ -2210,21 +2297,9 @@ mod tests {
             ("PYTHONUNBUFFERED".to_owned(), "1".to_owned()),
         ]);
         let port = "123456789012345678901234567890";
-        let systemd = render_systemd_unit(
-            &environment,
-            path_text(launcher).unwrap(),
-            port,
-            "/srv/journal",
-        )
-        .unwrap();
+        let systemd = render_systemd_unit(&environment, path_text(launcher).unwrap(), port);
         assert!(systemd_managed(systemd.as_bytes(), launcher));
-        let plist = render_launchd_plist(
-            &environment,
-            path_text(launcher).unwrap(),
-            port,
-            "/srv/journal",
-        )
-        .unwrap();
+        let plist = render_launchd_plist(&environment, path_text(launcher).unwrap(), port);
         assert!(launchd_managed(&plist, launcher, LABEL));
     }
 
@@ -2255,13 +2330,7 @@ mod tests {
             ("PATH".to_owned(), "/usr/bin:/bin".to_owned()),
             ("PYTHONUNBUFFERED".to_owned(), "1".to_owned()),
         ]);
-        let current = render_launchd_plist(
-            &environment,
-            "/home/owner/.local/bin/journal",
-            "5015",
-            "/srv/journal",
-        )
-        .unwrap();
+        let current = render_launchd_plist(&environment, "/home/owner/.local/bin/journal", "5015");
         let historical = String::from_utf8(current)
             .unwrap()
             .replace(

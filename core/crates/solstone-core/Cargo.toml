@@ -46,6 +46,10 @@ name = "heartbeat_cli"
 path = "tests/heartbeat_cli.rs"
 
 [[test]]
+name = "service_logs_cli"
+path = "tests/service_logs_cli.rs"
+
+[[test]]
 name = "think_verb_fidelity"
 path = "tests/think_verb_fidelity.rs"
 

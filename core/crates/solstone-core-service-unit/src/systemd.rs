@@ -3,8 +3,6 @@
 
 use std::collections::BTreeMap;
 
-use crate::{ServiceUnitError, error::validate_journal_path};
-
 const SERVICE_START_TIMEOUT_SECONDS: u32 = 120;
 const SERVICE_FILE_DESCRIPTOR_LIMIT: u32 = 4096;
 
@@ -13,21 +11,17 @@ pub fn render_systemd_unit(
     env: &BTreeMap<String, String>,
     launcher_path: &str,
     port: &str,
-    journal_path: &str,
-) -> Result<String, ServiceUnitError> {
-    validate_journal_path(journal_path)?;
-
+) -> String {
     let environment_lines = env
         .iter()
         .map(|(key, value)| render_environment(key, value))
         .collect::<Vec<_>>()
         .join("\n");
-    let service_log = format!("{journal_path}/health/service.log");
-    Ok(format!(
-        "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\nStartLimitIntervalSec=120\nStartLimitBurst=10\n\n[Service]\nType=notify\nTimeoutStartSec={SERVICE_START_TIMEOUT_SECONDS}\nExecStart={} start {}\nRestart=on-failure\nRestartSec=5\nKillMode=control-group\nTimeoutStopSec=30\nLimitNOFILE={SERVICE_FILE_DESCRIPTOR_LIMIT}\nStandardOutput=append:{service_log}\nStandardError=append:{service_log}\n{environment_lines}\n\n[Install]\nWantedBy=default.target\n",
+    format!(
+        "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\nStartLimitIntervalSec=120\nStartLimitBurst=10\n\n[Service]\nType=notify\nTimeoutStartSec={SERVICE_START_TIMEOUT_SECONDS}\nExecStart={} start {}\nRestart=on-failure\nRestartSec=5\nKillMode=control-group\nTimeoutStopSec=30\nLimitNOFILE={SERVICE_FILE_DESCRIPTOR_LIMIT}\n{environment_lines}\n\n[Install]\nWantedBy=default.target\n",
         render_exec_token(launcher_path),
         render_exec_token(port),
-    ))
+    )
 }
 
 fn render_exec_token(token: &str) -> String {

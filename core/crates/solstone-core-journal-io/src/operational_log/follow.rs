@@ -87,6 +87,7 @@ impl OplogFollowTick {
 #[derive(Default)]
 pub struct OplogFollower {
     state: OplogFollowState,
+    source_filter: Option<String>,
 }
 
 impl OplogFollower {
@@ -109,7 +110,31 @@ impl OplogFollower {
 
     /// Adopt state returned by [`Self::discover_initial`].
     pub fn from_state(state: OplogFollowState) -> Self {
-        Self { state }
+        Self {
+            state,
+            source_filter: None,
+        }
+    }
+
+    /// Seed a source-filtered follower from descriptors retained by a prior
+    /// snapshot. Each frontier has already been emitted by that snapshot, so
+    /// only bytes appended after it become eligible for this follower.
+    pub fn from_catalogued_frontiers(
+        source_slug: &str,
+        entries: Vec<(OplogCatalogEntry, File, u64)>,
+    ) -> Result<Self, OplogCatalogError> {
+        let mut state = OplogFollowState::default();
+        for (entry, file, frontier) in entries {
+            if entry.name().source().display_slug() != source_slug {
+                continue;
+            }
+            let tracked = tracked_from_frontier(entry, file, frontier)?;
+            state.tracked.insert(tracked.entry.identity(), tracked);
+        }
+        Ok(Self {
+            state,
+            source_filter: Some(source_slug.to_owned()),
+        })
     }
 
     /// Borrow persistent state for test observation or handoff.
@@ -220,6 +245,7 @@ impl OplogFollower {
             let identity = entry.identity();
             if self.state.tracked.contains_key(&identity)
                 || self.state.tombstones.contains_key(&identity)
+                || !self.tracks_source(&entry)
             {
                 continue;
             }
@@ -317,6 +343,12 @@ impl OplogFollower {
             .get_mut(identity)
             .expect("tracked identity exists")
     }
+
+    fn tracks_source(&self, entry: &OplogCatalogEntry) -> bool {
+        self.source_filter
+            .as_deref()
+            .is_none_or(|source| entry.name().source().display_slug() == source)
+    }
 }
 
 fn tracked_from_admission(
@@ -332,6 +364,24 @@ fn tracked_from_admission(
         entry,
         file,
         committed_offset,
+        last_observed_frontier: frontier,
+    })
+}
+
+fn tracked_from_frontier(
+    entry: OplogCatalogEntry,
+    file: File,
+    frontier: u64,
+) -> Result<TrackedOplog, OplogCatalogError> {
+    let current_frontier = file_len(&file, &entry)?;
+    let payload_offset = entry.payload_offset() as u64;
+    if frontier < payload_offset || frontier > current_frontier {
+        return Err(OplogCatalogError::identity_for_day(entry.day()));
+    }
+    Ok(TrackedOplog {
+        entry,
+        file,
+        committed_offset: frontier,
         last_observed_frontier: frontier,
     })
 }

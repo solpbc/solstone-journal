@@ -60,6 +60,8 @@ mod install_models;
 mod install_provider;
 mod navigate;
 mod service;
+#[cfg(unix)]
+mod service_capture;
 mod service_logs;
 mod settings;
 use solstone_core::supervisor;
@@ -201,6 +203,14 @@ fn run_supervisor(options: solstone_core_cli::SupervisorOptions) -> ExitCode {
         Err(error) => {
             eprint_journal_path_error(error);
             return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    #[cfg(unix)]
+    let _service_capture = match service_capture::start_if_guarded(&journal) {
+        Ok(capture) => capture,
+        Err(error) => {
+            eprintln!("supervisor service capture unavailable: {error}");
+            return ExitCode::from(EXIT_CANTCREAT);
         }
     };
     let runtime = match tokio::runtime::Builder::new_multi_thread()
