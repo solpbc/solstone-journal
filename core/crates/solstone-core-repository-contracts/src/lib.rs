@@ -79,6 +79,9 @@ mod bound_read_race_closure;
 #[path = "contracts/mcp_endpoint_production_source_purity.rs"]
 mod mcp_endpoint_production_source_purity;
 #[cfg(test)]
+#[path = "contracts/operational_diagnostic_cutover.rs"]
+mod operational_diagnostic_cutover;
+#[cfg(test)]
 #[path = "contracts/retention_client_contracts.rs"]
 mod retention_client_contracts;
 #[cfg(test)]

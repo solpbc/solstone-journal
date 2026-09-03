@@ -34,8 +34,9 @@ pub const UNLOCK_TIMEOUT_SECONDS: u64 = 5 * 60;
 pub const VERIFY_TIMEOUT_SECONDS: u64 = 60 * 60;
 
 // Restic matches a no-slash pattern by basename at ANY depth, so bare `health`
-// was removed because it dropped the durable deletion audit (retention.log,
-// pruning-runs/) and per-day talent-provenance/ from every snapshot.
+// was removed because it dropped historical root deletion-audit records
+// (`retention.log`, `pruning-runs/`), canonical per-day operational oplogs, and
+// per-day talent-provenance from every snapshot.
 pub const BACKUP_EXCLUDES: [&str; 20] = [
     "*.sqlite*",
     "indexer",
