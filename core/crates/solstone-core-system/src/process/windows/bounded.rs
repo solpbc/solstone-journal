@@ -417,8 +417,9 @@ pub fn run_bounded_helper(
             stderr_result.as_ref(),
             stdin_complete,
         ) {
-            if !owner.is_quiescent().unwrap_or(false) {
-                let _ = stop_and_drain(&mut owner, &stdin, &stdout, &stderr);
+            if !owner.is_quiescent().unwrap_or(false)
+                && !stop_and_drain(&mut owner, &stdin, &stdout, &stderr)
+            {
                 return Err(BoundedHelperError::JobNotQuiescent { identity });
             }
             let captured_stdout = stdout_result
