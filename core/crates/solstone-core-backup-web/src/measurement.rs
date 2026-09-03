@@ -60,15 +60,9 @@ fn device_geometry(journal_root: &Path) -> DeviceGeometry {
 
 #[cfg(windows)]
 fn device_geometry(journal_root: &Path) -> DeviceGeometry {
-    let Ok(space) = solstone_core_journal_io::windows_disk_space(journal_root) else {
-        return DeviceGeometry {
-            free_bytes: None,
-            total_bytes: None,
-        };
-    };
     DeviceGeometry {
-        free_bytes: Some(space.available_bytes),
-        total_bytes: Some(space.total_bytes),
+        free_bytes: solstone_core_offload::measurement::device_free_bytes(journal_root).ok(),
+        total_bytes: solstone_core_offload::measurement::device_total_bytes(journal_root).ok(),
     }
 }
 

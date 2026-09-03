@@ -178,6 +178,7 @@ pub fn collect_services(journal_root: &Path) -> Value {
     collect_services_with_probe(journal_root, system_service_probe)
 }
 
+#[cfg_attr(not(unix), allow(dead_code))]
 #[derive(Clone, Copy)]
 enum ServiceProbeStatus {
     Running,

@@ -5,6 +5,7 @@ use crate::contract::{CommitPlan, ParsedOutput, PrePostState};
 use crate::{
     ExecutionContext, PreparedTalent, RuntimeOutcome, StageError, apply_template_vars, stage_error,
 };
+#[cfg(unix)]
 use nix::fcntl::{Flock, FlockArg};
 use serde_json::{Map, Value, json};
 use std::fs::OpenOptions;
@@ -49,8 +50,14 @@ pub fn build(
         })?;
     // Same file lock as core/src/identity/steward.rs:169; it spans gather, render,
     // and write, releases before generation, and its file is never unlinked.
+    #[cfg(unix)]
     let _lock = match Flock::lock(file, FlockArg::LockExclusiveNonblock) {
         Ok(lock) => lock,
+        Err(_) => return skip(prepared, "steward already in flight"),
+    };
+    #[cfg(not(unix))]
+    let _lock = match file.try_lock() {
+        Ok(()) => file,
         Err(_) => return skip(prepared, "steward already in flight"),
     };
     let day = prepared
@@ -203,6 +210,7 @@ mod tests {
         read_jsonl_with_report,
     };
     use std::fs;
+    #[cfg(unix)]
     use std::os::unix::fs::OpenOptionsExt;
 
     fn prepared(dry_run: bool) -> PreparedTalent {
@@ -364,6 +372,7 @@ mod tests {
         assert!(!root.path().join("identity/health.md").exists());
     }
 
+    #[cfg(unix)]
     #[test]
     fn criterion_21_file_lock_skips_and_remains() {
         let root = tempfile::tempdir().unwrap();
