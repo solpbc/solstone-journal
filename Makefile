@@ -345,14 +345,17 @@ define RETIRED_PYTHON_TEST_RAIL
 	@exit 1
 endef
 
-# TRANSPARENCY_GUARD: the transparency rail is gated behind
-# TRANSPARENCY_ACTIVATED, checked in inactive (0). Set TRANSPARENCY_ACTIVATED=1
-# to restore the real implementation. See docs/PORTING.md.
+# TRANSPARENCY_GUARD: historically gated the Python-era transparency publish
+# targets; those targets were removed with the rest of the Python reference
+# tree, so this macro currently has no call site. Transparency publication
+# for this product now routes through the shared v2 trust/transparency rail
+# (see solpbc/solstone-transparency), whose production key ceremony -- not
+# this flag -- is what restores real publishing.
 TRANSPARENCY_ACTIVATED ?= 0
 export TRANSPARENCY_ACTIVATED
 
 define TRANSPARENCY_GUARD
-	@echo "$(1): transparency rail inactive; set TRANSPARENCY_ACTIVATED=1 to restore (see docs/PORTING.md)" >&2
+	@echo "$(1): transparency publication suspended pending the v2 rail's production key ceremony (see solpbc/solstone-transparency); this flag does not by itself authorize a real publish" >&2
 	@exit 1
 endef
 
