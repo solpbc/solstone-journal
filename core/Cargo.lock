@@ -3454,7 +3454,6 @@ dependencies = [
  "solstone-core-speaker-resolve",
  "solstone-core-spl",
  "solstone-core-spp-ratls",
- "solstone-core-steward-prune",
  "solstone-core-streams-cli",
  "solstone-core-system",
  "solstone-core-system-health",
@@ -5257,15 +5256,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "tower",
-]
-
-[[package]]
-name = "solstone-core-steward-prune"
-version = "2.0.0"
-dependencies = [
- "allocation-counter",
- "serde_json",
- "sha2",
 ]
 
 [[package]]
