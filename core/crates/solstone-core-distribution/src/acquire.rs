@@ -77,6 +77,10 @@ impl From<solstone_core_artifact_download::ArchiveError> for AcquireError {
 struct BuilderInputsFile {
     schema: String,
     ffmpeg: FetchableInput,
+    ffmpeg_windows_msys2_base: VersionedFetchableInput,
+    ffmpeg_windows_make: VersionedFetchableInput,
+    ffmpeg_windows_nasm: VersionedFetchableInput,
+    ffmpeg_windows_llvm: VersionedFetchableInput,
     zig: FetchableInput,
     cmake_windows_x86_64: VersionedFetchableInput,
     python_windows_x86_64: VersionedFetchableInput,
@@ -128,6 +132,25 @@ pub(crate) struct WindowsPythonArchiveInput {
     pub size: u64,
 }
 
+/// Exact archives used only while building the two Windows FFmpeg-bearing
+/// executables. They are builder inputs, not owner-package members.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WindowsFfmpegToolchainInputs {
+    pub msys2_base: WindowsFfmpegToolchainInput,
+    pub make: WindowsFfmpegToolchainInput,
+    pub nasm: WindowsFfmpegToolchainInput,
+    pub llvm: WindowsFfmpegToolchainInput,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WindowsFfmpegToolchainInput {
+    pub version: String,
+    pub filename: String,
+    pub url: String,
+    pub sha256: String,
+    pub size: u64,
+}
+
 #[derive(Debug, Default)]
 struct Flags {
     dest: Option<PathBuf>,
@@ -139,7 +162,7 @@ struct Flags {
 }
 
 pub fn usage() -> &'static str {
-    "usage: solstone-distribution acquire <ffmpeg|onnx|pdfium|builder-inputs|cmake-windows|python-windows> [FLAG]"
+    "usage: solstone-distribution acquire <ffmpeg|ffmpeg-windows-tools|onnx|pdfium|builder-inputs|cmake-windows|python-windows> [FLAG]"
 }
 
 pub fn run(args: &[String]) -> Result<(), AcquireError> {
@@ -150,6 +173,7 @@ pub fn run(args: &[String]) -> Result<(), AcquireError> {
     let repo = repository_root()?;
     match command.as_str() {
         "ffmpeg" => acquire_ffmpeg(&repo, flags.dest.as_deref())?,
+        "ffmpeg-windows-tools" => acquire_ffmpeg_windows_tools(&repo, flags.dest.as_deref())?,
         "onnx" => acquire_onnx(&repo, &flags)?,
         "pdfium" => acquire_pdfium(&repo, &flags)?,
         "builder-inputs" => acquire_builder_inputs(&repo, flags.dest.as_deref())?,
@@ -246,6 +270,25 @@ pub(crate) fn windows_python_archive_input(
     })
 }
 
+pub(crate) fn windows_ffmpeg_toolchain_inputs(
+    repo: &Path,
+) -> Result<WindowsFfmpegToolchainInputs, AcquireError> {
+    let inputs = load_builder_inputs(repo)?;
+    let convert = |input: VersionedFetchableInput| WindowsFfmpegToolchainInput {
+        version: input.version,
+        filename: input.input.filename,
+        url: input.input.url,
+        sha256: input.input.sha256,
+        size: input.input.size,
+    };
+    Ok(WindowsFfmpegToolchainInputs {
+        msys2_base: convert(inputs.ffmpeg_windows_msys2_base),
+        make: convert(inputs.ffmpeg_windows_make),
+        nasm: convert(inputs.ffmpeg_windows_nasm),
+        llvm: convert(inputs.ffmpeg_windows_llvm),
+    })
+}
+
 fn fetch_verified(
     url: &str,
     sha256: &str,
@@ -290,6 +333,31 @@ fn acquire_ffmpeg(repo: &Path, dest: Option<&Path>) -> Result<(), AcquireError> 
         if fetched { "fetched" } else { "cached" },
         dest.display()
     );
+    Ok(())
+}
+
+fn acquire_ffmpeg_windows_tools(repo: &Path, dest: Option<&Path>) -> Result<(), AcquireError> {
+    let inputs = windows_ffmpeg_toolchain_inputs(repo)?;
+    let root = dest
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| repo.join("target/windows-ffmpeg-builder-inputs"));
+    for input in [&inputs.msys2_base, &inputs.make, &inputs.nasm, &inputs.llvm] {
+        let fetched = fetch_input(
+            &FetchableInput {
+                filename: input.filename.clone(),
+                url: input.url.clone(),
+                sha256: input.sha256.clone(),
+                size: input.size,
+            },
+            &root.join(&input.filename),
+        )?;
+        println!(
+            "ffmpeg-windows-tool {} {} dest={}",
+            input.filename,
+            if fetched { "fetched" } else { "cached" },
+            root.join(&input.filename).display()
+        );
+    }
     Ok(())
 }
 
@@ -714,6 +782,25 @@ mod tests {
         let inputs = load_builder_inputs(&root).expect("committed builder-inputs");
         assert_eq!(inputs.ffmpeg.sha256.len(), 64);
         assert!(inputs.ffmpeg.url.starts_with("https://github.com/"));
+        let ffmpeg_tools = windows_ffmpeg_toolchain_inputs(&root).expect("FFmpeg Windows tools");
+        assert_eq!(ffmpeg_tools.msys2_base.version, "2026-06-11");
+        assert_eq!(
+            ffmpeg_tools.msys2_base.filename,
+            "msys2-base-x86_64-20260611.tar.xz"
+        );
+        assert_eq!(ffmpeg_tools.make.version, "4.4.1-3");
+        assert_eq!(ffmpeg_tools.nasm.version, "3.02");
+        assert_eq!(ffmpeg_tools.llvm.version, "22.1.6");
+        for tool in [
+            &ffmpeg_tools.msys2_base,
+            &ffmpeg_tools.make,
+            &ffmpeg_tools.nasm,
+            &ffmpeg_tools.llvm,
+        ] {
+            assert!(tool.url.starts_with("https://"));
+            assert_eq!(tool.sha256.len(), 64);
+            assert_ne!(tool.size, 0);
+        }
         assert!(inputs.zig.url.starts_with("https://ziglang.org/"));
         assert_eq!(inputs.cmake_windows_x86_64.version, "3.31.12");
         assert_eq!(

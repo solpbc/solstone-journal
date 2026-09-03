@@ -3993,7 +3993,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-assets",
- "solstone-core-cli",
+ "solstone-core-cli-boundary",
  "solstone-core-describe-categories",
  "solstone-core-format",
  "solstone-core-generate",

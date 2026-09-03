@@ -68,6 +68,43 @@ url = "https://github.com/FFmpeg/FFmpeg/archive/03d9533176e98bb9fbf569c1f34968e7
 sha256 = "ba7070db2f8a0590e3bbad428c8ffbec33f80b0a430bcad79c2cfb756e84ff8b"
 size = 17322302
 
+# This offline-only subset is the controlled Windows FFmpeg build substrate.
+# The native host has MSVC, but deliberately does not carry MSYS2/GNU make,
+# NASM, or libclang as ambient build state. The driver verifies and transfers
+# these archives into one fresh network-denied slot instead of installing them
+# on the host or falling back to whatever happens to be on PATH.
+[ffmpeg_windows_msys2_base]
+version = "2026-06-11"
+filename = "msys2-base-x86_64-20260611.tar.xz"
+url = "https://github.com/msys2/msys2-installer/releases/download/2026-06-11/msys2-base-x86_64-20260611.tar.xz"
+sha256 = "a2d047e8ee213c3c6a49a8de427eb1069df12207c0422ff1b3cbb5c905c34221"
+size = 53555380
+
+[ffmpeg_windows_make]
+version = "4.4.1-3"
+filename = "make-4.4.1-3-x86_64.pkg.tar.zst"
+url = "https://repo.msys2.org/msys/x86_64/make-4.4.1-3-x86_64.pkg.tar.zst"
+sha256 = "af0bdba17f06fe037f0194069adaa31a8fe45f1a11381501896aea1fae37bd5d"
+size = 514683
+
+[ffmpeg_windows_nasm]
+version = "3.02"
+filename = "nasm-3.02-win64.zip"
+url = "https://www.nasm.us/pub/nasm/releasebuilds/3.02/win64/nasm-3.02-win64.zip"
+sha256 = "161d0bfaff53c2f9e9f3e69fd0672323ebabafd1268976a5cec11be92a19aee7"
+size = 641314
+
+# bindgen loads libclang while Rust compiles the FFmpeg-bearing PEs. The
+# official LLVM archive is necessary because the controlled host intentionally
+# has no ambient libclang installation; the driver uses only its recorded
+# libclang directory and never substitutes clang for MSVC.
+[ffmpeg_windows_llvm]
+version = "22.1.6"
+filename = "clang+llvm-22.1.6-x86_64-pc-windows-msvc.tar.xz"
+url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.6/clang%2Bllvm-22.1.6-x86_64-pc-windows-msvc.tar.xz"
+sha256 = "657343edf361ca463bd642e39c74b251c6338b96cdbd55ff277555298b027696"
+size = 861999212
+
 [onnx_linux_x86_64]
 filename = "onnxruntime-linux-x86_64.whl"
 sha256 = "be93baa694ef8e5831fcb7b542da21f502b122918b5b9612d9f02972e043ee01"

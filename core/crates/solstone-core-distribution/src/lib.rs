@@ -19,6 +19,7 @@ pub mod controlled_build;
 pub mod deb;
 pub mod digest;
 pub mod elf;
+pub mod ffmpeg_windows;
 pub mod import_policy;
 pub mod inspect;
 pub mod inventory;

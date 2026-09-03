@@ -14,9 +14,11 @@ use std::str;
 use flate2::read::GzDecoder;
 use solstone_core_ffmpeg_build_support::{
     BUILD_RUN_ID_ENV, ConfigureReceipt, ConfigureRunRecord, EVIDENCE_DIR, SourceAdmission,
-    configure_mode_args, parse_build_profile, parse_debug_env, parse_ffmpeg_pin,
-    read_configure_receipt, run_fetch_if_selected, select_source_admission, sha256_hex,
-    verify_sha256,
+    configure_mode_args, controlled_component_args_for_audio_remux, parse_build_profile,
+    parse_component_inventory, parse_debug_env, parse_ffmpeg_pin, read_configure_receipt,
+    read_current_run_record,
+    run_fetch_if_selected, select_source_admission, sha256_hex,
+    validate_controlled_component_inventory, verify_sha256,
     write_configure_receipt, write_current_run_record,
 };
 use tar::Archive;
@@ -693,26 +695,16 @@ fn configure_command(sysroot: Option<&str>) -> io::Result<Command> {
         configure.arg(arg);
     }
 
-    // make it static
-    configure.arg("--enable-static");
-    configure.arg("--disable-shared");
+    let audio_remux = env::var("CARGO_FEATURE_SWRESAMPLE").is_ok();
+    for arg in controlled_component_args_for_audio_remux(audio_remux) {
+        configure.arg(arg);
+    }
+
     // windows includes threading in the standard library
     #[cfg(not(target_env = "msvc"))]
     {
         configure.arg("--enable-pthreads");
     }
-
-    // position independent code
-    configure.arg("--enable-pic");
-
-    // stop autodetected libraries enabling themselves, causing linking errors
-    configure.arg("--disable-autodetect");
-
-    // do not build programs since we don't need them
-    configure.arg("--disable-programs");
-
-    // do not generate documentation
-    configure.arg("--disable-doc");
 
     macro_rules! enable {
         ($conf:expr, $feat:expr, $name:expr) => {
@@ -745,6 +737,12 @@ fn configure_command(sysroot: Option<&str>) -> io::Result<Command> {
     for lib in LIBRARIES
         .iter()
         .filter(|lib| lib.is_feature)
+        .filter(|lib| {
+            !matches!(
+                lib.name,
+                "avcodec" | "avdevice" | "avfilter" | "avformat" | "swresample" | "swscale"
+            )
+        })
         .filter(|lib| !(lib.name == "avresample" && ffmpeg_major_version >= 5))
         .filter(|lib| !(lib.name == "postproc" && ffmpeg_major_version >= 8))
     {
@@ -1295,25 +1293,34 @@ fn main() {
         let target = env::var("TARGET").expect("missing required: TARGET");
         let configure = configure_command(sysroot.as_deref()).unwrap();
         let planned = captured_configure(&configure);
-        let expected_receipt = (admitted.admission == SourceAdmission::UseArchive).then(|| {
-            ConfigureReceipt::new(
-                &target,
-                &admitted.profile,
-                &admitted.pin.sha256,
-                &planned.program,
-                &planned.args,
-            )
-        });
         let evidence_dir = output().join(EVIDENCE_DIR);
-        let cached_receipt = expected_receipt.as_ref().and_then(|expected| {
-            search()
-                .join("lib")
-                .join("libavutil.a")
-                .is_file()
-                .then(|| read_configure_receipt(&evidence_dir, &expected.filename().unwrap()).ok())
-                .flatten()
-                .filter(|stored| stored.receipt == *expected)
-        });
+        let cached_receipt = (admitted.admission == SourceAdmission::UseArchive)
+            .then(|| {
+                search()
+                    .join("lib")
+                    .join("libavutil.a")
+                    .is_file()
+                    .then(|| {
+                        let record = read_current_run_record(&evidence_dir).ok()?;
+                        let stored =
+                            read_configure_receipt(&evidence_dir, &record.receipt_filename).ok()?;
+                        let receipt = &stored.receipt;
+                        (stored.content_sha256 == record.receipt_sha256
+                            && record.target == receipt.target
+                            && record.profile == receipt.profile
+                            && record.source_sha256 == receipt.source_sha256
+                            && receipt.target == target
+                            && receipt.profile == admitted.profile
+                            && receipt.source_sha256 == admitted.pin.sha256
+                            && receipt.program == planned.program
+                            && receipt.args == planned.args
+                            && receipt.fingerprint == record.fingerprint
+                            && validate_controlled_component_inventory(&receipt.components).is_ok())
+                        .then_some(stored)
+                    })
+                    .flatten()
+            })
+            .flatten();
         let (receipt, configure_executed) = if let Some(receipt) = cached_receipt {
             (receipt, false)
         } else {
@@ -1322,19 +1329,23 @@ fn main() {
             fs::create_dir_all(output()).expect("failed to create build directory");
             prepare_source(&admitted).unwrap();
             let executed = build(configure).unwrap();
+            if executed != planned {
+                panic!("configure command changed between cache check and execution");
+            }
             let source_sha256 = admitted_source_sha256(&admitted).unwrap();
+            let components = parse_component_inventory(
+                &fs::read_to_string(source().join("config_components.h")).unwrap(),
+            )
+            .unwrap();
+            validate_controlled_component_inventory(&components).unwrap();
             let receipt = ConfigureReceipt::new(
                 &target,
                 &admitted.profile,
                 &source_sha256,
                 &executed.program,
                 &executed.args,
+                &components,
             );
-            if let Some(expected) = expected_receipt {
-                if receipt.fingerprint != expected.fingerprint {
-                    panic!("configure command changed between cache check and execution");
-                }
-            }
             (
                 write_configure_receipt(&evidence_dir, &receipt).unwrap(),
                 true,

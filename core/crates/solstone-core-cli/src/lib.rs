@@ -9,6 +9,8 @@ use solstone_core_cli_boundary::{
 };
 use solstone_core_format::segment::segment_key;
 
+pub use solstone_core_cli_boundary::DESCRIBE_USAGE;
+
 #[cfg(test)]
 #[path = "../../solstone-core-system-health/tests/support/fixtures.rs"]
 mod health_text_fixture;
@@ -50,11 +52,6 @@ pub const THINK_USAGE: &str = "usage: journal think [-h] [--day DAY] [--segment 
 /// never typed.
 pub const GRAB_USAGE: &str =
     "usage: journal grab [-h] [--out OUT] [--force] [--json] [-v] [-d] [args ...]\n";
-
-/// The usage line native `journal describe` prints for an argument error.
-/// It names the owner-facing verb because the native describe helper is
-/// dispatched directly from `journal describe`.
-pub const DESCRIBE_USAGE: &str = "usage: journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE\n";
 
 /// The usage line native `journal navigate` prints for an argument error.
 /// It names `journal navigate`, not `solstone-core navigate`, because that is

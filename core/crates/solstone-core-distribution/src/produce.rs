@@ -12,7 +12,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use solstone_core_ffmpeg_build_support::{
     BUILD_RUN_ID_ENV, EVIDENCE_DIR, parse_ffmpeg_pin, read_configure_receipt,
-    read_current_run_record, verify_sha256,
+    read_current_run_record, validate_controlled_component_args,
+    validate_controlled_component_inventory, verify_sha256,
 };
 
 use crate::apple::RealArchiveMemberSigner;
@@ -1083,7 +1084,7 @@ fn validate_ffmpeg_evidence(
         ));
     }
     if expected_profile == "release" {
-        validate_release_configure_args(&receipt.args)?;
+        validate_release_configure_args(&receipt.args, &receipt.components)?;
     }
     Ok(())
 }
@@ -1092,7 +1093,10 @@ fn incomplete_ffmpeg_evidence(detail: impl std::fmt::Display) -> ProduceError {
     ProduceError::new(format!("incomplete FFmpeg configure evidence:\n  {detail}"))
 }
 
-fn validate_release_configure_args(args: &[String]) -> Result<(), ProduceError> {
+fn validate_release_configure_args(
+    args: &[String],
+    components: &[String],
+) -> Result<(), ProduceError> {
     let mistyped_optimization = ["-", "0", "3"].concat();
     if args.iter().any(|arg| arg.contains(&mistyped_optimization)) {
         return Err(incomplete_ffmpeg_evidence(
@@ -1118,6 +1122,8 @@ fn validate_release_configure_args(args: &[String]) -> Result<(), ProduceError> 
             "release configure receipt does not enable -O3",
         ));
     }
+    validate_controlled_component_args(args).map_err(incomplete_ffmpeg_evidence)?;
+    validate_controlled_component_inventory(components).map_err(incomplete_ffmpeg_evidence)?;
     Ok(())
 }
 
@@ -1536,7 +1542,8 @@ fn command_stdout(bin: &Path, args: &[&str]) -> Result<String, ProduceError> {
 mod tests {
     use super::*;
     use solstone_core_ffmpeg_build_support::{
-        ConfigureReceipt, ConfigureRunRecord, write_configure_receipt, write_current_run_record,
+        ConfigureReceipt, ConfigureRunRecord, controlled_component_args,
+        controlled_component_inventory, write_configure_receipt, write_current_run_record,
     };
 
     use std::collections::BTreeSet;
@@ -1568,6 +1575,10 @@ mod tests {
             &"a".repeat(64),
             "/source/configure",
             args,
+            &controlled_component_inventory()
+                .iter()
+                .map(|component| (*component).to_owned())
+                .collect::<Vec<_>>(),
         );
         let receipt = write_configure_receipt(evidence_dir, &receipt).unwrap();
         let record = ConfigureRunRecord::new(run_id, &receipt, configure_executed).unwrap();
@@ -1791,11 +1802,15 @@ mod tests {
     fn ffmpeg_evidence_requires_a_fresh_matching_record_and_receipt() {
         let root = tempfile::tempdir().unwrap();
         let evidence = root.path().join(EVIDENCE_DIR);
-        let release_args = vec![
+        let mut release_args = controlled_component_args()
+            .iter()
+            .map(|arg| (*arg).to_owned())
+            .collect::<Vec<_>>();
+        release_args.extend([
             "--disable-debug".to_owned(),
             "--enable-stripping".to_owned(),
             "--extra-cflags=-O3 -ffast-math".to_owned(),
-        ];
+        ]);
         let record = write_ffmpeg_evidence(&evidence, "current", true, &release_args);
         validate_ffmpeg_evidence(&evidence, "current", "x86_64-unknown-linux-gnu", "release")
             .unwrap();
@@ -1840,11 +1855,15 @@ mod tests {
     fn ffmpeg_evidence_refuses_tampered_or_release_unsafe_receipts() {
         let root = tempfile::tempdir().unwrap();
         let evidence = root.path().join(EVIDENCE_DIR);
-        let release_args = vec![
+        let mut release_args = controlled_component_args()
+            .iter()
+            .map(|arg| (*arg).to_owned())
+            .collect::<Vec<_>>();
+        release_args.extend([
             "--disable-debug".to_owned(),
             "--enable-stripping".to_owned(),
             "--extra-cflags=-O3 -ffast-math".to_owned(),
-        ];
+        ]);
         let mut record = write_ffmpeg_evidence(&evidence, "current", true, &release_args);
         record.receipt_sha256 = "tampered".to_owned();
         write_current_run_record(&evidence, &record).unwrap();
