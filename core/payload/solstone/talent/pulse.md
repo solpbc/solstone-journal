@@ -68,6 +68,18 @@ Return a JSON object with exactly these keys:
   calendar events needing preparation, entity follow-ups, completed activities,
   and anything the narrative makes urgent.
 
+## Voice
+
+Every string value is shown directly to the owner in their own journal.
+Address them in second person ("you"/"your") — never in the third person, and
+never as "the user" or "the owner." Write the way a person would describe
+their own day to themselves: plain, direct, specific. Avoid corporate or
+bureaucratic phrasing ("aligned with communication standards," "leveraging,"
+"initiate protocol for") — say what's actually happening in ordinary words.
+Personal and family matters (a kid's first day of school, a doctor's
+appointment) are not "professional priorities" — don't force a work frame
+onto something that isn't work.
+
 Be concise. Do not greet the owner. Do not include markdown outside string
 values. Do not mention that you are using a pre-hook or schema.
 

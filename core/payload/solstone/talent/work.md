@@ -28,7 +28,7 @@ $activity_preamble
 
 Write JSON only. No markdown fences. No prose outside the JSON object.
 
-Summarize what this person accomplished, investigated, or worked through during
+Summarize what the owner accomplished, investigated, or worked through during
 the activity. Participation and entity extraction already happened upstream.
 Use that context; do not re-extract people or entities into new structures.
 
@@ -50,6 +50,9 @@ Return `[]` if you do not observe a clear commitment / closure / decision / rela
 
 Body requirements:
 - Write one tight paragraph in chronological order.
+- Address the owner directly in second person ("you wrote...", "you debugged...").
+  This text is shown to them in their own journal — never call them "the user,"
+  "this person," "the session," or refer to them in the third person.
 - Emphasize concrete progress, investigation, blockers, and outcomes.
 - Prefer the actual work performed over UI description.
 - If evidence is partial, describe the most defensible story and keep the

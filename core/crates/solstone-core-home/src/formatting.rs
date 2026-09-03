@@ -298,7 +298,7 @@ pub fn format_gap_links(
         // Talent names are internal identifiers and can be namespaced with a
         // colon (e.g. "entities:detection"); sanitize both separators so the
         // raw identifier never leaks into owner-facing copy.
-        let label = name.replace(['_', ':'], " ");
+        let label = singularize_talent_label(&name.replace(['_', ':'], " "));
         let lost = rows
             .iter()
             .all(|row| row.get("state").and_then(Value::as_str) == Some("request_lost"));
@@ -354,6 +354,46 @@ pub fn format_gap_links(
         links.push(json!({"text":"I didn't prepare your morning briefing overnight.","href":format!("/app/thinking/#runs/{today}/morning_briefing")}));
     }
     links
+}
+
+/// Total count of talent runs that failed, honest about truncation: the
+/// `anomalies` array `format_gap_links` groups from may itself be a capped
+/// view, with the true total tracked separately in `outstanding_failed`.
+pub fn count_failed_runs(pipeline: &Value) -> i64 {
+    let visible = pipeline
+        .get("anomalies")
+        .and_then(Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter(|row| row.get("kind").and_then(Value::as_str) == Some("talent_failure"))
+                .count() as i64
+        })
+        .unwrap_or(0);
+    if pipeline
+        .pointer("/talents/failed_list_truncated")
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        pipeline
+            .pointer("/talents/outstanding_failed")
+            .and_then(Value::as_i64)
+            .filter(|total| *total > visible)
+            .unwrap_or(visible)
+    } else {
+        visible
+    }
+}
+
+/// A talent's internal identifier is occasionally already plural (e.g. the
+/// "documents" talent); the sentence template always appends "run"/"runs" on
+/// top, so an already-plural label produces "documents runs". Known cases are
+/// singularized for display only — the raw identifier (used for hrefs) is
+/// untouched.
+fn singularize_talent_label(label: &str) -> String {
+    match label {
+        "documents" => "document".to_owned(),
+        other => other.to_owned(),
+    }
 }
 
 fn plural(value: i64, unit: &str) -> String {
@@ -459,5 +499,20 @@ mod tests {
             links[0]["href"],
             "/app/thinking/#runs/20260813/entities:detection/a"
         );
+    }
+
+    #[test]
+    fn failure_gap_link_label_singularizes_a_plural_talent_name() {
+        let links = format_gap_links(
+            &json!({"anomalies":[
+                {"kind":"talent_failure","name":"documents","mode":"daily","use_id":"a","state":"failed"},
+                {"kind":"talent_failure","name":"documents","mode":"daily","use_id":"b","state":"failed"}
+            ]}),
+            true,
+            "20260813",
+            "20260814",
+        );
+        assert_eq!(links[0]["text"], "2 document runs didn't finish.");
+        assert_eq!(links[0]["href"], "/app/thinking/#runs/20260813/documents");
     }
 }
