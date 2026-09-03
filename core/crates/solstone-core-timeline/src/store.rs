@@ -10,8 +10,9 @@ use crate::{
     MasterTimelineV1, SegmentBindingV1, SegmentSummaryV1, SegmentTimelineV1, TimelineError,
     TimelineLockRequest, TimelineLockSubject, acquire_timeline_locks, artifact_sha256,
     bounded_diagnostic_detail, load_timeline_state, origin_for_binding, record_artifact_published,
-    record_attempt_outcome, record_attempt_started, segment_directory, validate_day_timeline,
-    validate_master_timeline, validate_segment_timeline,
+    record_attempt_outcome, record_attempt_started, resolve_activity_source, segment_directory,
+    segment_input_digest, validate_day_timeline, validate_master_timeline,
+    validate_segment_timeline,
 };
 
 pub fn segment_timeline_path(
@@ -24,7 +25,7 @@ pub fn segment_timeline_path(
 pub fn publish_segment_timeline(
     journal: &Path,
     timeline: &SegmentTimelineV1,
-    attempt: AttemptStateV1,
+    mut attempt: AttemptStateV1,
 ) -> Result<(), TimelineError> {
     validate_segment_timeline(timeline)?;
     let binding = &timeline.binding;
@@ -37,7 +38,37 @@ pub fn publish_segment_timeline(
             ..TimelineLockRequest::default()
         },
     )?;
+    attempt.input_digest.clone_from(&timeline.input_digest);
     record_attempt_started(journal, &subject, attempt.clone())?;
+
+    if let Err(error) = verify_segment_source(journal, timeline) {
+        // A missing or unreadable source cannot be reconstructed into a live
+        // snapshot, but it still invalidates the last-good artifact.  Give the
+        // failed attempt a deterministic digest distinct from the artifact's
+        // source digest before trying to capture more precise changed-source
+        // evidence below.
+        attempt.input_digest = artifact_sha256(&format!(
+            "segment-source-unavailable:{}",
+            timeline.input_digest
+        ));
+        if let Ok(Some(snapshot)) = resolve_activity_source(journal, &timeline.binding)
+            && let Some(template) = timeline.source.as_ref()
+            && let Ok(source) = source_with_snapshot(journal, template, snapshot)
+            && let Ok(current_digest) = segment_input_digest(&timeline.binding, &source)
+        {
+            attempt.input_digest = current_digest;
+        }
+        let detail = bounded_diagnostic_detail(&error.to_string());
+        record_terminal_failure(
+            journal,
+            &subject,
+            attempt,
+            AttemptOutcome::Failed,
+            &detail,
+            timeline.generated_at_ms,
+        )?;
+        return Err(error);
+    }
 
     let path = segment_timeline_path(journal, binding)?;
     let serialized = serialize_timeline(timeline)?;
@@ -50,6 +81,123 @@ pub fn publish_segment_timeline(
         serialized,
         attempt,
     )
+}
+
+fn source_with_snapshot(
+    journal: &Path,
+    template: &crate::SegmentSourceV1,
+    snapshot: crate::ActivitySourceSnapshot,
+) -> Result<crate::SegmentSourceV1, TimelineError> {
+    match template {
+        crate::SegmentSourceV1::GeneratedActivity { schema_version, .. } => {
+            Ok(crate::SegmentSourceV1::GeneratedActivity {
+                schema_version: *schema_version,
+                relative_path: snapshot.relative_path,
+                sha256: snapshot.sha256,
+            })
+        }
+        crate::SegmentSourceV1::Continuation {
+            schema_version,
+            predecessor_segment_key,
+            change_evidence_relative_path,
+            ..
+        } => {
+            let change_evidence_text = read_exact_text(journal, change_evidence_relative_path)?;
+            Ok(crate::SegmentSourceV1::Continuation {
+                schema_version: *schema_version,
+                relative_path: snapshot.relative_path,
+                sha256: snapshot.sha256,
+                predecessor_segment_key: predecessor_segment_key.clone(),
+                change_evidence_relative_path: change_evidence_relative_path.clone(),
+                change_evidence_sha256: artifact_sha256(&change_evidence_text),
+            })
+        }
+    }
+}
+
+fn verify_segment_source(
+    journal: &Path,
+    timeline: &SegmentTimelineV1,
+) -> Result<(), TimelineError> {
+    let expected =
+        timeline
+            .source
+            .as_ref()
+            .ok_or_else(|| TimelineError::InvalidSourceEvidence {
+                detail: "segment artifact has no source binding".to_owned(),
+            })?;
+    let current = resolve_activity_source(journal, &timeline.binding)?.ok_or_else(|| {
+        TimelineError::InvalidSourceEvidence {
+            detail: format!("source {:?} is missing", expected.relative_path()),
+        }
+    })?;
+    if current.relative_path != expected.relative_path() {
+        return Err(TimelineError::InvalidSourceEvidence {
+            detail: format!(
+                "source path changed from {:?} to {:?}",
+                expected.relative_path(),
+                current.relative_path
+            ),
+        });
+    }
+    if current.sha256 != expected.sha256() {
+        return Err(TimelineError::InvalidSourceEvidence {
+            detail: format!(
+                "source {:?} changed: expected {}, got {}",
+                expected.relative_path(),
+                expected.sha256(),
+                current.sha256
+            ),
+        });
+    }
+    if let crate::SegmentSourceV1::Continuation {
+        change_evidence_relative_path,
+        change_evidence_sha256,
+        ..
+    } = expected
+    {
+        verify_exact_file_sha(
+            journal,
+            change_evidence_relative_path,
+            change_evidence_sha256,
+        )?;
+    }
+    let digest = segment_input_digest(&timeline.binding, expected)?;
+    if digest != timeline.input_digest {
+        return Err(TimelineError::DigestMismatch {
+            expected: digest,
+            actual: timeline.input_digest.clone(),
+        });
+    }
+    Ok(())
+}
+
+fn read_exact_text(journal: &Path, relative_path: &str) -> Result<String, TimelineError> {
+    let path = solstone_core_journal_io::contained_path(journal, relative_path)?;
+    let bytes = std::fs::read(&path).map_err(|error| TimelineError::InvalidSourceEvidence {
+        detail: format!("cannot read {relative_path}: {error}"),
+    })?;
+    String::from_utf8(bytes).map_err(|error| TimelineError::InvalidSourceEvidence {
+        detail: format!("source {relative_path} is not UTF-8: {error}"),
+    })
+}
+
+fn verify_exact_file_sha(
+    journal: &Path,
+    relative_path: &str,
+    expected_sha256: &str,
+) -> Result<(), TimelineError> {
+    let text = read_exact_text(journal, relative_path)?;
+    let actual = artifact_sha256(&text);
+    if actual == expected_sha256 {
+        Ok(())
+    } else {
+        Err(TimelineError::InvalidSourceEvidence {
+            detail: format!(
+                "source {relative_path:?} changed: expected {expected_sha256}, got {actual}"
+            ),
+        })
+    }
 }
 
 pub fn day_timeline_path(journal: &Path, day: &str) -> PathBuf {
@@ -270,10 +418,29 @@ pub fn publish_continuation_summary(
     journal: &Path,
     binding: SegmentBindingV1,
     predecessor_segment_key: String,
-    input_digest: String,
     generated_at_ms: i64,
-    attempt: AttemptStateV1,
+    mut attempt: AttemptStateV1,
 ) -> Result<(), TimelineError> {
+    let snapshot = resolve_activity_source(journal, &binding)?.ok_or_else(|| {
+        TimelineError::InvalidSourceEvidence {
+            detail: "continuation activity source is missing".to_owned(),
+        }
+    })?;
+    let change_evidence_relative_path = format!(
+        "chronicle/{}/talents/change.json",
+        origin_for_binding(&binding)?
+    );
+    let change_evidence_text = read_exact_text(journal, &change_evidence_relative_path)?;
+    let source = crate::SegmentSourceV1::Continuation {
+        schema_version: crate::SEGMENT_SOURCE_SCHEMA_VERSION,
+        relative_path: snapshot.relative_path,
+        sha256: snapshot.sha256,
+        predecessor_segment_key: predecessor_segment_key.clone(),
+        change_evidence_relative_path,
+        change_evidence_sha256: artifact_sha256(&change_evidence_text),
+    };
+    let input_digest = segment_input_digest(&binding, &source)?;
+    attempt.input_digest.clone_from(&input_digest);
     let timeline = SegmentTimelineV1 {
         schema_version: CURRENT_SCHEMA_VERSION,
         kind: crate::TimelineKind::Segment,
@@ -285,6 +452,7 @@ pub fn publish_continuation_summary(
         },
         binding,
         input_digest,
+        source: Some(source),
         generated_at_ms,
         provenance: None,
     };
@@ -392,26 +560,36 @@ mod tests {
         }
     }
 
-    #[test]
-    fn continuation_publication_writes_typed_artifact_and_confirmed_state() {
+    fn published_continuation() -> (tempfile::TempDir, SegmentTimelineV1, PathBuf) {
         let journal = tempfile::tempdir().unwrap();
-        fs::create_dir_all(journal.path().join("chronicle/20260401/080000_300")).unwrap();
-
+        let talents = journal.path().join("chronicle/20260401/080000_300/talents");
+        fs::create_dir_all(&talents).unwrap();
+        fs::write(talents.join("activity.md"), "activity").unwrap();
+        fs::write(
+            talents.join("change.json"),
+            r#"{"change_class":"redundant"}"#,
+        )
+        .unwrap();
+        let mut continuation_attempt = attempt();
+        continuation_attempt.attempt_id = "attempt-2".to_owned();
+        continuation_attempt.started_at_ms = 2;
         publish_continuation_summary(
             journal.path(),
             binding(),
             "070000_300".to_owned(),
-            "input".to_owned(),
             2,
-            attempt(),
+            continuation_attempt,
         )
         .unwrap();
-
-        let path = journal
-            .path()
-            .join("chronicle/20260401/080000_300/timeline.json");
+        let path = segment_timeline_path(journal.path(), &binding()).unwrap();
         let timeline =
-            serde_json::from_slice::<SegmentTimelineV1>(&fs::read(path).unwrap()).unwrap();
+            serde_json::from_slice::<SegmentTimelineV1>(&fs::read(&path).unwrap()).unwrap();
+        (journal, timeline, path)
+    }
+
+    #[test]
+    fn continuation_publication_writes_typed_artifact_and_confirmed_state() {
+        let (journal, timeline, path) = published_continuation();
         assert_eq!(timeline.summary.title, "Continued");
         assert_eq!(
             timeline.summary.continuation_of.as_deref(),
@@ -427,6 +605,208 @@ mod tests {
                 .any(|value| value.outcome == AttemptOutcome::Published)
         );
         assert_ne!(state, TimelineStateV1::empty());
+
+        let last_good = fs::read(&path).unwrap();
+        fs::write(
+            journal
+                .path()
+                .join("chronicle/20260401/080000_300/talents/change.json"),
+            r#"{"change_class":"meaningful"}"#,
+        )
+        .unwrap();
+        let mut stale_attempt = attempt();
+        stale_attempt.attempt_id = "attempt-3".to_owned();
+        stale_attempt.started_at_ms = 3;
+        publish_segment_timeline(journal.path(), &timeline, stale_attempt)
+            .expect_err("changed continuation evidence must not publish");
+        assert_eq!(fs::read(&path).unwrap(), last_good);
+        let state = load_timeline_state(journal.path()).unwrap();
+        let failed = state
+            .attempts
+            .values()
+            .find(|attempt| attempt.attempt_id == "attempt-3")
+            .expect("terminal failed attempt");
+        assert_eq!(failed.outcome, AttemptOutcome::Failed);
+        assert_ne!(failed.input_digest, timeline.input_digest);
+    }
+
+    #[test]
+    fn missing_or_unreadable_change_evidence_invalidates_a_continuation() {
+        for replacement in [None, Some(vec![0xff, 0xfe])] {
+            let (journal, timeline, path) = published_continuation();
+            let change = journal
+                .path()
+                .join("chronicle/20260401/080000_300/talents/change.json");
+            match replacement {
+                None => fs::remove_file(change).unwrap(),
+                Some(bytes) => fs::write(change, bytes).unwrap(),
+            }
+            let last_good = fs::read(&path).unwrap();
+            let mut stale_attempt = attempt();
+            stale_attempt.attempt_id = "attempt-3".to_owned();
+            stale_attempt.started_at_ms = 3;
+            publish_segment_timeline(journal.path(), &timeline, stale_attempt)
+                .expect_err("unavailable continuation evidence must not publish");
+
+            assert_eq!(fs::read(&path).unwrap(), last_good);
+            let state = load_timeline_state(journal.path()).unwrap();
+            let failed = state
+                .attempts
+                .values()
+                .find(|attempt| attempt.attempt_id == "attempt-3")
+                .expect("terminal failed attempt");
+            assert_ne!(failed.input_digest, timeline.input_digest);
+            assert_eq!(
+                crate::evaluate_artifact_currentness(
+                    journal.path(),
+                    &segment_subject_key(&binding()),
+                    &timeline.input_digest,
+                    timeline.generated_at_ms,
+                    &String::from_utf8(last_good).unwrap(),
+                )
+                .unwrap(),
+                crate::ArtifactCurrentness::Stale
+            );
+        }
+    }
+
+    #[test]
+    fn changed_activity_cannot_publish_a_stale_segment_result() {
+        let journal = tempfile::tempdir().unwrap();
+        let activity = journal
+            .path()
+            .join("chronicle/20260401/080000_300/talents/activity.md");
+        fs::create_dir_all(activity.parent().unwrap()).unwrap();
+        fs::write(&activity, "activity V1").unwrap();
+        let snapshot = resolve_activity_source(journal.path(), &binding())
+            .unwrap()
+            .unwrap();
+        let source = crate::SegmentSourceV1::GeneratedActivity {
+            schema_version: crate::SEGMENT_SOURCE_SCHEMA_VERSION,
+            relative_path: snapshot.relative_path,
+            sha256: snapshot.sha256,
+        };
+        let input_digest = segment_input_digest(&binding(), &source).unwrap();
+        let timeline = SegmentTimelineV1 {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            kind: crate::TimelineKind::Segment,
+            binding: binding(),
+            input_digest: input_digest.clone(),
+            source: Some(source),
+            generated_at_ms: 2,
+            summary: SegmentSummaryV1 {
+                title: "V1 result".to_owned(),
+                description: "Generated from activity V1".to_owned(),
+                origin: "20260401/080000_300".to_owned(),
+                continuation_of: None,
+            },
+            provenance: None,
+        };
+        let mut first_attempt = attempt();
+        first_attempt.input_digest.clone_from(&input_digest);
+        publish_segment_timeline(journal.path(), &timeline, first_attempt).unwrap();
+        let path = segment_timeline_path(journal.path(), &binding()).unwrap();
+        let last_good = fs::read(&path).unwrap();
+
+        fs::write(&activity, "activity V2").unwrap();
+        let mut stale_attempt = attempt();
+        stale_attempt.attempt_id = "attempt-2".to_owned();
+        stale_attempt.started_at_ms = 3;
+        let error = publish_segment_timeline(journal.path(), &timeline, stale_attempt)
+            .expect_err("V1 result must not publish after activity V2");
+
+        assert!(matches!(error, TimelineError::InvalidSourceEvidence { .. }));
+        assert_eq!(fs::read(&path).unwrap(), last_good);
+        let state = load_timeline_state(journal.path()).unwrap();
+        let failed = state
+            .attempts
+            .values()
+            .find(|attempt| attempt.attempt_id == "attempt-2")
+            .expect("terminal failed attempt");
+        assert_eq!(failed.outcome, AttemptOutcome::Failed);
+        assert_ne!(failed.input_digest, input_digest);
+        let artifact_text = String::from_utf8(last_good).unwrap();
+        assert_eq!(
+            crate::evaluate_artifact_currentness(
+                journal.path(),
+                &segment_subject_key(&binding()),
+                &timeline.input_digest,
+                timeline.generated_at_ms,
+                &artifact_text,
+            )
+            .unwrap(),
+            crate::ArtifactCurrentness::Stale
+        );
+    }
+
+    #[test]
+    fn missing_or_unreadable_activity_invalidates_the_last_good_segment_result() {
+        for replacement in [None, Some(vec![0xff, 0xfe])] {
+            let journal = tempfile::tempdir().unwrap();
+            let activity = journal
+                .path()
+                .join("chronicle/20260401/080000_300/talents/activity.md");
+            fs::create_dir_all(activity.parent().unwrap()).unwrap();
+            fs::write(&activity, "activity V1").unwrap();
+            let snapshot = resolve_activity_source(journal.path(), &binding())
+                .unwrap()
+                .unwrap();
+            let source = crate::SegmentSourceV1::GeneratedActivity {
+                schema_version: crate::SEGMENT_SOURCE_SCHEMA_VERSION,
+                relative_path: snapshot.relative_path,
+                sha256: snapshot.sha256,
+            };
+            let input_digest = segment_input_digest(&binding(), &source).unwrap();
+            let timeline = SegmentTimelineV1 {
+                schema_version: CURRENT_SCHEMA_VERSION,
+                kind: crate::TimelineKind::Segment,
+                binding: binding(),
+                input_digest: input_digest.clone(),
+                source: Some(source),
+                generated_at_ms: 2,
+                summary: SegmentSummaryV1 {
+                    title: "V1 result".to_owned(),
+                    description: "Generated from activity V1".to_owned(),
+                    origin: "20260401/080000_300".to_owned(),
+                    continuation_of: None,
+                },
+                provenance: None,
+            };
+            publish_segment_timeline(journal.path(), &timeline, attempt()).unwrap();
+            let path = segment_timeline_path(journal.path(), &binding()).unwrap();
+            let last_good = fs::read(&path).unwrap();
+
+            match replacement {
+                None => fs::remove_file(&activity).unwrap(),
+                Some(bytes) => fs::write(&activity, bytes).unwrap(),
+            }
+            let mut stale_attempt = attempt();
+            stale_attempt.attempt_id = "attempt-2".to_owned();
+            stale_attempt.started_at_ms = 3;
+            publish_segment_timeline(journal.path(), &timeline, stale_attempt)
+                .expect_err("missing or unreadable source must prevent publication");
+
+            assert_eq!(fs::read(&path).unwrap(), last_good);
+            let state = load_timeline_state(journal.path()).unwrap();
+            let failed = state
+                .attempts
+                .values()
+                .find(|attempt| attempt.attempt_id == "attempt-2")
+                .expect("terminal failed attempt");
+            assert_eq!(failed.outcome, AttemptOutcome::Failed);
+            assert_ne!(failed.input_digest, input_digest);
+            assert_eq!(
+                crate::evaluate_artifact_currentness(
+                    journal.path(),
+                    &segment_subject_key(&binding()),
+                    &timeline.input_digest,
+                    timeline.generated_at_ms,
+                    &String::from_utf8(last_good).unwrap(),
+                )
+                .unwrap(),
+                crate::ArtifactCurrentness::Stale
+            );
+        }
     }
 
     #[test]
@@ -611,13 +991,20 @@ mod tests {
         )
         .unwrap();
 
+        let source = crate::SegmentSourceV1::GeneratedActivity {
+            schema_version: crate::SEGMENT_SOURCE_SCHEMA_VERSION,
+            relative_path: "chronicle/20260401/080000_300/talents/activity.md".to_owned(),
+            sha256: "a".repeat(64),
+        };
+        let input_digest = segment_input_digest(&binding(), &source).unwrap();
         let result = publish_segment_timeline(
             journal.path(),
             &SegmentTimelineV1 {
                 schema_version: CURRENT_SCHEMA_VERSION,
                 kind: crate::TimelineKind::Segment,
                 binding: binding(),
-                input_digest: "input".to_owned(),
+                input_digest,
+                source: Some(source),
                 generated_at_ms: 2,
                 summary: SegmentSummaryV1 {
                     title: "Title".to_owned(),

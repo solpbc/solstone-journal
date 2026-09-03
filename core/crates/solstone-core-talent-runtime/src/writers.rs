@@ -68,6 +68,7 @@ pub enum WriteIntent {
     TimelineSegmentSummary {
         result: Value,
         binding: solstone_core_timeline::SegmentBindingV1,
+        source: Box<solstone_core_timeline::SegmentSourceV1>,
         input_digest: String,
         provenance: Box<solstone_core_timeline::GenerationProvenanceV1>,
     },
@@ -233,6 +234,7 @@ pub fn apply(
         CommitPlan::Write(WriteIntent::TimelineSegmentSummary {
             result,
             binding,
+            source,
             input_digest,
             provenance,
         }) => {
@@ -240,6 +242,7 @@ pub fn apply(
                 &context.journal,
                 &result,
                 binding,
+                *source,
                 input_digest,
                 *provenance,
             )

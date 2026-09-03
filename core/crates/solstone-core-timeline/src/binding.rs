@@ -3,9 +3,18 @@
 
 use std::path::{Path, PathBuf};
 
-use solstone_core_journal_io::{DEFAULT_STREAM, PathOrDay, iter_segments};
+use solstone_core_journal_io::{DEFAULT_STREAM, PathOrDay, contained_path, iter_segments};
 
-use crate::{SegmentBindingV1, SegmentSelectorV1, TimelineError, validate_segment_binding};
+use crate::{
+    SegmentBindingV1, SegmentSelectorV1, TimelineError, artifact_sha256, validate_segment_binding,
+};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActivitySourceSnapshot {
+    pub relative_path: String,
+    pub text: String,
+    pub sha256: String,
+}
 
 pub fn resolve_segment_binding(
     journal: &Path,
@@ -108,6 +117,41 @@ pub fn origin_for_binding(binding: &SegmentBindingV1) -> Result<String, Timeline
     }
 }
 
+pub fn activity_source_relative_paths(
+    binding: &SegmentBindingV1,
+) -> Result<[String; 2], TimelineError> {
+    let origin = origin_for_binding(binding)?;
+    Ok([
+        format!("chronicle/{origin}/talents/activity.md"),
+        format!("chronicle/{origin}/activity.md"),
+    ])
+}
+
+pub fn resolve_activity_source(
+    journal: &Path,
+    binding: &SegmentBindingV1,
+) -> Result<Option<ActivitySourceSnapshot>, TimelineError> {
+    for relative_path in activity_source_relative_paths(binding)? {
+        let path = contained_path(journal, &relative_path)?;
+        if !path.is_file() {
+            continue;
+        }
+        let bytes = std::fs::read(&path).map_err(|error| TimelineError::InvalidSourceEvidence {
+            detail: format!("cannot read {relative_path}: {error}"),
+        })?;
+        let text =
+            String::from_utf8(bytes).map_err(|error| TimelineError::InvalidSourceEvidence {
+                detail: format!("source {relative_path} is not UTF-8: {error}"),
+            })?;
+        return Ok(Some(ActivitySourceSnapshot {
+            sha256: artifact_sha256(&text),
+            relative_path,
+            text,
+        }));
+    }
+    Ok(None)
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -178,6 +222,47 @@ mod tests {
         assert!(matches!(
             resolve_segment_binding(journal.path(), &selector(None)),
             Err(TimelineError::SegmentNotFound { .. })
+        ));
+    }
+
+    #[test]
+    fn activity_resolution_binds_the_preferred_exact_path_and_bytes() {
+        let journal = tempfile::tempdir().unwrap();
+        segment(journal.path(), None, "080000_300");
+        let segment = journal.path().join("chronicle/20260401/080000_300");
+        fs::create_dir_all(segment.join("talents")).unwrap();
+        fs::write(segment.join("activity.md"), "legacy").unwrap();
+        fs::write(segment.join("talents/activity.md"), "canonical").unwrap();
+
+        let snapshot = resolve_activity_source(
+            journal.path(),
+            &resolve_segment_binding(journal.path(), &selector(None)).unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(
+            snapshot.relative_path,
+            "chronicle/20260401/080000_300/talents/activity.md"
+        );
+        assert_eq!(snapshot.text, "canonical");
+        assert_eq!(snapshot.sha256, artifact_sha256("canonical"));
+    }
+
+    #[test]
+    fn invalid_utf8_activity_is_a_named_source_error() {
+        let journal = tempfile::tempdir().unwrap();
+        segment(journal.path(), None, "080000_300");
+        let segment = journal.path().join("chronicle/20260401/080000_300");
+        fs::create_dir_all(segment.join("talents")).unwrap();
+        fs::write(segment.join("talents/activity.md"), [0xff]).unwrap();
+
+        assert!(matches!(
+            resolve_activity_source(
+                journal.path(),
+                &resolve_segment_binding(journal.path(), &selector(None)).unwrap(),
+            ),
+            Err(TimelineError::InvalidSourceEvidence { detail }) if detail.contains("not UTF-8")
         ));
     }
 }

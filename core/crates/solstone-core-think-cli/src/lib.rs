@@ -2587,6 +2587,78 @@ mod tests {
     }
 
     #[test]
+    fn segment_without_a_stream_uses_the_only_named_stream_binding() {
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (context, _) = segment_context(
+            journal.path(),
+            roots.path(),
+            "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+        );
+        let segment = "090000_300";
+        let named = journal
+            .path()
+            .join("chronicle/20260813/audio")
+            .join(segment);
+        fs::create_dir_all(&named).unwrap();
+        let output = solstone_core_talent_config::get_output_path(
+            &context.day_dir,
+            "sense",
+            Some(segment),
+            Some("json"),
+            None,
+            Some("audio"),
+        );
+        fs::create_dir_all(output.parent().unwrap()).unwrap();
+        fs::write(
+            output,
+            serde_json::to_vec(&serde_json::json!({"density":"active","content_type":"work"}))
+                .unwrap(),
+        )
+        .unwrap();
+        let log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
+
+        let result =
+            segment::run(&context, &log, segment, false, None, 2, None, false, &[]).unwrap();
+
+        assert_eq!((result.success, result.failed), (1, 0));
+        assert!(named.join("talents/activity.md").is_file());
+        assert!(
+            !journal
+                .path()
+                .join("chronicle/20260813")
+                .join(segment)
+                .exists()
+        );
+    }
+
+    #[test]
+    fn segment_without_a_stream_rejects_an_ambiguous_basename() {
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (context, _) = segment_context(
+            journal.path(),
+            roots.path(),
+            "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+        );
+        let segment = "090000_300";
+        fs::create_dir_all(journal.path().join("chronicle/20260813").join(segment)).unwrap();
+        fs::create_dir_all(
+            journal
+                .path()
+                .join("chronicle/20260813/audio")
+                .join(segment),
+        )
+        .unwrap();
+        let log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
+
+        let error = segment::run(&context, &log, segment, false, None, 2, None, false, &[])
+            .expect_err("an omitted stream must not silently select one of two segments");
+
+        assert!(error.contains("ambiguous segment"), "{error}");
+    }
+
+    #[test]
     fn segment_no_input_gate_writes_idle_artifacts_without_dispatching() {
         // Source-derived, not measured: thinking.py:1536-1584 writes a
         // schema-valid idle Sense result and terminalizes the segment.

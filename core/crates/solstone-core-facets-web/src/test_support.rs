@@ -191,11 +191,11 @@ fn write_timeline_artifacts(root: &Path, day_path: &Path) {
         "day_curation": timeline_curation("day-input", 3, vec![default.clone()], "One seeded day.", "corpus-day-model"),
     });
     let day_text = write_json(&day_path.join("timeline.json"), &day);
-    let mut segment_texts = std::collections::BTreeMap::new();
-    for (path, digest, title, description, stream, segment) in [
+    let mut segment_artifacts = std::collections::BTreeMap::new();
+    for (path, label, title, description, stream, segment) in [
         (
             day_path.join("100000_300/timeline.json"),
-            "segment-default-input",
+            "default",
             "Both streams",
             "A default-stream segment with audio and screen.",
             "_default",
@@ -203,7 +203,7 @@ fn write_timeline_artifacts(root: &Path, day_path: &Path) {
         ),
         (
             day_path.join("103000_300/timeline.json"),
-            "segment-second-input",
+            "second",
             "Audio follow-up",
             "A default-stream audio follow-up.",
             "_default",
@@ -211,7 +211,7 @@ fn write_timeline_artifacts(root: &Path, day_path: &Path) {
         ),
         (
             day_path.join("workstation.browser/140000_300/timeline.json"),
-            "segment-browser-input",
+            "browser",
             "Browsing",
             "A named browser stream.",
             "workstation.browser",
@@ -219,11 +219,31 @@ fn write_timeline_artifacts(root: &Path, day_path: &Path) {
         ),
     ] {
         let summary = entry(title, description, stream, segment);
+        let binding = solstone_core_timeline::SegmentBindingV1 {
+            day: "20260510".to_owned(),
+            stream: stream.to_owned(),
+            segment: segment.to_owned(),
+        };
+        let relative_path = if stream == "_default" {
+            format!("chronicle/20260510/{segment}/talents/activity.md")
+        } else {
+            format!("chronicle/20260510/{stream}/{segment}/talents/activity.md")
+        };
+        let activity = format!("Corpus activity for {label}.\n");
+        write(&root.join(&relative_path), &activity);
+        let source = solstone_core_timeline::SegmentSourceV1::GeneratedActivity {
+            schema_version: solstone_core_timeline::SEGMENT_SOURCE_SCHEMA_VERSION,
+            relative_path,
+            sha256: solstone_core_timeline::artifact_sha256(&activity),
+        };
+        let digest = solstone_core_timeline::segment_input_digest(&binding, &source)
+            .expect("segment input digest");
         let timeline = serde_json::json!({
             "schema_version": 1,
             "kind": "segment",
             "binding": summary["binding"],
             "input_digest": digest,
+            "source": source,
             "generated_at_ms": 1770000050000_i64,
             "summary": {
                 "title": summary["title"],
@@ -234,8 +254,11 @@ fn write_timeline_artifacts(root: &Path, day_path: &Path) {
             "provenance": provenance("corpus-segment-model"),
         });
         let timeline_text = write_json(&path, &timeline);
-        segment_texts.insert(digest, timeline_text);
+        segment_artifacts.insert(label, (digest, timeline_text));
     }
+    let (default_digest, default_text) = &segment_artifacts["default"];
+    let (second_digest, second_text) = &segment_artifacts["second"];
+    let (browser_digest, browser_text) = &segment_artifacts["browser"];
     let master = serde_json::json!({
         "schema_version": 1,
         "kind": "master",
@@ -266,9 +289,9 @@ fn write_timeline_artifacts(root: &Path, day_path: &Path) {
             "artifacts": {
                 "master": artifact("master-input", &master_text),
                 "day:20260510": artifact("day-input", &day_text),
-                "segment:20260510/_default/100000_300": artifact("segment-default-input", &segment_texts["segment-default-input"]),
-                "segment:20260510/_default/103000_300": artifact("segment-second-input", &segment_texts["segment-second-input"]),
-                "segment:20260510/workstation.browser/140000_300": artifact("segment-browser-input", &segment_texts["segment-browser-input"]),
+                "segment:20260510/_default/100000_300": artifact(default_digest, default_text),
+                "segment:20260510/_default/103000_300": artifact(second_digest, second_text),
+                "segment:20260510/workstation.browser/140000_300": artifact(browser_digest, browser_text),
             },
             "attempts": {},
         }),

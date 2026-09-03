@@ -188,7 +188,12 @@ fn build_recovery_fixture(journal: &Path) -> Vec<FixtureSegment> {
                 segment: segment.clone(),
             };
             let path = journal.join("chronicle").join(day).join(&segment);
-            fs::create_dir_all(&path).expect("segment directory creates");
+            fs::create_dir_all(path.join("talents")).expect("segment directory creates");
+            fs::write(
+                path.join("talents/activity.md"),
+                format!("Recovered activity {ordinal}.\n"),
+            )
+            .expect("activity source writes");
             let missing = ordinal < MISSING_COUNT;
             if !missing {
                 fs::write(
@@ -226,12 +231,22 @@ fn stale_master() -> MasterTimelineV1 {
 
 fn repair_segment_population(journal: &Path, segments: &[FixtureSegment]) {
     for (ordinal, segment) in segments.iter().enumerate() {
-        let digest = format!("repaired-segment-input-{ordinal}");
+        let snapshot = solstone_core_timeline::resolve_activity_source(journal, &segment.binding)
+            .expect("activity resolution")
+            .expect("activity source");
+        let source = solstone_core_timeline::SegmentSourceV1::GeneratedActivity {
+            schema_version: solstone_core_timeline::SEGMENT_SOURCE_SCHEMA_VERSION,
+            relative_path: snapshot.relative_path,
+            sha256: snapshot.sha256,
+        };
+        let digest = solstone_core_timeline::segment_input_digest(&segment.binding, &source)
+            .expect("segment source digest");
         let timeline = SegmentTimelineV1 {
             schema_version: CURRENT_SCHEMA_VERSION,
             kind: TimelineKind::Segment,
             binding: segment.binding.clone(),
             input_digest: digest.clone(),
+            source: Some(source),
             generated_at_ms: 1_778_000_000_000 + ordinal as i64,
             summary: SegmentSummaryV1 {
                 title: format!("Recovered {ordinal}"),

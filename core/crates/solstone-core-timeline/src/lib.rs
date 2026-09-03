@@ -13,13 +13,14 @@ mod state;
 mod store;
 
 pub use binding::{
-    discover_day_segment_bindings, origin_for_binding, resolve_segment_binding, segment_directory,
+    ActivitySourceSnapshot, activity_source_relative_paths, discover_day_segment_bindings,
+    origin_for_binding, resolve_activity_source, resolve_segment_binding, segment_directory,
 };
 pub use currentness::{ArtifactCurrentness, artifact_sha256, evaluate_artifact_currentness};
 pub use error::{InvalidSelectionReason, TimelineCurationStage, TimelineError};
 pub use fingerprint::{
-    CurationJobV1, continuation_input_digest, curation_input_digest, curation_jobs_digest,
-    master_source_digest, segment_input_digest,
+    CurationJobV1, curation_input_digest, curation_jobs_digest, master_source_digest,
+    segment_input_digest,
 };
 pub use locks::{
     TimelineLockRequest, TimelineLockSet, TimelineLockSubject, acquire_timeline_locks,
@@ -28,9 +29,10 @@ pub use locks::{
 pub use schema::{
     CURRENT_SCHEMA_VERSION, CurationContentPartV1, CurationRecordV1, CurationRequestV1,
     DayTimelineV1, GenerationProvenanceV1, HourTimelineV1, MasterTimelineV1, MonthTimelineEntryV1,
-    MonthTimelineV1, SegmentBindingV1, SegmentSelectorV1, SegmentSummaryV1, SegmentTimelineV1,
-    TimelineEntryV1, TimelineKind, validate_day_timeline, validate_master_timeline,
-    validate_segment_binding, validate_segment_timeline,
+    MonthTimelineV1, SEGMENT_SOURCE_SCHEMA_VERSION, SegmentBindingV1, SegmentSelectorV1,
+    SegmentSourceV1, SegmentSummaryV1, SegmentTimelineV1, TimelineEntryV1, TimelineKind,
+    validate_day_timeline, validate_master_timeline, validate_segment_binding,
+    validate_segment_timeline,
 };
 pub use state::{
     ArtifactStateV1, AttemptOutcome, AttemptStateV1, MAX_DIAGNOSTIC_DETAIL_BYTES, TimelineStateV1,

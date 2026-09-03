@@ -2509,23 +2509,32 @@ mod tests {
     }
 
     fn write_segment(journal: &Path, day: &str, stream: &str, segment: &str, value: Value) {
-        let path = journal
+        let segment_dir = journal
             .join("chronicle")
             .join(day)
             .join(stream)
-            .join(segment)
-            .join("timeline.json");
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            .join(segment);
+        std::fs::create_dir_all(segment_dir.join("talents")).unwrap();
+        std::fs::write(segment_dir.join("talents/activity.md"), "fixture activity").unwrap();
         let binding = SegmentBindingV1 {
             day: day.to_owned(),
             stream: stream.to_owned(),
             segment: segment.to_owned(),
         };
+        let snapshot = solstone_core_timeline::resolve_activity_source(journal, &binding)
+            .unwrap()
+            .unwrap();
+        let source = solstone_core_timeline::SegmentSourceV1::GeneratedActivity {
+            schema_version: solstone_core_timeline::SEGMENT_SOURCE_SCHEMA_VERSION,
+            relative_path: snapshot.relative_path,
+            sha256: snapshot.sha256,
+        };
         let timeline = SegmentTimelineV1 {
             schema_version: CURRENT_SCHEMA_VERSION,
             kind: TimelineKind::Segment,
             binding: binding.clone(),
-            input_digest: "fixture-input".to_owned(),
+            input_digest: solstone_core_timeline::segment_input_digest(&binding, &source).unwrap(),
+            source: Some(source),
             generated_at_ms: 1,
             summary: SegmentSummaryV1 {
                 title: value

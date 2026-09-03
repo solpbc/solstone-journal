@@ -6,7 +6,8 @@ use serde_json::{Map, Value, to_value};
 use solstone_core_brain::{CanonicalInput, canonical_fingerprint_preserving_array_order};
 
 use crate::{
-    CURRENT_SCHEMA_VERSION, CurationRequestV1, SegmentBindingV1, TimelineEntryV1, TimelineError,
+    CURRENT_SCHEMA_VERSION, CurationRequestV1, SegmentBindingV1, SegmentSourceV1, TimelineEntryV1,
+    TimelineError,
 };
 
 /// One curation request performed while producing a rollup artifact.
@@ -41,27 +42,11 @@ pub fn curation_jobs_digest(jobs: &[CurationJobV1]) -> Result<String, TimelineEr
 
 pub fn segment_input_digest(
     binding: &SegmentBindingV1,
-    activity_source: &str,
+    source: &SegmentSourceV1,
 ) -> Result<String, TimelineError> {
     let mut envelope = base_envelope();
     envelope.insert("binding".to_owned(), to_value(binding)?);
-    envelope.insert(
-        "activity_source".to_owned(),
-        Value::String(activity_source.to_owned()),
-    );
-    fingerprint_envelope(envelope)
-}
-
-pub fn continuation_input_digest(
-    binding: &SegmentBindingV1,
-    predecessor_segment_key: &str,
-) -> Result<String, TimelineError> {
-    let mut envelope = base_envelope();
-    envelope.insert("binding".to_owned(), to_value(binding)?);
-    envelope.insert(
-        "predecessor_segment_key".to_owned(),
-        Value::String(predecessor_segment_key.to_owned()),
-    );
+    envelope.insert("source".to_owned(), to_value(source)?);
     fingerprint_envelope(envelope)
 }
 
@@ -150,9 +135,15 @@ mod tests {
             segment: "080000_300".to_owned(),
         };
 
+        let source = |sha256: &str| SegmentSourceV1::GeneratedActivity {
+            schema_version: crate::SEGMENT_SOURCE_SCHEMA_VERSION,
+            relative_path: "chronicle/20260401/080000_300/talents/activity.md".to_owned(),
+            sha256: sha256.repeat(64),
+        };
+
         assert_ne!(
-            segment_input_digest(&binding, "First activity.").unwrap(),
-            segment_input_digest(&binding, "Changed activity.").unwrap()
+            segment_input_digest(&binding, &source("a")).unwrap(),
+            segment_input_digest(&binding, &source("b")).unwrap()
         );
     }
 
@@ -164,9 +155,34 @@ mod tests {
             segment: "080000_300".to_owned(),
         };
 
+        let source = |predecessor: &str| SegmentSourceV1::Continuation {
+            schema_version: crate::SEGMENT_SOURCE_SCHEMA_VERSION,
+            relative_path: "chronicle/20260401/080000_300/talents/activity.md".to_owned(),
+            sha256: "a".repeat(64),
+            predecessor_segment_key: predecessor.to_owned(),
+            change_evidence_relative_path: "chronicle/20260401/080000_300/talents/change.json"
+                .to_owned(),
+            change_evidence_sha256: "c".repeat(64),
+        };
+
         assert_ne!(
-            continuation_input_digest(&binding, "070000_300").unwrap(),
-            continuation_input_digest(&binding, "071000_300").unwrap()
+            segment_input_digest(&binding, &source("070000_300")).unwrap(),
+            segment_input_digest(&binding, &source("071000_300")).unwrap()
+        );
+
+        let baseline = source("070000_300");
+        let mut changed_evidence = baseline.clone();
+        let SegmentSourceV1::Continuation {
+            change_evidence_sha256,
+            ..
+        } = &mut changed_evidence
+        else {
+            unreachable!();
+        };
+        *change_evidence_sha256 = "e".repeat(64);
+        assert_ne!(
+            segment_input_digest(&binding, &baseline).unwrap(),
+            segment_input_digest(&binding, &changed_evidence).unwrap()
         );
     }
 

@@ -76,6 +76,8 @@ pub enum TimelineError {
     },
     #[error("invalid segment identity: {detail}")]
     InvalidSegmentIdentity { detail: String },
+    #[error("invalid segment source evidence: {detail}")]
+    InvalidSourceEvidence { detail: String },
     #[error("timeline lock contention: {detail}")]
     LockContention { detail: String },
     #[error("timeline digest mismatch: expected {expected}, got {actual}")]

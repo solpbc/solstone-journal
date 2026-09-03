@@ -535,11 +535,18 @@ mod tests {
     }
 
     fn segment() -> SegmentTimelineV1 {
+        let binding = binding();
+        let source = solstone_core_timeline::SegmentSourceV1::GeneratedActivity {
+            schema_version: solstone_core_timeline::SEGMENT_SOURCE_SCHEMA_VERSION,
+            relative_path: format!("chronicle/{DAY}/090000_300/talents/activity.md"),
+            sha256: solstone_core_timeline::artifact_sha256("fixture activity"),
+        };
         SegmentTimelineV1 {
             schema_version: CURRENT_SCHEMA_VERSION,
             kind: TimelineKind::Segment,
-            binding: binding(),
-            input_digest: "segment-digest".to_owned(),
+            input_digest: solstone_core_timeline::segment_input_digest(&binding, &source).unwrap(),
+            binding,
+            source: Some(source),
             generated_at_ms: 1,
             summary: SegmentSummaryV1 {
                 title: "Timeline".to_owned(),
@@ -580,6 +587,15 @@ mod tests {
                 .join("090000_300/timeline.json"),
             &segment,
         );
+        fs::create_dir_all(root.join("chronicle").join(DAY).join("090000_300/talents"))
+            .expect("activity parent");
+        fs::write(
+            root.join("chronicle")
+                .join(DAY)
+                .join("090000_300/talents/activity.md"),
+            "fixture activity",
+        )
+        .expect("activity source");
         let state = solstone_core_timeline::TimelineStateV1 {
             schema_version: CURRENT_SCHEMA_VERSION,
             revision: 1,
