@@ -29,5 +29,19 @@ naming the exact upstream sources and tool versions used to construct it.
   remain intact; never overwrite an existing fixture.
 - `qwen35_admission_oracle.json` is the first fixture in this class.
 
+### Hybrid product-wire/provider observations
+
+`qwen35_b10068_wire_oracle_v1.json` is immutable but has deliberately mixed
+provenance: its exact request bodies were captured from the pinned production
+Generate and Converse builders, while its rendered prompts, token vectors, and
+three agreeing token-count observations were produced by the pinned external
+b10068 llama.cpp process. The embedded product commit and source hashes are a
+historical receipt for those captured bodies, not assertions about future
+repository revisions.
+
+A change to either side requires a new versioned fixture. Never edit this v1
+file in place or describe its product-derived request bodies as independently
+implemented.
+
 The rules above remain unchanged for producerless frozen regression pins. This
 second class is governed by its immutable rules instead.

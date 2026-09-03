@@ -209,7 +209,8 @@ mod tests {
     use solstone_core_generate::ContentPart;
     use solstone_core_local::connect::ConnectedServer;
     use solstone_core_local::{
-        HttpResponse, admission::acquire_local_slot, admission::admission_dir,
+        GenerateTransport, HttpResponse, admission::acquire_local_slot, admission::admission_dir,
+        generate_with, serialize_generate_http_body_for_test,
     };
 
     use super::*;
@@ -268,7 +269,7 @@ mod tests {
     #[derive(Clone)]
     struct StubTransport {
         response: HttpResponse,
-        posts: Arc<Mutex<Vec<(String, Value)>>>,
+        posts: Arc<Mutex<Vec<(String, String, Value)>>>,
         gets: Arc<Mutex<usize>>,
     }
 
@@ -297,15 +298,16 @@ mod tests {
         fn post_json(
             &mut self,
             base_url: &str,
-            _path: &str,
+            path: &str,
             body: &Value,
             _credential: Option<&str>,
             _timeout: Duration,
         ) -> Result<HttpResponse, crate::EndpointTransportError> {
-            self.posts
-                .lock()
-                .expect("posts")
-                .push((base_url.to_owned(), body.clone()));
+            self.posts.lock().expect("posts").push((
+                base_url.to_owned(),
+                path.to_owned(),
+                body.clone(),
+            ));
             Ok(self.response.clone())
         }
     }
@@ -378,6 +380,243 @@ mod tests {
             capacity_source: "test".into(),
             profile: "floor".into(),
         }
+    }
+
+    const QWEN_B10068_WIRE_ORACLE: &str =
+        include_str!("../../../fixtures/qwen35_b10068_wire_oracle_v1.json");
+
+    fn oracle_case(name: &str) -> Value {
+        let fixture: Value =
+            serde_json::from_str(QWEN_B10068_WIRE_ORACLE).expect("wire oracle parses");
+        fixture["cases"]
+            .as_array()
+            .expect("wire oracle cases")
+            .iter()
+            .find(|case| case["name"] == name)
+            .unwrap_or_else(|| panic!("wire oracle lost case {name}"))
+            .clone()
+    }
+
+    fn oracle_server() -> ConnectedServer {
+        ConnectedServer {
+            model_id: LOCAL_MODEL_ID.into(),
+            served_model_id: LOCAL_MODEL_ID.into(),
+            port: 1234,
+            base_url: "http://127.0.0.1:1234".into(),
+            parallel_slots: 1,
+            capacity_source: "wire-oracle-test".into(),
+            profile: "floor".into(),
+        }
+    }
+
+    #[derive(Default)]
+    struct WireGenerateTransport {
+        posts: Vec<(String, String, Value)>,
+    }
+
+    impl GenerateTransport for WireGenerateTransport {
+        fn get(
+            &mut self,
+            base_url: &str,
+            path: &str,
+            _timeout: Duration,
+        ) -> Result<HttpResponse, String> {
+            assert_eq!(base_url, "http://127.0.0.1:1234");
+            assert_eq!(path, "/props");
+            Ok(HttpResponse {
+                status: 200,
+                body: json!({"n_ctx": 16_384}).to_string(),
+            })
+        }
+
+        fn post_json(
+            &mut self,
+            base_url: &str,
+            path: &str,
+            body: &Value,
+            _timeout: Duration,
+        ) -> Result<HttpResponse, String> {
+            match path {
+                "/tokenize" => Ok(HttpResponse {
+                    status: 200,
+                    body: json!({"tokens": [1]}).to_string(),
+                }),
+                "/v1/chat/completions" => {
+                    self.posts
+                        .push((base_url.to_owned(), path.to_owned(), body.clone()));
+                    Ok(HttpResponse {
+                        status: 200,
+                        body: json!({
+                            "choices": [{
+                                "message": {"content": "ok"},
+                                "finish_reason": "stop",
+                            }],
+                            "usage": {
+                                "prompt_tokens": 1,
+                                "completion_tokens": 1,
+                                "total_tokens": 2,
+                            },
+                        })
+                        .to_string(),
+                    })
+                }
+                other => panic!("unexpected generate POST {other}"),
+            }
+        }
+    }
+
+    fn oracle_generate_request(
+        text: &str,
+        system_instruction: Option<&str>,
+        json_schema: Option<Value>,
+    ) -> GenerateRequest {
+        GenerateRequest {
+            id: None,
+            context: "test.qwen-b10068-wire-oracle".into(),
+            contents: vec![ContentPart::Text { text: text.into() }],
+            system_instruction: system_instruction.map(str::to_owned),
+            temperature: 0.0,
+            max_output_tokens: 1,
+            thinking_budget: None,
+            timeout_s: Some(5.0),
+            json_output: json_schema.is_some(),
+            json_schema,
+            enforce_responsiveness: false,
+            attempt_index: 0,
+            exclusive_admission: false,
+            transport_retries: None,
+        }
+    }
+
+    #[test]
+    fn bundled_generate_bodies_match_the_b10068_wire_oracle() {
+        let schema = json!({
+            "type": "object",
+            "properties": {"summary": {"type": "string"}},
+            "required": ["summary"],
+            "additionalProperties": false,
+        });
+        let cases = [
+            ("empty-user", oracle_generate_request("", None, None)),
+            (
+                "plain",
+                oracle_generate_request("hello world", Some("Return JSON."), None),
+            ),
+            (
+                "unicode",
+                oracle_generate_request("café é 東京 👩🏽‍💻 <|im_start|> not control", None, None),
+            ),
+            (
+                "json-terminal-schema",
+                oracle_generate_request(
+                    r#"{"pane":"%1","text":"\u001b[31mRED\u001b[0m\n$ git status"}"#,
+                    Some("Describe the visible terminal."),
+                    Some(schema),
+                ),
+            ),
+        ];
+
+        for (name, request) in cases {
+            let journal = journal_path();
+            let input = bundled_input(&request, &journal).expect("bundled input");
+            let mut transport = WireGenerateTransport::default();
+            let result = generate_with(input, &mut transport, |_| ConnectOutcome::Ready {
+                server: oracle_server(),
+            });
+            assert!(matches!(result, GenerateResult::Success(_)), "case={name}");
+            assert_eq!(transport.posts.len(), 1, "case={name}");
+            let (base_url, path, body) = &transport.posts[0];
+            assert_eq!(base_url, "http://127.0.0.1:1234", "case={name}");
+            assert_eq!(path, "/v1/chat/completions", "case={name}");
+            let actual = serialize_generate_http_body_for_test(body);
+            let expected =
+                serde_json::to_string(&oracle_case(name)["body"]).expect("oracle body serializes");
+            assert_eq!(actual, expected, "case={name}");
+            let _ = std::fs::remove_dir_all(journal);
+        }
+    }
+
+    #[test]
+    fn bundled_converse_body_matches_the_b10068_wire_oracle() {
+        let journal = journal_path();
+        let mut request = converse_request();
+        request.system_instruction = Some("Use tools when needed.".into());
+        request.temperature = 0.0;
+        request.max_output_tokens = 1;
+        let messages = vec![
+            ConverseMessage::User {
+                text: "What is the temperature in Denver?".into(),
+            },
+            ConverseMessage::Assistant {
+                text: String::new(),
+                tool_calls: vec![crate::ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city": "Denver"}),
+                    not_offered: false,
+                    thought_signature: None,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: r#"{"temperature_c":20}"#.into(),
+            },
+            ConverseMessage::Assistant {
+                text: "It is 20°C.".into(),
+                tool_calls: Vec::new(),
+            },
+            ConverseMessage::User {
+                text: "Return that as JSON.".into(),
+            },
+        ];
+        let tools = vec![ConverseToolSpec {
+            name: "weather".into(),
+            description: "Read current weather".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {"city": {"type": "string"}},
+                "required": ["city"],
+            }),
+        }];
+        let mut transport = StubTransport::success();
+        bundled_converse_with(
+            BundledConverseCall {
+                request: &request,
+                messages: &messages,
+                tools: &tools,
+                journal_path: &journal,
+                config: &Map::new(),
+                runtime: &EndpointRuntime::default(),
+            },
+            &mut transport,
+            |_| ConnectOutcome::Ready {
+                server: oracle_server(),
+            },
+            Instant::now(),
+        )
+        .expect("bundled Converse succeeds");
+
+        let posts = transport.posts.lock().expect("posts");
+        assert_eq!(posts.len(), 1);
+        let (base_url, path, body) = &posts[0];
+        assert_eq!(base_url, "http://127.0.0.1:1234");
+        assert_eq!(path, "/v1/chat/completions");
+        let expected_body = oracle_case("tool-roundtrip-wire")["body"].clone();
+        assert_eq!(
+            crate::endpoint::serialize_endpoint_http_body(body),
+            serde_json::to_string(&expected_body).expect("oracle body serializes")
+        );
+
+        let mut wrong_empty = body.clone();
+        wrong_empty["messages"][2]["content"] = Value::String(String::new());
+        assert_ne!(wrong_empty, expected_body);
+        let mut wrong_arguments = body.clone();
+        wrong_arguments["messages"][2]["tool_calls"][0]["function"]["arguments"] =
+            json!({"city": "Denver"});
+        assert_ne!(wrong_arguments, expected_body);
+        drop(posts);
+        let _ = std::fs::remove_dir_all(journal);
     }
 
     fn converse_request() -> GenerateRequest {
@@ -464,8 +703,9 @@ mod tests {
         assert_eq!(turn.model, "served-local");
         assert_eq!(turn.tool_calls[0].name, "weather");
         assert_eq!(*gets.lock().expect("get count"), 0);
-        let (base_url, body) = posts.lock().expect("posts")[0].clone();
+        let (base_url, path, body) = posts.lock().expect("posts")[0].clone();
         assert_eq!(base_url, server(2).base_url);
+        assert_eq!(path, "/v1/chat/completions");
         assert_eq!(body["model"], "served-local");
         assert_eq!(
             body["messages"],

@@ -27,6 +27,9 @@ pub use endpoint::{
     served_window_from_models_response,
 };
 pub use fixture::local_generate_input_schema;
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub use generate::serialize_generate_http_body_for_test;
 pub use generate::{
     ContextWindow, GenerateError, GenerateFailure, GenerateInput, GenerateResult, GenerateSuccess,
     GenerateTransport, HttpResponse, Inference, InputBudget, PreparedRequest, RequestBudget,

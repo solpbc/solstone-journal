@@ -39,6 +39,7 @@ path = "tests/provider_environment_isolation.rs"
 
 [dev-dependencies]
 socket2.workspace = true
+solstone-core-local = { workspace = true, features = ["test-hooks"] }
 solstone-core-spp-attest.workspace = true
 
 [lints]

@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 //! Frozen local-provider oracles: Vulkan child protocol, installer pin table,
-//! and the Qwen3.5-4B admission oracle.
+//! and the Qwen3.5-4B admission and b10068 wire oracles.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -34,6 +34,11 @@ const QWEN35_ORACLE_BYTES: &[u8] = include_bytes!("../../../fixtures/qwen35_admi
 const QWEN35_ORACLE_LEN: usize = 5424;
 const QWEN35_ORACLE_SHA256: &str =
     "44e549fe43014e2e774bf6337a1e999c898b46d80ac9008cc57a05e19efaf838";
+const QWEN35_B10068_WIRE_ORACLE_BYTES: &[u8] =
+    include_bytes!("../../../fixtures/qwen35_b10068_wire_oracle_v1.json");
+const QWEN35_B10068_WIRE_ORACLE_LEN: usize = 9234;
+const QWEN35_B10068_WIRE_ORACLE_SHA256: &str =
+    "ad96c3492f9cace1fb50ae0cf174f6489caf8158b1dccc715965776020ae995d";
 
 const KNOWN_DEVICE_TYPES: [u32; 4] = [1, 2, 3, 4];
 
@@ -233,6 +238,159 @@ fn qwen35_admission_oracle_has_expected_shape() {
             "tool-roundtrip",
             "unicode"
         ]
+    );
+}
+
+// This hybrid oracle freezes product-derived wire bodies together with three agreeing
+// observations made by the pinned b10068 provider process. It does not assert that the historical
+// source hashes still match the repository's current HEAD.
+#[test]
+fn qwen35_b10068_wire_oracle_matches_pinned_digest() {
+    assert_eq!(
+        QWEN35_B10068_WIRE_ORACLE_BYTES.len(),
+        QWEN35_B10068_WIRE_ORACLE_LEN
+    );
+    assert_eq!(
+        format!("{:x}", Sha256::digest(QWEN35_B10068_WIRE_ORACLE_BYTES)),
+        QWEN35_B10068_WIRE_ORACLE_SHA256
+    );
+}
+
+#[test]
+fn qwen35_b10068_wire_oracle_has_expected_shape_and_observations() {
+    let document: Value = serde_json::from_slice(QWEN35_B10068_WIRE_ORACLE_BYTES)
+        .expect("b10068 wire oracle parses as JSON");
+    assert_eq!(
+        document.get("schema").and_then(Value::as_str),
+        Some("solstone.qwen35-b10068-wire-oracle.v1")
+    );
+
+    let receipt = document["receipt"]
+        .as_object()
+        .expect("b10068 wire oracle has a receipt");
+    let runtime = receipt["runtime"]
+        .as_object()
+        .expect("receipt has runtime provenance");
+    assert_eq!(runtime["tag"], "b10068");
+    assert_eq!(
+        runtime["commit"],
+        "571d0d540df04f25298d0e159e520d9fc62ed121"
+    );
+    let product_wire = receipt["product_wire"]
+        .as_object()
+        .expect("receipt has product-wire provenance");
+    assert_eq!(
+        product_wire["commit"],
+        "1dbb1ccf68210d0a9a128fb1a63fd2aa8c20481e"
+    );
+    for key in [
+        "generate_builder_source_sha256",
+        "converse_builder_source_sha256",
+        "converse_body_builder_source_sha256",
+        "fixed_local_wrapper_source_sha256",
+    ] {
+        assert!(
+            product_wire
+                .get(key)
+                .and_then(Value::as_str)
+                .is_some_and(is_sha256_hex),
+            "product-wire receipt has {key}"
+        );
+    }
+
+    let cases = document["cases"]
+        .as_array()
+        .expect("b10068 wire oracle has cases");
+    assert_eq!(cases.len(), 5);
+    let mut names = Vec::with_capacity(cases.len());
+    for case in cases {
+        let name = case["name"].as_str().expect("wire case has a name");
+        names.push(name);
+        let body = serde_json::to_vec(&case["body"]).expect("wire body compact-serializes");
+        assert_eq!(
+            u64::try_from(body.len()).expect("wire body length fits u64"),
+            case["wire_bytes"].as_u64().expect("wire_bytes is u64"),
+            "case={name}"
+        );
+        assert_eq!(
+            format!("{:x}", Sha256::digest(&body)),
+            case["wire_sha256"].as_str().expect("wire_sha256 is text"),
+            "case={name}"
+        );
+        let count = case["native_input_tokens"]
+            .as_u64()
+            .expect("native input count is u64");
+        assert_eq!(case["apply_template_tokenize_tokens"], count);
+        assert_eq!(case["completion_usage_prompt_tokens"], count);
+        assert_eq!(
+            u64::try_from(
+                case["token_ids"]
+                    .as_array()
+                    .expect("case has token IDs")
+                    .len()
+            )
+            .expect("token count fits u64"),
+            count,
+            "case={name}"
+        );
+        assert!(
+            case["rendered_sha256"].as_str().is_some_and(is_sha256_hex),
+            "case={name}"
+        );
+    }
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        [
+            "empty-user",
+            "json-terminal-schema",
+            "plain",
+            "tool-roundtrip-wire",
+            "unicode"
+        ]
+    );
+
+    let named = |name: &str| {
+        cases
+            .iter()
+            .find(|case| case["name"] == name)
+            .unwrap_or_else(|| panic!("b10068 wire oracle lost case {name}"))
+    };
+    let unicode = named("unicode");
+    let upstream: Value =
+        serde_json::from_slice(QWEN35_ORACLE_BYTES).expect("upstream oracle parses");
+    let upstream_unicode = upstream["cases"]
+        .as_array()
+        .expect("upstream oracle has cases")
+        .iter()
+        .find(|case| case["name"] == "unicode")
+        .expect("upstream oracle has unicode case");
+    assert_eq!(unicode["rendered_bytes"], 126);
+    assert_eq!(
+        unicode["rendered_sha256"],
+        upstream_unicode["rendered_sha256"]
+    );
+    assert_eq!(upstream_unicode["token_count"], 30);
+    assert_eq!(unicode["native_input_tokens"], 31);
+
+    let tool = &named("tool-roundtrip-wire")["body"];
+    assert!(tool["messages"][2]["content"].is_null());
+    assert_eq!(
+        tool["messages"][2]["tool_calls"][0]["function"]["arguments"],
+        r#"{"city":"Denver"}"#
+    );
+    assert_eq!(tool["messages"][2]["tool_calls"][0]["id"], "call-1");
+    assert_eq!(tool["messages"][3]["tool_call_id"], "call-1");
+
+    let schema = &named("json-terminal-schema")["body"];
+    assert_eq!(schema["response_format"]["type"], "json_schema");
+    assert_eq!(
+        schema["response_format"]["json_schema"]["schema"]["additionalProperties"],
+        false
+    );
+    assert_eq!(
+        schema["messages"][1]["content"],
+        r#"{"pane":"%1","text":"\u001b[31mRED\u001b[0m\n$ git status"}"#
     );
 }
 
