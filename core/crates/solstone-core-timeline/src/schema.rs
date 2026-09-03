@@ -189,20 +189,15 @@ pub enum CurationContentPartV1 {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CurationRequestV1 {
-    pub id: Option<String>,
     pub context: String,
     pub contents: Vec<CurationContentPartV1>,
     pub system_instruction: Option<String>,
     pub temperature: f64,
     pub max_output_tokens: u64,
     pub thinking_budget: Option<u64>,
-    pub timeout_s: Option<f64>,
     pub json_output: bool,
     pub json_schema: Option<Value>,
     pub enforce_responsiveness: bool,
-    pub attempt_index: u64,
-    pub exclusive_admission: bool,
-    pub transport_retries: Option<u64>,
 }
 
 pub fn validate_segment_binding(binding: &SegmentBindingV1) -> Result<(), TimelineError> {

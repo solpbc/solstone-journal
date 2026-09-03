@@ -28,6 +28,7 @@ solstone-core-system.workspace = true
 solstone-core-timeline.workspace = true
 
 [dev-dependencies]
+jsonschema.workspace = true
 solstone-core-backup.workspace = true
 solstone-core-backup-runtime = { path = "../solstone-core-backup-runtime", features = ["test-hooks"] }
 tempfile = "3.24.0"

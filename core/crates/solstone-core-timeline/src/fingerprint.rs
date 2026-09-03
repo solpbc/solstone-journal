@@ -84,7 +84,6 @@ mod tests {
 
     fn request() -> CurationRequestV1 {
         CurationRequestV1 {
-            id: None,
             context: "timeline.scratch.rollup".to_owned(),
             contents: vec![CurationContentPartV1::Text {
                 text: "Candidates".to_owned(),
@@ -93,13 +92,9 @@ mod tests {
             temperature: 0.3,
             max_output_tokens: 2048,
             thinking_budget: None,
-            timeout_s: Some(60.0),
             json_output: true,
             json_schema: Some(json!({"type": "object"})),
             enforce_responsiveness: false,
-            attempt_index: 0,
-            exclusive_admission: false,
-            transport_retries: None,
         }
     }
 

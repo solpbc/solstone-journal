@@ -29,6 +29,49 @@ pub enum InvalidSelectionReason {
     Duplicate,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimelineCurationFailureReason {
+    GenerateFailed,
+    Refused,
+    RequestBindingMismatch,
+    NonStopFinish,
+    BlankModel,
+    MissingSchemaEvidence,
+    InvalidSchemaEvidence,
+    MalformedPayload,
+    WrongPickCount,
+    WrongPickType,
+    BlankRationale,
+    InvalidConcurrency,
+    WorkerPanicked,
+}
+
+impl TimelineCurationFailureReason {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::GenerateFailed => "generate-failed",
+            Self::Refused => "refused",
+            Self::RequestBindingMismatch => "request-binding-mismatch",
+            Self::NonStopFinish => "non-stop-finish",
+            Self::BlankModel => "blank-model",
+            Self::MissingSchemaEvidence => "missing-schema-evidence",
+            Self::InvalidSchemaEvidence => "invalid-schema-evidence",
+            Self::MalformedPayload => "malformed-payload",
+            Self::WrongPickCount => "wrong-pick-count",
+            Self::WrongPickType => "wrong-pick-type",
+            Self::BlankRationale => "blank-rationale",
+            Self::InvalidConcurrency => "invalid-concurrency",
+            Self::WorkerPanicked => "worker-panicked",
+        }
+    }
+}
+
+impl std::fmt::Display for TimelineCurationFailureReason {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 impl std::fmt::Display for InvalidSelectionReason {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(match self {
@@ -82,8 +125,11 @@ pub enum TimelineError {
     LockContention { detail: String },
     #[error("timeline digest mismatch: expected {expected}, got {actual}")]
     DigestMismatch { expected: String, actual: String },
-    #[error("timeline curation failed: {detail}")]
-    CurationFailed { detail: String },
+    #[error("timeline curation failed ({reason}): {detail}")]
+    CurationFailed {
+        reason: TimelineCurationFailureReason,
+        detail: String,
+    },
     #[error("timeline publication durability is uncertain for {}: {detail}", path.display())]
     DurabilityUncertain { path: PathBuf, detail: String },
     #[error("timeline publication did not complete for {}: {detail}", path.display())]

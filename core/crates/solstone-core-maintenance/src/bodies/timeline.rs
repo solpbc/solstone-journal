@@ -14,18 +14,19 @@ use solstone_core_timeline::{
     CurationContentPartV1, CurationJobV1, CurationRecordV1, CurationRequestV1, DayTimelineV1,
     GenerationProvenanceV1, HourTimelineV1, InvalidSelectionReason, MasterTimelineV1,
     MonthTimelineEntryV1, MonthTimelineV1, SegmentBindingV1, SegmentTimelineV1,
-    TimelineCurationStage, TimelineEntryV1, TimelineError, TimelineKind, TimelineLockRequest,
-    TimelineLockSet, TimelineLockSubject, acquire_timeline_locks, bounded_diagnostic_detail,
-    curation_input_digest, curation_jobs_digest, day_subject_key, day_timeline_path,
-    discover_day_segment_bindings, evaluate_artifact_currentness, master_source_digest,
-    master_subject_key, master_timeline_path, new_attempt_id, publish_day_timeline_after_start,
-    publish_master_timeline_after_start, record_attempt_outcome, record_attempt_started,
-    resolve_activity_source, segment_directory, segment_subject_key, validate_day_timeline,
-    validate_master_timeline, validate_segment_timeline, verify_segment_source,
+    TimelineCurationFailureReason, TimelineCurationStage, TimelineEntryV1, TimelineError,
+    TimelineKind, TimelineLockRequest, TimelineLockSet, TimelineLockSubject,
+    acquire_timeline_locks, bounded_diagnostic_detail, curation_input_digest, curation_jobs_digest,
+    day_subject_key, day_timeline_path, discover_day_segment_bindings,
+    evaluate_artifact_currentness, master_source_digest, master_subject_key, master_timeline_path,
+    new_attempt_id, publish_day_timeline_after_start, publish_master_timeline_after_start,
+    record_attempt_outcome, record_attempt_started, resolve_activity_source, segment_directory,
+    segment_subject_key, validate_day_timeline, validate_master_timeline,
+    validate_segment_timeline, verify_segment_source,
 };
 
 use crate::timezone::{default_rollup_day, resolve_owner_timezone};
-use crate::{CliRun, RollupPicker, TimelineServices};
+use crate::{CliRun, RollupPicker, RollupPickerError, TimelineServices};
 
 const EXIT_EMPTY: i32 = 66;
 const ROLLUP_CONTEXT: &str = "timeline.scratch.rollup";
@@ -48,6 +49,7 @@ struct DayScanFailure {
     detail: String,
 }
 
+#[derive(Debug)]
 struct EntryPickResult {
     picks: Vec<TimelineEntryV1>,
     rationale: String,
@@ -149,6 +151,9 @@ fn parse_day_args(args: &[String]) -> Result<DayOptions, String> {
         }
         index += 1;
     }
+    if options.top == 0 {
+        return Err("--top must be positive".to_owned());
+    }
     if options.commit && options.dry_run {
         return Err("--commit and --dry-run cannot be combined".to_owned());
     }
@@ -207,6 +212,9 @@ fn parse_master_args(args: &[String]) -> Result<MasterOptions, String> {
             value => return Err(format!("unrecognized arguments: {value}")),
         }
         index += 1;
+    }
+    if options.top == 0 {
+        return Err("--top must be positive".to_owned());
     }
     if options.commit && options.dry_run {
         return Err("--commit and --dry-run cannot be combined".to_owned());
@@ -854,7 +862,10 @@ fn pick_entry_batch(
     max_concurrent: usize,
 ) -> Result<Vec<EntryBatchResult>, TimelineError> {
     if max_concurrent == 0 {
-        return Err(curation_error("max_concurrent must be positive"));
+        return Err(curation_error(
+            TimelineCurationFailureReason::InvalidConcurrency,
+            "max_concurrent must be positive",
+        ));
     }
     let mut out = Vec::with_capacity(jobs.len());
     for chunk in jobs.chunks(max_concurrent) {
@@ -872,11 +883,12 @@ fn pick_entry_batch(
                 })
                 .collect::<Vec<_>>();
             for handle in handles {
-                completed.push(
-                    handle
-                        .join()
-                        .map_err(|_| curation_error("timeline rollup worker panicked")),
-                );
+                completed.push(handle.join().map_err(|_| {
+                    curation_error(
+                        TimelineCurationFailureReason::WorkerPanicked,
+                        "timeline rollup worker panicked",
+                    )
+                }));
             }
         });
         for result in completed {
@@ -893,20 +905,32 @@ fn pick_entries(
     scope_label: &str,
     stage: TimelineCurationStage,
 ) -> Result<EntryPickResult, TimelineError> {
-    let request = entry_rollup_request(candidates, n, scope_label);
+    let mut request = entry_rollup_request(candidates, n, scope_label);
     let input_digest = curation_input_digest(candidates, &curation_request(&request))?;
     if candidates.len() <= n {
         return Ok(EntryPickResult {
             picks: candidates.to_vec(),
-            rationale: "fewer than N candidates; returning all".to_owned(),
+            rationale: "all events fit, so none were left out".to_owned(),
             input_digest,
             provenance: None,
         });
     }
-    let response = picker
-        .pick(&request)
-        .map_err(|error| curation_error(&error))?;
-    let (indices, rationale) = parse_selection(&response, candidates.len(), n, stage)?;
+    request.id = Some(format!("timeline-curation:{input_digest}"));
+    let response = picker.pick(&request).map_err(|error| match error {
+        RollupPickerError::Client(detail) => {
+            curation_error(TimelineCurationFailureReason::GenerateFailed, &detail)
+        }
+        RollupPickerError::Refused(detail) => {
+            curation_error(TimelineCurationFailureReason::Refused, &detail)
+        }
+    })?;
+    let (indices, rationale) = parse_selection(
+        &response,
+        request.id.as_deref().expect("curation request id was set"),
+        candidates.len(),
+        n,
+        stage,
+    )?;
     Ok(EntryPickResult {
         picks: indices
             .into_iter()
@@ -920,34 +944,88 @@ fn pick_entries(
 
 fn parse_selection(
     response: &GeneratedResponse,
+    expected_id: &str,
     candidate_count: usize,
     n: usize,
     stage: TimelineCurationStage,
 ) -> Result<(Vec<usize>, String), TimelineError> {
+    if response.id.as_deref() != Some(expected_id) {
+        return Err(curation_error(
+            TimelineCurationFailureReason::RequestBindingMismatch,
+            "generate response id did not match its timeline curation request",
+        ));
+    }
+    if response.finish_reason != "stop" {
+        return Err(curation_error(
+            TimelineCurationFailureReason::NonStopFinish,
+            &format!(
+                "generate response did not finish normally: {:?}",
+                response.finish_reason
+            ),
+        ));
+    }
+    if response.model.trim().is_empty() {
+        return Err(curation_error(
+            TimelineCurationFailureReason::BlankModel,
+            "generate response model was blank",
+        ));
+    }
+    let Some(schema_validation) = response
+        .schema_validation
+        .as_ref()
+        .and_then(Value::as_object)
+    else {
+        return Err(curation_error(
+            TimelineCurationFailureReason::MissingSchemaEvidence,
+            "the timeline response did not include validation results",
+        ));
+    };
+    let schema_valid = schema_validation.get("valid") == Some(&Value::Bool(true));
+    let schema_errors_empty = schema_validation
+        .get("errors")
+        .and_then(Value::as_array)
+        .is_some_and(Vec::is_empty);
+    if !schema_valid || !schema_errors_empty {
+        return Err(curation_error(
+            TimelineCurationFailureReason::InvalidSchemaEvidence,
+            "the timeline response did not pass validation",
+        ));
+    }
     let payload: Value = serde_json::from_str(&response.text).map_err(|error| {
-        curation_error(&format!(
-            "rollup payload parse error: {error}; response={:?}",
-            response.text
-        ))
+        curation_error(
+            TimelineCurationFailureReason::MalformedPayload,
+            &format!(
+                "rollup payload parse error: {error}; response={:?}",
+                response.text
+            ),
+        )
     })?;
     let payload = payload.as_object().ok_or_else(|| {
-        curation_error(&format!(
-            "rollup payload must be an object: {:?}",
-            response.text
-        ))
+        curation_error(
+            TimelineCurationFailureReason::MalformedPayload,
+            &format!("rollup payload must be an object: {:?}", response.text),
+        )
     })?;
     let raw_indices = payload
         .get("picks")
         .and_then(Value::as_array)
-        .ok_or_else(|| curation_error("rollup payload picks must be an array"))?;
+        .ok_or_else(|| {
+            curation_error(
+                TimelineCurationFailureReason::WrongPickType,
+                "rollup payload picks must be an array",
+            )
+        })?;
     let mut seen = HashSet::new();
-    let mut picks = Vec::with_capacity(raw_indices.len().min(n));
+    let mut picks = Vec::with_capacity(raw_indices.len());
     for raw_index in raw_indices {
         let index = raw_index
             .as_u64()
             .and_then(|index| usize::try_from(index).ok())
             .ok_or_else(|| {
-                curation_error("rollup payload picks must contain non-negative integers")
+                curation_error(
+                    TimelineCurationFailureReason::WrongPickType,
+                    "rollup payload picks must contain non-negative integers",
+                )
             })?;
         if index >= candidate_count {
             return Err(TimelineError::InvalidModelSelection {
@@ -965,21 +1043,34 @@ fn parse_selection(
                 reason: InvalidSelectionReason::Duplicate,
             });
         }
-        if picks.len() == n {
-            continue;
-        }
         picks.push(index);
+    }
+    if picks.len() != n {
+        return Err(curation_error(
+            TimelineCurationFailureReason::WrongPickCount,
+            &format!(
+                "rollup payload returned {} picks; expected exactly {n}",
+                picks.len()
+            ),
+        ));
     }
     let rationale = payload
         .get("rationale")
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_owned();
+    if rationale.trim().is_empty() {
+        return Err(curation_error(
+            TimelineCurationFailureReason::BlankRationale,
+            "rollup payload rationale was blank",
+        ));
+    }
     Ok((picks, rationale))
 }
 
-fn curation_error(detail: &str) -> TimelineError {
+fn curation_error(reason: TimelineCurationFailureReason, detail: &str) -> TimelineError {
     TimelineError::CurationFailed {
+        reason,
         detail: bounded_diagnostic_detail(detail),
     }
 }
@@ -1029,11 +1120,25 @@ fn rollup_request_with_prompt(prompt: String, n: usize, scope_label: &str) -> Ge
 }
 
 fn curation_request(request: &GenerateRequest) -> CurationRequestV1 {
+    let GenerateRequest {
+        id: _,
+        context,
+        contents,
+        system_instruction,
+        temperature,
+        max_output_tokens,
+        thinking_budget,
+        timeout_s: _,
+        json_output,
+        json_schema,
+        enforce_responsiveness,
+        attempt_index: _,
+        exclusive_admission: _,
+        transport_retries: _,
+    } = request;
     CurationRequestV1 {
-        id: request.id.clone(),
-        context: request.context.clone(),
-        contents: request
-            .contents
+        context: context.clone(),
+        contents: contents
             .iter()
             .map(|content| match content {
                 ContentPart::Text { text } => CurationContentPartV1::Text { text: text.clone() },
@@ -1043,17 +1148,13 @@ fn curation_request(request: &GenerateRequest) -> CurationRequestV1 {
                 },
             })
             .collect(),
-        system_instruction: request.system_instruction.clone(),
-        temperature: request.temperature,
-        max_output_tokens: request.max_output_tokens,
-        thinking_budget: request.thinking_budget,
-        timeout_s: request.timeout_s,
-        json_output: request.json_output,
-        json_schema: request.json_schema.clone(),
-        enforce_responsiveness: request.enforce_responsiveness,
-        attempt_index: request.attempt_index,
-        exclusive_admission: request.exclusive_admission,
-        transport_retries: request.transport_retries,
+        system_instruction: system_instruction.clone(),
+        temperature: *temperature,
+        max_output_tokens: *max_output_tokens,
+        thinking_budget: *thinking_budget,
+        json_output: *json_output,
+        json_schema: json_schema.clone(),
+        enforce_responsiveness: *enforce_responsiveness,
     }
 }
 
@@ -1064,12 +1165,15 @@ fn build_rollup_schema(n: usize) -> Value {
             "picks": {
                 "type": "array",
                 "description": format!(
-                    "Zero-based indices of the most important events from the candidate list, in order of importance (most important first). Length must be exactly {n} (or fewer if input has fewer)."
+                    "Zero-based indices of the most important events from the candidate list, in order of importance (most important first). Length must be exactly {n}."
                 ),
                 "items": {"type": "integer"},
+                "minItems": n,
+                "maxItems": n,
             },
             "rationale": {
                 "type": "string",
+                "minLength": 1,
                 "description": "ONE sentence, max 100 chars, naming the criterion that drove the pick. For debugging — not shown in the UI.",
             },
         },
@@ -1458,13 +1562,15 @@ mod tests {
         master_digest, pick_entries, run,
     };
     use crate::timezone::HostTimezoneSource;
-    use crate::{RollupPicker, TimelineServices};
+    use crate::{RollupPicker, RollupPickerError, TimelineServices};
     use chrono::{TimeZone, Utc};
+    use jsonschema::{Draft, options as schema_options};
     use serde_json::{Value, json};
     use solstone_core_generate::{ContentPart, GenerateRequest, GeneratedResponse};
     use solstone_core_timeline::{
         AttemptOutcome, CURRENT_SCHEMA_VERSION, CurationRecordV1, DayTimelineV1, SegmentBindingV1,
-        SegmentSummaryV1, SegmentTimelineV1, TimelineEntryV1, TimelineKind, curation_jobs_digest,
+        SegmentSummaryV1, SegmentTimelineV1, TimelineCurationFailureReason, TimelineEntryV1,
+        TimelineError, TimelineKind, curation_input_digest, curation_jobs_digest,
         load_timeline_state, publish_day_timeline, publish_segment_timeline,
         record_attempt_outcome, segment_subject_key,
     };
@@ -1481,7 +1587,7 @@ mod tests {
     }
 
     struct Picker {
-        replies: Mutex<VecDeque<Result<GeneratedResponse, String>>>,
+        replies: Mutex<VecDeque<Result<GeneratedResponse, RollupPickerError>>>,
         requests: Mutex<Vec<GenerateRequest>>,
         fail_when: Option<&'static str>,
     }
@@ -1492,7 +1598,11 @@ mod tests {
                 replies: Mutex::new(
                     replies
                         .into_iter()
-                        .map(|reply| reply.map(generated_response).map_err(str::to_owned))
+                        .map(|reply| {
+                            reply
+                                .map(generated_response)
+                                .map_err(|error| RollupPickerError::Client(error.to_owned()))
+                        })
                         .collect(),
                 ),
                 requests: Mutex::new(Vec::new()),
@@ -1508,13 +1618,23 @@ mod tests {
             }
         }
 
+        fn responses(
+            replies: impl IntoIterator<Item = Result<GeneratedResponse, RollupPickerError>>,
+        ) -> Self {
+            Self {
+                replies: Mutex::new(replies.into_iter().collect()),
+                requests: Mutex::new(Vec::new()),
+                fail_when: None,
+            }
+        }
+
         fn call_count(&self) -> usize {
             self.requests.lock().unwrap().len()
         }
     }
 
     impl RollupPicker for Picker {
-        fn pick(&self, request: &GenerateRequest) -> Result<GeneratedResponse, String> {
+        fn pick(&self, request: &GenerateRequest) -> Result<GeneratedResponse, RollupPickerError> {
             self.requests.lock().unwrap().push(request.clone());
             let contents = match request.contents.first() {
                 Some(ContentPart::Text { text }) => text,
@@ -1524,13 +1644,43 @@ mod tests {
                 .fail_when
                 .is_some_and(|needle| contents.contains(needle))
             {
-                return Err(format!("canned failure for {contents}"));
+                return Err(RollupPickerError::Client(format!(
+                    "canned failure for {contents}"
+                )));
             }
-            self.replies.lock().unwrap().pop_front().unwrap_or_else(|| {
-                Ok(generated_response(
-                    "{\"picks\":[0],\"rationale\":\"canned\"}",
-                ))
-            })
+            let mut response = self
+                .replies
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or_else(|| {
+                    Ok(generated_response(
+                        "{\"picks\":[0],\"rationale\":\"canned\"}",
+                    ))
+                })?;
+            if response.id.is_none() {
+                response.id.clone_from(&request.id);
+            }
+            Ok(response)
+        }
+    }
+
+    struct SwappingPicker {
+        first_id: String,
+        second_id: String,
+    }
+
+    impl RollupPicker for SwappingPicker {
+        fn pick(&self, request: &GenerateRequest) -> Result<GeneratedResponse, RollupPickerError> {
+            let response_id = if request.id.as_ref() == Some(&self.first_id) {
+                &self.second_id
+            } else {
+                &self.first_id
+            };
+            Ok(bound_response(
+                response_id,
+                "{\"picks\":[0],\"rationale\":\"swapped\"}",
+            ))
         }
     }
 
@@ -1542,7 +1692,7 @@ mod tests {
             usage: json!({"input_tokens": 7, "output_tokens": 3}),
             finish_reason: "stop".to_owned(),
             thinking: None,
-            schema_validation: Some(json!({"valid": true})),
+            schema_validation: Some(json!({"valid": true, "errors": []})),
             input_budget: None,
             request_budget: None,
             inference: Some(json!({"provider": "fixture-byo"})),
@@ -1609,8 +1759,8 @@ mod tests {
             json!({
                 "type": "object",
                 "properties": {
-                    "picks": {"type": "array", "description": "Zero-based indices of the most important events from the candidate list, in order of importance (most important first). Length must be exactly 2 (or fewer if input has fewer).", "items": {"type": "integer"}},
-                    "rationale": {"type": "string", "description": "ONE sentence, max 100 chars, naming the criterion that drove the pick. For debugging — not shown in the UI."}
+                    "picks": {"type": "array", "description": "Zero-based indices of the most important events from the candidate list, in order of importance (most important first). Length must be exactly 2.", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2},
+                    "rationale": {"type": "string", "minLength": 1, "description": "ONE sentence, max 100 chars, naming the criterion that drove the pick. For debugging — not shown in the UI."}
                 },
                 "required": ["picks", "rationale"],
                 "additionalProperties": false
@@ -1648,7 +1798,438 @@ mod tests {
         )
         .unwrap();
         assert_eq!(short_circuit.picks, entries[..1]);
+        assert_eq!(
+            short_circuit.rationale,
+            "all events fit, so none were left out"
+        );
+        assert_eq!(short_circuit.provenance, None);
+        let fewer = pick_entries(
+            &picker,
+            &entries[..1],
+            2,
+            "day",
+            solstone_core_timeline::TimelineCurationStage::Day,
+        )
+        .unwrap();
+        assert_eq!(fewer.picks, entries[..1]);
+        assert_eq!(fewer.rationale, "all events fit, so none were left out");
+        assert_eq!(fewer.provenance, None);
         assert_eq!(picker.call_count(), 0);
+    }
+
+    fn assert_curation_reason(
+        response: &GeneratedResponse,
+        expected_id: &str,
+        expected: TimelineCurationFailureReason,
+    ) {
+        match super::parse_selection(
+            response,
+            expected_id,
+            3,
+            2,
+            solstone_core_timeline::TimelineCurationStage::Day,
+        ) {
+            Err(TimelineError::CurationFailed { reason, detail }) => {
+                assert_eq!(reason, expected, "unexpected reason for {detail}");
+                assert!(detail.len() <= 512);
+            }
+            other => panic!("expected {expected:?}, got {other:?}"),
+        }
+    }
+
+    fn bound_response(id: &str, text: impl Into<String>) -> GeneratedResponse {
+        let mut response = generated_response(text);
+        response.id = Some(id.to_owned());
+        response
+    }
+
+    #[test]
+    fn model_selection_requires_bound_complete_schema_valid_output() {
+        let expected_id = "timeline-curation:fixture";
+        let valid_text = "{\"picks\":[0,1],\"rationale\":\"consequence\"}";
+        assert_eq!(
+            super::parse_selection(
+                &bound_response(expected_id, valid_text),
+                expected_id,
+                3,
+                2,
+                solstone_core_timeline::TimelineCurationStage::Day,
+            )
+            .unwrap(),
+            (vec![0, 1], "consequence".to_owned())
+        );
+
+        let mut response = bound_response(expected_id, valid_text);
+        response.id = None;
+        assert_curation_reason(
+            &response,
+            expected_id,
+            TimelineCurationFailureReason::RequestBindingMismatch,
+        );
+
+        let mut response = bound_response("other-request", "not json");
+        response.finish_reason = "length".to_owned();
+        response.schema_validation = None;
+        assert_curation_reason(
+            &response,
+            expected_id,
+            TimelineCurationFailureReason::RequestBindingMismatch,
+        );
+
+        let mut response = bound_response(expected_id, "not json");
+        response.finish_reason = "length".to_owned();
+        response.schema_validation = None;
+        assert_curation_reason(
+            &response,
+            expected_id,
+            TimelineCurationFailureReason::NonStopFinish,
+        );
+
+        let mut response = bound_response(expected_id, valid_text);
+        response.model = " \t".to_owned();
+        assert_curation_reason(
+            &response,
+            expected_id,
+            TimelineCurationFailureReason::BlankModel,
+        );
+
+        for evidence in [None, Some(Value::Null), Some(Value::Bool(true))] {
+            let mut response = bound_response(expected_id, valid_text);
+            response.schema_validation = evidence;
+            assert_curation_reason(
+                &response,
+                expected_id,
+                TimelineCurationFailureReason::MissingSchemaEvidence,
+            );
+        }
+        for evidence in [
+            json!({}),
+            json!({"valid": "true", "errors": []}),
+            json!({"valid": false, "errors": []}),
+            json!({"valid": true}),
+            json!({"valid": true, "errors": {}}),
+            json!({"valid": true, "errors": [{"path": "/picks"}]}),
+        ] {
+            let mut response = bound_response(expected_id, valid_text);
+            response.schema_validation = Some(evidence);
+            assert_curation_reason(
+                &response,
+                expected_id,
+                TimelineCurationFailureReason::InvalidSchemaEvidence,
+            );
+        }
+
+        for text in ["", "not json", "[]"] {
+            assert_curation_reason(
+                &bound_response(expected_id, text),
+                expected_id,
+                TimelineCurationFailureReason::MalformedPayload,
+            );
+        }
+        for text in [
+            "{\"picks\":[0],\"rationale\":\"short\"}",
+            "{\"picks\":[0,1,2],\"rationale\":\"long\"}",
+        ] {
+            assert_curation_reason(
+                &bound_response(expected_id, text),
+                expected_id,
+                TimelineCurationFailureReason::WrongPickCount,
+            );
+        }
+        for pick in [json!(-1), json!("0"), json!(0.5), json!(true)] {
+            let text = json!({"picks": [pick, 1], "rationale": "typed"}).to_string();
+            assert_curation_reason(
+                &bound_response(expected_id, text),
+                expected_id,
+                TimelineCurationFailureReason::WrongPickType,
+            );
+        }
+        for rationale in [Value::Null, json!(3), json!(""), json!("  \t")] {
+            let text = json!({"picks": [0, 1], "rationale": rationale}).to_string();
+            assert_curation_reason(
+                &bound_response(expected_id, text),
+                expected_id,
+                TimelineCurationFailureReason::BlankRationale,
+            );
+        }
+    }
+
+    #[test]
+    fn rollup_schema_enforces_exact_cardinality_and_closed_payloads() {
+        for top in [1, 2, 4] {
+            let schema = super::build_rollup_schema(top);
+            let validator = schema_options()
+                .with_draft(Draft::Draft202012)
+                .build(&schema)
+                .unwrap();
+            let exact = (0..top).collect::<Vec<_>>();
+            assert!(validator.is_valid(&json!({"picks": exact, "rationale": "why"})));
+            assert!(!validator.is_valid(
+                &json!({"picks": (0..top.saturating_sub(1)).collect::<Vec<_>>(), "rationale": "why"})
+            ));
+            assert!(
+                !validator
+                    .is_valid(&json!({"picks": (0..=top).collect::<Vec<_>>(), "rationale": "why"}))
+            );
+            assert!(!validator.is_valid(&json!({"picks": exact, "rationale": ""})));
+            assert!(!validator.is_valid(&json!({"picks": exact})));
+            assert!(
+                !validator.is_valid(&json!({"picks": exact, "rationale": "why", "extra": true}))
+            );
+        }
+    }
+
+    #[test]
+    fn curation_digest_covers_content_and_excludes_operational_coordinates() {
+        let candidates = vec![
+            entry("Alpha", "first", "a", "080000_1"),
+            entry("Bravo", "second", "b", "080100_2"),
+        ];
+        let request = super::entry_rollup_request(&candidates, 1, "day");
+        let digest = |request: &GenerateRequest| {
+            curation_input_digest(&candidates, &super::curation_request(request)).unwrap()
+        };
+        let baseline = digest(&request);
+
+        let mut content_variants = Vec::new();
+        let mut changed = request.clone();
+        changed.context.push_str(".changed");
+        content_variants.push(changed);
+        let mut changed = request.clone();
+        changed.contents.push(ContentPart::Text {
+            text: "another part".to_owned(),
+        });
+        content_variants.push(changed);
+        let mut changed = request.clone();
+        changed.system_instruction = Some("changed".to_owned());
+        content_variants.push(changed);
+        let mut changed = request.clone();
+        changed.temperature = 0.4;
+        content_variants.push(changed);
+        let mut changed = request.clone();
+        changed.max_output_tokens += 1;
+        content_variants.push(changed);
+        let mut changed = request.clone();
+        changed.thinking_budget = Some(0);
+        content_variants.push(changed);
+        let mut changed = request.clone();
+        changed.json_output = false;
+        content_variants.push(changed);
+        let mut changed = request.clone();
+        changed.json_schema = Some(json!({"type": "array"}));
+        content_variants.push(changed);
+        let mut changed = request.clone();
+        changed.enforce_responsiveness = true;
+        content_variants.push(changed);
+        for changed in content_variants {
+            assert_ne!(baseline, digest(&changed));
+        }
+
+        let mut operational_variants = Vec::new();
+        let mut changed = request.clone();
+        changed.id = Some("unrelated-id".to_owned());
+        operational_variants.push(changed);
+        let mut changed = request.clone();
+        changed.timeout_s = Some(120.0);
+        operational_variants.push(changed);
+        let mut changed = request.clone();
+        changed.attempt_index = 7;
+        operational_variants.push(changed);
+        let mut changed = request.clone();
+        changed.exclusive_admission = true;
+        operational_variants.push(changed);
+        let mut changed = request.clone();
+        changed.transport_retries = Some(3);
+        operational_variants.push(changed);
+        for changed in operational_variants {
+            assert_eq!(baseline, digest(&changed));
+        }
+    }
+
+    #[test]
+    fn swapped_response_ids_fail_at_the_picker_boundary_and_matching_twins_pass() {
+        let first = vec![
+            entry("Alpha", "first", "a", "080000_1"),
+            entry("Bravo", "second", "b", "080100_2"),
+        ];
+        let second = vec![
+            entry("Charlie", "third", "c", "080200_3"),
+            entry("Delta", "fourth", "d", "080300_4"),
+        ];
+        let binding_id = |candidates: &[TimelineEntryV1]| {
+            let request = super::entry_rollup_request(candidates, 1, "day");
+            let digest =
+                curation_input_digest(candidates, &super::curation_request(&request)).unwrap();
+            format!("timeline-curation:{digest}")
+        };
+        let first_id = binding_id(&first);
+        let second_id = binding_id(&second);
+        assert_ne!(first_id, second_id);
+
+        let swapped = Picker::responses([
+            Ok(bound_response(
+                &second_id,
+                "{\"picks\":[0],\"rationale\":\"first\"}",
+            )),
+            Ok(bound_response(
+                &first_id,
+                "{\"picks\":[0],\"rationale\":\"second\"}",
+            )),
+        ]);
+        for candidates in [&first, &second] {
+            let error = pick_entries(
+                &swapped,
+                candidates,
+                1,
+                "day",
+                solstone_core_timeline::TimelineCurationStage::Day,
+            )
+            .unwrap_err();
+            assert!(matches!(
+                error,
+                TimelineError::CurationFailed {
+                    reason: TimelineCurationFailureReason::RequestBindingMismatch,
+                    ..
+                }
+            ));
+        }
+
+        let batch_swapped = SwappingPicker {
+            first_id: first_id.clone(),
+            second_id: second_id.clone(),
+        };
+        let swapped_batch = super::pick_entry_batch(
+            &batch_swapped,
+            vec![
+                super::EntryBatchInput {
+                    key: "first".to_owned(),
+                    candidates: first.clone(),
+                },
+                super::EntryBatchInput {
+                    key: "second".to_owned(),
+                    candidates: second.clone(),
+                },
+            ],
+            1,
+            "day",
+            solstone_core_timeline::TimelineCurationStage::Day,
+            2,
+        )
+        .unwrap();
+        assert!(swapped_batch.iter().all(|result| matches!(
+            &result.result,
+            Err(TimelineError::CurationFailed {
+                reason: TimelineCurationFailureReason::RequestBindingMismatch,
+                ..
+            })
+        )));
+
+        let matching = Picker::responses([
+            Ok(bound_response(
+                &first_id,
+                "{\"picks\":[0],\"rationale\":\"first\"}",
+            )),
+            Ok(bound_response(
+                &second_id,
+                "{\"picks\":[0],\"rationale\":\"second\"}",
+            )),
+        ]);
+        assert!(
+            pick_entries(
+                &matching,
+                &first,
+                1,
+                "day",
+                solstone_core_timeline::TimelineCurationStage::Day,
+            )
+            .is_ok()
+        );
+        assert!(
+            pick_entries(
+                &matching,
+                &second,
+                1,
+                "day",
+                solstone_core_timeline::TimelineCurationStage::Day,
+            )
+            .is_ok()
+        );
+
+        let matching_batch = Picker::canned([
+            Ok("{\"picks\":[0],\"rationale\":\"first\"}"),
+            Ok("{\"picks\":[0],\"rationale\":\"second\"}"),
+        ]);
+        let matching_results = super::pick_entry_batch(
+            &matching_batch,
+            vec![
+                super::EntryBatchInput {
+                    key: "first".to_owned(),
+                    candidates: first,
+                },
+                super::EntryBatchInput {
+                    key: "second".to_owned(),
+                    candidates: second,
+                },
+            ],
+            1,
+            "day",
+            solstone_core_timeline::TimelineCurationStage::Day,
+            2,
+        )
+        .unwrap();
+        assert!(matching_results.iter().all(|result| result.result.is_ok()));
+    }
+
+    #[test]
+    fn picker_failures_keep_stable_bounded_reasons() {
+        let entries = vec![
+            entry("Alpha", "first", "a", "080000_1"),
+            entry("Bravo", "second", "b", "080100_2"),
+        ];
+        for (failure, expected) in [
+            (
+                RollupPickerError::Client("client detail ".repeat(100)),
+                TimelineCurationFailureReason::GenerateFailed,
+            ),
+            (
+                RollupPickerError::Refused("refusal detail ".repeat(100)),
+                TimelineCurationFailureReason::Refused,
+            ),
+        ] {
+            let picker = Picker::responses([Err(failure)]);
+            match pick_entries(
+                &picker,
+                &entries,
+                1,
+                "day",
+                solstone_core_timeline::TimelineCurationStage::Day,
+            ) {
+                Err(TimelineError::CurationFailed { reason, detail }) => {
+                    assert_eq!(reason, expected);
+                    assert!(detail.len() <= 512);
+                }
+                other => panic!("expected {expected:?}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn zero_top_is_usage_before_journal_or_model_work() {
+        let journal = tempfile::tempdir().unwrap();
+        let picker = Picker::canned([]);
+        let model = Model::new("model");
+        for routine in ["timeline:rollup-day", "timeline:rollup-master"] {
+            let result = run(
+                routine,
+                &["--top".to_owned(), "0".to_owned(), "--commit".to_owned()],
+                journal.path(),
+                &services(&picker, &model),
+            );
+            assert_ne!(result.exit_code, 0);
+            assert!(result.stderr.contains("--top must be positive"));
+        }
+        assert_eq!(picker.call_count(), 0);
+        assert_eq!(std::fs::read_dir(journal.path()).unwrap().count(), 0);
     }
 
     #[test]
