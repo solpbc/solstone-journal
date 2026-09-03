@@ -68,8 +68,8 @@ pub use resolve::{ResolvedTools, ToolInstallDirs, resolve_operational_tools, res
 pub use restore::{RestoreDraft, RestoreOutcome, publish_restore_outcome, restore_journal};
 pub use rotation::{RotationResult, rotate_recovery_key};
 pub use runner::{
-    ResticResult, SystemToolRunner, ToolOutput, ToolRequest, ToolRunner, reason_for_returncode,
-    run_restic, select_summary,
+    PassedHandle, ResticResult, SystemToolRunner, ToolOutput, ToolRequest, ToolRunner,
+    reason_for_returncode, run_restic, select_summary,
 };
 pub use s3_wipe::{DELETE_OBJECT_BATCH_SIZE, S3Credentials, WipeResult, wipe_prefix};
 pub use teardown::{TeardownResult, teardown_backup};

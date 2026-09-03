@@ -5,23 +5,52 @@ use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsString;
 use std::fmt;
-use std::fs::File;
-use std::io::{self, Read};
-use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
-use std::os::unix::process::CommandExt;
+use std::io;
 use std::path::Path;
-use std::process::{Command, Stdio};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
+#[cfg(unix)]
+use std::fs::File;
+#[cfg(unix)]
+use std::io::Read;
+#[cfg(unix)]
+use std::os::fd::{AsFd, OwnedFd};
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+#[cfg(unix)]
+use std::process::{Command, Stdio};
+#[cfg(unix)]
+use std::thread;
+#[cfg(unix)]
+use std::time::Instant;
+
+#[cfg(unix)]
 use nix::errno::Errno;
+#[cfg(unix)]
 use nix::fcntl::{FcntlArg, FdFlag, fcntl};
+#[cfg(unix)]
 use nix::sys::signal::{Signal, killpg};
+#[cfg(unix)]
 use nix::sys::wait::waitpid;
+#[cfg(unix)]
 use nix::unistd::{Pid, pipe};
 use serde_json::Value;
+#[cfg(unix)]
 use solstone_core_system::process::{Disposition, LaunchAuthority, LaunchError, launch};
 use thiserror::Error;
+
+/// An inherited OS handle explicitly passed to a backup child process.
+///
+/// Windows backup execution does not support inherited handles; keeping this
+/// target-shaped type lets ordinary, descriptor-free restic requests retain a
+/// uniform request contract while that unsupported path fails closed.
+#[cfg(unix)]
+pub type PassedHandle<'a> = std::os::fd::BorrowedFd<'a>;
+#[cfg(windows)]
+pub type PassedHandle<'a> = std::os::windows::io::BorrowedHandle<'a>;
+#[cfg(not(any(unix, windows)))]
+#[derive(Clone, Copy)]
+pub struct PassedHandle<'a>(std::marker::PhantomData<&'a ()>);
 
 #[derive(Clone)]
 pub struct ToolRequest<'a> {
@@ -29,7 +58,7 @@ pub struct ToolRequest<'a> {
     pub argv: Vec<OsString>,
     pub env: BTreeMap<OsString, OsString>,
     pub timeout: Option<Duration>,
-    pub pass_fds: Vec<BorrowedFd<'a>>,
+    pub pass_fds: Vec<PassedHandle<'a>>,
 }
 impl fmt::Debug for ToolRequest<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -68,10 +97,10 @@ pub trait ToolRunner {
 #[derive(Debug, Default)]
 pub struct SystemToolRunner;
 
+#[cfg(unix)]
 impl ToolRunner for SystemToolRunner {
     fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
         let mut restored = Vec::with_capacity(request.pass_fds.len());
-        #[cfg(unix)]
         for &fd in &request.pass_fds {
             let flags = fcntl(fd, FcntlArg::F_GETFD).map_err(io::Error::other)?;
             let flags = FdFlag::from_bits_truncate(flags);
@@ -82,7 +111,6 @@ impl ToolRunner for SystemToolRunner {
             }
         }
         let result = self.run_child(request);
-        #[cfg(unix)]
         for (fd, flags) in restored {
             let _ = fcntl(fd, FcntlArg::F_SETFD(flags));
         }
@@ -90,6 +118,18 @@ impl ToolRunner for SystemToolRunner {
     }
 }
 
+#[cfg(not(unix))]
+impl ToolRunner for SystemToolRunner {
+    fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+        let _ = request;
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "the backup child-process runner is unsupported on this platform",
+        ))
+    }
+}
+
+#[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Step {
     Observe,
@@ -99,6 +139,7 @@ enum Step {
     CollectReaders,
 }
 
+#[cfg(unix)]
 trait SessionIo {
     fn observe_exit_without_reap(&mut self) -> io::Result<bool>;
     fn group_cleanup(&mut self) -> io::Result<()>;
@@ -107,12 +148,14 @@ trait SessionIo {
     fn collect_readers(&mut self) -> io::Result<(Vec<u8>, Vec<u8>)>;
 }
 
+#[cfg(unix)]
 fn push_step(trace: &mut Option<&mut Vec<Step>>, step: Step) {
     if let Some(trace) = trace {
         trace.push(step);
     }
 }
 
+#[cfg(unix)]
 fn complete_session<S: SessionIo>(
     session: &mut S,
     mut trace: Option<&mut Vec<Step>>,
@@ -137,11 +180,13 @@ fn complete_session<S: SessionIo>(
     Ok((status, stdout, stderr))
 }
 
+#[cfg(unix)]
 struct GroupGuard {
     pgid: Pid,
     reaped: bool,
 }
 
+#[cfg(unix)]
 impl Drop for GroupGuard {
     fn drop(&mut self) {
         if !self.reaped {
@@ -154,8 +199,10 @@ impl Drop for GroupGuard {
     }
 }
 
+#[cfg(unix)]
 type OutputReader = thread::JoinHandle<io::Result<Vec<u8>>>;
 
+#[cfg(unix)]
 struct SpawnedChild {
     // Drop order is declaration order and is load-bearing: GroupGuard
     // (kill group), parent write ends (EOF), LaunchAuthority, then detached readers.
@@ -166,6 +213,7 @@ struct SpawnedChild {
     readers: Option<(OutputReader, OutputReader)>,
 }
 
+#[cfg(unix)]
 impl SessionIo for SpawnedChild {
     fn observe_exit_without_reap(&mut self) -> io::Result<bool> {
         observe_exit_without_reap(self.guard.pgid)
@@ -197,6 +245,7 @@ impl SessionIo for SpawnedChild {
     }
 }
 
+#[cfg(unix)]
 fn kill_group(pgid: Pid) -> io::Result<()> {
     match killpg(pgid, Signal::SIGKILL) {
         Ok(()) | Err(Errno::ESRCH) => Ok(()),
@@ -210,6 +259,7 @@ fn kill_group(pgid: Pid) -> io::Result<()> {
     }
 }
 
+#[cfg(unix)]
 fn observe_exit_without_reap(pid: Pid) -> io::Result<bool> {
     let pid = rustix::process::Pid::from_raw(pid.as_raw())
         .ok_or_else(|| io::Error::other("invalid child pid"))?;
@@ -223,13 +273,15 @@ fn observe_exit_without_reap(pid: Pid) -> io::Result<bool> {
     .map_err(io::Error::from)
 }
 
-fn set_cloexec(fd: BorrowedFd<'_>) -> io::Result<()> {
+#[cfg(unix)]
+fn set_cloexec(fd: PassedHandle<'_>) -> io::Result<()> {
     let flags = fcntl(fd, FcntlArg::F_GETFD).map_err(io::Error::from)?;
     let flags = FdFlag::from_bits_truncate(flags);
     fcntl(fd, FcntlArg::F_SETFD(flags | FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
     Ok(())
 }
 
+#[cfg(unix)]
 fn pipe_cloexec() -> io::Result<(OwnedFd, OwnedFd)> {
     let (read, write) = pipe().map_err(io::Error::from)?;
     set_cloexec(read.as_fd())?;
@@ -237,6 +289,7 @@ fn pipe_cloexec() -> io::Result<(OwnedFd, OwnedFd)> {
     Ok((read, write))
 }
 
+#[cfg(unix)]
 impl SystemToolRunner {
     fn run_child(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
         let (stdout_r, stdout_w) = pipe_cloexec()?;
@@ -388,7 +441,7 @@ pub fn run_restic(
     json: bool,
     max_repack_size: Option<&str>,
     timeout: Option<Duration>,
-    pass_fds: &[BorrowedFd<'_>],
+    pass_fds: &[PassedHandle<'_>],
 ) -> Result<ResticResult, RunnerError> {
     if !is_explicit_program_path(restic_path) {
         return Err(RunnerError::BareProgram);
@@ -643,6 +696,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn complete_session_records_observe_cleanup_close_reap_order() {
         struct Fake;

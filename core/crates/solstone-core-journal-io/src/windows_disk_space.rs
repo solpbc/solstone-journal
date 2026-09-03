@@ -9,11 +9,26 @@ use std::path::Path;
 
 use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
 
+/// Capacity reported for the caller on the volume containing an existing path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WindowsDiskSpace {
+    pub available_bytes: u64,
+    pub total_bytes: u64,
+}
+
 /// Returns the bytes available to the current account on the volume containing `path`.
 ///
 /// Callers must create and validate `path` before this query so the capacity decision is
 /// anchored to the exact volume where they will write.
 pub fn windows_available_disk_bytes(path: &Path) -> io::Result<u64> {
+    Ok(windows_disk_space(path)?.available_bytes)
+}
+
+/// Returns caller-available and total capacity for the volume containing `path`.
+///
+/// Callers must create and validate `path` before this query so the capacity decision is
+/// anchored to the exact volume where they will write.
+pub fn windows_disk_space(path: &Path) -> io::Result<WindowsDiskSpace> {
     let mut directory = path.as_os_str().encode_wide().collect::<Vec<_>>();
     directory.push(0);
     let mut available = 0_u64;
@@ -27,7 +42,10 @@ pub fn windows_available_disk_bytes(path: &Path) -> io::Result<u64> {
     if result == 0 {
         return Err(io::Error::last_os_error());
     }
-    Ok(available)
+    Ok(WindowsDiskSpace {
+        available_bytes: available,
+        total_bytes: total,
+    })
 }
 
 #[cfg(test)]
@@ -37,6 +55,12 @@ mod tests {
     #[test]
     fn reports_current_account_capacity_for_an_existing_directory() {
         let temporary = tempfile::tempdir().expect("temporary directory");
-        assert!(windows_available_disk_bytes(temporary.path()).is_ok());
+        let space = windows_disk_space(temporary.path()).expect("volume capacity");
+        assert!(space.total_bytes > 0);
+        assert!(space.available_bytes <= space.total_bytes);
+        assert_eq!(
+            windows_available_disk_bytes(temporary.path()),
+            Ok(space.available_bytes)
+        );
     }
 }

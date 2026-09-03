@@ -7,6 +7,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
+#[cfg(unix)]
 use nix::sys::statvfs::statvfs;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -234,6 +235,7 @@ fn memory() -> MemoryInput {
         available_bytes: None,
     }
 }
+#[cfg(unix)]
 fn free_disk(path: &Path) -> Result<u64, String> {
     let mut root = path.to_path_buf();
     while !root.exists() && root != root.parent().unwrap_or(&root) {
@@ -243,6 +245,16 @@ fn free_disk(path: &Path) -> Result<u64, String> {
     (stat.blocks_available() as u64)
         .checked_mul(stat.fragment_size() as u64)
         .ok_or_else(|| "free space overflow".into())
+}
+
+#[cfg(windows)]
+fn free_disk(path: &Path) -> Result<u64, String> {
+    solstone_core_local::install::fit_report::free_bytes(path)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn free_disk(_path: &Path) -> Result<u64, String> {
+    Err("disk-space inspection is unsupported on this platform".into())
 }
 fn render_nodes_present_but_inaccessible(root: &Path) -> bool {
     let Ok(entries) = fs::read_dir(root) else {

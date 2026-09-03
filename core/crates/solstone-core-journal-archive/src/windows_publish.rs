@@ -92,9 +92,9 @@ pub fn publish_archive(
     // of another file after publication or a failed encode.
     let cleanup = fs::remove_file(&scratch_path);
     drop(scratch);
-    match (result, cleanup) {
-        (Ok(()), Ok(())) | (Err(_), Ok(())) => result,
-        (Ok(()), Err(error)) | (Err(_), Err(error)) => Err(ArchivePublicationError::Cleanup(error)),
+    match cleanup {
+        Ok(()) => result,
+        Err(error) => Err(ArchivePublicationError::Cleanup(error)),
     }
 }
 

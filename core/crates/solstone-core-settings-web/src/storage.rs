@@ -144,10 +144,23 @@ fn storage_warnings(
     warnings
 }
 
+#[cfg(unix)]
 fn disk_percent(journal_root: &std::path::Path) -> Option<f64> {
     let stats = nix::sys::statvfs::statvfs(journal_root).ok()?;
     let total = stats.blocks() as f64;
     (total > 0.0).then(|| round((total - stats.blocks_free() as f64) / total * 100.0, 1))
+}
+
+#[cfg(windows)]
+fn disk_percent(journal_root: &std::path::Path) -> Option<f64> {
+    let space = solstone_core_journal_io::windows_disk_space(journal_root).ok()?;
+    let total = space.total_bytes as f64;
+    (total > 0.0).then(|| round((total - space.available_bytes as f64) / total * 100.0, 1))
+}
+
+#[cfg(not(any(unix, windows)))]
+fn disk_percent(_journal_root: &std::path::Path) -> Option<f64> {
+    None
 }
 
 fn round(value: f64, places: i32) -> f64 {

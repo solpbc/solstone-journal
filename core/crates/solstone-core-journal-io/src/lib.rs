@@ -203,7 +203,7 @@ pub use strict_segment::{
     resolve_segment_exact, resolve_segment_locator_exact, resolve_stream_exact,
 };
 #[cfg(windows)]
-pub use windows_disk_space::windows_available_disk_bytes;
+pub use windows_disk_space::{WindowsDiskSpace, windows_available_disk_bytes, windows_disk_space};
 #[cfg(windows)]
 pub use windows_identity::{WindowsFileIdentity, windows_file_identity};
 #[cfg(windows)]
