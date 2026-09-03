@@ -651,7 +651,13 @@ fn router_with_hosted_parent(
         .route("/favicon.ico", get(favicon))
         .route("/static/{*path}", get(static_asset))
         .route("/api/shell", get(shell_api))
-        .route("/api/system/status", get(system::status))
+        .route(
+            "/api/system/status",
+            get({
+                let journal_root = journal_root.clone();
+                move || system::status(journal_root.clone())
+            }),
+        )
         .route("/sse/events", get(sse::events));
     for prefix in network::NETWORK_ROUTE_PREFIXES {
         routes = routes

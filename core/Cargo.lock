@@ -3881,6 +3881,7 @@ dependencies = [
  "solstone-core-facets-web",
  "solstone-core-handoff-nonce",
  "solstone-core-health-web",
+ "solstone-core-home",
  "solstone-core-home-web",
  "solstone-core-identity",
  "solstone-core-import-web",
