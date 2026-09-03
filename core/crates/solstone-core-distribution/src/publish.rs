@@ -435,6 +435,14 @@ fi
         fs::set_permissions(&path, permissions).expect("chmod curl");
     }
 
+    fn write_fake_minisign(dir: &Path) {
+        let path = dir.join("minisign");
+        fs::write(&path, "#!/bin/sh\nexit 0\n").expect("write fake minisign");
+        let mut permissions = fs::metadata(&path).expect("stat minisign").permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&path, permissions).expect("chmod minisign");
+    }
+
     fn prepend_path(dir: &Path) -> OsString {
         let mut path = dir.as_os_str().to_os_string();
         path.push(":");
@@ -448,7 +456,8 @@ fi
         let dir = served.join("solstone-journal").join(lane).join(version);
         fs::create_dir_all(&dir).expect("served version dir");
         let stage = served.join(format!("stage-{lane}-{version}"));
-        write_staged_file_mode(&stage, "bin/journal", b"ok\n", 0o755).expect("stage journal");
+        write_staged_file_mode(&stage, "bin/journal", b"#!/bin/sh\nexit 0\n", 0o755)
+            .expect("stage journal");
         let archive = dir.join(format!("{base}.tar.gz"));
         write_tar_gz(&stage, &archive).expect("write archive");
         let digest = sha256_hex(&fs::read(&archive).expect("read archive"));
@@ -460,10 +469,27 @@ fi
         fs::write(
             dir.join(format!("{base}.release")),
             format!(
-                "product=solstone-journal\nversion={version}\ntarget={target}\ncommit={HEX_COMMIT}\nlock_sha256={HEX_LOCK}\n"
+                "product=solstone-journal\nversion={version}\ntarget={target}\ncommit={HEX_COMMIT}\nlock_sha256={HEX_LOCK}\nupgrade_epoch=journal-v2\nretention_window=3\n"
             ),
         )
         .expect("release sidecar");
+        let sha_path = dir.join(format!("{base}.sha256"));
+        let release_path = dir.join(format!("{base}.release"));
+        fs::write(
+            dir.join(format!("{base}.manifest.json")),
+            format!(
+                "{{\"files\":{{\"{base}.tar.gz\":\"{}\",\"{base}.sha256\":\"{}\",\"{base}.release\":\"{}\"}}}}\n",
+                sha256_hex(&fs::read(&archive).expect("archive for manifest")),
+                sha256_hex(&fs::read(&sha_path).expect("sha for manifest")),
+                sha256_hex(&fs::read(&release_path).expect("release for manifest")),
+            ),
+        )
+        .expect("manifest sidecar");
+        fs::write(
+            dir.join(format!("{base}.manifest.json.minisig")),
+            b"fixture signature\n",
+        )
+        .expect("minisign sidecar");
         fs::write(
             served.join("solstone-journal").join(lane).join("latest"),
             format!("version={version}\n"),
@@ -474,7 +500,13 @@ fi
     fn plant_origin_root_legacy(served: &Path, lane: &str, version: &str) {
         let base = format!("solstone-journal-{version}-linux-x86_64");
         let src = served.join("solstone-journal").join(lane).join(version);
-        for ext in ["tar.gz", "sha256", "release"] {
+        for ext in [
+            "tar.gz",
+            "sha256",
+            "release",
+            "manifest.json",
+            "manifest.json.minisig",
+        ] {
             let name = format!("{base}.{ext}");
             fs::copy(src.join(&name), served.join(&name)).expect("plant origin-root legacy");
         }
@@ -501,6 +533,7 @@ fi
         let bin = root.join("bin");
         fs::create_dir_all(&bin).expect("bin dir");
         write_fake_curl(&bin);
+        write_fake_minisign(&bin);
         let home = root.join("home");
         fs::create_dir_all(&home).expect("home");
         let prefix = root.join("prefix");
@@ -543,10 +576,16 @@ fi
 
     fn object_urls(lane: &str, version: &str) -> Vec<String> {
         let base = format!("solstone-journal-{version}-linux-x86_64");
-        ["tar.gz", "sha256", "release"]
-            .into_iter()
-            .map(|ext| format!("{ORIGIN}/solstone-journal/{lane}/{version}/{base}.{ext}"))
-            .collect()
+        [
+            "tar.gz",
+            "sha256",
+            "release",
+            "manifest.json",
+            "manifest.json.minisig",
+        ]
+        .into_iter()
+        .map(|ext| format!("{ORIGIN}/solstone-journal/{lane}/{version}/{base}.{ext}"))
+        .collect()
     }
 
     #[test]

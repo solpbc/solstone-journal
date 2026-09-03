@@ -1488,10 +1488,17 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
             .installation_admission
             .as_ref()
             .expect("setup identity admission precedes mutating wrapper step")
-            .binding(),
+        .binding(),
     ) {
         Ok(_) => {
-            narrate(context, &ensure_user_bin_on_path(&context.home_dir));
+            if context.args.skip_path {
+                narrate(
+                    context,
+                    "left shell login files unchanged because --skip-path was selected",
+                );
+            } else {
+                narrate(context, &ensure_user_bin_on_path(&context.home_dir));
+            }
             Ok(StepResult::new(
                 StepName::Wrapper,
                 StepStatus::Ok,
@@ -2644,6 +2651,33 @@ mod tests {
                 .unwrap()
                 .contains(".local/bin")
         );
+    }
+
+    #[test]
+    fn skip_path_provisions_wrappers_without_touching_login_files() {
+        let (args, resolved, root, home) = fixture("wrapper-skip-path", &["--skip-path"]);
+        fs::create_dir_all(root.join("bin")).unwrap();
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        let result = step_wrapper(&mut context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        ))
+        .unwrap();
+        assert_eq!(result.status, StepStatus::Ok);
+        assert!(home.join(".local/bin/journal").exists());
+        assert!(home.join(".local/bin/solstone").exists());
+        for login_file in [".profile", ".bashrc", ".zshrc", ".config/fish/config.fish"] {
+            assert!(
+                !home.join(login_file).exists(),
+                "--skip-path must not create {login_file}"
+            );
+        }
     }
 
     /// A degraded optional asset must not cost the owner their whole journal.

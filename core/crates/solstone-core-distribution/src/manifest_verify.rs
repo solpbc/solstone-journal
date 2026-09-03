@@ -25,7 +25,15 @@ static FIXTURE_PIN: OnceLock<String> = OnceLock::new();
 
 const MANIFEST_SUFFIX: &str = ".manifest.json";
 const MINISIG_SUFFIX: &str = ".minisig";
-const RELEASE_KEYS: &[&str] = &["product", "version", "target", "commit", "lock_sha256"];
+const RELEASE_KEYS: &[&str] = &[
+    "product",
+    "version",
+    "target",
+    "commit",
+    "lock_sha256",
+    "upgrade_epoch",
+    "retention_window",
+];
 const ARCHIVE_CHAIN_RELEASE_KEYS: &[&str] = &[
     "archive_prebuild_input_sha256",
     "archive_delivery_contract_sha256",
@@ -723,7 +731,7 @@ mod release_contract_tests {
 
     fn release(target: &str) -> String {
         format!(
-            "product=solstone-journal\nversion=1.2.3\ntarget={target}\ncommit=commit\nlock_sha256=lock\n"
+            "product=solstone-journal\nversion=1.2.3\ntarget={target}\ncommit=commit\nlock_sha256=lock\nupgrade_epoch=journal-v2\nretention_window=3\n"
         )
     }
 

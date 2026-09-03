@@ -497,14 +497,18 @@ verify_artifact_set() {
 	target=$(awk -F= '$1 == "target" { print $2 }' "$release")
 	commit=$(awk -F= '$1 == "commit" { print $2 }' "$release")
 	lock=$(awk -F= '$1 == "lock_sha256" { print $2 }' "$release")
-	[ "$(awk 'NF { count++ } END { print count + 0 }' "$release")" -eq 5 ] \
-		|| refuse "release sidecar must contain exactly five fields"
+	epoch=$(awk -F= '$1 == "upgrade_epoch" { print $2 }' "$release")
+	window=$(awk -F= '$1 == "retention_window" { print $2 }' "$release")
+	[ "$(awk 'NF { count++ } END { print count + 0 }' "$release")" -eq 7 ] \
+		|| refuse "release sidecar must contain exactly seven fields"
 	[ "$product" = solstone-journal ] || refuse "release product mismatch"
 	[ "$target" = linux-x86_64 ] || refuse "release target mismatch"
 	[ "$base" = "solstone-journal-$version-linux-x86_64" ] \
 		|| refuse "release version does not match artifact basename"
 	is_lower_hex "$commit" 40 || refuse "release commit is invalid"
 	is_lower_hex "$lock" 64 || refuse "release lock digest is invalid"
+	[ "$epoch" = journal-v2 ] || refuse "release upgrade epoch is invalid"
+	[ "$window" = 3 ] || refuse "release retention window is invalid"
 	grep -F '  "product": "solstone-journal",' "$manifest" >/dev/null \
 		|| refuse "manifest product mismatch"
 	grep -F "  \"version\": \"$version\"," "$manifest" >/dev/null \
@@ -623,6 +627,8 @@ self_test() {
 	printf '%s\n' 'product=solstone-journal' 'version=1.0.22' 'target=linux-x86_64' \
 		'commit=0000000000000000000000000000000000000001' \
 		'lock_sha256=0000000000000000000000000000000000000000000000000000000000000001' \
+		'upgrade_epoch=journal-v2' \
+		'retention_window=3' \
 		>"$artifact_dir/$base.release"
 	cat >"$test_root/runtime" <<'EOF'
 #!/bin/sh

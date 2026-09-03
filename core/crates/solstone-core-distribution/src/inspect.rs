@@ -11,6 +11,12 @@ use crate::inventory::{
     manifest_members_for_os,
 };
 
+/// A binary from this release family may only downgrade to another retained
+/// release carrying the same identifier.
+pub const UPGRADE_EPOCH: &str = "journal-v2";
+/// Number of version directories in the explicit downgrade window.
+pub const RETENTION_WINDOW: usize = 3;
+
 #[derive(Clone, Copy)]
 pub struct ArchiveChainDigests<'a> {
     pub prebuild_input_sha256: &'a str,
@@ -112,8 +118,14 @@ fn write_sidecar(path: &Path, bytes: impl AsRef<[u8]>) -> io::Result<()> {
 #[must_use]
 pub fn render_release(release: &ReleaseInfo<'_>) -> String {
     let mut rendered = format!(
-        "product={}\nversion={}\ntarget={}\ncommit={}\nlock_sha256={}\n",
-        release.product, release.version, release.target, release.commit, release.lock_sha256
+        "product={}\nversion={}\ntarget={}\ncommit={}\nlock_sha256={}\nupgrade_epoch={}\nretention_window={}\n",
+        release.product,
+        release.version,
+        release.target,
+        release.commit,
+        release.lock_sha256,
+        UPGRADE_EPOCH,
+        RETENTION_WINDOW,
     );
     if let Some(chain) = release.archive_chain {
         rendered.push_str(&format!(
@@ -142,7 +154,7 @@ pub fn parse_release(text: &str) -> io::Result<Vec<(String, String)>> {
         };
         pairs.push((key.to_owned(), value.to_owned()));
     }
-    if !matches!(pairs.len(), 5 | 8) {
+    if !matches!(pairs.len(), 7 | 10) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "release-invalid",
