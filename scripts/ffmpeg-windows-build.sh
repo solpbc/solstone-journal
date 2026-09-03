@@ -99,12 +99,18 @@ remote_guard="foreach (\$path in @('$remote_source', '$remote_msys2', '$remote_m
 "$SSH" "$WIN_REMOTE_HOST" "powershell -NoProfile -Command \"$remote_guard\""
 
 remote_cleanup="\$ErrorActionPreference = 'Stop'
-foreach (\$path in @('$remote_source', '$remote_msys2', '$remote_make', '$remote_nasm', '$remote_llvm', '$remote_slot')) {
-  if (Test-Path -LiteralPath \$path) { Remove-Item -LiteralPath \$path -Recurse -Force }
-}
-foreach (\$path in @('$remote_source', '$remote_msys2', '$remote_make', '$remote_nasm', '$remote_llvm', '$remote_slot')) {
-  if (Test-Path -LiteralPath \$path) { throw \"remote FFmpeg cleanup left path: \$path\" }
-}
+if (Test-Path -LiteralPath '$remote_source') { Remove-Item -LiteralPath '$remote_source' -Recurse -Force }
+if (Test-Path -LiteralPath '$remote_msys2') { Remove-Item -LiteralPath '$remote_msys2' -Recurse -Force }
+if (Test-Path -LiteralPath '$remote_make') { Remove-Item -LiteralPath '$remote_make' -Recurse -Force }
+if (Test-Path -LiteralPath '$remote_nasm') { Remove-Item -LiteralPath '$remote_nasm' -Recurse -Force }
+if (Test-Path -LiteralPath '$remote_llvm') { Remove-Item -LiteralPath '$remote_llvm' -Recurse -Force }
+if (Test-Path -LiteralPath '$remote_slot') { Remove-Item -LiteralPath '$remote_slot' -Recurse -Force }
+if (Test-Path -LiteralPath '$remote_source') { throw 'remote FFmpeg cleanup left source archive' }
+if (Test-Path -LiteralPath '$remote_msys2') { throw 'remote FFmpeg cleanup left MSYS2 archive' }
+if (Test-Path -LiteralPath '$remote_make') { throw 'remote FFmpeg cleanup left make archive' }
+if (Test-Path -LiteralPath '$remote_nasm') { throw 'remote FFmpeg cleanup left NASM archive' }
+if (Test-Path -LiteralPath '$remote_llvm') { throw 'remote FFmpeg cleanup left LLVM archive' }
+if (Test-Path -LiteralPath '$remote_slot') { throw 'remote FFmpeg cleanup left build slot' }
 Write-Output 'FFMPEG_REMOTE_CLEANUP_OK paths=6'"
 remote_cleanup_encoded=$(printf '%s' "$remote_cleanup" | iconv -f UTF-8 -t UTF-16LE | base64 | tr -d '\r\n')
 if [ -z "$remote_cleanup_encoded" ]; then
