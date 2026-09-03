@@ -44,5 +44,5 @@ pub use store::{
     day_subject_key, day_timeline_path, master_subject_key, master_timeline_path,
     publish_continuation_summary, publish_day_timeline, publish_day_timeline_after_start,
     publish_master_timeline, publish_master_timeline_after_start, publish_segment_timeline,
-    segment_subject_key, segment_timeline_path,
+    segment_subject_key, segment_timeline_path, verify_segment_source,
 };

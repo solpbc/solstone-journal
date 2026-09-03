@@ -20,8 +20,8 @@ use solstone_core_timeline::{
     discover_day_segment_bindings, evaluate_artifact_currentness, master_source_digest,
     master_subject_key, master_timeline_path, new_attempt_id, publish_day_timeline_after_start,
     publish_master_timeline_after_start, record_attempt_outcome, record_attempt_started,
-    segment_directory, segment_subject_key, validate_day_timeline, validate_master_timeline,
-    validate_segment_timeline,
+    resolve_activity_source, segment_directory, segment_subject_key, validate_day_timeline,
+    validate_master_timeline, validate_segment_timeline, verify_segment_source,
 };
 
 use crate::timezone::{default_rollup_day, resolve_owner_timezone};
@@ -1090,6 +1090,17 @@ fn load_day_segments(journal: &Path, day: &str) -> Result<DayScan, String> {
     let mut rows = Vec::with_capacity(bindings.len());
     let mut failures = Vec::new();
     for binding in bindings {
+        let activity = match resolve_activity_source(journal, &binding) {
+            Ok(Some(activity)) => activity,
+            Ok(None) => continue,
+            Err(error) => {
+                failures.push(scan_failure(binding, "source_invalid", error.to_string()));
+                continue;
+            }
+        };
+        if activity.text.trim().is_empty() {
+            continue;
+        }
         let segment_dir = match segment_directory(journal, &binding) {
             Ok(path) => path,
             Err(error) => {
@@ -1137,6 +1148,10 @@ fn load_day_segments(journal: &Path, day: &str) -> Result<DayScan, String> {
                 "wrong_shape",
                 "artifact binding does not match its canonical segment directory".to_owned(),
             ));
+            continue;
+        }
+        if let Err(error) = verify_segment_source(journal, &timeline) {
+            failures.push(scan_failure(binding, "stale", error.to_string()));
             continue;
         }
         let artifact_text = match std::str::from_utf8(&bytes) {
@@ -1854,6 +1869,12 @@ mod tests {
             .join("100000_3")
             .join("timeline.json");
         std::fs::create_dir_all(&unreadable).unwrap();
+        std::fs::create_dir_all(unreadable.parent().unwrap().join("talents")).unwrap();
+        std::fs::write(
+            unreadable.parent().unwrap().join("talents/activity.md"),
+            "fixture activity",
+        )
+        .unwrap();
         write_raw_segment(journal.path(), day, "field.audio", "110000_4", b"{not json");
         write_raw_segment(journal.path(), day, "field.audio", "120000_5", b"[]");
         let picker = Picker::canned([]);
@@ -1878,6 +1899,74 @@ mod tests {
                 .join("chronicle/20260301/timeline.json")
                 .exists()
         );
+    }
+
+    #[test]
+    fn day_scan_uses_nonempty_activity_sources_as_its_population() {
+        let journal = tempfile::tempdir().unwrap();
+        let day = "20260301";
+        write_segment(
+            journal.path(),
+            day,
+            "field.audio",
+            "080000_1",
+            json!({"title":"Good", "description":"row"}),
+        );
+        let absent = journal
+            .path()
+            .join("chronicle/20260301/field.screen/090000_2");
+        std::fs::create_dir_all(&absent).unwrap();
+        std::fs::write(absent.join("timeline.json"), b"{not json").unwrap();
+        let empty = journal
+            .path()
+            .join("chronicle/20260301/field.audio/100000_3");
+        std::fs::create_dir_all(empty.join("talents")).unwrap();
+        std::fs::write(empty.join("talents/activity.md"), " \n").unwrap();
+        std::fs::write(empty.join("timeline.json"), b"{not json").unwrap();
+
+        let scan = load_day_segments(journal.path(), day).unwrap();
+
+        assert_eq!(scan.rows.len(), 1);
+        assert!(scan.failures.is_empty());
+        assert_eq!(scan.rows[0].binding.segment, "080000_1");
+    }
+
+    #[test]
+    fn day_scan_rejects_invalid_or_changed_activity_sources() {
+        let journal = tempfile::tempdir().unwrap();
+        let day = "20260301";
+        write_segment(
+            journal.path(),
+            day,
+            "field.audio",
+            "080000_1",
+            json!({"title":"Stale", "description":"row"}),
+        );
+        std::fs::write(
+            journal
+                .path()
+                .join("chronicle/20260301/field.audio/080000_1/talents/activity.md"),
+            "changed activity",
+        )
+        .unwrap();
+        let invalid = journal
+            .path()
+            .join("chronicle/20260301/field.audio/090000_2/talents");
+        std::fs::create_dir_all(&invalid).unwrap();
+        std::fs::write(invalid.join("activity.md"), [0xff]).unwrap();
+
+        let scan = load_day_segments(journal.path(), day).unwrap();
+
+        assert!(scan.rows.is_empty());
+        assert_eq!(scan.failures.len(), 2);
+        assert!(
+            scan.failures.iter().any(|failure| {
+                failure.binding.segment == "080000_1" && failure.kind == "stale"
+            })
+        );
+        assert!(scan.failures.iter().any(|failure| {
+            failure.binding.segment == "090000_2" && failure.kind == "source_invalid"
+        }));
     }
 
     #[test]
@@ -2572,14 +2661,13 @@ mod tests {
     }
 
     fn create_segment_dir(journal: &Path, day: &str, stream: &str, segment: &str) {
-        std::fs::create_dir_all(
-            journal
-                .join("chronicle")
-                .join(day)
-                .join(stream)
-                .join(segment),
-        )
-        .unwrap();
+        let segment = journal
+            .join("chronicle")
+            .join(day)
+            .join(stream)
+            .join(segment);
+        std::fs::create_dir_all(segment.join("talents")).unwrap();
+        std::fs::write(segment.join("talents/activity.md"), "fixture activity").unwrap();
     }
 
     fn entry(
@@ -2601,13 +2689,15 @@ mod tests {
     }
 
     fn write_raw_segment(journal: &Path, day: &str, stream: &str, segment: &str, contents: &[u8]) {
-        let path = journal
+        let segment_dir = journal
             .join("chronicle")
             .join(day)
             .join(stream)
-            .join(segment)
-            .join("timeline.json");
+            .join(segment);
+        let path = segment_dir.join("timeline.json");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(segment_dir.join("talents")).unwrap();
+        std::fs::write(segment_dir.join("talents/activity.md"), "fixture activity").unwrap();
         std::fs::write(path, contents).unwrap();
     }
 

@@ -303,11 +303,6 @@ pub(crate) fn run(
         .and_then(Value::as_str)
         .unwrap_or_default();
     log_change(log, context, segment, change_class, stream);
-    if density == "idle" && !refresh {
-        log_skip(log, context, "*", segment, "density_idle", stream);
-        complete(log, context, segment, stream, result.clone());
-        return Ok(result);
-    }
     if change_class == "redundant" && !refresh {
         if let Some(previous) = change
             .pointer("/predecessor/segment")
@@ -338,6 +333,17 @@ pub(crate) fn run(
         complete(log, context, segment, stream, result.clone());
         return Ok(result);
     }
+    let timeline_only = density == "idle" && !refresh;
+    if timeline_only {
+        log_skip(
+            log,
+            context,
+            "non_timeline_talents",
+            segment,
+            "density_idle",
+            stream,
+        );
+    }
     let mut total = result;
     let mut agents = select_agents(
         context,
@@ -348,6 +354,7 @@ pub(crate) fn run(
         segment,
         stream,
         refresh,
+        timeline_only,
     )?;
     context.status.update(segment_status(
         context,
@@ -437,8 +444,24 @@ fn select_agents<'a>(
     segment: &str,
     stream: Option<&str>,
     refresh: bool,
+    timeline_only: bool,
 ) -> Result<Vec<&'a TalentConfig>, String> {
     let mut selected = Vec::new();
+    if timeline_only {
+        if let Some(config) = by_name.get("timeline:segment_summary") {
+            selected.push(config);
+        } else {
+            log_skip(
+                log,
+                context,
+                "timeline:segment_summary",
+                segment,
+                "no_config",
+                stream,
+            );
+        }
+        return Ok(selected);
+    }
     let source = FilesystemHealthLogSource::new(&context.journal);
     for name in SEGMENT_FLOOR_TALENTS {
         let Some(config) = by_name.get(*name) else {

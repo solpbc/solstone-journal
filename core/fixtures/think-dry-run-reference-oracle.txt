@@ -44,11 +44,11 @@ Day 2026-01-01 segment 010203_60
 
 Sense orchestrator (linear):
   1. sense (gen/json) (new) — mandatory
-  2. timeline:segment_summary (gen/json) (new) — always for non-idle
+  2. timeline:segment_summary (gen/json) (new) — always when activity exists
   3. screen (gen/json) (new) — if recommend.screen_record
   4. speaker_attribution (gen/json) (new) — if recommend.speaker_attribution + audio embeddings
 
-  idle segments: write stubs + early return (unless --refresh)
+  idle segments: write stubs + timeline only (unless --refresh)
   activity state machine: updates per segment
 (exit 0)
 
@@ -57,11 +57,11 @@ Day 2026-01-01 segment 010203_60 (refresh)
 
 Sense orchestrator (linear):
   1. sense (gen/json) (new) — mandatory
-  2. timeline:segment_summary (gen/json) (new) — always for non-idle
+  2. timeline:segment_summary (gen/json) (new) — always when activity exists
   3. screen (gen/json) (new) — if recommend.screen_record
   4. speaker_attribution (gen/json) (new) — if recommend.speaker_attribution + audio embeddings
 
-  idle segments: write stubs + early return (unless --refresh)
+  idle segments: write stubs + timeline only (unless --refresh)
   activity state machine: updates per segment
 (exit 0)
 
@@ -142,11 +142,11 @@ Day 2026-01-01 segment 010203_60
 
 Sense orchestrator (linear):
   1. sense (gen/json) (new) — mandatory
-  2. timeline:segment_summary (gen/json) (new) — always for non-idle
+  2. timeline:segment_summary (gen/json) (new) — always when activity exists
   3. screen (gen/json) (new) — if recommend.screen_record
   4. speaker_attribution (gen/json) (new) — if recommend.speaker_attribution + audio embeddings
 
-  idle segments: write stubs + early return (unless --refresh)
+  idle segments: write stubs + timeline only (unless --refresh)
   activity state machine: updates per segment
 (exit 0)
 
@@ -201,11 +201,11 @@ Day 2026-01-01 — re-process 2 segments
 
 Sense orchestrator (linear):
   1. sense (gen/json) — mandatory
-  2. timeline:segment_summary (gen/json) — always for non-idle
+  2. timeline:segment_summary (gen/json) — always when activity exists
   3. screen (gen/json) — if recommend.screen_record
   4. speaker_attribution (gen/json) — if recommend.speaker_attribution + audio embeddings
 
-  idle segments: write stubs + early return (unless --refresh)
+  idle segments: write stubs + timeline only (unless --refresh)
   activity state machine: updates per segment
 (exit 0)
 

@@ -205,7 +205,8 @@ fn print_segment_orchestrator(
         );
         let label = match name {
             "sense" => "mandatory",
-            "entities" | "timeline:segment_summary" => "always for non-idle",
+            "entities" => "always for non-idle",
+            "timeline:segment_summary" => "always when activity exists",
             "screen" => "if recommend.screen_record",
             _ => "if recommend.speaker_attribution + audio embeddings",
         };
@@ -217,7 +218,7 @@ fn print_segment_orchestrator(
         .expect("write string");
         step += 1;
     }
-    out.push_str("\n  idle segments: write stubs + early return (unless --refresh)\n  activity state machine: updates per segment\n");
+    out.push_str("\n  idle segments: write stubs + timeline only (unless --refresh)\n  activity state machine: updates per segment\n");
     Ok(())
 }
 

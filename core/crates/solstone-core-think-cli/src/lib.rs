@@ -2770,8 +2770,8 @@ mod tests {
 
     #[test]
     fn segment_idle_and_redundant_branches_write_their_distinct_artifacts() {
-        // Source-derived, not measured: thinking.py:1746-1816 terminalizes
-        // idle segments and writes a continuation only for redundant changes.
+        // Idle segments without a configured timeline talent still terminalize;
+        // redundant active segments publish a source-bound continuation.
         let journal = tempdir().unwrap();
         let roots = tempdir().unwrap();
         let (context, _) = segment_context(
@@ -2844,6 +2844,53 @@ mod tests {
             continuation.summary.continuation_of.as_deref(),
             Some("090500_300")
         );
+    }
+
+    #[test]
+    fn idle_segment_dispatches_only_the_timeline_summary() {
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[
+                (
+                    "sense",
+                    "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+                ),
+                (
+                    "timeline:segment_summary",
+                    "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 2, \"output\": \"json\"\n}\n",
+                ),
+                (
+                    "entities:detection",
+                    "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 3, \"output\": \"json\"\n}\n",
+                ),
+            ],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        segment_dir(journal.path(), "20260813", "090000_300");
+        write_sense_output(
+            &context,
+            "090000_300",
+            serde_json::json!({
+                "density":"idle",
+                "content_type":"idle",
+                "activity_summary":"A quiet but real event occurred."
+            }),
+        );
+
+        let result = run_segment(&context, journal.path(), "090000_300", false, false);
+        let names = recorder
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|request| request.name.clone())
+            .collect::<Vec<_>>();
+
+        assert_eq!((result.success, result.failed), (2, 0));
+        assert_eq!(names, ["sense", "timeline:segment_summary"]);
     }
 
     #[test]

@@ -115,7 +115,7 @@ fn source_with_snapshot(
     }
 }
 
-fn verify_segment_source(
+pub fn verify_segment_source(
     journal: &Path,
     timeline: &SegmentTimelineV1,
 ) -> Result<(), TimelineError> {
