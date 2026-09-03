@@ -19,7 +19,6 @@ compile_error!(
 );
 
 mod deny;
-#[cfg(unix)]
 mod encode;
 mod entry;
 #[cfg(any(unix, windows))]
@@ -36,11 +35,13 @@ mod target;
 #[cfg(all(unix, feature = "test-hooks"))]
 mod test_hooks;
 #[cfg(windows)]
+mod windows_publish;
+#[cfg(windows)]
 mod windows_source;
-#[cfg(unix)]
+#[cfg(windows)]
+mod windows_target;
 mod writer;
 
-#[cfg(unix)]
 pub use encode::{
     DayWindow, EncodeArchiveError, EncodeArchiveFollowOn, EncodeArchiveRequest, EncodingPhase,
     encode_archive,
@@ -69,4 +70,11 @@ pub use test_hooks::{
     run_with_encode_control,
 };
 #[cfg(windows)]
+pub use windows_publish::{ArchivePublicationError, publish_archive};
+#[cfg(windows)]
 pub use windows_source::ArchiveSource;
+#[cfg(windows)]
+pub use windows_target::{
+    ArchiveOutputTarget, ExplicitArchiveOutputRequest, ExplicitTargetError,
+    acquire_explicit_output_target,
+};

@@ -162,11 +162,22 @@ pub(crate) struct ImportInfo {
     pub(crate) values: Map<String, Value>,
 }
 
+#[cfg(unix)]
 fn ctime(path: &Path) -> std::io::Result<f64> {
     use std::os::unix::fs::MetadataExt;
 
     let metadata = path.metadata()?;
     Ok(metadata.ctime() as f64 + metadata.ctime_nsec() as f64 / 1_000_000_000.0)
+}
+
+#[cfg(windows)]
+fn ctime(path: &Path) -> std::io::Result<f64> {
+    let metadata = path.metadata()?;
+    let timestamp = metadata.created().or_else(|_| metadata.modified())?;
+    timestamp
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs_f64())
+        .map_err(std::io::Error::other)
 }
 
 fn object_from_file(path: &Path) -> Result<Map<String, Value>, ()> {

@@ -7,8 +7,11 @@ use std::fmt;
 use std::fs::File;
 use std::io::{self, Seek, SeekFrom, Write};
 
+#[cfg(unix)]
 use nix::fcntl::{FcntlArg, OFlag, fcntl};
+#[cfg(unix)]
 use nix::sys::stat::{SFlag, fstat};
+#[cfg(unix)]
 use nix::unistd::{Whence, lseek};
 use zip::ZipWriter;
 
@@ -819,6 +822,18 @@ impl PendingFailure {
 }
 
 fn preflight_writer(file: &File) -> Result<(), EncodeArchiveError> {
+    #[cfg(unix)]
+    {
+        preflight_writer_unix(file)
+    }
+    #[cfg(windows)]
+    {
+        preflight_writer_windows(file)
+    }
+}
+
+#[cfg(unix)]
+fn preflight_writer_unix(file: &File) -> Result<(), EncodeArchiveError> {
     #[cfg(any(test, feature = "test-hooks"))]
     if test_take_preflight_fault(TestPreflightOperation::Stat) {
         return Err(EncodeArchiveError::InvalidWriter {
@@ -880,6 +895,61 @@ fn preflight_writer(file: &File) -> Result<(), EncodeArchiveError> {
     Ok(())
 }
 
+#[cfg(windows)]
+fn preflight_writer_windows(file: &File) -> Result<(), EncodeArchiveError> {
+    #[cfg(any(test, feature = "test-hooks"))]
+    if test_take_preflight_fault(TestPreflightOperation::Stat) {
+        return Err(EncodeArchiveError::InvalidWriter {
+            reason: "could not stat writer",
+        });
+    }
+    let metadata = file
+        .metadata()
+        .map_err(|_| EncodeArchiveError::InvalidWriter {
+            reason: "could not stat writer",
+        })?;
+    if !metadata.file_type().is_file() {
+        return Err(EncodeArchiveError::InvalidWriter {
+            reason: "must be a regular file",
+        });
+    }
+
+    // Windows does not expose a stable std-only query for the desired-access
+    // bits held by an existing `File`. The Windows publisher opens this file
+    // with read/write access itself; for another caller, the ZIP write is the
+    // authoritative access check. Length and cursor are still checked before
+    // ZIP construction so no existing output is accepted.
+    #[cfg(any(test, feature = "test-hooks"))]
+    if test_take_preflight_fault(TestPreflightOperation::Flags) {
+        return Err(EncodeArchiveError::InvalidWriter {
+            reason: "could not read writer flags",
+        });
+    }
+    if metadata.len() != 0 {
+        return Err(EncodeArchiveError::InvalidWriter {
+            reason: "must be empty",
+        });
+    }
+    #[cfg(any(test, feature = "test-hooks"))]
+    if test_take_preflight_fault(TestPreflightOperation::Position) {
+        return Err(EncodeArchiveError::InvalidWriter {
+            reason: "could not determine writer position",
+        });
+    }
+    let mut reader = file;
+    let position = reader
+        .stream_position()
+        .map_err(|_| EncodeArchiveError::InvalidWriter {
+            reason: "could not determine writer position",
+        })?;
+    if position != 0 {
+        return Err(EncodeArchiveError::InvalidWriter {
+            reason: "must be positioned at the start",
+        });
+    }
+    Ok(())
+}
+
 fn validate_member_name_length(name: &ArchiveMemberName) -> Result<(), EncodeArchiveError> {
     if name.as_str().len() > usize::from(u16::MAX) {
         return Err(EncodeArchiveError::InvalidMetadata {
@@ -905,7 +975,7 @@ fn from_manifest_error(error: ManifestError) -> EncodeArchiveError {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use std::fs::{self, File, OpenOptions};
