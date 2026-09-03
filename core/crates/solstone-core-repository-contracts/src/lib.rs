@@ -54,6 +54,9 @@ mod distribution_workspace_bins;
 #[path = "contracts/hosted_launch_admission_boundary.rs"]
 mod hosted_launch_admission_boundary;
 #[cfg(test)]
+#[path = "contracts/installation_binding_admission_surface.rs"]
+mod installation_binding_admission_surface;
+#[cfg(test)]
 #[path = "contracts/journal_windows_target_gate.rs"]
 mod journal_windows_target_gate;
 #[cfg(test)]

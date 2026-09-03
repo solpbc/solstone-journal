@@ -428,6 +428,29 @@ impl SetupAdmission {
     }
 }
 
+/// A retained read-only view of one adopted Linux installation binding.
+///
+/// Holding this value prevents setup and clean-uninstall identity mutations for
+/// this owner while allowing other readers to coexist. The admission exposes no
+/// storage handle or mutation operation.
+#[cfg(target_os = "linux")]
+#[derive(Debug)]
+pub struct InstallationBindingAdmission {
+    binding: InstallationBinding,
+    _owner_lock: IdentityLock,
+    _marker_lock: IdentityLock,
+    _namespace: SecureDir,
+    _owner_admission: OwnerAdmissionLease,
+}
+
+#[cfg(target_os = "linux")]
+impl InstallationBindingAdmission {
+    /// Returns the adopted binding held by this read admission.
+    pub fn binding(&self) -> &InstallationBinding {
+        &self.binding
+    }
+}
+
 /// Request for a clean-uninstall admission.
 #[derive(Clone, Debug)]
 pub struct CleanUninstallRequest {
@@ -528,9 +551,9 @@ struct NamespaceLease {
     _owner_lock: IdentityLock,
     _marker_lock: IdentityLock,
     _namespace: SecureDir,
-    // Struct fields drop in declaration order. Keep the process-local outer
-    // guard last so it remains held until every file and namespace lock drops.
-    _owner_coordinator: OwnerCoordinatorGuard,
+    // Struct fields drop in declaration order. Keep the outer admission last
+    // so it remains held until every file and namespace lock drops.
+    _owner_admission: OwnerAdmissionLease,
 }
 
 /// Provider failures, including unsafe storage states that require repair.
@@ -926,16 +949,31 @@ pub fn parse_service_guard_environment(
 /// Loads the adopted installation binding for an existing owner/root without
 /// modifying identity storage.
 ///
-/// The owner lock serializes record changes while the namespace is read. The
-/// adoption-marker lock is then acquired as a secondary validation before the
-/// binding is returned.
+/// The owner-scoped admission and storage locks serialize record changes while
+/// the namespace is read. The adoption-marker lock is acquired as a secondary
+/// validation before the binding is returned.
 pub fn load_installation_binding(
+    owner: &OwnerBase,
+    root_token: &RootToken,
+) -> Result<InstallationBinding, IdentityError> {
+    #[cfg(target_os = "linux")]
+    {
+        admit_installation_binding(owner, root_token).map(|admission| admission.binding().clone())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        load_installation_binding_exclusive(owner, root_token)
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn load_installation_binding_exclusive(
     owner: &OwnerBase,
     root_token: &RootToken,
 ) -> Result<InstallationBinding, IdentityError> {
     let namespace_name = namespace_name(owner.platform(), root_token);
     let provider = open_provider(owner, false)?;
-    let owner_coordinator = acquire_owner_coordinator(owner_coordinator_key(&provider.file)?)?;
+    let owner_admission = exclusive_owner_admission(&provider)?;
     let owner_lock = lock_existing_owner(&provider)?;
     let namespace = open_namespace(&provider, &namespace_name, false)?;
     let snapshot = read_namespace(&namespace, namespace_name.clone())?;
@@ -965,23 +1003,83 @@ pub fn load_installation_binding(
     let binding = InstallationBinding::from_record(namespace_name, &record);
     drop(marker_lock);
     drop(owner_lock);
-    drop(owner_coordinator);
+    drop(owner_admission);
     Ok(binding)
+}
+
+/// Admits a retained, read-only view of an adopted Linux installation binding.
+#[cfg(target_os = "linux")]
+pub fn admit_installation_binding(
+    owner: &OwnerBase,
+    root_token: &RootToken,
+) -> Result<InstallationBindingAdmission, IdentityError> {
+    let namespace_name = namespace_name(owner.platform(), root_token);
+    let gate = lock_linux_owner_admission_gate(owner, OwnerAdmissionMode::Shared)?;
+    let provider = open_provider(owner, false)?;
+    let owner_admission = linux_owner_admission(&provider, gate, OwnerAdmissionMode::Shared)?;
+    let owner_lock = lock_existing_owner_shared(&provider)?;
+    let namespace = open_namespace(&provider, &namespace_name, false)?;
+    let snapshot = read_namespace(&namespace, namespace_name.clone())?;
+    let record = snapshot
+        .record
+        .ok_or(IdentityError::UnsafeState("namespace record is missing"))?;
+    match record.state {
+        LifecycleState::Prepared => {
+            return Err(IdentityError::NotAdopted(
+                "installation identity record is prepared",
+            ));
+        }
+        LifecycleState::Tombstoned => {
+            return Err(IdentityError::NotAdopted(
+                "installation identity record is tombstoned",
+            ));
+        }
+        LifecycleState::Adopted => {}
+    }
+    if record.platform != owner.platform() || record.root_token != *root_token {
+        return Err(IdentityError::AdmissionRefused(
+            "record does not bind the requested root",
+        ));
+    }
+    let marker_lock = lock_existing_marker_shared(&namespace)?;
+    hit(FaultPoint::LoadLocksHeld)?;
+    let binding = InstallationBinding::from_record(namespace_name, &record);
+    Ok(InstallationBindingAdmission {
+        binding,
+        _owner_lock: owner_lock,
+        _marker_lock: marker_lock,
+        _namespace: namespace,
+        _owner_admission: owner_admission,
+    })
 }
 
 /// Admits setup and returns a lease held across all following setup mutations.
 ///
 /// The initial no-replace publication intentionally occurs after the contender
-/// releases its discovery lock. That makes filesystem no-replace publication,
-/// rather than advisory-lock timing, the convergence primitive for independent
-/// first-admission contenders. The winning or retrying contender reacquires the
-/// owner lock before it creates the marker, adopts, and returns this session.
+/// releases its discovery lock. On Linux, an owner-scoped admission serializes
+/// cooperating readers and writers before provider discovery; durable
+/// no-replace publication remains the backstop for legacy or non-cooperating
+/// contenders. Other platforms continue to use no-replace publication as the
+/// cross-process convergence primitive. The winning or retrying contender
+/// reacquires the owner lock before it creates the marker, adopts, and returns
+/// this session.
 pub fn admit_setup(request: SetupAdmissionRequest) -> Result<SetupAdmission, IdentityError> {
     validate_setup_evidence(&request.artifacts, request.legacy_manifest)?;
     let namespace_name = namespace_name(request.owner.platform, &request.root_token);
+
+    #[cfg(target_os = "linux")]
+    {
+        let gate = lock_linux_owner_admission_gate(&request.owner, OwnerAdmissionMode::Exclusive)?;
+        let provider = open_provider(&request.owner, true)?;
+        let owner_admission =
+            linux_owner_admission(&provider, gate, OwnerAdmissionMode::Exclusive)?;
+        admit_setup_linux(request, namespace_name, provider, owner_admission)
+    }
+
+    #[cfg(not(target_os = "linux"))]
     loop {
         let provider = open_provider(&request.owner, true)?;
-        let owner_coordinator = acquire_owner_coordinator(owner_coordinator_key(&provider.file)?)?;
+        let owner_admission = exclusive_owner_admission(&provider)?;
         let owner_lock = lock_owner(&provider)?;
         let registry = enumerate_registry(&provider)?;
         if let Some(snapshot) = registry
@@ -994,7 +1092,7 @@ pub fn admit_setup(request: SetupAdmissionRequest) -> Result<SetupAdmission, Ide
                 namespace_name,
                 namespace,
                 snapshot.clone(),
-                owner_coordinator,
+                owner_admission,
                 owner_lock,
                 &registry,
             );
@@ -1026,6 +1124,56 @@ pub fn admit_setup(request: SetupAdmissionRequest) -> Result<SetupAdmission, Ide
     }
 }
 
+#[cfg(target_os = "linux")]
+fn admit_setup_linux(
+    request: SetupAdmissionRequest,
+    namespace_name: NamespaceName,
+    provider: SecureDir,
+    owner_admission: OwnerAdmissionLease,
+) -> Result<SetupAdmission, IdentityError> {
+    loop {
+        let owner_lock = lock_owner(&provider)?;
+        let registry = enumerate_registry(&provider)?;
+        if let Some(snapshot) = registry
+            .get(&namespace_name)
+            .filter(|snapshot| snapshot.record.is_some())
+        {
+            let namespace = open_namespace(&provider, &namespace_name, false)?;
+            return admit_existing_setup(
+                request,
+                namespace_name,
+                namespace,
+                snapshot.clone(),
+                owner_admission,
+                owner_lock,
+                &registry,
+            );
+        }
+
+        validate_initial_evidence(&request)?;
+        let namespace = open_namespace(&provider, &namespace_name, true)?;
+        remove_stale_stages(&namespace)?;
+        let prepared = IdentityRecord {
+            state: LifecycleState::Prepared,
+            generation: Generation::new(1)?,
+            id: generate_id()?,
+            platform: request.owner.platform,
+            root_token: request.root_token.clone(),
+            journal_token: request.journal_token.clone(),
+        };
+        let stage = write_stage(&namespace, StageKind::Prepared, &prepared)?;
+        // Keep the outer Linux admission across the no-replace publication and
+        // loop. The narrower owner-file lock is still deliberately released so
+        // the durable no-replace protocol remains a compatibility backstop for
+        // legacy or non-cooperating contenders.
+        drop(owner_lock);
+        match publish_prepared(&namespace, stage) {
+            Ok(()) | Err(PublishPreparedError::AlreadyExists) => {}
+            Err(PublishPreparedError::Identity(error)) => return Err(error),
+        }
+    }
+}
+
 /// Admits a clean uninstall and calculates the owner-wide cleanup tail before
 /// any caller-owned service, wrapper, config, or manifest deletion occurs.
 pub fn admit_clean_uninstall(
@@ -1040,8 +1188,13 @@ pub fn admit_clean_uninstall(
         ));
     }
     let namespace_name = namespace_name(request.owner.platform, &request.root_token);
+    #[cfg(target_os = "linux")]
+    let gate = lock_linux_owner_admission_gate(&request.owner, OwnerAdmissionMode::Exclusive)?;
     let provider = open_provider(&request.owner, true)?;
-    let owner_coordinator = acquire_owner_coordinator(owner_coordinator_key(&provider.file)?)?;
+    #[cfg(target_os = "linux")]
+    let owner_admission = linux_owner_admission(&provider, gate, OwnerAdmissionMode::Exclusive)?;
+    #[cfg(not(target_os = "linux"))]
+    let owner_admission = exclusive_owner_admission(&provider)?;
     let owner_lock = lock_owner(&provider)?;
     let registry = enumerate_registry(&provider)?;
     let snapshot = registry
@@ -1105,7 +1258,7 @@ pub fn admit_clean_uninstall(
         _owner_lock: owner_lock,
         _marker_lock: marker_lock,
         _namespace: namespace.try_clone()?,
-        _owner_coordinator: owner_coordinator,
+        _owner_admission: owner_admission,
     };
     Ok(CleanUninstallSession {
         plan: CleanUninstallPlan {
@@ -1177,7 +1330,8 @@ enum OwnerCoordinatorKey {
 
 #[derive(Debug)]
 struct OwnerCoordinatorState {
-    occupied: bool,
+    readers: usize,
+    writer: bool,
     waiters: usize,
 }
 
@@ -1190,6 +1344,23 @@ struct OwnerCoordinator {
 #[derive(Debug)]
 struct OwnerCoordinatorGuard {
     coordinator: Arc<OwnerCoordinator>,
+    mode: OwnerAdmissionMode,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OwnerAdmissionMode {
+    #[cfg(target_os = "linux")]
+    Shared,
+    Exclusive,
+}
+
+#[derive(Debug)]
+struct OwnerAdmissionLease {
+    // Drop the process-local guard before the cross-process gate: acquisition
+    // takes the gate first, so this is the reverse order.
+    _owner_coordinator: OwnerCoordinatorGuard,
+    #[cfg(target_os = "linux")]
+    _cross_process_gate: IdentityLock,
 }
 
 static OWNER_COORDINATORS: OnceLock<Mutex<HashMap<OwnerCoordinatorKey, Weak<OwnerCoordinator>>>> =
@@ -1219,6 +1390,53 @@ fn owner_coordinator_key(dir: &File) -> Result<OwnerCoordinatorKey, IdentityErro
     }
 }
 
+#[cfg(target_os = "linux")]
+fn lock_linux_owner_admission_gate(
+    owner: &OwnerBase,
+    mode: OwnerAdmissionMode,
+) -> Result<IdentityLock, IdentityError> {
+    let home = open_absolute_dir(&owner.home)?;
+    let opened_identity = owner_coordinator_key(&home.file)?;
+    hit(FaultPoint::OwnerAdmissionGateOpened)?;
+    let argument = match mode {
+        OwnerAdmissionMode::Shared => FlockArg::LockShared,
+        OwnerAdmissionMode::Exclusive => FlockArg::LockExclusive,
+    };
+    let gate = Flock::lock(home.file, argument)
+        .map_err(|(_, error)| nix_error("lock owner admission root", error))?;
+    let observed = open_absolute_dir(&owner.home)?;
+    if owner_coordinator_key(&observed.file)? != opened_identity {
+        return Err(IdentityError::UnsafeState(
+            "owner admission root changed during lock",
+        ));
+    }
+    Ok(gate)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_owner_admission(
+    provider: &SecureDir,
+    gate: IdentityLock,
+    mode: OwnerAdmissionMode,
+) -> Result<OwnerAdmissionLease, IdentityError> {
+    let key = owner_coordinator_key(&provider.file)?;
+    let coordinator = match mode {
+        OwnerAdmissionMode::Shared => acquire_shared_owner_coordinator(key)?,
+        OwnerAdmissionMode::Exclusive => acquire_owner_coordinator(key)?,
+    };
+    Ok(OwnerAdmissionLease {
+        _owner_coordinator: coordinator,
+        _cross_process_gate: gate,
+    })
+}
+
+#[cfg(not(target_os = "linux"))]
+fn exclusive_owner_admission(provider: &SecureDir) -> Result<OwnerAdmissionLease, IdentityError> {
+    Ok(OwnerAdmissionLease {
+        _owner_coordinator: acquire_owner_coordinator(owner_coordinator_key(&provider.file)?)?,
+    })
+}
+
 fn owner_coordinator_for(key: OwnerCoordinatorKey) -> Result<Arc<OwnerCoordinator>, IdentityError> {
     let registry = OWNER_COORDINATORS.get_or_init(|| Mutex::new(HashMap::new()));
     // Deliberately fail loudly rather than recovering a poisoned coordinator:
@@ -1230,7 +1448,8 @@ fn owner_coordinator_for(key: OwnerCoordinatorKey) -> Result<Arc<OwnerCoordinato
     }
     let coordinator = Arc::new(OwnerCoordinator {
         state: Mutex::new(OwnerCoordinatorState {
-            occupied: false,
+            readers: 0,
+            writer: false,
             waiters: 0,
         }),
         condvar: Condvar::new(),
@@ -1242,12 +1461,30 @@ fn owner_coordinator_for(key: OwnerCoordinatorKey) -> Result<Arc<OwnerCoordinato
 fn acquire_owner_coordinator(
     key: OwnerCoordinatorKey,
 ) -> Result<OwnerCoordinatorGuard, IdentityError> {
+    acquire_owner_coordinator_mode(key, OwnerAdmissionMode::Exclusive)
+}
+
+#[cfg(target_os = "linux")]
+fn acquire_shared_owner_coordinator(
+    key: OwnerCoordinatorKey,
+) -> Result<OwnerCoordinatorGuard, IdentityError> {
+    acquire_owner_coordinator_mode(key, OwnerAdmissionMode::Shared)
+}
+
+fn acquire_owner_coordinator_mode(
+    key: OwnerCoordinatorKey,
+    mode: OwnerAdmissionMode,
+) -> Result<OwnerCoordinatorGuard, IdentityError> {
     let coordinator = owner_coordinator_for(key)?;
     let mut state = coordinator
         .state
         .lock()
         .map_err(|_| owner_coordinator_poisoned())?;
-    while state.occupied {
+    while match mode {
+        #[cfg(target_os = "linux")]
+        OwnerAdmissionMode::Shared => state.writer,
+        OwnerAdmissionMode::Exclusive => state.writer || state.readers != 0,
+    } {
         state.waiters += 1;
         state = coordinator
             .condvar
@@ -1255,15 +1492,25 @@ fn acquire_owner_coordinator(
             .map_err(|_| owner_coordinator_poisoned())?;
         state.waiters -= 1;
     }
-    state.occupied = true;
+    match mode {
+        #[cfg(target_os = "linux")]
+        OwnerAdmissionMode::Shared => state.readers += 1,
+        OwnerAdmissionMode::Exclusive => state.writer = true,
+    }
     drop(state);
-    Ok(OwnerCoordinatorGuard { coordinator })
+    Ok(OwnerCoordinatorGuard { coordinator, mode })
 }
 
 impl Drop for OwnerCoordinatorGuard {
     fn drop(&mut self) {
         if let Ok(mut state) = self.coordinator.state.lock() {
-            state.occupied = false;
+            match self.mode {
+                #[cfg(target_os = "linux")]
+                OwnerAdmissionMode::Shared => {
+                    state.readers = state.readers.saturating_sub(1);
+                }
+                OwnerAdmissionMode::Exclusive => state.writer = false,
+            }
         }
         // Wake all waiters even when the state mutex is poisoned. Each will
         // reacquire it, observe the poison, and fail rather than hanging.
@@ -1283,7 +1530,7 @@ fn owner_coordinator_held_for_test(key: OwnerCoordinatorKey) -> bool {
         return false;
     };
     match coordinator.state.try_lock() {
-        Ok(state) => state.occupied,
+        Ok(state) => state.writer || state.readers != 0,
         Err(std::sync::TryLockError::WouldBlock) => true,
         Err(std::sync::TryLockError::Poisoned(_)) => false,
     }
@@ -1507,7 +1754,7 @@ fn lock_owner(provider: &SecureDir) -> Result<IdentityLock, IdentityError> {
         .map_err(|(_, error)| nix_error("lock owner registry", error))
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "linux")))]
 fn lock_existing_owner(provider: &SecureDir) -> Result<IdentityLock, IdentityError> {
     #[cfg(test)]
     note_owner_file_lock_attempt();
@@ -1516,8 +1763,30 @@ fn lock_existing_owner(provider: &SecureDir) -> Result<IdentityLock, IdentityErr
         .map_err(|(_, error)| nix_error("lock owner registry", error))
 }
 
+#[cfg(target_os = "linux")]
+fn lock_existing_owner_shared(provider: &SecureDir) -> Result<IdentityLock, IdentityError> {
+    #[cfg(test)]
+    note_owner_file_lock_attempt();
+    let file = open_existing_file(provider, "owner.lock", true)?;
+    Flock::lock(file, FlockArg::LockShared)
+        .map_err(|(_, error)| nix_error("lock owner registry for reading", error))
+}
+
 #[cfg(unix)]
 fn lock_existing_marker(namespace: &SecureDir) -> Result<IdentityLock, IdentityError> {
+    lock_existing_marker_mode(namespace, FlockArg::LockExclusive)
+}
+
+#[cfg(target_os = "linux")]
+fn lock_existing_marker_shared(namespace: &SecureDir) -> Result<IdentityLock, IdentityError> {
+    lock_existing_marker_mode(namespace, FlockArg::LockShared)
+}
+
+#[cfg(unix)]
+fn lock_existing_marker_mode(
+    namespace: &SecureDir,
+    mode: FlockArg,
+) -> Result<IdentityLock, IdentityError> {
     let file = open_existing_file(namespace, "adoption.marker", true)?;
     let mut bytes = Vec::new();
     file.try_clone()
@@ -1529,8 +1798,7 @@ fn lock_existing_marker(namespace: &SecureDir) -> Result<IdentityLock, IdentityE
             "adoption marker has invalid content",
         ));
     }
-    Flock::lock(file, FlockArg::LockExclusive)
-        .map_err(|(_, error)| nix_error("lock adoption marker", error))
+    Flock::lock(file, mode).map_err(|(_, error)| nix_error("lock adoption marker", error))
 }
 
 #[cfg(unix)]
@@ -1717,7 +1985,7 @@ fn admit_existing_setup(
     namespace_name: NamespaceName,
     namespace: SecureDir,
     snapshot: NamespaceSnapshot,
-    owner_coordinator: OwnerCoordinatorGuard,
+    owner_admission: OwnerAdmissionLease,
     owner_lock: IdentityLock,
     _registry: &BTreeMap<NamespaceName, NamespaceSnapshot>,
 ) -> Result<SetupAdmission, IdentityError> {
@@ -1744,7 +2012,7 @@ fn admit_existing_setup(
                     _owner_lock: owner_lock,
                     _marker_lock: marker_lock,
                     _namespace: namespace,
-                    _owner_coordinator: owner_coordinator,
+                    _owner_admission: owner_admission,
                 },
             })
         }
@@ -1767,7 +2035,7 @@ fn admit_existing_setup(
                     _owner_lock: owner_lock,
                     _marker_lock: marker_lock,
                     _namespace: namespace,
-                    _owner_coordinator: owner_coordinator,
+                    _owner_admission: owner_admission,
                 },
             })
         }
@@ -1798,7 +2066,7 @@ fn admit_existing_setup(
                     _owner_lock: owner_lock,
                     _marker_lock: marker_lock,
                     _namespace: namespace,
-                    _owner_coordinator: owner_coordinator,
+                    _owner_admission: owner_admission,
                 },
             })
         }
@@ -3292,6 +3560,8 @@ fn remove_stale_stages(namespace: &SecureDir) -> Result<(), IdentityError> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum FaultPoint {
+    #[cfg(target_os = "linux")]
+    OwnerAdmissionGateOpened,
     LoadLocksHeld,
     PreparedWrite,
     PreparedFileSync,
@@ -3469,7 +3739,7 @@ fn park_at_for_test(point: FaultPoint) -> Arc<ParkGate> {
 mod tests {
     use super::*;
     use std::fs;
-    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
     use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
     use std::sync::mpsc::{self, RecvTimeoutError};
     use std::sync::{Arc, Mutex, OnceLock};
@@ -3481,10 +3751,45 @@ mod tests {
 
     #[derive(Debug, Eq, PartialEq)]
     enum TreeEntry {
-        Directory { mode: u32 },
-        File { mode: u32, bytes: Option<Vec<u8>> },
-        Symlink { mode: u32, target: PathBuf },
-        Other { mode: u32 },
+        Directory {
+            metadata: TreeMetadata,
+        },
+        File {
+            metadata: TreeMetadata,
+            bytes: Option<Vec<u8>>,
+        },
+        Symlink {
+            metadata: TreeMetadata,
+            target: PathBuf,
+        },
+        Other {
+            metadata: TreeMetadata,
+        },
+    }
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct TreeMetadata {
+        mode: u32,
+        uid: u32,
+        inode: u64,
+        size: u64,
+        mtime: i64,
+        mtime_nsec: i64,
+        ctime: i64,
+        ctime_nsec: i64,
+    }
+
+    fn tree_metadata(metadata: &fs::Metadata) -> TreeMetadata {
+        TreeMetadata {
+            mode: metadata.permissions().mode() & 0o777,
+            uid: metadata.uid(),
+            inode: metadata.ino(),
+            size: metadata.size(),
+            mtime: metadata.mtime(),
+            mtime_nsec: metadata.mtime_nsec(),
+            ctime: metadata.ctime(),
+            ctime_nsec: metadata.ctime_nsec(),
+        }
     }
 
     struct UmaskGuard(Mode);
@@ -3628,10 +3933,15 @@ mod tests {
                 .strip_prefix(root)
                 .expect("snapshot path is relative")
                 .to_path_buf();
-            let mode = metadata.permissions().mode() & 0o777;
+            let metadata_fields = tree_metadata(&metadata);
             let file_type = metadata.file_type();
             if file_type.is_dir() {
-                snapshot.insert(relative, TreeEntry::Directory { mode });
+                snapshot.insert(
+                    relative,
+                    TreeEntry::Directory {
+                        metadata: metadata_fields,
+                    },
+                );
                 if let Ok(entries) = fs::read_dir(path) {
                     let mut entries = entries
                         .map(|entry| entry.expect("snapshot directory entry"))
@@ -3645,7 +3955,7 @@ mod tests {
                 snapshot.insert(
                     relative,
                     TreeEntry::File {
-                        mode,
+                        metadata: metadata_fields,
                         bytes: fs::read(path).ok(),
                     },
                 );
@@ -3653,12 +3963,17 @@ mod tests {
                 snapshot.insert(
                     relative,
                     TreeEntry::Symlink {
-                        mode,
+                        metadata: metadata_fields,
                         target: fs::read_link(path).expect("snapshot symlink target"),
                     },
                 );
             } else {
-                snapshot.insert(relative, TreeEntry::Other { mode });
+                snapshot.insert(
+                    relative,
+                    TreeEntry::Other {
+                        metadata: metadata_fields,
+                    },
+                );
             }
         }
 
@@ -4058,6 +4373,130 @@ mod tests {
         assert_tree_unchanged(&fixture.root, before);
     }
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn retained_readers_coexist_and_exclude_writer_sessions() {
+        let _serial = serial();
+        clear_control();
+        let fixture = TestRoot::new();
+        let initial_request = fixture.request(b"/install/readers", b"/journal/readers-one");
+        let root = initial_request.root_token.clone();
+        let initial = admit_setup(initial_request).expect("initial setup admission");
+        let expected = initial.binding().clone();
+        drop(initial);
+
+        let first =
+            admit_installation_binding(&fixture.owner, &root).expect("first retained reader");
+        let second =
+            admit_installation_binding(&fixture.owner, &root).expect("second retained reader");
+        assert_eq!(first.binding(), &expected);
+        assert_eq!(second.binding(), &expected);
+        assert_eq!(
+            load_installation_binding(&fixture.owner, &root).expect("point read"),
+            expected
+        );
+
+        let writer_request = fixture.request(b"/install/readers", b"/journal/readers-two");
+        let (writer_acquired_tx, writer_acquired_rx) = mpsc::channel();
+        let (release_writer_tx, release_writer_rx) = mpsc::channel();
+        let writer = thread::spawn(move || {
+            let admission = admit_setup(writer_request).expect("writer admission");
+            writer_acquired_tx
+                .send(admission.binding().clone())
+                .expect("writer acquired signal");
+            release_writer_rx.recv().expect("release writer");
+            drop(admission);
+        });
+
+        assert!(matches!(
+            writer_acquired_rx.recv_timeout(Duration::from_millis(100)),
+            Err(RecvTimeoutError::Timeout)
+        ));
+        drop(first);
+        assert!(matches!(
+            writer_acquired_rx.recv_timeout(Duration::from_millis(100)),
+            Err(RecvTimeoutError::Timeout)
+        ));
+        drop(second);
+        let updated = writer_acquired_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("writer admitted after final reader");
+        assert_eq!(
+            updated.journal_token.to_path_buf(),
+            PathBuf::from("/journal/readers-two")
+        );
+
+        let reader_owner = fixture.owner.clone();
+        let reader_root = root.clone();
+        let (reader_tx, reader_rx) = mpsc::channel();
+        let reader = thread::spawn(move || {
+            reader_tx
+                .send(load_installation_binding(&reader_owner, &reader_root))
+                .expect("reader result");
+        });
+        assert!(matches!(
+            reader_rx.recv_timeout(Duration::from_millis(100)),
+            Err(RecvTimeoutError::Timeout)
+        ));
+        release_writer_tx.send(()).expect("release writer");
+        assert_eq!(
+            reader_rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("reader after writer")
+                .expect("reader binding"),
+            updated
+        );
+        writer.join().expect("writer thread");
+        reader.join().expect("reader thread");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn admission_refuses_a_home_replaced_between_open_and_lock() {
+        let _serial = serial();
+        clear_control();
+        for mode in [OwnerAdmissionMode::Shared, OwnerAdmissionMode::Exclusive] {
+            let fixture = TestRoot::new();
+            let request = fixture.request(b"/install/gate-replaced", b"/journal/gate-replaced");
+            let root = request.root_token.clone();
+            let retry_root = root.clone();
+            drop(admit_setup(request.clone()).expect("seed admission"));
+            let gate = park_at(FaultPoint::OwnerAdmissionGateOpened);
+            let owner = fixture.owner.clone();
+            let contender = thread::spawn(move || match mode {
+                OwnerAdmissionMode::Shared => {
+                    admit_installation_binding(&owner, &root).map(|admission| {
+                        drop(admission);
+                    })
+                }
+                OwnerAdmissionMode::Exclusive => admit_setup(request).map(|admission| {
+                    drop(admission);
+                }),
+            });
+
+            gate.arrived.wait();
+            let home = fixture.root.join("home");
+            let old_home = fixture.root.join("home-opened-before-replacement");
+            fs::rename(&home, &old_home).expect("move opened home");
+            fs::create_dir(&home).expect("create replacement home");
+            fs::set_permissions(&home, fs::Permissions::from_mode(0o700))
+                .expect("set replacement home mode");
+            gate.release.wait();
+            let result = contender.join().expect("contender thread");
+            assert!(matches!(
+                result,
+                Err(IdentityError::UnsafeState(
+                    "owner admission root changed during lock"
+                ))
+            ));
+            clear_control();
+
+            fs::remove_dir(&home).expect("remove replacement home");
+            fs::rename(&old_home, &home).expect("restore original home");
+            assert!(load_installation_binding(&fixture.owner, &retry_root).is_ok());
+        }
+    }
+
     #[test]
     fn load_rejects_an_absent_provider_without_creation() {
         let _serial = serial();
@@ -4420,7 +4859,7 @@ mod tests {
     }
 
     #[test]
-    fn real_threads_converge_at_the_no_replace_publication() {
+    fn real_threads_converge_through_setup_admission() {
         let _serial = serial();
         clear_control();
         let fixture = TestRoot::new();
@@ -4441,6 +4880,9 @@ mod tests {
                 .binding()
                 .clone()
         });
+        #[cfg(target_os = "linux")]
+        assert!(owner_coordinator_held_for_test(key));
+        #[cfg(not(target_os = "linux"))]
         wait_for_owner_coordinator_waiters(key, 1);
         gate.release.wait();
         let one = one.join().expect("first thread");

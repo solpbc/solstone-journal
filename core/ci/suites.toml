@@ -1755,6 +1755,19 @@ default_full = false
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-installation-identity::linux_admission"
+package = "solstone-core-installation-identity"
+target = "linux_admission"
+set = "component"
+areas = ["health"]
+platforms = ["linux"]
+prerequisites = ["cargo-cache"]
+timeout = "quick"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core::core_brain_contracts"
 package = "solstone-core"
 target = "core_brain_contracts"
