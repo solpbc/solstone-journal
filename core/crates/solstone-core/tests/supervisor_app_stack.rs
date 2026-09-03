@@ -408,12 +408,10 @@ fn app_fixture_receives_supervisor_spawned_environment() {
     );
 }
 
-/// When the supervisor's own speakers-analyze generation acquisition fails
-/// (here: no stubbed helper/model-asset override, so a real acquisition
-/// attempt in this sandboxed build cannot succeed), the supervisor refuses
-/// before any lifecycle admission artifact exists and exits 78 — distinct
-/// from the ordinary `EXIT_TEMPFAIL=75` mapping every other named boot
-/// refusal uses.
+/// When the supervisor's own speakers-analyze generation acquisition fails,
+/// the supervisor refuses before any lifecycle admission artifact exists and
+/// exits 78 — distinct from the ordinary `EXIT_TEMPFAIL=75` mapping every
+/// other named boot refusal uses.
 #[test]
 fn speakers_analyze_generation_failure_refuses_before_any_lifecycle_artifact() {
     let journal = TempJournal::new();
@@ -430,14 +428,27 @@ fn speakers_analyze_generation_failure_refuses_before_any_lifecycle_artifact() {
         .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_BINARY", fixture)
-        .env("HOME", home);
-    // Deliberately no speakers_analyze_stub::apply(...) here: this sandboxed
-    // build has neither a real speakers-analyze helper binary next to
-    // `solstone-core` nor (without the override) discoverable model assets,
-    // so the supervisor's own acquisition attempt fails. Every other fixture
-    // env var above is still set so `preflight_journal_binary` short-circuits
-    // (app_fixture_binary().is_some()) and the boot actually reaches the new
-    // speakers-analyze gate instead of failing at an unrelated earlier step.
+        .env("HOME", home)
+        // Deliberately no speakers_analyze_stub::apply(...) here: the point
+        // is to force the supervisor's own acquisition attempt to fail. Do
+        // not rely on the ambient absence of a real speakers-analyze helper
+        // binary next to `solstone-core` in the build tree to produce that
+        // failure — a prior build step (or a shared/reused target
+        // directory) can leave that binary sitting right there, which makes
+        // acquisition succeed instead, and the supervisor then boots its
+        // full app stack for real and never exits, hanging this test's
+        // blocking `output()` call indefinitely. Point the helper-binary
+        // override at a path that is guaranteed not to exist so the
+        // negative case is hermetic regardless of build-tree state. Every
+        // other fixture env var above is still set so
+        // `preflight_journal_binary` short-circuits
+        // (app_fixture_binary().is_some()) and the boot actually reaches the
+        // speakers-analyze gate instead of failing at an unrelated earlier
+        // step.
+        .env(
+            "SOLSTONE_SPEAKERS_ANALYZE_BINARY",
+            journal.0.join("nonexistent-speakers-analyze-helper"),
+        );
     let output = command.output().expect("supervisor runs to completion");
     assert_eq!(
         output.status.code(),
