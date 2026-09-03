@@ -488,12 +488,6 @@ body.has-managed-dialog .workspace {
   color: #333;
 }
 
-.status-pane-content p {
-  margin: 0;
-  font-size: 14px;
-  color: #666;
-}
-
 .status-pane-detail {
   font-size: 13px;
   color: #9ca3af;

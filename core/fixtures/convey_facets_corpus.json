@@ -2694,8 +2694,8 @@
         "why": "timeline is the only app in this plate with a background badge"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_bytes": 7732,
+        "body_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -2705,8 +2705,8 @@
         "why": "the year view serves the shell verbatim"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_bytes": 7732,
+        "body_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -2716,8 +2716,8 @@
         "why": "a day view: shell, not a payload"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_bytes": 7732,
+        "body_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -3077,8 +3077,8 @@
         "why": "a malformed segment key: 400"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_bytes": 7732,
+        "body_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -3380,8 +3380,8 @@
         "why": "a non-integer limit"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_bytes": 7732,
+        "body_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -3420,8 +3420,8 @@
         "why": "the sample as text/markdown"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_bytes": 7732,
+        "body_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -3431,8 +3431,8 @@
         "why": "a day view serves the shell"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_bytes": 7732,
+        "body_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -3548,8 +3548,8 @@
         "why": "a missing newsletter PDF: plain-text 404"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_bytes": 7732,
+        "body_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -3922,8 +3922,8 @@
         "why": "timeline is the only app in this plate with a background badge"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_bytes": 7732,
+        "body_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -3933,8 +3933,8 @@
         "why": "the year view serves the shell verbatim"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_bytes": 7732,
+        "body_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -3944,8 +3944,8 @@
         "why": "a day view: shell, not a payload"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_bytes": 7732,
+        "body_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -4639,8 +4639,8 @@
         "why": "a malformed segment key: 400"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_bytes": 7732,
+        "body_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -5006,8 +5006,8 @@
         "why": "a non-integer limit"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_bytes": 7732,
+        "body_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -5046,8 +5046,8 @@
         "why": "the sample as text/markdown"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_bytes": 7732,
+        "body_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -5057,8 +5057,8 @@
         "why": "a day view serves the shell"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_bytes": 7732,
+        "body_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -5179,8 +5179,8 @@
         "why": "a missing newsletter PDF: plain-text 404"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_bytes": 7732,
+        "body_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
