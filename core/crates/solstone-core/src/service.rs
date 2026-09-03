@@ -193,7 +193,7 @@ where
     Discover: FnOnce() -> Result<PathBuf, DiscoverError>,
     Load: FnOnce(&Path) -> Result<GuardFields, LoadError>,
 {
-    let Ok(Some(inherited)) = parse_service_guard_environment(&environment) else {
+    let Ok(Some(inherited)) = parse_service_guard_environment(environment) else {
         return false;
     };
     let Ok(home) = discover_home() else {
