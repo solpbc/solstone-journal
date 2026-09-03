@@ -933,12 +933,25 @@ struct CapturedConfigure {
 }
 
 fn captured_configure(configure: &Command) -> CapturedConfigure {
-    CapturedConfigure {
-        program: configure.get_program().to_string_lossy().into_owned(),
-        args: configure
-            .get_args()
-            .map(|arg| arg.to_string_lossy().into_owned())
-            .collect(),
+    let program = configure.get_program().to_string_lossy().into_owned();
+    let args = configure
+        .get_args()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    if cfg!(target_os = "windows") {
+        // `sh <source>/configure` has one invocation operand before FFmpeg's
+        // configure arguments. Bind that script to the recorded program while
+        // keeping `args` as the actual FFmpeg configure flag vector that the
+        // controlled allowlist validates.
+        let (script, args) = args
+            .split_first()
+            .expect("Windows FFmpeg configure invocation must name its script");
+        CapturedConfigure {
+            program: format!("{program} {script}"),
+            args: args.to_vec(),
+        }
+    } else {
+        CapturedConfigure { program, args }
     }
 }
 
