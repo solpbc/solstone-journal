@@ -2,11 +2,11 @@ version = 1
 target = "x86_64-pc-windows-msvc"
 
 [baseline]
-# Re-derived from Cargo metadata after the MCP endpoint and its audit crate
-# joined the workspace. The census counts a package once when any target is
-# `lib`; each new library-only crate increases both baselines by exactly one.
-workspace_packages = 137
-library_packages = 131
+# Re-derived from Cargo metadata after the versioned timeline owner joined the
+# workspace. The census counts a package once when any target is `lib`; each new
+# library-only crate increases both baselines by exactly one.
+workspace_packages = 138
+library_packages = 132
 
 [[exclusions]]
 package = "solstone-core-retention"
