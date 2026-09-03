@@ -48,6 +48,8 @@ pub mod snapshot;
 pub mod staged;
 pub mod strict_segment;
 #[cfg(windows)]
+mod windows_disk_space;
+#[cfg(windows)]
 mod windows_identity;
 #[cfg(windows)]
 pub mod windows_inventory;
@@ -200,6 +202,8 @@ pub use strict_segment::{
     ExactLookupError, StrictCreateError, create_segment_strict, preflight_segment_admission,
     resolve_segment_exact, resolve_segment_locator_exact, resolve_stream_exact,
 };
+#[cfg(windows)]
+pub use windows_disk_space::windows_available_disk_bytes;
 #[cfg(windows)]
 pub use windows_identity::{WindowsFileIdentity, windows_file_identity};
 #[cfg(windows)]

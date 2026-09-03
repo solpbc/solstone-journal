@@ -9,9 +9,6 @@ use std::io::{self, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[cfg(windows)]
-use std::os::windows::ffi::OsStrExt;
-
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -85,36 +82,12 @@ fn available_bytes(path: &Path) -> Result<u64, String> {
 
 #[cfg(windows)]
 fn available_bytes(path: &Path) -> Result<u64, String> {
-    let mut directory = path.as_os_str().encode_wide().collect::<Vec<_>>();
-    directory.push(0);
-    let mut available = 0_u64;
-    let mut total = 0_u64;
-    let mut free = 0_u64;
-    // SAFETY: `directory` is nul-terminated and live for the synchronous call; the
-    // three u64 values are writable Windows ULARGE_INTEGER-compatible output.
-    #[allow(unsafe_code)]
-    let result =
-        unsafe { GetDiskFreeSpaceExW(directory.as_ptr(), &mut available, &mut total, &mut free) };
-    if result == 0 {
-        return Err(io::Error::last_os_error().to_string());
-    }
-    Ok(available)
+    solstone_core_journal_io::windows_available_disk_bytes(path).map_err(|error| error.to_string())
 }
 
 #[cfg(not(any(unix, windows)))]
 fn available_bytes(_path: &Path) -> Result<u64, String> {
     Err("disk-space inspection is unsupported on this platform".to_owned())
-}
-
-#[cfg(windows)]
-#[link(name = "kernel32")]
-unsafe extern "system" {
-    fn GetDiskFreeSpaceExW(
-        directory_name: *const u16,
-        available_to_caller: *mut u64,
-        total_bytes: *mut u64,
-        total_free_bytes: *mut u64,
-    ) -> i32;
 }
 
 /// A request sink for the one full reindex requested after a completed merge.
