@@ -343,7 +343,7 @@ route_record_hex_decode() {
         _route_record_hex_low_value=$(_route_record_hex_nibble "$_route_record_hex_low") || return 1
         _route_record_hex_byte=$(( _route_record_hex_high_value * 16 + _route_record_hex_low_value ))
         _route_record_hex_octal=$(printf '%03o' "$_route_record_hex_byte")
-        printf "\\$_route_record_hex_octal"
+        printf '%b' "\\0$_route_record_hex_octal"
         _route_record_hex_index=$(( _route_record_hex_index + 2 ))
     done
 }

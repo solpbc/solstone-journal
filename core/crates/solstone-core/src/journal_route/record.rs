@@ -141,7 +141,7 @@ impl InspectRecord {
         }
     }
 
-    #[allow(dead_code)] // Retained as the shared decoder for the later repair command.
+    #[allow(dead_code)] // Used only by the Rust-side record round-trip tests.
     pub fn decode(input: &str) -> Result<Self, &'static str> {
         OrderedRecord::decode(&INSPECT_KEYS, input).map(|record| Self { record })
     }
@@ -201,7 +201,7 @@ impl RepairRecord {
         }
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used only by the Rust-side record round-trip tests.
     pub fn decode(input: &str) -> Result<Self, &'static str> {
         OrderedRecord::decode(&REPAIR_KEYS, input).map(|record| Self { record })
     }

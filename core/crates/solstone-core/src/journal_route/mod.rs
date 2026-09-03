@@ -209,6 +209,9 @@ pub fn repair(lock_owner: &str) -> ExitCode {
     if lock_state != coordination_lock::RouteLockState::Validated {
         return emit_repair_refusal(record, route_lock_refusal(lock_state));
     }
+    if platform != service::Platform::Linux {
+        return emit_repair_refusal(record, "unsupported-platform");
+    }
 
     let root_token = match root_token_from_path(&prefix) {
         Ok(token) => token,
@@ -294,9 +297,6 @@ pub fn repair(lock_owner: &str) -> ExitCode {
         record.set("terminal_identity_state", "matched");
         return emit_repair(record, ExitCode::SUCCESS);
     }
-    if platform != service::Platform::Linux {
-        return emit_repair_refusal(record, "unsupported-platform");
-    }
     if let Some(refusal) =
         repair_eligibility_refusal(&journal_state, &solstone_state, &service_state)
     {
@@ -304,13 +304,11 @@ pub fn repair(lock_owner: &str) -> ExitCode {
     }
 
     let repair_wrappers = journal_state == "drifted" || solstone_state == "drifted";
-    // Runtime observation can be indeterminate even while the parsed, owned
-    // unit is safe to republish (for example a fixture has no user manager).
-    // It does not itself trigger a static rewrite; wrapper drift does, so the
-    // republished unit follows the wrapper update without making a second,
-    // otherwise-idempotent run touch the manager definition.
-    let repair_service =
-        service_state == "drifted" || (repair_wrappers && service_state != "missing");
+    // Runtime drift may leave the selected route pointing at an old process,
+    // so it must refresh the manager even if the static unit is aligned.
+    let repair_service = service_state == "drifted"
+        || service_state == "runtime-drifted"
+        || (repair_wrappers && service_state != "missing");
     let initial_runtime = repair_service.then(|| {
         service::observe_runtime(platform, &service_path)
             .unwrap_or_else(service::RuntimeTruth::Unknown)
@@ -387,7 +385,7 @@ pub fn repair(lock_owner: &str) -> ExitCode {
                         | service::RuntimeTruth::Absent,),
                 ) | (
                     service::RuntimeTruth::Foreign(_) | service::RuntimeTruth::Unknown(_),
-                    _
+                    Ok(service::RuntimeTruth::Managed { .. } | service::RuntimeTruth::Absent)
                 )
             );
         }

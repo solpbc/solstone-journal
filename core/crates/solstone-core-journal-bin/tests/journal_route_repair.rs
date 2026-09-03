@@ -194,6 +194,19 @@ impl Fixture {
             .output()
             .expect("run route repair")
     }
+
+    fn run_repair_with_missing_user_manager(&self, token: &str) -> Output {
+        Command::new(self.dispatcher())
+            .args(["__journal-route-repair", "--route-lock-owner", token])
+            .env("HOME", &self.home)
+            .env("SOLSTONE_JOURNAL", &self.journal)
+            .env(
+                "DBUS_SESSION_BUS_ADDRESS",
+                format!("unix:path={}", self.root.join("missing-user-bus").display()),
+            )
+            .output()
+            .expect("run route repair without a user manager")
+    }
 }
 
 impl Drop for Fixture {
@@ -278,8 +291,17 @@ fn repair_repoints_owned_drift_and_is_idempotent() {
     let selected = fixture.respring_current();
     fixture.acquire_route_lock(TOKEN);
 
-    let fields = parse_record(fixture.run_repair(TOKEN), 0);
-    assert_eq!(fields["outcome"], "success", "{fields:?}");
+    let first = fixture.run_repair(TOKEN);
+    let first_code = first.status.code().expect("repair exit code");
+    assert!(matches!(first_code, 0 | 3));
+    let fields = parse_record(first, first_code);
+    if fields["service_state"] == "runtime-drifted" {
+        assert_eq!(first_code, 3, "{fields:?}");
+        assert_eq!(fields["outcome"], "partial-failure", "{fields:?}");
+    } else {
+        assert_eq!(first_code, 0, "{fields:?}");
+        assert_eq!(fields["outcome"], "success", "{fields:?}");
+    }
     assert_eq!(fields["repair_wrapper"], "rewritten");
     assert_eq!(fields["repair_service"], "rewritten");
     assert_eq!(fields["terminal_identity_state"], "matched");
@@ -304,9 +326,30 @@ fn repair_repoints_owned_drift_and_is_idempotent() {
     assert!(service.contains(&format!("PATH={}/current/bin", fixture.prefix.display())));
     assert!(service.contains(&format!("ExecStart={} start 5015", journal.display())));
 
-    let fields = parse_record(fixture.run_repair(TOKEN), 0);
+    let second = fixture.run_repair(TOKEN);
+    let second_code = second.status.code().expect("repair exit code");
+    let fields = parse_record(second, second_code);
     assert_eq!(fields["repair_wrapper"], "unchanged");
-    assert_eq!(fields["repair_service"], "unchanged");
+    if fields["service_state"] == "runtime-drifted" {
+        assert_eq!(second_code, 3, "{fields:?}");
+        assert_eq!(fields["repair_service"], "rewritten");
+    } else {
+        assert_eq!(second_code, 0, "{fields:?}");
+        assert_eq!(fields["repair_service"], "unchanged");
+    }
+}
+
+#[test]
+fn repair_attempts_service_refresh_for_runtime_drift() {
+    let fixture = Fixture::new("runtime-drift");
+    fixture.install_owned_tuple();
+    fixture.acquire_route_lock(TOKEN);
+
+    let fields = parse_record(fixture.run_repair_with_missing_user_manager(TOKEN), 3);
+    assert_eq!(fields["service_state"], "runtime-drifted");
+    assert_eq!(fields["repair_wrapper"], "unchanged");
+    assert_eq!(fields["repair_service"], "rewritten");
+    assert_eq!(fields["outcome"], "partial-failure");
 }
 
 #[test]
