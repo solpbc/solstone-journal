@@ -4643,6 +4643,7 @@ version = "2.0.0"
 dependencies = [
  "chrono",
  "chrono-tz",
+ "jsonschema",
  "serde_json",
  "solstone-core-artifact-download",
  "solstone-core-backup",

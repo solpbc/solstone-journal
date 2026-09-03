@@ -17,7 +17,9 @@ pub use binding::{
     origin_for_binding, resolve_activity_source, resolve_segment_binding, segment_directory,
 };
 pub use currentness::{ArtifactCurrentness, artifact_sha256, evaluate_artifact_currentness};
-pub use error::{InvalidSelectionReason, TimelineCurationStage, TimelineError};
+pub use error::{
+    InvalidSelectionReason, TimelineCurationFailureReason, TimelineCurationStage, TimelineError,
+};
 pub use fingerprint::{
     CurationJobV1, curation_input_digest, curation_jobs_digest, master_source_digest,
     segment_input_digest,

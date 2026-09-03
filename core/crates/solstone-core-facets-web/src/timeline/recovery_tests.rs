@@ -13,8 +13,8 @@ use chrono::{NaiveDate, TimeZone, Utc};
 use serde_json::{Value, json};
 use solstone_core_generate::{GenerateRequest, GeneratedResponse};
 use solstone_core_maintenance::{
-    MaintenanceServices, RollupPicker, TimelineServices, registry, run_cli_with_timeline,
-    timezone::HostTimezoneSource,
+    MaintenanceServices, RollupPicker, RollupPickerError, TimelineServices, registry,
+    run_cli_with_timeline, timezone::HostTimezoneSource,
 };
 use solstone_core_system_health::{TimelineDivergenceDiagnosis, diagnose_timeline_divergence};
 use solstone_core_timeline::{
@@ -45,7 +45,7 @@ impl HostTimezoneSource for UtcHost {
 struct NeverPicker;
 
 impl RollupPicker for NeverPicker {
-    fn pick(&self, _: &GenerateRequest) -> Result<GeneratedResponse, String> {
+    fn pick(&self, _: &GenerateRequest) -> Result<GeneratedResponse, RollupPickerError> {
         panic!("the recovery fixture uses --top {TOP}; no curation generation is expected")
     }
 }

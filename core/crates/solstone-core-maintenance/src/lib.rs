@@ -65,7 +65,13 @@ pub struct TimelineServices<'a> {
 
 /// One model selection request for a timeline rollup.
 pub trait RollupPicker: Sync {
-    fn pick(&self, request: &GenerateRequest) -> Result<GeneratedResponse, String>;
+    fn pick(&self, request: &GenerateRequest) -> Result<GeneratedResponse, RollupPickerError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RollupPickerError {
+    Client(String),
+    Refused(String),
 }
 
 impl<'a> MaintenanceServices<'a> {
@@ -346,14 +352,25 @@ pub fn run_cli_with_all_services(
 struct ProductionRollupPicker;
 
 impl RollupPicker for ProductionRollupPicker {
-    fn pick(&self, request: &GenerateRequest) -> Result<GeneratedResponse, String> {
-        let client = OneShotClient::sibling().map_err(|error| format!("{error}"))?;
+    fn pick(&self, request: &GenerateRequest) -> Result<GeneratedResponse, RollupPickerError> {
+        let client = OneShotClient::sibling()
+            .map_err(|error| RollupPickerError::Client(error.to_string()))?;
         match client
             .execute(request)
-            .map_err(|error| format!("{error}"))?
+            .map_err(|error| RollupPickerError::Client(error.to_string()))?
         {
             GenerateResponse::Generated(response) => Ok(*response),
-            GenerateResponse::Refused(response) => Err(response.detail),
+            GenerateResponse::Refused(response) => {
+                let reason_code = response
+                    .reason_code
+                    .as_ref()
+                    .map_or("none", |code| code.as_wire());
+                Err(RollupPickerError::Refused(format!(
+                    "reason={} reason_code={reason_code} detail={}",
+                    response.reason.as_str(),
+                    response.detail
+                )))
+            }
         }
     }
 }
@@ -396,8 +413,8 @@ mod composed_tests {
     use solstone_core_generate::{GenerateRequest, GeneratedResponse};
 
     use super::{
-        HealthServices, MaintenanceServices, RollupPicker, TimelineServices, registry,
-        run_cli_with_all_services,
+        HealthServices, MaintenanceServices, RollupPicker, RollupPickerError, TimelineServices,
+        registry, run_cli_with_all_services,
     };
     use crate::timezone::HostTimezoneSource;
 
@@ -456,7 +473,7 @@ mod composed_tests {
     struct Picker;
 
     impl RollupPicker for Picker {
-        fn pick(&self, _: &GenerateRequest) -> Result<GeneratedResponse, String> {
+        fn pick(&self, _: &GenerateRequest) -> Result<GeneratedResponse, RollupPickerError> {
             panic!("empty timeline fixtures must not generate")
         }
     }
