@@ -7,6 +7,8 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use serde_json::Value;
+use sha2::{Digest, Sha256};
 use solstone_core_assets::{Artifact, Backend, Platform, catalog, resolve};
 use solstone_core_local::install::ced_install::{ENGINE_VERSION, ced_artifact_key, ced_model_path};
 use solstone_core_local::install::rfdetr_install::{
@@ -27,6 +29,10 @@ const CED_ENGINE_ARM64_SHA256: &str =
     "a87de0a8b086429aa5d6544a6f881a70e62726d07901734640ac85dbf146181e";
 const CED_ENGINE_METAL_SHA256: &str =
     "4c913ba0ece1d06ba2210da9fcaee3d8199ca3c62697c331810f224444e4054b";
+const QWEN35_ORACLE_BYTES: &[u8] = include_bytes!("../../../fixtures/qwen35_admission_oracle.json");
+const QWEN35_ORACLE_LEN: usize = 5424;
+const QWEN35_ORACLE_SHA256: &str =
+    "44e549fe43014e2e774bf6337a1e999c898b46d80ac9008cc57a05e19efaf838";
 
 const KNOWN_DEVICE_TYPES: [u32; 4] = [1, 2, 3, 4];
 
@@ -35,6 +41,198 @@ fn catalog_row(sha256: &str) -> &'static Artifact {
         .iter()
         .find(|row| row.sha256 == sha256)
         .unwrap_or_else(|| panic!("catalog lost frozen pin {sha256}"))
+}
+
+fn is_sha256_hex(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+// This oracle proves independent tokenizer rendering/token vectors for the named tokenizer and
+// GGUF-header chat template, not model weights, multimodal image cost, a running provider, or
+// llama.cpp.
+#[test]
+fn qwen35_admission_oracle_matches_pinned_digest() {
+    assert_eq!(QWEN35_ORACLE_BYTES.len(), QWEN35_ORACLE_LEN);
+    assert_eq!(
+        format!("{:x}", Sha256::digest(QWEN35_ORACLE_BYTES)),
+        QWEN35_ORACLE_SHA256
+    );
+}
+
+#[test]
+fn qwen35_admission_oracle_has_expected_shape() {
+    let _fixture_text = std::str::from_utf8(QWEN35_ORACLE_BYTES).expect("oracle fixture is UTF-8");
+    let fixture: Value =
+        serde_json::from_slice(QWEN35_ORACLE_BYTES).expect("oracle fixture parses as JSON");
+    let document = fixture.as_object().expect("oracle fixture is an object");
+    assert_eq!(
+        document.get("schema").and_then(Value::as_str),
+        Some("solstone.qwen35-admission-oracle.v1")
+    );
+
+    let receipt = document
+        .get("receipt")
+        .and_then(Value::as_object)
+        .expect("oracle fixture has a receipt object");
+    for key in [
+        "producer",
+        "constructed_date",
+        "construction",
+        "sources",
+        "claims",
+    ] {
+        assert!(receipt.contains_key(key), "receipt has {key}");
+        assert!(!receipt[key].is_null(), "receipt {key} is non-null");
+    }
+
+    let sources = receipt
+        .get("sources")
+        .and_then(Value::as_object)
+        .expect("receipt has sources object");
+    let gguf_model = sources
+        .get("gguf_model")
+        .and_then(Value::as_object)
+        .expect("receipt has GGUF model source");
+    assert!(
+        gguf_model
+            .get("repository")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.is_empty()),
+        "GGUF model repository is non-empty"
+    );
+    assert!(
+        gguf_model
+            .get("revision")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.is_empty()),
+        "GGUF model revision is non-empty"
+    );
+    assert!(
+        gguf_model
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_some_and(is_sha256_hex),
+        "GGUF model SHA-256 has lowercase hexadecimal syntax"
+    );
+
+    let template = sources
+        .get("gguf_embedded_chat_template")
+        .and_then(Value::as_object)
+        .expect("receipt has embedded chat template source");
+    assert!(
+        template
+            .get("utf8_bytes")
+            .and_then(Value::as_u64)
+            .is_some_and(|value| value > 0),
+        "embedded chat template UTF-8 byte length is positive"
+    );
+    assert!(
+        template
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_some_and(is_sha256_hex),
+        "embedded chat template SHA-256 has lowercase hexadecimal syntax"
+    );
+
+    let tokenizer = sources
+        .get("tokenizer")
+        .and_then(Value::as_object)
+        .expect("receipt has tokenizer source");
+    assert!(
+        tokenizer
+            .get("repository")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.is_empty()),
+        "tokenizer repository is non-empty"
+    );
+    assert!(
+        tokenizer
+            .get("revision")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.is_empty()),
+        "tokenizer revision is non-empty"
+    );
+    assert!(
+        tokenizer
+            .get("tokenizer_json_sha256")
+            .and_then(Value::as_str)
+            .is_some_and(is_sha256_hex),
+        "tokenizer JSON SHA-256 has lowercase hexadecimal syntax"
+    );
+
+    let claims = receipt
+        .get("claims")
+        .and_then(Value::as_object)
+        .expect("receipt has claims object");
+    assert!(
+        claims
+            .get("proves")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.is_empty()),
+        "receipt proves claim is non-empty"
+    );
+    let does_not_prove = claims
+        .get("does_not_prove")
+        .and_then(Value::as_array)
+        .expect("receipt has does_not_prove array");
+    assert_eq!(does_not_prove.len(), 4);
+    assert!(
+        does_not_prove.iter().all(|claim| claim.is_string()),
+        "each does_not_prove claim is a string"
+    );
+
+    let cases = document
+        .get("cases")
+        .and_then(Value::as_array)
+        .expect("oracle fixture has cases array");
+    assert_eq!(cases.len(), 5);
+    let mut names = Vec::with_capacity(cases.len());
+    for case in cases {
+        let case = case.as_object().expect("oracle case is an object");
+        names.push(
+            case.get("name")
+                .and_then(Value::as_str)
+                .expect("oracle case has a name"),
+        );
+        let token_count = case
+            .get("token_count")
+            .and_then(Value::as_u64)
+            .expect("oracle case token count is an unsigned integer");
+        let token_ids = case
+            .get("token_ids")
+            .and_then(Value::as_array)
+            .expect("oracle case has token IDs");
+        assert_eq!(
+            token_count,
+            u64::try_from(token_ids.len()).expect("token IDs length fits u64")
+        );
+        assert!(
+            case.get("rendered_sha256")
+                .and_then(Value::as_str)
+                .is_some_and(is_sha256_hex),
+            "oracle case rendered SHA-256 has lowercase hexadecimal syntax"
+        );
+        assert!(
+            case.get("rendered_bytes")
+                .and_then(Value::as_u64)
+                .is_some_and(|value| value > 0),
+            "oracle case rendered byte length is positive"
+        );
+    }
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        [
+            "empty-user",
+            "json-terminal",
+            "plain",
+            "tool-roundtrip",
+            "unicode"
+        ]
+    );
 }
 
 #[test]
