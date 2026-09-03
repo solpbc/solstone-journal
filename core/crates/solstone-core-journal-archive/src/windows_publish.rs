@@ -84,6 +84,7 @@ pub fn publish_archive(
             &mut scratch,
             AtomicWriteOptions { mode: Some(0o600) },
         )
+        .map(|_| ())
         .map_err(ArchivePublicationError::Publish)
     })();
     // Keep the exclusively-created handle open while removing its name. That
