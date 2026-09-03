@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Frozen local-provider oracles: Vulkan child protocol and installer pin table.
+//! Frozen local-provider oracles: Vulkan child protocol, installer pin table,
+//! and the Qwen3.5-4B admission oracle.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
