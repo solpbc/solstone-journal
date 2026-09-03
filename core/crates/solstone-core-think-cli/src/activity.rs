@@ -9,9 +9,8 @@ use solstone_core_talent_config::{TalentFilter, get_output_name, load_talent_con
 
 use crate::context::{DispatchFailure, ThinkContext};
 use crate::dispatch::{
-    DEFAULT_THINK_TIMEOUT, ModeResult, PendingUse, blocked_runtime_reason, dispatch_direct,
-    failure_cause, grouped, item_label, maybe_rescan_output, merge_mode_result, named_failure,
-    runtime, timeout_cause,
+    DEFAULT_THINK_TIMEOUT, ModeResult, PendingUse, dispatch_direct, failure_cause, grouped,
+    item_label, maybe_rescan_output, merge_mode_result, named_failure, runtime, timeout_cause,
 };
 use crate::helpers;
 use crate::run_log::RunLogWriter;
@@ -369,28 +368,31 @@ fn drain_activity(
         .iter()
         .map(|item| item.use_id.clone())
         .collect::<Vec<_>>();
-    let Ok(report) = context
+    let report = match context
         .cortex
         .wait(runtime, &ids, Some(DEFAULT_THINK_TIMEOUT))
-    else {
-        let cause =
-            blocked_runtime_reason(&context.journal).unwrap_or_else(|| "unavailable".to_owned());
-        for item in pending {
-            result.failed += 1;
-            result
-                .failed_names
-                .push(named_failure(&item_label(&item.name, Some(facet)), &cause));
-            log_fail(
-                log,
-                context,
-                activity_id,
-                facet,
-                &item.name,
-                Some(&item.use_id),
-                "unknown",
-            );
+    {
+        Ok(report) => report,
+        Err(error) => {
+            let wait_error = format!("wait failed: {error:?}");
+            for item in pending {
+                result.failed += 1;
+                result.failed_names.push(named_failure(
+                    &item_label(&item.name, Some(facet)),
+                    &failure_cause(&context.journal, &item.use_id, &wait_error),
+                ));
+                log_fail(
+                    log,
+                    context,
+                    activity_id,
+                    facet,
+                    &item.name,
+                    Some(&item.use_id),
+                    "unknown",
+                );
+            }
+            return result;
         }
-        return result;
     };
     for item in pending {
         let label = item_label(&item.name, Some(facet));
@@ -402,9 +404,7 @@ fn drain_activity(
             result.failed += 1;
             result.failed_names.push(named_failure(
                 &label,
-                blocked_runtime_reason(&context.journal)
-                    .as_deref()
-                    .unwrap_or_else(|| timeout_cause(timeout)),
+                &failure_cause(&context.journal, &item.use_id, timeout_cause(timeout)),
             ));
             let state = match timeout {
                 TimedOutUse::LostAtDeadline { .. } => "unknown",

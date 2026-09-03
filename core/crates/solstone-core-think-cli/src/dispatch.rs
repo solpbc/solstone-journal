@@ -8,7 +8,6 @@ use std::time::Duration;
 
 use chrono::{Datelike, Duration as ChronoDuration, NaiveDate};
 use serde_json::{Map, Value};
-use solstone_core_brain::inspect_runtime_health;
 use solstone_core_cortex_client::{CortexRequest, TimedOutUse, UseEndState, read_use_events};
 use solstone_core_talent_config::{TalentConfig, get_output_path};
 
@@ -52,44 +51,22 @@ pub(crate) fn merge_mode_result(into: &mut ModeResult, from: ModeResult) {
     into.capped_units.extend(from.capped_units);
 }
 
-/// Blocking local-runtime reason from the same health record the runtime API reads.
-pub(crate) fn blocked_runtime_reason(journal: &Path) -> Option<String> {
-    let inspection = inspect_runtime_health(journal);
-    if inspection.status != "ok" {
-        return inspection.reason_code;
-    }
-    let record = inspection.record?;
-    let phase = record.get("phase").and_then(Value::as_str)?;
-    matches!(
-        phase,
-        "host-blocked"
-            | "artifact-not-ready"
-            | "failed"
-            | "cleanup-failed"
-            | "state-corrupt"
-            | "state-unavailable"
-            | "ready-proof-unavailable"
-    )
-    .then(|| {
-        record
-            .get("reason_code")
-            .and_then(Value::as_str)
-            .map(str::to_owned)
-    })
-    .flatten()
-}
-
 fn use_log_error(journal: &Path, use_id: &str) -> Option<String> {
     let events = read_use_events(journal, use_id).ok()?;
-    events.into_iter().rev().find_map(|event| {
-        (event.get("event").and_then(Value::as_str) == Some("error")).then(|| {
+    events.iter().rev().find_map(|event| {
+        (event.get("event").and_then(Value::as_str) == Some("error")
+            && event
+                .get("terminal")
+                .and_then(Value::as_bool)
+                .unwrap_or(true))
+        .then(|| {
             event
-                .get("error")
+                .get("reason_code")
                 .and_then(Value::as_str)
                 .map(str::to_owned)
                 .or_else(|| {
                     event
-                        .get("reason_code")
+                        .get("error")
                         .and_then(Value::as_str)
                         .map(str::to_owned)
                 })
@@ -105,9 +82,6 @@ pub(crate) fn timeout_cause(timeout: &TimedOutUse) -> &'static str {
 }
 
 pub(crate) fn failure_cause(journal: &Path, use_id: &str, fallback: &str) -> String {
-    if let Some(reason) = blocked_runtime_reason(journal) {
-        return reason;
-    }
     if let Some(error) = use_log_error(journal, use_id) {
         return error;
     }
@@ -464,9 +438,7 @@ pub(crate) fn drain_with_deadline_observed(
                     result.timed_out = true;
                     result.failed_names.push(named_failure(
                         &label,
-                        blocked_runtime_reason(&context.journal)
-                            .as_deref()
-                            .unwrap_or_else(|| timeout_cause(timeout)),
+                        &failure_cause(&context.journal, &item.use_id, timeout_cause(timeout)),
                     ));
                     observer(&item, DrainOutcome::Fail(timeout_cause(timeout)));
                     continue;
@@ -550,7 +522,48 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{blocked_runtime_reason, failure_cause, named_failure};
+    use super::{failure_cause, named_failure};
+
+    fn write_blocked_local_runtime(journal: &std::path::Path) {
+        let path = journal.join("health/providers/runtime/local.json");
+        fs::create_dir_all(path.parent().expect("runtime directory")).expect("runtime directory");
+        fs::write(
+            path,
+            serde_json::to_vec(&json!({
+                "schema_version": 1,
+                "provider": "local",
+                "revision": 1,
+                "phase": "artifact-not-ready",
+                "reason_code": "manifest-missing",
+                "detail": {},
+                "desired_fingerprint_sha256": null,
+                "incarnation": null,
+                "generation": 0,
+                "attempt": 0,
+                "process": null,
+                "updated_at": null,
+                "display_deadline_at": null,
+                "owner": null
+            }))
+            .expect("runtime record"),
+        )
+        .expect("write runtime record");
+    }
+
+    fn write_use_start(journal: &std::path::Path, use_id: &str, provider: &str) {
+        let use_log = journal
+            .join("talents/timeline--segment_summary")
+            .join(format!("{use_id}.jsonl"));
+        fs::create_dir_all(use_log.parent().expect("use log directory"))
+            .expect("use log directory");
+        fs::write(
+            use_log,
+            format!(
+                "{{\"event\":\"start\",\"use_id\":\"{use_id}\",\"provider\":\"{provider}\"}}\n"
+            ),
+        )
+        .expect("write use log");
+    }
 
     // AC: when nothing else knows why a use failed, the caller's fallback is reported --
     // not a generic word. The wait-failure arm of `drain_with_deadline_observed` relies on
@@ -574,38 +587,76 @@ mod tests {
     }
 
     #[test]
-    fn blocked_runtime_reason_reads_the_same_health_record() {
+    fn failed_use_reason_precedes_unrelated_blocked_local_runtime() {
         let journal = tempfile::tempdir().expect("journal");
-        let path = journal.path().join("health/providers/runtime/local.json");
-        fs::create_dir_all(path.parent().expect("runtime directory")).expect("runtime directory");
+        write_blocked_local_runtime(journal.path());
+        let use_log = journal
+            .path()
+            .join("talents/timeline--segment_summary/use-1.jsonl");
+        fs::create_dir_all(use_log.parent().expect("use log directory"))
+            .expect("use log directory");
         fs::write(
-            &path,
-            serde_json::to_vec(&json!({
-                "schema_version": 1,
-                "provider": "local",
-                "revision": 1,
-                "phase": "host-blocked",
-                "reason_code": "gpu-unavailable",
-                "detail": {},
-                "desired_fingerprint_sha256": null,
-                "incarnation": null,
-                "generation": 0,
-                "attempt": 0,
-                "process": null,
-                "updated_at": null,
-                "display_deadline_at": null,
-                "owner": null
-            }))
-            .expect("record"),
+            use_log,
+            concat!(
+                "{\"event\":\"start\",\"use_id\":\"use-1\",\"provider\":\"google\"}\n",
+                "{\"event\":\"error\",\"use_id\":\"use-1\",",
+                "\"reason_code\":\"incomplete_json_length\",",
+                "\"error\":\"generate hook failed\"}\n"
+            ),
         )
-        .expect("write");
+        .expect("write use log");
+
         assert_eq!(
-            blocked_runtime_reason(journal.path()).as_deref(),
-            Some("gpu-unavailable")
+            failure_cause(journal.path(), "use-1", "error"),
+            "incomplete_json_length"
         );
+    }
+
+    #[test]
+    fn blocked_local_runtime_does_not_relabel_byo_timeout_without_terminal_error() {
+        let journal = tempfile::tempdir().expect("journal");
+        write_blocked_local_runtime(journal.path());
+        write_use_start(journal.path(), "use-google", "google");
+
         assert_eq!(
-            named_failure("daily_schedule", "gpu-unavailable"),
-            "daily_schedule (gpu-unavailable)"
+            failure_cause(journal.path(), "use-google", "timeout"),
+            "timeout"
+        );
+    }
+
+    #[test]
+    fn blocked_local_runtime_does_not_replace_provider_neutral_local_timeout() {
+        let journal = tempfile::tempdir().expect("journal");
+        write_blocked_local_runtime(journal.path());
+        write_use_start(journal.path(), "use-local", "local");
+
+        assert_eq!(
+            failure_cause(journal.path(), "use-local", "timeout"),
+            "timeout"
+        );
+    }
+
+    #[test]
+    fn nonterminal_use_error_does_not_replace_timeout_cause() {
+        let journal = tempfile::tempdir().expect("journal");
+        let use_log = journal
+            .path()
+            .join("talents/timeline--segment_summary/use-transient.jsonl");
+        fs::create_dir_all(use_log.parent().expect("use log directory"))
+            .expect("use log directory");
+        fs::write(
+            use_log,
+            concat!(
+                "{\"event\":\"start\",\"use_id\":\"use-transient\"}\n",
+                "{\"event\":\"error\",\"use_id\":\"use-transient\",",
+                "\"terminal\":false,\"reason_code\":\"retryable_transport\"}\n"
+            ),
+        )
+        .expect("write use log");
+
+        assert_eq!(
+            failure_cause(journal.path(), "use-transient", "timeout"),
+            "timeout"
         );
     }
 }

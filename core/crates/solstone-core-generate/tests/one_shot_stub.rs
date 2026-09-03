@@ -184,7 +184,7 @@ fn install_talent_worker_wrapper(fixture: &Fixture) -> PathBuf {
         format!(
             r##"#!/bin/sh
 if [ "$1" = "generate" ] && [ "$2" = "--one-shot" ]; then
-    cat >/dev/null
+    cat > "$SOLSTONE_JOURNAL/generate-request.json"
     case "$(cat "$SOLSTONE_JOURNAL/config/journal.json")" in
         *'"provider":"local"'*)
             printf '%s\n' '{{"schema":"solstone-generate-response-v2","id":null,"outcome":"generated","text":"{{\"title\":\"Local\",\"description\":\"Local provider fixture.\"}}","model":"local/fixture","usage":{{}},"finish_reason":"stop","thinking":null,"schema_validation":{{"valid":true}},"input_budget":null,"request_budget":null,"inference":{{"reason_code":"manifest-missing","runtime_reason_code":"manifest-missing"}}}}'
@@ -527,6 +527,12 @@ fn concurrent_real_workers_keep_byo_timeline_provenance_separate_from_local_runt
         timeline["provenance"]["inference"],
         json!({"provider":"google"})
     );
+    let generate_request: serde_json::Value = serde_json::from_slice(
+        &fs::read(byo_journal.join("generate-request.json")).expect("BYO generate request reads"),
+    )
+    .expect("BYO generate request parses");
+    assert_eq!(generate_request["thinking_budget"], 0);
+    assert_eq!(generate_request["max_output_tokens"], 1024);
 
     let provenance = timeline["provenance"].to_string();
     assert!(

@@ -4,6 +4,7 @@
   "description": "Names the single most important event in each segment for the timeline.",
   "schedule": "segment",
   "priority": 41,
+  "thinking_budget": 0,
   "max_output_tokens": 1024,
   "output": "json",
   "schema": "segment_summary.schema.json",

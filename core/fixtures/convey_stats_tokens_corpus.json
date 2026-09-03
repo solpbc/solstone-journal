@@ -762,6 +762,7 @@
                   "schedule": "segment",
                   "schema": "segment_summary.schema.json",
                   "source": "app",
+                  "thinking_budget": 0,
                   "title": "Segment Summary",
                   "type": "generate"
                 },
@@ -1516,6 +1517,7 @@
                   "schedule": "segment",
                   "schema": "segment_summary.schema.json",
                   "source": "app",
+                  "thinking_budget": 0,
                   "title": "Segment Summary",
                   "type": "generate"
                 },
@@ -2388,6 +2390,7 @@
                   "schedule": "segment",
                   "schema": "segment_summary.schema.json",
                   "source": "app",
+                  "thinking_budget": 0,
                   "title": "Segment Summary",
                   "type": "generate"
                 },
@@ -3260,6 +3263,7 @@
                   "schedule": "segment",
                   "schema": "segment_summary.schema.json",
                   "source": "app",
+                  "thinking_budget": 0,
                   "title": "Segment Summary",
                   "type": "generate"
                 },
