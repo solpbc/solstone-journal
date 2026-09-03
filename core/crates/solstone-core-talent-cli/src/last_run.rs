@@ -8,8 +8,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 use solstone_core_journal_io::cortex_use::{
-    census_cortex_namespace, create_or_admit_cortex_namespace, talent_directory_name,
+    CortexTalentCensus, census_cortex_namespace, create_or_admit_cortex_namespace,
+    talent_directory_name,
 };
+#[cfg(unix)]
+use solstone_core_journal_io::read_observed_file;
+#[cfg(windows)]
+use solstone_core_journal_io::read_windows_observed_file_bounded;
 use solstone_core_journal_io::{JournalEntryKind, JournalRoot};
 
 const MAXIMUM_CENSUS_ENTRIES: usize = 64 * 1024;
@@ -66,11 +71,10 @@ pub(crate) fn format_last_run(key: &str, journal_root: &Path, now: SystemTime) -
     else {
         return LastRunOutcome::NoRuns;
     };
-    let path = journal_root
-        .join("talents")
-        .join(&directory_name)
-        .join(leaf);
-    match format_run(&path, now) {
+    let Some(bytes) = read_run(talent, leaf) else {
+        return LastRunOutcome::Unavailable;
+    };
+    match format_run(&bytes, now) {
         Some((display, failed)) => LastRunOutcome::Found { display, failed },
         None => LastRunOutcome::Unavailable,
     }
@@ -80,8 +84,17 @@ fn is_real_directory(path: &Path) -> bool {
     fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_dir())
 }
 
-fn format_run(path: &Path, now: SystemTime) -> Option<(String, bool)> {
-    let text = fs::read_to_string(path).ok()?;
+fn read_run(talent: &CortexTalentCensus, leaf: &OsStr) -> Option<Vec<u8>> {
+    #[cfg(unix)]
+    let observation = read_observed_file(talent.directory(), leaf).ok()??;
+    #[cfg(windows)]
+    let observation =
+        read_windows_observed_file_bounded(talent.directory(), leaf, usize::MAX).ok()??;
+    Some(observation.bytes)
+}
+
+fn format_run(bytes: &[u8], now: SystemTime) -> Option<(String, bool)> {
+    let text = std::str::from_utf8(bytes).ok()?;
     let mut lines = text.split_inclusive('\n');
     let first_line = lines.next()?;
     let first = serde_json::from_str::<Value>(first_line).ok()?;
