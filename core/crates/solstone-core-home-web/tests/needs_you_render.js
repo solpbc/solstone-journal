@@ -12,7 +12,7 @@ if (!manifestDir) throw new Error('manifest directory required');
 let source = fs.readFileSync(path.join(manifestDir, 'assets/home.js'), 'utf8');
 source = source.replace(
   '  window.toggleBriefingCard = toggleBriefingCard;\n',
-  `  window.__needsYou = { needsYouItemHtml, dispatchNeedsYouItem };
+  `  window.__needsYou = { needsYouItemHtml, dispatchNeedsYouItem, renderNeedsYouHtml };
   window.toggleBriefingCard = toggleBriefingCard;\n`,
 );
 
@@ -31,9 +31,10 @@ window.window = window;
 document.defaultView = window;
 
 vm.runInNewContext(source, { window, document, console }, { filename: 'home.js' });
-const { needsYouItemHtml, dispatchNeedsYouItem } = window.__needsYou;
+const { needsYouItemHtml, dispatchNeedsYouItem, renderNeedsYouHtml } = window.__needsYou;
 assert(needsYouItemHtml, 'needsYouItemHtml exported');
 assert(dispatchNeedsYouItem, 'dispatchNeedsYouItem exported');
+assert(renderNeedsYouHtml, 'renderNeedsYouHtml exported');
 
 const noteHtml = needsYouItemHtml({
   text: 'the invoice',
@@ -83,5 +84,17 @@ dispatchNeedsYouItem({
   disabled: false,
 });
 assert.strictEqual(location.href, 'keep');
+
+// The empty "needs you" state must never flatly contradict a vitals banner
+// that is already flagging an issue on the same page (F9 regression guard).
+const emptyPlain = renderNeedsYouHtml({ needs_you_items: [], health_glance: { verdict: 'ok' } });
+assert(emptyPlain.includes('nothing needs your attention right now.'), emptyPlain);
+assert.strictEqual(emptyPlain.includes('nothing else'), false, emptyPlain);
+
+const emptyWithAttentionElsewhere = renderNeedsYouHtml({
+  needs_you_items: [],
+  health_glance: { verdict: 'attention', headline: '1 thing needs your attention' },
+});
+assert(emptyWithAttentionElsewhere.includes('nothing else needs your attention right now.'), emptyWithAttentionElsewhere);
 
 console.log('needs-you render contract passed');

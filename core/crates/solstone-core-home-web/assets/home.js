@@ -419,9 +419,15 @@
   function renderNeedsYouHtml(pulse) {
     const items = Array.isArray(pulse.needs_you_items) ? pulse.needs_you_items : [];
     if (!items.length) {
+      // health_glance flags its own issues (device/backlog/pipeline health) up in the
+      // vitals banner, a separate signal from needs_you_items. Say "else" when it has
+      // something flagged so this empty state never reads as a flat contradiction.
+      const emptyMessage = pulse.health_glance && pulse.health_glance.verdict === 'attention'
+        ? 'nothing else needs your attention right now.'
+        : 'nothing needs your attention right now.';
       return '<div class="pulse-empty-state" data-home-surface="needs">'
         + '<h2 class="pulse-section-header">needs you</h2>'
-        + '<div class="pulse-empty-message">nothing needs your attention right now.</div>'
+        + '<div class="pulse-empty-message">' + esc(emptyMessage) + '</div>'
         + '</div>';
     }
     return '<div class="pulse-needs" id="pulse-needs" data-home-surface="needs" data-section-collapsed="false">'
