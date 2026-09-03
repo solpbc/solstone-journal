@@ -2512,7 +2512,7 @@ fn native_health_dispatch_reaches_both_real_bodies_without_python() {
         .expect("dispatch native health logs body");
     assert_eq!(logs.status.code(), Some(0));
     assert!(logs.stdout.is_empty());
-    assert_eq!(logs.stderr, b"No health directory found.\n");
+    assert_eq!(logs.stderr, b"No log files found.\n");
     assert!(!context.poison_marker.exists());
 }
 
@@ -2856,9 +2856,11 @@ fn native_think_cadence_run_reaches_the_talent_plane_without_python() {
         String::from_utf8_lossy(&output.stderr)
     );
     let recorded = fs::read_to_string(&logs[0]).expect("read cadence run log");
-    let first = recorded.lines().next().unwrap_or_default();
-    let start: serde_json::Value =
-        serde_json::from_str(first).expect("first run-log line is a JSON event");
+    let start: serde_json::Value = recorded
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("parse canonical run-log record"))
+        .find(|event: &serde_json::Value| event.get("event").is_some())
+        .expect("canonical run log contains an event after its admission record");
     assert_eq!(start["event"], "run.start");
     assert_eq!(start["mode"], "cadence");
     for name in ["pulse", "steward"] {
@@ -2872,7 +2874,7 @@ fn native_think_cadence_run_reaches_the_talent_plane_without_python() {
     }
 }
 
-/// Collect `chronicle/<day>/health/<ref>_cadence.jsonl` sidecars.
+/// Collect canonical JSONL operational logs under `chronicle/<day>/health/`.
 fn cadence_run_logs(journal: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
     let Ok(days) = fs::read_dir(journal.join("chronicle")) else {
@@ -2883,11 +2885,9 @@ fn cadence_run_logs(journal: &Path) -> Vec<PathBuf> {
             continue;
         };
         for entry in entries.filter_map(Result::ok) {
-            if entry
-                .file_name()
-                .to_string_lossy()
-                .ends_with("_cadence.jsonl")
-            {
+            let leaf = entry.file_name();
+            let leaf = leaf.to_string_lossy();
+            if leaf.starts_with("oplog--") && leaf.ends_with(".jsonl") {
                 found.push(entry.path());
             }
         }
@@ -2930,7 +2930,6 @@ fn seed_think_install(context: &VerdictContext<'_>, talents: &[(&str, &str)]) {
 }
 
 fn think_mode_events(journal: &Path, mode: &str) -> Vec<serde_json::Value> {
-    let suffix = format!("_{mode}.jsonl");
     let mut logs = Vec::new();
     let chronicle = journal.join("chronicle");
     let Ok(days) = fs::read_dir(chronicle) else {
@@ -2941,12 +2940,15 @@ fn think_mode_events(journal: &Path, mode: &str) -> Vec<serde_json::Value> {
             continue;
         };
         for entry in entries.filter_map(Result::ok) {
-            if entry.file_name().to_string_lossy().ends_with(&suffix) {
+            let leaf = entry.file_name();
+            let leaf = leaf.to_string_lossy();
+            if leaf.starts_with("oplog--") && leaf.ends_with(".jsonl") {
                 logs.extend(
                     fs::read_to_string(entry.path())
                         .expect("read think mode sidecar")
                         .lines()
-                        .map(|line| serde_json::from_str(line).expect("parse think sidecar event")),
+                        .map(|line| serde_json::from_str(line).expect("parse think sidecar event"))
+                        .filter(|event: &serde_json::Value| event["mode"] == mode),
                 );
             }
         }

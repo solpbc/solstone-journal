@@ -391,9 +391,12 @@ fn ac21_only_operational_log_module_names_write_primitives() {
             "catchup must not write journal data through {primitive}"
         );
     }
-    assert!(LOG.contains("OpenOptions"));
-    assert!(LOG.contains("create_dir_all"));
-    assert!(LOG.contains("join(\"health\")"));
+    // Process capture delegates exclusive leaf creation and namespace admission
+    // to journal-io's canonical operational-log boundary. Keep this guard tied
+    // to that capability instead of the retired direct filesystem primitives.
+    assert!(LOG.contains("JournalRoot::open"));
+    assert!(LOG.contains("create_oplog_at"));
+    assert!(LOG.contains("OplogFormat::Log"));
     assert!(LOG.contains("CHRONICLE_DIR"));
     assert!(LIFECYCLE_STATE.contains("OpenOptions"));
     assert!(LIFECYCLE_STATE.contains("create_dir_all"));
