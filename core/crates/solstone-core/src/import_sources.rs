@@ -149,17 +149,22 @@ struct WindowsPdfWorker {
 impl WindowsPdfWorker {
     fn from_verified_package(timeout: Duration) -> Result<Self, String> {
         let package = verified_windows_pdfium_package()?;
-        let current_directory = package.worker.parent().ok_or_else(|| {
-            format!(
-                "signed PDF worker has no containing directory: {}",
-                package.worker.display()
-            )
-        })?;
+        let current_directory =
+            package
+                .worker
+                .parent()
+                .map(Path::to_path_buf)
+                .ok_or_else(|| {
+                    format!(
+                        "signed PDF worker has no containing directory: {}",
+                        package.worker.display()
+                    )
+                })?;
         Ok(Self {
             package_root: package.package_root,
             executable: package.worker,
             pdfium_library: package.library,
-            current_directory: current_directory.to_path_buf(),
+            current_directory,
             timeout,
         })
     }

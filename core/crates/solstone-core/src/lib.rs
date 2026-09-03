@@ -9,10 +9,10 @@ pub mod supervisor;
 
 // The route command is owned by the binary, but these protocol and lock units
 // have no binary-only dependencies and belong in the crate's routine unit gate.
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "journal_route/coordination_lock.rs"]
 mod journal_route_coordination_lock;
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "journal_route/record.rs"]
 mod journal_route_record;
 

@@ -383,21 +383,29 @@ fn corrupt(path: &Path) -> String {
     )
 }
 fn installed() -> bool {
-    if cfg!(target_os = "macos") {
+    #[cfg(target_os = "macos")]
+    {
         home()
             .join("Library/LaunchAgents/org.solpbc.solstone.plist")
             .exists()
-    } else {
+    }
+    #[cfg(target_os = "linux")]
+    {
         home()
             .join(".config/systemd/user/solstone.service")
             .exists()
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        false
     }
 }
 fn running() -> bool {
     if !installed() {
         return false;
     }
-    if cfg!(target_os = "macos") {
+    #[cfg(target_os = "macos")]
+    {
         Command::new("launchctl")
             .args([
                 "print",
@@ -408,11 +416,17 @@ fn running() -> bool {
                 o.status.success()
                     && String::from_utf8_lossy(&o.stdout).contains("\n\tstate = running\n")
             })
-    } else {
+    }
+    #[cfg(target_os = "linux")]
+    {
         Command::new("systemctl")
             .args(["--user", "is-active", "solstone"])
             .output()
             .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).trim() == "active")
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        false
     }
 }
 fn home() -> PathBuf {
@@ -420,6 +434,19 @@ fn home() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/"))
 }
+
+#[cfg(unix)]
+fn filesystem_device(path: &Path) -> Option<u64> {
+    use std::os::unix::fs::MetadataExt;
+
+    fs::metadata(path).ok().map(|metadata| metadata.dev())
+}
+
+#[cfg(not(unix))]
+fn filesystem_device(_path: &Path) -> Option<u64> {
+    None
+}
+
 fn resolve_non_strict(path: &Path) -> PathBuf {
     let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
     resolve_non_strict_from(path, &home(), &cwd)
@@ -848,14 +875,8 @@ fn journal(o: ConfigJournalOptions) -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    let current_device = fs::metadata(&current).ok().map(|m| {
-        use std::os::unix::fs::MetadataExt;
-        m.dev()
-    });
-    let target_parent_device = target.parent().and_then(|p| fs::metadata(p).ok()).map(|m| {
-        use std::os::unix::fs::MetadataExt;
-        m.dev()
-    });
+    let current_device = filesystem_device(&current);
+    let target_parent_device = target.parent().and_then(filesystem_device);
     let identity_root = match identity_root_from_current_executable() {
         Ok(root) => root,
         Err(error) => {
