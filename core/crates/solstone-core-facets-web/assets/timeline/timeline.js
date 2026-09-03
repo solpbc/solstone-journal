@@ -896,6 +896,9 @@ async function renderMonth(index) {
   const eventDays = new Map(monthEvents.map((event) => [event.day, event.side]));
 
   timeline.innerHTML = `
+    <div class="timeline-rollup-status">
+      ${renderArtifactTruth(monthCache[month.ym])}
+    </div>
     <div class="month-view accent-${month.accent}" style="--days: ${month.days}">
       ${previous ? renderEdgeMonth(previous, index - 1, "prev") : ""}
       ${next ? renderEdgeMonth(next, index + 1, "next") : ""}
@@ -907,7 +910,6 @@ async function renderMonth(index) {
           <button class="timeline-focus-node" type="button" data-month="${index}" aria-label="return to all history">
             ${month.short}
           </button>
-          ${renderArtifactTruth(monthCache[month.ym])}
         </div>
 
         <div class="events-lane timeline-top" aria-label="${month.name} highlighted events above the daily timeline">
@@ -980,6 +982,9 @@ async function renderDay(monthIndex, day) {
   const dayLabel = `${month.short} ${day}`;
 
   timeline.innerHTML = `
+    <div class="timeline-rollup-status">
+      ${renderArtifactTruth(data)}
+    </div>
     <div class="day-view accent-${month.accent}">
       ${previous ? renderEdgeDay(monthIndex, previous, "prev") : ""}
       ${next ? renderEdgeDay(monthIndex, next, "next") : ""}
@@ -991,8 +996,6 @@ async function renderDay(monthIndex, day) {
           <button class="day-focus-node" type="button" data-month="${monthIndex}" data-return-month="true" aria-label="return to ${month.name} ${month.year || ""}">
             ${dayLabel}
           </button>
-          ${renderArtifactTruth(data)}
-          ${window.TimelineProvenance.renderDayProvenance(data.generated_at_ms, data.provenance)}
         </div>
 
         <div class="hour-lane timeline-top" aria-label="${month.name} ${day} highlighted events above the hourly timeline">
@@ -1451,7 +1454,6 @@ async function renderFiveMinute(monthIndex, day, hour, minute) {
             generated_at_ms: primarySample.timeline?.generated_at_ms,
             provenance: primarySample.timeline?.provenance,
           })}
-          ${primarySample.timeline ? window.TimelineProvenance.renderDayProvenance(primarySample.timeline.generated_at_ms, primarySample.timeline.provenance) : ""}
           ${topics.length ? `<div class="seg-topics">${topics.map((t) => `<span class="topic-chip">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
         </header>
 

@@ -50,6 +50,20 @@
   font-size: .78rem;
 }
 
+.timeline-shell .timeline-rollup-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  width: min(100%, 1160px);
+  margin: 12px auto 0;
+  padding: 0 clamp(14px, 4vw, 32px);
+}
+
+.timeline-shell .timeline-rollup-status .timeline-truth {
+  margin: 0;
+}
+
 .timeline-shell .timeline-empty-state {
   width: min(100%, 520px);
   margin: clamp(96px, 18vh, 180px) auto;
@@ -220,6 +234,7 @@
 .timeline-shell .month-view {
   --axis-top: 304px;
   position: relative;
+  min-height: 650px;
   overflow: hidden;
 }
 
@@ -295,6 +310,7 @@
 .timeline-focus-panel {
   position: relative;
   z-index: 2;
+  min-height: 650px;
   padding: 0 118px;
 }
 
@@ -446,6 +462,7 @@
 .timeline-shell .day-view {
   --axis-top: 304px;
   position: relative;
+  min-height: 650px;
   overflow: hidden;
 }
 
@@ -530,6 +547,7 @@
 .timeline-shell .hour-panel {
   position: relative;
   z-index: 2;
+  min-height: 650px;
   padding: 0 118px;
 }
 
@@ -658,6 +676,7 @@
 .timeline-shell .minute-view {
   --axis-top: 304px;
   position: relative;
+  min-height: 650px;
   overflow: hidden;
 }
 
@@ -742,6 +761,7 @@
 .timeline-shell .minute-panel {
   position: relative;
   z-index: 2;
+  min-height: 650px;
   padding: 0 118px;
 }
 
@@ -911,12 +931,14 @@
 .timeline-shell .segment-view {
   --axis-top: 304px;
   position: relative;
+  min-height: 650px;
   overflow: hidden;
 }
 
 .timeline-shell .segment-panel {
   position: relative;
   z-index: 2;
+  min-height: 650px;
   padding: 56px 118px 24px;
 }
 
@@ -1880,10 +1902,4 @@
 .timeline-shell .timeline-origin-chip:hover,
 .timeline-shell .timeline-origin-chip:focus {
   text-decoration: underline;
-}
-
-.timeline-shell .timeline-day-provenance {
-  margin: 0.25rem 0 0.75rem;
-  font-size: 0.75rem;
-  color: var(--muted);
 }

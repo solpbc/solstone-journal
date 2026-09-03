@@ -2738,8 +2738,8 @@
         "why": "\u26a0 an EMPTY-BODY 404, not the shared HTML 404 page"
       },
       {
-        "body_bytes": 66980,
-        "body_sha256": "c2b268f7acde63506c5d30c41244425d52e3f0a09532991978c47ec8743c540e",
+        "body_bytes": 66814,
+        "body_sha256": "6ea1c6cd052156d28884690ce5f54dac6ab226b831c07af62f8fd0412498db19",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=timeline.js",
         "content_type": "text/javascript; charset=utf-8",
@@ -2749,8 +2749,8 @@
         "why": "per-app static"
       },
       {
-        "body_bytes": 40050,
-        "body_sha256": "5811516b1d0b3d3319f428bf19c2d75926d5cf3754da8de167976e4f652ba8c1",
+        "body_bytes": 41371,
+        "body_sha256": "be1c1ab82cc8d11bd843c0fc19ad5711dfbf0cdb9d5888c6b3be8447f1a5db2e",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=timeline.css",
         "content_type": "text/css; charset=utf-8",
@@ -2760,8 +2760,8 @@
         "why": "per-app static"
       },
       {
-        "body_bytes": 1829,
-        "body_sha256": "f7fbb5f14a55bbe6910237075b51b4de04100ccfc746a235a453508a271dba83",
+        "body_bytes": 2266,
+        "body_sha256": "aa6a6c702a11398c71edf1cd2e4fd181a95c396341c37874a4efffeb503e1370",
         "body_sha256_basis": "raw-body",
         "body_text": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function (global) {\n  'use strict';\n\n  // --- owner-facing strings ---\n  const PROVENANCE_PREFIX = 'rolled up';\n  const PROVENANCE_AGO = 'ago';\n  const PROVENANCE_TITLE_PREFIX = 'rolled up at';\n  const PROVENANCE_TITLE_ON = 'on';\n  const PROVENANCE_SEPARATOR = ' \u00b7 ';\n  // --- end owner-facing strings ---\n\n  function escapeHtml(value) {\n    return String(value ?? '').replace(/[&<>\"']/g, (char) => ({\n      '&': '&amp;',\n      '<': '&lt;',\n      '>': '&gt;',\n      '\"': '&quot;',\n      \"'\": '&#39;'\n    })[char]);\n  }\n\n  function pad2(value) {\n    return String(value).padStart(2, '0');\n  }\n\n  function absoluteRollupTitle(generatedAt) {\n    const date = new Date(generatedAt * 1000);\n    const hh = pad2(date.getHours());\n    const mm = pad2(date.getMinutes());\n    const y = date.getFullYear();\n    const mo = pad2(date.getMonth() + 1);\n    const da = pad2(date.getDate());\n    return `${PROVENANCE_TITLE_PREFIX} ${hh}:${mm} ${PROVENANCE_TITLE_ON} ${y}-${mo}-${da}`;\n  }\n\n  function renderDayProvenance(generatedAt, model, nowMs = Date.now()) {\n    if (!generatedAt || !model) return \"\";\n    const generatedMs = generatedAt * 1000;\n    const relative = global.relativeTime(nowMs - generatedMs);\n    const text = `${PROVENANCE_PREFIX} ${relative} ${PROVENANCE_AGO}${PROVENANCE_SEPARATOR}${model}`;\n    const title = absoluteRollupTitle(generatedAt);\n    return `<p class=\"timeline-day-provenance\" title=\"${escapeHtml(title)}\">${escapeHtml(text)}</p>`;\n  }\n\n  const TimelineProvenance = {\n    absoluteRollupTitle,\n    renderDayProvenance,\n  };\n  global.TimelineProvenance = TimelineProvenance;\n  if (typeof module !== 'undefined' && module.exports) {\n    module.exports = TimelineProvenance;\n  }\n})(typeof window !== 'undefined' ? window : globalThis);\n",
         "content_disposition": "inline; filename=timeline_provenance.js",
@@ -3966,8 +3966,8 @@
         "why": "\u26a0 an EMPTY-BODY 404, not the shared HTML 404 page"
       },
       {
-        "body_bytes": 66980,
-        "body_sha256": "c2b268f7acde63506c5d30c41244425d52e3f0a09532991978c47ec8743c540e",
+        "body_bytes": 66814,
+        "body_sha256": "6ea1c6cd052156d28884690ce5f54dac6ab226b831c07af62f8fd0412498db19",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=timeline.js",
         "content_type": "text/javascript; charset=utf-8",
@@ -3977,8 +3977,8 @@
         "why": "per-app static"
       },
       {
-        "body_bytes": 40050,
-        "body_sha256": "5811516b1d0b3d3319f428bf19c2d75926d5cf3754da8de167976e4f652ba8c1",
+        "body_bytes": 41371,
+        "body_sha256": "be1c1ab82cc8d11bd843c0fc19ad5711dfbf0cdb9d5888c6b3be8447f1a5db2e",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=timeline.css",
         "content_type": "text/css; charset=utf-8",
@@ -3988,8 +3988,8 @@
         "why": "per-app static"
       },
       {
-        "body_bytes": 1829,
-        "body_sha256": "f7fbb5f14a55bbe6910237075b51b4de04100ccfc746a235a453508a271dba83",
+        "body_bytes": 2266,
+        "body_sha256": "aa6a6c702a11398c71edf1cd2e4fd181a95c396341c37874a4efffeb503e1370",
         "body_sha256_basis": "raw-body",
         "body_text": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function (global) {\n  'use strict';\n\n  // --- owner-facing strings ---\n  const PROVENANCE_PREFIX = 'rolled up';\n  const PROVENANCE_AGO = 'ago';\n  const PROVENANCE_TITLE_PREFIX = 'rolled up at';\n  const PROVENANCE_TITLE_ON = 'on';\n  const PROVENANCE_SEPARATOR = ' \u00b7 ';\n  // --- end owner-facing strings ---\n\n  function escapeHtml(value) {\n    return String(value ?? '').replace(/[&<>\"']/g, (char) => ({\n      '&': '&amp;',\n      '<': '&lt;',\n      '>': '&gt;',\n      '\"': '&quot;',\n      \"'\": '&#39;'\n    })[char]);\n  }\n\n  function pad2(value) {\n    return String(value).padStart(2, '0');\n  }\n\n  function absoluteRollupTitle(generatedAt) {\n    const date = new Date(generatedAt * 1000);\n    const hh = pad2(date.getHours());\n    const mm = pad2(date.getMinutes());\n    const y = date.getFullYear();\n    const mo = pad2(date.getMonth() + 1);\n    const da = pad2(date.getDate());\n    return `${PROVENANCE_TITLE_PREFIX} ${hh}:${mm} ${PROVENANCE_TITLE_ON} ${y}-${mo}-${da}`;\n  }\n\n  function renderDayProvenance(generatedAt, model, nowMs = Date.now()) {\n    if (!generatedAt || !model) return \"\";\n    const generatedMs = generatedAt * 1000;\n    const relative = global.relativeTime(nowMs - generatedMs);\n    const text = `${PROVENANCE_PREFIX} ${relative} ${PROVENANCE_AGO}${PROVENANCE_SEPARATOR}${model}`;\n    const title = absoluteRollupTitle(generatedAt);\n    return `<p class=\"timeline-day-provenance\" title=\"${escapeHtml(title)}\">${escapeHtml(text)}</p>`;\n  }\n\n  const TimelineProvenance = {\n    absoluteRollupTitle,\n    renderDayProvenance,\n  };\n  global.TimelineProvenance = TimelineProvenance;\n  if (typeof module !== 'undefined' && module.exports) {\n    module.exports = TimelineProvenance;\n  }\n})(typeof window !== 'undefined' ? window : globalThis);\n",
         "content_disposition": "inline; filename=timeline_provenance.js",

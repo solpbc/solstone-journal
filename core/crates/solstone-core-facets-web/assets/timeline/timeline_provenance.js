@@ -5,11 +5,8 @@
   'use strict';
 
   // --- owner-facing strings ---
-  const PROVENANCE_PREFIX = 'rolled up';
-  const PROVENANCE_AGO = 'ago';
   const PROVENANCE_TITLE_PREFIX = 'rolled up at';
   const PROVENANCE_TITLE_ON = 'on';
-  const PROVENANCE_SEPARATOR = ' · ';
   // --- end owner-facing strings ---
 
   function escapeHtml(value) {
@@ -36,14 +33,6 @@
     return `${PROVENANCE_TITLE_PREFIX} ${hh}:${mm} ${PROVENANCE_TITLE_ON} ${y}-${mo}-${da}`;
   }
 
-  function renderDayProvenance(generatedAtMs, provenance, nowMs = Date.now()) {
-    if (!generatedAtMs || !provenance?.model) return "";
-    const relative = global.relativeTime(nowMs - generatedAtMs);
-    const text = `${PROVENANCE_PREFIX} ${relative} ${PROVENANCE_AGO}${PROVENANCE_SEPARATOR}${provenance.model}`;
-    const title = absoluteRollupTitle(generatedAtMs);
-    return `<p class="timeline-day-provenance" title="${escapeHtml(title)}">${escapeHtml(text)}</p>`;
-  }
-
   function renderArtifactTruth(status, generatedAtMs, provenance, artifactOutcome) {
     const normalized = ["current", "stale", "missing"].includes(status) ? status : "stale";
     const label = normalized === "current" ? "current" : normalized === "stale" ? "refresh needed" : "missing";
@@ -62,7 +51,6 @@
 
   const TimelineProvenance = {
     absoluteRollupTitle,
-    renderDayProvenance,
     renderArtifactTruth,
   };
   global.TimelineProvenance = TimelineProvenance;
