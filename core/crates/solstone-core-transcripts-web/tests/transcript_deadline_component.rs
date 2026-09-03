@@ -43,7 +43,7 @@ fn workspace_asset_matches_pinned_native_source() {
     let ground = std::process::Command::new("git")
         .args([
             "show",
-            "5c9e5583c0c14f303cbdac4069fe4663c7132dda:core/crates/solstone-core-transcripts-web/assets/transcripts/workspace.html",
+            "3813e90cac1eb48242a7bde9f2215b91f9c3e578:core/crates/solstone-core-transcripts-web/assets/transcripts/workspace.html",
         ])
         .output()
         .unwrap();
