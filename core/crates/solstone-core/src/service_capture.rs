@@ -11,14 +11,15 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use chrono::{DateTime, FixedOffset, Local, NaiveDate};
-use solstone_core_journal_io::{
-    JournalRoot,
-    operational_log::{OplogFormat, OplogWriter, create_oplog_at},
-};
+use solstone_core_journal_io::operational_log::OplogWriter;
 
 use crate::service::current_process_has_matching_installation_guard;
 
 const ROLLOVER_POLL_INTERVAL: Duration = Duration::from_secs(1);
+
+#[path = "service_capture_io.rs"]
+mod capture_io;
+use capture_io::{open_service_oplog, redirect_both};
 
 /// Keeps a valid installed-service capture active for the supervisor lifetime.
 pub(super) struct ServiceCapture {
@@ -94,16 +95,6 @@ fn local_instant() -> DateTime<FixedOffset> {
     Local::now().fixed_offset()
 }
 
-fn open_service_oplog(
-    journal: &Path,
-    opened: DateTime<FixedOffset>,
-) -> Result<OplogWriter, String> {
-    let root = JournalRoot::open(journal)
-        .map_err(|error| format!("open journal for service capture: {error}"))?;
-    create_oplog_at(root, "service", "supervisor", OplogFormat::Log, opened)
-        .map_err(|error| format!("create service capture oplog: {error}"))
-}
-
 fn open_and_redirect(
     journal: &Path,
     opened: DateTime<FixedOffset>,
@@ -136,42 +127,11 @@ fn rollover_at_with(
     true
 }
 
-fn redirect_both(next: &OplogWriter, previous: Option<&OplogWriter>) -> io::Result<()> {
-    redirect_both_with(next, previous, duplicate_stdout, duplicate_stderr)
-}
-
-fn redirect_both_with(
-    next: &OplogWriter,
-    previous: Option<&OplogWriter>,
-    duplicate_stdout: impl Fn(&OplogWriter) -> io::Result<()>,
-    duplicate_stderr: impl Fn(&OplogWriter) -> io::Result<()>,
-) -> io::Result<()> {
-    duplicate_stdout(next)?;
-    if let Err(error) = duplicate_stderr(next) {
-        if let Some(previous) = previous {
-            let _ = duplicate_stdout(previous);
-        }
-        return Err(error);
-    }
-    Ok(())
-}
-
-fn duplicate_stdout(writer: &OplogWriter) -> io::Result<()> {
-    // `dup2` is the required process-wide redirection primitive: library code
-    // that writes directly to fd 1 or 2 cannot otherwise participate.
-    nix::unistd::dup2_stdout(writer).map_err(io::Error::from)
-}
-
-fn duplicate_stderr(writer: &OplogWriter) -> io::Result<()> {
-    nix::unistd::dup2_stderr(writer).map_err(io::Error::from)
-}
-
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
     use std::fs;
     use std::io::Write;
-    use std::process::Command;
 
     use chrono::TimeZone;
 
@@ -237,38 +197,6 @@ mod tests {
     }
 
     #[test]
-    fn redirection_writes_both_targets_to_the_service_oplog() {
-        const CHILD_JOURNAL: &str = "SOLSTONE_SERVICE_CAPTURE_CHILD_JOURNAL";
-        if let Ok(journal) = std::env::var(CHILD_JOURNAL) {
-            let journal = PathBuf::from(journal);
-            let opened = instant(7);
-            let writer = open_test_writer(&journal, opened);
-            fs::write(journal.join("capture-leaf"), writer.leaf_name()).unwrap();
-            redirect_both(&writer, None).unwrap();
-            nix::unistd::write(std::io::stdout(), b"stdout bytes").unwrap();
-            nix::unistd::write(std::io::stderr(), b"stderr bytes").unwrap();
-            return;
-        }
-
-        let journal = tempfile::tempdir().unwrap();
-        let status = Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "service_capture::tests::redirection_writes_both_targets_to_the_service_oplog",
-                "--nocapture",
-            ])
-            .env(CHILD_JOURNAL, journal.path())
-            .status()
-            .unwrap();
-
-        assert!(status.success());
-        let leaf = fs::read_to_string(journal.path().join("capture-leaf")).unwrap();
-        let path = journal.path().join("chronicle/20260807/health").join(leaf);
-        assert_contains(&path, b"stdout bytes");
-        assert_contains(&path, b"stderr bytes");
-    }
-
-    #[test]
     fn rollover_create_or_second_redirect_failure_retains_the_old_destination() {
         let journal = tempfile::tempdir().unwrap();
         let opened = instant(7);
@@ -293,7 +221,7 @@ mod tests {
             instant(8),
             |next_opened| Ok(open_test_writer(journal.path(), next_opened)),
             |next, previous| {
-                redirect_both_with(
+                capture_io::redirect_both_with(
                     next,
                     previous,
                     |_| Ok(()),
@@ -324,7 +252,7 @@ mod tests {
             |next_opened| Ok(open_test_writer(journal.path(), next_opened)),
             |next, previous| {
                 assert!(previous.is_some());
-                redirect_both_with(
+                capture_io::redirect_both_with(
                     next,
                     previous,
                     |_| {
