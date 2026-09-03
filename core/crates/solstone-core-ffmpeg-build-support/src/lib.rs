@@ -270,7 +270,7 @@ pub fn validate_controlled_component_inventory(components: &[String]) -> Result<
     Ok(())
 }
 
-fn canonicalize_component_inventory(components: &mut Vec<String>) -> Result<(), String> {
+fn canonicalize_component_inventory(components: &mut [String]) -> Result<(), String> {
     components.sort_unstable();
     for component in components.iter() {
         validate_component_name(component)?;
@@ -340,12 +340,14 @@ pub fn configure_mode_args(mode: ConfigureMode, windows: bool) -> Vec<String> {
     match mode {
         ConfigureMode::Debug => vec!["--enable-debug".into(), "--disable-stripping".into()],
         ConfigureMode::Release => {
-            let mut args = vec![
-                "--disable-debug".into(),
-                "--enable-stripping".into(),
-                "--extra-cflags=-O3 -ffast-math -funroll-loops".into(),
-            ];
-            if !windows {
+            let mut args = vec!["--disable-debug".into(), "--enable-stripping".into()];
+            if windows {
+                // FFmpeg's MSVC toolchain passes these directly to cl.exe.
+                // Keep the release speed and fast-math policy without leaking
+                // GNU-only flags into the native Windows compiler probe.
+                args.push("--extra-cflags=/O2 /fp:fast".into());
+            } else {
+                args.push("--extra-cflags=-O3 -ffast-math -funroll-loops".into());
                 args.push("--extra-ldflags=-flto".into());
             }
             args
@@ -972,6 +974,13 @@ mod tests {
             !configure_mode_args(ConfigureMode::Release, true)
                 .iter()
                 .any(|arg| arg == "--extra-ldflags=-flto")
+        );
+        let windows_release_args = configure_mode_args(ConfigureMode::Release, true);
+        assert!(windows_release_args.contains(&"--extra-cflags=/O2 /fp:fast".into()));
+        assert!(
+            !windows_release_args
+                .iter()
+                .any(|arg| arg.contains("-O3") || arg.contains("-ffast-math"))
         );
     }
 
