@@ -1,20 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 #[cfg(test)]
 use std::fs::OpenOptions;
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
-use std::os::fd::OwnedFd;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::{cell::Cell, ffi::OsStr};
 
 use chrono::NaiveDate;
 use getrandom::fill as random_fill;
-use nix::fcntl::{AtFlags, OFlag, open, openat};
-use nix::sys::stat::{Mode, SFlag, fstat, fstatat};
 use quick_xml::Reader;
 use quick_xml::events::{BytesStart, Event};
 use serde_json::{Map, Value};
@@ -25,6 +22,9 @@ use solstone_core_journal_io::{
 };
 
 use crate::approval::{apple_approval, pin_journal_target};
+use crate::bounded_file::{
+    open_descendant_regular as open_descendant_file, open_regular_file as open_nofollow,
+};
 use crate::bundle::{
     BodyIngestError, BodyIngestErrorKind, BodyIngestReport, MAX_RAW_ASSETS, MAX_RAW_PATH_BYTES,
     NormalizedInput, RawAsset, publish, sha256_hex,
@@ -46,15 +46,6 @@ const MAX_APPLE_IMPORT_ENTRIES_SCANNED: usize = 100_000;
 const MAX_STALE_APPLE_SNAPSHOTS: usize = 1_024;
 const ZIP_EOCD_MIN_BYTES: usize = 22;
 const ZIP_MAX_COMMENT_BYTES: usize = u16::MAX as usize;
-const DIRECTORY_FLAGS: OFlag = OFlag::O_RDONLY
-    .union(OFlag::O_DIRECTORY)
-    .union(OFlag::O_CLOEXEC)
-    .union(OFlag::O_NOFOLLOW);
-const FILE_FLAGS: OFlag = OFlag::O_RDONLY
-    .union(OFlag::O_CLOEXEC)
-    .union(OFlag::O_NOFOLLOW)
-    .union(OFlag::O_NONBLOCK);
-
 #[derive(Clone, Copy)]
 struct SourceTraversalLimits {
     files: usize,
@@ -148,11 +139,7 @@ pub fn detect_apple_source(source: &Path) -> Result<bool, BodyIngestError> {
         for candidate in ["export.xml", "apple_health_export/export.xml"] {
             match open_descendant_file(source, candidate) {
                 Ok(_) => return Ok(true),
-                Err(error)
-                    if matches!(
-                        error.raw_os_error(),
-                        Some(nix::libc::ENOENT) | Some(nix::libc::ENOTDIR)
-                    ) => {}
+                Err(error) if missing_or_not_directory(&error) => {}
                 Err(_) => return Err(source_error("source_symlink")),
             }
         }
@@ -702,11 +689,7 @@ fn find_export(source: &Path) -> Result<String, BodyIngestError> {
         for candidate in ["export.xml", "apple_health_export/export.xml"] {
             match open_descendant_file(source, candidate) {
                 Ok(_) => return Ok(candidate.to_owned()),
-                Err(error)
-                    if matches!(
-                        error.raw_os_error(),
-                        Some(nix::libc::ENOENT) | Some(nix::libc::ENOTDIR)
-                    ) => {}
+                Err(error) if missing_or_not_directory(&error) => {}
                 Err(_) => return Err(source_error("source_symlink")),
             }
         }
@@ -819,52 +802,11 @@ fn with_capped_reader<T>(
     }
 }
 
-fn open_descendant_file(root: &Path, relative: &str) -> io::Result<File> {
-    let components = Path::new(relative)
-        .components()
-        .map(|component| match component {
-            Component::Normal(name) => Ok(name),
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Apple export path has an invalid component",
-            )),
-        })
-        .collect::<io::Result<Vec<&OsStr>>>()?;
-    let (leaf, directories) = components
-        .split_last()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "empty Apple export path"))?;
-    let mut directory = open(root, DIRECTORY_FLAGS, Mode::empty()).map_err(nix_io)?;
-    for component in directories {
-        require_entry_kind(&directory, component, SFlag::S_IFDIR)?;
-        directory =
-            openat(&directory, *component, DIRECTORY_FLAGS, Mode::empty()).map_err(nix_io)?;
-    }
-    require_entry_kind(&directory, leaf, SFlag::S_IFREG)?;
-    let file: OwnedFd = openat(&directory, *leaf, FILE_FLAGS, Mode::empty()).map_err(nix_io)?;
-    let stat = fstat(&file).map_err(nix_io)?;
-    if !SFlag::from_bits_truncate(stat.st_mode).contains(SFlag::S_IFREG) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Apple export is not a regular file",
-        ));
-    }
-    Ok(File::from(file))
-}
-
-fn require_entry_kind(directory: &OwnedFd, name: &OsStr, required: SFlag) -> io::Result<()> {
-    let stat = fstatat(directory, name, AtFlags::AT_SYMLINK_NOFOLLOW).map_err(nix_io)?;
-    let actual = SFlag::from_bits_truncate(stat.st_mode);
-    if actual.contains(SFlag::S_IFLNK) {
-        return Err(io::Error::from_raw_os_error(nix::libc::ELOOP));
-    }
-    if !actual.contains(required) {
-        return Err(io::Error::from_raw_os_error(nix::libc::ENOTDIR));
-    }
-    Ok(())
-}
-
-fn nix_io(error: nix::errno::Errno) -> io::Error {
-    io::Error::from_raw_os_error(error as i32)
+fn missing_or_not_directory(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+    )
 }
 
 fn preflight_zip(file: &mut File) -> Result<(), BodyIngestError> {
@@ -1102,18 +1044,6 @@ fn copy_snapshot_assets(
             .ok_or_else(|| source_error("source_size_limit"))?;
     }
     Ok(())
-}
-
-fn open_nofollow(path: &Path) -> io::Result<File> {
-    let file: OwnedFd = open(path, FILE_FLAGS, Mode::empty()).map_err(nix_io)?;
-    let stat = fstat(&file).map_err(nix_io)?;
-    if !SFlag::from_bits_truncate(stat.st_mode).contains(SFlag::S_IFREG) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Apple source is not a regular file",
-        ));
-    }
-    Ok(File::from(file))
 }
 
 fn raw_plan(source: &Path, retention: BodyRawRetention) -> Result<Vec<RawAsset>, BodyIngestError> {

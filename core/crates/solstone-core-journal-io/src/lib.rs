@@ -219,5 +219,6 @@ pub use windows_lock::{
 #[cfg(windows)]
 pub use windows_sync_dir::{
     WindowsFlatDirectory, create_or_open_windows_flat_directory_bound, list_windows_flat_directory,
-    open_windows_flat_directory_bound, read_windows_observed_file_bounded,
+    open_windows_flat_directory_bound, open_windows_regular_file_from_bound_parent,
+    read_windows_observed_file_bounded,
 };

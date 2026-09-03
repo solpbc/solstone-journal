@@ -3,9 +3,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::fs::{self, File, OpenOptions};
+use std::fs;
 use std::io::{BufReader, Read};
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -26,7 +25,7 @@ use solstone_core_journal_io::{
     publish_staged_dir, remove_dir_all, write_bytes_exclusive, write_reader_exclusive,
 };
 
-use crate::bounded_file::read_bounded_regular;
+use crate::bounded_file::{open_regular_file, read_bounded_regular};
 
 const EMPTY_DIGEST: &str =
     "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
@@ -645,7 +644,7 @@ fn populate(
     for prepared in &raw_inventory.assets {
         let destination = match &prepared.asset {
             RawAsset::File { source, relative } => {
-                let file = open_nofollow(source)
+                let file = open_regular_file(source)
                     .map_err(|_| error(BodyIngestErrorKind::Source, "raw_source"))?;
                 let mut reader = BufReader::new(file);
                 write_raw(staging, relative, &mut reader, options)?
@@ -655,7 +654,7 @@ fn populate(
                 member,
                 relative,
             } => {
-                let file = open_nofollow(archive)
+                let file = open_regular_file(archive)
                     .map_err(|_| error(BodyIngestErrorKind::Source, "raw_archive"))?;
                 let mut archive = zip::ZipArchive::new(file)
                     .map_err(|_| error(BodyIngestErrorKind::Source, "raw_archive"))?;
@@ -795,7 +794,7 @@ fn hash_raw_asset(asset: &RawAsset) -> Result<(u64, String), BodyIngestError> {
         RawAsset::ZipMember {
             archive, member, ..
         } => {
-            let file = open_nofollow(archive)
+            let file = open_regular_file(archive)
                 .map_err(|_| error(BodyIngestErrorKind::Source, "raw_archive"))?;
             let mut archive = zip::ZipArchive::new(file)
                 .map_err(|_| error(BodyIngestErrorKind::Source, "raw_archive"))?;
@@ -822,22 +821,8 @@ fn hash_file(path: &Path, limit: u64) -> Result<(u64, String), BodyIngestError> 
         return Err(error(BodyIngestErrorKind::Source, "raw_asset_size"));
     }
     let mut file =
-        open_nofollow(path).map_err(|_| error(BodyIngestErrorKind::Source, "raw_source"))?;
+        open_regular_file(path).map_err(|_| error(BodyIngestErrorKind::Source, "raw_source"))?;
     hash_reader(&mut file, limit)
-}
-
-fn open_nofollow(path: &Path) -> std::io::Result<File> {
-    let file = OpenOptions::new()
-        .read(true)
-        .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK | nix::libc::O_CLOEXEC)
-        .open(path)?;
-    if !file.metadata()?.file_type().is_file() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "body ingress source is not a regular file",
-        ));
-    }
-    Ok(file)
 }
 
 fn hash_reader(reader: &mut impl Read, limit: u64) -> Result<(u64, String), BodyIngestError> {

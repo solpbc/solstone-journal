@@ -13,6 +13,8 @@ use std::fs;
 use std::io;
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
+#[cfg(windows)]
+use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -1289,12 +1291,23 @@ fn invalid_activity_field(field: &str) -> Box<dyn Error + Send + Sync> {
     ))
 }
 
+#[cfg(unix)]
 fn reload_key(path: &Path) -> Option<ReloadKey> {
     let metadata = fs::metadata(path).ok()?;
     Some(ReloadKey {
         inode: metadata.ino(),
         mtime_ns: i128::from(metadata.mtime()) * 1_000_000_000 + i128::from(metadata.mtime_nsec()),
         size: metadata.len(),
+    })
+}
+
+#[cfg(windows)]
+fn reload_key(path: &Path) -> Option<ReloadKey> {
+    let metadata = fs::metadata(path).ok()?;
+    Some(ReloadKey {
+        inode: metadata.file_index(),
+        mtime_ns: i128::from(metadata.last_write_time()),
+        size: metadata.file_size(),
     })
 }
 

@@ -180,6 +180,42 @@ pub fn open_windows_flat_directory_bound(
     open_windows_flat_directory(parent, name, parent_diagnostic, FILE_OPEN)
 }
 
+/// Open one direct regular non-reparse child beneath an already-bound parent.
+///
+/// The caller owns the lifetime and revalidation of `parent`; this function
+/// obtains the child through that retained handle, never through its diagnostic
+/// pathname. A missing child is `Ok(None)`.
+pub fn open_windows_regular_file_from_bound_parent(
+    parent: &impl AsHandle,
+    name: &OsStr,
+    parent_diagnostic: &Path,
+) -> Result<Option<File>, FlatDirectoryError> {
+    let name = validate_portable_name(name)?;
+    let path = parent_diagnostic.join(&name);
+    let handle = match open_relative(
+        parent.as_handle().as_raw_handle(),
+        &name,
+        FILE_READ_ATTRIBUTES | FILE_READ_DATA,
+        0,
+        &path,
+        FILE_OPEN,
+    ) {
+        Ok(handle) => handle,
+        Err(FlatDirectoryError::Io { source, .. })
+            if matches!(
+                source.raw_os_error(),
+                Some(code)
+                    if code == ERROR_FILE_NOT_FOUND as i32 || code == ERROR_PATH_NOT_FOUND as i32
+            ) =>
+        {
+            return Ok(None);
+        }
+        Err(error) => return Err(error),
+    };
+    validate_windows_regular_handle(handle.as_raw_handle(), &path)?;
+    Ok(Some(File::from(handle)))
+}
+
 /// List direct entries, returning `None` instead of a partial list above `maximum`.
 pub fn list_windows_flat_directory(
     directory: &WindowsFlatDirectory,
