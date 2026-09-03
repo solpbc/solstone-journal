@@ -3,12 +3,16 @@
 
 //! Ordered day-level pipeline health response for the native Health API.
 
-use std::fs;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 use chrono::{DateTime, NaiveDate, Timelike, Utc};
 use serde::Serialize;
 use serde_json::{Value, json};
+use solstone_core_journal_io::{
+    JournalRoot,
+    operational_log::{OplogFormat, catalog_oplogs},
+};
 use solstone_core_system_health::{
     FilesystemHealthLogSource, FilesystemSegmentSource, SegmentInput, TerminalEvent,
     classify_segment_completion, read_segment_progress, read_terminal_states, scan_day,
@@ -16,7 +20,6 @@ use solstone_core_system_health::{
 
 use super::report::HealthError;
 
-const MODES: [&str; 6] = ["segment", "daily", "activity", "weekly", "flush", "cadence"];
 const FAILED_LIST_CAP: usize = 20;
 const ACTIVITY_WORK_EVENTS: [&str; 6] = [
     "run.start",
@@ -146,8 +149,8 @@ pub(crate) fn summarize_pipeline_day(
         }
         return Ok(summary);
     }
-    if let Err(error) = scan_health_logs(&health_dir, &day, &mut summary) {
-        log::warn!("native pipeline health scan failed day={day}: {error}");
+    if let Err(error) = scan_health_logs(journal_root, date, &day, &mut summary) {
+        log::warn!("native pipeline health scan failed day={day}: {error:?}");
         summary.status = "unknown".to_owned();
         summary
             .anomalies
@@ -237,27 +240,30 @@ pub(crate) fn summarize_pipeline_day(
 }
 
 fn scan_health_logs(
-    directory: &Path,
+    journal_root: &Path,
+    date: NaiveDate,
     day: &str,
     summary: &mut PipelineReport,
-) -> Result<(), std::io::Error> {
-    let mut paths = fs::read_dir(directory)?
-        .map(|entry| entry.map(|value| value.path()))
-        .collect::<Result<Vec<_>, _>>()?;
-    paths.sort();
-    for path in paths {
-        let Some(filename) = path.file_name().and_then(|value| value.to_str()) else {
+) -> Result<(), HealthError> {
+    let root = JournalRoot::open(journal_root)
+        .map_err(|error| HealthError::internal(error.to_string()))?;
+    let entries = catalog_oplogs(root, &[date])
+        .map_err(|error| HealthError::internal(error.to_string()))?
+        .into_catalogued_entries();
+    for (entry, mut file) in entries {
+        let name = entry.name();
+        if name.source().display_slug() != "think" || name.format() != OplogFormat::Jsonl {
             continue;
-        };
-        let Some(mode) = MODES
-            .iter()
-            .find(|mode| filename.ends_with(&format!("_{mode}.jsonl")))
-            .copied()
-        else {
+        }
+        let Some(mode) = pipeline_mode(name.run().display_slug()) else {
             continue;
         };
         summary.run_mut(mode).count += 1;
-        let text = fs::read_to_string(path)?;
+        file.seek(SeekFrom::Start(entry.payload_offset() as u64))
+            .map_err(|error| HealthError::internal(error.to_string()))?;
+        let mut text = String::new();
+        file.read_to_string(&mut text)
+            .map_err(|error| HealthError::internal(error.to_string()))?;
         for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
             let Ok(record) = serde_json::from_str::<Value>(line) else {
                 continue;
@@ -302,6 +308,18 @@ fn scan_health_logs(
     Ok(())
 }
 
+fn pipeline_mode(run: &str) -> Option<&'static str> {
+    match run {
+        "segment" | "segments" => Some("segment"),
+        "daily" => Some("daily"),
+        "activity" => Some("activity"),
+        "weekly" => Some("weekly"),
+        "flush" => Some("flush"),
+        "cadence" => Some("cadence"),
+        _ => None,
+    }
+}
+
 fn completion_for_day(
     journal_root: &Path,
     day: &str,
@@ -342,11 +360,16 @@ fn duration_ms(value: Option<&Value>) -> i64 {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
 
-    use chrono::{Duration, TimeZone, Utc};
+    use chrono::{Duration, FixedOffset, NaiveDate, TimeZone, Utc};
     use serde_json::{Value, json};
+    use solstone_core_journal_io::{
+        JournalRoot,
+        operational_log::{OplogFormat, create_oplog_at},
+    };
     use tempfile::TempDir;
 
     use super::{PipelineReport, summarize_pipeline_day};
@@ -359,24 +382,48 @@ mod tests {
         Utc.with_ymd_and_hms(2026, 4, 10, 12, 0, 0).unwrap()
     }
 
-    fn write_log(root: &Path, day: &str, filename: &str, rows: &[Value]) {
-        let path = root
-            .join("chronicle")
-            .join(day)
-            .join("health")
-            .join(filename);
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(
-            path,
-            format!(
-                "{}\n",
-                rows.iter()
-                    .map(|row| serde_json::to_string(row).unwrap())
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            ),
+    fn write_log(root: &Path, day: &str, run: &str, rows: &[Value]) {
+        let day = NaiveDate::parse_from_str(day, "%Y%m%d").unwrap();
+        let opened = FixedOffset::east_opt(0)
+            .unwrap()
+            .from_local_datetime(&day.and_hms_opt(12, 0, 0).unwrap())
+            .single()
+            .unwrap();
+        let mut writer = create_oplog_at(
+            JournalRoot::open(root).unwrap(),
+            "think",
+            run,
+            OplogFormat::Jsonl,
+            opened,
         )
         .unwrap();
+        writeln!(
+            writer,
+            "{}",
+            rows.iter()
+                .map(|row| serde_json::to_string(row).unwrap())
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+        .unwrap();
+    }
+
+    fn write_invalid_log(root: &Path, day: &str) {
+        let day = NaiveDate::parse_from_str(day, "%Y%m%d").unwrap();
+        let opened = FixedOffset::east_opt(0)
+            .unwrap()
+            .from_local_datetime(&day.and_hms_opt(12, 0, 0).unwrap())
+            .single()
+            .unwrap();
+        let mut writer = create_oplog_at(
+            JournalRoot::open(root).unwrap(),
+            "think",
+            "daily",
+            OplogFormat::Jsonl,
+            opened,
+        )
+        .unwrap();
+        writer.write_all(&[0xff]).unwrap();
     }
 
     fn screen_segment(root: &Path, day: &str, segment: &str) {
@@ -440,7 +487,7 @@ mod tests {
                     json!({"event":"talent.skip","day":day,"mode":"segment","name":"later","reason":"queue"}),
                 ]);
             }
-            write_log(root, day, &format!("001_{mode}.jsonl"), &rows);
+            write_log(root, day, mode, &rows);
         }
         let report = value(&summarize_pipeline_day(root, now().date_naive(), now()).unwrap());
         assert_eq!(report["status"], "healthy");
@@ -476,7 +523,7 @@ mod tests {
         let rows = (0..21)
             .map(|index| json!({"event":"talent.fail","day":day,"mode":"daily","name":format!("talent-{index:02}"),"use_id":format!("use-{index:02}"),"ts":index}))
             .collect::<Vec<_>>();
-        write_log(temporary.path(), day, "001_daily.jsonl", &rows);
+        write_log(temporary.path(), day, "daily", &rows);
         let report =
             value(&summarize_pipeline_day(temporary.path(), now().date_naive(), now()).unwrap());
         assert_eq!(report["status"], "warning");
@@ -547,29 +594,7 @@ mod tests {
     #[test]
     fn unreadable_health_log_degrades_to_unknown_scan_failed() {
         let temporary = temporary();
-        let path = temporary
-            .path()
-            .join("chronicle/20260410/health/001_daily.jsonl");
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, [0xff]).unwrap();
-        let report =
-            value(&summarize_pipeline_day(temporary.path(), now().date_naive(), now()).unwrap());
-        assert_eq!(report["status"], "unknown");
-        assert_eq!(
-            report["anomalies"],
-            json!([{"kind":"segments_not_thought","error":"scan_failed"}])
-        );
-    }
-
-    #[test]
-    fn matching_health_log_directory_degrades_to_unknown_scan_failed() {
-        let temporary = temporary();
-        fs::create_dir_all(
-            temporary
-                .path()
-                .join("chronicle/20260410/health/001_daily.jsonl"),
-        )
-        .unwrap();
+        write_invalid_log(temporary.path(), "20260410");
         let report =
             value(&summarize_pipeline_day(temporary.path(), now().date_naive(), now()).unwrap());
         assert_eq!(report["status"], "unknown");
@@ -586,13 +611,13 @@ mod tests {
         write_log(
             temporary.path(),
             day,
-            "001_daily.jsonl",
+            "daily",
             &[json!({"event":"run.complete","day":day,"mode":"daily"})],
         );
         write_log(
             temporary.path(),
             day,
-            "001_activity.jsonl",
+            "activity",
             &[json!({"event":"activity.detected","day":day,"mode":"activity"})],
         );
         let report =
@@ -614,13 +639,13 @@ mod tests {
         write_log(
             temporary.path(),
             day,
-            "001_daily.jsonl",
+            "daily",
             &[json!({"event":"run.complete","day":day,"mode":"daily"})],
         );
         write_log(
             temporary.path(),
             day,
-            "001_activity.jsonl",
+            "activity",
             &[
                 json!({"event":"activity.detected","day":day,"mode":"activity"}),
                 json!({"event":"run.complete","day":day,"mode":"activity"}),
@@ -647,7 +672,7 @@ mod tests {
         write_log(
             temporary.path(),
             &day,
-            "001_segment.jsonl",
+            "segment",
             &[json!({"event":"run.complete","day":day,"mode":"segment"})],
         );
         let report = value(&summarize_pipeline_day(temporary.path(), date, now()).unwrap());
@@ -669,7 +694,7 @@ mod tests {
         write_log(
             temporary.path(),
             day,
-            "001_daily.jsonl",
+            "daily",
             &[
                 json!({"event":"run.complete","day":day,"mode":"daily"}),
                 json!({"event":"sense.complete","ts":1,"mode":"segment","stream":"_default","segment":"120000_60","density":"idle"}),

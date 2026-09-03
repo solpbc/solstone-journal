@@ -50,10 +50,6 @@ fn populated(root: &Path, failures: usize, write_stats: bool, bad_stats: bool) {
     tokens(root);
     runs(root, failures);
     write(
-        root.join(format!("{POPULATED_DAY}/health/health.log")),
-        b"2026-04-03 corpus health log\n",
-    );
-    write(
         root.join(format!(
             "chronicle/{POPULATED_DAY}/talents/example-output.md"
         )),

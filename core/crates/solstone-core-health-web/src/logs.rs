@@ -63,5 +63,5 @@ pub async fn get(
 }
 fn valid(path: &str) -> bool {
     let mut parts = path.split('/');
-    matches!((parts.next(),parts.next(),parts.next(),parts.next()),(Some(day),Some("health"),Some(file),None) if day.len()==8 && day.bytes().all(|x|x.is_ascii_digit()) && file.ends_with(".log") && !file.contains('/'))
+    matches!((parts.next(),parts.next(),parts.next(),parts.next(),parts.next()),(Some("chronicle"),Some(day),Some("health"),Some(file),None) if day.len()==8 && day.bytes().all(|x|x.is_ascii_digit()) && file.ends_with(".log") && !file.contains('/'))
 }

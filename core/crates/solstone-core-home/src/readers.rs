@@ -9,6 +9,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::{Read, Seek, SeekFrom};
 
 use chrono::{DateTime, Duration, NaiveDate, Timelike, Utc};
 use serde_json::{Map, Value, json};
@@ -18,6 +19,10 @@ use solstone_core_facets::{
     list_declared_facet_names, load_activity_records, load_current, read_facet_declaration,
 };
 use solstone_core_indexer_query::{NetworkRequest, load_entity_network};
+use solstone_core_journal_io::{
+    JournalRoot,
+    operational_log::{OplogFormat, catalog_oplogs},
+};
 use solstone_core_journal_stats_cli::estimate_duration_minutes;
 use solstone_core_sol_link::client_status::{
     ClientActivityState, ClientAssessment, ClientCaptureState, ClientInspection,
@@ -485,19 +490,10 @@ pub fn newsletter_attempts_from_think_logs(context: &HomeContext, day: &str) -> 
                 .is_file()
         })
         .count();
-    let health = day_root(context, day).join("health");
-    let failed = fs::read_dir(health)
-        .ok()
+    let failed = think_oplogs(context, day)
         .into_iter()
-        .flatten()
-        .filter_map(Result::ok)
-        .filter(|entry| {
-            entry
-                .file_name()
-                .to_string_lossy()
-                .ends_with("_daily.jsonl")
-        })
-        .flat_map(|entry| read_jsonl_objects(&entry.path()))
+        .filter(|(run, _)| run == "daily")
+        .flat_map(|(_, rows)| rows)
         .filter(|record| {
             record.get("event").and_then(Value::as_str) == Some("talent.fail")
                 && record.get("facet").is_some_and(|value| match value {
@@ -644,18 +640,10 @@ pub fn read_steward_summary(context: &HomeContext, day: Option<&str>) -> Option<
 /// reference-compatible generic attention item.
 pub fn resolve_attention(context: &HomeContext, awareness: &Value) -> Option<Value> {
     let day = context.today();
-    let failures = fs::read_dir(day_root(context, &day).join("health"))
-        .ok()
+    let failures = think_oplogs(context, &day)
         .into_iter()
-        .flatten()
-        .filter_map(Result::ok)
-        .filter(|entry| {
-            entry
-                .file_name()
-                .to_string_lossy()
-                .ends_with("_daily.jsonl")
-        })
-        .flat_map(|entry| read_jsonl_objects(&entry.path()))
+        .filter(|(run, _)| run == "daily")
+        .flat_map(|(_, rows)| rows)
         .filter(|row| row.get("event").and_then(Value::as_str) == Some("talent.fail"))
         .collect::<Vec<_>>();
     if !failures.is_empty() {
@@ -728,7 +716,7 @@ pub fn parse_sol_sources(text: &str) -> Vec<Value> {
 pub fn summarize_pipeline_day(context: &HomeContext, day: &str) -> Value {
     let mut summary = json!({"day":day,"generated_at":context.now_ms(),"status":"healthy","anomalies":[],"runs":{"daily":{"count":0,"duration_ms_total":0},"activity":{"count":0,"duration_ms_total":0},"on_demand":{"count":0,"duration_ms_total":0}},"talents":{"dispatched":0,"completed":0,"failed":0,"outstanding_failed":0,"skipped":0,"capped":0,"failed_list":[],"failed_list_truncated":false},"activities":{"detected":0,"persisted":0,"talents_fired":false},"exhausted_segments":{"count":0,"segments":[]}});
     let directory = day_root(context, day).join("health");
-    let Ok(entries) = fs::read_dir(&directory) else {
+    if !directory.is_dir() {
         if day < context.today().as_str() {
             summary["status"] = "stale".into();
             summary["anomalies"]
@@ -737,12 +725,14 @@ pub fn summarize_pipeline_day(context: &HomeContext, day: &str) -> Value {
                 .push(json!({"kind":"segments_not_thought","error":"no_health_dir"}));
         }
         return summary;
-    };
-    for entry in entries.filter_map(Result::ok) {
-        let file = entry.file_name().to_string_lossy().into_owned();
-        let mode = ["daily", "activity", "on_demand"]
-            .into_iter()
-            .find(|mode| file.ends_with(&format!("_{mode}.jsonl")));
+    }
+    for (run, rows) in think_oplogs(context, day) {
+        let mode = match run.as_str() {
+            "daily" => Some("daily"),
+            "activity" => Some("activity"),
+            "segment" | "segments" => Some("on_demand"),
+            _ => None,
+        };
         let Some(mode) = mode else {
             continue;
         };
@@ -751,7 +741,7 @@ pub fn summarize_pipeline_day(context: &HomeContext, day: &str) -> Value {
             .unwrap_or(0)
             .saturating_add(1)
             .into();
-        for row in read_jsonl_objects(&entry.path()) {
+        for row in rows {
             if row
                 .get("day")
                 .and_then(Value::as_str)
@@ -1080,6 +1070,43 @@ pub fn build_brain_snapshot(context: &HomeContext) -> Value {
 fn day_root(context: &HomeContext, day: &str) -> std::path::PathBuf {
     context.journal_root().join("chronicle").join(day)
 }
+
+/// Read validated structured think diagnostics from the canonical oplog namespace.
+///
+/// Home is an optional projection, so an unavailable journal or malformed payload is
+/// treated as absent input just like the former direct JSONL reads.
+fn think_oplogs(context: &HomeContext, day: &str) -> Vec<(String, Vec<Map<String, Value>>)> {
+    let Ok(day_key) = NaiveDate::parse_from_str(day, "%Y%m%d") else {
+        return Vec::new();
+    };
+    let Ok(root) = JournalRoot::open(context.journal_root()) else {
+        return Vec::new();
+    };
+    let Ok(snapshot) = catalog_oplogs(root, &[day_key]) else {
+        return Vec::new();
+    };
+    snapshot
+        .into_catalogued_entries()
+        .into_iter()
+        .filter_map(|(entry, mut file)| {
+            let name = entry.name();
+            if name.source().display_slug() != "think" || name.format() != OplogFormat::Jsonl {
+                return None;
+            }
+            file.seek(SeekFrom::Start(entry.payload_offset() as u64))
+                .ok()?;
+            let mut text = String::new();
+            file.read_to_string(&mut text).ok()?;
+            let rows = text
+                .lines()
+                .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                .filter_map(|value| value.as_object().cloned())
+                .collect();
+            Some((name.run().display_slug().to_owned(), rows))
+        })
+        .collect()
+}
+
 fn read_json_value(path: &std::path::Path) -> Option<Value> {
     serde_json::from_slice(&fs::read(path).ok()?).ok()
 }
@@ -1144,8 +1171,14 @@ fn brain_action(state: &str, reason: Option<&str>) -> Value {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
     use super::*;
-    use chrono::TimeZone;
+    use chrono::{FixedOffset, TimeZone};
+    use solstone_core_journal_io::{
+        JournalRoot,
+        operational_log::{OplogFormat, create_oplog_at},
+    };
     use solstone_core_sol_link::client_status::{
         ClientReach, ConnectionGroup, ConnectionState, SourceDelivery, SourceDeliveryRow,
     };
@@ -1159,6 +1192,24 @@ mod tests {
         let path = root.join(relative);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, text).unwrap();
+    }
+
+    fn write_oplog(root: &std::path::Path, day: &str, source: &str, run: &str, text: &str) {
+        let day = NaiveDate::parse_from_str(day, "%Y%m%d").unwrap();
+        let opened = FixedOffset::east_opt(0)
+            .unwrap()
+            .from_local_datetime(&day.and_hms_opt(12, 0, 0).unwrap())
+            .single()
+            .unwrap();
+        let mut writer = create_oplog_at(
+            JournalRoot::open(root).unwrap(),
+            source,
+            run,
+            OplogFormat::Jsonl,
+            opened,
+        )
+        .unwrap();
+        writer.write_all(text.as_bytes()).unwrap();
     }
 
     #[test]
@@ -1206,9 +1257,11 @@ mod tests {
     fn newsletter_reader_skips_malformed_and_missing_facet_failures() {
         let root = TempDir::new().unwrap();
         let context = context(root.path());
-        write(
+        write_oplog(
             root.path(),
-            "chronicle/20260601/health/a_daily.jsonl",
+            "20260601",
+            "think",
+            "daily",
             "not json\n{\"event\":\"talent.fail\",\"name\":\"facet_newsletter\"}\n",
         );
         assert_eq!(
@@ -1562,9 +1615,11 @@ mod tests {
         let root = TempDir::new().unwrap();
         let context = context(root.path());
         assert_eq!(resolve_attention(&context, &json!({})), None);
-        write(
+        write_oplog(
             root.path(),
-            "chronicle/20260602/health/x_daily.jsonl",
+            "20260602",
+            "think",
+            "daily",
             "bad\n{\"event\":\"talent.fail\",\"name\":\"writer\"}\n",
         );
         assert!(
@@ -1964,9 +2019,11 @@ mod tests {
         let root = TempDir::new().unwrap();
         let context = context(root.path());
         write(root.path(), "facets/work/news/20260602.md", "sent");
-        write(
+        write_oplog(
             root.path(),
-            "chronicle/20260602/health/news_daily.jsonl",
+            "20260602",
+            "think",
+            "daily",
             r#"{"event":"talent.fail","name":"facet_newsletter","facet":"work"}
 {"event":"talent.fail","name":"other","facet":"work"}
 {"event":"talent.fail","name":"facet_newsletter","facet":false}"#,
@@ -2017,14 +2074,18 @@ mod tests {
     fn pipeline_reader_ignores_wrong_day_and_unknown_log_modes() {
         let root = TempDir::new().unwrap();
         let context = context(root.path());
-        write(
+        write_oplog(
             root.path(),
-            "chronicle/20260602/health/x_other.jsonl",
+            "20260602",
+            "heartbeat",
+            "pass",
             r#"{"event":"talent.fail"}"#,
         );
-        write(
+        write_oplog(
             root.path(),
-            "chronicle/20260602/health/x_daily.jsonl",
+            "20260602",
+            "think",
+            "daily",
             r#"bad
 {"day":"20260601","event":"talent.fail"}
 {"day":"20260602","event":"talent.complete"}"#,

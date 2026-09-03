@@ -23,6 +23,7 @@ solstone-core-convey-http.workspace = true
 solstone-core-brain.workspace = true
 solstone-core-entity.workspace = true
 solstone-core-facets.workspace = true
+solstone-core-journal-io.workspace = true
 solstone-core-reprocess-cli.workspace = true
 solstone-core-system.workspace = true
 solstone-core-system-health.workspace = true
