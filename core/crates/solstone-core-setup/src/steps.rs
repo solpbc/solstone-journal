@@ -1463,6 +1463,17 @@ fn step_skills_journal(context: &mut SetupContext<'_>) -> Result<StepResult, Ste
 }
 
 fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutionError> {
+    #[cfg(windows)]
+    {
+        let mut result = StepResult::new(
+            StepName::Wrapper,
+            StepStatus::Skipped,
+            Vec::new(),
+            (context.now)(),
+        );
+        result.reason = Some(SkipReason::WindowsPackageOwnsCommands.as_str().to_owned());
+        return Ok(result);
+    }
     if context.args.skip_wrapper {
         let mut result = StepResult::new(
             StepName::Wrapper,
@@ -2011,7 +2022,12 @@ fn plan_skills_journal(context: &SetupContext<'_>) -> String {
     )
 }
 fn plan_wrapper(_context: &SetupContext<'_>) -> String {
-    "would provision managed solstone and journal wrappers in-process".into()
+    if cfg!(windows) {
+        "would skip POSIX wrapper provisioning; the Windows package exposes the commands directly"
+            .into()
+    } else {
+        "would provision managed solstone and journal wrappers in-process".into()
+    }
 }
 fn plan_service(_context: &SetupContext<'_>) -> String {
     "would install and start the journal service".into()

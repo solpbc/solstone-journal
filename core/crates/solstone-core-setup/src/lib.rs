@@ -13,10 +13,18 @@ pub mod args;
 pub mod clean_uninstall;
 pub mod events;
 pub mod identity_evidence;
+#[cfg(unix)]
+mod legacy_launcher;
+#[cfg(not(unix))]
+#[path = "legacy_launcher_nonunix.rs"]
 mod legacy_launcher;
 pub mod manifest;
 pub mod steps;
 pub mod user_config;
+#[cfg(unix)]
+pub mod wrapper;
+#[cfg(not(unix))]
+#[path = "wrapper_nonunix.rs"]
 pub mod wrapper;
 
 use args::{ResolutionContext, SetupArgs, resolve_mode, resolve_setup};
