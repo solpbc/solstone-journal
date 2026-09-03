@@ -1474,60 +1474,63 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
         result.reason = Some(SkipReason::WindowsPackageOwnsCommands.as_str().to_owned());
         return Ok(result);
     }
-    if context.args.skip_wrapper {
-        let mut result = StepResult::new(
-            StepName::Wrapper,
-            StepStatus::Skipped,
-            Vec::new(),
-            (context.now)(),
-        );
-        result.reason = Some(SkipReason::SkipWrapper.as_str().to_owned());
-        return Ok(result);
-    }
-    let environment = WrapperEnvironment {
-        home_dir: context.home_dir.clone(),
-        curdir: context.project_root.clone(),
-        executable_dir: context.install_bin_dir.clone(),
-        backup_dir: context.wrapper_backup_dir.clone(),
-        legacy_replacement: context.legacy_replacement,
-    };
-    let paths = wrapper_paths(&context.home_dir);
-    match provision_wrappers(
-        &environment,
-        &context.journal_path,
-        context
-            .installation_admission
-            .as_ref()
-            .expect("setup identity admission precedes mutating wrapper step")
-            .binding(),
-    ) {
-        Ok(_) => {
-            narrate(context, &ensure_user_bin_on_path(&context.home_dir));
-            Ok(StepResult::new(
+    #[cfg(not(windows))]
+    {
+        if context.args.skip_wrapper {
+            let mut result = StepResult::new(
                 StepName::Wrapper,
-                StepStatus::Ok,
-                vec![paths.solstone, paths.journal],
+                StepStatus::Skipped,
+                Vec::new(),
                 (context.now)(),
-            ))
+            );
+            result.reason = Some(SkipReason::SkipWrapper.as_str().to_owned());
+            return Ok(result);
         }
-        Err(error) => Ok(StepResult::failed(
-            StepName::Wrapper,
-            Vec::new(),
-            (context.now)(),
-            StepError {
-                code: ErrorCode::WrapperProvisionFailed,
-                message: format!(
-                    "could not provision the solstone/journal wrappers at {} ({}: {error})",
-                    context.home_dir.join(".local/bin").display(),
-                    std::any::type_name::<WrapperError>()
-                        .rsplit("::")
-                        .next()
-                        .unwrap_or("WrapperError")
-                ),
-                details: "fix permissions on ~/.local/bin and re-run `journal setup`, or invoke solstone/journal directly from the runtime".into(),
-                exit_code: 1,
-            },
-        )),
+        let environment = WrapperEnvironment {
+            home_dir: context.home_dir.clone(),
+            curdir: context.project_root.clone(),
+            executable_dir: context.install_bin_dir.clone(),
+            backup_dir: context.wrapper_backup_dir.clone(),
+            legacy_replacement: context.legacy_replacement,
+        };
+        let paths = wrapper_paths(&context.home_dir);
+        match provision_wrappers(
+            &environment,
+            &context.journal_path,
+            context
+                .installation_admission
+                .as_ref()
+                .expect("setup identity admission precedes mutating wrapper step")
+                .binding(),
+        ) {
+            Ok(_) => {
+                narrate(context, &ensure_user_bin_on_path(&context.home_dir));
+                Ok(StepResult::new(
+                    StepName::Wrapper,
+                    StepStatus::Ok,
+                    vec![paths.solstone, paths.journal],
+                    (context.now)(),
+                ))
+            }
+            Err(error) => Ok(StepResult::failed(
+                StepName::Wrapper,
+                Vec::new(),
+                (context.now)(),
+                StepError {
+                    code: ErrorCode::WrapperProvisionFailed,
+                    message: format!(
+                        "could not provision the solstone/journal wrappers at {} ({}: {error})",
+                        context.home_dir.join(".local/bin").display(),
+                        std::any::type_name::<WrapperError>()
+                            .rsplit("::")
+                            .next()
+                            .unwrap_or("WrapperError")
+                    ),
+                    details: "fix permissions on ~/.local/bin and re-run `journal setup`, or invoke solstone/journal directly from the runtime".into(),
+                    exit_code: 1,
+                },
+            )),
+        }
     }
 }
 
