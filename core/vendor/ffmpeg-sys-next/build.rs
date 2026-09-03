@@ -695,9 +695,22 @@ fn configure_command(sysroot: Option<&str>) -> io::Result<Command> {
         configure.arg(arg);
     }
 
-    let audio_remux = env::var("CARGO_FEATURE_SWRESAMPLE").is_ok();
-    for arg in controlled_component_args_for_audio_remux(audio_remux) {
-        configure.arg(arg);
+    let controlled_windows_target = env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows");
+    if controlled_windows_target {
+        let audio_remux = env::var("CARGO_FEATURE_SWRESAMPLE").is_ok();
+        for arg in controlled_component_args_for_audio_remux(audio_remux) {
+            configure.arg(arg);
+        }
+    } else {
+        // Controlled component inventories are a native Windows delivery
+        // constraint. Other supported targets retain the upstream feature
+        // selection so ordinary media behavior is not silently narrowed.
+        configure.arg("--enable-static");
+        configure.arg("--disable-shared");
+        configure.arg("--enable-pic");
+        configure.arg("--disable-autodetect");
+        configure.arg("--disable-programs");
+        configure.arg("--disable-doc");
     }
 
     // windows includes threading in the standard library
@@ -738,10 +751,11 @@ fn configure_command(sysroot: Option<&str>) -> io::Result<Command> {
         .iter()
         .filter(|lib| lib.is_feature)
         .filter(|lib| {
-            !matches!(
-                lib.name,
-                "avcodec" | "avdevice" | "avfilter" | "avformat" | "swresample" | "swscale"
-            )
+            !controlled_windows_target
+                || !matches!(
+                    lib.name,
+                    "avcodec" | "avdevice" | "avfilter" | "avformat" | "swresample" | "swscale"
+                )
         })
         .filter(|lib| !(lib.name == "avresample" && ffmpeg_major_version >= 5))
         .filter(|lib| !(lib.name == "postproc" && ffmpeg_major_version >= 8))
@@ -1318,6 +1332,8 @@ fn main() {
         link_to_libraries(statik, &target_os);
         let admitted = admit_source().unwrap();
         let target = env::var("TARGET").expect("missing required: TARGET");
+        let controlled_windows_target =
+            env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows");
         let configure = configure_command(sysroot.as_deref()).unwrap();
         let planned = captured_configure(&configure);
         let evidence_dir = output().join(EVIDENCE_DIR);
@@ -1342,7 +1358,9 @@ fn main() {
                             && receipt.program == planned.program
                             && receipt.args == planned.args
                             && receipt.fingerprint == record.fingerprint
-                            && validate_controlled_component_inventory(&receipt.components).is_ok())
+                            && (!controlled_windows_target
+                                || validate_controlled_component_inventory(&receipt.components)
+                                    .is_ok()))
                         .then_some(stored)
                     })
                     .flatten()
@@ -1364,7 +1382,9 @@ fn main() {
                 &fs::read_to_string(source().join("config_components.h")).unwrap(),
             )
             .unwrap();
-            validate_controlled_component_inventory(&components).unwrap();
+            if controlled_windows_target {
+                validate_controlled_component_inventory(&components).unwrap();
+            }
             let receipt = ConfigureReceipt::new(
                 &target,
                 &admitted.profile,

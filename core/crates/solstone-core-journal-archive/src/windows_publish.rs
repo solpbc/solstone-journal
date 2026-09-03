@@ -13,7 +13,6 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{Seek, SeekFrom};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use solstone_core_journal_io::{AtomicWriteOptions, write_reader_exclusive};
 
@@ -67,7 +66,7 @@ pub fn publish_archive(
         .revalidate()
         .map_err(ArchivePublicationError::Target)?;
     let (scratch_path, mut scratch) =
-        create_scratch_file().map_err(ArchivePublicationError::CreateTemp)?;
+        create_scratch_file(target).map_err(ArchivePublicationError::CreateTemp)?;
     let result = (|| {
         encode_archive(request, &mut scratch).map_err(ArchivePublicationError::Encode)?;
         scratch
@@ -98,18 +97,14 @@ pub fn publish_archive(
     }
 }
 
-fn create_scratch_file() -> std::io::Result<(PathBuf, File)> {
-    let root = std::env::temp_dir();
+fn create_scratch_file(target: &ArchiveOutputTarget) -> std::io::Result<(PathBuf, File)> {
+    let root = target
+        .final_path()
+        .parent()
+        .expect("validated archive output always has a parent");
     for _ in 0..128 {
         let sequence = SCRATCH_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        let path = root.join(format!(
-            "solstone-journal-archive-{}-{stamp}-{sequence}.tmp",
-            std::process::id()
-        ));
+        let path = root.join(format!(".solstone-journal-archive-{sequence}.tmp"));
         match OpenOptions::new()
             .read(true)
             .write(true)

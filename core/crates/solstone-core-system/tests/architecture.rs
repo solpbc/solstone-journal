@@ -55,6 +55,8 @@ const LIFECYCLE: &str = include_str!("../src/lifecycle/mod.rs");
 const LIFECYCLE_CLOCK: &str = include_str!("../src/lifecycle/clock.rs");
 const LIFECYCLE_DARWIN_PARENT_WATCH: &str = include_str!("../src/lifecycle/darwin_parent_watch.rs");
 const LIFECYCLE_HOSTED_SERVICE: &str = include_str!("../src/lifecycle/hosted_service.rs");
+const LIFECYCLE_HOSTED_SERVICE_WINDOWS: &str =
+    include_str!("../src/lifecycle/hosted_service_windows.rs");
 const LIFECYCLE_READINESS: &str = include_str!("../src/lifecycle/readiness.rs");
 const LIFECYCLE_PARENT: &str = include_str!("../src/lifecycle/parent.rs");
 const LIFECYCLE_PARENT_LOSS_ADMISSION: &str =
@@ -228,6 +230,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("clock", LIFECYCLE_CLOCK),
         ("darwin_parent_watch", LIFECYCLE_DARWIN_PARENT_WATCH),
         ("hosted_service", LIFECYCLE_HOSTED_SERVICE),
+        ("hosted_service_windows", LIFECYCLE_HOSTED_SERVICE_WINDOWS),
         ("parent", LIFECYCLE_PARENT),
         ("parent_loss_admission", LIFECYCLE_PARENT_LOSS_ADMISSION),
         ("parent_loss_coordinator", LIFECYCLE_PARENT_LOSS_COORDINATOR),

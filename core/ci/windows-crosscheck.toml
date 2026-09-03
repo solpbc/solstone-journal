@@ -9,12 +9,6 @@ workspace_packages = 138
 library_packages = 132
 
 [[exclusions]]
-package = "solstone-core-retention"
-class = "sibling-owned-platform-backend"
-reason = "Retention's compact_log still reads Unix file permissions via std::os::unix::fs::PermissionsExt."
-expected_stderr = ["cannot find `unix` in `os`"]
-
-[[exclusions]]
 package = "ring"
 version = "0.17.14"
 class = "native-msvc-build-oracle"

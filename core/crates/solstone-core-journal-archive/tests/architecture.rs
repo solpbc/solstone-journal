@@ -17,7 +17,9 @@ const SOURCES: &[(&str, &str)] = &[
     ("source", include_str!("../src/source.rs")),
     ("target", include_str!("../src/target.rs")),
     ("test_hooks", include_str!("../src/test_hooks.rs")),
+    ("windows_publish", include_str!("../src/windows_publish.rs")),
     ("windows_source", include_str!("../src/windows_source.rs")),
+    ("windows_target", include_str!("../src/windows_target.rs")),
     ("writer", include_str!("../src/writer.rs")),
 ];
 const LIB: &str = include_str!("../src/lib.rs");
@@ -365,6 +367,7 @@ fn production_source(source: &str) -> &str {
     [
         "\n#[cfg(test)]\nmod tests",
         "\n#[cfg(test)]\n#[allow(clippy::disallowed_methods, clippy::disallowed_types)]\nmod tests",
+        "\n#[cfg(all(test, unix))]\n#[allow(clippy::disallowed_methods, clippy::disallowed_types)]\nmod tests",
     ]
     .into_iter()
     .filter_map(|boundary| source.find(boundary))
