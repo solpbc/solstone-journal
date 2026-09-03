@@ -20,6 +20,7 @@ pub fn new(journal_root: &Path) -> SharedMeasurementCache {
     cache(device_geometry(journal_root))
 }
 
+#[cfg(unix)]
 fn device_geometry(journal_root: &Path) -> DeviceGeometry {
     let Some(stats) = nix::sys::statvfs::statvfs(journal_root).ok() else {
         return DeviceGeometry {
@@ -54,6 +55,28 @@ fn device_geometry(journal_root: &Path) -> DeviceGeometry {
     DeviceGeometry {
         free_bytes: free_blocks.checked_mul(fragment_size),
         total_bytes: total_blocks.checked_mul(fragment_size),
+    }
+}
+
+#[cfg(windows)]
+fn device_geometry(journal_root: &Path) -> DeviceGeometry {
+    let Ok(space) = solstone_core_journal_io::windows_disk_space(journal_root) else {
+        return DeviceGeometry {
+            free_bytes: None,
+            total_bytes: None,
+        };
+    };
+    DeviceGeometry {
+        free_bytes: Some(space.available_bytes),
+        total_bytes: Some(space.total_bytes),
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn device_geometry(_journal_root: &Path) -> DeviceGeometry {
+    DeviceGeometry {
+        free_bytes: None,
+        total_bytes: None,
     }
 }
 

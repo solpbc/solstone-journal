@@ -22,10 +22,11 @@ use crate::args::{ResolvedSetup, SetupArgs, SetupMode, resolve_expanded_path};
 use crate::events::{ErrorCode, EventSink, EventType, SkipReason, StepName};
 use crate::manifest::{SetupManifest, can_skip, prior_steps, read_manifest, write_manifest};
 use crate::user_config::{read_user_config, write_user_config};
+#[cfg(not(windows))]
 use crate::wrapper::{
-    WrapperEnvironment, WrapperError, ensure_user_bin_on_path, is_live_app_owned_child_launcher,
-    provision_wrappers, wrapper_paths,
+    WrapperEnvironment, WrapperError, ensure_user_bin_on_path, provision_wrappers,
 };
+use crate::wrapper::{is_live_app_owned_child_launcher, wrapper_paths};
 
 const LOCAL_MODEL: &str = "local/qwen3.5-4b";
 const LOCAL_INSTALL_HINT: &str = "journal install-provider local";

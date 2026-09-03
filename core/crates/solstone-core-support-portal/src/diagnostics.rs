@@ -9,8 +9,11 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, SecondsFormat, TimeZone, Utc};
+#[cfg(unix)]
 use nix::errno::Errno;
+#[cfg(unix)]
 use nix::sys::signal::kill;
+#[cfg(unix)]
 use nix::unistd::Pid;
 use regex::Regex;
 use serde_json::{Map, Value, json};
@@ -157,9 +160,12 @@ pub fn native_platform() -> PlatformInfo {
         other => other.to_owned(),
     };
     // Python platform.release() has no error surface.  Keep the Rust collector infallible.
+    #[cfg(unix)]
     let release = nix::sys::utsname::uname()
         .map(|value| value.release().to_string_lossy().into_owned())
         .unwrap_or_else(|_| "unknown".to_owned());
+    #[cfg(not(unix))]
+    let release = "unknown".to_owned();
     PlatformInfo {
         system,
         release,
@@ -169,12 +175,19 @@ pub fn native_platform() -> PlatformInfo {
 
 /// Services are intentionally unredacted: their status values are not diagnostic text.
 pub fn collect_services(journal_root: &Path) -> Value {
-    collect_services_with_probe(journal_root, signal_zero)
+    collect_services_with_probe(journal_root, system_service_probe)
+}
+
+#[derive(Clone, Copy)]
+enum ServiceProbeStatus {
+    Running,
+    Stopped,
+    Unknown,
 }
 
 fn collect_services_with_probe(
     journal_root: &Path,
-    probe: impl Fn(i32) -> Result<(), Errno>,
+    probe: impl Fn(i32) -> ServiceProbeStatus,
 ) -> Value {
     let health = journal_root.join("health");
     let Ok(entries) = fs::read_dir(health) else {
@@ -198,20 +211,33 @@ fn collect_services_with_probe(
 
 fn service_status(
     pid_text: Option<&str>,
-    probe: &impl Fn(i32) -> Result<(), Errno>,
+    probe: &impl Fn(i32) -> ServiceProbeStatus,
 ) -> &'static str {
     let Some(pid) = pid_text.and_then(|value| value.trim().parse::<i32>().ok()) else {
         return "stopped";
     };
     match probe(pid) {
-        Ok(()) => "running",
-        Err(Errno::ESRCH | Errno::EPERM) => "stopped",
-        Err(_) => "unknown",
+        ServiceProbeStatus::Running => "running",
+        ServiceProbeStatus::Stopped => "stopped",
+        ServiceProbeStatus::Unknown => "unknown",
     }
 }
 
-fn signal_zero(pid: i32) -> Result<(), Errno> {
-    kill(Pid::from_raw(pid), None)
+#[cfg(unix)]
+fn system_service_probe(pid: i32) -> ServiceProbeStatus {
+    match kill(Pid::from_raw(pid), None) {
+        Ok(()) => ServiceProbeStatus::Running,
+        Err(Errno::ESRCH | Errno::EPERM) => ServiceProbeStatus::Stopped,
+        Err(_) => ServiceProbeStatus::Unknown,
+    }
+}
+
+#[cfg(not(unix))]
+fn system_service_probe(_pid: i32) -> ServiceProbeStatus {
+    // Windows PID reuse makes an unowned numeric PID unsafe as a liveness
+    // claim. The support bundle reports this honestly until it has a
+    // process-identity receipt to inspect.
+    ServiceProbeStatus::Unknown
 }
 
 /// Closed, path-free error for the support bundle's log section.

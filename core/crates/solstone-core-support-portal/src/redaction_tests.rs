@@ -174,9 +174,9 @@ fn services_and_recent_errors_keep_reference_shapes_and_ordering() {
     ));
     assert_ne!(public_services["sk-x"], "***");
     let services = collect_services_with_probe(root.path(), |pid| match pid {
-        1 => Ok(()),
-        2 => Err(nix::errno::Errno::ESRCH),
-        _ => Err(nix::errno::Errno::EIO),
+        1 => ServiceProbeStatus::Running,
+        2 => ServiceProbeStatus::Stopped,
+        _ => ServiceProbeStatus::Unknown,
     });
     assert_eq!(services["sk-x"], "running");
     assert_eq!(services["stopped"], "stopped");

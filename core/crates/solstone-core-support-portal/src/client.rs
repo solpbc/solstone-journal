@@ -278,10 +278,7 @@ impl PortalClient {
     /// Memoize a generated client handle exactly as the Python property does.
     pub fn handle(&mut self) -> &str {
         if self.handle.as_deref().is_none_or(str::is_empty) {
-            let hostname = nix::unistd::gethostname()
-                .expect("read local hostname")
-                .to_string_lossy()
-                .to_lowercase();
+            let hostname = native_hostname().to_lowercase();
             let hostname: String = hostname
                 .replace('_', "-")
                 .chars()
@@ -608,6 +605,27 @@ impl PortalClient {
     fn tos_path(&self) -> PathBuf {
         self.storage_dir.join("tos.txt")
     }
+}
+
+#[cfg(unix)]
+fn native_hostname() -> String {
+    nix::unistd::gethostname()
+        .expect("read local hostname")
+        .to_string_lossy()
+        .into_owned()
+}
+
+#[cfg(windows)]
+fn native_hostname() -> String {
+    std::env::var_os("COMPUTERNAME")
+        .unwrap_or_else(|| "solstone".into())
+        .to_string_lossy()
+        .into_owned()
+}
+
+#[cfg(not(any(unix, windows)))]
+fn native_hostname() -> String {
+    "solstone".to_owned()
 }
 
 #[derive(Serialize)]
