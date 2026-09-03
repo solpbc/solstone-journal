@@ -127,17 +127,10 @@ try {
 
     $buildCommand = 'call "{0}" x64 >nul && set "PATH={1};{2};%PATH%;{3}" && set "LIBCLANG_PATH={4}" && set "SOLSTONE_FFMPEG_SOURCE_ARCHIVE={5}" && set "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER={6}" && set "SOLSTONE_DISTRIBUTION_OFFLINE=1" && set "FFMPEG_MARCH=" && set "FFMPEG_MTUNE=" && set "CC=cl" && cargo build --manifest-path core\Cargo.toml -p solstone-core --bin solstone-core --release --locked --offline && cargo build --manifest-path core\Cargo.toml -p solstone-core-describe --bin solstone-core-describe --release --locked --offline' -f $vcvars, $toolBin, $nasmDir, $msysBin, $llvmBin, $SourceArchive, $link
     Invoke-Checked 'network-denied MSVC build of the two FFmpeg-bearing executables' 'cmd.exe' @('/d', '/s', '/c', $buildCommand)
-    $corpusCommand = 'call "{0}" x64 >nul && set "PATH={1};{2};%PATH%;{3}" && set "LIBCLANG_PATH={4}" && set "SOLSTONE_FFMPEG_SOURCE_ARCHIVE={5}" && set "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER={6}" && set "SOLSTONE_DISTRIBUTION_OFFLINE=1" && set "FFMPEG_MARCH=" && set "FFMPEG_MTUNE=" && set "CC=cl" && cargo test --manifest-path core\Cargo.toml -p solstone-core-import-host --lib --release --locked --offline native_remux_preserves_long_form_audio_packets_without_unbounded_buffers' -f $vcvars, $toolBin, $nasmDir, $msysBin, $llvmBin, $SourceArchive, $link
-    Invoke-Checked 'network-denied native FFmpeg long remux corpus' 'cmd.exe' @('/d', '/s', '/c', $corpusCommand)
 
-    $targetRoot = Join-Path $RepositoryRoot 'core/target/release'
-    $core = Join-Path $targetRoot 'solstone-core.exe'; $describe = Join-Path $targetRoot 'solstone-core-describe.exe'
-    Require-File $core 'solstone-core.exe'
-    Require-File $describe 'solstone-core-describe.exe'
-    $outputBin = Join-Path $OutputRoot 'bin'; New-Item -ItemType Directory -Path $outputBin | Out-Null
-    Copy-Item -LiteralPath $core -Destination (Join-Path $outputBin 'solstone-core.exe')
-    Copy-Item -LiteralPath $describe -Destination (Join-Path $outputBin 'solstone-core-describe.exe')
-
+    # Capture only the two configure records that produced the carrying PEs.
+    # The corpus below compiles an additional audio test harness, whose distinct
+    # Cargo unit must not make the production receipt ambiguous.
     $evidenceRoots = @(Get-ChildItem -LiteralPath (Join-Path $RepositoryRoot 'core/target/release/build') -Filter current-run.v1 -Recurse -File | ForEach-Object { $_.Directory.Parent.FullName })
     $audioEvidence = @(); $videoEvidence = @()
     foreach ($evidenceRoot in $evidenceRoots) {
@@ -149,6 +142,17 @@ try {
         if ($receiptText -match '(?m)^component=CONFIG_OPUS_MUXER$') { $audioEvidence += $evidenceRoot } else { $videoEvidence += $evidenceRoot }
     }
     if ($audioEvidence.Count -ne 1 -or $videoEvidence.Count -ne 1) { throw "FFmpeg build must retain exactly one audio and one video configure evidence root; observed audio=$($audioEvidence.Count) video=$($videoEvidence.Count)" }
+
+    $corpusCommand = 'call "{0}" x64 >nul && set "PATH={1};{2};%PATH%;{3}" && set "LIBCLANG_PATH={4}" && set "SOLSTONE_FFMPEG_SOURCE_ARCHIVE={5}" && set "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER={6}" && set "SOLSTONE_DISTRIBUTION_OFFLINE=1" && set "FFMPEG_MARCH=" && set "FFMPEG_MTUNE=" && set "CC=cl" && cargo test --manifest-path core\Cargo.toml -p solstone-core-import-host --lib --release --locked --offline native_remux_preserves_long_form_audio_packets_without_unbounded_buffers' -f $vcvars, $toolBin, $nasmDir, $msysBin, $llvmBin, $SourceArchive, $link
+    Invoke-Checked 'network-denied native FFmpeg long remux corpus' 'cmd.exe' @('/d', '/s', '/c', $corpusCommand)
+
+    $targetRoot = Join-Path $RepositoryRoot 'core/target/release'
+    $core = Join-Path $targetRoot 'solstone-core.exe'; $describe = Join-Path $targetRoot 'solstone-core-describe.exe'
+    Require-File $core 'solstone-core.exe'
+    Require-File $describe 'solstone-core-describe.exe'
+    $outputBin = Join-Path $OutputRoot 'bin'; New-Item -ItemType Directory -Path $outputBin | Out-Null
+    Copy-Item -LiteralPath $core -Destination (Join-Path $outputBin 'solstone-core.exe')
+    Copy-Item -LiteralPath $describe -Destination (Join-Path $outputBin 'solstone-core-describe.exe')
 
     $importLines = @()
     foreach ($exe in @($core, $describe)) {
