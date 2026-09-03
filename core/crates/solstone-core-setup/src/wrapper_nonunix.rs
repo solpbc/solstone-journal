@@ -4,17 +4,40 @@
 //! Non-Unix boundary for managed shell wrappers.
 //!
 //! A Windows package exposes its executable entry points directly. It must not
-//! create, replace, or remove the POSIX shell wrappers used by Unix installs.
+//! create, replace, remove, or adopt the POSIX shell wrappers used by Unix
+//! installs. This module nevertheless preserves the shared wrapper API so the
+//! read-only setup identity flow compiles on every supported platform.
 
 use std::io;
 use std::path::{Path, PathBuf};
 
-use solstone_core_installation_identity::{GuardFields, InstallationBinding, wrapper_guard_lines};
+use solstone_core_installation_identity::{
+    GuardFields, InstallationBinding, parse_wrapper_guard, wrapper_guard_lines,
+};
 
 pub const WRAPPER_MARKER: &str = "# managed-version: 8";
 pub const WRAPPER_VERSION: u8 = 8;
 
 const UNSUPPORTED: &str = "POSIX wrapper provisioning is unsupported on this platform";
+
+/// Command names the Unix wrapper implementation supports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WrapperCommand {
+    Sol,
+    Solstone,
+    Journal,
+}
+
+impl WrapperCommand {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Sol => "sol",
+            Self::Solstone => "solstone",
+            Self::Journal => "journal",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AliasState {
@@ -31,6 +54,7 @@ pub struct ParsedWrapper {
     pub journal: String,
     pub sol_bin: PathBuf,
     pub version: u8,
+    pub guard: Option<GuardFields>,
 }
 
 #[derive(Debug)]
@@ -83,18 +107,33 @@ pub fn wrapper_paths(home_dir: &Path) -> WrapperPaths {
     }
 }
 
-#[must_use]
-pub fn render_wrapper(binary: &str, journal: &Path, sol_bin: &Path, guard: &GuardFields) -> String {
-    format!(
-        "#!/bin/bash\n# {binary} — managed by 'journal config'. Edits will be overwritten.\n{WRAPPER_MARKER}\n{}: \"${{SOLSTONE_JOURNAL:={}}}\"\nexport SOLSTONE_JOURNAL\nSOL_BIN='{}'\nexec \"$SOL_BIN\" \"$@\"\n",
+pub fn render_wrapper(
+    command: WrapperCommand,
+    journal: &Path,
+    sol_bin: &Path,
+    guard: &GuardFields,
+) -> Result<String, WrapperError> {
+    if command == WrapperCommand::Sol {
+        return Err(WrapperError(
+            "the current wrapper format does not publish the retired sol command".into(),
+        ));
+    }
+    if guard.journal_token.to_path_buf() != journal {
+        return Err(WrapperError(
+            "wrapper journal does not match its installation identity guard".into(),
+        ));
+    }
+    Ok(format!(
+        "#!/bin/bash\n# {} — managed by 'journal config'. Edits will be overwritten.\n{WRAPPER_MARKER}\n{}: \"${{SOLSTONE_JOURNAL:={}}}\"\nexport SOLSTONE_JOURNAL\nSOL_BIN='{}'\nexec \"$SOL_BIN\" \"$@\"\n",
+        command.as_str(),
         wrapper_guard_lines(guard),
         journal.to_string_lossy(),
         sol_bin.to_string_lossy().replace('\'', "'\\''"),
-    )
+    ))
 }
 
 #[must_use]
-pub fn parse_wrapper(content: &str) -> Option<ParsedWrapper> {
+pub fn parse_wrapper(command: WrapperCommand, content: &str) -> Option<ParsedWrapper> {
     let marker = content
         .lines()
         .find(|line| line.starts_with("# managed-version: "))?;
@@ -102,7 +141,7 @@ pub fn parse_wrapper(content: &str) -> Option<ParsedWrapper> {
         .strip_prefix("# managed-version: ")?
         .parse::<u8>()
         .ok()?;
-    if !(1..=WRAPPER_VERSION).contains(&version) {
+    if !matches!(version, 7 | 8) || (version == 8 && command == WrapperCommand::Sol) {
         return None;
     }
     let journal = content
@@ -119,10 +158,22 @@ pub fn parse_wrapper(content: &str) -> Option<ParsedWrapper> {
                 .and_then(|value| value.strip_suffix('\''))
         })?
         .replace("'\\''", "'");
+    let guard = if version == 8 {
+        parse_wrapper_guard(content).ok()?
+    } else {
+        None
+    };
+    if guard
+        .as_ref()
+        .is_some_and(|guard| guard.journal_token.as_bytes() != journal.as_bytes())
+    {
+        return None;
+    }
     Some(ParsedWrapper {
         journal,
         sol_bin: PathBuf::from(sol_bin),
         version,
+        guard,
     })
 }
 
@@ -175,6 +226,12 @@ pub fn wrapper_lock(_home_dir: &Path) -> Result<WrapperLock, WrapperError> {
 }
 
 pub fn validate_journal_path_for_wrapper(_journal: &Path) -> Result<(), WrapperError> {
+    Ok(())
+}
+
+/// Windows packages do not create POSIX wrappers. The setup preflight keeps
+/// this no-op so the shared lifecycle flow can reach its Windows skip step.
+pub fn validate_wrapper_pair(_journal: &Path, _executable_dir: &Path) -> Result<(), WrapperError> {
     Ok(())
 }
 
