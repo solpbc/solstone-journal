@@ -17,6 +17,12 @@ log.workspace = true
 serde_json.workspace = true
 solstone-core-speakers.workspace = true
 solstone-core-speakers-onnx = { workspace = true, optional = true }
+
+# This admission hook is used only by the native helper binary on its supported
+# Linux and macOS targets.  The Windows cross-check deliberately builds this
+# crate's library to verify the helper's unsupported-runtime diagnostic; do not
+# pull the hosted runtime's native dependency closure into that probe.
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 solstone-core-system.workspace = true
 
 [[bin]]
