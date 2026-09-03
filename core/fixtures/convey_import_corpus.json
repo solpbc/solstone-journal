@@ -642,8 +642,8 @@
         "why": "the app index: the SPA shell, byte-identical"
       },
       {
-        "body_bytes": 85568,
-        "body_sha256": "ad5e6dcefa79afe6e1ddf14bf3b5a6915623dd24df8350dc098196f32c3f8485",
+        "body_bytes": 85637,
+        "body_sha256": "8e3af67bd88061caa603b4a456d1e1ef0a322fe71d76a49b1756fc13321bbadd",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -1277,8 +1277,8 @@
         "why": "the app index: the SPA shell, byte-identical"
       },
       {
-        "body_bytes": 85568,
-        "body_sha256": "ad5e6dcefa79afe6e1ddf14bf3b5a6915623dd24df8350dc098196f32c3f8485",
+        "body_bytes": 85637,
+        "body_sha256": "8e3af67bd88061caa603b4a456d1e1ef0a322fe71d76a49b1756fc13321bbadd",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
