@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Local, TimeZone, Utc};
+use chrono::{DateTime, FixedOffset, Local, TimeZone, Utc};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use solstone_core_backup::{get_backup_config, record_offload_result};
@@ -28,7 +28,7 @@ use solstone_core_retention::{
 use crate::ledger::{OffloadFile, append_offload_event};
 use crate::marks::OffloadMarkIndex;
 use crate::measurement::measure_raw_media_usage;
-use crate::pruning_audit::write_prune_audit;
+use crate::pruning_audit::{PruneAuditWriter, open_prune_audit, write_prune_audit};
 
 pub const OFFLOAD_STALL_BACKUP_NOT_READY: &str = "backup_not_ready";
 pub const OFFLOAD_STALL_BACKUP_FAILING: &str = "backup_failing";
@@ -84,6 +84,9 @@ pub struct OffloadResult {
     /// token itself stays `segment_identity`.
     pub reason_detail: Option<String>,
     pub details: Vec<OffloadSegmentDetail>,
+    /// Best-effort failure while creating or appending the invocation audit oplog.
+    pub audit_recording_failure: Option<String>,
+    /// Failure while recording the backup ledger's `last_offload` state.
     pub recording_failure: Option<String>,
 }
 
@@ -139,8 +142,12 @@ pub fn format_offload_result(result: &OffloadResult) -> String {
             result.ran_out_of_markable_media
         )
     };
-    match result.recording_failure.as_deref() {
+    let line = match result.recording_failure.as_deref() {
         Some(detail) => format!("{line} recording_failed={detail}"),
+        None => line,
+    };
+    match result.audit_recording_failure.as_deref() {
+        Some(detail) => format!("{line} audit_recording_failed={detail}"),
         None => line,
     }
 }
@@ -165,6 +172,7 @@ fn stall(
         dry_run,
         reason_detail: None,
         details,
+        audit_recording_failure: None,
         recording_failure: None,
     }
 }
@@ -172,6 +180,11 @@ fn stall(
 impl OffloadResult {
     fn with_reason_detail(mut self, detail: String) -> Self {
         self.reason_detail = Some(detail);
+        self
+    }
+
+    fn with_audit_recording_failure(mut self, failure: Option<String>) -> Self {
+        self.audit_recording_failure = failure;
         self
     }
 }
@@ -192,11 +205,11 @@ fn prepare(paths: &[PathBuf]) -> Option<Vec<OffloadFile>> {
 fn budget_satisfied(start_raw_bytes: u64, freed_bytes: u64, budget_bytes: Option<u64>) -> bool {
     budget_bytes.is_none_or(|budget| start_raw_bytes.saturating_sub(freed_bytes) <= budget)
 }
-fn local_day(now_unix: i64) -> Option<String> {
+fn local_instant(now_unix: i64) -> Option<DateTime<FixedOffset>> {
     Local
         .timestamp_opt(now_unix, 0)
         .single()
-        .map(|time| time.format("%Y%m%d").to_string())
+        .map(|time| time.fixed_offset())
 }
 fn precondition(config: &serde_json::Map<String, Value>, now: i64) -> Option<&'static str> {
     if config.get("enabled") != Some(&Value::Bool(true)) {
@@ -285,6 +298,7 @@ fn run_offload_body(
             dry_run,
             reason_detail: None,
             details: vec![],
+            audit_recording_failure: None,
             recording_failure: None,
         };
     }
@@ -320,6 +334,7 @@ fn run_offload_body(
             dry_run,
             reason_detail: None,
             details,
+            audit_recording_failure: None,
             recording_failure: None,
         };
     }
@@ -344,6 +359,19 @@ fn run_offload_body(
         )
         .with_reason_detail(error.to_string());
     }
+    let (mut audit, mut audit_recording_failure): (Option<PruneAuditWriter>, Option<String>) =
+        if dry_run {
+            (None, None)
+        } else if let Some(opened) = local_instant(services.clock.now_unix()) {
+            let audit = open_prune_audit(journal, opened);
+            let failure = audit.recording_failure();
+            (Some(audit), failure)
+        } else {
+            (
+                None,
+                Some("failed to create offload audit oplog: local time unavailable".into()),
+            )
+        };
     for day in days {
         for segment in iter_segments(journal, PathOrDay::Day(&day)).unwrap_or_default() {
             let identity = match segment.record_identity() {
@@ -358,7 +386,8 @@ fn run_offload_body(
                         files_already_marked,
                         bytes_already_marked,
                     )
-                    .with_reason_detail(error.to_string());
+                    .with_reason_detail(error.to_string())
+                    .with_audit_recording_failure(audit_recording_failure);
                 }
             };
             let registry = ClosedHandlerSet;
@@ -391,7 +420,8 @@ fn run_offload_body(
                     bytes_marked,
                     files_already_marked,
                     bytes_already_marked,
-                );
+                )
+                .with_audit_recording_failure(audit_recording_failure);
             };
             let bytes = files.iter().map(|file| file.bytes).sum::<u64>();
             let names = files
@@ -429,6 +459,7 @@ fn run_offload_body(
                     dry_run,
                     reason_detail: None,
                     details,
+                    audit_recording_failure,
                     recording_failure: None,
                 };
             }
@@ -457,7 +488,8 @@ fn run_offload_body(
                     bytes_marked,
                     files_already_marked,
                     bytes_already_marked,
-                );
+                )
+                .with_audit_recording_failure(audit_recording_failure);
             };
             let expected = paths
                 .iter()
@@ -489,7 +521,8 @@ fn run_offload_body(
                     bytes_marked,
                     files_already_marked,
                     bytes_already_marked,
-                );
+                )
+                .with_audit_recording_failure(audit_recording_failure);
             }
             if append_offload_event(
                 journal,
@@ -510,7 +543,8 @@ fn run_offload_body(
                     bytes_marked,
                     files_already_marked,
                     bytes_already_marked,
-                );
+                )
+                .with_audit_recording_failure(audit_recording_failure);
             }
             let Some(marked_at) = DateTime::<Utc>::from_timestamp(services.clock.now_unix(), 0)
             else {
@@ -522,7 +556,8 @@ fn run_offload_body(
                     bytes_marked,
                     files_already_marked,
                     bytes_already_marked,
-                );
+                )
+                .with_audit_recording_failure(audit_recording_failure);
             };
             if upsert_offload(
                 journal,
@@ -546,29 +581,28 @@ fn run_offload_body(
                     bytes_marked,
                     files_already_marked,
                     bytes_already_marked,
-                );
+                )
+                .with_audit_recording_failure(audit_recording_failure);
             }
-            let messages = BTreeMap::from([(
-                day.clone(),
-                format!(
-                    "raw-media offload: archived and marked {} raw media file(s)",
-                    files.len()
-                ),
-            )]);
-            let record = serde_json::json!({"kind":"raw_media_offload","day":day,"stream":identity.stream,"segment":identity.key,"bytes_marked":bytes});
-            let Some(audit_day) = local_day(services.clock.now_unix()) else {
-                return stall(
-                    OFFLOAD_STALL_UNEXPECTED_ERROR,
-                    false,
-                    details,
-                    files_marked,
-                    bytes_marked,
-                    files_already_marked,
-                    bytes_already_marked,
-                );
-            };
-            let _audit =
-                write_prune_audit(journal, "raw_media_offload", &record, &messages, &audit_day);
+            let message = format!(
+                "raw-media offload: archived and marked {} raw media file(s)",
+                files.len()
+            );
+            let record = serde_json::json!({
+                "event": "raw_media_offload",
+                "kind": "raw_media_offload",
+                "outcome": "success",
+                "stream": identity.stream,
+                "segment": identity.key,
+                "bytes_marked": bytes,
+                "ts": services.clock.now_unix().saturating_mul(1_000),
+            });
+            if let Some(audit) = audit.as_mut() {
+                let outcome = write_prune_audit(audit, &record, &day, &message);
+                if audit_recording_failure.is_none() {
+                    audit_recording_failure = outcome.recording_failure;
+                }
+            }
             files_marked += files.len() as u64;
             bytes_marked += bytes;
         }
@@ -584,6 +618,7 @@ fn run_offload_body(
         dry_run,
         reason_detail: None,
         details,
+        audit_recording_failure,
         recording_failure: None,
     }
 }
@@ -604,6 +639,11 @@ mod tests {
     use solstone_core_backup_runtime::{
         Clock, HttpRequest, HttpResponse, HttpTransport, JournalMaintenance,
         JournalMaintenanceError, ToolOutput, ToolRequest, ToolRunner,
+    };
+    use solstone_core_journal_io::{
+        JournalRoot, MalformedPolicy,
+        operational_log::{OplogFormat, catalog_oplogs},
+        readers::read_jsonl_with_report,
     };
 
     struct Script {
@@ -788,6 +828,34 @@ mod tests {
         )
     }
 
+    fn audit_rows(journal: &Path, day: chrono::NaiveDate) -> Vec<Value> {
+        let snapshot = catalog_oplogs(JournalRoot::open(journal).unwrap(), &[day]).unwrap();
+        let entries = snapshot
+            .entries()
+            .iter()
+            .filter(|entry| {
+                entry.name().source().display_slug() == "offload"
+                    && entry.name().run().display_slug() == "raw-media-offload"
+                    && entry.name().format() == OplogFormat::Jsonl
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 1);
+        read_jsonl_with_report::<Value>(
+            journal
+                .join("chronicle")
+                .join(entries[0].day())
+                .join("health")
+                .join(entries[0].leaf()),
+            Vec::new(),
+            MalformedPolicy::Raise,
+        )
+        .unwrap()
+        .records
+        .into_iter()
+        .map(|record| record.value)
+        .collect()
+    }
+
     #[test]
     fn floor_is_ignored_when_marking_raw_media() {
         // Marking releases no bytes. A huge floor would suppress work if this
@@ -811,6 +879,29 @@ mod tests {
     }
 
     #[test]
+    fn successful_offload_writes_per_segment_rows_to_one_invocation_oplog() {
+        let (journal, _, result) = successful_offload(1);
+
+        assert_eq!(result.audit_recording_failure, None);
+        let rows = audit_rows(journal.path(), local_instant(100).unwrap().date_naive());
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|row| {
+            row["event"] == "raw_media_offload"
+                && row["kind"] == "raw_media_offload"
+                && row["outcome"] == "success"
+                && row["message"]
+                    .as_str()
+                    .is_some_and(|message| message.starts_with("raw-media offload:"))
+        }));
+        let mut days = rows
+            .iter()
+            .map(|row| row["day"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        days.sort_unstable();
+        assert_eq!(days, ["20260101", "20260102"]);
+    }
+
+    #[test]
     fn partial_pruning_audit_failure_does_not_change_success() {
         let journal = tempfile::tempdir().unwrap();
         let raw = journal
@@ -819,12 +910,18 @@ mod tests {
         fs::create_dir_all(raw.parent().unwrap()).unwrap();
         fs::write(&raw, b"audit").unwrap();
         write_eligible_sidecar(&raw);
-        // A file where the per-day health directory belongs makes that best-effort
-        // audit append fail, but a completed archive and mark must still succeed.
-        fs::write(journal.path().join("chronicle/20260103/health"), b"blocked").unwrap();
-
         let clock = TestClock { now: 1_767_225_600 };
         configure_offload(journal.path(), clock.now, Some(1));
+        let audit_day = local_instant(clock.now)
+            .unwrap()
+            .date_naive()
+            .format("%Y%m%d")
+            .to_string();
+        let audit_parent = journal.path().join("chronicle").join(&audit_day);
+        fs::create_dir_all(&audit_parent).unwrap();
+        // A file where the invocation's health directory belongs makes canonical
+        // oplog creation fail, but a completed archive and mark must still succeed.
+        fs::write(audit_parent.join("health"), b"blocked").unwrap();
 
         let nodes = json!([
             {"message_type":"snapshot","id":"snapshot"},
@@ -847,15 +944,15 @@ mod tests {
         );
 
         assert_eq!(result.status, "ok");
-        let audit_day = local_day(clock.now).unwrap();
-        assert_ne!(audit_day, "19700101");
+        assert_eq!(result.files_marked, 1);
+        assert_eq!(result.bytes_marked, 5);
         assert!(
-            journal
-                .path()
-                .join("health/pruning-runs")
-                .join(format!("{audit_day}.jsonl"))
-                .exists()
+            result
+                .audit_recording_failure
+                .as_deref()
+                .is_some_and(|error| error.starts_with("failed to create offload audit oplog:"))
         );
+        assert!(format_offload_result(&result).contains("audit_recording_failed="));
     }
 
     #[test]

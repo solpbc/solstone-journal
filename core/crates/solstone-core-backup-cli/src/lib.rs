@@ -164,6 +164,7 @@ fn format_resolution_error(
                 dry_run: false,
                 reason_detail: None,
                 details: vec![],
+                audit_recording_failure: None,
                 recording_failure: None,
             }),
             Some("restore") => offload_restore_result(
