@@ -256,11 +256,16 @@
       img.setAttribute('aria-hidden', 'true');
       img.width = 22;
       img.height = 22;
+      statusIcon.insertBefore(img, badge || statusIcon.firstChild);
+    }
+    if (!img.onerror) {
       // The one icon meant to convey connectivity is itself fetched over the
       // network, so it can fail to load exactly when it matters most. Hide it
       // rather than let the browser's broken-image glyph stand in for "offline".
+      // shell_boot.js seeds this <img> before this module ever runs, so this
+      // must attach regardless of whether the element pre-existed or was just
+      // created above.
       img.onerror = () => { img.style.visibility = 'hidden'; };
-      statusIcon.insertBefore(img, badge || statusIcon.firstChild);
     }
 
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
