@@ -35,6 +35,26 @@ pub fn render_collected(
     Ok(())
 }
 
+/// Decode captured service-output bytes for terminal display.
+///
+/// Service capture redirects process file descriptors, so its payload is not
+/// constrained to UTF-8 or newline-delimited records. Keep the one-shot and
+/// follow paths on the same lossy decoding and terminal-sanitization policy.
+pub fn normalize_raw_stream(bytes: &[u8], is_tty: bool) -> String {
+    let decoded = String::from_utf8_lossy(bytes);
+    let normalized = decoded.replace("\r\n", "\n").replace('\r', "\n");
+    if is_tty {
+        sanitize_preserving_lf(&normalized)
+    } else {
+        normalized
+    }
+}
+
+/// Render raw captured service-output bytes without imposing record boundaries.
+pub fn render_raw_stream(output: &mut dyn Write, bytes: &[u8], is_tty: bool) -> io::Result<()> {
+    output.write_all(normalize_raw_stream(bytes, is_tty).as_bytes())
+}
+
 pub(crate) fn render_stream_row(
     output: &mut dyn Write,
     raw: &str,
@@ -59,6 +79,20 @@ pub(crate) fn render_stream_row(
         *last_service = Some(service.to_owned());
     }
     writeln!(output, "{}", sanitize_for_terminal(raw))
+}
+
+fn sanitize_preserving_lf(value: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    let mut start = 0;
+    for (offset, scalar) in value.char_indices() {
+        if scalar == '\n' {
+            output.push_str(&sanitize_for_terminal(&value[start..offset]));
+            output.push('\n');
+            start = offset + 1;
+        }
+    }
+    output.push_str(&sanitize_for_terminal(&value[start..]));
+    output
 }
 
 #[cfg(test)]

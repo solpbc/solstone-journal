@@ -23,7 +23,6 @@ const PATH: &str = "/usr/bin:/bin";
 const RUNTIME_DIR: &str = "/opt/sol/bin";
 const LAUNCHER: &str = "/home/sol/.local/bin/journal";
 const PORT: &str = "5015";
-const JOURNAL: &str = "/srv/journal";
 
 static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -68,10 +67,9 @@ fn render(
     env: &BTreeMap<String, String>,
     launcher: &str,
     port: &str,
-    journal: &str,
 ) -> (Value, support::ParsedUnit) {
-    let plist = render_launchd_plist(env, launcher, port, journal).expect("valid render");
-    let unit = render_systemd_unit(env, launcher, port, journal).expect("valid render");
+    let plist = render_launchd_plist(env, launcher, port);
+    let unit = render_systemd_unit(env, launcher, port);
     (support::parse_plist(&plist), support::parse_unit(&unit))
 }
 
@@ -98,46 +96,54 @@ fn environment(plist: &Value) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn log_paths(plist: &Value) -> (String, String) {
-    let dictionary = plist.as_dictionary().expect("plist dictionary");
-    (
-        dictionary["StandardOutPath"]
-            .as_string()
-            .expect("stdout path")
-            .to_owned(),
-        dictionary["StandardErrorPath"]
-            .as_string()
-            .expect("stderr path")
-            .to_owned(),
-    )
-}
-
 #[test]
 fn one_input_at_a_time_changes_only_its_derived_field() {
     let baseline_env = build_service_environment(HOME, Some(PATH), RUNTIME_DIR, &guard());
-    let (baseline_plist, baseline_unit) = render(&baseline_env, LAUNCHER, PORT, JOURNAL);
+    let (baseline_plist, baseline_unit) = render(&baseline_env, LAUNCHER, PORT);
 
-    let (plist, unit) = render(&baseline_env, "/home/sol/a b/$journal", PORT, JOURNAL);
+    let (plist, unit) = render(&baseline_env, "/home/sol/a b/$journal", PORT);
     assert_eq!(arguments(&plist)[1..], arguments(&baseline_plist)[1..]);
     assert_eq!(unit.exec_start[0], "/home/sol/a b/$journal");
     assert_eq!(unit.exec_start[1..], baseline_unit.exec_start[1..]);
     assert_eq!(environment(&plist), environment(&baseline_plist));
-    assert_eq!(log_paths(&plist), log_paths(&baseline_plist));
+    assert!(
+        !plist
+            .as_dictionary()
+            .unwrap()
+            .contains_key("StandardOutPath")
+    );
+    assert!(
+        !plist
+            .as_dictionary()
+            .unwrap()
+            .contains_key("StandardErrorPath")
+    );
     assert_eq!(unit.environment, baseline_unit.environment);
-    assert_eq!(unit.log_paths, baseline_unit.log_paths);
+    assert!(!unit.has_legacy_log_directives);
 
-    let (plist, unit) = render(&baseline_env, LAUNCHER, "5 815${PORT}%", JOURNAL);
+    let (plist, unit) = render(&baseline_env, LAUNCHER, "5 815${PORT}%");
     assert_eq!(arguments(&plist)[0], arguments(&baseline_plist)[0]);
     assert_eq!(arguments(&plist)[1], "start");
     assert_eq!(arguments(&plist)[2], "5 815${PORT}%");
     assert_eq!(unit.exec_start[2], "5 815${PORT}%");
     assert_eq!(environment(&plist), environment(&baseline_plist));
-    assert_eq!(log_paths(&plist), log_paths(&baseline_plist));
+    assert!(
+        !plist
+            .as_dictionary()
+            .unwrap()
+            .contains_key("StandardOutPath")
+    );
+    assert!(
+        !plist
+            .as_dictionary()
+            .unwrap()
+            .contains_key("StandardErrorPath")
+    );
     assert_eq!(unit.environment, baseline_unit.environment);
-    assert_eq!(unit.log_paths, baseline_unit.log_paths);
+    assert!(!unit.has_legacy_log_directives);
 
     let home_env = build_service_environment("/home/sol $ café", Some(PATH), RUNTIME_DIR, &guard());
-    let (plist, unit) = render(&home_env, LAUNCHER, PORT, JOURNAL);
+    let (plist, unit) = render(&home_env, LAUNCHER, PORT);
     assert_eq!(arguments(&plist), arguments(&baseline_plist));
     assert_eq!(environment(&plist)["HOME"], "/home/sol $ café");
     assert_eq!(unit.environment["HOME"], "/home/sol $ café");
@@ -145,35 +151,26 @@ fn one_input_at_a_time_changes_only_its_derived_field() {
         environment(&plist)["PATH"],
         environment(&baseline_plist)["PATH"]
     );
-    assert_eq!(log_paths(&plist), log_paths(&baseline_plist));
-    assert_eq!(unit.exec_start, baseline_unit.exec_start);
-    assert_eq!(unit.log_paths, baseline_unit.log_paths);
-
-    let (plist, unit) = render(&baseline_env, LAUNCHER, PORT, "/srv/journal space%");
-    assert_eq!(arguments(&plist), arguments(&baseline_plist));
-    assert_eq!(environment(&plist), environment(&baseline_plist));
-    assert_eq!(
-        log_paths(&plist),
-        (
-            "/srv/journal space%/health/service.log".to_owned(),
-            "/srv/journal space%/health/service.log".to_owned(),
-        )
+    assert!(
+        !plist
+            .as_dictionary()
+            .unwrap()
+            .contains_key("StandardOutPath")
+    );
+    assert!(
+        !plist
+            .as_dictionary()
+            .unwrap()
+            .contains_key("StandardErrorPath")
     );
     assert_eq!(unit.exec_start, baseline_unit.exec_start);
-    assert_eq!(unit.environment, baseline_unit.environment);
-    assert_eq!(
-        unit.log_paths,
-        (
-            "/srv/journal space%/health/service.log".to_owned(),
-            "/srv/journal space%/health/service.log".to_owned(),
-        )
-    );
+    assert!(!unit.has_legacy_log_directives);
 }
 
 #[test]
 fn path_inputs_change_only_path_construction() {
     let baseline = build_service_environment(HOME, Some(PATH), RUNTIME_DIR, &guard());
-    let (baseline_plist, baseline_unit) = render(&baseline, LAUNCHER, PORT, JOURNAL);
+    let (baseline_plist, baseline_unit) = render(&baseline, LAUNCHER, PORT);
     let duplicate = build_service_environment(
         HOME,
         Some("/usr/bin:/opt/sol/bin:/usr/bin:/bin"),
@@ -193,20 +190,31 @@ fn path_inputs_change_only_path_construction() {
     assert_eq!(alternate_runtime["PATH"], "/runtime other:/usr/bin:/bin");
 
     for environment_input in [duplicate, absent, alternate_runtime] {
-        let (plist, unit) = render(&environment_input, LAUNCHER, PORT, JOURNAL);
+        let (plist, unit) = render(&environment_input, LAUNCHER, PORT);
         assert_eq!(arguments(&plist), arguments(&baseline_plist));
-        assert_eq!(log_paths(&plist), log_paths(&baseline_plist));
+        assert!(
+            !plist
+                .as_dictionary()
+                .unwrap()
+                .contains_key("StandardOutPath")
+        );
+        assert!(
+            !plist
+                .as_dictionary()
+                .unwrap()
+                .contains_key("StandardErrorPath")
+        );
         assert_eq!(environment(&plist), environment_input);
         assert_eq!(unit.exec_start, baseline_unit.exec_start);
         assert_eq!(unit.environment, environment_input);
-        assert_eq!(unit.log_paths, baseline_unit.log_paths);
+        assert!(!unit.has_legacy_log_directives);
     }
 }
 
 #[test]
 fn default_unit_is_notify_and_does_not_export_pythonunbuffered() {
     let environment = build_service_environment(HOME, Some(PATH), RUNTIME_DIR, &guard());
-    let unit = render_systemd_unit(&environment, LAUNCHER, PORT, JOURNAL).expect("valid render");
+    let unit = render_systemd_unit(&environment, LAUNCHER, PORT);
     assert!(unit.contains("Type=notify\n"));
     assert!(!unit.contains("PYTHONUNBUFFERED"));
 }

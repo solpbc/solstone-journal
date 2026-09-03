@@ -67,7 +67,7 @@ pub fn build(
         .is_some_and(|value| value == &Value::Bool(true))
     {
         if let Some(reason) = crate::steward_health::validate_steward_health(&body) {
-            let _ = crate::steward_log::append_event(
+            if let Err(error) = crate::steward_log::append_event(
                 &context.journal,
                 "render.failed",
                 Map::from_iter([
@@ -75,7 +75,12 @@ pub fn build(
                     ("target".into(), json!("identity/health.md")),
                     ("detail".into(), json!(reason)),
                 ]),
-            );
+            ) {
+                return skip(
+                    prepared,
+                    &format!("steward pre-hook failed to record render failure: {error}"),
+                );
+            }
         } else if let Err(error) = solstone_core_identity::write_identity(
             &context.journal,
             "health.md",
@@ -191,6 +196,12 @@ pub fn commit(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Local;
+    use solstone_core_journal_io::{
+        JournalRoot, MalformedPolicy,
+        operational_log::{OplogFormat, catalog_oplogs},
+        read_jsonl_with_report,
+    };
     use std::fs;
     use std::os::unix::fs::OpenOptionsExt;
 
@@ -266,12 +277,91 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(fs::read(&health).unwrap(), before);
-        let log = fs::read_to_string(root.path().join("health/steward.log")).unwrap();
-        let rows = log.lines().collect::<Vec<_>>();
-        assert_eq!(rows.len(), 1);
-        let row: Value = serde_json::from_str(rows[0]).unwrap();
+        let today = Local::now().date_naive();
+        let snapshot = catalog_oplogs(JournalRoot::open(root.path()).unwrap(), &[today]).unwrap();
+        let entries = snapshot
+            .entries()
+            .iter()
+            .filter(|entry| {
+                entry.name().source().display_slug() == "steward"
+                    && entry.name().run().display_slug() == "pre-hook"
+                    && entry.name().format() == OplogFormat::Jsonl
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 1);
+        let entry = entries[0];
+        let report = read_jsonl_with_report::<Value>(
+            root.path()
+                .join("chronicle")
+                .join(entry.day())
+                .join("health")
+                .join(entry.leaf()),
+            Vec::new(),
+            MalformedPolicy::Raise,
+        )
+        .unwrap();
+        assert_eq!(report.records.len(), 1);
+        let row = &report.records[0].value;
         assert_eq!(row["event"], "render.failed");
         assert!(row["ts"].as_i64().is_some_and(|ts| ts > 1_000_000_000_000));
+    }
+
+    #[test]
+    fn rejected_health_invocations_create_distinct_intact_pre_hook_oplogs() {
+        let root = tempfile::tempdir().unwrap();
+        let health = root.path().join("identity/health.md");
+        fs::create_dir_all(health.parent().unwrap()).unwrap();
+        fs::write(&health, b"owner health content\n").unwrap();
+        set_rendered_body(Some("rejected body"));
+        let first = build(&mut prepared(false), &context(&root));
+        let second = build(&mut prepared(false), &context(&root));
+        set_rendered_body(None);
+
+        assert!(first.is_ok());
+        assert!(second.is_ok());
+        let today = Local::now().date_naive();
+        let snapshot = catalog_oplogs(JournalRoot::open(root.path()).unwrap(), &[today]).unwrap();
+        let entries = snapshot
+            .entries()
+            .iter()
+            .filter(|entry| {
+                entry.name().source().display_slug() == "steward"
+                    && entry.name().run().display_slug() == "pre-hook"
+                    && entry.name().format() == OplogFormat::Jsonl
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 2);
+        assert_ne!(entries[0].leaf(), entries[1].leaf());
+        for entry in entries {
+            let report = read_jsonl_with_report::<Value>(
+                root.path()
+                    .join("chronicle")
+                    .join(entry.day())
+                    .join("health")
+                    .join(entry.leaf()),
+                Vec::new(),
+                MalformedPolicy::Raise,
+            )
+            .unwrap();
+            assert_eq!(report.records.len(), 1);
+            assert_eq!(report.records[0].value["event"], "render.failed");
+        }
+    }
+
+    #[test]
+    fn rejected_health_oplog_failure_is_a_skip() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("chronicle"), b"not a directory").unwrap();
+        set_rendered_body(Some("rejected body"));
+        let result = build(&mut prepared(false), &context(&root));
+        set_rendered_body(None);
+
+        assert!(matches!(
+            result,
+            Err(RuntimeOutcome::Skipped { reason, .. })
+                if reason.contains("failed to record render failure")
+        ));
+        assert!(!root.path().join("identity/health.md").exists());
     }
 
     #[test]

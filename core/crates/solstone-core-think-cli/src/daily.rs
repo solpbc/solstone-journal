@@ -20,7 +20,7 @@ use crate::run_log::RunLogWriter;
 /// Port of `thinking.py:2086-2556`.
 pub(crate) fn run(
     context: &ThinkContext,
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &mut RunLogWriter,
     stream: Option<&str>,
     from_scratch: bool,
     max_concurrency: i64,
@@ -68,7 +68,7 @@ pub(crate) fn run(
         fields.insert("day".to_owned(), Value::String(context.day.clone()));
         fields.insert("priority".to_owned(), Value::from(priority));
         fields.insert("count".to_owned(), Value::from(group.len()));
-        log.log_event("group.start", context.now_ms, fields);
+        log.log("group.start", context.now_ms, fields);
         let mut pending = Vec::new();
         let mut group_result = ModeResult::default();
         for config in group {
@@ -137,7 +137,7 @@ pub(crate) fn run(
         completed_fields.insert("priority".to_owned(), Value::from(priority));
         completed_fields.insert("success".to_owned(), Value::from(group_result.success));
         completed_fields.insert("failed".to_owned(), Value::from(group_result.failed));
-        log.log_event("group.complete", context.now_ms, completed_fields);
+        log.log("group.complete", context.now_ms, completed_fields);
         merge(&mut total, group_result);
     }
     context.status.update(Map::from_iter([(
@@ -155,11 +155,9 @@ pub(crate) fn run(
             ("failed".to_owned(), Value::from(total.failed)),
         ]),
     );
-    helpers::day_log(
-        &context.journal,
-        &context.day,
+    log.summary(
         context.now_ms,
-        &format!(
+        format!(
             "think{}",
             if total.failed == 0 {
                 String::new()
@@ -177,7 +175,7 @@ pub(crate) fn run(
 )]
 fn queue_daily(
     context: &ThinkContext,
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &mut RunLogWriter,
     runtime: &tokio::runtime::Runtime,
     config: &solstone_core_talent_config::TalentConfig,
     facet: Option<&str>,
@@ -226,7 +224,7 @@ fn queue_daily(
             if let Some(facet) = facet {
                 fields.insert("facet".to_owned(), Value::String(facet.to_owned()));
             }
-            log.log_event("talent.dispatch", context.now_ms, fields);
+            log.log("talent.dispatch", context.now_ms, fields);
             pending.push(item);
         }
         Err(DispatchFailure::NotClaimed { use_id }) => {
@@ -245,7 +243,7 @@ fn queue_daily(
                 "reason_code".to_owned(),
                 Value::String("request_lost".to_owned()),
             );
-            log.log_event("talent.fail", context.now_ms, fields);
+            log.log("talent.fail", context.now_ms, fields);
             result.failed += 1;
             result
                 .failed_names
@@ -269,7 +267,7 @@ fn queue_daily(
 }
 
 fn log_skip(
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &mut RunLogWriter,
     context: &ThinkContext,
     name: &str,
     reason: &str,
@@ -283,12 +281,12 @@ fn log_skip(
     if let Some(facet) = facet {
         fields.insert("facet".to_owned(), Value::String(facet.to_owned()));
     }
-    log.log_event("talent.skip", context.now_ms, fields);
+    log.log("talent.skip", context.now_ms, fields);
 }
 
 fn drain_if_full(
     context: &ThinkContext,
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &mut RunLogWriter,
     runtime: &tokio::runtime::Runtime,
     pending: &mut Vec<PendingUse>,
     result: &mut ModeResult,
@@ -307,7 +305,7 @@ fn drain_if_full(
 /// disposition before the lifecycle rereads that fold.
 fn drain_daily(
     context: &ThinkContext,
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &mut RunLogWriter,
     runtime: &tokio::runtime::Runtime,
     pending: Vec<PendingUse>,
 ) -> ModeResult {
@@ -321,7 +319,7 @@ fn drain_daily(
 }
 
 fn log_daily_terminal(
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &mut RunLogWriter,
     context: &ThinkContext,
     item: &PendingUse,
     outcome: DrainOutcome,
@@ -329,7 +327,7 @@ fn log_daily_terminal(
     match outcome {
         DrainOutcome::Finish => {
             let mut fields = daily_terminal_fields(context, item, "finish");
-            log.log_event(
+            log.log(
                 "talent.complete",
                 context.now_ms,
                 std::mem::take(&mut fields),
@@ -351,7 +349,7 @@ fn log_daily_terminal(
 }
 
 fn log_daily_failure(
-    log: &mut RunLogWriter<std::fs::File>,
+    log: &mut RunLogWriter,
     context: &ThinkContext,
     name: &str,
     facet: Option<&str>,
@@ -367,7 +365,7 @@ fn log_daily_failure(
         "reason_code".to_owned(),
         Value::String(reason_code.to_owned()),
     );
-    log.log_event("talent.fail", context.now_ms, fields);
+    log.log("talent.fail", context.now_ms, fields);
 }
 
 fn daily_terminal_fields(

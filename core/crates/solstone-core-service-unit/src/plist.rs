@@ -5,8 +5,6 @@ use std::collections::BTreeMap;
 
 use plist::{Dictionary, Value};
 
-use crate::{ServiceUnitError, error::validate_journal_path};
-
 const SERVICE_LABEL: &str = "org.solpbc.solstone";
 const SERVICE_FILE_DESCRIPTOR_LIMIT: u32 = 4096;
 
@@ -15,11 +13,7 @@ pub fn render_launchd_plist(
     env: &BTreeMap<String, String>,
     launcher_path: &str,
     port: &str,
-    journal_path: &str,
-) -> Result<Vec<u8>, ServiceUnitError> {
-    validate_journal_path(journal_path)?;
-
-    let service_log = format!("{journal_path}/health/service.log");
+) -> Vec<u8> {
     let environment = env
         .iter()
         .map(|(key, value)| (key.clone(), Value::String(value.clone())))
@@ -45,8 +39,6 @@ pub fn render_launchd_plist(
         "EnvironmentVariables".into(),
         Value::Dictionary(environment),
     );
-    plist.insert("StandardOutPath".into(), Value::String(service_log.clone()));
-    plist.insert("StandardErrorPath".into(), Value::String(service_log));
     plist.insert("RunAtLoad".into(), Value::Boolean(true));
     plist.insert("KeepAlive".into(), Value::Dictionary(keep_alive));
     plist.insert(
@@ -58,7 +50,7 @@ pub fn render_launchd_plist(
     Value::Dictionary(plist)
         .to_writer_xml(&mut bytes)
         .expect("in-memory plist serializes");
-    Ok(bytes)
+    bytes
 }
 
 #[cfg(test)]
@@ -76,13 +68,7 @@ mod tests {
             ("PATH".to_owned(), "/usr/bin:/bin".to_owned()),
             ("PYTHONUNBUFFERED".to_owned(), "1".to_owned()),
         ]);
-        let bytes = render_launchd_plist(
-            &environment,
-            "/home/sol/.local/bin/journal",
-            "5015",
-            "/srv/journal",
-        )
-        .expect("valid journal path renders");
+        let bytes = render_launchd_plist(&environment, "/home/sol/.local/bin/journal", "5015");
         let plist = Value::from_reader_xml(bytes.as_slice()).expect("rendered plist parses");
         let dictionary = plist.as_dictionary().expect("plist dictionary");
 
@@ -98,8 +84,6 @@ mod tests {
                 "ProgramArguments",
                 "RunAtLoad",
                 "SoftResourceLimits",
-                "StandardErrorPath",
-                "StandardOutPath",
             ])
         );
         assert_eq!(dictionary["Label"].as_string(), Some("org.solpbc.solstone"));
@@ -120,14 +104,8 @@ mod tests {
                     .collect()
             )
         );
-        assert_eq!(
-            dictionary["StandardOutPath"].as_string(),
-            Some("/srv/journal/health/service.log")
-        );
-        assert_eq!(
-            dictionary["StandardErrorPath"].as_string(),
-            Some("/srv/journal/health/service.log")
-        );
+        assert!(!dictionary.contains_key("StandardOutPath"));
+        assert!(!dictionary.contains_key("StandardErrorPath"));
         assert_eq!(dictionary["RunAtLoad"].as_boolean(), Some(true));
         assert_eq!(
             dictionary["KeepAlive"]

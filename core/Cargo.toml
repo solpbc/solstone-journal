@@ -129,7 +129,6 @@ members = [
     "crates/solstone-core-reprocess-cli",
     "crates/solstone-core-backfill-cli",
     "crates/solstone-core-backup-web",
-    "crates/solstone-core-steward-prune",
     "crates/solstone-core-health-web",
     "crates/solstone-core-profile-web",
     "crates/solstone-core-stats-web",
@@ -242,7 +241,6 @@ solstone-core-spl = { path = "crates/solstone-core-spl" }
 solstone-core-sense = { path = "crates/solstone-core-sense" }
 solstone-core-cortex = { path = "crates/solstone-core-cortex" }
 solstone-core-service-unit = { path = "crates/solstone-core-service-unit" }
-solstone-core-steward-prune = { path = "crates/solstone-core-steward-prune" }
 solstone-core-health-web = { path = "crates/solstone-core-health-web" }
 solstone-core-profile-web = { path = "crates/solstone-core-profile-web" }
 solstone-core-stats-web = { path = "crates/solstone-core-stats-web" }

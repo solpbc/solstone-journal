@@ -198,3 +198,44 @@ fn extension_lower(path: &Path) -> Option<String> {
 fn is_talent_output(path: &Path) -> bool {
     matches!(extension_lower(path).as_deref(), Some("json" | "md"))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::io::Write;
+
+    use chrono::{FixedOffset, TimeZone};
+    use solstone_core_journal_io::{
+        JournalRoot,
+        operational_log::{OplogFormat, create_oplog_at},
+    };
+
+    use super::bounded_input_mtime;
+
+    #[test]
+    fn canonical_jsonl_oplog_is_a_bounded_day_cache_input() {
+        let root = tempfile::tempdir().unwrap();
+        let opened = FixedOffset::east_opt(0)
+            .unwrap()
+            .with_ymd_and_hms(2026, 6, 2, 12, 0, 0)
+            .unwrap();
+        let mut writer = create_oplog_at(
+            JournalRoot::open(root.path()).unwrap(),
+            "think",
+            "daily",
+            OplogFormat::Jsonl,
+            opened,
+        )
+        .unwrap();
+        let leaf = writer.leaf_name().to_owned();
+        writer.write_all(b"{\"event\":\"run.summary\"}\n").unwrap();
+        drop(writer);
+
+        let day = root.path().join("chronicle/20260602");
+        let expected = fs::metadata(day.join("health").join(leaf))
+            .unwrap()
+            .modified()
+            .unwrap();
+        assert_eq!(bounded_input_mtime(&day).unwrap(), Some(expected));
+    }
+}

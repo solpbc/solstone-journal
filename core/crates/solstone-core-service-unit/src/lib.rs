@@ -6,11 +6,9 @@
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
 mod env;
-mod error;
 mod plist;
 mod systemd;
 
 pub use env::build_service_environment;
-pub use error::{JournalPathRejection, ServiceUnitError};
 pub use plist::render_launchd_plist;
 pub use systemd::render_systemd_unit;

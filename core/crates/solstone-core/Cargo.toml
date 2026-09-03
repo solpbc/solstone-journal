@@ -42,6 +42,18 @@ name = "identity_cli"
 path = "tests/identity_cli.rs"
 
 [[test]]
+name = "heartbeat_cli"
+path = "tests/heartbeat_cli.rs"
+
+[[test]]
+name = "service_logs_cli"
+path = "tests/service_logs_cli.rs"
+
+[[test]]
+name = "service_capture_cli"
+path = "tests/service_capture_cli.rs"
+
+[[test]]
 name = "think_verb_fidelity"
 path = "tests/think_verb_fidelity.rs"
 
@@ -152,7 +164,6 @@ solstone-core-thinking.workspace = true
 solstone-core-top.workspace = true
 solstone-core-operational-logs.workspace = true
 solstone-core-service-unit.workspace = true
-solstone-core-steward-prune.workspace = true
 solstone-core-transfer.workspace = true
 solstone-core-transcribe.workspace = true
 solstone-core-streams-cli.workspace = true

@@ -104,7 +104,7 @@
           "method": "GET",
           "name": "api_log_valid",
           "normalized": [],
-          "path": "/app/health/api/log?path=20260403/health/health.log",
+          "path": "/app/health/api/log?path=chronicle/20260403/health/health.log",
           "response": {
             "body": {
               "detail": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
@@ -158,7 +158,7 @@
           "method": "GET",
           "name": "api_log_not_found",
           "normalized": [],
-          "path": "/app/health/api/log?path=20260403/health/missing.log",
+          "path": "/app/health/api/log?path=chronicle/20260403/health/missing.log",
           "response": {
             "body": {
               "detail": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
@@ -289,7 +289,7 @@
           "method": "GET",
           "name": "api_log_valid",
           "normalized": [],
-          "path": "/app/health/api/log?path=20260403/health/health.log",
+          "path": "/app/health/api/log?path=chronicle/20260403/health/health.log",
           "response": {
             "body": {
               "detail": "Log file not found",
@@ -343,7 +343,7 @@
           "method": "GET",
           "name": "api_log_not_found",
           "normalized": [],
-          "path": "/app/health/api/log?path=20260403/health/missing.log",
+          "path": "/app/health/api/log?path=chronicle/20260403/health/missing.log",
           "response": {
             "body": {
               "detail": "Log file not found",
@@ -543,16 +543,17 @@
           "method": "GET",
           "name": "api_log_valid",
           "normalized": [],
-          "path": "/app/health/api/log?path=20260403/health/health.log",
+          "path": "/app/health/api/log?path=chronicle/20260403/health/health.log",
           "response": {
             "body": {
-              "content": "2026-04-03 corpus health log\n",
-              "path": "20260403/health/health.log"
+              "detail": "Log file not found",
+              "error": "I couldn't find that file.",
+              "reason_code": "file_not_found"
             },
             "headers": {
               "Content-Type": "application/json"
             },
-            "status": 200
+            "status": 404
           }
         },
         {
@@ -596,7 +597,7 @@
           "method": "GET",
           "name": "api_log_not_found",
           "normalized": [],
-          "path": "/app/health/api/log?path=20260403/health/missing.log",
+          "path": "/app/health/api/log?path=chronicle/20260403/health/missing.log",
           "response": {
             "body": {
               "detail": "Log file not found",
@@ -774,16 +775,17 @@
           "method": "GET",
           "name": "api_log_valid",
           "normalized": [],
-          "path": "/app/health/api/log?path=20260403/health/health.log",
+          "path": "/app/health/api/log?path=chronicle/20260403/health/health.log",
           "response": {
             "body": {
-              "content": "2026-04-03 corpus health log\n",
-              "path": "20260403/health/health.log"
+              "detail": "Log file not found",
+              "error": "I couldn't find that file.",
+              "reason_code": "file_not_found"
             },
             "headers": {
               "Content-Type": "application/json"
             },
-            "status": 200
+            "status": 404
           }
         },
         {
@@ -827,7 +829,7 @@
           "method": "GET",
           "name": "api_log_not_found",
           "normalized": [],
-          "path": "/app/health/api/log?path=20260403/health/missing.log",
+          "path": "/app/health/api/log?path=chronicle/20260403/health/missing.log",
           "response": {
             "body": {
               "detail": "Log file not found",
@@ -992,16 +994,17 @@
           "method": "GET",
           "name": "api_log_valid",
           "normalized": [],
-          "path": "/app/health/api/log?path=20260403/health/health.log",
+          "path": "/app/health/api/log?path=chronicle/20260403/health/health.log",
           "response": {
             "body": {
-              "content": "2026-04-03 corpus health log\n",
-              "path": "20260403/health/health.log"
+              "detail": "Log file not found",
+              "error": "I couldn't find that file.",
+              "reason_code": "file_not_found"
             },
             "headers": {
               "Content-Type": "application/json"
             },
-            "status": 200
+            "status": 404
           }
         },
         {
@@ -1045,7 +1048,7 @@
           "method": "GET",
           "name": "api_log_not_found",
           "normalized": [],
-          "path": "/app/health/api/log?path=20260403/health/missing.log",
+          "path": "/app/health/api/log?path=chronicle/20260403/health/missing.log",
           "response": {
             "body": {
               "detail": "Log file not found",
@@ -1210,16 +1213,17 @@
           "method": "GET",
           "name": "api_log_valid",
           "normalized": [],
-          "path": "/app/health/api/log?path=20260403/health/health.log",
+          "path": "/app/health/api/log?path=chronicle/20260403/health/health.log",
           "response": {
             "body": {
-              "content": "2026-04-03 corpus health log\n",
-              "path": "20260403/health/health.log"
+              "detail": "Log file not found",
+              "error": "I couldn't find that file.",
+              "reason_code": "file_not_found"
             },
             "headers": {
               "Content-Type": "application/json"
             },
-            "status": 200
+            "status": 404
           }
         },
         {
@@ -1263,7 +1267,7 @@
           "method": "GET",
           "name": "api_log_not_found",
           "normalized": [],
-          "path": "/app/health/api/log?path=20260403/health/missing.log",
+          "path": "/app/health/api/log?path=chronicle/20260403/health/missing.log",
           "response": {
             "body": {
               "detail": "Log file not found",
@@ -1412,7 +1416,7 @@
           "method": "GET",
           "name": "api_log_valid",
           "normalized": [],
-          "path": "/app/health/api/log?path=20260403/health/health.log",
+          "path": "/app/health/api/log?path=chronicle/20260403/health/health.log",
           "response": {
             "body": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
             "headers": {
@@ -1457,7 +1461,7 @@
           "method": "GET",
           "name": "api_log_not_found",
           "normalized": [],
-          "path": "/app/health/api/log?path=20260403/health/missing.log",
+          "path": "/app/health/api/log?path=chronicle/20260403/health/missing.log",
           "response": {
             "body": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
             "headers": {

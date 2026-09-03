@@ -1489,17 +1489,6 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
-id = "package::solstone-core-steward-prune"
-package = "solstone-core-steward-prune"
-set = "component"
-areas = ["backup"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-runtime = "none"
-
-[[package_suites]]
 id = "package::solstone-core-streams-cli"
 package = "solstone-core-streams-cli"
 set = "component"
@@ -1847,9 +1836,48 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core::heartbeat_cli"
+package = "solstone-core"
+target = "heartbeat_cli"
+set = "component"
+areas = ["core"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core::identity_cli"
 package = "solstone-core"
 target = "identity_cli"
+set = "component"
+areas = ["core"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core::service_capture_cli"
+package = "solstone-core"
+target = "service_capture_cli"
+set = "component"
+areas = ["core"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core::service_logs_cli"
+package = "solstone-core"
+target = "service_logs_cli"
 set = "component"
 areas = ["core"]
 platforms = ["linux", "macos"]
@@ -4022,58 +4050,6 @@ package = "solstone-core-spp-ratls"
 target = "composite_oracles"
 set = "component"
 areas = ["trust"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-steward-prune::adversarial"
-package = "solstone-core-steward-prune"
-target = "adversarial"
-set = "component"
-areas = ["backup"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-steward-prune::allocation_accounting"
-package = "solstone-core-steward-prune"
-target = "allocation_accounting"
-set = "component"
-areas = ["backup"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-steward-prune::reference_oracle"
-package = "solstone-core-steward-prune"
-target = "reference_oracle"
-set = "component"
-areas = ["backup"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-steward-prune::rows"
-package = "solstone-core-steward-prune"
-target = "rows"
-set = "component"
-areas = ["backup"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"

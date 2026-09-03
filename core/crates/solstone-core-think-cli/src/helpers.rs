@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -43,19 +41,4 @@ pub(crate) fn emit(journal: &Path, now_ms: i64, event: &str, fields: Map<String,
     CallosumOneShotSender::new(journal.join("health/callosum.sock"), SOCKET_TIMEOUT)
         .send_line(&line)
         .is_ok()
-}
-
-/// Best-effort per-day operator log, matching `utils.py:927-929`.
-pub(crate) fn day_log(journal: &Path, day: &str, now_ms: i64, message: &str) {
-    let path = journal.join("chronicle").join(day).join("task_log.txt");
-    let Some(parent) = path.parent() else {
-        return;
-    };
-    if std::fs::create_dir_all(parent).is_err() {
-        return;
-    }
-    let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) else {
-        return;
-    };
-    let _ = writeln!(file, "{}\t{}", now_ms.div_euclid(1000), message);
 }

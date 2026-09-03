@@ -3,9 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use solstone_core_service_unit::{
-    JournalPathRejection, ServiceUnitError, render_launchd_plist, render_systemd_unit,
-};
+use solstone_core_service_unit::{render_launchd_plist, render_systemd_unit};
 
 mod support;
 
@@ -23,9 +21,8 @@ fn hostile_printable_values_round_trip_through_independent_parsers() {
     let env = environment(hostile);
     let launcher = format!("/opt/{hostile}/journal");
     let port = format!("5{hostile}");
-    let journal = "/srv/journal";
-    let plist = render_launchd_plist(&env, &launcher, &port, journal).expect("plist renders");
-    let unit = render_systemd_unit(&env, &launcher, &port, journal).expect("unit renders");
+    let plist = render_launchd_plist(&env, &launcher, &port);
+    let unit = render_systemd_unit(&env, &launcher, &port);
     let parsed_plist = support::parse_plist(&plist);
     let parsed_unit = support::parse_unit(&unit);
     let dictionary = parsed_plist.as_dictionary().expect("plist dictionary");
@@ -46,14 +43,8 @@ fn control_characters_in_non_journal_fields_stay_within_one_directive_line() {
     let control = "line\ncontrol\u{1}";
     let env = environment(control);
     let launcher = format!("/opt/{control}/journal");
-    let unit = render_systemd_unit(&env, &launcher, "5015", "/srv/journal").expect("unit renders");
-    let baseline = render_systemd_unit(
-        &environment("/home/sol"),
-        "/opt/journal",
-        "5015",
-        "/srv/journal",
-    )
-    .expect("baseline renders");
+    let unit = render_systemd_unit(&env, &launcher, "5015");
+    let baseline = render_systemd_unit(&environment("/home/sol"), "/opt/journal", "5015");
     let exec_line = unit
         .lines()
         .find(|line| line.starts_with("ExecStart="))
@@ -71,39 +62,16 @@ fn control_characters_in_non_journal_fields_stay_within_one_directive_line() {
 }
 
 #[test]
-fn rejects_legacy_and_unicode_category_journal_characters() {
-    for character in ['$', '`', '"', '\\', '\n'] {
-        assert_eq!(
-            render_systemd_unit(
-                &environment("/home/sol"),
-                "/opt/journal",
-                "5015",
-                &format!("/srv/{character}")
-            )
-            .unwrap_err(),
-            ServiceUnitError::InvalidJournalPath(JournalPathRejection::LegacyReserved {
-                character
-            })
-        );
-    }
-    for (character, category) in [
-        ('\u{1}', "Cc"),
-        ('\u{ad}', "Cf"),
-        ('\u{2028}', "Zl"),
-        ('\u{2029}', "Zp"),
-    ] {
-        assert_eq!(
-            render_launchd_plist(
-                &environment("/home/sol"),
-                "/opt/journal",
-                "5015",
-                &format!("/srv/{character}")
-            )
-            .unwrap_err(),
-            ServiceUnitError::InvalidJournalPath(JournalPathRejection::ForbiddenCategory {
-                character,
-                category,
-            })
-        );
-    }
+fn rendered_units_have_no_journal_owned_output_directives() {
+    let environment = environment("/home/sol");
+    let systemd = render_systemd_unit(&environment, "/opt/journal", "5015");
+    assert!(!systemd.contains("StandardOutput="));
+    assert!(!systemd.contains("StandardError="));
+    let plist = render_launchd_plist(&environment, "/opt/journal", "5015");
+    let dictionary = plist::Value::from_reader_xml(plist.as_slice())
+        .unwrap()
+        .into_dictionary()
+        .unwrap();
+    assert!(!dictionary.contains_key("StandardOutPath"));
+    assert!(!dictionary.contains_key("StandardErrorPath"));
 }

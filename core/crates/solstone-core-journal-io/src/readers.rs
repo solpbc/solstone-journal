@@ -16,6 +16,9 @@ use nix::errno::Errno;
 use serde::de::DeserializeOwned;
 
 use crate::errors::{MalformedDataError, ReadError};
+use crate::operational_log::{
+    OplogNameClassification, classify_oplog_name, validate_oplog_admission,
+};
 
 /// Response to malformed non-empty JSON data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -290,22 +293,23 @@ pub fn read_jsonl_with_report<T: DeserializeOwned>(
             malformed_line_count: 0,
         });
     }
+    let (payload, first_line) = oplog_payload(path, &contents).unwrap_or((&contents, 1));
     let mut records = Vec::new();
     let mut malformed_line_count = 0;
-    for (index, line) in contents.split(|byte| *byte == b'\n').enumerate() {
+    for (index, line) in payload.split(|byte| *byte == b'\n').enumerate() {
         if line.iter().all(u8::is_ascii_whitespace) {
             continue;
         }
         match serde_json::from_slice(line) {
             Ok(value) => records.push(JsonlRecord {
                 value,
-                line_number: index + 1,
+                line_number: first_line + index,
             }),
             Err(source) => match on_error {
                 MalformedPolicy::Raise => {
                     return Err(ReadError::Malformed(MalformedDataError {
                         path: path.to_path_buf(),
-                        line: Some(index + 1),
+                        line: Some(first_line + index),
                         source,
                     }));
                 }
@@ -317,7 +321,7 @@ pub fn read_jsonl_with_report<T: DeserializeOwned>(
                     log::warn!(
                         "malformed JSONL record in {} at line {}: {source}",
                         path.display(),
-                        index + 1
+                        first_line + index
                     );
                 }
             },
@@ -327,6 +331,20 @@ pub fn read_jsonl_with_report<T: DeserializeOwned>(
         records,
         malformed_line_count,
     })
+}
+
+/// Return the payload after a validated canonical oplog admission record.
+///
+/// Ordinary JSONL remains byte-for-byte compatible.  A merely similar first
+/// JSON object is never suppressed: both the canonical leaf and its admission
+/// record must validate under the operational-log grammar.
+fn oplog_payload<'a>(path: &Path, contents: &'a [u8]) -> Option<(&'a [u8], usize)> {
+    let leaf = path.file_name()?;
+    let OplogNameClassification::Candidate(Ok(_)) = classify_oplog_name(leaf) else {
+        return None;
+    };
+    let admission = validate_oplog_admission(leaf, contents).ok()?;
+    Some((&contents[admission.header_len()..], 2))
 }
 
 /// Read UTF-8 text, treating a missing path as `default`.
@@ -538,8 +556,10 @@ fn io_error(path: &Path, source: io::Error) -> ReadError {
 mod tests {
     use std::ffi::OsStr;
     use std::fs;
+    use std::io::Write;
     use std::sync::{Mutex, Once, OnceLock};
 
+    use chrono::{FixedOffset, TimeZone};
     use log::{Level, LevelFilter, Log, Metadata, Record};
     use nix::errno::Errno;
     use nix::fcntl::{AT_FDCWD, OFlag, openat};
@@ -690,6 +710,47 @@ mod tests {
                 .unwrap()
                 .iter()
                 .any(|entry| entry.contains("line 2"))
+        );
+    }
+
+    #[test]
+    fn valid_oplog_admission_is_not_a_jsonl_payload_record() {
+        let temporary = TempDir::new();
+        let opened = FixedOffset::east_opt(0)
+            .unwrap()
+            .with_ymd_and_hms(2026, 8, 7, 12, 0, 0)
+            .single()
+            .unwrap();
+        let mut writer = crate::operational_log::create_oplog_at(
+            crate::JournalRoot::open(temporary.path()).unwrap(),
+            "think",
+            "daily",
+            crate::operational_log::OplogFormat::Jsonl,
+            opened,
+        )
+        .unwrap();
+        let path = temporary
+            .path()
+            .join("chronicle/20260807/health")
+            .join(writer.leaf_name());
+        writer.write_all(b"1\nnot-json\n2\n").unwrap();
+        drop(writer);
+
+        let report =
+            read_jsonl_with_report::<u8>(&path, Vec::new(), MalformedPolicy::Skip).unwrap();
+        assert_eq!(report.malformed_line_count, 1);
+        assert_eq!(
+            report.records,
+            vec![
+                JsonlRecord {
+                    value: 1,
+                    line_number: 2,
+                },
+                JsonlRecord {
+                    value: 2,
+                    line_number: 4,
+                },
+            ]
         );
     }
 

@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 use chrono::NaiveDateTime;
-use solstone_core_journal_io::{JournalRoot, operational_log::catalog_oplogs};
+use solstone_core_journal_io::{
+    JournalRoot,
+    operational_log::{OplogCatalogEntry, OplogFormat, catalog_oplogs},
+};
 use solstone_core_system::operational_log_parse::{ParsedHealthLogRow, parse_health_log_row};
 use solstone_core_system_health::GrepPattern;
 
@@ -19,6 +23,84 @@ pub struct HealthLogsQuery {
     pub since: Option<NaiveDateTime>,
     pub service: Option<String>,
     pub grep: Option<GrepPattern>,
+}
+
+/// Raw source-filtered tail plus the descriptor frontiers that produced it.
+///
+/// The retained descriptors are intentionally opaque: callers can render the
+/// bytes and then transfer the exact descriptors to [`crate::run_follow_from_snapshot`]
+/// without reopening by path.
+pub struct SourceTailSnapshot {
+    source_slug: String,
+    tail: Vec<u8>,
+    entries: Vec<(OplogCatalogEntry, File, u64)>,
+}
+
+impl SourceTailSnapshot {
+    /// The source coordinate used to retain this snapshot.
+    pub fn source_slug(&self) -> &str {
+        &self.source_slug
+    }
+
+    /// Raw payload bytes retained for the one-shot tail.
+    pub fn tail(&self) -> &[u8] {
+        &self.tail
+    }
+
+    /// Whether at least one canonical source leaf was retained.
+    pub fn has_descriptors(&self) -> bool {
+        !self.entries.is_empty()
+    }
+
+    pub(crate) fn into_catalogued_frontiers(self) -> Vec<(OplogCatalogEntry, File, u64)> {
+        self.entries
+    }
+}
+
+/// Collect today's raw `.log` tail for one canonical source and retain its
+/// exact descriptor frontiers for a subsequent follow handoff.
+pub fn collect_source_tail_snapshot(
+    journal_root: &Path,
+    now: NaiveDateTime,
+    source_slug: &str,
+    tail_byte_limit: usize,
+) -> Result<SourceTailSnapshot, CollectError> {
+    let root = JournalRoot::open(journal_root).map_err(|_| CollectError::Root)?;
+    let snapshot = catalog_oplogs(root, &[now.date()]).map_err(CollectError::Catalog)?;
+    let mut tail = Vec::new();
+    let mut entries = Vec::new();
+    for (entry, mut file) in snapshot.into_catalogued_entries() {
+        if entry.name().source().display_slug() != source_slug
+            || entry.name().format() != OplogFormat::Log
+        {
+            continue;
+        }
+        let frontier = file.metadata().map_err(|_| CollectError::CatalogIo)?.len();
+        let payload_offset = entry.payload_offset() as u64;
+        if frontier < payload_offset {
+            return Err(CollectError::CatalogIo);
+        }
+        let start = frontier
+            .saturating_sub(u64::try_from(tail_byte_limit).unwrap_or(u64::MAX))
+            .max(payload_offset);
+        file.seek(SeekFrom::Start(start))
+            .map_err(|_| CollectError::CatalogIo)?;
+        let byte_count = usize::try_from(frontier - start).map_err(|_| CollectError::CatalogIo)?;
+        let mut bytes = vec![0; byte_count];
+        file.read_exact(&mut bytes)
+            .map_err(|_| CollectError::CatalogIo)?;
+        tail.extend(bytes);
+        if tail.len() > tail_byte_limit {
+            let retained_start = tail.len() - tail_byte_limit;
+            tail.drain(..retained_start);
+        }
+        entries.push((entry, file, frontier));
+    }
+    Ok(SourceTailSnapshot {
+        source_slug: source_slug.to_owned(),
+        tail,
+        entries,
+    })
 }
 
 /// Collect and order today's canonical operational logs without rendering them.
@@ -250,5 +332,37 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["beta-8", "gamma-9"]
         );
+    }
+
+    #[test]
+    fn source_tail_snapshot_filters_sources_and_skips_admission_bytes() {
+        use std::io::Write;
+
+        let temporary = tempfile::tempdir().unwrap();
+        let opened = FixedOffset::east_opt(0)
+            .unwrap()
+            .with_ymd_and_hms(2026, 8, 7, 12, 0, 0)
+            .single()
+            .unwrap();
+        for (source, payload) in [
+            ("service", b"stdout\nstderr\n".as_slice()),
+            ("other", b"hidden\n"),
+        ] {
+            let mut writer = create_oplog_at(
+                JournalRoot::open(temporary.path()).unwrap(),
+                source,
+                "run",
+                OplogFormat::Log,
+                opened,
+            )
+            .unwrap();
+            writer.write_all(payload).unwrap();
+        }
+        let snapshot =
+            collect_source_tail_snapshot(temporary.path(), opened.naive_local(), "service", 32)
+                .unwrap();
+        assert!(snapshot.has_descriptors());
+        assert_eq!(snapshot.source_slug(), "service");
+        assert_eq!(snapshot.tail(), b"stdout\nstderr\n");
     }
 }

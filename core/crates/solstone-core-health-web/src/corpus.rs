@@ -6,8 +6,13 @@ use axum::{
     http::{Request, StatusCode},
     response::IntoResponse,
 };
-use chrono::TimeZone;
+use chrono::{FixedOffset, TimeZone};
 use serde_json::{Value, json};
+use solstone_core_journal_io::{
+    JournalRoot,
+    operational_log::{OplogFormat, create_oplog_at},
+};
+use std::io::Write;
 use tower::ServiceExt;
 
 fn corpus() -> Value {
@@ -484,12 +489,12 @@ async fn ac10_and_ac11_log_reads_are_whole_and_safely_classified() {
     }
 
     let root = crate::test_support::root();
-    let health = root.path().join("20240101/health");
+    let health = root.path().join("chronicle/20240101/health");
     std::fs::create_dir_all(&health).unwrap();
     let content = "whole-file-log\n".repeat(10_000);
     assert!(content.len() > 100_000);
     std::fs::write(health.join("large.log"), &content).unwrap();
-    let (status, body) = get(root.path(), "20240101/health/large.log").await;
+    let (status, body) = get(root.path(), "chronicle/20240101/health/large.log").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["content"], content);
 
@@ -497,18 +502,41 @@ async fn ac10_and_ac11_log_reads_are_whole_and_safely_classified() {
     let outside_file = outside.path().join("outside.log");
     std::fs::write(&outside_file, "outside").unwrap();
     std::os::unix::fs::symlink(&outside_file, health.join("escape.log")).unwrap();
-    let (status, body) = get(root.path(), "20240101/health/escape.log").await;
+    let (status, body) = get(root.path(), "chronicle/20240101/health/escape.log").await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["reason_code"], "invalid_path");
 
-    let (status, body) = get(root.path(), "20240101/health/missing.log").await;
+    let (status, body) = get(root.path(), "chronicle/20240101/health/missing.log").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["reason_code"], "file_not_found");
 
     std::fs::create_dir(health.join("unreadable.log")).unwrap();
-    let (status, body) = get(root.path(), "20240101/health/unreadable.log").await;
+    let (status, body) = get(root.path(), "chronicle/20240101/health/unreadable.log").await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(body["reason_code"], "file_read_failed");
+
+    let opened = FixedOffset::east_opt(0)
+        .unwrap()
+        .with_ymd_and_hms(2024, 1, 1, 12, 0, 0)
+        .unwrap();
+    let mut writer = create_oplog_at(
+        JournalRoot::open(root.path()).unwrap(),
+        "service",
+        "supervisor",
+        OplogFormat::Log,
+        opened,
+    )
+    .unwrap();
+    let leaf = writer.leaf_name().to_owned();
+    writer.write_all(b"canonical service output\n").unwrap();
+    drop(writer);
+    let (status, body) = get(root.path(), &format!("chronicle/20240101/health/{leaf}")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body["content"]
+            .as_str()
+            .is_some_and(|content| content.contains("canonical service output\n"))
+    );
 }
 
 #[tokio::test]

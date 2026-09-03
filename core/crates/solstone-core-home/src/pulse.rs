@@ -462,12 +462,35 @@ fn summarize_yesterday_processing(context: &HomeContext, journal_age_days: i64) 
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::io::Write;
     use std::path::Path;
 
-    use chrono::TimeZone;
+    use chrono::{FixedOffset, NaiveDate, TimeZone};
+    use solstone_core_journal_io::{
+        JournalRoot,
+        operational_log::{OplogFormat, create_oplog_at},
+    };
     use tempfile::TempDir;
 
     use super::*;
+
+    fn write_think_oplog(root: &Path, day: &str, run: &str, text: &str) {
+        let day = NaiveDate::parse_from_str(day, "%Y%m%d").unwrap();
+        let opened = FixedOffset::east_opt(0)
+            .unwrap()
+            .from_local_datetime(&day.and_hms_opt(12, 0, 0).unwrap())
+            .single()
+            .unwrap();
+        let mut writer = create_oplog_at(
+            JournalRoot::open(root).unwrap(),
+            "think",
+            run,
+            OplogFormat::Jsonl,
+            opened,
+        )
+        .unwrap();
+        writer.write_all(text.as_bytes()).unwrap();
+    }
 
     #[test]
     fn empty_payload_has_exact_public_key_set_and_naive_microsecond_now() {
@@ -540,7 +563,7 @@ mod tests {
 
     #[test]
     fn empty_fixture_matches_the_captured_pulse_and_briefing() {
-        let context = fixture_context(
+        let (_fixture, context) = fixture_context(
             "convey_home_empty_journal",
             Utc.with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
                 .unwrap()
@@ -554,7 +577,7 @@ mod tests {
 
     #[test]
     fn seeded_fixture_matches_the_captured_pulse_and_briefing() {
-        let context = fixture_context(
+        let (_fixture, context) = fixture_context(
             "convey_home_seeded_journal",
             Utc.with_ymd_and_hms(2026, 8, 14, 23, 25, 13)
                 .unwrap()
@@ -743,8 +766,6 @@ mod tests {
     #[test]
     fn pipeline_summary_caps_real_failures_before_gap_links() {
         let root = TempDir::new().unwrap();
-        let health = root.path().join("chronicle/20260813/health");
-        fs::create_dir_all(&health).unwrap();
         let failures = (0..21)
             .map(|index| {
                 json!({
@@ -758,7 +779,7 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        fs::write(health.join("failures_daily.jsonl"), format!("{failures}\n")).unwrap();
+        write_think_oplog(root.path(), "20260813", "daily", &format!("{failures}\n"));
         let context = HomeContext::new(
             root.path(),
             Utc.with_ymd_and_hms(2026, 8, 14, 13, 0, 0).unwrap(),
@@ -904,7 +925,7 @@ mod tests {
 
     #[test]
     fn assembly_keeps_muted_activities_but_excludes_them_from_yesterday_processing() {
-        let context = fixture_context(
+        let (_fixture, context) = fixture_context(
             "convey_home_seeded_journal",
             Utc.with_ymd_and_hms(2026, 8, 14, 23, 25, 13)
                 .unwrap()
@@ -1036,13 +1057,34 @@ mod tests {
         assert!(card.get("horizon_note").is_none());
     }
 
-    fn fixture_context(fixture: &str, now: DateTime<Utc>) -> HomeContext {
-        HomeContext::new(
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../fixtures")
-                .join(fixture),
-            now,
-        )
+    fn fixture_context(fixture: &str, now: DateTime<Utc>) -> (TempDir, HomeContext) {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures")
+            .join(fixture);
+        let root = TempDir::new().unwrap();
+        copy_fixture(&source, root.path());
+        if fixture == "convey_home_seeded_journal" {
+            write_think_oplog(
+                root.path(),
+                "20260813",
+                "daily",
+                "{\"event\":\"run.summary\"}\n",
+            );
+        }
+        let context = HomeContext::new(root.path(), now);
+        (root, context)
+    }
+
+    fn copy_fixture(source: &Path, destination: &Path) {
+        fs::create_dir_all(destination).unwrap();
+        for entry in fs::read_dir(source).unwrap().filter_map(Result::ok) {
+            let target = destination.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy_fixture(&entry.path(), &target);
+            } else {
+                fs::copy(entry.path(), target).unwrap();
+            }
+        }
     }
 
     fn reference_payload(name: &str) -> Value {

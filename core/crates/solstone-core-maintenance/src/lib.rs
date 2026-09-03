@@ -170,6 +170,7 @@ fn format_backup_resolution_error(args: &[String], reason: &str) -> CliRun {
             dry_run: false,
             reason_detail: None,
             details: vec![],
+            audit_recording_failure: None,
             recording_failure: None,
         }),
         _ => format!("backup: error reason={reason}"),
