@@ -11,9 +11,7 @@ use std::process::ExitCode;
 use serde_json::Value;
 use solstone_core_cli::DESCRIBE_USAGE;
 use solstone_core_describe::selection::{CategoryOverride, Importance};
-use solstone_core_describe::{
-    ConveyFiducialMask, WinnowConfig, pipeline, process_video_with_transform_metadata,
-};
+use solstone_core_describe::{WinnowConfig, pipeline, process_video_metadata};
 use solstone_core_journal_config::read_journal_config;
 
 const EXIT_DECODE_FAILURE: u8 = 2;
@@ -79,12 +77,7 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
         }
         Command::FramesOnly(arguments) => {
             let config = read_config(arguments.journal.as_deref())?;
-            let mut transform = ConveyFiducialMask;
-            let result = process_video_with_transform_metadata(
-                &arguments.video_path,
-                &mut transform,
-                config.winnow,
-            );
+            let result = process_video_metadata(&arguments.video_path, config.winnow);
             if result.decode_failed {
                 return Err(CliError::Decode(format!(
                     "failed to decode video: {}",

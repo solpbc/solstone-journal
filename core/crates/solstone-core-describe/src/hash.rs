@@ -1,11 +1,11 @@
-use crate::RgbFrame;
+use crate::decode::RgbFrame;
 
 const HASH_WIDTH: u32 = 9;
 const HASH_HEIGHT: u32 = 8;
 const RESAMPLE_PRECISION_BITS: i32 = 22;
 
 /// Compute the 64-bit difference hash used by Python's `VideoProcessor`.
-pub fn dhash(frame: &RgbFrame) -> u64 {
+pub(crate) fn dhash(frame: &RgbFrame) -> u64 {
     let gray = resize_and_grayscale(frame);
     if gray.len() != (HASH_WIDTH * HASH_HEIGHT) as usize {
         return 0;
@@ -141,7 +141,7 @@ pub fn format_dhash(hash: u64) -> String {
 #[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use super::{dhash, format_dhash, resize_and_grayscale};
-    use crate::RgbFrame;
+    use crate::decode::RgbFrame;
 
     #[test]
     fn all_black_frame_hashes_to_zero() {

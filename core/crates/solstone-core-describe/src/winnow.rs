@@ -226,25 +226,4 @@ mod tests {
             ]
         );
     }
-
-    #[test]
-    fn omitting_a_masked_frame_keeps_the_last_kept_reference() {
-        let anchor = HashedFrame {
-            timestamp: 0.0,
-            hash: 0,
-        };
-        let masked = HashedFrame {
-            timestamp: 6.0,
-            hash: 0b1111_1111,
-        };
-        let later = HashedFrame {
-            timestamp: 7.0,
-            hash: 0b1111_1111,
-        };
-        let (without_masked, _) = winnow(&[anchor, later], &config());
-        let (with_masked, _) = winnow(&[anchor, masked, later], &config());
-        assert_eq!(without_masked[1], WinnowVerdict::SceneCut);
-        assert_eq!(with_masked[2], WinnowVerdict::BelowThreshold);
-        assert_ne!(without_masked[1], with_masked[2]);
-    }
 }

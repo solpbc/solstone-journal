@@ -540,7 +540,6 @@
                 "additionalProperties": true,
                 "type": "object"
               },
-              "aruco": {},
               "content": {
                 "additionalProperties": true,
                 "type": "object"

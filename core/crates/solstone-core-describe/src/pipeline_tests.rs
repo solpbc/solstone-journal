@@ -5,7 +5,7 @@
 
 //! Private, in-process coverage for describe pipeline semantics.
 //!
-//! The `cli` integration harness retains the native decode, masking, detector,
+//! The `cli` integration harness retains the native decode, detector,
 //! session-child, and command-line contracts. These tests deliberately supply
 //! decoded PNG frames and a synchronous session so pipeline behavior does not
 //! require repeatedly transcoding the video corpus or spawning a helper child.
@@ -296,7 +296,6 @@ fn decoded(frame_ids: &[u64]) -> DescribeResult {
             .map(|(index, frame_id)| QualifiedFrame {
                 frame_id: *frame_id,
                 timestamp: index as f64 / 10.0,
-                aruco: None,
                 png: png(),
             })
             .collect(),

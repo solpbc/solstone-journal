@@ -14,7 +14,8 @@ use solstone_core_processing_record::{
     read_processing_record_header, record_attempts, should_reenter_analysis_output, vocab,
 };
 
-use crate::decode::{QualifiedFrame, process_video_with_transform, resize_for_vlm_png};
+use crate::WinnowConfig;
+use crate::decode::{QualifiedFrame, process_video, resize_for_vlm_png};
 use crate::detect;
 use crate::extraction;
 use crate::merge;
@@ -22,7 +23,6 @@ use crate::notify;
 use crate::request;
 use crate::selection::{self, CategorizedFrame, CategoryOverride, SelectionError};
 use crate::session::{DescribeSession, DescribeSessionFactory, SystemSessionFactory};
-use crate::{ConveyFiducialMask, WinnowConfig};
 
 pub const EXIT_PROVIDER_BLOCKED: i32 = 69;
 const MAX_ATTEMPTS: u64 = 5;
@@ -136,8 +136,7 @@ pub fn run_with_factory(
     if options.jobs == 0 {
         return Err(RunError::Internal("--jobs must be positive".to_owned()));
     }
-    let mut transform = ConveyFiducialMask;
-    let decoded = process_video_with_transform(options.video, &mut transform, options.config);
+    let decoded = process_video(options.video, options.config);
     run_decoded(options, factory, decoded)
 }
 
@@ -145,7 +144,7 @@ pub fn run_with_factory(
 ///
 /// Keeping this seam private lets pipeline tests use small, valid synthetic frame
 /// data while the CLI integration suite continues to prove the native decode,
-/// masking, child-session, detector, and command-line boundaries.
+/// child-session, detector, and command-line boundaries.
 fn run_decoded(
     options: DescribeOptions<'_>,
     factory: &dyn DescribeSessionFactory,

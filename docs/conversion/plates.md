@@ -105,15 +105,15 @@ Media processing: an ingested segment's raw media becoming analysed output on di
 
 ⚠ **"Emits two strands" is stale** — it predates the wire/durable split. This plate emits **five** Tier-1 strands with five different contracts (`:journal-segment` fixture · `:system` schema · `:journal-segment-events` fixture · `:thinking` schema · `:segment-processing` fixture) plus the Tier-2 `S:segment-sense:speaker-id`. ⛔ The wire and durable halves of the event contract are deliberately separate; do not re-merge them.
 
-**Shape, re-measured 2026-08-13 — the plate is NATIVE.** One long-running dispatcher plus three
-handlers, all separate processes. ⛔ `observe/sense.py` and `observe/describe.py` **no longer exist**;
+**Shape, updated 2026-09-03: the plate is NATIVE.** The native cut was re-measured 2026-08-13.
+One long-running dispatcher plus three handlers, all separate processes. ⛔ `observe/sense.py` and `observe/describe.py` **no longer exist**;
 both were deleted from `main` on 2026-08-13 .
 
 | | Module | Reads | Writes | Notes |
 |---|---|---|---|---|
 | dispatcher | **`solstone-core-sense`** (library crate, wired as the `solstone-core sense` subcommand) | the `observe.observing` bus event, or a `--day` scan | nothing in the segment | spawns handlers by **file extension**, one worker pool per handler, memory-gated, per-job wall-clock caps (`describe` 1800s · `transcribe` 2700s · `depict` 600s) |
 | audio | `observe/transcribe/` (~3,100) | `.flac .opus .ogg .m4a .mp3 .wav` | `<stem>.jsonl`, `<stem>.npz` | VAD → silence reduction → backend registry → STT → native speaker analysis |
-| screen | **`solstone-core-describe`** (sibling binary, 7,221 lines) | `.webm .mp4 .mov` | `<stem>.jsonl` | dHash winnow → ArUco mask → categorize → select → extract. ⚠ **Linux-only** — see below |
+| screen | **`solstone-core-describe`** (sibling binary) | `.webm .mp4 .mov` | `<stem>.jsonl` | dHash winnow → categorize → select → extract. ⚠ **Linux-only** — see below |
 | image reference | `observe/depict.py` (104) | `.png .jpg .jpeg .heic .heif .gif .webp .tiff` | `<stem>.jsonl` | frozen oracle for the native handler |
 
 🍎 **`describe` ships Linux-only, deliberately.** A macOS journal host has no `journal describe`: it
@@ -180,8 +180,6 @@ Both are gated only by `transcribe.preserve_all`, which **defaults to false**, a
 🆕 ⚠ **`describe` DOES write a processing record** — it stamps one at every terminal promote, including `attempts` on failures, and `should_reenter_analysis_output` is keyed on it. **`depict` wrote none in Python**; `solstone-core-depict` now writes one. A still image still cannot be proven consumed for retention — because `expected_handler` returns `None` for image extensions (the closed set does not claim them), not because a record is absent.
 
 🆕 🔴 **Truncation is invisible to this plate.** Measured against a reference-observed corpus (`core/fixtures/describe_frames.json`): a WebM cut short by a crashed recorder decodes **cleanly** to a shorter frame set with no decode-failure flag, so the handler records `analyzed` / `ok` over a partial description and nothing anywhere says frames were lost. Corruption early in the stream does set the flag, and yields nothing. ⚠ The reference's branch that returns already-collected frames *alongside* a decode failure was unreachable across a sweep of 46 corruption offsets at two widths — it is unpinned by any corpus.
-
-🆕 ⚠ **The frame loop's order is not the obvious one, and a rebuild that gets it wrong stays green.** Per decoded frame: the `raw` counter increments **before** the presentation-timestamp check; the fiducial mask runs **before** the perceptual hash, so the hash is computed on the *masked* image; and a frame the mask rejects consumes its frame index without advancing the winnow's last-kept reference. ⛔ A corpus carrying no fiducials cannot detect the mask being applied after the winnow instead of before the hash.
 
 ## `P-index`
 
