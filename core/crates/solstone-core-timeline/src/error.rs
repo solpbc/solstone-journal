@@ -86,6 +86,8 @@ pub enum TimelineError {
     DurabilityUncertain { path: PathBuf, detail: String },
     #[error("timeline publication did not complete for {}: {detail}", path.display())]
     PublicationNotConfirmed { path: PathBuf, detail: String },
+    #[error("timeline publication failed ({primary}); terminal state write also failed ({state})")]
+    TerminalStateWriteFailed { primary: String, state: String },
     #[error(transparent)]
     Io(#[from] io::Error),
     #[error(transparent)]

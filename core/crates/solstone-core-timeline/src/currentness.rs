@@ -42,17 +42,17 @@ pub fn evaluate_artifact_currentness(
     {
         return Ok(ArtifactCurrentness::Stale);
     }
-    let has_newer_unsuccessful_attempt = state.attempts.iter().any(|(key, attempt)| {
+    let has_newer_incomplete_attempt = state.attempts.iter().any(|(key, attempt)| {
         matches!(
             attempt.outcome,
-            AttemptOutcome::Failed | AttemptOutcome::DurabilityUncertain
+            AttemptOutcome::Running | AttemptOutcome::Failed | AttemptOutcome::DurabilityUncertain
         ) && attempt_subject(key, &attempt.attempt_id).is_some_and(|attempt_subject| {
             attempt_subject == subject
-                && attempt.started_at_ms > artifact_generated_at_ms
+                && attempt.started_at_ms >= artifact_generated_at_ms
                 && attempt.input_digest != artifact_input_digest
         })
     });
-    Ok(if has_newer_unsuccessful_attempt {
+    Ok(if has_newer_incomplete_attempt {
         ArtifactCurrentness::Stale
     } else {
         ArtifactCurrentness::Current
@@ -114,6 +114,56 @@ mod tests {
             evaluate_artifact_currentness(root.path(), SUBJECT, "known-input", 10, ARTIFACT)
                 .expect("currentness"),
             ArtifactCurrentness::Stale
+        );
+    }
+
+    #[test]
+    fn running_or_failed_attempt_at_the_same_timestamp_is_conservatively_stale() {
+        for outcome in [AttemptOutcome::Running, AttemptOutcome::Failed] {
+            let root = tempfile::tempdir().expect("journal");
+            let mut state = state();
+            state.attempts.insert(
+                format!("{SUBJECT}:same-time"),
+                AttemptStateV1 {
+                    attempt_id: "same-time".to_owned(),
+                    input_digest: "changed-input".to_owned(),
+                    started_at_ms: 10,
+                    finished_at_ms: (outcome != AttemptOutcome::Running).then_some(10),
+                    outcome,
+                    detail: "fixture".to_owned(),
+                },
+            );
+            save_timeline_state(root.path(), &state).expect("state");
+
+            assert_eq!(
+                evaluate_artifact_currentness(root.path(), SUBJECT, "known-input", 10, ARTIFACT)
+                    .expect("currentness"),
+                ArtifactCurrentness::Stale
+            );
+        }
+    }
+
+    #[test]
+    fn failed_refresh_of_the_same_input_keeps_last_good_current() {
+        let root = tempfile::tempdir().expect("journal");
+        let mut state = state();
+        state.attempts.insert(
+            format!("{SUBJECT}:same-input"),
+            AttemptStateV1 {
+                attempt_id: "same-input".to_owned(),
+                input_digest: "known-input".to_owned(),
+                started_at_ms: 11,
+                finished_at_ms: Some(12),
+                outcome: AttemptOutcome::Failed,
+                detail: "refresh failed".to_owned(),
+            },
+        );
+        save_timeline_state(root.path(), &state).expect("state");
+
+        assert_eq!(
+            evaluate_artifact_currentness(root.path(), SUBJECT, "known-input", 10, ARTIFACT)
+                .expect("currentness"),
+            ArtifactCurrentness::Current
         );
     }
 

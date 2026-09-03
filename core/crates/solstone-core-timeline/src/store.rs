@@ -64,6 +64,36 @@ pub fn publish_day_timeline(
     validate_day_timeline(timeline)?;
     let subject = day_subject_key(&timeline.day);
     record_attempt_started(journal, &subject, attempt.clone())?;
+    publish_validated_day_timeline(journal, timeline, attempt)
+}
+
+pub fn publish_day_timeline_after_start(
+    journal: &Path,
+    timeline: &DayTimelineV1,
+    attempt: AttemptStateV1,
+) -> Result<(), TimelineError> {
+    let subject = day_subject_key(&timeline.day);
+    if let Err(error) = validate_day_timeline(timeline) {
+        let detail = bounded_diagnostic_detail(&error.to_string());
+        record_terminal_failure(
+            journal,
+            &subject,
+            attempt,
+            AttemptOutcome::Failed,
+            &detail,
+            timeline.generated_at_ms,
+        )?;
+        return Err(error);
+    }
+    publish_validated_day_timeline(journal, timeline, attempt)
+}
+
+fn publish_validated_day_timeline(
+    journal: &Path,
+    timeline: &DayTimelineV1,
+    attempt: AttemptStateV1,
+) -> Result<(), TimelineError> {
+    let subject = day_subject_key(&timeline.day);
     let serialized = serialize_timeline(timeline)?;
     publish_timeline(
         journal,
@@ -88,6 +118,36 @@ pub fn publish_master_timeline(
     validate_master_timeline(timeline)?;
     let subject = master_subject_key();
     record_attempt_started(journal, subject, attempt.clone())?;
+    publish_validated_master_timeline(journal, timeline, attempt)
+}
+
+pub fn publish_master_timeline_after_start(
+    journal: &Path,
+    timeline: &MasterTimelineV1,
+    attempt: AttemptStateV1,
+) -> Result<(), TimelineError> {
+    let subject = master_subject_key();
+    if let Err(error) = validate_master_timeline(timeline) {
+        let detail = bounded_diagnostic_detail(&error.to_string());
+        record_terminal_failure(
+            journal,
+            subject,
+            attempt,
+            AttemptOutcome::Failed,
+            &detail,
+            timeline.generated_at_ms,
+        )?;
+        return Err(error);
+    }
+    publish_validated_master_timeline(journal, timeline, attempt)
+}
+
+fn publish_validated_master_timeline(
+    journal: &Path,
+    timeline: &MasterTimelineV1,
+    attempt: AttemptStateV1,
+) -> Result<(), TimelineError> {
+    let subject = master_subject_key();
     let serialized = serialize_timeline(timeline)?;
     publish_timeline(
         journal,
@@ -113,14 +173,14 @@ fn publish_timeline(
     match publication {
         Err(error) => {
             let detail = bounded_diagnostic_detail(&error.to_string());
-            let _ = record_attempt_outcome(
+            record_terminal_failure(
                 journal,
                 subject,
-                attempt,
+                attempt.clone(),
                 AttemptOutcome::Failed,
                 &detail,
                 generated_at_ms,
-            );
+            )?;
             Err(TimelineError::Atomic(error))
         }
         Ok(DetailedAtomicOutcome::Published) => {
@@ -139,14 +199,14 @@ fn publish_timeline(
         }
         Ok(DetailedAtomicOutcome::PublishedDurabilityUncertain { source }) => {
             let detail = bounded_diagnostic_detail(&source.to_string());
-            let _ = record_attempt_outcome(
+            record_terminal_failure(
                 journal,
                 subject,
                 attempt,
                 AttemptOutcome::DurabilityUncertain,
                 &detail,
                 generated_at_ms,
-            );
+            )?;
             Err(TimelineError::DurabilityUncertain { path, detail })
         }
         Ok(DetailedAtomicOutcome::PublishedParentPathRaced { sync_error }) => {
@@ -156,14 +216,14 @@ fn publish_timeline(
                     .map(ToString::to_string)
                     .unwrap_or_else(|| "parent path raced".to_owned()),
             );
-            let _ = record_attempt_outcome(
+            record_terminal_failure(
                 journal,
                 subject,
                 attempt,
                 AttemptOutcome::Failed,
                 &detail,
                 generated_at_ms,
-            );
+            )?;
             Err(TimelineError::PublicationNotConfirmed { path, detail })
         }
         Ok(DetailedAtomicOutcome::PublishedParentPathUnverified {
@@ -177,17 +237,33 @@ fn publish_timeline(
                     .map(ToString::to_string)
                     .unwrap_or_else(|| "parent sync was not attempted".to_owned())
             ));
-            let _ = record_attempt_outcome(
+            record_terminal_failure(
                 journal,
                 subject,
                 attempt,
                 AttemptOutcome::Failed,
                 &detail,
                 generated_at_ms,
-            );
+            )?;
             Err(TimelineError::PublicationNotConfirmed { path, detail })
         }
     }
+}
+
+fn record_terminal_failure(
+    journal: &Path,
+    subject: &str,
+    attempt: AttemptStateV1,
+    outcome: AttemptOutcome,
+    primary: &str,
+    finished_at_ms: i64,
+) -> Result<(), TimelineError> {
+    record_attempt_outcome(journal, subject, attempt, outcome, primary, finished_at_ms).map_err(
+        |state_error| TimelineError::TerminalStateWriteFailed {
+            primary: bounded_diagnostic_detail(primary),
+            state: bounded_diagnostic_detail(&state_error.to_string()),
+        },
+    )
 }
 
 pub fn publish_continuation_summary(
@@ -380,6 +456,39 @@ mod tests {
     }
 
     #[test]
+    fn day_validation_is_nonmutating_before_start_and_terminal_after_start() {
+        let journal = tempfile::tempdir().unwrap();
+        let mut invalid = day_timeline();
+        invalid.kind = crate::TimelineKind::Segment;
+
+        let public_error = publish_day_timeline(journal.path(), &invalid, attempt())
+            .expect_err("public API must reject malformed input");
+        assert!(matches!(
+            public_error,
+            TimelineError::SchemaKindMismatch { .. }
+        ));
+        assert_eq!(
+            load_timeline_state(journal.path()).unwrap(),
+            TimelineStateV1::empty()
+        );
+
+        record_attempt_started(journal.path(), &day_subject_key("20260401"), attempt()).unwrap();
+        let started_error = publish_day_timeline_after_start(journal.path(), &invalid, attempt())
+            .expect_err("started attempt must reject malformed input");
+        assert!(matches!(
+            started_error,
+            TimelineError::SchemaKindMismatch { .. }
+        ));
+        assert!(
+            load_timeline_state(journal.path())
+                .unwrap()
+                .attempts
+                .values()
+                .any(|attempt| attempt.outcome == AttemptOutcome::Failed)
+        );
+    }
+
+    #[test]
     fn master_publication_writes_typed_artifact_and_master_subject_state() {
         let journal = tempfile::tempdir().unwrap();
         let timeline = master_timeline();
@@ -448,6 +557,47 @@ mod tests {
             }
             assert!(!day_timeline_path(journal.path(), "20260401").exists());
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn publication_failure_surfaces_a_second_terminal_state_write_failure() {
+        let journal = tempfile::tempdir().unwrap();
+        fs::create_dir_all(journal.path().join("chronicle/20260401")).unwrap();
+        record_attempt_started(journal.path(), &day_subject_key("20260401"), attempt()).unwrap();
+        let (result, consumed) = run_with_bound_publication_fault(
+            BoundPublicationPrimitive::TempCreate,
+            1,
+            Errno::EIO as i32,
+            || {
+                record_terminal_failure(
+                    journal.path(),
+                    &day_subject_key("20260401"),
+                    attempt(),
+                    AttemptOutcome::Failed,
+                    "artifact publication failed",
+                    3,
+                )
+            },
+        );
+
+        assert!(consumed, "terminal-state fault must be consumed");
+        let error = result.expect_err("publication and terminal state cannot both succeed");
+        let TimelineError::TerminalStateWriteFailed { primary, state } = error else {
+            panic!("expected combined terminal-state failure, got {error:?}");
+        };
+        assert!(!primary.is_empty());
+        assert!(!state.is_empty());
+        assert!(primary.len() <= crate::MAX_DIAGNOSTIC_DETAIL_BYTES);
+        assert!(state.len() <= crate::MAX_DIAGNOSTIC_DETAIL_BYTES);
+        assert!(
+            load_timeline_state(journal.path())
+                .unwrap()
+                .attempts
+                .values()
+                .any(|attempt| attempt.outcome == AttemptOutcome::Running)
+        );
+        assert_no_current_artifact(journal.path(), &day_subject_key("20260401"));
     }
 
     #[cfg(unix)]

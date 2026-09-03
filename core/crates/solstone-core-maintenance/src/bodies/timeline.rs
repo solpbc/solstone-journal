@@ -5,7 +5,6 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::{Map, Value, json};
 use solstone_core_generate::{ContentPart, GenerateRequest, GeneratedResponse};
@@ -19,9 +18,10 @@ use solstone_core_timeline::{
     TimelineLockSet, TimelineLockSubject, acquire_timeline_locks, bounded_diagnostic_detail,
     curation_input_digest, curation_jobs_digest, day_subject_key, day_timeline_path,
     discover_day_segment_bindings, evaluate_artifact_currentness, master_source_digest,
-    master_subject_key, master_timeline_path, publish_day_timeline, publish_master_timeline,
-    record_attempt_outcome, segment_directory, segment_subject_key, validate_day_timeline,
-    validate_master_timeline, validate_segment_timeline,
+    master_subject_key, master_timeline_path, new_attempt_id, publish_day_timeline_after_start,
+    publish_master_timeline_after_start, record_attempt_outcome, record_attempt_started,
+    segment_directory, segment_subject_key, validate_day_timeline, validate_master_timeline,
+    validate_segment_timeline,
 };
 
 use crate::timezone::{default_rollup_day, resolve_owner_timezone};
@@ -71,9 +71,6 @@ struct MasterScanFailure {
     kind: &'static str,
     detail: String,
 }
-
-static DAY_ATTEMPT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-static MASTER_ATTEMPT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn run(
     id: &str,
@@ -198,7 +195,10 @@ fn parse_master_args(args: &[String]) -> Result<MasterOptions, String> {
                         "--months must be comma-separated YYYYMM values: {invalid:?}"
                     ));
                 }
-                options.months = (!months.is_empty()).then_some(months);
+                if months.is_empty() {
+                    return Err("--months requires at least one YYYYMM value".to_owned());
+                }
+                options.months = Some(months);
                 index += 1;
             }
             "--commit" => options.commit = true,
@@ -213,6 +213,11 @@ fn parse_master_args(args: &[String]) -> Result<MasterOptions, String> {
     }
     if options.force && !options.commit {
         return Err("--force requires --commit".to_owned());
+    }
+    if options.commit && options.months.is_some() {
+        return Err(
+            "--months is preview-only; a canonical master commit must cover every month".to_owned(),
+        );
     }
     Ok(options)
 }
@@ -321,6 +326,9 @@ fn rollup_day(journal: &Path, options: DayOptions, services: &TimelineServices<'
     }
     let generated_at_ms = services.now.timestamp_millis();
     let attempt = day_attempt(&day, &source_digest, generated_at_ms);
+    if let Err(error) = record_attempt_started(journal, &day_subject_key(&day), attempt.clone()) {
+        return failure(error.to_string());
+    }
     let by_hour = group_by_hour(&entries);
     let jobs = by_hour
         .iter()
@@ -381,7 +389,7 @@ fn rollup_day(journal: &Path, options: DayOptions, services: &TimelineServices<'
         hours,
         day_curation: curation_record(day_candidates.len(), day_picked),
     };
-    if let Err(error) = publish_day_timeline(journal, &timeline, attempt) {
+    if let Err(error) = publish_day_timeline_after_start(journal, &timeline, attempt) {
         return failure(error.to_string());
     }
     success(format!(
@@ -488,9 +496,8 @@ fn curation_record(candidate_count: usize, picked: EntryPickResult) -> CurationR
 }
 
 fn day_attempt(day: &str, input_digest: &str, started_at_ms: i64) -> AttemptStateV1 {
-    let sequence = DAY_ATTEMPT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     AttemptStateV1 {
-        attempt_id: format!("day-{day}-{sequence}"),
+        attempt_id: new_attempt_id(&format!("day-{day}")),
         input_digest: input_digest.to_owned(),
         started_at_ms,
         finished_at_ms: None,
@@ -506,14 +513,18 @@ fn day_curation_failure(
     error: &TimelineError,
 ) -> CliRun {
     let detail = bounded_diagnostic_detail(&error.to_string());
-    let _ = record_attempt_outcome(
+    if let Err(state_error) = record_attempt_outcome(
         journal,
         &day_subject_key(day),
         attempt.clone(),
         AttemptOutcome::Failed,
         &detail,
         attempt.started_at_ms,
-    );
+    ) {
+        return failure(bounded_diagnostic_detail(&format!(
+            "terminal timeline state write failed: {state_error}; primary failure: {detail}"
+        )));
+    }
     failure(detail)
 }
 
@@ -555,6 +566,9 @@ fn rollup_master(
     }
     let generated_at_ms = services.now.timestamp_millis();
     let attempt = master_attempt(&source_digest, generated_at_ms);
+    if let Err(error) = record_attempt_started(journal, master_subject_key(), attempt.clone()) {
+        return failure(error.to_string());
+    }
     let by_month = group_by_month(&days);
     let jobs = by_month
         .iter()
@@ -625,7 +639,7 @@ fn rollup_master(
         year_top,
         year_curation: curation_record(candidates.len(), year_picked),
     };
-    if let Err(error) = publish_master_timeline(journal, &timeline, attempt) {
+    if let Err(error) = publish_master_timeline_after_start(journal, &timeline, attempt) {
         return failure(error.to_string());
     }
     success(format!(
@@ -794,9 +808,8 @@ fn master_is_current(journal: &Path, source_digest: &str) -> bool {
 }
 
 fn master_attempt(input_digest: &str, started_at_ms: i64) -> AttemptStateV1 {
-    let sequence = MASTER_ATTEMPT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     AttemptStateV1 {
-        attempt_id: format!("master-{sequence}"),
+        attempt_id: new_attempt_id("master"),
         input_digest: input_digest.to_owned(),
         started_at_ms,
         finished_at_ms: None,
@@ -811,14 +824,18 @@ fn master_curation_failure(
     error: &TimelineError,
 ) -> CliRun {
     let detail = bounded_diagnostic_detail(&error.to_string());
-    let _ = record_attempt_outcome(
+    if let Err(state_error) = record_attempt_outcome(
         journal,
         master_subject_key(),
         attempt.clone(),
         AttemptOutcome::Failed,
         &detail,
         attempt.started_at_ms,
-    );
+    ) {
+        return failure(bounded_diagnostic_detail(&format!(
+            "terminal timeline state write failed: {state_error}; primary failure: {detail}"
+        )));
+    }
     failure(detail)
 }
 
@@ -2352,6 +2369,33 @@ mod tests {
             &services(&picker, &model),
         );
         assert_eq!(contradictory_modes.exit_code, 2);
+
+        let artifact_before = std::fs::read(journal.path().join("timeline.json")).unwrap();
+        let state_before =
+            std::fs::read(journal.path().join("health/timeline/state.json")).unwrap();
+        let calls_before = picker.call_count();
+        for month_value in ["202601", "", ",,,"] {
+            let filtered_commit = run(
+                "timeline:rollup-master",
+                &[
+                    "--commit".to_owned(),
+                    "--months".to_owned(),
+                    month_value.to_owned(),
+                ],
+                journal.path(),
+                &services(&picker, &model),
+            );
+            assert_eq!(filtered_commit.exit_code, 2, "value={month_value:?}");
+            assert_eq!(picker.call_count(), calls_before);
+            assert_eq!(
+                std::fs::read(journal.path().join("timeline.json")).unwrap(),
+                artifact_before
+            );
+            assert_eq!(
+                std::fs::read(journal.path().join("health/timeline/state.json")).unwrap(),
+                state_before
+            );
+        }
     }
 
     #[test]

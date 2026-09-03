@@ -34,12 +34,13 @@ pub use schema::{
 };
 pub use state::{
     ArtifactStateV1, AttemptOutcome, AttemptStateV1, MAX_DIAGNOSTIC_DETAIL_BYTES, TimelineStateV1,
-    bounded_diagnostic_detail, load_timeline_state, record_artifact_published,
+    bounded_diagnostic_detail, load_timeline_state, new_attempt_id, record_artifact_published,
     record_attempt_outcome, record_attempt_started, save_timeline_state, timeline_state_path,
     update_timeline_state,
 };
 pub use store::{
     day_subject_key, day_timeline_path, master_subject_key, master_timeline_path,
-    publish_continuation_summary, publish_day_timeline, publish_master_timeline,
-    publish_segment_timeline, segment_subject_key, segment_timeline_path,
+    publish_continuation_summary, publish_day_timeline, publish_day_timeline_after_start,
+    publish_master_timeline, publish_master_timeline_after_start, publish_segment_timeline,
+    segment_subject_key, segment_timeline_path,
 };

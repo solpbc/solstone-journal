@@ -18,6 +18,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 solstone-core-brain.workspace = true
 solstone-core-journal-io.workspace = true
+uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 solstone-core-journal-io = { workspace = true, features = ["test-hooks"] }

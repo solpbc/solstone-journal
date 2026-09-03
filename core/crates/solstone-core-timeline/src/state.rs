@@ -9,10 +9,15 @@ use serde::{Deserialize, Serialize};
 use solstone_core_journal_io::{
     DetailedAtomicOutcome, LockOptions, atomic_replace_detailed, hold_lock,
 };
+use uuid::Uuid;
 
 use crate::{CURRENT_SCHEMA_VERSION, TimelineError};
 
 pub const MAX_DIAGNOSTIC_DETAIL_BYTES: usize = 512;
+
+pub fn new_attempt_id(prefix: &str) -> String {
+    format!("{prefix}-{}", Uuid::new_v4().simple())
+}
 const TRUNCATION_MARKER: &str = "...[truncated]";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -264,6 +269,16 @@ mod tests {
     use solstone_core_journal_io::DetailedAtomicOutcome;
 
     use super::*;
+
+    #[test]
+    fn generated_attempt_ids_are_distinct_and_keep_the_subject_prefix() {
+        let first = new_attempt_id("day-20260401");
+        let second = new_attempt_id("day-20260401");
+
+        assert_ne!(first, second);
+        assert!(first.starts_with("day-20260401-"));
+        assert!(second.starts_with("day-20260401-"));
+    }
 
     #[test]
     fn detail_at_limit_is_unchanged() {

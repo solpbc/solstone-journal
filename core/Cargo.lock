@@ -5536,6 +5536,7 @@ dependencies = [
  "solstone-core-journal-io",
  "tempfile",
  "thiserror 2.0.20",
+ "uuid",
 ]
 
 [[package]]
