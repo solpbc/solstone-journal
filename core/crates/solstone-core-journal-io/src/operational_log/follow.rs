@@ -251,6 +251,10 @@ impl OplogFollower {
             })
             .collect::<Vec<_>>();
 
+        if stop() {
+            return Ok(OplogFollowTick::Stopped);
+        }
+
         // Commit begins here: every error-capable action is above this point.
         for identity in &identities {
             let tracked = self.tracked_mut(identity);
@@ -679,11 +683,31 @@ mod tests {
     }
 
     #[test]
-    fn oversized_record_fails_closed() {
+    fn record_size_boundary_is_exact_and_oversize_fails_without_commit() {
         let temporary = tempfile::tempdir().unwrap();
-        let mut log = writer(&temporary, "large");
-        write!(log, "{}", "x".repeat(OPLOG_FOLLOW_MAX_RECORD_BYTES + 1)).unwrap();
+        let mut exact = writer(&temporary, "exact");
+        writeln!(exact, "{}", "x".repeat(OPLOG_FOLLOW_MAX_RECORD_BYTES - 1)).unwrap();
         let (mut follower, source, clock) = follower(&temporary);
+        let rows = follower
+            .tick(&source, &clock, &|| false)
+            .unwrap()
+            .into_rows()
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].1.len(), OPLOG_FOLLOW_MAX_RECORD_BYTES - 1);
+
+        let mut oversized = writer(&temporary, "oversized");
+        writeln!(oversized, "{}", "x".repeat(OPLOG_FOLLOW_MAX_RECORD_BYTES)).unwrap();
+        follower.tick(&source, &clock, &|| false).unwrap();
+        let identity = *follower
+            .state
+            .tracked
+            .iter()
+            .find_map(|(identity, tracked)| {
+                (tracked.entry.name().source().display_slug() == "oversized").then_some(identity)
+            })
+            .unwrap();
+        let offset = follower.state.tracked[&identity].committed_offset;
         assert_eq!(
             follower
                 .tick(&source, &clock, &|| false)
@@ -691,6 +715,7 @@ mod tests {
                 .kind(),
             "oplog_catalog_record_too_large"
         );
+        assert_eq!(follower.state.tracked[&identity].committed_offset, offset);
     }
 
     #[test]
@@ -792,15 +817,34 @@ mod tests {
     }
 
     #[test]
-    fn stop_has_no_rows_or_mutation() {
+    fn stop_during_tick_has_no_rows_or_mutation() {
         let temporary = tempfile::tempdir().unwrap();
-        let _log = writer(&temporary, "stopped");
+        let mut log = writer(&temporary, "stopped");
+        writeln!(log, "sentinel").unwrap();
         let (mut follower, source, clock) = follower(&temporary);
-        let tracked = follower.state.tracked.len();
-        assert!(matches!(
-            follower.tick(&source, &clock, &|| true).unwrap(),
-            OplogFollowTick::Stopped
-        ));
-        assert_eq!(follower.state.tracked.len(), tracked);
+        let identity = *follower.state.tracked.keys().next().unwrap();
+        let offset = follower.state.tracked[&identity].committed_offset;
+        let stopped = std::rc::Rc::new(Cell::new(false));
+        let stop_from_hook = stopped.clone();
+        let stop_for_tick = stopped.clone();
+        let tick = with_after_frontier_sample(
+            move || stop_from_hook.set(true),
+            || follower.tick(&source, &clock, &|| stop_for_tick.get()),
+        )
+        .unwrap();
+        assert!(matches!(tick, OplogFollowTick::Stopped));
+        assert_eq!(follower.state.tracked[&identity].committed_offset, offset);
+        assert!(follower.state.tombstones.is_empty());
+
+        stopped.set(false);
+        let rows = follower
+            .tick(&source, &clock, &|| false)
+            .unwrap()
+            .into_rows()
+            .unwrap();
+        assert_eq!(
+            rows.into_iter().map(|(_, line)| line).collect::<Vec<_>>(),
+            ["sentinel"]
+        );
     }
 }

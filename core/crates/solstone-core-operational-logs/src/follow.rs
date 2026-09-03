@@ -56,6 +56,24 @@ pub fn run_follow(
     is_tty: bool,
     warn: &mut dyn FnMut(String),
 ) -> Result<(), FollowFatalError> {
+    run_follow_with_sleep(
+        journal_root,
+        stop,
+        output,
+        is_tty,
+        warn,
+        &std::thread::sleep,
+    )
+}
+
+fn run_follow_with_sleep(
+    journal_root: &Path,
+    stop: &dyn Fn() -> bool,
+    output: &mut dyn Write,
+    is_tty: bool,
+    warn: &mut dyn FnMut(String),
+    sleep: &dyn Fn(std::time::Duration),
+) -> Result<(), FollowFatalError> {
     let source = CatalogSource {
         root: journal_root.to_path_buf(),
     };
@@ -86,7 +104,7 @@ pub fn run_follow(
             .map_err(output_error)?;
             output.flush().map_err(output_error)?;
         }
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        sleep(std::time::Duration::from_millis(200));
     }
     Ok(())
 }
@@ -104,5 +122,67 @@ fn output_error(source: io::Error) -> FollowFatalError {
         path: PathBuf::from("<stdout>"),
         operation: "output",
         source: Some(source),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use solstone_core_journal_io::operational_log::{OplogFormat, create_oplog};
+
+    use super::*;
+
+    struct FlushFailure {
+        bytes: Vec<u8>,
+        flushes: usize,
+    }
+
+    impl Write for FlushFailure {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.bytes.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.flushes += 1;
+            Err(io::Error::other("injected flush failure"))
+        }
+    }
+
+    #[test]
+    fn flush_failure_returns_before_later_rows_or_sleep() {
+        let temporary = tempfile::tempdir().unwrap();
+        for source in ["alpha", "beta"] {
+            let mut writer = create_oplog(
+                JournalRoot::open(temporary.path()).unwrap(),
+                source,
+                "follow-output-test",
+                OplogFormat::Log,
+            )
+            .unwrap();
+            writeln!(writer, "{source}-sentinel").unwrap();
+        }
+        let mut output = FlushFailure {
+            bytes: Vec::new(),
+            flushes: 0,
+        };
+        let sleeps = Cell::new(0);
+        let error = run_follow_with_sleep(
+            temporary.path(),
+            &|| false,
+            &mut output,
+            false,
+            &mut |_| {},
+            &|_| sleeps.set(sleeps.get() + 1),
+        )
+        .unwrap_err();
+        assert_eq!(error.operation, "output");
+        assert_eq!(output.flushes, 1);
+        assert_eq!(
+            output.bytes.iter().filter(|byte| **byte == b'\n').count(),
+            1
+        );
+        assert_eq!(sleeps.get(), 0);
     }
 }

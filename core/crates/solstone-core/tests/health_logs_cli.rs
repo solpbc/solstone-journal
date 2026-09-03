@@ -5,12 +5,17 @@
 
 use std::ffi::OsString;
 use std::fs;
+use std::io::Write;
 use std::os::unix::fs::symlink;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Output, Stdio};
 
 use chrono::Local;
 use solstone_core_cli::HEALTH_LOGS_HELP;
+use solstone_core_journal_io::{
+    JournalRoot,
+    operational_log::{OplogFormat, create_oplog_at},
+};
 
 const BINARY: &str = env!("CARGO_BIN_EXE_solstone-core");
 
@@ -23,18 +28,16 @@ impl TestJournal {
     fn path(&self) -> &Path {
         self.0.path()
     }
-    fn day_health(&self) -> PathBuf {
-        self.path()
-            .join("chronicle")
-            .join(Local::now().format("%Y%m%d").to_string())
-            .join("health")
-    }
-    fn log(&self, name: &str, content: &str) {
-        let health = self.day_health();
-        fs::create_dir_all(&health).unwrap();
-        let target = self.path().join(format!("target-{name}"));
-        fs::write(&target, content).unwrap();
-        symlink(target, health.join(name)).unwrap();
+    fn log(&self, source: &str, content: &str, instant: chrono::DateTime<chrono::FixedOffset>) {
+        let mut writer = create_oplog_at(
+            JournalRoot::open(self.path()).unwrap(),
+            source,
+            "health-logs-cli-test",
+            OplogFormat::Log,
+            instant,
+        )
+        .unwrap();
+        writer.write_all(content.as_bytes()).unwrap();
     }
 }
 
@@ -53,8 +56,7 @@ fn run_path(journal: OsString, args: &[&str]) -> Output {
         .unwrap()
 }
 
-fn logs() -> String {
-    let day = Local::now().format("%Y-%m-%d").to_string();
+fn logs(day: &str) -> String {
     [
         format!("{day} 09:00:00 [observer:stdout] old error"),
         format!("{day} 10:00:00 [observer:stdout] new error"),
@@ -68,9 +70,15 @@ fn logs() -> String {
 #[test]
 fn one_shot_filters_and_count_reach_the_real_command_body() {
     let journal = TestJournal::new();
-    let content = logs();
+    let instant = Local::now().fixed_offset();
+    let content = logs(&instant.format("%Y-%m-%d").to_string());
     let rows = content.lines().collect::<Vec<_>>();
-    journal.log("service.log", &content);
+    journal.log(
+        "observer",
+        &format!("{}\n{}\n{}\n", rows[0], rows[1], rows[3]),
+        instant,
+    );
+    journal.log("other", &format!("{}\n", rows[2]), instant);
     for (args, expected) in [
         (
             ["health", "logs", "-c", "1"].as_slice(),
@@ -124,7 +132,7 @@ fn invalid_values_and_follow_missing_directory_keep_their_polarity() {
     let output = run(&journal, &["health", "logs", "-f"]);
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(output.stdout, b"");
-    assert_eq!(output.stderr, b"No health directory found.\n");
+    assert_eq!(output.stderr, b"No log files found.\n");
 }
 
 #[test]
@@ -220,35 +228,42 @@ fn value_validation_and_help_precede_journal_resolution() {
 fn path_diagnostics_escape_control_bytes_and_backslashes_once() {
     let outer = tempfile::tempdir().unwrap();
     let journal = outer.path().join("journal-\\-\n-\x1b-\u{202e}");
-    let day_health = journal
+    fs::create_dir_all(&journal).unwrap();
+    let instant = Local::now().fixed_offset();
+    let day = instant.format("%Y%m%d").to_string();
+    let writer = create_oplog_at(
+        JournalRoot::open(&journal).unwrap(),
+        "broken",
+        "health-logs-cli-test",
+        OplogFormat::Log,
+        instant,
+    )
+    .unwrap();
+    let canonical = journal
         .join("chronicle")
-        .join(Local::now().format("%Y%m%d").to_string())
-        .join("health");
-    fs::create_dir_all(&day_health).unwrap();
-    let name = "bad-\\-\n-\x1b-\u{202e}.log";
-    let target = journal.join("invalid-target");
-    fs::write(&target, b"\xff").unwrap();
-    symlink(&target, day_health.join(name)).unwrap();
+        .join(&day)
+        .join("health")
+        .join(writer.leaf_name());
+    drop(writer);
+    fs::remove_file(&canonical).unwrap();
+    symlink("missing", &canonical).unwrap();
 
-    let output = run_path(
-        journal.as_os_str().to_owned(),
-        &["health", "logs", "-c", "5"],
-    );
+    let output = run_path(journal.as_os_str().to_owned(), &["health", "logs", "-f"]);
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert_eq!(
         stderr,
         format!(
-            "health logs: {}/journal-\\\\-\\n-\\x1b-\\u{{202e}}/chronicle/{}/health/bad-\\\\-\\n-\\x1b-\\u{{202e}}.log: invalid utf-8 sequence of 1 bytes from index 0\n",
+            "health logs: catalog failed for {}/journal-\\\\-\\n-\\x1b-\\u{{202e}}: oplog_catalog_unsafe_{}\n",
             outer.path().display(),
-            Local::now().format("%Y%m%d")
+            day
         )
     );
 }
 
 #[test]
-fn follow_warning_keeps_invalid_path_identity_once() {
+fn follow_ignores_noncanonical_broken_symlink() {
     let outer = tempfile::tempdir().unwrap();
     let journal = outer.path().join("journal-\\-\n-\x1b-\u{202e}");
     let health = journal.join("health");
@@ -260,11 +275,5 @@ fn follow_warning_keeps_invalid_path_identity_once() {
     assert_eq!(output.status.code(), Some(0));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8(output.stderr).unwrap();
-    assert_eq!(
-        stderr,
-        format!(
-            "health logs: initial-open failed for {}/journal-\\\\-\\n-\\x1b-\\u{{202e}}/health/broken-\\\\-\\n-\\x1b-\\u{{202e}}.log\nNo log files found.\n",
-            outer.path().display()
-        )
-    );
+    assert_eq!(stderr, "No log files found.\n");
 }

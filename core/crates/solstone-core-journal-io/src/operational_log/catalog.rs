@@ -767,12 +767,18 @@ mod tests {
     #[test]
     fn unstable_attempts_drop_retained_descriptors_before_retrying() {
         let temporary = tempfile::tempdir().unwrap();
-        create(&temporary);
+        for _ in 0..3 {
+            create(&temporary);
+        }
         LIVE_RETAINED_DESCRIPTORS.with(|count| count.set(0));
         MAX_LIVE_RETAINED_DESCRIPTORS.with(|count| count.set(0));
-        let result = with_forced_unstable_after_entries(1, || snapshot(&temporary)).unwrap();
-        assert_eq!(LIVE_RETAINED_DESCRIPTORS.with(Cell::get), 1);
-        assert_eq!(MAX_LIVE_RETAINED_DESCRIPTORS.with(Cell::get), 1);
+        let result = with_forced_unstable_after_entries(OPLOG_CATALOG_CENSUS_ATTEMPTS - 1, || {
+            snapshot(&temporary)
+        })
+        .unwrap();
+        assert_eq!(result.entries().len(), 3);
+        assert_eq!(LIVE_RETAINED_DESCRIPTORS.with(Cell::get), 3);
+        assert_eq!(MAX_LIVE_RETAINED_DESCRIPTORS.with(Cell::get), 3);
         drop(result);
         assert_eq!(LIVE_RETAINED_DESCRIPTORS.with(Cell::get), 0);
     }
@@ -812,11 +818,24 @@ mod tests {
     }
 
     #[test]
-    fn candidate_limit_has_no_partial_snapshot() {
+    fn candidate_limit_accepts_exactly_512_and_opens_none_at_513() {
         let temporary = tempfile::tempdir().unwrap();
-        for _ in 0..=OPLOG_CATALOG_MAX_CANDIDATES_PER_DAY {
+        for _ in 0..OPLOG_CATALOG_MAX_CANDIDATES_PER_DAY {
             let _ = create(&temporary);
         }
+        CATALOG_ENTRY_OPEN_CALLS.with(|count| count.set(0));
+        let at_limit = snapshot(&temporary).unwrap();
+        assert_eq!(
+            at_limit.entries().len(),
+            OPLOG_CATALOG_MAX_CANDIDATES_PER_DAY
+        );
+        assert_eq!(
+            CATALOG_ENTRY_OPEN_CALLS.with(Cell::get),
+            OPLOG_CATALOG_MAX_CANDIDATES_PER_DAY
+        );
+        drop(at_limit);
+
+        let _ = create(&temporary);
         CATALOG_ENTRY_OPEN_CALLS.with(|count| count.set(0));
         assert_eq!(
             snapshot(&temporary).unwrap_err().kind(),
