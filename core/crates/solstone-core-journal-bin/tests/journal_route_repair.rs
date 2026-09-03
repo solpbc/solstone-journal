@@ -196,19 +196,6 @@ impl Fixture {
             .output()
             .expect("run route repair")
     }
-
-    fn run_repair_with_missing_user_manager(&self, token: &str) -> Output {
-        Command::new(self.dispatcher())
-            .args(["__journal-route-repair", "--route-lock-owner", token])
-            .env("HOME", &self.home)
-            .env("SOLSTONE_JOURNAL", &self.journal)
-            .env(
-                "DBUS_SESSION_BUS_ADDRESS",
-                format!("unix:path={}", self.root.join("missing-user-bus").display()),
-            )
-            .output()
-            .expect("run route repair without a user manager")
-    }
 }
 
 impl Drop for Fixture {
@@ -342,7 +329,7 @@ fn repair_repoints_owned_drift_and_is_idempotent() {
 }
 
 #[test]
-fn repair_attempts_service_refresh_for_static_drift() {
+fn repair_refuses_conflicting_guard_generations_without_mutating() {
     let fixture = Fixture::new("static-drift");
     let guard = fixture.install_owned_tuple();
     let mut stale_guard = guard.clone();
@@ -350,11 +337,7 @@ fn repair_attempts_service_refresh_for_static_drift() {
     fixture.write_service_for(&stale_guard, &fixture.prefix.join("current/bin"));
     fixture.acquire_route_lock(TOKEN);
 
-    let fields = parse_record(fixture.run_repair_with_missing_user_manager(TOKEN), 3);
-    assert_eq!(fields["service_state"], "drifted");
-    assert_eq!(fields["repair_wrapper"], "unchanged");
-    assert_eq!(fields["repair_service"], "failed");
-    assert_eq!(fields["outcome"], "partial-failure");
+    assert_repair_refusal_preserves_artifacts(&fixture, "artifact-ambiguous");
 }
 
 #[test]
