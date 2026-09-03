@@ -36,11 +36,30 @@ pub mod test_support {
     pub fn runtime() -> Result<tokio::runtime::Runtime, String> {
         crate::dispatch::runtime()
     }
+
+    pub fn emit_segment_dispatch(journal: &Path, day: &str, now_ms: i64) -> Result<bool, String> {
+        let mut log = crate::run_log::RunLogWriter::open(journal, day, "segment");
+        let emitted = crate::segment::write_dispatch_event(
+            journal,
+            &mut log,
+            now_ms,
+            Map::from_iter([
+                ("mode".to_owned(), Value::String("segment".to_owned())),
+                ("day".to_owned(), Value::String(day.to_owned())),
+                ("segment".to_owned(), Value::String("test".to_owned())),
+                ("name".to_owned(), Value::String("sense".to_owned())),
+                ("use_id".to_owned(), Value::String("use-test".to_owned())),
+            ]),
+        );
+        log.finish()?;
+        Ok(emitted)
+    }
 }
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::Path;
+use std::sync::Arc;
 
 use chrono::{Local, NaiveDate};
 use solstone_core_cli::THINK_USAGE;
@@ -74,13 +93,17 @@ pub fn run_cli(
     journal: &Path,
     sense_child_environment: &BTreeMap<OsString, OsString>,
 ) -> CliRun {
-    run_cli_with(
+    let event_clock: Arc<dyn Fn() -> i64 + Send + Sync> =
+        Arc::new(|| chrono::Utc::now().timestamp_millis());
+    let start_clock = Arc::clone(&event_clock);
+    run_cli_with_event_clock(
         args,
         journal,
         |name| std::env::var(name).ok(),
         || solstone_core_segment::is_solstone_up(journal),
         || Local::now().date_naive(),
-        || chrono::Utc::now().timestamp_millis(),
+        move || start_clock(),
+        Some(event_clock),
         || {
             std::thread::available_parallelism()
                 .ok()
@@ -151,6 +174,44 @@ where
     R: Fn() -> (bool, LocalEndpointResolution),
     B: Fn() -> Option<u32>,
 {
+    run_cli_with_event_clock(
+        raw_args,
+        journal,
+        lookup_env,
+        connectivity,
+        clock,
+        now_ms,
+        None,
+        cpu_count,
+        endpoint,
+        bundled_slots,
+        sense_child_environment,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_cli_with_event_clock<E, C, N, M, P, R, B>(
+    raw_args: &[String],
+    journal: &Path,
+    lookup_env: E,
+    connectivity: C,
+    clock: N,
+    now_ms: M,
+    event_clock: Option<Arc<dyn Fn() -> i64 + Send + Sync>>,
+    cpu_count: P,
+    endpoint: R,
+    bundled_slots: B,
+    sense_child_environment: &BTreeMap<OsString, OsString>,
+) -> CliRun
+where
+    E: Fn(&str) -> Option<String>,
+    C: FnOnce() -> bool,
+    N: Fn() -> NaiveDate,
+    M: Fn() -> i64,
+    P: Fn() -> Option<usize>,
+    R: Fn() -> (bool, LocalEndpointResolution),
+    B: Fn() -> Option<u32>,
+{
     let result = (|| {
         let parsed = match args::parse(raw_args).map_err(|message| CliError::Usage { message })? {
             args::ParseOutcome::Help => {
@@ -205,9 +266,15 @@ where
         validate(&parsed, cpu_count, uses_local, endpoint, bundled_slots)?;
 
         let now_ms = now_ms();
-        let context =
-            context::ThinkContext::new(journal, selected_day.clone(), day_dir.clone(), now_ms)
-                .map_err(|message| CliError::InvalidDay { message })?;
+        let event_clock = event_clock.unwrap_or_else(|| Arc::new(move || now_ms));
+        let context = context::ThinkContext::new_with_event_clock(
+            journal,
+            selected_day.clone(),
+            day_dir.clone(),
+            now_ms,
+            event_clock,
+        )
+        .map_err(|message| CliError::InvalidDay { message })?;
         if parsed.dry_run {
             return Ok(CliRun {
                 stdout: dry_run::run(&context, &parsed, default_segment_workers)
@@ -520,10 +587,12 @@ fn validate(
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
     use std::collections::BTreeSet;
     use std::fs;
     use std::io::{BufRead, BufReader, Seek, SeekFrom, Write};
     use std::path::Path;
+    use std::sync::atomic::{AtomicI64, Ordering};
     use std::sync::{Arc, Mutex, MutexGuard, Once, OnceLock};
 
     use chrono::NaiveDate;
@@ -1779,7 +1848,13 @@ mod tests {
             ],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
-        let context = context.with_talent_roots(talent_root, apps_root);
+        let next_ms = Arc::new(AtomicI64::new(1_785_000_100_000));
+        let event_counter = Arc::clone(&next_ms);
+        let context = context
+            .with_talent_roots(talent_root, apps_root)
+            .with_event_clock(Arc::new(move || {
+                event_counter.fetch_add(1, Ordering::SeqCst)
+            }));
         let mut log = test_log(&context, "activity");
         let result = activity::run(&context, &mut log, "reading_1", "work", false, 2).unwrap();
         assert_eq!((result.success, result.failed), (3, 0));
@@ -1845,6 +1920,27 @@ mod tests {
                 .iter()
                 .any(|record| record["activity"] == "reading_1")
         );
+        assert_eq!(context.now_ms, 9, "run identity remains fixed");
+        for name in ["one", "three", "two"] {
+            let timestamp = |event: &str| {
+                events
+                    .iter()
+                    .find(|record| record["event"] == event && record["name"] == name)
+                    .unwrap_or_else(|| panic!("missing {event} for {name}"))["ts"]
+                    .as_i64()
+                    .unwrap()
+            };
+            let started = timestamp("talent.started");
+            let dispatch = timestamp("talent.dispatch");
+            let completed = timestamp("talent.completed");
+            let complete = timestamp("talent.complete");
+            assert_eq!(started, dispatch, "start aliases must share one sample");
+            assert_eq!(
+                completed, complete,
+                "terminal aliases must share one sample"
+            );
+            assert!(dispatch < complete, "later logical event must advance");
+        }
     }
 
     #[test]
@@ -2088,20 +2184,60 @@ mod tests {
     #[test]
     fn cadence_records_a_run_start_without_firing_when_no_work_is_complete() {
         let journal = tempdir().unwrap();
-        assert_eq!(run_at(journal.path(), &["--cadence"]).exit_code, 0);
+        let next_ms = Arc::new(AtomicI64::new(1_785_000_000_000));
+        let event_counter = Arc::clone(&next_ms);
+        let start_clock: Arc<dyn Fn() -> i64 + Send + Sync> =
+            Arc::new(move || event_counter.fetch_add(1, Ordering::SeqCst));
+        let run_start_clock = Arc::clone(&start_clock);
+        let result = run_cli_with_event_clock(
+            &["--cadence".to_owned()],
+            journal.path(),
+            |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
+            || false,
+            today,
+            move || run_start_clock(),
+            Some(start_clock),
+            || Some(8),
+            || (false, LocalEndpointResolution::Bundled),
+            || Some(2),
+            &BTreeMap::new(),
+        );
+        assert_eq!(result.exit_code, 0);
         let events = sidecar_events(journal.path(), "20260814", "cadence");
         assert_eq!(events[0]["event"], "run.start");
         assert_eq!(events[0]["mode"], "cadence");
-        assert_eq!(
-            events
-                .iter()
-                .filter(|event| {
-                    event["event"] == "talent.skip" && event["reason"] == "no_new_work"
-                })
-                .count(),
-            2
-        );
+        assert_eq!(events[0]["ts"], 1_785_000_000_000_i64);
+        assert_eq!(events[0]["ref"], 1_785_000_000_000_i64);
+        let skip_times = events
+            .iter()
+            .filter(|event| event["event"] == "talent.skip" && event["reason"] == "no_new_work")
+            .map(|event| event["ts"].as_i64().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(skip_times, vec![1_785_000_000_001, 1_785_000_000_002]);
         assert!(!journal.path().join("health/cadence.json").exists());
+    }
+
+    #[test]
+    fn public_injected_clock_keeps_its_borrowed_non_send_contract() {
+        let journal = tempdir().unwrap();
+        let reads = Cell::new(0);
+        let run = run_cli_with(
+            &["--help".to_owned()],
+            journal.path(),
+            |_| None,
+            || false,
+            today,
+            || {
+                reads.set(reads.get() + 1);
+                1_785_000_000_000
+            },
+            || Some(8),
+            || (false, LocalEndpointResolution::Bundled),
+            || Some(2),
+            &BTreeMap::new(),
+        );
+        assert_eq!(run.exit_code, 0);
+        assert_eq!(reads.get(), 0);
     }
 
     #[test]
@@ -2819,6 +2955,7 @@ mod tests {
             roots.path(),
             "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
         );
+        let context = context.with_event_clock(Arc::new(|| 1_785_000_123_456));
         segment_dir(journal.path(), "20260813", "090000_300");
         *recorder.dispatch_failure.lock().unwrap() = Some(context::DispatchFailure::NotClaimed {
             use_id: "lost-1".to_owned(),
@@ -2827,7 +2964,12 @@ mod tests {
         let result = run_segment(&context, journal.path(), "090000_300", false, false);
         assert_eq!(result.failed_names, vec!["sense (request_lost)"]);
         let log = oplog_records(journal.path(), &context.day, "segment");
-        assert!(log.iter().any(|record| record["state"] == "request_lost"));
+        let failure = log
+            .iter()
+            .find(|record| record["state"] == "request_lost")
+            .expect("request_lost record");
+        assert_eq!(failure["ts"], 1_785_000_123_456_i64);
+        assert_ne!(failure["ts"], context.now_ms);
         assert!(!log.iter().any(|record| record["reason"] == "send_failed"));
     }
 
