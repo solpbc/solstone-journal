@@ -20,8 +20,8 @@ use solstone_core_timeline::{
     day_subject_key, day_timeline_path, discover_day_segment_bindings,
     evaluate_artifact_currentness, master_source_digest, master_subject_key, master_timeline_path,
     new_attempt_id, publish_day_timeline_after_start, publish_master_timeline_after_start,
-    record_attempt_outcome, record_attempt_started, resolve_activity_source, segment_directory,
-    segment_subject_key, validate_day_timeline, validate_master_timeline,
+    record_attempt_outcome, record_attempt_started, resolve_eligible_activity_source,
+    segment_directory, segment_subject_key, validate_day_timeline, validate_master_timeline,
     validate_segment_timeline, verify_segment_source,
 };
 
@@ -1194,17 +1194,14 @@ fn load_day_segments(journal: &Path, day: &str) -> Result<DayScan, String> {
     let mut rows = Vec::with_capacity(bindings.len());
     let mut failures = Vec::new();
     for binding in bindings {
-        let activity = match resolve_activity_source(journal, &binding) {
-            Ok(Some(activity)) => activity,
+        match resolve_eligible_activity_source(journal, &binding) {
+            Ok(Some(_)) => {}
             Ok(None) => continue,
             Err(error) => {
                 failures.push(scan_failure(binding, "source_invalid", error.to_string()));
                 continue;
             }
         };
-        if activity.text.trim().is_empty() {
-            continue;
-        }
         let segment_dir = match segment_directory(journal, &binding) {
             Ok(path) => path,
             Err(error) => {
@@ -1397,8 +1394,24 @@ fn load_day_rollups(journal: &Path) -> Result<MasterScan, String> {
             .and_then(|name| name.to_str())
             .unwrap_or_default()
             .to_owned();
+        let live_rows = match load_day_segments(journal, &day)
+            .and_then(|scan| verified_day_entries(&day, scan))
+        {
+            Ok(rows) => rows,
+            Err(detail) => {
+                failures.push(master_scan_failure(day, "segment_incomplete", detail));
+                continue;
+            }
+        };
         let path = day_dir.join("timeline.json");
         if !path.exists() {
+            if !live_rows.is_empty() {
+                failures.push(master_scan_failure(
+                    day,
+                    "missing",
+                    format!("{} is missing", path.display()),
+                ));
+            }
             continue;
         }
         let bytes = match std::fs::read(&path) {
@@ -1472,6 +1485,27 @@ fn load_day_rollups(journal: &Path) -> Result<MasterScan, String> {
                     day,
                     "state_unavailable",
                     error.to_string(),
+                ));
+                continue;
+            }
+        }
+        if !live_rows.is_empty() {
+            let live_digest = match day_source_digest(&live_rows, timeline.top_n) {
+                Ok(digest) => digest,
+                Err(error) => {
+                    failures.push(master_scan_failure(
+                        day,
+                        "state_unavailable",
+                        error.to_string(),
+                    ));
+                    continue;
+                }
+            };
+            if live_digest != timeline.source_digest {
+                failures.push(master_scan_failure(
+                    day,
+                    "stale",
+                    "day timeline inputs have changed".to_owned(),
                 ));
                 continue;
             }
@@ -3105,6 +3139,92 @@ mod tests {
                 result.stderr
             );
         }
+        assert!(!journal.path().join("timeline.json").exists());
+    }
+
+    #[test]
+    fn master_refuses_a_day_with_an_unpublished_source_backed_segment() {
+        let journal = tempfile::tempdir().unwrap();
+        write_segment(
+            journal.path(),
+            "20260101",
+            "field.audio",
+            "080000_1",
+            json!({"title":"Published", "description":"summary"}),
+        );
+        let picker = Picker::canned([]);
+        let model = Model::new("model");
+        let day = run(
+            "timeline:rollup-day",
+            &[
+                "--day".to_owned(),
+                "20260101".to_owned(),
+                "--commit".to_owned(),
+            ],
+            journal.path(),
+            &services(&picker, &model),
+        );
+        assert_eq!(day.exit_code, 0);
+        create_segment_dir(journal.path(), "20260101", "field.audio", "090000_2");
+
+        let result = run(
+            "timeline:rollup-master",
+            &["--commit".to_owned()],
+            journal.path(),
+            &services(&picker, &model),
+        );
+
+        assert_eq!(result.exit_code, 1);
+        assert!(result.stderr.contains("090000_2"), "{}", result.stderr);
+        assert!(result.stderr.contains("missing"), "{}", result.stderr);
+        assert!(!journal.path().join("timeline.json").exists());
+    }
+
+    #[test]
+    fn master_refuses_a_day_that_omits_a_newly_summarized_segment() {
+        let journal = tempfile::tempdir().unwrap();
+        write_segment(
+            journal.path(),
+            "20260101",
+            "field.audio",
+            "080000_1",
+            json!({"title":"First", "description":"summary"}),
+        );
+        let picker = Picker::canned([]);
+        let model = Model::new("model");
+        let day = run(
+            "timeline:rollup-day",
+            &[
+                "--day".to_owned(),
+                "20260101".to_owned(),
+                "--commit".to_owned(),
+            ],
+            journal.path(),
+            &services(&picker, &model),
+        );
+        assert_eq!(day.exit_code, 0);
+        write_segment(
+            journal.path(),
+            "20260101",
+            "field.audio",
+            "090000_2",
+            json!({"title":"Second", "description":"summary"}),
+        );
+
+        let result = run(
+            "timeline:rollup-master",
+            &["--commit".to_owned()],
+            journal.path(),
+            &services(&picker, &model),
+        );
+
+        assert_eq!(result.exit_code, 1);
+        assert!(result.stderr.contains("stale"), "{}", result.stderr);
+        assert!(
+            result.stderr.contains("day timeline inputs have changed"),
+            "{}",
+            result.stderr
+        );
         assert!(!journal.path().join("timeline.json").exists());
     }
 

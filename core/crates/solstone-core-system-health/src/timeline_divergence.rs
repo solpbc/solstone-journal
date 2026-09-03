@@ -13,9 +13,10 @@ use chrono::{DateTime, Utc};
 use solstone_core_timeline::{
     ArtifactCurrentness, AttemptOutcome, DayTimelineV1, MasterTimelineV1, SegmentTimelineV1,
     TimelineError, TimelineStateV1, day_subject_key, day_timeline_path,
-    evaluate_artifact_currentness, load_timeline_state, master_subject_key, master_timeline_path,
-    segment_subject_key, validate_day_timeline, validate_master_timeline,
-    validate_segment_timeline,
+    discover_day_segment_bindings, evaluate_artifact_currentness, load_timeline_state,
+    master_subject_key, master_timeline_path, resolve_eligible_activity_source,
+    segment_subject_key, segment_timeline_path, validate_day_timeline, validate_master_timeline,
+    validate_segment_timeline, verify_segment_source,
 };
 use thiserror::Error;
 
@@ -36,12 +37,11 @@ pub enum TimelineHealthError {
     Directory { path: PathBuf, source: io::Error },
     #[error("timeline durable state is unavailable: {0}")]
     State(#[source] TimelineError),
+    #[error("timeline source population is unavailable: {0}")]
+    Source(#[source] TimelineError),
 }
 
-/// Independently verify artifact schema, state agreement, and day/master agreement.
-///
-/// This deliberately reads only the small timeline artifacts and their durable state;
-/// it does not rescan source activity or recompute curation input digests.
+/// Independently verify live source coverage, artifact schema, durable state, and rollup agreement.
 pub fn diagnose_timeline_divergence(
     journal: &Path,
     _now: DateTime<Utc>,
@@ -55,7 +55,10 @@ pub fn diagnose_timeline_divergence(
             days.entry(day.clone()).or_insert(read_day(journal, &day)?);
         }
     }
-    let segments = read_segment_artifacts(&day_directories)?;
+    let SegmentScan {
+        artifacts: segments,
+        eligible_paths: eligible_segment_paths,
+    } = read_segment_artifacts(journal, &day_directories)?;
 
     if is_empty_inventory(&master, &days, &segments, &state) {
         return Ok(TimelineDivergenceDiagnosis::NoData);
@@ -71,6 +74,10 @@ pub fn diagnose_timeline_divergence(
     let observed = observed_digests(&master, &days, &segments);
     if let Some(detail) = uncertain_attempt(&state, &observed) {
         return Ok(TimelineDivergenceDiagnosis::Uncertain { detail });
+    }
+
+    if let Some(detail) = segment_day_divergence(&days, &segments, &eligible_segment_paths) {
+        return Ok(TimelineDivergenceDiagnosis::Diverged { detail });
     }
 
     if let Some(detail) = day_master_divergence(&master, &days) {
@@ -96,6 +103,11 @@ enum ArtifactRead<T> {
 struct DayDirectory {
     day: String,
     path: PathBuf,
+}
+
+struct SegmentScan {
+    artifacts: Vec<(PathBuf, ArtifactRead<SegmentTimelineV1>)>,
+    eligible_paths: BTreeSet<PathBuf>,
 }
 
 fn read_master(journal: &Path) -> Result<ArtifactRead<MasterTimelineV1>, TimelineHealthError> {
@@ -187,9 +199,11 @@ fn read_standalone_days(
 }
 
 fn read_segment_artifacts(
+    journal: &Path,
     directories: &[DayDirectory],
-) -> Result<Vec<(PathBuf, ArtifactRead<SegmentTimelineV1>)>, TimelineHealthError> {
+) -> Result<SegmentScan, TimelineHealthError> {
     let mut paths = BTreeSet::new();
+    let mut eligible_paths = BTreeSet::new();
     for directory in directories {
         let entries =
             fs::read_dir(&directory.path).map_err(|source| TimelineHealthError::Directory {
@@ -230,17 +244,53 @@ fn read_segment_artifacts(
             }
         }
     }
-    paths
+    for directory in directories {
+        let bindings = discover_day_segment_bindings(journal, &directory.day)
+            .map_err(TimelineHealthError::Source)?;
+        for binding in bindings {
+            match resolve_eligible_activity_source(journal, &binding) {
+                Ok(Some(_)) => {
+                    let path = segment_timeline_path(journal, &binding)
+                        .map_err(TimelineHealthError::Source)?;
+                    eligible_paths.insert(path.clone());
+                    paths.insert(path);
+                }
+                Err(_) => {
+                    paths.insert(
+                        segment_timeline_path(journal, &binding)
+                            .map_err(TimelineHealthError::Source)?,
+                    );
+                }
+                Ok(None) => {}
+            }
+        }
+    }
+    let artifacts = paths
         .into_iter()
         .map(|path| {
+            let canonical_path = path.clone();
             let value = read_artifact(&path, |bytes| {
                 let value = serde_json::from_slice(bytes)?;
                 validate_segment_timeline(&value)?;
+                let expected_path = segment_timeline_path(journal, &value.binding)?;
+                if expected_path != canonical_path {
+                    return Err(TimelineError::InvalidSourceEvidence {
+                        detail: format!(
+                            "segment artifact path {} does not match its binding",
+                            canonical_path.display()
+                        ),
+                    });
+                }
+                verify_segment_source(journal, &value)?;
                 Ok(value)
             })?;
             Ok((path, value))
         })
-        .collect()
+        .collect::<Result<Vec<_>, TimelineHealthError>>()?;
+    Ok(SegmentScan {
+        artifacts,
+        eligible_paths,
+    })
 }
 
 fn is_empty_inventory(
@@ -355,6 +405,44 @@ fn day_master_divergence(
     None
 }
 
+fn segment_day_divergence(
+    days: &BTreeMap<String, ArtifactRead<DayTimelineV1>>,
+    segments: &[(PathBuf, ArtifactRead<SegmentTimelineV1>)],
+    eligible_paths: &BTreeSet<PathBuf>,
+) -> Option<String> {
+    let mut segment_counts = BTreeMap::<String, usize>::new();
+    for (path, artifact) in segments {
+        if !eligible_paths.contains(path) {
+            continue;
+        }
+        if let ArtifactRead::Valid(segment) = artifact {
+            *segment_counts
+                .entry(segment.binding.day.clone())
+                .or_default() += 1;
+        }
+    }
+    for (day, artifact) in days {
+        let ArtifactRead::Valid(timeline) = artifact else {
+            continue;
+        };
+        let current_count = segment_counts.remove(day).unwrap_or_default();
+        if timeline.segment_count != current_count {
+            return Some(format!(
+                "day {day} segment count is {}, but {current_count} current source-backed segment summaries exist",
+                timeline.segment_count
+            ));
+        }
+    }
+    segment_counts
+        .into_iter()
+        .find(|(_, count)| *count > 0)
+        .map(|(day, count)| {
+            format!(
+                "day {day} has {count} current source-backed segment summaries but no standalone day artifact"
+            )
+        })
+}
+
 fn stale_reasons(
     journal: &Path,
     master: &ArtifactRead<MasterTimelineV1>,
@@ -408,9 +496,12 @@ fn stale_reasons(
             ));
         }
     }
-    for (_, artifact) in segments {
+    for (path, artifact) in segments {
         if matches!(artifact, ArtifactRead::Missing) {
-            stale.push("segment timeline artifact is missing".to_owned());
+            stale.push(format!(
+                "segment timeline artifact {} is missing",
+                path.display()
+            ));
         }
     }
     Ok(stale)
@@ -473,7 +564,7 @@ mod tests {
         ArtifactStateV1, AttemptOutcome, AttemptStateV1, CURRENT_SCHEMA_VERSION, CurationRecordV1,
         DayTimelineV1, MasterTimelineV1, SegmentBindingV1, SegmentSummaryV1, SegmentTimelineV1,
         TimelineKind, day_subject_key, day_timeline_path, master_subject_key, master_timeline_path,
-        segment_subject_key, timeline_state_path,
+        publish_segment_timeline, segment_subject_key, timeline_state_path,
     };
 
     use super::{TimelineDivergenceDiagnosis, diagnose_timeline_divergence};
@@ -615,6 +706,41 @@ mod tests {
         write_json(&timeline_state_path(root), &state);
     }
 
+    fn publish_extra_segment(root: &Path, segment_name: &str, source_text: &str) {
+        let mut added = segment();
+        added.binding.segment = segment_name.to_owned();
+        let source_path = root
+            .join("chronicle")
+            .join(DAY)
+            .join(segment_name)
+            .join("talents/activity.md");
+        fs::create_dir_all(source_path.parent().expect("source parent")).expect("source parent");
+        fs::write(&source_path, source_text).expect("source");
+        added.source = Some(solstone_core_timeline::SegmentSourceV1::GeneratedActivity {
+            schema_version: solstone_core_timeline::SEGMENT_SOURCE_SCHEMA_VERSION,
+            relative_path: format!("chronicle/{DAY}/{segment_name}/talents/activity.md"),
+            sha256: solstone_core_timeline::artifact_sha256(source_text),
+        });
+        added.input_digest = solstone_core_timeline::segment_input_digest(
+            &added.binding,
+            added.source.as_ref().expect("source"),
+        )
+        .expect("input digest");
+        publish_segment_timeline(
+            root,
+            &added,
+            AttemptStateV1 {
+                attempt_id: format!("added-{segment_name}"),
+                input_digest: added.input_digest.clone(),
+                started_at_ms: 2,
+                finished_at_ms: None,
+                outcome: AttemptOutcome::Running,
+                detail: String::new(),
+            },
+        )
+        .expect("added segment publishes");
+    }
+
     fn diagnose(root: &Path) -> TimelineDivergenceDiagnosis {
         diagnose_timeline_divergence(root, Utc.with_ymd_and_hms(2026, 6, 1, 0, 0, 0).unwrap())
             .expect("diagnosis")
@@ -624,6 +750,48 @@ mod tests {
     fn clean_requires_current_segment_day_and_master_artifacts() {
         let root = tempfile::tempdir().expect("root");
         write_clean(root.path());
+        assert_eq!(diagnose(root.path()), TimelineDivergenceDiagnosis::Clean);
+    }
+
+    #[test]
+    fn source_backed_segment_without_a_summary_is_not_invisible() {
+        let root = tempfile::tempdir().expect("root");
+        write_clean(root.path());
+        let missing = root
+            .path()
+            .join("chronicle")
+            .join(DAY)
+            .join("100000_300/talents");
+        fs::create_dir_all(&missing).expect("missing summary source parent");
+        fs::write(missing.join("activity.md"), "unpublished activity")
+            .expect("missing summary source");
+
+        assert!(matches!(
+            diagnose(root.path()),
+            TimelineDivergenceDiagnosis::Stale { detail }
+                if detail.contains("100000_300") && detail.contains("missing")
+        ));
+    }
+
+    #[test]
+    fn newly_summarized_segment_makes_older_day_rollup_diverge() {
+        let root = tempfile::tempdir().expect("root");
+        write_clean(root.path());
+        publish_extra_segment(root.path(), "100000_300", "later activity");
+
+        assert!(matches!(
+            diagnose(root.path()),
+            TimelineDivergenceDiagnosis::Diverged { detail }
+                if detail.contains(DAY) && detail.contains("segment count")
+        ));
+    }
+
+    #[test]
+    fn blank_activity_artifact_does_not_expand_the_day_population() {
+        let root = tempfile::tempdir().expect("root");
+        write_clean(root.path());
+        publish_extra_segment(root.path(), "100000_300", " \n");
+
         assert_eq!(diagnose(root.path()), TimelineDivergenceDiagnosis::Clean);
     }
 

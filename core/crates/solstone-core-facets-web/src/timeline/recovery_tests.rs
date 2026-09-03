@@ -112,7 +112,7 @@ async fn recovery_fixture_converges_legacy_segment_population_to_verified_owner_
             journal.path(),
             &[
                 "run",
-                "timeline:rollup",
+                "timeline:rollup-day",
                 "--day",
                 day,
                 "--commit",
@@ -123,6 +123,11 @@ async fn recovery_fixture_converges_legacy_segment_population_to_verified_owner_
         assert_eq!(result.exit_code, 0, "{day}: {result:?}");
         assert!(day_timeline_path(journal.path(), day).is_file());
     }
+    let master = run_timeline(
+        journal.path(),
+        &["run", "timeline:rollup-master", "--commit", "--top", "100"],
+    );
+    assert_eq!(master.exit_code, 0, "{master:?}");
     let recovered_master: MasterTimelineV1 = serde_json::from_slice(
         &fs::read(journal.path().join("timeline.json")).expect("recovered master reads"),
     )
