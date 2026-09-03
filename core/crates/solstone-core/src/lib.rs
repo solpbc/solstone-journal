@@ -4,6 +4,7 @@
 //! Library seams shared by the native supervisor executable and hosted callers.
 
 pub mod installation_context;
+#[cfg(unix)]
 pub mod supervisor;
 
 // The route command is owned by the binary, but these protocol and lock units
