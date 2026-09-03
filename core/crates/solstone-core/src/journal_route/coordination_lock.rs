@@ -145,14 +145,14 @@ fn open_owner(directory: &OwnedFd) -> Result<OwnedFd, RouteLockState> {
     Ok(owner)
 }
 
-fn is_directory_with_mode(directory: &OwnedFd, mode: u32) -> bool {
+fn is_directory_with_mode(directory: &OwnedFd, mode: nix::libc::mode_t) -> bool {
     fstat(directory).is_ok_and(|metadata| {
         SFlag::from_bits_truncate(metadata.st_mode).contains(SFlag::S_IFDIR)
             && metadata.st_mode & 0o7777 == mode
     })
 }
 
-fn is_regular_with_mode(mode: u32, expected: u32) -> bool {
+fn is_regular_with_mode(mode: nix::libc::mode_t, expected: nix::libc::mode_t) -> bool {
     SFlag::from_bits_truncate(mode).contains(SFlag::S_IFREG) && mode & 0o7777 == expected
 }
 
