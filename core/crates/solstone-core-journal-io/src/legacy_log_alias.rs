@@ -568,24 +568,15 @@ fn is_file_symbolic_link(metadata: &Metadata) -> bool {
 }
 
 fn journal_entry_kind(metadata: &Metadata) -> JournalEntryKind {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-
-        JournalEntryKind::from_mode(nix::sys::stat::SFlag::from_bits_truncate(metadata.mode()))
-    }
-    #[cfg(windows)]
-    {
-        let file_type = metadata.file_type();
-        if is_symbolic_link(metadata) {
-            JournalEntryKind::Symlink
-        } else if file_type.is_file() {
-            JournalEntryKind::RegularFile
-        } else if file_type.is_dir() {
-            JournalEntryKind::Directory
-        } else {
-            JournalEntryKind::Other
-        }
+    let file_type = metadata.file_type();
+    if is_symbolic_link(metadata) {
+        JournalEntryKind::Symlink
+    } else if file_type.is_file() {
+        JournalEntryKind::RegularFile
+    } else if file_type.is_dir() {
+        JournalEntryKind::Directory
+    } else {
+        JournalEntryKind::Other
     }
 }
 
