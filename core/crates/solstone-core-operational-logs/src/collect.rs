@@ -57,8 +57,9 @@ impl SourceTailSnapshot {
     }
 }
 
-/// Collect today's raw `.log` tail for one canonical source and retain its
-/// exact descriptor frontiers for a subsequent follow handoff.
+/// Collect the current and prior local day's raw `.log` tail for one canonical
+/// source and retain its exact descriptor frontiers for a subsequent follow
+/// handoff.
 pub fn collect_source_tail_snapshot(
     journal_root: &Path,
     now: NaiveDateTime,
@@ -66,7 +67,11 @@ pub fn collect_source_tail_snapshot(
     tail_byte_limit: usize,
 ) -> Result<SourceTailSnapshot, CollectError> {
     let root = JournalRoot::open(journal_root).map_err(|_| CollectError::Root)?;
-    let snapshot = catalog_oplogs(root, &[now.date()]).map_err(CollectError::Catalog)?;
+    let today = now.date();
+    let days = today
+        .pred_opt()
+        .map_or_else(|| vec![today], |previous| vec![previous, today]);
+    let snapshot = catalog_oplogs(root, &days).map_err(CollectError::Catalog)?;
     let mut tail = Vec::new();
     let mut entries = Vec::new();
     for (entry, mut file) in snapshot.into_catalogued_entries() {
@@ -225,6 +230,43 @@ mod tests {
                     .is_empty()
             );
         }
+    }
+
+    #[test]
+    fn source_tail_snapshot_retains_previous_day_bytes_and_frontiers() {
+        use std::io::Write;
+
+        let temporary = tempfile::tempdir().unwrap();
+        let offset = FixedOffset::east_opt(0).unwrap();
+        let previous = offset
+            .with_ymd_and_hms(2026, 8, 7, 23, 59, 59)
+            .single()
+            .unwrap();
+        let today = offset
+            .with_ymd_and_hms(2026, 8, 8, 0, 0, 1)
+            .single()
+            .unwrap();
+        for (opened, bytes) in [
+            (previous, b"before midnight\n".as_slice()),
+            (today, b"after midnight\n".as_slice()),
+        ] {
+            let mut writer = create_oplog_at(
+                JournalRoot::open(temporary.path()).unwrap(),
+                "service",
+                "supervisor",
+                OplogFormat::Log,
+                opened,
+            )
+            .unwrap();
+            writer.write_all(bytes).unwrap();
+        }
+
+        let snapshot =
+            collect_source_tail_snapshot(temporary.path(), today.naive_local(), "service", 1024)
+                .unwrap();
+
+        assert_eq!(snapshot.tail(), b"before midnight\nafter midnight\n");
+        assert_eq!(snapshot.entries.len(), 2);
     }
 
     #[test]
