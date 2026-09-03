@@ -29,6 +29,9 @@ solstone-core-timeline.workspace = true
 pdf-extract.workspace = true
 sha2.workspace = true
 solstone-core-convey-shell.workspace = true
+solstone-core-generate.workspace = true
+solstone-core-maintenance.workspace = true
+solstone-core-system-health.workspace = true
 tempfile = "3.24.0"
 tokio = { workspace = true, features = ["macros", "rt"] }
 tower.workspace = true

@@ -4143,9 +4143,12 @@ dependencies = [
  "solstone-core-entity",
  "solstone-core-facets",
  "solstone-core-format",
+ "solstone-core-generate",
  "solstone-core-journal-io",
+ "solstone-core-maintenance",
  "solstone-core-speaker-resolve",
  "solstone-core-system",
+ "solstone-core-system-health",
  "solstone-core-timeline",
  "tempfile",
  "tokio",
@@ -5526,6 +5529,7 @@ dependencies = [
 name = "solstone-core-timeline"
 version = "2.0.0"
 dependencies = [
+ "nix",
  "serde",
  "serde_json",
  "sha2",

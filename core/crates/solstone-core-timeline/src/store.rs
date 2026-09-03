@@ -244,6 +244,14 @@ mod tests {
     use std::collections::BTreeMap;
     use std::fs;
 
+    #[cfg(unix)]
+    use nix::errno::Errno;
+    #[cfg(unix)]
+    use solstone_core_journal_io::{
+        BoundPublicationPrimitive, run_with_bound_publication_barrier,
+        run_with_bound_publication_fault,
+    };
+
     use super::*;
     use crate::{
         AttemptOutcome, CurationRecordV1, DayTimelineV1, MasterTimelineV1, TimelineKind,
@@ -393,6 +401,191 @@ mod tests {
                 .attempts
                 .values()
                 .any(|attempt| attempt.outcome == AttemptOutcome::Published)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn publication_faults_never_advance_current_artifact_state() {
+        struct Case {
+            name: &'static str,
+            ordinal: usize,
+            expected_attempt: Option<AttemptOutcome>,
+        }
+
+        for case in [
+            Case {
+                name: "durable_state_write",
+                ordinal: 1,
+                expected_attempt: None,
+            },
+            Case {
+                name: "artifact_write",
+                ordinal: 2,
+                expected_attempt: Some(AttemptOutcome::Failed),
+            },
+        ] {
+            let journal = tempfile::tempdir().unwrap();
+            fs::create_dir_all(journal.path().join("chronicle/20260401")).unwrap();
+            let (result, consumed) = run_with_bound_publication_fault(
+                BoundPublicationPrimitive::TempCreate,
+                case.ordinal,
+                Errno::EIO as i32,
+                || publish_day_timeline(journal.path(), &day_timeline(), attempt()),
+            );
+
+            assert!(consumed, "{} fault must be consumed", case.name);
+            assert!(
+                matches!(result, Err(TimelineError::Atomic(_))),
+                "{}",
+                case.name
+            );
+            assert_no_current_artifact(journal.path(), &day_subject_key("20260401"));
+            let state = load_timeline_state(journal.path()).unwrap();
+            match case.expected_attempt {
+                Some(outcome) => assert!(state.attempts.values().any(|attempt| {
+                    attempt.outcome == outcome
+                        && attempt.detail.len() <= crate::MAX_DIAGNOSTIC_DETAIL_BYTES
+                })),
+                None => assert!(state.attempts.is_empty()),
+            }
+            assert!(!day_timeline_path(journal.path(), "20260401").exists());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn lock_acquisition_failure_never_starts_or_publishes_a_segment_attempt() {
+        let journal = tempfile::tempdir().unwrap();
+        fs::create_dir_all(journal.path().join("health/timeline")).unwrap();
+        fs::write(
+            journal.path().join("health/timeline/locks"),
+            b"not a directory",
+        )
+        .unwrap();
+
+        let result = publish_segment_timeline(
+            journal.path(),
+            &SegmentTimelineV1 {
+                schema_version: CURRENT_SCHEMA_VERSION,
+                kind: crate::TimelineKind::Segment,
+                binding: binding(),
+                input_digest: "input".to_owned(),
+                generated_at_ms: 2,
+                summary: SegmentSummaryV1 {
+                    title: "Title".to_owned(),
+                    description: "Description".to_owned(),
+                    origin: "20260401/080000_300".to_owned(),
+                    continuation_of: None,
+                },
+                provenance: None,
+            },
+            attempt(),
+        );
+
+        assert!(matches!(result, Err(TimelineError::LockContention { .. })));
+        assert_no_current_artifact(journal.path(), &segment_subject_key(&binding()));
+        assert!(
+            load_timeline_state(journal.path())
+                .unwrap()
+                .attempts
+                .is_empty()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn durability_uncertainty_records_only_an_uncertain_attempt() {
+        let journal = tempfile::tempdir().unwrap();
+        fs::create_dir_all(journal.path().join("chronicle/20260401")).unwrap();
+        let (result, consumed) = run_with_bound_publication_fault(
+            BoundPublicationPrimitive::ParentSync,
+            2,
+            Errno::EIO as i32,
+            || publish_day_timeline(journal.path(), &day_timeline(), attempt()),
+        );
+
+        assert!(consumed);
+        assert!(matches!(
+            result,
+            Err(TimelineError::DurabilityUncertain { .. })
+        ));
+        assert!(day_timeline_path(journal.path(), "20260401").is_file());
+        assert_no_current_artifact(journal.path(), &day_subject_key("20260401"));
+        assert!(
+            load_timeline_state(journal.path())
+                .unwrap()
+                .attempts
+                .values()
+                .any(|attempt| {
+                    attempt.outcome == AttemptOutcome::DurabilityUncertain
+                        && attempt.detail.len() <= crate::MAX_DIAGNOSTIC_DETAIL_BYTES
+                })
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn parent_path_ambiguities_never_confirm_current_artifact_state() {
+        for replace_parent in [false, true] {
+            let journal = tempfile::tempdir().unwrap();
+            let parent = journal.path().join("chronicle/20260401");
+            fs::create_dir_all(&parent).unwrap();
+            let relocated = journal.path().join("relocated-day");
+            let parent_for_barrier = parent.clone();
+            let relocated_for_barrier = relocated.clone();
+            let (result, fired) = run_with_bound_publication_barrier(
+                BoundPublicationPrimitive::ParentSync,
+                2,
+                move || {
+                    fs::rename(&parent_for_barrier, &relocated_for_barrier).unwrap();
+                    if replace_parent {
+                        fs::create_dir(&parent_for_barrier).unwrap();
+                    }
+                },
+                || publish_day_timeline(journal.path(), &day_timeline(), attempt()),
+            );
+
+            assert!(fired);
+            let error = result.expect_err("parent ambiguity must not confirm publication");
+            let TimelineError::PublicationNotConfirmed { detail, .. } = error else {
+                panic!("expected a publication-not-confirmed error");
+            };
+            if replace_parent {
+                assert!(detail.contains("parent path raced"));
+            } else {
+                assert!(!detail.contains("parent path raced"));
+            }
+            assert!(detail.len() <= crate::MAX_DIAGNOSTIC_DETAIL_BYTES);
+            assert_no_current_artifact(journal.path(), &day_subject_key("20260401"));
+            assert!(
+                load_timeline_state(journal.path())
+                    .unwrap()
+                    .attempts
+                    .values()
+                    .any(|attempt| {
+                        attempt.outcome == AttemptOutcome::Failed
+                            && attempt.detail.len() <= crate::MAX_DIAGNOSTIC_DETAIL_BYTES
+                    })
+            );
+            if replace_parent {
+                assert!(!parent.join("timeline.json").exists());
+            } else {
+                assert!(!parent.exists());
+            }
+            assert!(relocated.join("timeline.json").is_file());
+        }
+    }
+
+    #[cfg(unix)]
+    fn assert_no_current_artifact(journal: &Path, subject: &str) {
+        let state = load_timeline_state(journal).unwrap();
+        assert!(!state.artifacts.contains_key(subject));
+        assert!(
+            state
+                .attempts
+                .values()
+                .all(|attempt| attempt.outcome != AttemptOutcome::Published)
         );
     }
 }

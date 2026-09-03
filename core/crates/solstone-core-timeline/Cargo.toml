@@ -21,4 +21,8 @@ solstone-core-brain.workspace = true
 solstone-core-journal-io.workspace = true
 
 [dev-dependencies]
+solstone-core-journal-io = { workspace = true, features = ["test-hooks"] }
 tempfile = "3.24.0"
+
+[target.'cfg(unix)'.dev-dependencies]
+nix.workspace = true

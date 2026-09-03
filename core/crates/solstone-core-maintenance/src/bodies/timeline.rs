@@ -1291,7 +1291,7 @@ mod tests {
         SegmentSummaryV1, SegmentTimelineV1, TimelineEntryV1, TimelineKind, load_timeline_state,
     };
     use std::collections::{BTreeMap, VecDeque};
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::sync::Mutex;
 
     struct Host(&'static str);
@@ -1604,6 +1604,71 @@ mod tests {
                 .join("chronicle/20260301/timeline.json")
                 .exists()
         );
+    }
+
+    #[test]
+    fn preview_stays_read_only_when_commit_would_fail_timeline_lock_acquisition() {
+        let journal = tempfile::tempdir().unwrap();
+        let day = "20260301";
+        write_segment(
+            journal.path(),
+            day,
+            "field.audio",
+            "080000_1",
+            json!({"title":"Preview", "description":"must not write"}),
+        );
+        std::fs::create_dir_all(journal.path().join("health/timeline")).unwrap();
+        std::fs::write(
+            journal.path().join("health/timeline/locks"),
+            b"not a directory",
+        )
+        .unwrap();
+        let before = file_snapshot(journal.path());
+        let picker = Picker::canned([]);
+        let model = Model::new("model");
+
+        let preview = run(
+            "timeline:rollup",
+            &["--day".to_owned(), day.to_owned(), "--dry-run".to_owned()],
+            journal.path(),
+            &services(&picker, &model),
+        );
+
+        assert_eq!(preview.exit_code, 0);
+        assert!(preview.stdout.contains("[would_publish]"));
+        assert_eq!(file_snapshot(journal.path()), before);
+
+        let commit = run(
+            "timeline:rollup",
+            &["--day".to_owned(), day.to_owned(), "--commit".to_owned()],
+            journal.path(),
+            &services(&picker, &model),
+        );
+
+        assert_eq!(commit.exit_code, 1);
+        assert!(commit.stderr.contains("timeline lock contention"));
+        assert_eq!(file_snapshot(journal.path()), before);
+    }
+
+    fn file_snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+        fn collect(root: &Path, path: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
+            for entry in std::fs::read_dir(path).unwrap() {
+                let entry = entry.unwrap();
+                let path = entry.path();
+                if path.is_dir() {
+                    collect(root, &path, files);
+                } else {
+                    files.insert(
+                        path.strip_prefix(root).unwrap().to_path_buf(),
+                        std::fs::read(path).unwrap(),
+                    );
+                }
+            }
+        }
+
+        let mut files = BTreeMap::new();
+        collect(root, root, &mut files);
+        files
     }
 
     #[test]

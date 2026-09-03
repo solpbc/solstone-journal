@@ -24,6 +24,8 @@ use crate::{
 mod browser;
 mod day;
 mod projection;
+#[cfg(test)]
+mod recovery_tests;
 mod rollup;
 mod segment;
 
