@@ -39,8 +39,8 @@ use serde_json::Value;
 use solstone_core_timeline::{
     AttemptOutcome, AttemptStateV1, CURRENT_SCHEMA_VERSION, SEGMENT_SOURCE_SCHEMA_VERSION,
     SegmentBindingV1, SegmentSourceV1, SegmentSummaryV1, SegmentTimelineV1, TimelineKind,
-    new_attempt_id, origin_for_binding, publish_segment_timeline, resolve_activity_source,
-    segment_input_digest, segment_subject_key,
+    new_attempt_id, origin_for_binding, publish_continuation_summary, publish_segment_timeline,
+    resolve_activity_source, segment_input_digest, segment_subject_key,
 };
 
 /// What a migration would do with one legacy artifact.
@@ -214,6 +214,18 @@ pub struct MigrationOutcome {
 
 const MAX_REPORTED_FAILURES: usize = 10;
 
+/// The exact prose `publish_continuation_summary` writes.
+///
+/// A legacy continuation artifact carries a predecessor, and the strict schema refuses to let
+/// a `generated_activity` source claim one -- that combination is what a continuation source
+/// exists to express. Republishing through the product's continuation path is therefore the
+/// only truthful option, and it rewrites the summary. Measured over the owner's corpus, all
+/// 10,840 legacy continuation artifacts carry exactly these two strings, so that rewrite is
+/// byte-identical. The constants below make that measurement a precondition rather than an
+/// assumption: prose that differs is left alone instead of being overwritten.
+const CONTINUATION_TITLE: &str = "Continued";
+const CONTINUATION_DESCRIPTION: &str = "Unchanged from the prior window.";
+
 impl MigrationOutcome {
     pub fn render(&self) -> String {
         let mut out = String::from("timeline legacy-artifact migration\n\n");
@@ -265,6 +277,19 @@ fn now_ms() -> i64 {
     .unwrap_or(0)
 }
 
+/// A migration attempt record. The `publish_*` entry points overwrite `input_digest` with the
+/// digest they actually publish, so the placeholder here is never the one that lands.
+fn migration_attempt(subject: &str) -> AttemptStateV1 {
+    AttemptStateV1 {
+        attempt_id: new_attempt_id(&format!("migrate-{subject}")),
+        input_digest: String::new(),
+        started_at_ms: now_ms(),
+        finished_at_ms: None,
+        outcome: AttemptOutcome::Running,
+        detail: String::new(),
+    }
+}
+
 fn text_field(body: &Value, key: &str) -> String {
     body.get(key)
         .and_then(Value::as_str)
@@ -282,6 +307,41 @@ fn rebind_one(
     let binding = binding_from_directory(directory)
         .ok_or_else(|| format!("{}: unreadable segment path", directory.display()))?;
     let subject = segment_subject_key(&binding);
+    // Legacy artifacts stamp `generated_at` in whole seconds. Keeping the original instant
+    // matters: currentness is ordered against it, so stamping "now" would assert that a
+    // five-year-old summary was produced during the migration.
+    let generated_at_ms = body
+        .get("generated_at")
+        .and_then(Value::as_i64)
+        .map_or_else(
+            || {
+                i64::try_from(artifact_mtime)
+                    .unwrap_or(0)
+                    .saturating_mul(1000)
+            },
+            |seconds| seconds.saturating_mul(1000),
+        );
+    if let Some(predecessor) = body
+        .get("continuation_of")
+        .and_then(Value::as_str)
+        .filter(|predecessor| !predecessor.is_empty())
+    {
+        if text_field(body, "title") != CONTINUATION_TITLE
+            || text_field(body, "description") != CONTINUATION_DESCRIPTION
+        {
+            return Err(format!(
+                "{subject}: continuation carries prose the continuation path would overwrite"
+            ));
+        }
+        return publish_continuation_summary(
+            journal,
+            binding,
+            predecessor.to_owned(),
+            generated_at_ms,
+            migration_attempt(&subject),
+        )
+        .map_err(|error| format!("{subject}: {error}"));
+    }
     let snapshot = resolve_activity_source(journal, &binding)
         .map_err(|error| format!("{subject}: {error}"))?
         .ok_or_else(|| format!("{subject}: activity source disappeared"))?;
@@ -301,20 +361,6 @@ fn rebind_one(
             .and_then(Value::as_str)
             .map(str::to_owned),
     };
-    // Legacy artifacts stamp `generated_at` in whole seconds. Keeping the original instant
-    // matters: currentness is ordered against it, so stamping "now" would assert that a
-    // five-year-old summary was produced during the migration.
-    let generated_at_ms = body
-        .get("generated_at")
-        .and_then(Value::as_i64)
-        .map_or_else(
-            || {
-                i64::try_from(artifact_mtime)
-                    .unwrap_or(0)
-                    .saturating_mul(1000)
-            },
-            |seconds| seconds.saturating_mul(1000),
-        );
     let timeline = SegmentTimelineV1 {
         schema_version: CURRENT_SCHEMA_VERSION,
         kind: TimelineKind::Segment,
@@ -330,24 +376,20 @@ fn rebind_one(
         // `publish_continuation_summary` sets the same precedent.
         provenance: None,
     };
-    let attempt = AttemptStateV1 {
-        attempt_id: new_attempt_id(&format!("migrate-{subject}")),
-        input_digest,
-        started_at_ms: now_ms(),
-        finished_at_ms: None,
-        outcome: AttemptOutcome::Running,
-        detail: String::new(),
-    };
+    let mut attempt = migration_attempt(&subject);
+    attempt.input_digest = input_digest;
     publish_segment_timeline(journal, &timeline, attempt)
         .map_err(|error| format!("{subject}: {error}"))
 }
 
 /// Walk the chronicle and re-bind every re-bindable legacy artifact.
 ///
-/// `limit` bounds how many artifacts are rewritten in one invocation, so a first run can be
-/// made small and inspected before the whole corpus is committed to.
+/// `limit` bounds how many artifacts are ATTEMPTED in one invocation, so a first run can be
+/// made small and inspected before the whole corpus is committed to. Bounding successes
+/// instead would let a run that refuses hundreds still walk the entire corpus.
 pub fn commit(journal: &Path, limit: Option<u64>) -> MigrationOutcome {
     let mut outcome = MigrationOutcome::default();
+    let mut attempted = 0u64;
     for entry in walk(journal) {
         match classify(
             entry.body.as_ref(),
@@ -357,9 +399,10 @@ pub fn commit(journal: &Path, limit: Option<u64>) -> MigrationOutcome {
             "current" => outcome.untouched += 1,
             "regenerate" => outcome.left_for_regeneration += 1,
             "rebind" => {
-                if limit.is_some_and(|limit| outcome.rebound >= limit) {
+                if limit.is_some_and(|limit| attempted >= limit) {
                     continue;
                 }
+                attempted += 1;
                 let Some(body) = entry.body.as_ref() else {
                     continue;
                 };
@@ -509,6 +552,82 @@ mod tests {
         let outcome = commit(journal, None);
         assert_eq!(outcome.rebound, 0);
         assert_eq!(outcome.left_for_regeneration, 1);
+        assert_eq!(fs::read_to_string(&artifact).unwrap(), before);
+    }
+
+    fn legacy_continuation_journal(title: &str) -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        let segment = root
+            .path()
+            .join("chronicle")
+            .join("20260101")
+            .join("device")
+            .join("120000_300");
+        fs::create_dir_all(segment.join("talents")).unwrap();
+        let activity = segment.join("talents").join("activity.md");
+        let change = segment.join("talents").join("change.json");
+        let artifact = segment.join("timeline.json");
+        fs::write(&activity, "# activity\n").unwrap();
+        fs::write(&change, r#"{"change_class":"active"}"#).unwrap();
+        fs::write(
+            &artifact,
+            format!(
+                r#"{{"title":"{title}","description":"Unchanged from the prior window.","origin":"20260101/device/120000_300","continuation_of":"115500_300","generated_at":1700000000}}"#
+            ),
+        )
+        .unwrap();
+        set_mtime(&activity, 7200);
+        set_mtime(&change, 7200);
+        set_mtime(&artifact, 3600);
+        root
+    }
+
+    /// A legacy continuation cannot be re-bound as a generated activity -- the schema refuses
+    /// that pairing -- so it goes through the product's continuation path instead, and the
+    /// prose it writes is the prose that was already there.
+    #[test]
+    fn a_legacy_continuation_migrates_through_the_continuation_path() {
+        let root = legacy_continuation_journal(CONTINUATION_TITLE);
+        let journal = root.path();
+        let outcome = commit(journal, None);
+        assert_eq!(outcome.rebound, 1, "{:?}", outcome.failures);
+        assert_eq!(outcome.failed, 0, "{:?}", outcome.failures);
+
+        let text = fs::read_to_string(
+            journal
+                .join("chronicle/20260101/device/120000_300")
+                .join("timeline.json"),
+        )
+        .unwrap();
+        let migrated: SegmentTimelineV1 = serde_json::from_str(&text).expect("parses as V1");
+        assert_eq!(migrated.summary.title, CONTINUATION_TITLE);
+        assert_eq!(migrated.summary.description, CONTINUATION_DESCRIPTION);
+        assert_eq!(
+            migrated.summary.continuation_of.as_deref(),
+            Some("115500_300"),
+            "the predecessor survives the migration"
+        );
+    }
+
+    /// The continuation path rewrites the summary, so it may only be used where that rewrite
+    /// is a no-op. Prose that differs is left byte-identical rather than overwritten.
+    #[test]
+    fn a_continuation_with_unexpected_prose_is_refused_not_overwritten() {
+        let root = legacy_continuation_journal("Something an owner would miss");
+        let journal = root.path();
+        let artifact = journal
+            .join("chronicle/20260101/device/120000_300")
+            .join("timeline.json");
+        let before = fs::read_to_string(&artifact).unwrap();
+
+        let outcome = commit(journal, None);
+        assert_eq!(outcome.rebound, 0);
+        assert_eq!(outcome.failed, 1);
+        assert!(
+            outcome.failures[0].contains("would overwrite"),
+            "{:?}",
+            outcome.failures
+        );
         assert_eq!(fs::read_to_string(&artifact).unwrap(), before);
     }
 
