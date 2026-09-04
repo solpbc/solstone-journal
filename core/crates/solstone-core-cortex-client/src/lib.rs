@@ -728,7 +728,11 @@ mod tests {
 
         let path = journal.path().join("talents/test/corrupt_active.jsonl");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(&path, b"{\"event\":\"finish\",\"use_id\":\"corrupt\"}\n\xff").unwrap();
+        fs::write(
+            &path,
+            b"{\"event\":\"finish\",\"use_id\":\"corrupt\"}\n\xff",
+        )
+        .unwrap();
         let corrupt = read_use_events(journal.path(), "corrupt").unwrap_err();
         assert_ne!(
             corrupt.kind(),
