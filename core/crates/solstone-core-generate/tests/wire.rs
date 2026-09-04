@@ -170,6 +170,11 @@ fn handle_local_request(mut stream: TcpStream, completion: Completion) -> bool {
         (r#"{"n_ctx":16384,"total_slots":1}"#.to_owned(), false)
     } else if request_line.starts_with("POST /tokenize ") {
         (r#"{"tokens":[1]}"#.to_owned(), false)
+    } else if request_line.starts_with("POST /v1/chat/completions/input_tokens ") {
+        (
+            r#"{"object":"response.input_tokens","input_tokens":1}"#.to_owned(),
+            false,
+        )
     } else if request_line.starts_with("POST /v1/chat/completions ") {
         (
             format!(

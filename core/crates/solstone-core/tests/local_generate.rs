@@ -46,6 +46,9 @@ fn path(mut stream: TcpStream) -> String {
         "/health" => r#"{"loaded_model":"served"}"#,
         "/props" => r#"{"n_ctx":16384,"total_slots":1}"#,
         "/tokenize" => r#"{"tokens":[1]}"#,
+        "/v1/chat/completions/input_tokens" => {
+            r#"{"object":"response.input_tokens","input_tokens":1}"#
+        }
         "/v1/chat/completions" => {
             r#"{"choices":[{"message":{"content":"hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#
         }
@@ -62,7 +65,7 @@ fn serve() -> (u16, thread::JoinHandle<Vec<String>>) {
     let port = listener.local_addr().expect("stub address").port();
     let handle = thread::spawn(move || {
         let mut paths = Vec::new();
-        for _ in 0..6 {
+        for _ in 0..5 {
             let (stream, _) = listener.accept().expect("accept request");
             paths.push(path(stream));
         }
@@ -123,7 +126,7 @@ fn generate_binary_emits_one_success_json_record() {
     let result: Value = serde_json::from_slice(&output.stdout).expect("single JSON stdout record");
     assert_eq!(result["outcome"], "success", "{result}");
     assert_eq!(result["text"], "hello");
-    assert_eq!(server.join().expect("join stub").len(), 6);
+    assert_eq!(server.join().expect("join stub").len(), 5);
     let _ = std::fs::remove_dir_all(journal);
 }
 
@@ -133,7 +136,7 @@ fn generate_binary_keeps_refusal_stdout_json_only() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind stub server");
     let port = listener.local_addr().expect("stub address").port();
     let server = thread::spawn(move || {
-        for index in 0..6 {
+        for index in 0..5 {
             let (mut stream, _) = listener.accept().expect("accept request");
             let mut request = [0_u8; 8192];
             let read = stream.read(&mut request).expect("read request");
@@ -142,12 +145,14 @@ fn generate_binary_keeps_refusal_stdout_json_only() {
                 .nth(1)
                 .expect("request path")
                 .to_owned();
-            let body = if index == 5 {
+            let body = if index == 4 {
                 "not-json"
             } else if path == "/health" {
                 r#"{"loaded_model":"served"}"#
             } else if path == "/props" {
                 r#"{"n_ctx":16384,"total_slots":1}"#
+            } else if path == "/v1/chat/completions/input_tokens" {
+                r#"{"object":"response.input_tokens","input_tokens":1}"#
             } else {
                 r#"{"tokens":[1]}"#
             };
