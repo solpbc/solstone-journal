@@ -9,6 +9,14 @@ pub struct PreviewRequest {
     pub day: Option<String>,
     pub segment: Option<String>,
     pub facet: Option<String>,
+    pub activity: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PromptPreviewRefusal {
+    pub code: String,
+    pub segment: Option<String>,
+    pub recovery: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -21,6 +29,7 @@ pub enum PromptPreview {
     WouldNotRun {
         reason: String,
     },
+    Refused(PromptPreviewRefusal),
     UnavailablePreStep,
     Failed {
         error: String,

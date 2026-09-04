@@ -64,6 +64,30 @@ pub fn compose_talent(
     let sources = composed.remove("load").unwrap_or_else(default_load);
     composed.insert("sources".to_owned(), sources);
 
+    let instruction = compose_talent_instruction(
+        config,
+        journal_root,
+        templates_dir,
+        focused_facet,
+        &BTreeMap::new(),
+    )?;
+    composed.insert("user_instruction".to_owned(), Value::String(instruction));
+    composed.insert("name".to_owned(), Value::String(config.key.clone()));
+    Ok(composed)
+}
+
+/// Render one talent body with the request-time context the runtime has in hand.
+///
+/// Definition-only callers pass an empty context. Day, segment, and activity
+/// callers pass the same values Python supplied when it reloaded the prompt
+/// after merging a request.
+pub fn compose_talent_instruction(
+    config: &TalentConfig,
+    journal_root: &Path,
+    templates_dir: &Path,
+    focused_facet: Option<&str>,
+    context: &BTreeMap<String, String>,
+) -> Result<String, String> {
     let facets = if focused_facet.is_none() {
         match load_raw_templates(templates_dir) {
             Ok(templates) => resolve_facets(
@@ -76,11 +100,9 @@ pub fn compose_talent(
     } else {
         resolve_facets(journal_root, focused_facet, None)?
     };
-    let context = BTreeMap::from([("facets".to_owned(), facets)]);
-    let instruction = compose_prompt_body(&config.body, journal_root, templates_dir, &context)?;
-    composed.insert("user_instruction".to_owned(), Value::String(instruction));
-    composed.insert("name".to_owned(), Value::String(config.key.clone()));
-    Ok(composed)
+    let mut context = context.clone();
+    context.insert("facets".to_owned(), facets);
+    compose_prompt_body(&config.body, journal_root, templates_dir, &context)
 }
 
 fn default_load() -> Value {

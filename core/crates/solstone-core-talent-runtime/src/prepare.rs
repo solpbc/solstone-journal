@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
-use solstone_core_talent_config::{TalentConfig, discover, is_truthy, merge};
+use solstone_core_talent_config::{TalentConfig, discover, is_truthy, merge, validate};
 
 use crate::{ExecutionContext, PreparedTalent, transcript};
 
@@ -58,15 +58,7 @@ pub fn prepare(
         .filter(|value| !value.is_empty())
         .ok_or_else(|| PrepareFailure::Refusal("talent request missing name".to_owned()))?
         .to_owned();
-    let mut configs =
-        discover(&paths.talent_root, &paths.apps_root).map_err(PrepareFailure::Refusal)?;
-    let overrides = talent_overrides(&context.journal);
-    merge(&mut configs, overrides.as_ref());
-    let config = configs
-        .into_iter()
-        .find(|config| config.key == name)
-        .ok_or_else(|| PrepareFailure::Refusal(format!("talent '{name}' not found")))?;
-    reject_definition_fields(&config, &name)?;
+    let config = resolve_talent_config(&name, paths, context)?;
     reject_request_fields(&config, &request, &name)?;
     let focused_facet = request.get("facet").and_then(Value::as_str);
     let mut composed = solstone_core_talent_cli::compose_talent(
@@ -157,6 +149,23 @@ pub fn prepare(
             composed.insert("transcript".to_owned(), Value::String(transcript));
         }
     }
+    if composed
+        .get("day")
+        .and_then(Value::as_str)
+        .is_some_and(|day| !day.is_empty())
+    {
+        let prompt_context = crate::prompt_context::build(&context.journal, &composed);
+        let focused_facet = composed.get("facet").and_then(Value::as_str);
+        let instruction = solstone_core_talent_cli::compose_talent_instruction(
+            &config,
+            &context.journal,
+            &paths.templates_dir,
+            focused_facet,
+            &prompt_context,
+        )
+        .map_err(PrepareFailure::Refusal)?;
+        composed.insert("user_instruction".to_owned(), Value::String(instruction));
+    }
     if let Some(output) = composed.get("output").and_then(Value::as_str)
         && let Some(day) = composed.get("day").and_then(Value::as_str)
     {
@@ -184,6 +193,52 @@ pub fn prepare(
         name,
         config: composed,
     })
+}
+
+/// Resolve owner overrides and definition-level refusals without composing a
+/// prompt or reading facet/segment source context.
+pub(crate) fn resolve_talent_config(
+    name: &str,
+    paths: &RuntimePaths,
+    context: &ExecutionContext,
+) -> Result<TalentConfig, PrepareFailure> {
+    let configs = merged_talent_configs(paths, context)?;
+    select_talent_config(configs, name)
+}
+
+/// Activity preview admits talents through the same whole-corpus validation
+/// gate production activity dispatch uses, without changing execute semantics.
+pub(crate) fn resolve_validated_talent_config(
+    name: &str,
+    paths: &RuntimePaths,
+    context: &ExecutionContext,
+) -> Result<TalentConfig, PrepareFailure> {
+    let mut configs = merged_talent_configs(paths, context)?;
+    validate(&mut configs).map_err(PrepareFailure::Refusal)?;
+    select_talent_config(configs, name)
+}
+
+fn merged_talent_configs(
+    paths: &RuntimePaths,
+    context: &ExecutionContext,
+) -> Result<Vec<TalentConfig>, PrepareFailure> {
+    let mut configs =
+        discover(&paths.talent_root, &paths.apps_root).map_err(PrepareFailure::Refusal)?;
+    let overrides = talent_overrides(&context.journal);
+    merge(&mut configs, overrides.as_ref());
+    Ok(configs)
+}
+
+fn select_talent_config(
+    configs: Vec<TalentConfig>,
+    name: &str,
+) -> Result<TalentConfig, PrepareFailure> {
+    let config = configs
+        .into_iter()
+        .find(|config| config.key == name)
+        .ok_or_else(|| PrepareFailure::Refusal(format!("talent '{name}' not found")))?;
+    reject_definition_fields(&config, name)?;
+    Ok(config)
 }
 
 fn source_count(counts: &solstone_core_transcripts::SourceCounts, source: &str) -> usize {
@@ -324,6 +379,8 @@ pub fn validate_config(config: &Map<String, Value>) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use serde_json::json;
 
     use super::*;
@@ -495,5 +552,171 @@ mod tests {
         let prepared = prepare(request, &paths, &context, PrepareMode::Preview)
             .expect("preview mode must skip the no-brain check");
         assert_eq!(prepared.config["provider"], "none");
+    }
+
+    #[test]
+    fn day_segment_request_renders_the_shipped_preamble_context() {
+        let root = tempfile::tempdir().expect("root");
+        let talent_root = root.path().join("talent");
+        let apps_root = root.path().join("apps");
+        let templates_dir = root.path().join("templates");
+        let journal = root.path().join("journal");
+        for directory in [
+            talent_root.clone(),
+            apps_root.clone(),
+            templates_dir.clone(),
+            journal.join("config"),
+        ] {
+            fs::create_dir_all(directory).expect("fixture directory");
+        }
+        fs::write(
+            journal.join("config/journal.json"),
+            r#"{"identity":{"preferred":"Soleil"},"providers":{"active":{"provider":"none"}}}"#,
+        )
+        .expect("journal config");
+        fs::write(
+            templates_dir.join("segment_preamble.md"),
+            "$preferred|$day|$day_YYYYMMDD|$segment_start|$segment_end|$content_description",
+        )
+        .expect("segment template");
+        fs::write(
+            talent_root.join("screen.md"),
+            "{\n\"type\":\"generate\"\n}\n$segment_preamble",
+        )
+        .expect("talent");
+        let prepared = prepare(
+            json!({
+                "name":"screen",
+                "day":"20260101",
+                "segment":"090000_60",
+                "stream":"import.obsidian"
+            })
+            .as_object()
+            .expect("request object")
+            .clone(),
+            &RuntimePaths {
+                talent_root,
+                apps_root,
+                templates_dir,
+            },
+            &ExecutionContext { journal },
+            PrepareMode::Preview,
+        )
+        .expect("prepare");
+        assert_eq!(
+            prepared.config["user_instruction"],
+            "Soleil|Thursday, January 01, 2026|20260101|9:00 AM|9:01 AM|an imported note from Obsidian"
+        );
+    }
+
+    #[test]
+    fn activity_request_renders_the_exact_python_context_sections() {
+        let root = tempfile::tempdir().expect("root");
+        let talent_root = root.path().join("talent");
+        let apps_root = root.path().join("apps");
+        let templates_dir = root.path().join("templates");
+        let journal = root.path().join("journal");
+        for directory in [
+            talent_root.clone(),
+            apps_root.clone(),
+            templates_dir.clone(),
+            journal.join("config"),
+            journal.join("facets/work"),
+            journal.join("chronicle/20260101/090000_60/talents/work"),
+            journal.join("chronicle/20260101/090200_120/talents/work"),
+        ] {
+            fs::create_dir_all(directory).expect("fixture directory");
+        }
+        fs::write(
+            journal.join("config/journal.json"),
+            r#"{"identity":{"preferred":"Soleil"},"providers":{"active":{"provider":"none"}}}"#,
+        )
+        .expect("journal config");
+        fs::write(
+            journal.join("facets/work/facet.json"),
+            r#"{"name":"work","description":"Work"}"#,
+        )
+        .expect("facet");
+        fs::write(
+            journal.join("chronicle/20260101/090000_60/talents/work/activity_state.json"),
+            r#"[{"activity":"coding","level":"high","description":"Debugged retry handling"}]"#,
+        )
+        .expect("first activity state");
+        fs::write(
+            journal.join("chronicle/20260101/090200_120/talents/work/activity_state.json"),
+            r#"[{"activity":"coding","level":"medium","description":"Verified the provider request"}]"#,
+        )
+        .expect("second activity state");
+        fs::write(
+            templates_dir.join("activity_preamble.md"),
+            concat!(
+                "You are analyzing a **$activity_type** activity from $preferred's journal on **$day** ($day_YYYYMMDD), covering **$segment_start to $segment_end** (~$activity_duration minutes).\n\n",
+                "**Activity:** $activity_type\n",
+                "**Description:** $activity_description\n",
+                "**Entities involved:** $activity_entities\n\n",
+                "The transcript below contains $content_description from the segments where this activity occurred. These segments may also contain content from other concurrent activities — focus your analysis ONLY on content related to this $activity_type activity."
+            ),
+        )
+        .expect("activity template");
+        fs::write(
+            talent_root.join("work.md"),
+            "{\n\"type\":\"generate\",\"schedule\":\"activity\",\"activities\":[\"coding\"]\n}\n$activity_context\n\n$activity_preamble",
+        )
+        .expect("talent");
+        let prepared = prepare(
+            json!({
+                "name":"work",
+                "day":"20260101",
+                "facet":"work",
+                "span":["090000_60", "090200_120"],
+                "activity":{
+                    "id":"coding_090000_60",
+                    "activity":"coding",
+                    "description":"Release work",
+                    "level_avg":0.8,
+                    "active_entities":["Mina", "Ravi"],
+                    "segments":["090000_60", "090200_120"]
+                }
+            })
+            .as_object()
+            .expect("request object")
+            .clone(),
+            &RuntimePaths {
+                talent_root,
+                apps_root,
+                templates_dir,
+            },
+            &ExecutionContext { journal },
+            PrepareMode::Preview,
+        )
+        .expect("prepare");
+        assert_eq!(
+            prepared.config["user_instruction"],
+            concat!(
+                "## Activity Context\n",
+                "- **Type:** coding\n",
+                "- **Description:** Release work\n",
+                "- **Engagement Level:** 0.8 (high)\n",
+                "- **Duration:** ~3 minutes (2 segments)\n",
+                "- **Active Entities:** Mina, Ravi\n\n",
+                "## Activity State Per Segment\n\n",
+                "### 090000_60 (9:00 AM - 9:01 AM)\n",
+                "coding [high]: Debugged retry handling\n\n",
+                "### 090200_120 (9:02 AM - 9:04 AM)\n",
+                "coding [medium]: Verified the provider request\n\n",
+                "## Analysis Focus\n",
+                "You are analyzing ONLY the **coding** activity within the **work** facet. The transcript segments may contain content from other concurrent activities (e.g., background meetings, messaging). Use the Activity State Per Segment section above to identify which content relates to this activity, and ignore unrelated content. Your analysis should only cover what happened within this specific activity.\n\n",
+                "You are analyzing a **coding** activity from Soleil's journal on **Thursday, January 01, 2026** (20260101), covering **9:00 AM to 9:04 AM** (~3 minutes).\n\n",
+                "**Activity:** coding\n",
+                "**Description:** Release work\n",
+                "**Entities involved:** Mina, Ravi\n\n",
+                "The transcript below contains audio transcription and screen recording from the segments where this activity occurred. These segments may also contain content from other concurrent activities — focus your analysis ONLY on content related to this coding activity."
+            )
+        );
+        let instruction = prepared.config["user_instruction"]
+            .as_str()
+            .expect("instruction");
+        assert!(!instruction.contains("$activity_"));
+        assert!(!instruction.contains("$segment_"));
     }
 }

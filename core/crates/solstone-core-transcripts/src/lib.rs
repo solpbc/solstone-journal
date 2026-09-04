@@ -10,7 +10,7 @@ use chrono::{Duration, NaiveDate, NaiveDateTime};
 use serde_json::{Map, Value};
 use solstone_core_format::content::{
     Family, RawPerceptFamily, iter_talent_text_projections, produce_chunks,
-    produce_raw_percept_chunks,
+    produce_raw_percept_chunks, produce_screen_talent_raw_screen_chunks,
 };
 use solstone_core_format::segment::segment_parse;
 use solstone_core_journal_io::paths::{PathOrDay, StreamLocation, iter_segments};
@@ -88,6 +88,12 @@ struct Segment {
     key: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PerceptProjection {
+    Generic,
+    ScreenTalent,
+}
+
 #[derive(Debug)]
 pub struct RangeError(String);
 
@@ -100,6 +106,23 @@ impl fmt::Display for RangeError {
 impl std::error::Error for RangeError {}
 
 pub fn cluster(root: &Path, day: &str, sources: &Sources) -> (String, SourceCounts) {
+    cluster_with_projection(root, day, sources, PerceptProjection::Generic)
+}
+
+pub fn cluster_for_screen_talent(
+    root: &Path,
+    day: &str,
+    sources: &Sources,
+) -> (String, SourceCounts) {
+    cluster_with_projection(root, day, sources, PerceptProjection::ScreenTalent)
+}
+
+fn cluster_with_projection(
+    root: &Path,
+    day: &str,
+    sources: &Sources,
+    projection: PerceptProjection,
+) -> (String, SourceCounts) {
     let day_dir = day_dir(root, day);
     // Python's day_path at solstone/think/utils.py:289 creates this directory before
     // cluster.py:794-797 checks it. Native reads stay non-creating: native think creates
@@ -110,7 +133,7 @@ pub fn cluster(root: &Path, day: &str, sources: &Sources) -> (String, SourceCoun
             SourceCounts::default(),
         );
     }
-    let entries = load_day(root, day, sources);
+    let entries = load_day(root, day, sources, projection);
     let counts = SourceCounts::from_entries(&entries);
     if entries.is_empty() {
         (
@@ -132,13 +155,41 @@ pub fn cluster_period(
     sources: &Sources,
     stream: Option<&str>,
 ) -> (String, SourceCounts) {
+    cluster_period_with_projection(root, day, key, sources, stream, PerceptProjection::Generic)
+}
+
+pub fn cluster_period_for_screen_talent(
+    root: &Path,
+    day: &str,
+    key: &str,
+    sources: &Sources,
+    stream: Option<&str>,
+) -> (String, SourceCounts) {
+    cluster_period_with_projection(
+        root,
+        day,
+        key,
+        sources,
+        stream,
+        PerceptProjection::ScreenTalent,
+    )
+}
+
+fn cluster_period_with_projection(
+    root: &Path,
+    day: &str,
+    key: &str,
+    sources: &Sources,
+    stream: Option<&str>,
+    projection: PerceptProjection,
+) -> (String, SourceCounts) {
     let Some(segment) = find_segment(root, day, key, stream) else {
         return (
             format!("Segment folder not found: {day}/{key}"),
             SourceCounts::default(),
         );
     };
-    let entries = process_segment(&segment, day, sources);
+    let entries = process_segment(&segment, day, sources, projection);
     let counts = SourceCounts::from_entries(&entries);
     if entries.is_empty() {
         (
@@ -157,6 +208,34 @@ pub fn cluster_span(
     sources: &Sources,
     stream: Option<&str>,
 ) -> Result<(String, SourceCounts), String> {
+    cluster_span_with_projection(root, day, span, sources, stream, PerceptProjection::Generic)
+}
+
+pub fn cluster_span_for_screen_talent(
+    root: &Path,
+    day: &str,
+    span: &[&str],
+    sources: &Sources,
+    stream: Option<&str>,
+) -> Result<(String, SourceCounts), String> {
+    cluster_span_with_projection(
+        root,
+        day,
+        span,
+        sources,
+        stream,
+        PerceptProjection::ScreenTalent,
+    )
+}
+
+fn cluster_span_with_projection(
+    root: &Path,
+    day: &str,
+    span: &[&str],
+    sources: &Sources,
+    stream: Option<&str>,
+    projection: PerceptProjection,
+) -> Result<(String, SourceCounts), String> {
     let mut found = Vec::new();
     let mut missing = Vec::new();
     for key in span {
@@ -173,7 +252,7 @@ pub fn cluster_span(
     }
     let mut entries = found
         .iter()
-        .flat_map(|segment| process_segment(segment, day, sources))
+        .flat_map(|segment| process_segment(segment, day, sources, projection))
         .collect::<Vec<_>>();
     let counts = SourceCounts::from_entries(&entries);
     if entries.is_empty() {
@@ -203,7 +282,7 @@ pub fn cluster_range(
     let end =
         NaiveDateTime::parse_from_str(&format!("{}{end}", date.format("%Y%m%d")), "%Y%m%d%H%M%S")
             .map_err(range_error)?;
-    let entries = load_day(root, day, sources)
+    let entries = load_day(root, day, sources, PerceptProjection::Generic)
         .into_iter()
         .filter(|entry| entry.segment_start < end && entry.segment_end > start)
         .collect();
@@ -214,16 +293,26 @@ fn range_error(error: impl fmt::Display) -> RangeError {
     RangeError(error.to_string())
 }
 
-fn load_day(root: &Path, day: &str, sources: &Sources) -> Vec<Entry> {
+fn load_day(
+    root: &Path,
+    day: &str,
+    sources: &Sources,
+    projection: PerceptProjection,
+) -> Vec<Entry> {
     let mut entries = all_segments(root, day)
         .into_iter()
-        .flat_map(|segment| process_segment(&segment, day, sources))
+        .flat_map(|segment| process_segment(&segment, day, sources, projection))
         .collect::<Vec<_>>();
     entries.sort_by_key(|entry| entry.timestamp);
     entries
 }
 
-fn process_segment(segment: &Segment, day: &str, sources: &Sources) -> Vec<Entry> {
+fn process_segment(
+    segment: &Segment,
+    day: &str,
+    sources: &Sources,
+    projection: PerceptProjection,
+) -> Vec<Entry> {
     let Some((start, end)) = segment_times(day, &segment.key) else {
         return Vec::new();
     };
@@ -244,7 +333,13 @@ fn process_segment(segment: &Segment, day: &str, sources: &Sources) -> Vec<Entry
         transcript.sort();
         transcript.dedup();
         for path in transcript {
-            if let Some(content) = raw_content(path, segment, day, RawPerceptFamily::Audio) {
+            if let Some(content) = raw_content(
+                path,
+                segment,
+                day,
+                RawPerceptFamily::Audio,
+                PerceptProjection::Generic,
+            ) {
                 entries.push(entry(
                     start,
                     end,
@@ -290,7 +385,13 @@ fn process_segment(segment: &Segment, day: &str, sources: &Sources) -> Vec<Entry
         }
         for path in &files {
             if first_kind(path).as_deref() == Some("image")
-                && let Some(content) = raw_content(path, segment, day, RawPerceptFamily::Audio)
+                && let Some(content) = raw_content(
+                    path,
+                    segment,
+                    day,
+                    RawPerceptFamily::Audio,
+                    PerceptProjection::Generic,
+                )
             {
                 entries.push(entry(
                     start,
@@ -310,7 +411,8 @@ fn process_segment(segment: &Segment, day: &str, sources: &Sources) -> Vec<Entry
                 .and_then(|name| name.to_str())
                 .is_some_and(|name| name.ends_with("screen.jsonl"))
         }) {
-            if let Some(content) = raw_content(path, segment, day, RawPerceptFamily::RawScreen)
+            if let Some(content) =
+                raw_content(path, segment, day, RawPerceptFamily::RawScreen, projection)
                 && !content.is_empty()
             {
                 entries.push(entry(
@@ -398,6 +500,7 @@ fn raw_content(
     segment: &Segment,
     day: &str,
     family: RawPerceptFamily,
+    projection: PerceptProjection,
 ) -> Option<String> {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
@@ -418,7 +521,12 @@ fn raw_content(
     // Unlike solstone/think/cluster.py:173, the formatter skips malformed JSONL lines
     // individually (content/mod.rs:500-513), preserving valid body rows rather than
     // reducing what native reads from the file.
-    let produced = produce_raw_percept_chunks(family, &rel, &text);
+    let produced = match (family, projection) {
+        (RawPerceptFamily::RawScreen, PerceptProjection::ScreenTalent) => {
+            produce_screen_talent_raw_screen_chunks(&rel, &text)
+        }
+        _ => produce_raw_percept_chunks(family, &rel, &text),
+    };
     if let Some(error) = &produced.error {
         log::warn!("{error}");
     }
@@ -708,6 +816,7 @@ mod tests {
             direct_segment,
             DAY,
             RawPerceptFamily::Audio,
+            PerceptProjection::Generic,
         )
         .unwrap();
         let named_content = raw_content(
@@ -715,6 +824,7 @@ mod tests {
             named_segment,
             DAY,
             RawPerceptFamily::Audio,
+            PerceptProjection::Generic,
         )
         .unwrap();
         assert!(
@@ -797,6 +907,31 @@ mod tests {
         assert_eq!(counts.transcripts, 0);
         assert_eq!(counts.percepts, 2);
         assert_eq!(counts.talents, 0);
+    }
+
+    #[test]
+    fn screen_talent_projection_is_private_to_its_explicit_reader() {
+        let root = TempDir::new().unwrap();
+        let segment = segment(&root);
+        let fixture = include_str!(
+            "../../solstone-core-format/tests/data/golden/tmux-observer-envelope-main.jsonl"
+        );
+        fs::write(segment.join("tmux_0_screen.jsonl"), fixture).unwrap();
+        let sources = sources(false, true, TalentSource::Disabled);
+
+        let generic = cluster_period(root.path(), DAY, SEGMENT, &sources, None);
+        let screen = cluster_period_for_screen_talent(root.path(), DAY, SEGMENT, &sources, None);
+
+        assert_eq!(generic.1, screen.1);
+        assert!(generic.0.contains("Terminal session 'main'"));
+        assert!(generic.0.contains("@8"));
+        assert!(generic.0.contains("\\u001b[31m"));
+        assert!(!generic.0.contains("**Tmux observation:**"));
+        assert!(screen.0.contains("**Tmux observation:**"));
+        assert!(screen.0.contains("RED café"));
+        assert!(!screen.0.contains("Terminal session 'main'"));
+        assert!(!screen.0.contains("@8"));
+        assert!(!screen.0.contains("\\u001b[31m"));
     }
 
     #[test]
@@ -1058,7 +1193,13 @@ mod tests {
         };
 
         assert_eq!(
-            raw_content(&missing, &missing_segment, DAY, RawPerceptFamily::Audio),
+            raw_content(
+                &missing,
+                &missing_segment,
+                DAY,
+                RawPerceptFamily::Audio,
+                PerceptProjection::Generic,
+            ),
             None
         );
         let (markdown, counts) = cluster(

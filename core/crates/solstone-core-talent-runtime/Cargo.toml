@@ -23,6 +23,7 @@ solstone-core-identity.workspace = true
 solstone-core-entity.workspace = true
 solstone-core-entity-matching.workspace = true
 solstone-core-facets.workspace = true
+solstone-core-format.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-indexer-query.workspace = true
 solstone-core-home.workspace = true

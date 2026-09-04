@@ -21,13 +21,19 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
-use chrono::{Days, Local, SecondsFormat, Utc};
+use chrono::{DateTime, Days, Local, SecondsFormat, TimeZone, Utc};
 use serde_json::{Value, json};
 use solstone_core_retention_client::{RemovalClass, policy_from_retention};
 use tempfile::TempDir;
 use tower::ServiceExt;
 
 static EXECUTOR_ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+fn fixed_removal_now() -> DateTime<Utc> {
+    Utc.with_ymd_and_hms(2026, 8, 30, 12, 0, 0)
+        .single()
+        .expect("fixed removal clock")
+}
 
 const STUB: &str = r#"#!/bin/sh
 id=''
@@ -77,7 +83,7 @@ impl Harness {
     fn router(&self) -> Router {
         solstone_core_home_web::routes(
             self.root.path().to_path_buf(),
-            solstone_core_home_web::Clock::system(),
+            solstone_core_home_web::Clock::fixed(fixed_removal_now()),
         )
     }
 
@@ -740,7 +746,8 @@ fn real_executor_refuses_when_the_current_policy_no_longer_releases_the_mark() {
     let _guard = EXECUTOR_ENV_LOCK.lock().expect("executor environment lock");
     let binary = support::retention_binary();
     let harness = Harness::new();
-    let today = Local::now().date_naive();
+    let now = fixed_removal_now();
+    let today = now.with_timezone(&Local).date_naive();
     let segment_day = today
         .checked_sub_days(Days::new(2))
         .expect("segment date")
@@ -750,7 +757,7 @@ fn real_executor_refuses_when_the_current_policy_no_longer_releases_the_mark() {
     let policy = r#"{"default_rule":{"anchor":"captured","period":1,"priority":0},"enabled":true}"#;
     let root = harness.root.path().display().to_string();
     let today = today.format("%Y-%m-%d").to_string();
-    let now = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
+    let now = now.to_rfc3339_opts(SecondsFormat::Secs, true);
     let marked = run_retention(
         &binary,
         &[

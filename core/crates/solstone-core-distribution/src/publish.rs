@@ -469,7 +469,7 @@ fi
         fs::write(
             dir.join(format!("{base}.release")),
             format!(
-                "product=solstone-journal\nversion={version}\ntarget={target}\ncommit={HEX_COMMIT}\nlock_sha256={HEX_LOCK}\nupgrade_epoch=journal-v2\nretention_window=3\n"
+                "product=solstone-journal\nversion={version}\ntarget={target}\ncommit={HEX_COMMIT}\nlock_sha256={HEX_LOCK}\nupgrade_epoch=journal-v2\nretention_window=3\nmin_bootstrap_revision=1\n"
             ),
         )
         .expect("release sidecar");

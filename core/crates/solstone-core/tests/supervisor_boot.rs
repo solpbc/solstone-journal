@@ -37,7 +37,57 @@ use super::{
 };
 use hostile_binary::{copied_binary, hostile_binary};
 
-struct TempJournal(PathBuf);
+struct StableBinaries {
+    root: PathBuf,
+    core: PathBuf,
+    hosted_supervisor_fixture: PathBuf,
+    system_test_child: PathBuf,
+}
+
+impl StableBinaries {
+    fn new(stamp: u128, sequence: u64) -> Self {
+        // Cargo exposes un-hashed target/debug paths to integration tests. A
+        // concurrent CI shard may atomically relink any of those paths while
+        // this long-lived suite is running, including after a supervisor has
+        // used current_exe() to plan a coordinator launch. Hard links taken
+        // beside the Cargo outputs pin one complete inode for this journal's
+        // entire process tree without copying the large core executable.
+        let core = Path::new(env!("CARGO_BIN_EXE_solstone-core"));
+        let target_dir = core.parent().expect("Cargo binary directory");
+        let root = target_dir.join(format!(
+            ".solstone-supervisor-contracts-{}-{stamp}-{sequence}",
+            std::process::id()
+        ));
+        fs::create_dir(&root).expect("stable supervisor binary directory");
+        let link = |source: &Path, name: &str| {
+            let target = root.join(name);
+            fs::hard_link(source, &target).unwrap_or_else(|error| {
+                panic!(
+                    "hard-link stable supervisor binary {} -> {}: {error}",
+                    source.display(),
+                    target.display()
+                )
+            });
+            target
+        };
+        Self {
+            core: link(core, "solstone-core"),
+            hosted_supervisor_fixture: link(
+                Path::new(env!(
+                    "CARGO_BIN_EXE_solstone-core-hosted-supervisor-fixture"
+                )),
+                "solstone-core-hosted-supervisor-fixture",
+            ),
+            system_test_child: link(
+                Path::new(env!("CARGO_BIN_EXE_solstone-core-system-test-child")),
+                "solstone-core-system-test-child",
+            ),
+            root,
+        }
+    }
+}
+
+struct TempJournal(PathBuf, StableBinaries);
 
 static NEXT_TEMP_JOURNAL: AtomicU64 = AtomicU64::new(0);
 
@@ -58,13 +108,26 @@ impl TempJournal {
             br#"{"setup":{"completed_at":1}}"#,
         )
         .expect("journal config");
-        Self(root)
+        Self(root, StableBinaries::new(stamp, sequence))
+    }
+
+    fn core_binary(&self) -> &Path {
+        &self.1.core
+    }
+
+    fn hosted_supervisor_fixture(&self) -> &Path {
+        &self.1.hosted_supervisor_fixture
+    }
+
+    fn system_test_child(&self) -> &Path {
+        &self.1.system_test_child
     }
 }
 
 impl Drop for TempJournal {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
+        let _ = fs::remove_dir_all(&self.1.root);
     }
 }
 
@@ -114,29 +177,30 @@ fn start(journal: &TempJournal) -> SupervisorGuard {
 
 fn start_with_convey_argv(journal: &TempJournal, convey_argv: Option<String>) -> SupervisorGuard {
     let home = super::installation_binding::admit_for(&journal.0);
-    let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
+    let mut command = Command::new(journal.core_binary());
     command
         .args(["supervisor", "--journal"])
         .arg(&journal.0)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
-        .env(
-            "SOLSTONE_LOCAL_BINARY",
-            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
-        )
+        .env("SOLSTONE_LOCAL_BINARY", journal.system_test_child())
         .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE_FAST_TIMING", "1")
         .env("HOME", home)
         .env(
             "SOLSTONE_SUPERVISOR_APP_BINARY",
-            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+            journal.system_test_child(),
         );
     if let Some(argv) = convey_argv {
         command.env("SOLSTONE_SUPERVISOR_APP_CONVEY_ARGV", argv);
     }
     speakers_analyze_stub::apply(&mut command);
+    command.env(
+        "SOLSTONE_SPEAKERS_ANALYZE_BINARY",
+        journal.system_test_child(),
+    );
     SupervisorGuard::new(command.spawn().expect("supervisor starts"))
 }
 
@@ -150,24 +214,21 @@ fn start_paused_before_readiness_with_args(
     extra_args: &[&str],
 ) -> SupervisorGuard {
     let home = super::installation_binding::admit_for(&journal.0);
-    let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
+    let mut command = Command::new(journal.core_binary());
     command
         .args(["supervisor", "--journal"])
         .arg(&journal.0)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
-        .env(
-            "SOLSTONE_LOCAL_BINARY",
-            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
-        )
+        .env("SOLSTONE_LOCAL_BINARY", journal.system_test_child())
         .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE_FAST_TIMING", "1")
         .env("HOME", home)
         .env(
             "SOLSTONE_SUPERVISOR_APP_BINARY",
-            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+            journal.system_test_child(),
         )
         .env(
             "SOLSTONE_SUPERVISOR_HOSTED_PAUSE_BEFORE_FINAL_PARENT_CHECK",
@@ -175,6 +236,10 @@ fn start_paused_before_readiness_with_args(
         );
     command.args(extra_args);
     speakers_analyze_stub::apply(&mut command);
+    command.env(
+        "SOLSTONE_SPEAKERS_ANALYZE_BINARY",
+        journal.system_test_child(),
+    );
     SupervisorGuard::new(command.spawn().expect("paused supervisor starts"))
 }
 
@@ -262,9 +327,7 @@ fn start_hosted_with_home(
     let child_pid = journal.0.join("hosted-child.pid");
     let outcome = journal.0.join("hosted.outcome");
     let nonce = next_receipt_nonce(&outcome);
-    let mut command = Command::new(env!(
-        "CARGO_BIN_EXE_solstone-core-hosted-supervisor-fixture"
-    ));
+    let mut command = Command::new(journal.hosted_supervisor_fixture());
     command
         .args(["launcher"])
         .arg(&journal.0)
@@ -275,17 +338,18 @@ fn start_hosted_with_home(
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .env("HOME", home)
-        .env(
-            "SOLSTONE_LOCAL_BINARY",
-            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
-        )
+        .env("SOLSTONE_LOCAL_BINARY", journal.system_test_child())
         .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
         .env(
             "SOLSTONE_SUPERVISOR_APP_BINARY",
-            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+            journal.system_test_child(),
         );
     speakers_analyze_stub::apply(&mut command);
+    command.env(
+        "SOLSTONE_SPEAKERS_ANALYZE_BINARY",
+        journal.system_test_child(),
+    );
     let launcher = command.spawn().expect("hosted launcher starts");
     (launcher, child_pid, outcome, nonce)
 }
@@ -379,9 +443,7 @@ fn wait_for_outcome(path: &Path, expected_nonce: &str) -> SupervisorHostOutcome 
 fn run_hosted_with_parent(journal: &TempJournal, pid: u32, ticks: u64) -> SupervisorHostOutcome {
     let outcome = journal.0.join("declared-parent.outcome");
     let nonce = next_receipt_nonce(&outcome);
-    let mut command = Command::new(env!(
-        "CARGO_BIN_EXE_solstone-core-hosted-supervisor-fixture"
-    ));
+    let mut command = Command::new(journal.hosted_supervisor_fixture());
     command
         .args(["host-with-parent"])
         .arg(&journal.0)
@@ -393,17 +455,18 @@ fn run_hosted_with_parent(journal: &TempJournal, pid: u32, ticks: u64) -> Superv
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .env("HOME", super::installation_binding::admit_for(&journal.0))
-        .env(
-            "SOLSTONE_LOCAL_BINARY",
-            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
-        )
+        .env("SOLSTONE_LOCAL_BINARY", journal.system_test_child())
         .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
         .env(
             "SOLSTONE_SUPERVISOR_APP_BINARY",
-            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+            journal.system_test_child(),
         );
     speakers_analyze_stub::apply(&mut command);
+    command.env(
+        "SOLSTONE_SPEAKERS_ANALYZE_BINARY",
+        journal.system_test_child(),
+    );
     let status = command.status().expect("declared-parent host runs");
     assert_eq!(status.code(), Some(75));
     let result = wait_for_outcome(&outcome, &nonce);
@@ -421,9 +484,7 @@ fn legacy_log_cleanup_failure_refuses_before_lifecycle_activation() {
         .expect("make chronicle unreadable");
     let outcome = journal.0.join("legacy-log-cleanup.outcome");
     let nonce = next_receipt_nonce(&outcome);
-    let mut command = Command::new(env!(
-        "CARGO_BIN_EXE_solstone-core-hosted-supervisor-fixture"
-    ));
+    let mut command = Command::new(journal.hosted_supervisor_fixture());
     command
         .args(["host"])
         .arg(&journal.0)
@@ -433,17 +494,18 @@ fn legacy_log_cleanup_failure_refuses_before_lifecycle_activation() {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .env("HOME", super::installation_binding::admit_for(&journal.0))
-        .env(
-            "SOLSTONE_LOCAL_BINARY",
-            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
-        )
+        .env("SOLSTONE_LOCAL_BINARY", journal.system_test_child())
         .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
         .env(
             "SOLSTONE_SUPERVISOR_APP_BINARY",
-            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+            journal.system_test_child(),
         );
     speakers_analyze_stub::apply(&mut command);
+    command.env(
+        "SOLSTONE_SPEAKERS_ANALYZE_BINARY",
+        journal.system_test_child(),
+    );
     let status = command.status().expect("hosted supervisor fixture runs");
     fs::set_permissions(&unreadable_chronicle, fs::Permissions::from_mode(0o700))
         .expect("restore chronicle permissions");
@@ -498,7 +560,8 @@ fn ac2_stale_receipt_cannot_be_accepted_for_a_new_nonce() {
 
 #[test]
 fn ac4_parent_mismatch_refuses_before_lifecycle_publication() {
-    let mut unrelated = Command::new(env!("CARGO_BIN_EXE_solstone-core-system-test-child"))
+    let unrelated_journal = TempJournal::new();
+    let mut unrelated = Command::new(unrelated_journal.system_test_child())
         .arg("never-ready")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -506,7 +569,6 @@ fn ac4_parent_mismatch_refuses_before_lifecycle_publication() {
         .spawn()
         .expect("unrelated child");
     let unrelated_pid = unrelated.id();
-    let unrelated_journal = TempJournal::new();
     let unrelated_outcome = run_hosted_with_parent(&unrelated_journal, unrelated_pid, 1);
     assert!(matches!(
         unrelated_outcome,
@@ -551,9 +613,7 @@ fn ac4_parent_loss_before_readiness_aborts_the_pre_ready_lifecycle() {
     let child_pid = journal.0.join("hosted-child.pid");
     let outcome = journal.0.join("hosted.outcome");
     let nonce = next_receipt_nonce(&outcome);
-    let mut command = Command::new(env!(
-        "CARGO_BIN_EXE_solstone-core-hosted-supervisor-fixture"
-    ));
+    let mut command = Command::new(journal.hosted_supervisor_fixture());
     command
         .args(["launcher"])
         .arg(&journal.0)
@@ -564,21 +624,22 @@ fn ac4_parent_loss_before_readiness_aborts_the_pre_ready_lifecycle() {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .env("HOME", home)
-        .env(
-            "SOLSTONE_LOCAL_BINARY",
-            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
-        )
+        .env("SOLSTONE_LOCAL_BINARY", journal.system_test_child())
         .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
         .env(
             "SOLSTONE_SUPERVISOR_APP_BINARY",
-            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+            journal.system_test_child(),
         )
         .env(
             "SOLSTONE_SUPERVISOR_HOSTED_PAUSE_BEFORE_FINAL_PARENT_CHECK",
             &marker,
         );
     speakers_analyze_stub::apply(&mut command);
+    command.env(
+        "SOLSTONE_SPEAKERS_ANALYZE_BINARY",
+        journal.system_test_child(),
+    );
     let mut launcher = command.spawn().expect("paused hosted launcher starts");
     for _ in 0..1_600 {
         if marker.exists() {
@@ -661,8 +722,8 @@ fn ac1_ac4_hosted_and_foreground_supervisors_record_the_resident_pid() {
 
 #[test]
 fn ac6_boot_order_is_identity_then_socket_then_ready() {
-    assert!(std::path::Path::new(env!("CARGO_BIN_EXE_solstone-core-system-test-child")).exists());
     let journal = TempJournal::new();
+    assert!(journal.system_test_child().exists());
     let mut child = start(&journal);
     let socket = journal.0.join("health/callosum.sock");
     let pid = journal.0.join("health/supervisor.pid");
@@ -720,25 +781,26 @@ fn ac7_second_instance_refused_first_survives() {
         .trim()
         .parse::<i32>()
         .expect("numeric pid");
-    let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
+    let mut command = Command::new(journal.core_binary());
     command
         .args(["supervisor", "--journal"])
         .arg(&journal.0)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .env(
-            "SOLSTONE_LOCAL_BINARY",
-            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
-        )
+        .env("SOLSTONE_LOCAL_BINARY", journal.system_test_child())
         .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
         .env("HOME", super::installation_binding::admit_for(&journal.0))
         .env(
             "SOLSTONE_SUPERVISOR_APP_BINARY",
-            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+            journal.system_test_child(),
         );
     speakers_analyze_stub::apply(&mut command);
+    command.env(
+        "SOLSTONE_SPEAKERS_ANALYZE_BINARY",
+        journal.system_test_child(),
+    );
     let second = command.status().expect("second supervisor runs");
     // The second instance's speakers-analyze generation acquisition contends
     // with the first's held lease and fails, refusing boot with
@@ -804,25 +866,26 @@ fn ac8_live_foreign_writer_blocks_boot_without_pid() {
         renew_heartbeat_when_wait_marker_appears(&journal, heartbeat_path, heartbeat_body);
     let stderr_path = journal.0.join("ac8-supervisor.stderr");
     let stderr_file = fs::File::create(&stderr_path).expect("supervisor stderr file");
-    let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
+    let mut command = Command::new(journal.core_binary());
     command
         .args(["supervisor", "--journal"])
         .arg(&journal.0)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr_file))
-        .env(
-            "SOLSTONE_LOCAL_BINARY",
-            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
-        )
+        .env("SOLSTONE_LOCAL_BINARY", journal.system_test_child())
         .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
         .env("HOME", super::installation_binding::admit_for(&journal.0))
         .env(
             "SOLSTONE_SUPERVISOR_APP_BINARY",
-            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+            journal.system_test_child(),
         );
     speakers_analyze_stub::apply(&mut command);
+    command.env(
+        "SOLSTONE_SPEAKERS_ANALYZE_BINARY",
+        journal.system_test_child(),
+    );
     let status = wait_for_bounded_status(
         SupervisorGuard::new(command.spawn().expect("supervisor runs")),
         Duration::from_secs(30),
@@ -1015,11 +1078,7 @@ fn ac3_ac7_hosted_refusals_are_typed_and_leave_no_lifecycle_artifacts() {
 fn supervisor_installation_recovery_preserves_real_provider_causes() {
     let journal = TempJournal::new();
 
-    let missing_home = supervisor_output(
-        Path::new(env!("CARGO_BIN_EXE_solstone-core")),
-        journal.0.as_os_str(),
-        None,
-    );
+    let missing_home = supervisor_output(journal.core_binary(), journal.0.as_os_str(), None);
     assert_eq!(missing_home.status.code(), Some(75));
     assert!(missing_home.stdout.is_empty());
     assert_eq!(
@@ -1028,7 +1087,7 @@ fn supervisor_installation_recovery_preserves_real_provider_causes() {
     );
 
     let relative_home = supervisor_output(
-        Path::new(env!("CARGO_BIN_EXE_solstone-core")),
+        journal.core_binary(),
         journal.0.as_os_str(),
         Some(Path::new("relative-home")),
     );
@@ -1041,11 +1100,8 @@ fn supervisor_installation_recovery_preserves_real_provider_causes() {
 
     let home = super::installation_binding::admit_for(&journal.0);
     super::installation_binding::corrupt_admitted_record_checksum(&home);
-    let checksum_mismatch = supervisor_output(
-        Path::new(env!("CARGO_BIN_EXE_solstone-core")),
-        journal.0.as_os_str(),
-        Some(&home),
-    );
+    let checksum_mismatch =
+        supervisor_output(journal.core_binary(), journal.0.as_os_str(), Some(&home));
     assert_eq!(checksum_mismatch.status.code(), Some(75));
     assert!(checksum_mismatch.stdout.is_empty());
     assert_eq!(
@@ -1058,7 +1114,7 @@ details: saved binding: identity record checksum mismatch\n"
     let journal_for_tokens = TempJournal::new();
     let token_home = super::installation_binding::admit_for(&journal_for_tokens.0);
     let relative_journal = supervisor_output(
-        Path::new(env!("CARGO_BIN_EXE_solstone-core")),
+        journal_for_tokens.core_binary(),
         OsStr::new("relative-journal"),
         Some(&token_home),
     );
@@ -1069,7 +1125,7 @@ details: saved binding: identity record checksum mismatch\n"
     );
     let overlong_journal = OsString::from(format!("/{}", "a".repeat(4096)));
     let overlong = supervisor_output(
-        Path::new(env!("CARGO_BIN_EXE_solstone-core")),
+        journal_for_tokens.core_binary(),
         overlong_journal.as_os_str(),
         Some(&token_home),
     );
@@ -1081,7 +1137,7 @@ details: saved binding: identity record checksum mismatch\n"
 
     let different_journal = TempJournal::new();
     let mismatch = supervisor_output(
-        Path::new(env!("CARGO_BIN_EXE_solstone-core")),
+        different_journal.core_binary(),
         different_journal.0.as_os_str(),
         Some(&token_home),
     );
@@ -1270,7 +1326,7 @@ fn readiness_publication_failure_clears_heartbeat_and_supervisor_identity() {
     fs::write(
         journal.0.join("config/schedules.json"),
         serde_json::to_vec(&serde_json::json!({"pre-ready": {
-            "cmd": [env!("CARGO_BIN_EXE_solstone-core-system-test-child"), "lines"],
+            "cmd": [journal.system_test_child().display().to_string(), "lines"],
             "every": "1m"
         }}))
         .expect("schedule JSON"),

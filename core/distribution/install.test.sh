@@ -57,6 +57,7 @@ make_release() {
 		"lock_sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
 		"upgrade_epoch=journal-v2" \
 		"retention_window=3" \
+		"min_bootstrap_revision=1" \
 		>"$_dest"
 }
 
@@ -328,6 +329,7 @@ if grep -F 'schema_version=1' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'origin=local' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F "architecture=$TARGET" "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'installer_revision=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "$PREFIX/install-receipt" >/dev/null \
+	&& grep -F 'bootstrap_revision=1' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'route=tree' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'signature_verification=skipped' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'setup_status=complete' "$PREFIX/install-receipt" >/dev/null; then
@@ -714,6 +716,41 @@ expect_refuse release-invalid malformed-owned-release-is-named \
 expect_refuse 'leave the existing tree untouched and run journal setup' malformed-owned-release-has-next-step \
 	env HOME="$BASE/malformed-home" "$INSTALL" --upgrade --prefix "$MALFORMED_PREFIX" --archive /nope --sha256 /nope --release /nope
 
+# A positively identified existing tree whose release declares a higher
+# min_bootstrap_revision than this installer's own BOOTSTRAP_REVISION refuses
+# by name, without positive_tree_release's generic "leave it untouched" hint.
+OUTDATED_PREFIX=$BASE/outdated-owned-prefix
+OUTDATED_DIGEST=0000000000000000000000000000000000000000000000000000000000000000
+mkdir -p "$OUTDATED_PREFIX/versions/1.0.22-000000000000/bin"
+printf '%s\n' "$OUTDATED_DIGEST" >"$OUTDATED_PREFIX/versions/1.0.22-000000000000/.archive-sha256"
+make_release "$BASE/outdated-owned-base.release" 1.0.22 "$TARGET"
+sed 's/^min_bootstrap_revision=1$/min_bootstrap_revision=2/' "$BASE/outdated-owned-base.release" >"$OUTDATED_PREFIX/versions/1.0.22-000000000000/.release"
+printf '%s\n' '#!/bin/sh' 'exit 0' >"$OUTDATED_PREFIX/versions/1.0.22-000000000000/bin/journal"
+chmod 755 "$OUTDATED_PREFIX/versions/1.0.22-000000000000/bin/journal"
+ln -s versions/1.0.22-000000000000 "$OUTDATED_PREFIX/current"
+_outdated_out=$(mktemp "$BASE/solstone-install-test-output-XXXXXX")
+_outdated_status=0
+env HOME="$BASE/outdated-home" "$INSTALL" --upgrade --prefix "$OUTDATED_PREFIX" --archive /nope --sha256 /nope --release /nope \
+	>"$_outdated_out" 2>&1 || _outdated_status=$?
+_outdated_text=$(cat "$_outdated_out")
+rm -f "$_outdated_out"
+case $_outdated_text in
+*installer-outdated*)
+	if [ "$_outdated_status" -ne 0 ]; then
+		pass "existing tree with a higher min_bootstrap_revision is named installer-outdated"
+	else
+		fail "existing tree installer-outdated: succeeded unexpectedly"
+	fi
+	;;
+*) fail "existing tree installer-outdated: wanted installer-outdated in: $_outdated_text" ;;
+esac
+case $_outdated_text in
+*"leave the existing tree untouched"* | *"run journal setup"*)
+	fail "existing tree installer-outdated must not inherit the generic tree-refusal hint: $_outdated_text"
+	;;
+*) pass "existing tree installer-outdated omits the generic tree-refusal hint" ;;
+esac
+
 # temp-root resolution and cleanup
 REAL_MKTEMP=$(command -v mktemp)
 case $REAL_MKTEMP in
@@ -908,7 +945,7 @@ rm -f "$ADOPT_PREFIX/install-receipt"
 # record. Positive identification accepts that legacy shape for adoption, but
 # does not invent an epoch or lane for it.
 _adopt_current=$ADOPT_PREFIX/$(readlink "$ADOPT_PREFIX/current")
-sed '/^upgrade_epoch=/d; /^retention_window=/d' "$_adopt_current/.release" >"$BASE/adopt-legacy.release"
+sed '/^upgrade_epoch=/d; /^retention_window=/d; /^min_bootstrap_revision=/d' "$_adopt_current/.release" >"$BASE/adopt-legacy.release"
 mv "$BASE/adopt-legacy.release" "$_adopt_current/.release"
 ADOPT_UPGRADE_REL=$BASE/adopt-upgrade.release
 make_release "$ADOPT_UPGRADE_REL" 1.0.23 "$TARGET"
@@ -1037,6 +1074,13 @@ make_release "$BASE/other.release" 9.9.9 "$TARGET"
 expect_refuse version-mismatch version-other \
 	env HOME="$HOME" \
 	"$INSTALL" --prefix "$BASE/other" --version 1.0.22 --archive "$ARCHIVE" --sha256 "$SHA" --release "$BASE/other.release"
+
+# installer-outdated (fresh-fetch route)
+make_release "$BASE/outdated-fetch-base.release" 1.0.22 "$TARGET"
+sed 's/^min_bootstrap_revision=1$/min_bootstrap_revision=2/' "$BASE/outdated-fetch-base.release" >"$BASE/outdated-fetch.release"
+expect_refuse installer-outdated installer-outdated-fresh-fetch \
+	env HOME="$HOME" \
+	"$INSTALL" --prefix "$BASE/other" --archive "$ARCHIVE" --sha256 "$SHA" --release "$BASE/outdated-fetch.release"
 
 # same version, different bytes: a respin before release, which install.sh
 # must accept as an upgrade in place -- not refuse. This used to be the

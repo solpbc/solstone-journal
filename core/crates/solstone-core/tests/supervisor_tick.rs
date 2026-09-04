@@ -10,6 +10,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -37,6 +38,8 @@ use await_outcome::{
 
 struct TempJournal(PathBuf);
 
+static TEMP_JOURNAL_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
 fn temporary_root() -> PathBuf {
     #[cfg(target_os = "macos")]
     {
@@ -54,7 +57,11 @@ impl TempJournal {
             .duration_since(UNIX_EPOCH)
             .expect("clock")
             .as_nanos();
-        let root = temporary_root().join(format!("solstone-core-supervisor-tick-{stamp}"));
+        let sequence = TEMP_JOURNAL_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let root = temporary_root().join(format!(
+            "solstone-core-supervisor-tick-{}-{stamp}-{sequence}",
+            std::process::id()
+        ));
         fs::create_dir_all(root.join("config")).expect("config directory");
         fs::write(
             root.join("config/journal.json"),
@@ -211,26 +218,6 @@ fn start(journal: &TempJournal, cap_seconds: Option<u64>, extra_args: &[&str]) -
     SupervisorGuard::new(command.spawn().expect("supervisor starts"))
 }
 
-fn supervisor_boot_exit(child: &mut SupervisorGuard, status: std::process::ExitStatus) -> String {
-    let mut stderr = String::new();
-    let read = child
-        .stderr
-        .as_mut()
-        .map(|stream| stream.read_to_string(&mut stderr));
-    match read {
-        Some(Ok(_)) if !stderr.trim().is_empty() => {
-            format!(
-                "supervisor exited during boot: {status}; stderr: {}",
-                stderr.trim()
-            )
-        }
-        Some(Ok(_)) | None => format!("supervisor exited during boot: {status}"),
-        Some(Err(error)) => {
-            format!("supervisor exited during boot: {status}; stderr read failed: {error}")
-        }
-    }
-}
-
 fn wait_for_socket(child: &mut SupervisorGuard, socket: &std::path::Path) {
     let ready = socket
         .parent()
@@ -246,7 +233,17 @@ fn wait_for_socket(child: &mut SupervisorGuard, socket: &std::path::Path) {
                 PollState::Held
             } else {
                 match child.try_wait() {
-                    Ok(Some(status)) => PollState::HardFail(supervisor_boot_exit(child, status)),
+                    Ok(Some(status)) => {
+                        let mut stderr = String::new();
+                        if let Some(mut pipe) = child.stderr.take() {
+                            let _ = pipe.read_to_string(&mut stderr);
+                        }
+                        let stderr = stderr.trim();
+                        let diagnostic = if stderr.is_empty() { "<empty>" } else { stderr };
+                        PollState::HardFail(format!(
+                            "supervisor exited during boot: {status}; stderr: {diagnostic}"
+                        ))
+                    }
                     Ok(None) => PollState::Pending,
                     Err(error) => PollState::HardFail(format!("supervisor status: {error}")),
                 }

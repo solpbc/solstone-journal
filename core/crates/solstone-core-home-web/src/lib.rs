@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use axum::{
-    Json, Router,
+    Extension, Json, Router,
     body::Body,
     http::{StatusCode, header},
     response::Response,
@@ -21,6 +21,7 @@ pub fn routes(journal_root: PathBuf, clock: Clock) -> Router {
     let pulse_root = journal_root.clone();
     let pulse_clock = clock.clone();
     let briefing_root = journal_root.clone();
+    let removal_clock = clock.clone();
     Router::new()
         .route("/app/home/", get(assets::shell))
         .route("/app/home", get(shell_redirect))
@@ -39,6 +40,7 @@ pub fn routes(journal_root: PathBuf, clock: Clock) -> Router {
             "/app/home/api/briefing",
             get(move || briefing(briefing_root.clone(), clock.clone())),
         )
+        .layer(Extension(removal_clock))
         .with_state(journal_root)
 }
 

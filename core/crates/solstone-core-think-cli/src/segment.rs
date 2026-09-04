@@ -27,7 +27,7 @@ use solstone_core_timeline::{
 use crate::context::{DispatchFailure, ThinkContext};
 use crate::dispatch::{
     DrainOutcome, ModeResult, PendingUse, dispatch_direct, drain_with_deadline_observed,
-    merge_mode_result, runtime,
+    failure_cause, merge_mode_result, runtime,
 };
 use crate::helpers;
 use crate::run_log::RunLogWriter;
@@ -1193,7 +1193,7 @@ fn log_use_terminal(
         DrainOutcome::Finish => ("talent.complete", "finish"),
         DrainOutcome::Fail(state) => ("talent.fail", state),
     };
-    let fields = segment_event(
+    let mut fields = segment_event(
         context,
         segment,
         stream,
@@ -1203,6 +1203,16 @@ fn log_use_terminal(
             ("state".to_owned(), Value::String(state.to_owned())),
         ]),
     );
+    // Segment mode dropped the cause that `log_daily_terminal` already records: the
+    // durable record carried only `state`, so `wait_failed` and `error` reached an
+    // operator with no way to tell a blocked runtime from a dead socket. The cause is
+    // known here — `failure_cause` reads the same use log the daily path consults — so
+    // record it under the same `reason_code` key rather than leaving the state to stand
+    // in for a reason it does not carry.
+    if let DrainOutcome::Fail(state) = outcome {
+        let reason_code = failure_cause(&context.journal, &item.use_id, state);
+        fields.insert("reason_code".to_owned(), Value::String(reason_code));
+    }
     log.log(event, context.event_now_ms(), fields);
 }
 

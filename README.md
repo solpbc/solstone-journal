@@ -70,10 +70,10 @@ The journal ships as one self-contained tree. It needs no interpreter and no pac
 
 For release and local-build installation paths, see [INSTALL.md](INSTALL.md).
 
-Once it is published, one command does the whole thing:
+`install.sh` is already live at [solstone.app/install.sh](https://solstone.app/install.sh). Once a release is published, one command does the whole thing:
 
 ```bash
-sh install.sh --version <version>
+curl -fsSL https://solstone.app/install.sh | sh -s -- --version <version>
 ```
 
 That fetches the archive from `updates.solstone.app`, verifies the digest, and installs. Today, with the files already on disk:

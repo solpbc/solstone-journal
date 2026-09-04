@@ -499,8 +499,9 @@ verify_artifact_set() {
 	lock=$(awk -F= '$1 == "lock_sha256" { print $2 }' "$release")
 	epoch=$(awk -F= '$1 == "upgrade_epoch" { print $2 }' "$release")
 	window=$(awk -F= '$1 == "retention_window" { print $2 }' "$release")
-	[ "$(awk 'NF { count++ } END { print count + 0 }' "$release")" -eq 7 ] \
-		|| refuse "release sidecar must contain exactly seven fields"
+	min_bootstrap=$(awk -F= '$1 == "min_bootstrap_revision" { print $2 }' "$release")
+	[ "$(awk 'NF { count++ } END { print count + 0 }' "$release")" -eq 8 ] \
+		|| refuse "release sidecar must contain exactly eight fields"
 	[ "$product" = solstone-journal ] || refuse "release product mismatch"
 	[ "$target" = linux-x86_64 ] || refuse "release target mismatch"
 	[ "$base" = "solstone-journal-$version-linux-x86_64" ] \
@@ -509,6 +510,7 @@ verify_artifact_set() {
 	is_lower_hex "$lock" 64 || refuse "release lock digest is invalid"
 	[ "$epoch" = journal-v2 ] || refuse "release upgrade epoch is invalid"
 	[ "$window" = 3 ] || refuse "release retention window is invalid"
+	[ "$min_bootstrap" = 1 ] || refuse "release minimum bootstrap revision is invalid"
 	grep -F '  "product": "solstone-journal",' "$manifest" >/dev/null \
 		|| refuse "manifest product mismatch"
 	grep -F "  \"version\": \"$version\"," "$manifest" >/dev/null \
@@ -629,6 +631,7 @@ self_test() {
 		'lock_sha256=0000000000000000000000000000000000000000000000000000000000000001' \
 		'upgrade_epoch=journal-v2' \
 		'retention_window=3' \
+		'min_bootstrap_revision=1' \
 		>"$artifact_dir/$base.release"
 	cat >"$test_root/runtime" <<'EOF'
 #!/bin/sh

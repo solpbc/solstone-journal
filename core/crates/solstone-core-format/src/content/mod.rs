@@ -454,6 +454,16 @@ pub fn produce_raw_percept_chunks(
     produce_raw_percept_chunks_by_shape(family, Some(rel), &records)
 }
 
+/// Render raw screen records for the Screen talent's private input projection.
+///
+/// The ordinary raw-screen renderer remains the owner/index/display contract.
+/// This separate entry point may compact a producer-typed tmux envelope because
+/// its output is used only as model input for the Screen talent.
+pub fn produce_screen_talent_raw_screen_chunks(rel: &str, text: &str) -> ProducedChunks {
+    let records = parse_jsonl_objects(text);
+    raw_screen::render_for_screen_talent(rel, &records)
+}
+
 pub type JsonObject = Map<String, Value>;
 
 pub(super) fn recorded_chunk(
