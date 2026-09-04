@@ -12,6 +12,7 @@ pub const USAGE: &str = "usage: journal maintenance <command> [options]\n";
 const LIST_USAGE: &str = "usage: journal maintenance list\n";
 const SYNC_USAGE: &str = "usage: journal maintenance sync\n";
 const RUN_USAGE: &str = "usage: journal maintenance run ID [ARGS...]\n";
+const MIGRATE_USAGE: &str = "usage: journal maintenance migrate-timeline\n";
 
 pub(crate) fn run(
     args: &[String],
@@ -39,6 +40,10 @@ pub(crate) fn run(
             health_services,
             timeline_services,
         ),
+        // Plan-only today: it reports what a legacy-artifact migration would do and writes
+        // nothing. The commit phase is deliberately a separate change, because its failure
+        // mode is the loss of the owner's historical journal prose.
+        "migrate-timeline" if no_positionals(rest) => migrate_timeline(journal),
         _ => usage_error(USAGE, &args.join(" ")),
     }
 }
@@ -80,8 +85,13 @@ fn usage_for_scope(args: &[String]) -> &'static str {
         Some("list") => LIST_USAGE,
         Some("sync") => SYNC_USAGE,
         Some("run") => RUN_USAGE,
+        Some("migrate-timeline") => MIGRATE_USAGE,
         _ => USAGE,
     }
+}
+
+fn migrate_timeline(journal: &Path) -> CliRun {
+    success(crate::bodies::migrate::plan(journal).render())
 }
 
 fn list(journal: &Path, services: &MaintenanceServices<'_>) -> CliRun {

@@ -3,4 +3,5 @@
 
 pub(crate) mod backup;
 pub(crate) mod health;
+pub mod migrate;
 pub mod timeline;
