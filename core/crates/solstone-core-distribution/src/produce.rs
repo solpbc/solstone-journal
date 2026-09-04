@@ -1084,7 +1084,7 @@ fn validate_ffmpeg_evidence(
         ));
     }
     if expected_profile == "release" {
-        validate_release_configure_args(&receipt.args, &receipt.components)?;
+        validate_release_configure_args(&receipt.args, &receipt.components, expected_target)?;
     }
     Ok(())
 }
@@ -1096,6 +1096,7 @@ fn incomplete_ffmpeg_evidence(detail: impl std::fmt::Display) -> ProduceError {
 fn validate_release_configure_args(
     args: &[String],
     components: &[String],
+    target: &str,
 ) -> Result<(), ProduceError> {
     let mistyped_optimization = ["-", "0", "3"].concat();
     if args.iter().any(|arg| arg.contains(&mistyped_optimization)) {
@@ -1122,8 +1123,17 @@ fn validate_release_configure_args(
             "release configure receipt does not enable -O3",
         ));
     }
-    validate_controlled_component_args(args).map_err(incomplete_ffmpeg_evidence)?;
-    validate_controlled_component_inventory(components).map_err(incomplete_ffmpeg_evidence)?;
+    // The controlled component inventory is a native Windows delivery constraint, and
+    // `vendor/ffmpeg-sys-next/build.rs` only emits those arguments when
+    // `CARGO_CFG_TARGET_OS == "windows"` -- every other target deliberately keeps the
+    // upstream feature selection so ordinary media behaviour is not silently narrowed.
+    // Validating the inventory on every release lane therefore rejected a receipt the build
+    // was never asked to produce, and failed 100% of non-Windows release builds. Gate the
+    // check on the same condition that gates the emission.
+    if target.contains("windows") {
+        validate_controlled_component_args(args).map_err(incomplete_ffmpeg_evidence)?;
+        validate_controlled_component_inventory(components).map_err(incomplete_ffmpeg_evidence)?;
+    }
     Ok(())
 }
 
@@ -1796,6 +1806,55 @@ mod tests {
                 .to_string()
                 .contains("solstone-distribution acquire ffmpeg")
         );
+    }
+
+    // AC: a non-Windows release lane validates with the arguments the build actually emits.
+    //
+    // `vendor/ffmpeg-sys-next/build.rs` only adds the controlled component inventory when
+    // `CARGO_CFG_TARGET_OS == "windows"`; every other target keeps the upstream feature
+    // selection. Validating the inventory unconditionally rejected a receipt the build was
+    // never asked to produce and failed 100% of Linux release builds.
+    //
+    // The existing evidence test does not catch this: it feeds `controlled_component_args()`
+    // in even for a linux triple, so its fixture is a shape the real Linux build never emits.
+    #[test]
+    fn a_non_windows_release_lane_validates_without_the_controlled_inventory() {
+        let root = tempfile::tempdir().unwrap();
+
+        // exactly what build.rs emits for a non-Windows release target
+        let linux_args: Vec<String> = [
+            "--disable-debug",
+            "--enable-stripping",
+            "--extra-cflags=-O3 -ffast-math -funroll-loops",
+            "--enable-static",
+            "--disable-shared",
+            "--enable-pic",
+            "--disable-autodetect",
+            "--disable-programs",
+            "--disable-doc",
+            "--enable-pthreads",
+        ]
+        .iter()
+        .map(|arg| (*arg).to_owned())
+        .collect();
+
+        let evidence = root.path().join(EVIDENCE_DIR);
+        write_ffmpeg_evidence(&evidence, "current", true, &linux_args);
+        validate_ffmpeg_evidence(&evidence, "current", "x86_64-unknown-linux-gnu", "release")
+            .expect("a linux release lane must validate without the controlled inventory");
+
+        // ...and a Windows lane still requires it. Checked at the gate directly, because
+        // the evidence fixture stamps its own target into the record.
+        let error = validate_release_configure_args(&linux_args, &[], "x86_64-pc-windows-msvc")
+            .expect_err("a windows lane must still require the controlled inventory");
+        assert!(
+            error
+                .to_string()
+                .contains("controlled FFmpeg configure argument set"),
+            "unexpected error: {error}"
+        );
+        validate_release_configure_args(&linux_args, &[], "x86_64-unknown-linux-gnu")
+            .expect("the same arguments are valid on a non-windows lane");
     }
 
     #[test]
