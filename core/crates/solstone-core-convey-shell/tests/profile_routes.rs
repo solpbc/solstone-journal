@@ -360,8 +360,8 @@ async fn rich_full_brief_cadence_and_active_responses_match_complete_json() {
     assert_eq!(
         full,
         json!({
-            "entity_id":"ada","name":"Ada","type":"person","aka":["Countess"],"is_self":false,
-            "facets":["math","work"],"description":"Mathematician | Engineer",
+            "entity_id":"ada","name":"Ada","type":"person","aka":["Countess"],"is_self":false,"blocked":false,
+            "facets":["math","work"],"detached_facets":[],"description":"Mathematician | Engineer",
             "cadence":{"recent_interactions_count_30d":2,"last_seen":today,"avg_interval_days":2.0,"gone_quiet_since":null},
             "open_with_them":[],"closed_with_them_30d":[],"decisions_involving_them":[],
             "sources":[
@@ -374,7 +374,7 @@ async fn rich_full_brief_cadence_and_active_responses_match_complete_json() {
     let (_, _, brief) = get("/api/profile/ada/brief", &fixture).await;
     assert_eq!(
         body_json(&brief),
-        json!({"entity_id":"ada","name":"Ada","type":"person","description":"Mathematician | Engineer","last_seen":today,"open_loop_count":0,"decisions_count_30d":0})
+        json!({"entity_id":"ada","name":"Ada","type":"person","blocked":false,"description":"Mathematician | Engineer","last_seen":today,"open_loop_count":0,"decisions_count_30d":0})
     );
     let (_, _, cadence) = get("/api/profile/ada/cadence", &fixture).await;
     assert_eq!(
@@ -536,7 +536,8 @@ async fn full_uses_enabled_ledger_folds_but_all_declared_profile_data() {
     let (_, _, brief) = get("/api/profile/pat/brief", &fixture).await;
     let brief = body_json(&brief);
     let fields = brief.as_object().expect("brief object");
-    assert_eq!(fields.len(), 7);
+    assert_eq!(fields.len(), 8);
+    assert_eq!(brief["blocked"], false);
     assert_eq!(brief["open_loop_count"], 1);
     assert_eq!(brief["decisions_count_30d"], 0);
     assert!(brief.get("is_self").is_none());
