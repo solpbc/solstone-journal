@@ -4156,6 +4156,54 @@ mod tests {
         (context.with_talent_roots(talent_root, apps_root), recorder)
     }
 
+    // AC: a failed wait is not evidence about any individual use. When the use's own
+    // durable log already ended in `finish`, the drain records the completion instead of
+    // blaming the wait on it. Without this, every pending use in the batch was marked
+    // `wait_failed` -- 17 of 327 `talent.fail` records on the owner's journal on
+    // 2026-09-03 were false this way, with every output present on disk.
+    #[test]
+    fn wait_failure_does_not_overwrite_a_use_that_already_finished() {
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (context, recorder) = segment_context(
+            journal.path(),
+            roots.path(),
+            "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+        );
+        segment_dir(journal.path(), "20260813", "090000_300");
+        write_sense_output(
+            &context,
+            "090000_300",
+            serde_json::json!({"density":"active","content_type":"work"}),
+        );
+        // the use finished durably -- this is the shape that dominated the false failures
+        let use_log = journal.path().join("talents/sense/use-1.jsonl");
+        fs::create_dir_all(use_log.parent().unwrap()).unwrap();
+        fs::write(
+            &use_log,
+            concat!(
+                "{\"event\":\"start\",\"use_id\":\"use-1\"}\n",
+                "{\"event\":\"finish\",\"use_id\":\"use-1\",\"skip_reason\":\"no_input\"}\n",
+            ),
+        )
+        .unwrap();
+        // ...and only then does the wait itself fail
+        *recorder.wait_error.lock().unwrap() = Some("cortex socket closed".to_owned());
+
+        let result = run_segment(&context, journal.path(), "090000_300", false, false);
+
+        assert_eq!(
+            (result.success, result.failed, result.failed_names.clone()),
+            (1, 0, Vec::<String>::new()),
+            "a use whose own log ended in finish must not be failed by the wait"
+        );
+        let records = oplog_records(journal.path(), &context.day, "segment");
+        assert_eq!(
+            canonical_terminals(&records, "sense"),
+            vec![("talent.complete", Some("use-1"), Some("finish"))]
+        );
+    }
+
     #[test]
     fn segment_drain_outcomes_emit_one_canonical_terminal_and_preserve_mode_result() {
         struct Case {
