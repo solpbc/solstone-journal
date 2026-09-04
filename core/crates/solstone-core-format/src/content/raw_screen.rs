@@ -782,7 +782,7 @@ mod tests {
     #[test]
     fn producer_golden_projects_by_typed_envelope_not_stream_name() {
         let fixture = include_str!("../../tests/data/golden/tmux-observer-envelope-main.jsonl");
-        assert_eq!(fixture.as_bytes().len(), 724);
+        assert_eq!(fixture.len(), 724);
         let record = serde_json::from_str::<Value>(fixture)
             .unwrap()
             .as_object()

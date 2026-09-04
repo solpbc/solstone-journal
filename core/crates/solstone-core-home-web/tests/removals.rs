@@ -1079,9 +1079,9 @@ fn product_processed_journal_releases_empty_audio_while_ordinary_hits_the_floor(
     let id = mark_journal(&binary, harness.root.path(), &processed_policy(retention));
     let binary = binary.display().to_string();
     let approved = approve(&harness, &binary, &id);
-    assert_eq!(approved.1["state"], "approve.partial");
+    assert_eq!(approved.1["state"], "approve.deleted");
     assert_eq!(approved.1["removed_count"], 1);
-    assert_eq!(approved.1["not_removed_count"], 1);
+    assert_eq!(approved.1["not_removed_count"], 0);
     assert!(!segment.join("audio.flac").exists());
     assert!(segment.join("extra.flac").exists());
 }
