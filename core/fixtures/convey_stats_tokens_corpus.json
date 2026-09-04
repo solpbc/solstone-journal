@@ -357,7 +357,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 2048,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -661,7 +661,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 8192,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1112,7 +1112,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 2048,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1416,7 +1416,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 8192,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -1985,7 +1985,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 2048,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2289,7 +2289,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 8192,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -2858,7 +2858,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 2048,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
@@ -3162,7 +3162,7 @@
                     "talents": false,
                     "transcripts": true
                   },
-                  "max_output_tokens": 12288,
+                  "max_output_tokens": 8192,
                   "mtime": "<TALENT_MTIME>",
                   "output": "json",
                   "path": "<TALENT_PATH>",
