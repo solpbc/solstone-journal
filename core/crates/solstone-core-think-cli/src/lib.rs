@@ -4156,6 +4156,60 @@ mod tests {
         (context.with_talent_roots(talent_root, apps_root), recorder)
     }
 
+    // AC: the durable record's reason and the operator-facing name come from ONE read, so they
+    // cannot disagree. They used to be two independent `failure_cause` calls against the use
+    // log; on the owner's journal 2026-09-03 the same failure on the same segment reported
+    // `sense (error)` once and `sense (context_window_exceeded)` another time, and the health
+    // record disagreed with the CLI line for the same attempt.
+    //
+    // NOTE what this does and does not fix: the underlying use-log read is still subject to a
+    // flush race, so the *reason* can still degrade to the state word. What is now guaranteed
+    // is that when it does, both surfaces degrade together and an operator is never shown two
+    // different causes for one failure.
+    #[test]
+    fn the_durable_reason_and_the_operator_name_come_from_one_read() {
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (context, recorder) = segment_context(
+            journal.path(),
+            roots.path(),
+            "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+        );
+        segment_dir(journal.path(), "20260813", "090000_300");
+        recorder.end_states.lock().unwrap().insert(
+            "use-1".to_owned(),
+            solstone_core_cortex_client::UseEndState::Error,
+        );
+        let use_log = journal.path().join("talents/sense/use-1.jsonl");
+        fs::create_dir_all(use_log.parent().unwrap()).unwrap();
+        fs::write(
+            &use_log,
+            concat!(
+                "{\"event\":\"start\",\"use_id\":\"use-1\"}\n",
+                "{\"event\":\"error\",\"use_id\":\"use-1\",\"terminal\":true,",
+                "\"reason_code\":\"context_window_exceeded\"}\n",
+            ),
+        )
+        .unwrap();
+
+        let result = run_segment(&context, journal.path(), "090000_300", false, false);
+
+        assert_eq!(
+            result.failed_names,
+            vec!["sense (context_window_exceeded)".to_owned()],
+            "the operator-facing name carries the real cause"
+        );
+        let records = oplog_records(journal.path(), &context.day, "segment");
+        let fail = records
+            .iter()
+            .find(|r| r["event"] == "talent.fail" && r["name"] == "sense")
+            .expect("a sense failure record");
+        assert_eq!(
+            fail["reason_code"], "context_window_exceeded",
+            "the durable record must carry the SAME cause the name did, not a second read"
+        );
+    }
+
     // AC: a failed wait is not evidence about any individual use. When the use's own
     // durable log already ended in `finish`, the drain records the completion instead of
     // blaming the wait on it. Without this, every pending use in the batch was marked

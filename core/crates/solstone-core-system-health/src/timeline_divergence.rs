@@ -41,6 +41,27 @@ pub enum TimelineHealthError {
     Source(#[source] TimelineError),
 }
 
+/// Cap how many reasons a diagnosis enumerates.
+///
+/// These lists are one entry per artifact, and on a journal mid-schema-migration that is
+/// every artifact: the owner's journal produced a `timeline_divergence` detail of
+/// **24,622,411 characters** on 2026-09-03 — 94,176 near-identical `unknown field \`title\``
+/// entries plus 340 day artifacts. A detail that large is not a diagnosis; it cannot be read,
+/// it bloats `doctor --json`, and nothing downstream can render it. The entries repeat, so a
+/// bounded sample plus an honest total carries the same information.
+fn summarize_reasons(reasons: &[String]) -> String {
+    const MAX_REASONS: usize = 20;
+    if reasons.len() <= MAX_REASONS {
+        return reasons.join("; ");
+    }
+    format!(
+        "{}; (+{} more of {} total)",
+        reasons[..MAX_REASONS].join("; "),
+        reasons.len() - MAX_REASONS,
+        reasons.len()
+    )
+}
+
 /// Independently verify live source coverage, artifact schema, durable state, and rollup agreement.
 pub fn diagnose_timeline_divergence(
     journal: &Path,
@@ -68,7 +89,7 @@ pub fn diagnose_timeline_divergence(
     let invalid = invalid_artifacts(&master, &days, &segments);
     if !invalid.is_empty() {
         return Ok(TimelineDivergenceDiagnosis::Stale {
-            detail: invalid.join("; "),
+            detail: summarize_reasons(&invalid),
         });
     }
 
@@ -85,7 +106,7 @@ pub fn diagnose_timeline_divergence(
                 "read {} of {} chronicle day(s); could not enumerate segment bindings for {}",
                 day_directories.len().saturating_sub(unreadable_days.len()),
                 day_directories.len(),
-                unreadable_days.join("; ")
+                summarize_reasons(&unreadable_days)
             ),
         });
     }
@@ -106,7 +127,7 @@ pub fn diagnose_timeline_divergence(
     let stale = stale_reasons(journal, &master, &days, &segments, &state, &observed)?;
     if !stale.is_empty() {
         return Ok(TimelineDivergenceDiagnosis::Stale {
-            detail: stale.join("; "),
+            detail: summarize_reasons(&stale),
         });
     }
 
@@ -607,7 +628,7 @@ mod tests {
         publish_segment_timeline, segment_subject_key, timeline_state_path,
     };
 
-    use super::{TimelineDivergenceDiagnosis, diagnose_timeline_divergence};
+    use super::{TimelineDivergenceDiagnosis, diagnose_timeline_divergence, summarize_reasons};
 
     const DAY: &str = "20260520";
 
@@ -792,6 +813,34 @@ mod tests {
     /// the whole timeline check as a hard error -- hiding every day it could read.
     ///
     /// Partial coverage must be reported as partial, never as a refusal to look.
+    // AC: a diagnosis detail stays readable no matter how many artifacts are invalid. On
+    // 2026-09-03 the owner's journal produced a 24,622,411-character detail because every
+    // artifact predated the V1 schema and each got its own entry. The entries repeat, so a
+    // bounded sample plus an honest total says the same thing and can actually be read.
+    #[test]
+    fn a_diagnosis_detail_is_bounded_and_reports_the_true_total() {
+        let few: Vec<String> = (0..5).map(|i| format!("reason {i}")).collect();
+        assert_eq!(summarize_reasons(&few), few.join("; "));
+        assert!(!summarize_reasons(&few).contains("more of"));
+
+        let many: Vec<String> = (0..94_176).map(|i| format!("reason {i}")).collect();
+        let summary = summarize_reasons(&many);
+        assert!(
+            summary.len() < 2_000,
+            "detail must stay readable, got {} chars",
+            summary.len()
+        );
+        assert!(
+            summary.starts_with("reason 0; reason 1;"),
+            "keeps real examples"
+        );
+        assert!(
+            summary.ends_with("(+94156 more of 94176 total)"),
+            "reports the true total, got tail {:?}",
+            &summary[summary.len().saturating_sub(40)..]
+        );
+    }
+
     #[test]
     fn an_unspellable_legacy_stream_directory_yields_uncertain_not_a_hard_error() {
         let root = tempfile::tempdir().expect("root");

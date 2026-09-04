@@ -36,6 +36,36 @@ pub struct SourceCounts {
     pub talents: usize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScreenCut {
+    pub byte_offset: usize,
+    pub observation_byte_offset: usize,
+    pub reset_carry: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ScreenTranscript {
+    pub text: String,
+    pub cuts: Vec<ScreenCut>,
+}
+
+impl ScreenTranscript {
+    pub fn plain(text: String) -> Self {
+        Self {
+            text,
+            cuts: Vec::new(),
+        }
+    }
+}
+
+impl std::ops::Deref for ScreenTranscript {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.text
+    }
+}
+
 impl SourceCounts {
     pub fn total(&self) -> usize {
         self.transcripts + self.percepts + self.talents
@@ -80,6 +110,27 @@ struct Entry {
     content: String,
     stream: Option<String>,
     output_name: Option<String>,
+    screen_cuts: Vec<ScreenCut>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct RawContent {
+    text: String,
+    screen_cuts: Vec<ScreenCut>,
+}
+
+impl std::ops::Deref for RawContent {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.text
+    }
+}
+
+impl fmt::Display for RawContent {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.text.fmt(formatter)
+    }
 }
 
 struct Segment {
@@ -106,14 +157,16 @@ impl fmt::Display for RangeError {
 impl std::error::Error for RangeError {}
 
 pub fn cluster(root: &Path, day: &str, sources: &Sources) -> (String, SourceCounts) {
-    cluster_with_projection(root, day, sources, PerceptProjection::Generic)
+    let (transcript, counts) =
+        cluster_with_projection(root, day, sources, PerceptProjection::Generic);
+    (transcript.text, counts)
 }
 
 pub fn cluster_for_screen_talent(
     root: &Path,
     day: &str,
     sources: &Sources,
-) -> (String, SourceCounts) {
+) -> (ScreenTranscript, SourceCounts) {
     cluster_with_projection(root, day, sources, PerceptProjection::ScreenTalent)
 }
 
@@ -122,14 +175,14 @@ fn cluster_with_projection(
     day: &str,
     sources: &Sources,
     projection: PerceptProjection,
-) -> (String, SourceCounts) {
+) -> (ScreenTranscript, SourceCounts) {
     let day_dir = day_dir(root, day);
     // Python's day_path at solstone/think/utils.py:289 creates this directory before
     // cluster.py:794-797 checks it. Native reads stay non-creating: native think creates
     // day directories before dispatch, while an owner's read must not create chronicle state.
     if !day_dir.is_dir() {
         return (
-            format!("Day folder not found: {}", day_dir.display()),
+            ScreenTranscript::plain(format!("Day folder not found: {}", day_dir.display())),
             SourceCounts::default(),
         );
     }
@@ -137,10 +190,10 @@ fn cluster_with_projection(
     let counts = SourceCounts::from_entries(&entries);
     if entries.is_empty() {
         (
-            format!(
+            ScreenTranscript::plain(format!(
                 "No transcript, screen, or browser files found for date {day} in {}.",
                 day_dir.display()
-            ),
+            )),
             counts,
         )
     } else {
@@ -155,7 +208,9 @@ pub fn cluster_period(
     sources: &Sources,
     stream: Option<&str>,
 ) -> (String, SourceCounts) {
-    cluster_period_with_projection(root, day, key, sources, stream, PerceptProjection::Generic)
+    let (transcript, counts) =
+        cluster_period_with_projection(root, day, key, sources, stream, PerceptProjection::Generic);
+    (transcript.text, counts)
 }
 
 pub fn cluster_period_for_screen_talent(
@@ -164,7 +219,7 @@ pub fn cluster_period_for_screen_talent(
     key: &str,
     sources: &Sources,
     stream: Option<&str>,
-) -> (String, SourceCounts) {
+) -> (ScreenTranscript, SourceCounts) {
     cluster_period_with_projection(
         root,
         day,
@@ -182,10 +237,10 @@ fn cluster_period_with_projection(
     sources: &Sources,
     stream: Option<&str>,
     projection: PerceptProjection,
-) -> (String, SourceCounts) {
+) -> (ScreenTranscript, SourceCounts) {
     let Some(segment) = find_segment(root, day, key, stream) else {
         return (
-            format!("Segment folder not found: {day}/{key}"),
+            ScreenTranscript::plain(format!("Segment folder not found: {day}/{key}")),
             SourceCounts::default(),
         );
     };
@@ -193,7 +248,9 @@ fn cluster_period_with_projection(
     let counts = SourceCounts::from_entries(&entries);
     if entries.is_empty() {
         (
-            format!("No transcript, screen, or browser files found for segment {key}"),
+            ScreenTranscript::plain(format!(
+                "No transcript, screen, or browser files found for segment {key}"
+            )),
             counts,
         )
     } else {
@@ -209,6 +266,7 @@ pub fn cluster_span(
     stream: Option<&str>,
 ) -> Result<(String, SourceCounts), String> {
     cluster_span_with_projection(root, day, span, sources, stream, PerceptProjection::Generic)
+        .map(|(transcript, counts)| (transcript.text, counts))
 }
 
 pub fn cluster_span_for_screen_talent(
@@ -217,7 +275,7 @@ pub fn cluster_span_for_screen_talent(
     span: &[&str],
     sources: &Sources,
     stream: Option<&str>,
-) -> Result<(String, SourceCounts), String> {
+) -> Result<(ScreenTranscript, SourceCounts), String> {
     cluster_span_with_projection(
         root,
         day,
@@ -235,7 +293,7 @@ fn cluster_span_with_projection(
     sources: &Sources,
     stream: Option<&str>,
     projection: PerceptProjection,
-) -> Result<(String, SourceCounts), String> {
+) -> Result<(ScreenTranscript, SourceCounts), String> {
     let mut found = Vec::new();
     let mut missing = Vec::new();
     for key in span {
@@ -257,10 +315,10 @@ fn cluster_span_with_projection(
     let counts = SourceCounts::from_entries(&entries);
     if entries.is_empty() {
         return Ok((
-            format!(
+            ScreenTranscript::plain(format!(
                 "No transcript, screen, or browser files found in span: {}",
                 span.join(", ")
-            ),
+            )),
             counts,
         ));
     }
@@ -286,7 +344,7 @@ pub fn cluster_range(
         .into_iter()
         .filter(|entry| entry.segment_start < end && entry.segment_end > start)
         .collect();
-    Ok(groups_to_markdown(entries))
+    Ok(groups_to_markdown(entries).text)
 }
 
 fn range_error(error: impl fmt::Display) -> RangeError {
@@ -345,7 +403,7 @@ fn process_segment(
                     end,
                     segment,
                     "transcript",
-                    content,
+                    content.text,
                     stream.clone(),
                     None,
                 ));
@@ -398,7 +456,7 @@ fn process_segment(
                     end,
                     segment,
                     "transcript",
-                    content,
+                    content.text,
                     stream.clone(),
                     None,
                 ));
@@ -413,17 +471,19 @@ fn process_segment(
         }) {
             if let Some(content) =
                 raw_content(path, segment, day, RawPerceptFamily::RawScreen, projection)
-                && !content.is_empty()
+                && !content.text.is_empty()
             {
-                entries.push(entry(
+                let mut projected = entry(
                     start,
                     end,
                     segment,
                     "percept",
-                    content,
+                    content.text,
                     stream.clone(),
                     None,
-                ));
+                );
+                projected.screen_cuts = content.screen_cuts;
+                entries.push(projected);
             }
         }
         let mut browser = files
@@ -487,6 +547,7 @@ fn process_segment(
                         content: projection.text,
                         stream: stream.clone(),
                         output_name: Some(projection.stem),
+                        screen_cuts: Vec::new(),
                     });
                 }
             }
@@ -501,7 +562,7 @@ fn raw_content(
     day: &str,
     family: RawPerceptFamily,
     projection: PerceptProjection,
-) -> Option<String> {
+) -> Option<RawContent> {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
         Err(error) => {
@@ -521,21 +582,57 @@ fn raw_content(
     // Unlike solstone/think/cluster.py:173, the formatter skips malformed JSONL lines
     // individually (content/mod.rs:500-513), preserving valid body rows rather than
     // reducing what native reads from the file.
-    let produced = match (family, projection) {
+    let (header, chunks, error, tmux_chunk_indices) = match (family, projection) {
         (RawPerceptFamily::RawScreen, PerceptProjection::ScreenTalent) => {
-            produce_screen_talent_raw_screen_chunks(&rel, &text)
+            let produced = produce_screen_talent_raw_screen_chunks(&rel, &text);
+            (
+                produced.header,
+                produced.chunks,
+                produced.error,
+                produced.tmux_chunk_indices,
+            )
         }
-        _ => produce_raw_percept_chunks(family, &rel, &text),
+        _ => {
+            let produced = produce_raw_percept_chunks(family, &rel, &text);
+            (produced.header, produced.chunks, produced.error, Vec::new())
+        }
     };
-    if let Some(error) = &produced.error {
+    if let Some(error) = &error {
         log::warn!("{error}");
     }
-    let mut parts = Vec::new();
-    if let Some(header) = produced.header {
-        parts.push(header);
+    let tmux_chunk_indices = tmux_chunk_indices.into_iter().collect::<BTreeSet<_>>();
+    let mut rendered = String::new();
+    if let Some(header) = header {
+        rendered.push_str(&header);
     }
-    parts.extend(produced.chunks.into_iter().map(|chunk| chunk.content));
-    Some(parts.join("\n"))
+    let mut tmux_chunk_offsets = Vec::new();
+    for (index, chunk) in chunks.into_iter().enumerate() {
+        if !rendered.is_empty() {
+            rendered.push('\n');
+        }
+        let chunk_start = rendered.len();
+        rendered.push_str(&chunk.content);
+        if tmux_chunk_indices.contains(&index) {
+            tmux_chunk_offsets.push(chunk_start);
+        }
+    }
+    let screen_cuts = tmux_chunk_offsets
+        .into_iter()
+        .enumerate()
+        .map(|(index, observation_byte_offset)| ScreenCut {
+            byte_offset: if index == 0 {
+                0
+            } else {
+                observation_byte_offset
+            },
+            observation_byte_offset,
+            reset_carry: index == 0,
+        })
+        .collect();
+    Some(RawContent {
+        text: rendered,
+        screen_cuts,
+    })
 }
 
 fn entry(
@@ -556,10 +653,11 @@ fn entry(
         content,
         stream,
         output_name,
+        screen_cuts: Vec::new(),
     }
 }
 
-fn groups_to_markdown(mut entries: Vec<Entry>) -> String {
+fn groups_to_markdown(mut entries: Vec<Entry>) -> ScreenTranscript {
     entries.sort_by_key(|entry| entry.timestamp);
     let mut groups: Vec<Vec<Entry>> = Vec::new();
     for entry in entries {
@@ -575,6 +673,7 @@ fn groups_to_markdown(mut entries: Vec<Entry>) -> String {
     }
     groups.sort_by_key(|group| group[0].segment_start);
     let mut lines = Vec::new();
+    let mut pending_cuts = Vec::new();
     for group in groups {
         let first = &group[0];
         lines.push(format!(
@@ -584,6 +683,7 @@ fn groups_to_markdown(mut entries: Vec<Entry>) -> String {
         ));
         lines.push(String::new());
         for entry in group {
+            let entry_heading_line = lines.len();
             match entry.prefix {
                 "transcript" => lines.push(format!(
                     "### {}",
@@ -597,11 +697,60 @@ fn groups_to_markdown(mut entries: Vec<Entry>) -> String {
                 )),
                 _ => continue,
             }
-            lines.push(entry.content.trim().into());
+            let trimmed = entry.content.trim();
+            let trimmed_start = entry.content.len() - entry.content.trim_start().len();
+            let content_line = lines.len();
+            lines.push(trimmed.into());
+            for cut in entry.screen_cuts {
+                if cut.byte_offset < trimmed_start || cut.observation_byte_offset < trimmed_start {
+                    continue;
+                }
+                let (cut_line, cut_relative) = if cut.byte_offset == 0 {
+                    (entry_heading_line, 0)
+                } else {
+                    (content_line, cut.byte_offset - trimmed_start)
+                };
+                pending_cuts.push((
+                    cut_line,
+                    cut_relative,
+                    content_line,
+                    cut.observation_byte_offset - trimmed_start,
+                    cut.reset_carry,
+                ));
+            }
             lines.push(String::new());
         }
     }
-    lines.join("\n")
+    let mut line_offsets = Vec::with_capacity(lines.len());
+    let mut byte_offset = 0usize;
+    for line in &lines {
+        line_offsets.push(byte_offset);
+        byte_offset = byte_offset.saturating_add(line.len()).saturating_add(1);
+    }
+    let text = lines.join("\n");
+    let mut cuts = pending_cuts
+        .into_iter()
+        .filter_map(
+            |(line, relative, observation_line, observation_relative, reset_carry)| {
+                let byte_offset = line_offsets.get(line)?.checked_add(relative)?;
+                let observation_byte_offset = line_offsets
+                    .get(observation_line)?
+                    .checked_add(observation_relative)?;
+                (byte_offset <= observation_byte_offset
+                    && observation_byte_offset <= text.len()
+                    && text.is_char_boundary(byte_offset)
+                    && text.is_char_boundary(observation_byte_offset))
+                .then_some(ScreenCut {
+                    byte_offset,
+                    observation_byte_offset,
+                    reset_carry,
+                })
+            },
+        )
+        .collect::<Vec<_>>();
+    cuts.sort_by_key(|cut| cut.byte_offset);
+    cuts.dedup_by_key(|cut| cut.byte_offset);
+    ScreenTranscript { text, cuts }
 }
 
 fn day_dir(root: &Path, day: &str) -> PathBuf {

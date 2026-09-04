@@ -27,7 +27,7 @@ use solstone_core_timeline::{
 use crate::context::{DispatchFailure, ThinkContext};
 use crate::dispatch::{
     DrainOutcome, ModeResult, PendingUse, dispatch_direct, drain_with_deadline_observed,
-    failure_cause, merge_mode_result, runtime,
+    merge_mode_result, runtime,
 };
 use crate::helpers;
 use crate::run_log::RunLogWriter;
@@ -1189,9 +1189,9 @@ fn log_use_terminal(
     item: &PendingUse,
     outcome: DrainOutcome,
 ) {
-    let (event, state) = match outcome {
-        DrainOutcome::Finish => ("talent.complete", "finish"),
-        DrainOutcome::Fail(state) => ("talent.fail", state),
+    let (event, state, carried_cause) = match &outcome {
+        DrainOutcome::Finish => ("talent.complete", "finish", None),
+        DrainOutcome::Fail { state, cause } => ("talent.fail", *state, cause.clone()),
     };
     let mut fields = segment_event(
         context,
@@ -1209,8 +1209,7 @@ fn log_use_terminal(
     // known here — `failure_cause` reads the same use log the daily path consults — so
     // record it under the same `reason_code` key rather than leaving the state to stand
     // in for a reason it does not carry.
-    if let DrainOutcome::Fail(state) = outcome {
-        let reason_code = failure_cause(&context.journal, &item.use_id, state);
+    if let Some(reason_code) = carried_cause {
         fields.insert("reason_code".to_owned(), Value::String(reason_code));
     }
     log.log(event, context.event_now_ms(), fields);

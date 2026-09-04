@@ -109,8 +109,11 @@ pub fn prepare(
             .as_ref()
             .is_some_and(transcript::sources_are_enabled)
     {
-        let (mut transcript, counts) = transcript::load_transcript(&context.journal, &composed)
+        let loaded = transcript::load_transcript(&context.journal, &composed)
             .map_err(PrepareFailure::Refusal)?;
+        let mut transcript = loaded.text;
+        let counts = loaded.counts;
+        let mut screen_cuts = loaded.screen_cuts;
         composed.insert("transcript".to_owned(), Value::String(transcript.clone()));
         composed.insert("source_counts".to_owned(), Value::from(counts));
 
@@ -146,7 +149,30 @@ pub fn prepare(
         }
         if counts.total() < 3 {
             transcript.insert_str(0, SPARSE_INPUT_NOTE);
+            for cut in &mut screen_cuts {
+                cut.byte_offset = cut.byte_offset.saturating_add(SPARSE_INPUT_NOTE.len());
+                cut.observation_byte_offset = cut
+                    .observation_byte_offset
+                    .saturating_add(SPARSE_INPUT_NOTE.len());
+            }
             composed.insert("transcript".to_owned(), Value::String(transcript));
+        }
+        if name == "screen" && !screen_cuts.is_empty() {
+            composed.insert(
+                "_screen_batch_cuts".to_owned(),
+                Value::Array(
+                    screen_cuts
+                        .into_iter()
+                        .map(|cut| {
+                            serde_json::json!({
+                                "byte_offset": cut.byte_offset,
+                                "observation_byte_offset": cut.observation_byte_offset,
+                                "reset_carry": cut.reset_carry,
+                            })
+                        })
+                        .collect(),
+                ),
+            );
         }
     }
     if composed

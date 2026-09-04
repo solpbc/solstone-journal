@@ -244,9 +244,15 @@ where
     };
 
     let window = resolve_context_window(&input, &server, transport);
-    let prepared = match prepare_bundled_request(&input, &server, window, |text| {
-        count_tokens(transport, &server.base_url, text)
-    }) {
+    let prepared = match if cfg!(target_os = "linux") && count_image_parts(&input.contents) == 0 {
+        prepare_exact_text_request(&input, &server, window, |body| {
+            count_input_tokens(transport, &server.base_url, body)
+        })
+    } else {
+        prepare_bundled_request(&input, &server, window, |text| {
+            count_tokens(transport, &server.base_url, text)
+        })
+    } {
         Ok(prepared) => prepared,
         Err(error) => return GenerateResult::Failure(error.into_failure()),
     };
@@ -397,6 +403,160 @@ pub struct PreparedRequest {
 pub struct ContextWindow {
     pub window: u32,
     pub slots: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExactTextCount {
+    pub input_tokens: u32,
+    pub window: u32,
+    pub slots: u32,
+}
+
+impl ExactTextCount {
+    pub fn completion_room(self) -> u32 {
+        self.window
+            .saturating_sub(self.input_tokens)
+            .saturating_sub(SAFETY_MARGIN_TOKENS)
+    }
+}
+
+/// Count-only admission result for callers that must plan lossless request batches.
+///
+/// This uses the same managed bundled-provider body and native count endpoint as
+/// [`generate`], but never sends an inference request.
+pub fn inspect_exact_text_admission(
+    input: &GenerateInput,
+) -> Result<ExactTextCount, GenerateError> {
+    if !cfg!(target_os = "linux") || count_image_parts(&input.contents) != 0 {
+        return Err(failure_error(
+            "local_endpoint_contract_failed",
+            "Exact text admission is available only for text-only managed Linux requests.".into(),
+        ));
+    }
+    let mut transport = UreqTransport;
+    let server = match connect(ConnectInput {
+        schema: "solstone-local-connect-input-v1".into(),
+        journal_path: input.journal_path.clone(),
+        bind_address: input.bind_address,
+        default_model_id: input.default_model_id.clone(),
+        platform: input.platform,
+    }) {
+        ConnectOutcome::Ready { server } => server,
+        ConnectOutcome::Loading { reason }
+        | ConnectOutcome::NotReady { reason }
+        | ConnectOutcome::Failed { reason } => {
+            return Err(failure_error("local_endpoint_contract_failed", reason));
+        }
+    };
+    let context = resolve_context_window(input, &server, &mut transport);
+    let body = build_request_body(
+        &server.served_model_id,
+        build_messages(&input.contents, input.system_instruction.as_deref()),
+        input.temperature,
+        input.max_output_tokens,
+        input.json_output,
+        input.json_schema.as_ref(),
+        true,
+    );
+    let input_tokens =
+        count_input_tokens(&mut transport, &server.base_url, &body).map_err(|detail| {
+            failure_error(
+                "local_endpoint_contract_failed",
+                format!("Managed local input-token count failed: {detail}"),
+            )
+        })?;
+    Ok(ExactTextCount {
+        input_tokens,
+        window: context.window,
+        slots: context.slots,
+    })
+}
+
+/// Build an unmodified text request and admit it using the provider's native
+/// count of the exact OpenAI chat body. Input is never clipped or reordered.
+pub fn prepare_exact_text_request<F>(
+    input: &GenerateInput,
+    server: &ConnectedServer,
+    context: ContextWindow,
+    mut count: F,
+) -> Result<PreparedRequest, GenerateError>
+where
+    F: FnMut(&Value) -> Result<u32, String>,
+{
+    if count_image_parts(&input.contents) != 0 {
+        return Err(failure_error(
+            "local_endpoint_contract_failed",
+            "Exact text admission does not cover image input.".into(),
+        ));
+    }
+    let messages = build_messages(&input.contents, input.system_instruction.as_deref());
+    let mut body = build_request_body(
+        &server.served_model_id,
+        messages,
+        input.temperature,
+        input.max_output_tokens,
+        input.json_output,
+        input.json_schema.as_ref(),
+        true,
+    );
+    let count_body = |body: &Value, count: &mut F| {
+        count(body).map_err(|detail| {
+            failure_error(
+                "local_endpoint_contract_failed",
+                format!("Managed local input-token count failed: {detail}"),
+            )
+        })
+    };
+    let mut input_tokens = count_body(&body, &mut count)?;
+    let mut recounts = 0u8;
+    let clamped_max_tokens = loop {
+        let required = SAFETY_MARGIN_TOKENS
+            .checked_add(MIN_COMPLETION_TOKENS)
+            .and_then(|reserve| input_tokens.checked_add(reserve))
+            .ok_or_else(|| {
+                failure_error(
+                    "context_budget_exceeded",
+                    "Local request token arithmetic overflowed.".into(),
+                )
+            })?;
+        if required > context.window {
+            return Err(failure_error(
+                "context_budget_exceeded",
+                "Unmodified local request input exceeds the model context window.".into(),
+            ));
+        }
+        let room = context
+            .window
+            .checked_sub(input_tokens)
+            .and_then(|room| room.checked_sub(SAFETY_MARGIN_TOKENS))
+            .expect("required admission arithmetic checked above");
+        let clamped = input.max_output_tokens.min(room);
+        if body["max_tokens"].as_u64() == Some(u64::from(clamped)) {
+            break clamped;
+        }
+        if recounts == 4 {
+            return Err(failure_error(
+                "local_endpoint_contract_failed",
+                "Managed local input-token count did not stabilize for the final request body."
+                    .into(),
+            ));
+        }
+        body["max_tokens"] = json!(clamped);
+        input_tokens = count_body(&body, &mut count)?;
+        recounts += 1;
+    };
+    Ok(PreparedRequest {
+        body,
+        input_budget: None,
+        request_budget: RequestBudget {
+            window: context.window,
+            slots: context.slots,
+            estimated_prompt_tokens: input_tokens,
+            image_tokens: 0,
+            clamped_max_tokens,
+            requested_max_output_tokens: input.max_output_tokens,
+        },
+    })
 }
 
 /// Build a bundled request from an injected tokenizer, without I/O other than that tokenizer.
@@ -937,6 +1097,34 @@ fn count_tokens<T: GenerateTransport>(transport: &mut T, base_url: &str, text: &
         .unwrap_or_else(|| estimate_tokens(text))
 }
 
+/// Ask the managed provider to count the exact chat-completion body it will
+/// receive. There is deliberately no tokenizer or character-count fallback.
+pub fn count_input_tokens<T: GenerateTransport>(
+    transport: &mut T,
+    base_url: &str,
+    body: &Value,
+) -> Result<u32, String> {
+    let response = transport.post_json(
+        base_url,
+        "/v1/chat/completions/input_tokens",
+        body,
+        TOKENIZE_TIMEOUT,
+    )?;
+    if response.status != 200 {
+        return Err(format!("HTTP {}", response.status));
+    }
+    let value = serde_json::from_str::<Value>(&response.body)
+        .map_err(|error| format!("invalid JSON: {error}"))?;
+    if value.get("object").and_then(Value::as_str) != Some("response.input_tokens") {
+        return Err("unexpected count response object".into());
+    }
+    value
+        .get("input_tokens")
+        .and_then(Value::as_u64)
+        .and_then(|tokens| u32::try_from(tokens).ok())
+        .ok_or_else(|| "missing or invalid input_tokens".into())
+}
+
 pub fn estimate_tokens(text: &str) -> u32 {
     u32::try_from(text.chars().count().div_ceil(3)).unwrap_or(u32::MAX)
 }
@@ -1369,6 +1557,72 @@ mod tests {
                 .any(|source| source.ends_with("local.py"))
         );
         assert_eq!(fixture.prompt_cache_states, ["warm", "cold", "unknown"]);
+        assert_eq!(
+            fixture.reason_codes.get("local_endpoint_contract_failed"),
+            Some(&"local_endpoint_contract_failed".into())
+        );
+    }
+
+    #[test]
+    fn exact_text_admission_counts_the_complete_unmodified_body() {
+        let source = "first frame\nsecond frame\nthird frame";
+        let mut counted_bodies = Vec::new();
+        let prepared = prepare_exact_text_request(
+            &input(json!(source)),
+            &server(),
+            ContextWindow {
+                window: 1_600,
+                slots: 1,
+            },
+            |body| {
+                assert_eq!(body["messages"][0]["content"], source);
+                counted_bodies.push(body.clone());
+                Ok(1_000)
+            },
+        )
+        .expect("exact body fits");
+        assert!(prepared.input_budget.is_none());
+        assert_eq!(prepared.body["messages"][0]["content"], source);
+        assert_eq!(prepared.body["max_tokens"], 344);
+        assert_eq!(prepared.request_budget.estimated_prompt_tokens, 1_000);
+        assert_eq!(prepared.request_budget.clamped_max_tokens, 344);
+        assert_eq!(counted_bodies.len(), 2);
+        assert_eq!(counted_bodies.last(), Some(&prepared.body));
+    }
+
+    #[test]
+    fn exact_text_admission_refuses_one_token_past_the_minimum_without_fitting() {
+        let source = "preserve every byte";
+        let error = prepare_exact_text_request(
+            &input(json!(source)),
+            &server(),
+            ContextWindow {
+                window: 1_600,
+                slots: 1,
+            },
+            |body| {
+                assert_eq!(body["messages"][0]["content"], source);
+                Ok(1_089)
+            },
+        )
+        .expect_err("minimum completion no longer fits");
+        assert_eq!(error.reason_code, "context_budget_exceeded");
+    }
+
+    #[test]
+    fn exact_text_admission_has_no_count_fallback() {
+        let error = prepare_exact_text_request(
+            &input(json!("text")),
+            &server(),
+            ContextWindow {
+                window: 16_384,
+                slots: 1,
+            },
+            |_| Err("native endpoint unavailable".into()),
+        )
+        .expect_err("failed native count is terminal");
+        assert_eq!(error.reason_code, "local_endpoint_contract_failed");
+        assert!(error.detail.contains("native endpoint unavailable"));
     }
 
     #[test]
@@ -1700,6 +1954,10 @@ mod tests {
     struct ScriptedTransport {
         completions: std::collections::VecDeque<Result<HttpResponse, String>>,
         completion_posts: usize,
+        count_posts: usize,
+        input_tokens: u32,
+        count_bodies: Vec<Value>,
+        completion_bodies: Vec<Value>,
     }
 
     impl ScriptedTransport {
@@ -1707,6 +1965,10 @@ mod tests {
             Self {
                 completions: completions.into_iter().collect(),
                 completion_posts: 0,
+                count_posts: 0,
+                input_tokens: 1,
+                count_bodies: Vec::new(),
+                completion_bodies: Vec::new(),
             }
         }
     }
@@ -1725,13 +1987,26 @@ mod tests {
             &mut self,
             _base_url: &str,
             path: &str,
-            _body: &Value,
+            body: &Value,
             _timeout: Duration,
         ) -> Result<HttpResponse, String> {
+            if path == "/v1/chat/completions/input_tokens" {
+                self.count_posts += 1;
+                self.count_bodies.push(body.clone());
+                return Ok(HttpResponse {
+                    status: 200,
+                    body: json!({
+                        "object": "response.input_tokens",
+                        "input_tokens": self.input_tokens,
+                    })
+                    .to_string(),
+                });
+            }
             if path != "/v1/chat/completions" {
-                return Err("scripted transport has no tokenize".into());
+                return Err("scripted transport has no supported endpoint".into());
             }
             self.completion_posts += 1;
+            self.completion_bodies.push(body.clone());
             self.completions
                 .pop_front()
                 .unwrap_or_else(|| Err("no more scripted completion posts".into()))
@@ -1743,6 +2018,48 @@ mod tests {
             status: 200,
             body: body.to_string(),
         })
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_text_overflow_counts_once_and_never_posts_inference() {
+        let mut transport = ScriptedTransport::new([]);
+        transport.input_tokens = FLOOR_CONTEXT_TOKENS - 511;
+        let outcome = generate_with(input(json!("all source bytes")), &mut transport, |_| {
+            ConnectOutcome::Ready { server: server() }
+        });
+        let GenerateResult::Failure(failure) = outcome else {
+            panic!("oversized exact text request unexpectedly succeeded");
+        };
+        assert_eq!(
+            failure.reason_code.as_deref(),
+            Some("context_budget_exceeded")
+        );
+        assert_eq!(transport.count_posts, 1);
+        assert_eq!(transport.completion_posts, 0);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_text_inference_body_is_the_body_admitted_by_native_count() {
+        let mut transport = ScriptedTransport::new([ok_http(json!({
+            "choices": [{"message": {"content": "hello"}, "finish_reason": "stop"}]
+        }))]);
+        transport.input_tokens = FLOOR_CONTEXT_TOKENS - 1_000;
+        let root = tempfile::tempdir().expect("journal");
+        let mut request = input(json!("all source bytes"));
+        request.journal_path = root.path().display().to_string();
+        request.max_output_tokens = 12_288;
+        let result = generate_with(request, &mut transport, |_| ConnectOutcome::Ready {
+            server: server(),
+        });
+        assert!(matches!(result, GenerateResult::Success(_)));
+        assert_eq!(transport.count_bodies.len(), 2);
+        assert_eq!(transport.completion_bodies.len(), 1);
+        assert_eq!(
+            transport.count_bodies.last(),
+            transport.completion_bodies.first()
+        );
     }
 
     fn generate_against(
