@@ -435,6 +435,12 @@ fi
             "--no-path",
         ])
         .env("FAKE_CURL_ROOT", &origin)
+        // install.sh refuses with `v1-handoff` when `$HOME/.local/bin/journal` is a Python
+        // v1 launcher. Without pinning HOME this test reads the developer's own machine and
+        // passes or fails on whether solstone v1 happens to be installed there -- it passes
+        // on a clean checkout host and fails on any box that still has v1, which is most of
+        // ours. The prefix is already explicit, so HOME is only ever the route probe here.
+        .env("HOME", &fixture.root)
         .env("SOLSTONE_UNAME_S", "Linux")
         .env("SOLSTONE_UNAME_M", "x86_64")
         .env("TMPDIR", &fixture.root)
