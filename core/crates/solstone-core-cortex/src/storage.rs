@@ -438,9 +438,13 @@ fn recover_active_candidate(
         refusals.record(CortexUseRefusal::CandidateIo);
         return;
     };
-    let error = synthesized_error(
+    let mut error = synthesized_error(
         &request.use_id,
         "Recovered: Cortex restarted while talent was running",
+    );
+    error.insert(
+        "reason_code".into(),
+        Value::String("cortex_restart_recovered".into()),
     );
     match store.append_active(&active_path, &error) {
         Ok(true) => {}

@@ -777,7 +777,7 @@ fn emit_outcome(writer: &mut impl Write, outcome: RuntimeOutcome) {
         ),
         RuntimeOutcome::UnportedHook { hook, talent } => emit(
             writer,
-            json!({"event":"error", "terminal":true, "name":talent, "error":format!("unported talent hook: {hook}")}),
+            json!({"event":"error", "terminal":true, "name":talent, "error":format!("unported talent hook: {hook}"), "reason_code":"unported_talent_hook"}),
         ),
         RuntimeOutcome::PrepareSkipped { talent, reason } => emit(
             writer,
@@ -785,15 +785,15 @@ fn emit_outcome(writer: &mut impl Write, outcome: RuntimeOutcome) {
         ),
         RuntimeOutcome::SchemaValidationFailed { talent, validation } => emit(
             writer,
-            json!({"event":"error", "terminal":true, "name":talent, "error":"talent output failed schema validation", "schema_validation":validation}),
+            json!({"event":"error", "terminal":true, "name":talent, "error":"talent output failed schema validation", "schema_validation":validation, "reason_code":"schema_validation_failed"}),
         ),
         RuntimeOutcome::PrepareFailed(error) => emit(
             writer,
-            json!({"event":"error", "terminal":true, "error":error.to_string()}),
+            json!({"event":"error", "terminal":true, "error":error.to_string(), "reason_code":"talent_prepare_failed"}),
         ),
         RuntimeOutcome::StageFailed(error) => emit(
             writer,
-            json!({"event":"error", "terminal":true, "name":error.talent, "error":error.to_string()}),
+            json!({"event":"error", "terminal":true, "name":error.talent, "error":error.to_string(), "reason_code":"talent_stage_failed"}),
         ),
         RuntimeOutcome::GenerateRefused { error, response }
         | RuntimeOutcome::CogitateRefused { error, response } => emit(
