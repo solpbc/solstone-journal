@@ -454,6 +454,18 @@ fn replay_full_recorded_case(
         case.get("location").and_then(Value::as_str),
         "{phase} {path} location"
     );
+    // A record with no `body_sha256` is deliberately not body-asserted: served
+    // frontend assets (html/js/css) keep their status, content-type and location
+    // pins above and drop the whole-file digest. See the fixture's
+    // corpus_maintenance note. `superseded_presentation_asset` below is the
+    // stronger form of the same idea -- compare against the asset on disk.
+    if case.get("body_sha256").and_then(Value::as_str).is_none() {
+        return (
+            body_arm(case),
+            false,
+            runtime_status_deviation_path(phase, case).is_some(),
+        );
+    }
     let mut normalized_response = None;
     let actual_hash = match (
         case["body_sha256_basis"].as_str(),

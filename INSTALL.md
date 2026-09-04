@@ -33,12 +33,12 @@ sudo pacman -S libgomp         # Arch
 
 ### Where the files come from
 
-The release channel is `updates.solstone.app`. `install.sh` accepts only that host, re-checking on every redirect hop; loopback is allowed for testing, and `--origin` overrides. `install.sh` lives in this repository at `core/distribution/install.sh`, and is served from the origin as well.
+The release channel is `updates.solstone.app`. `install.sh` accepts only that host, re-checking on every redirect hop; loopback is allowed for testing, and `--origin` overrides. `install.sh` lives in this repository at `core/distribution/install.sh`, and is served at `https://solstone.app/install.sh` (mirrored, unchanged, at `https://updates.solstone.app/solstone-journal/install.sh`).
 
 One command does the whole thing, including signed-manifest verification and `journal setup`, once a release has been published:
 
 ```bash
-sh install.sh
+curl -fsSL https://solstone.app/install.sh | sh
 ```
 
 That follows the `release` lane's `latest` pointer, fetches the archive and signed release set from `updates.solstone.app`, verifies the manifest signature with the pinned minisign key, then checks the manifest digests for the selected archive, checksum, and release record. It installs and runs setup. Pass `--version <version>` to pin a version instead of following `latest`. A tree downgrade with `--version` proceeds only when that exact build is still inside this release's three-directory `journal-v2` window; outside the epoch or window it refuses without touching the journal. The archive route below is the same operation with the files already on disk.
