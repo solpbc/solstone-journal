@@ -554,8 +554,18 @@ fn recover_completed_from_disk(
             get_use_end_state(journal, &use_id).map_err(CortexClientError::ReadUseLog)?;
         if end_state.is_terminal() {
             let fields = if end_state == UseEndState::Finish {
-                let events =
-                    read_use_events(journal, &use_id).map_err(CortexClientError::ReadUseLog)?;
+                // `get_use_end_state` just resolved and read this very log to learn the
+                // use finished. `read_use_events` resolves it a *second* time, and the
+                // file can move between the two lookups while cortex finalizes it. That
+                // transient NotFound aborted the whole wait -- and the caller's drain
+                // then failed every other use in the batch, including ones that had
+                // plainly finished. Only the optional finish fields are unavailable
+                // here, and they already fall back to the default below.
+                let events = match read_use_events(journal, &use_id) {
+                    Ok(events) => events,
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
+                    Err(error) => return Err(CortexClientError::ReadUseLog(error)),
+                };
                 events
                     .iter()
                     .rev()
@@ -700,6 +710,31 @@ mod tests {
         .unwrap();
         let error = get_use_end_state(journal.path(), "non_utf8").unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    }
+
+    // AC: `recover_completed_from_disk` tolerates exactly one error kind from
+    // `read_use_events` -- NotFound, the transient where the log moved between the two
+    // lookups -- and must keep propagating every other. This pins the classification that
+    // tolerance keys on: if `find_use_file` ever reports a missing log as something other
+    // than NotFound, the match arm would silently stop firing and the batch-failure
+    // regression would return without any test going red.
+    #[test]
+    fn a_missing_use_log_is_reported_as_not_found_and_a_corrupt_one_is_not() {
+        let journal = tempfile::tempdir().unwrap();
+        fs::create_dir_all(journal.path().join("talents")).unwrap();
+
+        let missing = read_use_events(journal.path(), "never-existed").unwrap_err();
+        assert_eq!(missing.kind(), io::ErrorKind::NotFound);
+
+        let path = journal.path().join("talents/test/corrupt_active.jsonl");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, b"{\"event\":\"finish\",\"use_id\":\"corrupt\"}\n\xff").unwrap();
+        let corrupt = read_use_events(journal.path(), "corrupt").unwrap_err();
+        assert_ne!(
+            corrupt.kind(),
+            io::ErrorKind::NotFound,
+            "a corrupt log must not be swallowed as a missing one"
+        );
     }
 
     #[test]
