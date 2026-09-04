@@ -340,19 +340,28 @@ async fn bootstrap_parent_loss_coordinator(
     let mut capability = vec![0_u8; 32];
     getrandom::fill(&mut capability)
         .map_err(|_| ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake)?;
-    let mut authority = launch_command(
-        Disposition::ExplicitlyUnowned {
-            reason: "parent-loss coordinator must observe supervisor exit".to_owned(),
-        },
-        parent_loss_coordinator_launch_request(
+    let launch_deadline = Instant::now() + PARENT_LOSS_COORDINATOR_BOOTSTRAP_TIMEOUT;
+    let mut authority = loop {
+        let request = parent_loss_coordinator_launch_request(
             journal,
             supervisor,
             &enabled,
             &supervisor_heartbeat_filename,
-        )?,
-        Box::new(|child, _| child.kill().map_err(LaunchError::Terminate)),
-    )
-    .map_err(|_| ParentLossCoordinatorBootstrapFailure::Launch)?;
+        )?;
+        match launch_command(
+            Disposition::ExplicitlyUnowned {
+                reason: "parent-loss coordinator must observe supervisor exit".to_owned(),
+            },
+            request,
+            Box::new(|child, _| child.kill().map_err(LaunchError::Terminate)),
+        ) {
+            Ok(authority) => break authority,
+            Err(_) if Instant::now() < launch_deadline => {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            Err(_) => return Err(ParentLossCoordinatorBootstrapFailure::Launch),
+        }
+    };
     let coordinator = match SystemProcessInstanceSource.inspect(authority.pid()) {
         InspectResult::Present { instance, uid, .. } => LaunchedProcessIdentity { instance, uid },
         InspectResult::Absent | InspectResult::Unverifiable => {

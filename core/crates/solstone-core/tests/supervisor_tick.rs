@@ -5,6 +5,7 @@
 
 use std::fs;
 use std::future::Future;
+use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::path::PathBuf;
@@ -210,6 +211,26 @@ fn start(journal: &TempJournal, cap_seconds: Option<u64>, extra_args: &[&str]) -
     SupervisorGuard::new(command.spawn().expect("supervisor starts"))
 }
 
+fn supervisor_boot_exit(child: &mut SupervisorGuard, status: std::process::ExitStatus) -> String {
+    let mut stderr = String::new();
+    let read = child
+        .stderr
+        .as_mut()
+        .map(|stream| stream.read_to_string(&mut stderr));
+    match read {
+        Some(Ok(_)) if !stderr.trim().is_empty() => {
+            format!(
+                "supervisor exited during boot: {status}; stderr: {}",
+                stderr.trim()
+            )
+        }
+        Some(Ok(_)) | None => format!("supervisor exited during boot: {status}"),
+        Some(Err(error)) => {
+            format!("supervisor exited during boot: {status}; stderr read failed: {error}")
+        }
+    }
+}
+
 fn wait_for_socket(child: &mut SupervisorGuard, socket: &std::path::Path) {
     let ready = socket
         .parent()
@@ -225,9 +246,7 @@ fn wait_for_socket(child: &mut SupervisorGuard, socket: &std::path::Path) {
                 PollState::Held
             } else {
                 match child.try_wait() {
-                    Ok(Some(status)) => {
-                        PollState::HardFail(format!("supervisor exited during boot: {status}"))
-                    }
+                    Ok(Some(status)) => PollState::HardFail(supervisor_boot_exit(child, status)),
                     Ok(None) => PollState::Pending,
                     Err(error) => PollState::HardFail(format!("supervisor status: {error}")),
                 }
