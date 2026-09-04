@@ -86,6 +86,25 @@ pub(crate) fn timeout_cause(timeout: &TimedOutUse) -> &'static str {
     }
 }
 
+/// The durable use log is the authority on what a talent actually did.
+///
+/// A failed wait tells us nothing about any individual use, so attributing the
+/// wait's failure to every pending one records work that already finished as
+/// `wait_failed`. Measured on the owner's journal 2026-09-03: 17 of 327
+/// `talent.fail` records were provably false, their outputs present on disk and
+/// their own logs ending in `finish` — many a legitimate `no_input` skip.
+fn use_log_terminal(journal: &Path, use_id: &str) -> Option<String> {
+    let events = read_use_events(journal, use_id).ok()?;
+    events.iter().rev().find_map(|event| {
+        let name = event.get("event").and_then(Value::as_str)?;
+        let terminal = event
+            .get("terminal")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        (matches!(name, "finish" | "error") && terminal).then(|| name.to_owned())
+    })
+}
+
 pub(crate) fn failure_cause(journal: &Path, use_id: &str, fallback: &str) -> String {
     if let Some(error) = use_log_error(journal, use_id) {
         return error;
@@ -490,9 +509,23 @@ pub(crate) fn drain_with_deadline_observed(
         Err(error) => {
             let wait_error = format!("wait failed: {error:?}");
             for item in pending {
+                let label = item_label(&item.name, item.facet.as_deref());
+                // Ask each use's own log what happened rather than blaming the wait
+                // on all of them. A use that already finished durably is a success
+                // whatever the wait did afterwards.
+                if use_log_terminal(&context.journal, &item.use_id).as_deref() == Some("finish") {
+                    // Deliberately no `maybe_rescan_output` here: no completion is
+                    // available to read the literal changed flag from, and this arm
+                    // never rescanned. Recording the truth is strictly better than the
+                    // false failure it replaces, and regresses nothing.
+                    result.success += 1;
+                    result.success_names.push(label);
+                    observer(&item, DrainOutcome::Finish);
+                    continue;
+                }
                 result.failed += 1;
                 result.failed_names.push(named_failure(
-                    &item_label(&item.name, item.facet.as_deref()),
+                    &label,
                     &failure_cause(&context.journal, &item.use_id, &wait_error),
                 ));
                 observer(&item, DrainOutcome::Fail("wait_failed"));
@@ -527,7 +560,7 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{failure_cause, named_failure};
+    use super::{failure_cause, named_failure, use_log_terminal};
 
     fn write_blocked_local_runtime(journal: &std::path::Path) {
         let path = journal.join("health/providers/runtime/local.json");
@@ -568,6 +601,57 @@ mod tests {
             ),
         )
         .expect("write use log");
+    }
+
+    // AC: the use log is the authority on what a talent actually did, so a wait failure
+    // cannot be attributed to a use whose own log already ended in `finish`. Measured on
+    // the owner's journal 2026-09-03: 17 of 327 `talent.fail` records were provably false
+    // this way, every output present on disk.
+    #[test]
+    fn use_log_terminal_reports_the_uses_own_outcome() {
+        let journal = tempfile::tempdir().expect("journal");
+        let dir = journal.path().join("talents/sense");
+        fs::create_dir_all(&dir).expect("use log directory");
+
+        // nothing written yet -- the wait failure is all we know
+        assert_eq!(use_log_terminal(journal.path(), "use-none"), None);
+
+        // a use that finished, including the legitimate skip shape that dominated the
+        // false failures on the owner's journal
+        fs::write(
+            dir.join("use-finish.jsonl"),
+            concat!(
+                "{\"event\":\"start\",\"use_id\":\"use-finish\"}\n",
+                "{\"event\":\"finish\",\"use_id\":\"use-finish\",\"skip_reason\":\"no_input\"}\n",
+            ),
+        )
+        .expect("write use log");
+        assert_eq!(
+            use_log_terminal(journal.path(), "use-finish").as_deref(),
+            Some("finish")
+        );
+
+        // a use that genuinely failed stays a failure
+        fs::write(
+            dir.join("use-error.jsonl"),
+            concat!(
+                "{\"event\":\"start\",\"use_id\":\"use-error\"}\n",
+                "{\"event\":\"error\",\"use_id\":\"use-error\",\"error\":\"boom\"}\n",
+            ),
+        )
+        .expect("write use log");
+        assert_eq!(
+            use_log_terminal(journal.path(), "use-error").as_deref(),
+            Some("error")
+        );
+
+        // a start with no terminal event yields nothing to attribute
+        fs::write(
+            dir.join("use-open.jsonl"),
+            "{\"event\":\"start\",\"use_id\":\"use-open\"}\n",
+        )
+        .expect("write use log");
+        assert_eq!(use_log_terminal(journal.path(), "use-open"), None);
     }
 
     // AC: when nothing else knows why a use failed, the caller's fallback is reported --
