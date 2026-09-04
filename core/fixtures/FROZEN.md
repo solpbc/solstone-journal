@@ -7,6 +7,27 @@ which is gone. They are **frozen regression pins**, not regenerable goldens.
 - If the Rust behaviour it pins legitimately changes, edit the fixture **in
   the same commit as the behaviour change**, and say why in the commit body.
 
+**But not everything in a frozen corpus is a behaviour pin.** A served frontend
+asset's body (`text/html`, `text/javascript`, `text/css` at status 200) is not
+product behaviour: pinning its bytes asserts that a file we deliberately edit
+has not been edited, so it reddens on every legitimate UI change and says
+nothing about what changed. Those pins were removed from the conveyance corpora
+on 2026-09-03.
+
+- A record with **no `body_sha256`** is deliberately not body-asserted. Do not
+  "repair" it by adding one back.
+- For those routes the corpus still asserts status, content type, content
+  disposition and `Location` — that is the contract worth freezing.
+- `normalized-json` API response bodies remain fully asserted. This carve-out
+  is about served asset files only.
+- To assert frontend **content**, target the thing you care about. The stronger
+  form already in the tree is `superseded_presentation_asset` in
+  `solstone-core-convey-shell/tests/thinking_corpus.rs`, which compares the
+  served body against the asset on disk rather than a recorded digest, so it
+  cannot go stale.
+- If you find yourself hand-patching a hash so CI goes green, stop and ask
+  whether that pin was ever an assertion about the product.
+
 This applies to every file under `core/fixtures/` that a test treats as an
 oracle — the top-level `*.json` corpora, the nested `native-sol/`,
 `body-source/`, `pdf_corpus/`, and journal trees included.
