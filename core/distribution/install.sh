@@ -20,6 +20,7 @@
 #   digest-mismatch
 #   release-invalid
 #   version-mismatch
+#   installer-outdated
 #   lane-invalid
 #   latest-invalid
 #   verifier-missing
@@ -51,6 +52,13 @@ MINISIGN_PUBLIC_KEY=RWRE2eBJv3NAtN0mF5+kqygYyP/ocYNw1Ng9yJhAKgyTflNV9NabMMjq
 RECEIPT_SCHEMA_VERSION=1
 SUPPORTED_UPGRADE_EPOCH=journal-v2
 SUPPORTED_RETENTION_WINDOW=3
+# This installer script's own revision — bump it when install.sh changes in a
+# way that would behave incorrectly against a release requiring the fix.
+# Invariant: a promoted release's min_bootstrap_revision must never exceed the
+# BOOTSTRAP_REVISION of the installer live at https://solstone.app/install.sh
+# at promotion time (solstone-core-distribution's inspect.rs::MIN_BOOTSTRAP_REVISION
+# mirrors this floor).
+BOOTSTRAP_REVISION=1
 
 refuse() {
 	_name=$1
@@ -568,8 +576,8 @@ validate_release() {
 	_want_target=$3
 	_lines=$(printf '%s\n' "$_text" | awk 'NF{c++} END{print c+0}')
 	case $_lines in
-	5 | 7 | 10) ;;
-	*) refuse release-invalid "expected 5 legacy, 7 current, or 10 macos fields" ;;
+	5 | 8 | 11) ;;
+	*) refuse release-invalid "expected 5 legacy, 8 current, or 11 macos fields" ;;
 	esac
 	_product=
 	_version=
@@ -578,6 +586,7 @@ validate_release() {
 	_lock=
 	_epoch=
 	_window=
+	_min_bootstrap=
 	_archive_prebuild=
 	_archive_delivery=
 	_archive_invocation=
@@ -602,6 +611,7 @@ validate_release() {
 		lock_sha256) _lock=$_val ;;
 		upgrade_epoch) _epoch=$_val ;;
 		retention_window) _window=$_val ;;
+		min_bootstrap_revision) _min_bootstrap=$_val ;;
 		archive_prebuild_input_sha256) _archive_prebuild=$_val ;;
 		archive_delivery_contract_sha256) _archive_delivery=$_val ;;
 		archive_final_invocation_sha256) _archive_invocation=$_val ;;
@@ -626,15 +636,19 @@ EOF
 	if [ "$_lines" -eq 5 ]; then
 		_epoch=unknown
 		_window=unknown
+		_min_bootstrap=0
 	else
 		[ -n "$_epoch" ] || refuse release-invalid "upgrade_epoch"
 		case $_window in
 		'' | *[!0-9]*) refuse release-invalid "retention_window" ;;
 		esac
 		[ "$_window" -gt 0 ] || refuse release-invalid "retention_window"
+		case $_min_bootstrap in
+		'' | *[!0-9]*) refuse release-invalid "min_bootstrap_revision" ;;
+		esac
 	fi
 	[ "$_target" = "$_want_target" ] || refuse release-invalid "target"
-	if [ "$_lines" -eq 10 ]; then
+	if [ "$_lines" -eq 11 ]; then
 		[ "$_target" = macos-arm64 ] \
 			|| refuse release-invalid "archive-chain fields are macos-only"
 		is_hex "$_archive_prebuild" 64 || refuse release-invalid "archive_prebuild_input_sha256"
@@ -643,6 +657,10 @@ EOF
 	fi
 	if [ -n "$_want_version" ] && [ "$_version" != "$_want_version" ]; then
 		refuse version-mismatch "$_version"
+	fi
+	if [ "$BOOTSTRAP_REVISION" -lt "$_min_bootstrap" ]; then
+		REFUSAL_HINT=
+		refuse installer-outdated "this install.sh (revision ${BOOTSTRAP_REVISION}) is older than the release's minimum installer revision (${_min_bootstrap}); get the current installer: https://solstone.app/install.sh"
 	fi
 	RELEASE_VERSION=$_version
 	RELEASE_COMMIT=$_commit
@@ -1136,6 +1154,9 @@ stage_receipt() {
 		printf 'origin=%s\n' "$_origin"
 		printf 'architecture=%s\n' "$TARGET"
 		printf 'installer_revision=%s\n' "$RELEASE_COMMIT"
+		# bootstrap_revision is install.sh's own BOOTSTRAP_REVISION, not the
+		# release commit above — do not copy the installer_revision value here.
+		printf 'bootstrap_revision=%s\n' "$BOOTSTRAP_REVISION"
 		printf 'route=tree\n'
 		printf 'signature_verification=%s\n' "$_status"
 		printf 'setup_status=%s\n' "$_setup_status"

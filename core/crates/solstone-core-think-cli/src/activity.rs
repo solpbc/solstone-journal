@@ -108,7 +108,7 @@ pub(crate) fn run(
                 // `work` below 0.4 for browsing and reading activities.
                 log.log(
                     "talent.skip",
-                    context.now_ms,
+                    context.event_now_ms(),
                     fields(
                         context,
                         activity_id,
@@ -507,8 +507,9 @@ fn log_dispatch(
     );
     // Source-derived, not measured: thinking.py:3403-3417 records both the
     // accepted start and the durable `talent.dispatch` sidecar event.
-    log.log("talent.started", context.now_ms, base.clone());
-    log.log("talent.dispatch", context.now_ms, base);
+    let event_ms = context.event_now_ms();
+    log.log("talent.started", event_ms, base.clone());
+    log.log("talent.dispatch", event_ms, base);
 }
 
 fn log_complete(
@@ -530,8 +531,9 @@ fn log_complete(
             ("state".to_owned(), Value::String(state.to_owned())),
         ]),
     );
-    log.log("talent.completed", context.now_ms, base.clone());
-    log.log("talent.complete", context.now_ms, base);
+    let event_ms = context.event_now_ms();
+    log.log("talent.completed", event_ms, base.clone());
+    log.log("talent.complete", event_ms, base);
 }
 
 fn log_fail(
@@ -551,8 +553,9 @@ fn log_fail(
         extra.insert("use_id".to_owned(), Value::String(use_id.to_owned()));
     }
     let base = fields(context, activity, facet, extra);
-    log.log("talent.completed", context.now_ms, base.clone());
-    log.log("talent.fail", context.now_ms, base);
+    let event_ms = context.event_now_ms();
+    log.log("talent.completed", event_ms, base.clone());
+    log.log("talent.fail", event_ms, base);
 }
 
 fn merge(into: &mut ModeResult, from: ModeResult) {

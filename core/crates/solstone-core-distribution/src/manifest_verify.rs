@@ -33,6 +33,7 @@ const RELEASE_KEYS: &[&str] = &[
     "lock_sha256",
     "upgrade_epoch",
     "retention_window",
+    "min_bootstrap_revision",
 ];
 const ARCHIVE_CHAIN_RELEASE_KEYS: &[&str] = &[
     "archive_prebuild_input_sha256",
@@ -731,7 +732,7 @@ mod release_contract_tests {
 
     fn release(target: &str) -> String {
         format!(
-            "product=solstone-journal\nversion=1.2.3\ntarget={target}\ncommit=commit\nlock_sha256=lock\nupgrade_epoch=journal-v2\nretention_window=3\n"
+            "product=solstone-journal\nversion=1.2.3\ntarget={target}\ncommit=commit\nlock_sha256=lock\nupgrade_epoch=journal-v2\nretention_window=3\nmin_bootstrap_revision=1\n"
         )
     }
 
@@ -784,6 +785,30 @@ mod release_contract_tests {
                 "extra {extra}"
             );
         }
+    }
+
+    #[test]
+    fn release_requires_min_bootstrap_revision() {
+        assert!(validate("linux-x86_64", release("linux-x86_64")).is_ok());
+        let release = release("linux-x86_64")
+            .lines()
+            .filter(|line| !line.starts_with("min_bootstrap_revision"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(
+            validate("linux-x86_64", format!("{release}\n")),
+            Err(ManifestVerifyRefusal::ReleaseDeclarationMismatch)
+        );
+    }
+
+    #[test]
+    fn release_refuses_a_malformed_min_bootstrap_revision_line() {
+        let release = release("linux-x86_64")
+            .replace("min_bootstrap_revision=1\n", "min_bootstrap_revision\n");
+        assert_eq!(
+            validate("linux-x86_64", release),
+            Err(ManifestVerifyRefusal::ReleaseDeclarationMismatch)
+        );
     }
 }
 

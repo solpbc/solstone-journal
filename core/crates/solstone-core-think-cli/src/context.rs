@@ -80,6 +80,7 @@ pub(crate) struct ThinkContext {
     pub(crate) day: String,
     pub(crate) day_dir: PathBuf,
     pub(crate) now_ms: i64,
+    event_clock: Arc<dyn Fn() -> i64 + Send + Sync>,
     pub(crate) talent_root: PathBuf,
     pub(crate) apps_root: PathBuf,
     pub(crate) cortex: Arc<dyn CortexBoundary>,
@@ -88,11 +89,22 @@ pub(crate) struct ThinkContext {
 }
 
 impl ThinkContext {
+    #[cfg(test)]
     pub(crate) fn new(
         journal: &Path,
         day: String,
         day_dir: PathBuf,
         now_ms: i64,
+    ) -> Result<Self, String> {
+        Self::new_with_event_clock(journal, day, day_dir, now_ms, Arc::new(move || now_ms))
+    }
+
+    pub(crate) fn new_with_event_clock(
+        journal: &Path,
+        day: String,
+        day_dir: PathBuf,
+        now_ms: i64,
+        event_clock: Arc<dyn Fn() -> i64 + Send + Sync>,
     ) -> Result<Self, String> {
         let (talent_root, apps_root) = package_roots()?;
         let allocator_now = now_ms;
@@ -101,6 +113,7 @@ impl ThinkContext {
             day,
             day_dir,
             now_ms,
+            event_clock,
             talent_root,
             apps_root,
             cortex: Arc::new(NativeCortexBoundary(CortexRequestClient::with_allocator(
@@ -113,9 +126,26 @@ impl ThinkContext {
         })
     }
 
+    pub(crate) fn event_now_ms(&self) -> i64 {
+        (self.event_clock)()
+    }
+
+    pub(crate) fn event_clock(&self) -> Arc<dyn Fn() -> i64 + Send + Sync> {
+        Arc::clone(&self.event_clock)
+    }
+
     #[cfg(test)]
     pub(crate) fn with_boundary(mut self, boundary: Arc<dyn CortexBoundary>) -> Self {
         self.cortex = boundary;
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_event_clock(
+        mut self,
+        event_clock: Arc<dyn Fn() -> i64 + Send + Sync>,
+    ) -> Self {
+        self.event_clock = event_clock;
         self
     }
 

@@ -20,21 +20,30 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
             skipped += 1;
         }
     }
-    frames.sort_by_key(|frame| timestamp(frame));
+    frames.sort_by(|left, right| {
+        timestamp_seconds(left)
+            .partial_cmp(&timestamp_seconds(right))
+            .expect("timestamp_seconds always returns a finite value")
+    });
 
     let (base_timestamp, base_hour, base_minute, base_second) = base_time(rel);
     let chunks = frames
         .into_iter()
         .map(|frame| {
-            let offset = timestamp(frame);
-            let total_seconds = base_hour * 3600 + base_minute * 60 + base_second + offset;
-            let hour = (total_seconds / 3600).rem_euclid(24);
-            let minute = (total_seconds / 60).rem_euclid(60);
-            let second = total_seconds.rem_euclid(60);
-            let mut lines = vec![
-                format!("### {hour:02}:{minute:02}:{second:02}"),
-                String::new(),
-            ];
+            let offset_ms = timestamp_millis(frame);
+            let clock_ms = (base_hour * 3_600_000 + base_minute * 60_000 + base_second * 1_000)
+                .saturating_add(offset_ms)
+                .rem_euclid(86_400_000);
+            let hour = clock_ms / 3_600_000;
+            let minute = (clock_ms / 60_000).rem_euclid(60);
+            let second = (clock_ms / 1_000).rem_euclid(60);
+            let millisecond = clock_ms.rem_euclid(1_000);
+            let heading = if millisecond == 0 {
+                format!("### {hour:02}:{minute:02}:{second:02}")
+            } else {
+                format!("### {hour:02}:{minute:02}:{second:02}.{millisecond:03}")
+            };
+            let mut lines = vec![heading, String::new()];
             if let Some(analysis) = frame.get("analysis").and_then(Value::as_object) {
                 let category = analysis
                     .get("primary")
@@ -62,7 +71,11 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
                     }
                 }
             }
-            recorded_chunk(lines.join("\n"), base_timestamp + offset * 1000, frame)
+            recorded_chunk(
+                lines.join("\n"),
+                base_timestamp.saturating_add(offset_ms),
+                frame,
+            )
         })
         .collect();
 
@@ -95,8 +108,16 @@ fn base_time(rel: &str) -> (i64, i64, i64, i64) {
     (base_timestamp, hour, minute, second)
 }
 
-fn timestamp(frame: &JsonObject) -> i64 {
-    frame.get("timestamp").and_then(Value::as_i64).unwrap_or(0)
+fn timestamp_seconds(frame: &JsonObject) -> f64 {
+    frame
+        .get("timestamp")
+        .and_then(Value::as_f64)
+        .filter(|value| value.is_finite())
+        .unwrap_or(0.0)
+}
+
+fn timestamp_millis(frame: &JsonObject) -> i64 {
+    (timestamp_seconds(frame) * 1_000.0).round() as i64
 }
 
 fn screen_header(rel: &str) -> String {
@@ -237,4 +258,70 @@ fn python_title(value: &str) -> String {
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::content::OccurrenceTimeMs;
+
+    fn record(timestamp: Value, marker: &str) -> JsonObject {
+        json!({"timestamp": timestamp, "content": {"marker": marker}})
+            .as_object()
+            .expect("record object")
+            .clone()
+    }
+
+    #[test]
+    fn fractional_offsets_are_sorted_numerically_and_rendered_to_milliseconds() {
+        let records = vec![
+            record(json!(1.5), "late"),
+            record(json!(0.75), "early"),
+            record(json!(1), "middle"),
+        ];
+        let produced = render("20260304/workstation/090000_300/screen.jsonl", &records);
+
+        assert_eq!(produced.chunks.len(), 3);
+        assert!(produced.chunks[0].content.starts_with("### 09:00:00.750\n"));
+        assert!(produced.chunks[0].content.contains("early"));
+        assert!(produced.chunks[1].content.starts_with("### 09:00:01\n"));
+        assert!(produced.chunks[1].content.contains("middle"));
+        assert!(produced.chunks[2].content.starts_with("### 09:00:01.500\n"));
+        assert!(produced.chunks[2].content.contains("late"));
+        assert_eq!(
+            produced
+                .chunks
+                .iter()
+                .map(|chunk| chunk.occurrence_time_ms)
+                .collect::<Vec<_>>(),
+            vec![
+                Some(OccurrenceTimeMs(1_772_614_800_750)),
+                Some(OccurrenceTimeMs(1_772_614_801_000)),
+                Some(OccurrenceTimeMs(1_772_614_801_500)),
+            ]
+        );
+    }
+
+    #[test]
+    fn equal_numeric_offsets_preserve_source_row_order() {
+        let records = vec![record(json!(1.5), "first"), record(json!(1.500), "second")];
+        let produced = render("20260304/workstation/090000_300/screen.jsonl", &records);
+
+        assert!(produced.chunks[0].content.contains("first"));
+        assert!(produced.chunks[1].content.contains("second"));
+    }
+
+    #[test]
+    fn signed_zero_offsets_are_equal_and_preserve_source_row_order() {
+        let records = vec![
+            record(json!(0.0), "positive-zero-first"),
+            record(json!(-0.0), "negative-zero-second"),
+        ];
+        let produced = render("20260304/workstation/090000_300/screen.jsonl", &records);
+
+        assert!(produced.chunks[0].content.contains("positive-zero-first"));
+        assert!(produced.chunks[1].content.contains("negative-zero-second"));
+    }
 }
