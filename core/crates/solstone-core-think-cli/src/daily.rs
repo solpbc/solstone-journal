@@ -333,8 +333,11 @@ fn log_daily_terminal(
                 std::mem::take(&mut fields),
             );
         }
-        DrainOutcome::Fail(state) => {
-            let reason_code = failure_cause(&context.journal, &item.use_id, state);
+        DrainOutcome::Fail { state, cause } => {
+            // The cause travelled with the outcome; re-reading the use log here raced the
+            // flush and silently degraded the reason to the state word.
+            let reason_code =
+                cause.unwrap_or_else(|| failure_cause(&context.journal, &item.use_id, state));
             log_daily_failure(
                 log,
                 context,

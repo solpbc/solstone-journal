@@ -409,10 +409,30 @@ pub(crate) fn dispatch_direct(
 
 /// Per-use drain result visible to a mode-local observer. Fail carries the
 /// canonical `state` string for a run-log terminal; accounting stays in the drain.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Per-use drain result visible to a mode-local observer.
+///
+/// `Fail` carries the canonical `state` string **and the cause that was already computed for
+/// the operator-facing name**. The cause used to be re-read from the use log by each consumer,
+/// which is a race: a failure recorded before that log's terminal event is flushed falls back
+/// to the state word and writes `reason_code=error`, losing a reason the process already knew.
+/// Observed on the owner's journal 2026-09-03 — the same failure on the same segment recorded
+/// `error` at 23:19 and `context_window_exceeded` at 23:44 with identical use logs.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum DrainOutcome {
     Finish,
-    Fail(&'static str),
+    Fail {
+        state: &'static str,
+        cause: Option<String>,
+    },
+}
+
+impl DrainOutcome {
+    pub(crate) fn fail(state: &'static str, cause: impl Into<String>) -> Self {
+        Self::Fail {
+            state,
+            cause: Some(cause.into()),
+        }
+    }
 }
 
 /// Shared equivalent of `_drain_priority_batch` (`thinking.py:991-1042`).
@@ -460,11 +480,10 @@ pub(crate) fn drain_with_deadline_observed(
                 {
                     result.failed += 1;
                     result.timed_out = true;
-                    result.failed_names.push(named_failure(
-                        &label,
-                        &failure_cause(&context.journal, &item.use_id, timeout_cause(timeout)),
-                    ));
-                    observer(&item, DrainOutcome::Fail(timeout_cause(timeout)));
+                    let cause =
+                        failure_cause(&context.journal, &item.use_id, timeout_cause(timeout));
+                    result.failed_names.push(named_failure(&label, &cause));
+                    observer(&item, DrainOutcome::fail(timeout_cause(timeout), cause));
                     continue;
                 }
                 match report.completed.get(&item.use_id) {
@@ -478,23 +497,22 @@ pub(crate) fn drain_with_deadline_observed(
                     }
                     Some(completion) => {
                         result.failed += 1;
-                        result.failed_names.push(named_failure(
-                            &label,
-                            &failure_cause(
-                                &context.journal,
-                                &item.use_id,
-                                completion.end_state.as_str(),
-                            ),
-                        ));
-                        observer(&item, DrainOutcome::Fail(completion.end_state.as_str()));
+                        let cause = failure_cause(
+                            &context.journal,
+                            &item.use_id,
+                            completion.end_state.as_str(),
+                        );
+                        result.failed_names.push(named_failure(&label, &cause));
+                        observer(
+                            &item,
+                            DrainOutcome::fail(completion.end_state.as_str(), cause),
+                        );
                     }
                     None => {
                         result.failed += 1;
-                        result.failed_names.push(named_failure(
-                            &label,
-                            &failure_cause(&context.journal, &item.use_id, "unknown"),
-                        ));
-                        observer(&item, DrainOutcome::Fail("missing_completion"));
+                        let cause = failure_cause(&context.journal, &item.use_id, "unknown");
+                        result.failed_names.push(named_failure(&label, &cause));
+                        observer(&item, DrainOutcome::fail("missing_completion", cause));
                     }
                 }
             }
@@ -524,11 +542,9 @@ pub(crate) fn drain_with_deadline_observed(
                     continue;
                 }
                 result.failed += 1;
-                result.failed_names.push(named_failure(
-                    &label,
-                    &failure_cause(&context.journal, &item.use_id, &wait_error),
-                ));
-                observer(&item, DrainOutcome::Fail("wait_failed"));
+                let cause = failure_cause(&context.journal, &item.use_id, &wait_error);
+                result.failed_names.push(named_failure(&label, &cause));
+                observer(&item, DrainOutcome::fail("wait_failed", cause));
             }
         }
     }
