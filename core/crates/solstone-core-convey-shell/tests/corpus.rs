@@ -661,12 +661,13 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
                 } else {
                     body
                 };
-                let digest = format!("{:x}", Sha256::digest(&body));
-                assert_eq!(
-                    digest,
-                    case["body_sha256"].as_str().unwrap(),
-                    "{phase} {path}"
-                );
+                // A record with no `body_sha256` is deliberately not body-asserted: served
+                // frontend assets (html/js/css) carry status, content type and disposition
+                // only. See the corpus_maintenance note in the fixture.
+                if let Some(recorded) = case.get("body_sha256").and_then(Value::as_str) {
+                    let digest = format!("{:x}", Sha256::digest(&body));
+                    assert_eq!(digest, recorded, "{phase} {path}");
+                }
             }
         }
     }
