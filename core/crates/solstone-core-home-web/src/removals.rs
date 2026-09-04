@@ -4,13 +4,13 @@
 use std::path::{Path, PathBuf};
 
 use axum::{
-    Json,
+    Extension, Json,
     body::Bytes,
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use chrono::{Local, SecondsFormat, Utc};
+use chrono::{Local, SecondsFormat};
 use serde_json::{Map, Value, json};
 use solstone_core_retention_client as retention;
 
@@ -75,7 +75,11 @@ pub async fn list(State(journal_root): State<PathBuf>) -> Response {
     }
 }
 
-pub async fn approve(State(journal_root): State<PathBuf>, body: Bytes) -> Response {
+pub async fn approve(
+    State(journal_root): State<PathBuf>,
+    Extension(clock): Extension<crate::Clock>,
+    body: Bytes,
+) -> Response {
     let mark_ids = match mark_ids(body) {
         Ok(mark_ids) => mark_ids,
         Err(state) => return request_response(StatusCode::BAD_REQUEST, state),
@@ -98,10 +102,11 @@ pub async fn approve(State(journal_root): State<PathBuf>, body: Bytes) -> Respon
         );
     }
     let policy = serde_json::to_string(&policy).expect("retention policy serializes");
+    let now = clock.now();
     let call = call_remove_marked(
         journal_root.clone(),
-        Local::now().format("%Y-%m-%d").to_string(),
-        Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+        now.with_timezone(&Local).format("%Y-%m-%d").to_string(),
+        now.to_rfc3339_opts(SecondsFormat::Secs, true),
         policy,
         mark_ids.clone(),
     )
@@ -190,11 +195,15 @@ pub async fn decline(State(journal_root): State<PathBuf>, body: Bytes) -> Respon
     .into_response()
 }
 
-pub async fn recover(State(journal_root): State<PathBuf>, body: Bytes) -> Response {
+pub async fn recover(
+    State(journal_root): State<PathBuf>,
+    Extension(clock): Extension<crate::Clock>,
+    body: Bytes,
+) -> Response {
     if let Err(state) = recover_empty(body) {
         return request_response(StatusCode::BAD_REQUEST, state);
     }
-    let at = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
+    let at = clock.now().to_rfc3339_opts(SecondsFormat::Secs, true);
     let outcome = recover_from_call(call_recover(journal_root.clone(), at).await);
     append_action(
         &journal_root,
