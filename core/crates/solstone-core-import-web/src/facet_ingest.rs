@@ -13,9 +13,17 @@ use solstone_core_journal_io::{
 };
 
 #[cfg(test)]
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::cell::Cell;
 #[cfg(test)]
-static DISPATCH_CALLS: AtomicUsize = AtomicUsize::new(0);
+thread_local! {
+    /// Test-only dispatch counter, thread-local rather than a process-global
+    /// atomic. Cargo runs a crate's tests as parallel threads in one process, so
+    /// a global counter let sibling tests increment between one test's reset and
+    /// its assertion -- `received_hash_short_circuit_never_dispatches_a_merge`
+    /// read 3 instead of 0 under parallel threads while passing serially. A
+    /// thread-local is exclusive by construction, so no test needs to serialize.
+    static DISPATCH_CALLS: Cell<usize> = const { Cell::new(0) };
+}
 
 pub(crate) struct MergeResult {
     pub(crate) status: &'static str,
@@ -488,7 +496,7 @@ pub(crate) fn process_facet(
             continue;
         }
         #[cfg(test)]
-        DISPATCH_CALLS.fetch_add(1, Ordering::Relaxed);
+        DISPATCH_CALLS.with(|calls| calls.set(calls.get() + 1));
         let item_result = (|| -> Result<(), String> {
             let (mut relative, output_dir) = parse_facet_path(raw_path, item.kind)?;
             let item_id = format!("{facet}/{relative}");
@@ -664,10 +672,10 @@ mod tests {
     };
     use serde_json::{Value, json};
     use sha2::Digest;
+    use std::cell::Cell;
     use std::fs;
     #[cfg(unix)]
     use std::os::unix::fs::symlink;
-    use std::sync::atomic::Ordering;
     use tempfile::TempDir;
 
     #[test]
@@ -891,7 +899,7 @@ mod tests {
         let digest = format!("{:x}", sha2::Sha256::digest(bytes));
         let mut received =
             serde_json::Map::from_iter([("work/facet.json".to_owned(), json!(digest))]);
-        DISPATCH_CALLS.store(0, Ordering::Relaxed);
+        DISPATCH_CALLS.with(|calls| calls.set(0));
         let result = process_facet(
             FacetRoots {
                 direct: temp.path(),
@@ -909,7 +917,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(result.skipped, 1);
-        assert_eq!(DISPATCH_CALLS.load(Ordering::Relaxed), 0);
+        assert_eq!(DISPATCH_CALLS.with(Cell::get), 0);
     }
 
     #[test]
