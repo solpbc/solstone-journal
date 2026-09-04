@@ -35,7 +35,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_json::Value;
+use serde::Deserialize;
 use solstone_core_timeline::{
     AttemptOutcome, AttemptStateV1, CURRENT_SCHEMA_VERSION, SEGMENT_SOURCE_SCHEMA_VERSION,
     SegmentBindingV1, SegmentSourceV1, SegmentSummaryV1, SegmentTimelineV1, TimelineKind,
@@ -85,26 +85,59 @@ impl MigrationPlan {
     }
 }
 
+/// A pre-V1 segment timeline artifact.
+///
+/// Reading this as a typed struct rather than a raw `Value` is what
+/// `timeline_truth_architecture` requires of every timeline reader, and the requirement is
+/// right even here: the migration is the one component whose whole job is to interpret
+/// artifacts the strict reader rejects, so it is the last place that should be guessing at
+/// an untyped map. Only `title` is required -- everything else is absent in some part of a
+/// five-year corpus, and an artifact missing it is not a legacy timeline at all.
+#[derive(Debug, Clone, Deserialize)]
+pub struct LegacySegmentTimeline {
+    pub title: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub continuation_of: Option<String>,
+    #[serde(default)]
+    pub generated_at: Option<i64>,
+}
+
+/// What a timeline artifact on disk turned out to be.
+#[derive(Debug)]
+pub enum ArtifactShape {
+    /// Parses strictly as the current typed artifact.
+    Current,
+    /// Parses as a pre-V1 artifact.
+    Legacy(LegacySegmentTimeline),
+    /// Neither. Counted and never written to.
+    Unreadable,
+}
+
+/// Decide what an artifact is by trying to type it, strictest shape first.
+pub fn read_shape(bytes: &[u8]) -> ArtifactShape {
+    if serde_json::from_slice::<SegmentTimelineV1>(bytes).is_ok() {
+        return ArtifactShape::Current;
+    }
+    match serde_json::from_slice::<LegacySegmentTimeline>(bytes) {
+        Ok(legacy) => ArtifactShape::Legacy(legacy),
+        Err(_) => ArtifactShape::Unreadable,
+    }
+}
+
 /// Classify a single artifact from its parsed body and the mtimes of artifact and source.
 ///
 /// Split out from the filesystem walk so the decision is testable without a journal tree.
 pub fn classify(
-    body: Option<&Value>,
+    shape: &ArtifactShape,
     source_mtime: Option<u64>,
     artifact_mtime: u64,
 ) -> &'static str {
-    let Some(body) = body else {
-        return "unreadable";
-    };
-    let Some(object) = body.as_object() else {
-        return "unreadable";
-    };
-    if object.contains_key("schema_version") && object.get("summary").is_some_and(Value::is_object)
-    {
-        return "current";
-    }
-    if !object.contains_key("title") {
-        return "unreadable";
+    match shape {
+        ArtifactShape::Unreadable => return "unreadable",
+        ArtifactShape::Current => return "current",
+        ArtifactShape::Legacy(_) => {}
     }
     let Some(source_mtime) = source_mtime else {
         return "unbindable";
@@ -122,7 +155,7 @@ pub fn classify(
 /// One candidate artifact found by the chronicle walk.
 struct Candidate {
     directory: PathBuf,
-    body: Option<Value>,
+    shape: ArtifactShape,
     source_mtime: Option<u64>,
     artifact_mtime: u64,
 }
@@ -158,16 +191,15 @@ fn walk(journal: &Path) -> Vec<Candidate> {
                     continue;
                 };
                 let artifact_mtime = seconds(metadata.modified().ok());
-                let body = fs::read_to_string(&artifact)
-                    .ok()
-                    .and_then(|text| serde_json::from_str::<Value>(&text).ok());
+                let shape = fs::read(&artifact)
+                    .map_or(ArtifactShape::Unreadable, |bytes| read_shape(&bytes));
                 let source_mtime = fs::metadata(directory.join("talents").join("activity.md"))
                     .ok()
                     .and_then(|metadata| metadata.modified().ok())
                     .map(|time| seconds(Some(time)));
                 found.push(Candidate {
                     directory,
-                    body,
+                    shape,
                     source_mtime,
                     artifact_mtime,
                 });
@@ -181,11 +213,7 @@ fn walk(journal: &Path) -> Vec<Candidate> {
 pub fn plan(journal: &Path) -> MigrationPlan {
     let mut plan = MigrationPlan::default();
     for entry in walk(journal) {
-        match classify(
-            entry.body.as_ref(),
-            entry.source_mtime,
-            entry.artifact_mtime,
-        ) {
+        match classify(&entry.shape, entry.source_mtime, entry.artifact_mtime) {
             "current" => plan.current += 1,
             "rebind" => plan.rebind += 1,
             "regenerate" => plan.regenerate += 1,
@@ -290,18 +318,11 @@ fn migration_attempt(subject: &str) -> AttemptStateV1 {
     }
 }
 
-fn text_field(body: &Value, key: &str) -> String {
-    body.get(key)
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned()
-}
-
 /// Republish one legacy artifact as V1 through the product write path.
 fn rebind_one(
     journal: &Path,
     directory: &Path,
-    body: &Value,
+    legacy: &LegacySegmentTimeline,
     artifact_mtime: u64,
 ) -> Result<(), String> {
     let binding = binding_from_directory(directory)
@@ -310,25 +331,20 @@ fn rebind_one(
     // Legacy artifacts stamp `generated_at` in whole seconds. Keeping the original instant
     // matters: currentness is ordered against it, so stamping "now" would assert that a
     // five-year-old summary was produced during the migration.
-    let generated_at_ms = body
-        .get("generated_at")
-        .and_then(Value::as_i64)
-        .map_or_else(
-            || {
-                i64::try_from(artifact_mtime)
-                    .unwrap_or(0)
-                    .saturating_mul(1000)
-            },
-            |seconds| seconds.saturating_mul(1000),
-        );
-    if let Some(predecessor) = body
-        .get("continuation_of")
-        .and_then(Value::as_str)
+    let generated_at_ms = legacy.generated_at.map_or_else(
+        || {
+            i64::try_from(artifact_mtime)
+                .unwrap_or(0)
+                .saturating_mul(1000)
+        },
+        |seconds| seconds.saturating_mul(1000),
+    );
+    if let Some(predecessor) = legacy
+        .continuation_of
+        .as_deref()
         .filter(|predecessor| !predecessor.is_empty())
     {
-        if text_field(body, "title") != CONTINUATION_TITLE
-            || text_field(body, "description") != CONTINUATION_DESCRIPTION
-        {
+        if legacy.title != CONTINUATION_TITLE || legacy.description != CONTINUATION_DESCRIPTION {
             return Err(format!(
                 "{subject}: continuation carries prose the continuation path would overwrite"
             ));
@@ -353,13 +369,10 @@ fn rebind_one(
     let input_digest =
         segment_input_digest(&binding, &source).map_err(|error| format!("{subject}: {error}"))?;
     let summary = SegmentSummaryV1 {
-        title: text_field(body, "title"),
-        description: text_field(body, "description"),
+        title: legacy.title.clone(),
+        description: legacy.description.clone(),
         origin: origin_for_binding(&binding).map_err(|error| format!("{subject}: {error}"))?,
-        continuation_of: body
-            .get("continuation_of")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
+        continuation_of: legacy.continuation_of.clone(),
     };
     let timeline = SegmentTimelineV1 {
         schema_version: CURRENT_SCHEMA_VERSION,
@@ -391,11 +404,7 @@ pub fn commit(journal: &Path, limit: Option<u64>) -> MigrationOutcome {
     let mut outcome = MigrationOutcome::default();
     let mut attempted = 0u64;
     for entry in walk(journal) {
-        match classify(
-            entry.body.as_ref(),
-            entry.source_mtime,
-            entry.artifact_mtime,
-        ) {
+        match classify(&entry.shape, entry.source_mtime, entry.artifact_mtime) {
             "current" => outcome.untouched += 1,
             "regenerate" => outcome.left_for_regeneration += 1,
             "rebind" => {
@@ -403,10 +412,10 @@ pub fn commit(journal: &Path, limit: Option<u64>) -> MigrationOutcome {
                     continue;
                 }
                 attempted += 1;
-                let Some(body) = entry.body.as_ref() else {
+                let ArtifactShape::Legacy(legacy) = &entry.shape else {
                     continue;
                 };
-                match rebind_one(journal, &entry.directory, body, entry.artifact_mtime) {
+                match rebind_one(journal, &entry.directory, legacy, entry.artifact_mtime) {
                     Ok(()) => outcome.rebound += 1,
                     Err(detail) => {
                         outcome.failed += 1;
@@ -430,26 +439,58 @@ fn seconds(time: Option<std::time::SystemTime>) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn classification_separates_rebindable_from_stale_and_current() {
-        let legacy = json!({"title": "t", "description": "d", "origin": "o"});
-        let v1 = json!({"schema_version": 1, "summary": {"title": "t"}});
+        let legacy = br#"{"title":"t","description":"d","origin":"o"}"#;
+        // A real V1 artifact, not a V1-shaped fragment: the reader types it strictly, so a
+        // partial body is `unreadable` rather than quietly `current`.
+        let v1 = serde_json::to_vec(&SegmentTimelineV1 {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            kind: TimelineKind::Segment,
+            binding: SegmentBindingV1 {
+                day: "20260101".into(),
+                stream: "device".into(),
+                segment: "120000_300".into(),
+            },
+            input_digest: "d".into(),
+            source: None,
+            generated_at_ms: 1,
+            summary: SegmentSummaryV1 {
+                title: "t".into(),
+                description: "d".into(),
+                origin: "20260101/device/120000_300".into(),
+                continuation_of: None,
+            },
+            provenance: None,
+        })
+        .unwrap();
 
-        assert_eq!(classify(Some(&v1), Some(10), 20), "current");
+        assert_eq!(classify(&read_shape(&v1), Some(10), 20), "current");
         // source older than the summary: the prose saw these exact bytes
-        assert_eq!(classify(Some(&legacy), Some(10), 20), "rebind");
+        assert_eq!(classify(&read_shape(legacy), Some(10), 20), "rebind");
         // source rewritten after the summary: the prose is stale
-        assert_eq!(classify(Some(&legacy), Some(200), 20), "regenerate");
+        assert_eq!(classify(&read_shape(legacy), Some(200), 20), "regenerate");
         // within the granularity slack, still re-bindable
-        assert_eq!(classify(Some(&legacy), Some(50), 20), "rebind");
-        assert_eq!(classify(Some(&legacy), None, 20), "unbindable");
-        assert_eq!(classify(None, Some(10), 20), "unreadable");
-        assert_eq!(classify(Some(&json!([])), Some(10), 20), "unreadable");
+        assert_eq!(classify(&read_shape(legacy), Some(50), 20), "rebind");
+        assert_eq!(classify(&read_shape(legacy), None, 20), "unbindable");
+        assert_eq!(
+            classify(&read_shape(b"not json"), Some(10), 20),
+            "unreadable"
+        );
+        assert_eq!(classify(&read_shape(b"[]"), Some(10), 20), "unreadable");
         // an object that is neither V1 nor legacy is not silently treated as either
         assert_eq!(
-            classify(Some(&json!({"other": 1})), Some(10), 20),
+            classify(&read_shape(br#"{"other":1}"#), Some(10), 20),
+            "unreadable"
+        );
+        // a V1-shaped fragment is NOT accepted as current -- typing it is the point
+        assert_eq!(
+            classify(
+                &read_shape(br#"{"schema_version":1,"summary":{"title":"t"}}"#),
+                Some(10),
+                20
+            ),
             "unreadable"
         );
     }
