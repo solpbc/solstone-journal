@@ -28,6 +28,7 @@ pub mod facet_newsletter;
 pub mod morning_briefing;
 pub mod participation;
 pub mod prepare;
+mod prompt_context;
 pub mod pulse;
 pub mod schedule;
 pub mod speaker_attribution;

@@ -5318,6 +5318,7 @@ dependencies = [
  "solstone-core-entity",
  "solstone-core-entity-matching",
  "solstone-core-facets",
+ "solstone-core-format",
  "solstone-core-generate",
  "solstone-core-home",
  "solstone-core-identity",

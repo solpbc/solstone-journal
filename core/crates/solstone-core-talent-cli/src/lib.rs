@@ -18,7 +18,7 @@ pub mod preview;
 mod schema;
 mod templates;
 
-pub use compose::compose_talent;
+pub use compose::{compose_talent, compose_talent_instruction};
 pub use preview::{PreviewRequest, PromptPreview, PromptPreviewRefusal, PromptPreviewer};
 pub use templates::safe_substitute;
 
