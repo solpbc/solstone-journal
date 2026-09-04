@@ -28,11 +28,12 @@ pub use endpoint::{
 };
 pub use fixture::local_generate_input_schema;
 pub use generate::{
-    ContextWindow, GenerateError, GenerateFailure, GenerateInput, GenerateResult, GenerateSuccess,
-    GenerateTransport, HttpResponse, Inference, InputBudget, PreparedRequest, RequestBudget,
-    ServerInference, UreqTransport, Usage, build_messages, build_request_body, count_image_parts,
-    estimate_tokens, fit_contents, generate, generate_with, normalize_finish_reason,
-    parse_response, prepare_bundled_request, prepare_local_schema, serialized_message_text,
+    ContextWindow, ExactTextCount, GenerateError, GenerateFailure, GenerateInput, GenerateResult,
+    GenerateSuccess, GenerateTransport, HttpResponse, Inference, InputBudget, PreparedRequest,
+    RequestBudget, ServerInference, UreqTransport, Usage, build_messages, build_request_body,
+    count_image_parts, count_input_tokens, estimate_tokens, fit_contents, generate, generate_with,
+    inspect_exact_text_admission, normalize_finish_reason, parse_response, prepare_bundled_request,
+    prepare_exact_text_request, prepare_local_schema, serialized_message_text,
 };
 pub use install::{
     DispatchError as InstallDispatchError, InstallEnvelope, InstallVerb,

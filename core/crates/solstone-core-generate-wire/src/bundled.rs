@@ -441,6 +441,24 @@ mod tests {
                     status: 200,
                     body: json!({"tokens": [1]}).to_string(),
                 }),
+                "/v1/chat/completions/input_tokens" => {
+                    let fixture: Value =
+                        serde_json::from_str(QWEN_B10068_WIRE_ORACLE).expect("wire oracle parses");
+                    let case = fixture["cases"]
+                        .as_array()
+                        .expect("wire oracle cases")
+                        .iter()
+                        .find(|case| case["body"] == *body)
+                        .expect("count receives one exact oracle body");
+                    Ok(HttpResponse {
+                        status: 200,
+                        body: json!({
+                            "object": "response.input_tokens",
+                            "input_tokens": case["native_input_tokens"],
+                        })
+                        .to_string(),
+                    })
+                }
                 "/v1/chat/completions" => {
                     self.posts
                         .push((base_url.to_owned(), path.to_owned(), body.clone()));

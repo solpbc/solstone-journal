@@ -330,6 +330,32 @@ mod tests {
     }
 
     #[test]
+    fn bundled_exact_admission_public_codes_are_classified() {
+        for (reason_code, retryable, blocking) in [
+            ("context_budget_exceeded", true, false),
+            ("local_endpoint_contract_failed", true, false),
+        ] {
+            let refusal = refusal_for(
+                &LaneOutcome::BundledFailure(Box::new(GenerateFailure {
+                    schema: "test".into(),
+                    outcome: "failure".into(),
+                    reason_code: Some(reason_code.into()),
+                    detail: "local implementation detail".into(),
+                    inference: None,
+                })),
+                "local",
+                None,
+            );
+            assert_eq!(
+                refusal.reason_code.as_ref().map(ReasonCodeValue::as_wire),
+                Some(reason_code)
+            );
+            assert_eq!(refusal.retryable, retryable);
+            assert_eq!(refusal.blocking, blocking);
+        }
+    }
+
+    #[test]
     fn endpoint_failure_preserves_known_unknown_and_absent_codes() {
         for (reason_code, expected_wire, retryable, blocking) in [
             (
