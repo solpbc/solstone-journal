@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
-use solstone_core_talent_config::{TalentConfig, discover, is_truthy, merge};
+use solstone_core_talent_config::{TalentConfig, discover, is_truthy, merge, validate};
 
 use crate::{ExecutionContext, PreparedTalent, transcript};
 
@@ -58,15 +58,7 @@ pub fn prepare(
         .filter(|value| !value.is_empty())
         .ok_or_else(|| PrepareFailure::Refusal("talent request missing name".to_owned()))?
         .to_owned();
-    let mut configs =
-        discover(&paths.talent_root, &paths.apps_root).map_err(PrepareFailure::Refusal)?;
-    let overrides = talent_overrides(&context.journal);
-    merge(&mut configs, overrides.as_ref());
-    let config = configs
-        .into_iter()
-        .find(|config| config.key == name)
-        .ok_or_else(|| PrepareFailure::Refusal(format!("talent '{name}' not found")))?;
-    reject_definition_fields(&config, &name)?;
+    let config = resolve_talent_config(&name, paths, context)?;
     reject_request_fields(&config, &request, &name)?;
     let focused_facet = request.get("facet").and_then(Value::as_str);
     let mut composed = solstone_core_talent_cli::compose_talent(
@@ -184,6 +176,52 @@ pub fn prepare(
         name,
         config: composed,
     })
+}
+
+/// Resolve owner overrides and definition-level refusals without composing a
+/// prompt or reading facet/segment source context.
+pub(crate) fn resolve_talent_config(
+    name: &str,
+    paths: &RuntimePaths,
+    context: &ExecutionContext,
+) -> Result<TalentConfig, PrepareFailure> {
+    let configs = merged_talent_configs(paths, context)?;
+    select_talent_config(configs, name)
+}
+
+/// Activity preview admits talents through the same whole-corpus validation
+/// gate production activity dispatch uses, without changing execute semantics.
+pub(crate) fn resolve_validated_talent_config(
+    name: &str,
+    paths: &RuntimePaths,
+    context: &ExecutionContext,
+) -> Result<TalentConfig, PrepareFailure> {
+    let mut configs = merged_talent_configs(paths, context)?;
+    validate(&mut configs).map_err(PrepareFailure::Refusal)?;
+    select_talent_config(configs, name)
+}
+
+fn merged_talent_configs(
+    paths: &RuntimePaths,
+    context: &ExecutionContext,
+) -> Result<Vec<TalentConfig>, PrepareFailure> {
+    let mut configs =
+        discover(&paths.talent_root, &paths.apps_root).map_err(PrepareFailure::Refusal)?;
+    let overrides = talent_overrides(&context.journal);
+    merge(&mut configs, overrides.as_ref());
+    Ok(configs)
+}
+
+fn select_talent_config(
+    configs: Vec<TalentConfig>,
+    name: &str,
+) -> Result<TalentConfig, PrepareFailure> {
+    let config = configs
+        .into_iter()
+        .find(|config| config.key == name)
+        .ok_or_else(|| PrepareFailure::Refusal(format!("talent '{name}' not found")))?;
+    reject_definition_fields(&config, name)?;
+    Ok(config)
 }
 
 fn source_count(counts: &solstone_core_transcripts::SourceCounts, source: &str) -> usize {

@@ -17,6 +17,7 @@ use solstone_core_generate::{
 };
 use solstone_core_system_health::{DataState, read_segment_data_state};
 
+pub mod activity_contract;
 pub mod assemble;
 pub mod cogitate;
 pub mod contract;
