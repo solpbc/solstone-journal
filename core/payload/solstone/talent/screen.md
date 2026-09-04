@@ -8,7 +8,7 @@
   "priority": 10,
   "output": "json",
   "schema": "screen.schema.json",
-  "max_output_tokens": 12288,
+  "max_output_tokens": 8192,
   "load": {"transcripts": true, "percepts": "required", "talents": false}
 
 }

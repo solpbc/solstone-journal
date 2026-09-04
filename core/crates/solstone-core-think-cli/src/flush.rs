@@ -72,12 +72,21 @@ pub(crate) fn run(
                     &config.key,
                     Some(&use_id),
                     "request_lost",
+                    Some("request_lost"),
                 );
             }
             Err(DispatchFailure::Unavailable) => {
                 result.failed += 1;
                 result.failed_names.push(format!("{} (send)", config.key));
-                log_fail(log, context, segment, &config.key, None, "send_failed");
+                log_fail(
+                    log,
+                    context,
+                    segment,
+                    &config.key,
+                    None,
+                    "send_failed",
+                    Some("send_failed"),
+                );
             }
         }
     }
@@ -192,10 +201,10 @@ fn drain(
             let wait_error = format!("wait failed: {error:?}");
             for item in pending {
                 result.failed += 1;
-                result.failed_names.push(named_failure(
-                    &item_label(&item.name, None),
-                    &failure_cause(&context.journal, &item.use_id, &wait_error),
-                ));
+                let cause = failure_cause(&context.journal, &item.use_id, &wait_error);
+                result
+                    .failed_names
+                    .push(named_failure(&item_label(&item.name, None), &cause));
                 log_fail(
                     log,
                     context,
@@ -203,6 +212,7 @@ fn drain(
                     &item.name,
                     Some(&item.use_id),
                     "unknown",
+                    Some(&cause),
                 );
             }
             return result;
@@ -216,10 +226,8 @@ fn drain(
             .find(|timeout| timeout.use_id() == item.use_id)
         {
             result.failed += 1;
-            result.failed_names.push(named_failure(
-                &label,
-                &failure_cause(&context.journal, &item.use_id, timeout_cause(timeout)),
-            ));
+            let cause = failure_cause(&context.journal, &item.use_id, timeout_cause(timeout));
+            result.failed_names.push(named_failure(&label, &cause));
             log_fail(
                 log,
                 context,
@@ -230,6 +238,7 @@ fn drain(
                     TimedOutUse::LostAtDeadline { .. } => "unknown",
                     TimedOutUse::GenuineTimeout { .. } => "running",
                 },
+                Some(&cause),
             );
             continue;
         }
@@ -241,14 +250,12 @@ fn drain(
             }
             Some(completion) => {
                 result.failed += 1;
-                result.failed_names.push(named_failure(
-                    &label,
-                    &failure_cause(
-                        &context.journal,
-                        &item.use_id,
-                        completion.end_state.as_str(),
-                    ),
-                ));
+                let cause = failure_cause(
+                    &context.journal,
+                    &item.use_id,
+                    completion.end_state.as_str(),
+                );
+                result.failed_names.push(named_failure(&label, &cause));
                 log_fail(
                     log,
                     context,
@@ -256,14 +263,13 @@ fn drain(
                     &item.name,
                     Some(&item.use_id),
                     completion.end_state.as_str(),
+                    Some(&cause),
                 );
             }
             None => {
                 result.failed += 1;
-                result.failed_names.push(named_failure(
-                    &label,
-                    &failure_cause(&context.journal, &item.use_id, "unknown"),
-                ));
+                let cause = failure_cause(&context.journal, &item.use_id, "unknown");
+                result.failed_names.push(named_failure(&label, &cause));
                 log_fail(
                     log,
                     context,
@@ -271,6 +277,7 @@ fn drain(
                     &item.name,
                     Some(&item.use_id),
                     "unknown",
+                    Some(&cause),
                 );
             }
         }
@@ -336,6 +343,7 @@ fn log_fail(
     name: &str,
     use_id: Option<&str>,
     state: &str,
+    reason: Option<&str>,
 ) {
     let mut extra = Map::from_iter([
         ("name".to_owned(), Value::String(name.to_owned())),
@@ -343,6 +351,12 @@ fn log_fail(
     ]);
     if let Some(use_id) = use_id {
         extra.insert("use_id".to_owned(), Value::String(use_id.to_owned()));
+    }
+    // The caller already computed this cause for the operator-facing name; recording it is
+    // what makes a `talent.fail` row explainable. Without it the durable record carries only
+    // `state`, and 195 of 374 failures on 2026-09-04 were unexplained by construction.
+    if let Some(reason) = reason {
+        extra.insert("reason_code".to_owned(), Value::String(reason.to_owned()));
     }
     let base = fields(context, segment, extra);
     let event_ms = context.event_now_ms();
