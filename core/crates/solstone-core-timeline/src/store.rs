@@ -6,10 +6,10 @@ use std::path::{Path, PathBuf};
 use solstone_core_journal_io::{DetailedAtomicOutcome, atomic_replace_detailed};
 
 use crate::{
-    ArtifactStateV1, AttemptOutcome, AttemptStateV1, CURRENT_SCHEMA_VERSION, DayTimelineV1,
-    MasterTimelineV1, SegmentBindingV1, SegmentSummaryV1, SegmentTimelineV1, TimelineError,
+    AttemptOutcome, AttemptStateV1, CURRENT_SCHEMA_VERSION, DayTimelineV1, MasterTimelineV1,
+    PublishedArtifactV1, SegmentBindingV1, SegmentSummaryV1, SegmentTimelineV1, TimelineError,
     TimelineLockRequest, TimelineLockSubject, acquire_timeline_locks, artifact_sha256,
-    bounded_diagnostic_detail, load_timeline_state, origin_for_binding, record_artifact_published,
+    bounded_diagnostic_detail, origin_for_binding, record_artifact_published,
     record_attempt_outcome, record_attempt_started, resolve_activity_source, segment_directory,
     segment_input_digest, validate_day_timeline, validate_master_timeline,
     validate_segment_timeline,
@@ -332,18 +332,12 @@ fn publish_timeline(
             Err(TimelineError::Atomic(error))
         }
         Ok(DetailedAtomicOutcome::Published) => {
-            let generation = load_timeline_state(journal)?
-                .artifacts
-                .get(subject)
-                .map(|state| state.generation.saturating_add(1))
-                .unwrap_or(1);
-            let artifact = ArtifactStateV1 {
+            let published = PublishedArtifactV1 {
                 input_digest: input_digest.to_owned(),
                 artifact_sha256: artifact_sha256(&serialized),
                 published_at_ms: generated_at_ms,
-                generation,
             };
-            record_artifact_published(journal, subject, attempt, artifact, generated_at_ms)
+            record_artifact_published(journal, subject, attempt, published, generated_at_ms)
         }
         Ok(DetailedAtomicOutcome::PublishedDurabilityUncertain { source }) => {
             let detail = bounded_diagnostic_detail(&source.to_string());

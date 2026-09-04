@@ -38,10 +38,10 @@ pub use schema::{
     validate_segment_timeline,
 };
 pub use state::{
-    ArtifactStateV1, AttemptOutcome, AttemptStateV1, MAX_DIAGNOSTIC_DETAIL_BYTES, TimelineStateV1,
-    bounded_diagnostic_detail, load_timeline_state, new_attempt_id, record_artifact_published,
-    record_attempt_outcome, record_attempt_started, save_timeline_state, timeline_state_path,
-    update_timeline_state,
+    ArtifactStateV1, AttemptOutcome, AttemptStateV1, MAX_DIAGNOSTIC_DETAIL_BYTES,
+    PublishedArtifactV1, TimelineStateV1, bounded_diagnostic_detail, load_timeline_state,
+    new_attempt_id, record_artifact_published, record_attempt_outcome, record_attempt_started,
+    save_timeline_state, timeline_state_path, update_timeline_state,
 };
 pub use store::{
     day_subject_key, day_timeline_path, master_subject_key, master_timeline_path,

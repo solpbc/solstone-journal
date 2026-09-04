@@ -150,17 +150,43 @@ pub fn record_attempt_outcome(
     })
 }
 
+/// A publication record without its generation counter.
+///
+/// `generation` is derived from the subject's previous record, so it is the one field a
+/// caller cannot supply without reading the state first. Taking it out of the caller's hands
+/// is what lets the read happen inside the update that was already loading the state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublishedArtifactV1 {
+    pub input_digest: String,
+    pub artifact_sha256: String,
+    pub published_at_ms: i64,
+}
+
 pub fn record_artifact_published(
     journal: &Path,
     subject: &str,
     mut attempt: AttemptStateV1,
-    artifact: ArtifactStateV1,
+    published: PublishedArtifactV1,
     finished_at_ms: i64,
 ) -> Result<(), TimelineError> {
     attempt.outcome = AttemptOutcome::Published;
     attempt.finished_at_ms = Some(finished_at_ms);
     attempt.detail.clear();
     update_timeline_state(journal, |state| {
+        // The generation bump reads the very state this update already holds. Computing it
+        // in the caller cost a second full deserialization of the whole document per publish
+        // -- on a five-year journal that is tens of megabytes of pure read amplification for
+        // a counter nothing consumes.
+        let generation = state
+            .artifacts
+            .get(subject)
+            .map_or(1, |previous| previous.generation.saturating_add(1));
+        let artifact = ArtifactStateV1 {
+            input_digest: published.input_digest,
+            artifact_sha256: published.artifact_sha256,
+            published_at_ms: published.published_at_ms,
+            generation,
+        };
         state.artifacts.insert(subject.to_owned(), artifact);
         state
             .attempts
