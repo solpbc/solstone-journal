@@ -22,14 +22,26 @@
 //! can be re-bound; 8,284 (9%) have a source rewritten afterwards and must be regenerated
 //! instead; 0 have no source at all.**
 //!
-//! This module implements the **plan** phase only: it classifies the corpus and reports what
-//! a migration would do. It performs no writes. The commit phase is deliberately separate,
-//! because its failure mode is the loss of five years of the owner's journal prose.
+//! [`plan`] classifies the corpus and writes nothing. [`commit`] performs the re-bind, and
+//! only the re-bind: it never touches an artifact classified `regenerate`, `unbindable` or
+//! `unreadable`, so the one thing it cannot do is overwrite prose with something worse.
+//!
+//! The re-bind goes through [`publish_segment_timeline`], the product's own write path, which
+//! validates the artifact, takes the day and segment locks, re-verifies the source binding it
+//! was just handed, writes atomically, and records the durable publication state the fifth
+//! gate reads. Reconstructing that record by hand is exactly the shortcut this module exists
+//! to avoid.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::Value;
+use solstone_core_timeline::{
+    AttemptOutcome, AttemptStateV1, CURRENT_SCHEMA_VERSION, SEGMENT_SOURCE_SCHEMA_VERSION,
+    SegmentBindingV1, SegmentSourceV1, SegmentSummaryV1, SegmentTimelineV1, TimelineKind,
+    new_attempt_id, origin_for_binding, publish_segment_timeline, resolve_activity_source,
+    segment_input_digest, segment_subject_key,
+};
 
 /// What a migration would do with one legacy artifact.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -107,12 +119,23 @@ pub fn classify(
     "rebind"
 }
 
-/// Walk the chronicle and classify every segment timeline artifact. Read-only.
-pub fn plan(journal: &Path) -> MigrationPlan {
-    let mut plan = MigrationPlan::default();
+/// One candidate artifact found by the chronicle walk.
+struct Candidate {
+    directory: PathBuf,
+    body: Option<Value>,
+    source_mtime: Option<u64>,
+    artifact_mtime: u64,
+}
+
+/// Walk the chronicle and yield every segment timeline artifact. Read-only.
+///
+/// `plan` and `commit` share this so the set `commit` acts on is by construction the set
+/// `plan` counted -- a second, drifting walk is the obvious way for the two to disagree.
+fn walk(journal: &Path) -> Vec<Candidate> {
+    let mut found = Vec::new();
     let chronicle = journal.join("chronicle");
     let Ok(days) = fs::read_dir(&chronicle) else {
-        return plan;
+        return found;
     };
     for day in days.flatten() {
         if !day.file_type().is_ok_and(|kind| kind.is_dir()) {
@@ -142,17 +165,218 @@ pub fn plan(journal: &Path) -> MigrationPlan {
                     .ok()
                     .and_then(|metadata| metadata.modified().ok())
                     .map(|time| seconds(Some(time)));
-                match classify(body.as_ref(), source_mtime, artifact_mtime) {
-                    "current" => plan.current += 1,
-                    "rebind" => plan.rebind += 1,
-                    "regenerate" => plan.regenerate += 1,
-                    "unbindable" => plan.unbindable += 1,
-                    _ => plan.unreadable += 1,
-                }
+                found.push(Candidate {
+                    directory,
+                    body,
+                    source_mtime,
+                    artifact_mtime,
+                });
             }
         }
     }
+    found
+}
+
+/// Classify every segment timeline artifact. Read-only.
+pub fn plan(journal: &Path) -> MigrationPlan {
+    let mut plan = MigrationPlan::default();
+    for entry in walk(journal) {
+        match classify(
+            entry.body.as_ref(),
+            entry.source_mtime,
+            entry.artifact_mtime,
+        ) {
+            "current" => plan.current += 1,
+            "rebind" => plan.rebind += 1,
+            "regenerate" => plan.regenerate += 1,
+            "unbindable" => plan.unbindable += 1,
+            _ => plan.unreadable += 1,
+        }
+    }
     plan
+}
+
+/// What a migration actually did.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct MigrationOutcome {
+    /// Legacy artifacts republished as `SegmentTimelineV1`.
+    pub rebound: u64,
+    /// Left alone because their prose is stale; the think pipeline owns these.
+    pub left_for_regeneration: u64,
+    /// Already V1.
+    pub untouched: u64,
+    /// Attempted and refused by the product write path. The artifact is unchanged.
+    pub failed: u64,
+    /// The first few refusals, for the operator. Bounded so a corpus-wide fault cannot
+    /// produce an unreadable wall of identical text.
+    pub failures: Vec<String>,
+}
+
+const MAX_REPORTED_FAILURES: usize = 10;
+
+impl MigrationOutcome {
+    pub fn render(&self) -> String {
+        let mut out = String::from("timeline legacy-artifact migration\n\n");
+        out.push_str(&format!("  re-bound                {:>8}\n", self.rebound));
+        out.push_str(&format!(
+            "  left for regeneration   {:>8}\n",
+            self.left_for_regeneration
+        ));
+        out.push_str(&format!(
+            "  already V1              {:>8}\n",
+            self.untouched
+        ));
+        out.push_str(&format!("  failed (unchanged)      {:>8}\n", self.failed));
+        for failure in &self.failures {
+            out.push_str(&format!("    - {failure}\n"));
+        }
+        if self.failed as usize > self.failures.len() {
+            out.push_str(&format!(
+                "    ... and {} more\n",
+                self.failed as usize - self.failures.len()
+            ));
+        }
+        out
+    }
+}
+
+/// Recover a binding from the artifact's own location.
+///
+/// The legacy body carries an `origin` string, but the path is the authority: a body copied
+/// between segments would otherwise re-bind that summary onto the wrong segment.
+pub fn binding_from_directory(directory: &Path) -> Option<SegmentBindingV1> {
+    let segment = directory.file_name()?.to_str()?.to_owned();
+    let stream_dir = directory.parent()?;
+    let stream = stream_dir.file_name()?.to_str()?.to_owned();
+    let day = stream_dir.parent()?.file_name()?.to_str()?.to_owned();
+    Some(SegmentBindingV1 {
+        day,
+        stream,
+        segment,
+    })
+}
+
+fn now_ms() -> i64 {
+    i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |duration| duration.as_millis()),
+    )
+    .unwrap_or(0)
+}
+
+fn text_field(body: &Value, key: &str) -> String {
+    body.get(key)
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// Republish one legacy artifact as V1 through the product write path.
+fn rebind_one(
+    journal: &Path,
+    directory: &Path,
+    body: &Value,
+    artifact_mtime: u64,
+) -> Result<(), String> {
+    let binding = binding_from_directory(directory)
+        .ok_or_else(|| format!("{}: unreadable segment path", directory.display()))?;
+    let subject = segment_subject_key(&binding);
+    let snapshot = resolve_activity_source(journal, &binding)
+        .map_err(|error| format!("{subject}: {error}"))?
+        .ok_or_else(|| format!("{subject}: activity source disappeared"))?;
+    let source = SegmentSourceV1::GeneratedActivity {
+        schema_version: SEGMENT_SOURCE_SCHEMA_VERSION,
+        relative_path: snapshot.relative_path,
+        sha256: snapshot.sha256,
+    };
+    let input_digest =
+        segment_input_digest(&binding, &source).map_err(|error| format!("{subject}: {error}"))?;
+    let summary = SegmentSummaryV1 {
+        title: text_field(body, "title"),
+        description: text_field(body, "description"),
+        origin: origin_for_binding(&binding).map_err(|error| format!("{subject}: {error}"))?,
+        continuation_of: body
+            .get("continuation_of")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+    };
+    // Legacy artifacts stamp `generated_at` in whole seconds. Keeping the original instant
+    // matters: currentness is ordered against it, so stamping "now" would assert that a
+    // five-year-old summary was produced during the migration.
+    let generated_at_ms = body
+        .get("generated_at")
+        .and_then(Value::as_i64)
+        .map_or_else(
+            || {
+                i64::try_from(artifact_mtime)
+                    .unwrap_or(0)
+                    .saturating_mul(1000)
+            },
+            |seconds| seconds.saturating_mul(1000),
+        );
+    let timeline = SegmentTimelineV1 {
+        schema_version: CURRENT_SCHEMA_VERSION,
+        kind: TimelineKind::Segment,
+        binding: binding.clone(),
+        input_digest: input_digest.clone(),
+        source: Some(source),
+        generated_at_ms,
+        summary,
+        // A legacy artifact records only `model`, and `GenerationProvenanceV1` also requires a
+        // finish reason, schema-validation result, inference record and usage. Synthesizing
+        // those would put invented evidence behind a provenance field, so the migration
+        // declares no provenance rather than a partly-fabricated one.
+        // `publish_continuation_summary` sets the same precedent.
+        provenance: None,
+    };
+    let attempt = AttemptStateV1 {
+        attempt_id: new_attempt_id(&format!("migrate-{subject}")),
+        input_digest,
+        started_at_ms: now_ms(),
+        finished_at_ms: None,
+        outcome: AttemptOutcome::Running,
+        detail: String::new(),
+    };
+    publish_segment_timeline(journal, &timeline, attempt)
+        .map_err(|error| format!("{subject}: {error}"))
+}
+
+/// Walk the chronicle and re-bind every re-bindable legacy artifact.
+///
+/// `limit` bounds how many artifacts are rewritten in one invocation, so a first run can be
+/// made small and inspected before the whole corpus is committed to.
+pub fn commit(journal: &Path, limit: Option<u64>) -> MigrationOutcome {
+    let mut outcome = MigrationOutcome::default();
+    for entry in walk(journal) {
+        match classify(
+            entry.body.as_ref(),
+            entry.source_mtime,
+            entry.artifact_mtime,
+        ) {
+            "current" => outcome.untouched += 1,
+            "regenerate" => outcome.left_for_regeneration += 1,
+            "rebind" => {
+                if limit.is_some_and(|limit| outcome.rebound >= limit) {
+                    continue;
+                }
+                let Some(body) = entry.body.as_ref() else {
+                    continue;
+                };
+                match rebind_one(journal, &entry.directory, body, entry.artifact_mtime) {
+                    Ok(()) => outcome.rebound += 1,
+                    Err(detail) => {
+                        outcome.failed += 1;
+                        if outcome.failures.len() < MAX_REPORTED_FAILURES {
+                            outcome.failures.push(detail);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    outcome
 }
 
 fn seconds(time: Option<std::time::SystemTime>) -> u64 {
@@ -185,6 +409,132 @@ mod tests {
             classify(Some(&json!({"other": 1})), Some(10), 20),
             "unreadable"
         );
+    }
+
+    /// Set an exact mtime rather than sleeping: the classifier's slack is 60 seconds, so a
+    /// test that tried to straddle it by sleeping would either be wrong or take a minute.
+    fn set_mtime(path: &Path, seconds_ago: u64) {
+        let when = std::time::SystemTime::now() - std::time::Duration::from_secs(seconds_ago);
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(when))
+            .unwrap();
+    }
+
+    fn legacy_journal(rebindable: bool) -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        let segment = root
+            .path()
+            .join("chronicle")
+            .join("20260101")
+            .join("device")
+            .join("120000_300");
+        fs::create_dir_all(segment.join("talents")).unwrap();
+        let activity = segment.join("talents").join("activity.md");
+        let artifact = segment.join("timeline.json");
+        fs::write(&activity, "# activity\n").unwrap();
+        fs::write(
+            &artifact,
+            r#"{"title":"T","description":"D","origin":"20260101/device/120000_300","model":"local/m","generated_at":1700000000}"#,
+        )
+        .unwrap();
+        if rebindable {
+            // Source predates the summary: the prose saw these exact bytes.
+            set_mtime(&activity, 7200);
+            set_mtime(&artifact, 3600);
+        } else {
+            // Source rewritten well after the summary, past the 60s slack.
+            set_mtime(&artifact, 7200);
+            set_mtime(&activity, 3600);
+        }
+        root
+    }
+
+    #[test]
+    fn a_binding_comes_from_the_path_not_the_body() {
+        let binding =
+            binding_from_directory(Path::new("/j/chronicle/20260101/device/120000_300")).unwrap();
+        assert_eq!(binding.day, "20260101");
+        assert_eq!(binding.stream, "device");
+        assert_eq!(binding.segment, "120000_300");
+    }
+
+    /// The whole point of the commit phase: a legacy artifact comes out the other side as a
+    /// `SegmentTimelineV1` that the strict reader accepts, with its prose and its original
+    /// generation instant intact.
+    #[test]
+    fn committing_rebinds_a_legacy_artifact_into_accepted_v1() {
+        let root = legacy_journal(true);
+        let journal = root.path();
+        let outcome = commit(journal, None);
+        assert_eq!(outcome.rebound, 1, "{:?}", outcome.failures);
+        assert_eq!(outcome.failed, 0, "{:?}", outcome.failures);
+
+        let text = fs::read_to_string(
+            journal
+                .join("chronicle/20260101/device/120000_300")
+                .join("timeline.json"),
+        )
+        .unwrap();
+        let migrated: SegmentTimelineV1 = serde_json::from_str(&text)
+            .expect("migrated artifact parses under deny_unknown_fields");
+        assert_eq!(migrated.summary.title, "T");
+        assert_eq!(migrated.summary.description, "D");
+        assert_eq!(migrated.summary.origin, "20260101/device/120000_300");
+        assert_eq!(migrated.binding.segment, "120000_300");
+        assert!(migrated.source.is_some(), "source binding is required");
+        // Preserved, not restamped: currentness is ordered against this instant.
+        assert_eq!(migrated.generated_at_ms, 1_700_000_000_000);
+        assert!(migrated.provenance.is_none(), "no invented provenance");
+
+        // Idempotent: a second pass sees V1 and does nothing.
+        let again = commit(journal, None);
+        assert_eq!(again.rebound, 0);
+        assert_eq!(again.untouched, 1);
+    }
+
+    /// A stale artifact is the one case where re-binding would assert a correspondence
+    /// nobody verified, so commit must leave it exactly as it found it.
+    #[test]
+    fn committing_never_touches_an_artifact_whose_source_moved_on() {
+        let root = legacy_journal(false);
+        let journal = root.path();
+        let artifact = journal
+            .join("chronicle/20260101/device/120000_300")
+            .join("timeline.json");
+        let before = fs::read_to_string(&artifact).unwrap();
+
+        let outcome = commit(journal, None);
+        assert_eq!(outcome.rebound, 0);
+        assert_eq!(outcome.left_for_regeneration, 1);
+        assert_eq!(fs::read_to_string(&artifact).unwrap(), before);
+    }
+
+    #[test]
+    fn a_zero_limit_is_not_expressible_and_a_limit_bounds_the_rewrite() {
+        let root = legacy_journal(true);
+        let journal = root.path();
+        let outcome = commit(journal, Some(0));
+        assert_eq!(outcome.rebound, 0, "a zero limit rewrites nothing");
+        let outcome = commit(journal, Some(5));
+        assert_eq!(outcome.rebound, 1);
+    }
+
+    #[test]
+    fn an_outcome_reports_bounded_failures() {
+        let mut outcome = MigrationOutcome {
+            rebound: 2,
+            failed: 12,
+            ..MigrationOutcome::default()
+        };
+        outcome.failures = (0..MAX_REPORTED_FAILURES)
+            .map(|index| format!("segment:{index}"))
+            .collect();
+        let rendered = outcome.render();
+        assert!(rendered.contains("re-bound"), "{rendered}");
+        assert!(rendered.contains("... and 2 more"), "{rendered}");
     }
 
     #[test]

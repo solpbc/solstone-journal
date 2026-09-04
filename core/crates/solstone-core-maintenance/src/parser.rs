@@ -12,7 +12,7 @@ pub const USAGE: &str = "usage: journal maintenance <command> [options]\n";
 const LIST_USAGE: &str = "usage: journal maintenance list\n";
 const SYNC_USAGE: &str = "usage: journal maintenance sync\n";
 const RUN_USAGE: &str = "usage: journal maintenance run ID [ARGS...]\n";
-const MIGRATE_USAGE: &str = "usage: journal maintenance migrate-timeline\n";
+const MIGRATE_USAGE: &str = "usage: journal maintenance migrate-timeline [--commit] [--limit N]\n";
 
 pub(crate) fn run(
     args: &[String],
@@ -40,10 +40,10 @@ pub(crate) fn run(
             health_services,
             timeline_services,
         ),
-        // Plan-only today: it reports what a legacy-artifact migration would do and writes
-        // nothing. The commit phase is deliberately a separate change, because its failure
-        // mode is the loss of the owner's historical journal prose.
-        "migrate-timeline" if no_positionals(rest) => migrate_timeline(journal),
+        // Plan by default: it reports what a legacy-artifact migration would do and writes
+        // nothing. `--commit` is required to write, because the failure mode of this command
+        // is the loss of the owner's historical journal prose.
+        "migrate-timeline" => migrate_timeline(rest, journal),
         _ => usage_error(USAGE, &args.join(" ")),
     }
 }
@@ -90,7 +90,33 @@ fn usage_for_scope(args: &[String]) -> &'static str {
     }
 }
 
-fn migrate_timeline(journal: &Path) -> CliRun {
+fn migrate_timeline(args: &[String], journal: &Path) -> CliRun {
+    let mut commit = false;
+    let mut limit = None;
+    let mut rest = args.iter();
+    while let Some(argument) = rest.next() {
+        match argument.as_str() {
+            "--commit" => commit = true,
+            "--limit" => {
+                let Some(value) = rest.next().and_then(|value| value.parse::<u64>().ok()) else {
+                    return usage_error(MIGRATE_USAGE, "--limit needs a positive count");
+                };
+                if value == 0 {
+                    return usage_error(MIGRATE_USAGE, "--limit needs a positive count");
+                }
+                limit = Some(value);
+            }
+            other => return usage_error(MIGRATE_USAGE, other),
+        }
+    }
+    if commit {
+        return success(crate::bodies::migrate::commit(journal, limit).render());
+    }
+    // `--limit` without `--commit` would read as though it bounded the survey, which it does
+    // not: the plan always counts the whole corpus.
+    if limit.is_some() {
+        return usage_error(MIGRATE_USAGE, "--limit only applies with --commit");
+    }
     success(crate::bodies::migrate::plan(journal).render())
 }
 
