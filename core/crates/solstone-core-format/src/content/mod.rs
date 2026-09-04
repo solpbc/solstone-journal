@@ -115,6 +115,20 @@ pub struct ProducedChunks {
     pub warnings: Vec<String>,
 }
 
+/// Screen-talent rendering plus projector-owned tmux chunk identity.
+///
+/// `tmux_chunk_indices` is a side channel: owner content can contain any text,
+/// so rendered Markdown must never be parsed to rediscover these boundaries.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScreenTalentRawScreen {
+    pub chunks: Vec<IndexChunk>,
+    pub agent_override: Option<String>,
+    pub header: Option<String>,
+    pub error: Option<String>,
+    pub warnings: Vec<String>,
+    pub tmux_chunk_indices: Vec<usize>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FamilyPattern {
     pub pattern: &'static str,
@@ -459,7 +473,7 @@ pub fn produce_raw_percept_chunks(
 /// The ordinary raw-screen renderer remains the owner/index/display contract.
 /// This separate entry point may compact a producer-typed tmux envelope because
 /// its output is used only as model input for the Screen talent.
-pub fn produce_screen_talent_raw_screen_chunks(rel: &str, text: &str) -> ProducedChunks {
+pub fn produce_screen_talent_raw_screen_chunks(rel: &str, text: &str) -> ScreenTalentRawScreen {
     let records = parse_jsonl_objects(text);
     raw_screen::render_for_screen_talent(rel, &records)
 }

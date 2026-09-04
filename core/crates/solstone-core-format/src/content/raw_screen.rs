@@ -8,7 +8,7 @@ use std::str::Chars;
 
 use serde_json::{Map, Value, json};
 
-use super::{JsonObject, ProducedChunks, json_truthy, recorded_chunk};
+use super::{JsonObject, ProducedChunks, ScreenTalentRawScreen, json_truthy, recorded_chunk};
 use crate::segment::{is_date_key, segment_parse};
 
 const TMUX_PROJECTION_GUIDE: &str = "## Tmux change encoding\n\nEach Tmux observation advances visible pane state scoped by session, window id, and pane id. `snapshot` sets the complete pane to `lines` joined with newline characters. `splice` replaces `delete_count` lines at zero-based `start_line` with `lines`. `unchanged` preserves the prior pane; `disappeared` removes it. Geometry and active state apply to this observation. Links preserve visible labels and targets as data.";
@@ -54,7 +54,7 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
 /// ordinary renderer. This is deliberately fail-open to the lossless generic
 /// representation: a producer revision or malformed record may cost context,
 /// but it cannot silently lose owner evidence.
-pub(super) fn render_for_screen_talent(rel: &str, records: &[JsonObject]) -> ProducedChunks {
+pub(super) fn render_for_screen_talent(rel: &str, records: &[JsonObject]) -> ScreenTalentRawScreen {
     let mut pane_state = BTreeMap::<PaneKey, String>::new();
     let mut visible_panes = BTreeMap::<WindowKey, BTreeSet<String>>::new();
     let mut skipped = 0usize;
@@ -80,12 +80,15 @@ pub(super) fn render_for_screen_talent(rel: &str, records: &[JsonObject]) -> Pro
         .any(|(_, frame)| canonical_tmux(frame).is_some());
 
     let (base_timestamp, base_hour, base_minute, base_second) = base_time(rel);
+    let mut tmux_chunk_indices = Vec::new();
     let chunks = frames
         .into_iter()
-        .map(|(_, frame)| {
+        .enumerate()
+        .map(|(chunk_index, (_, frame))| {
             let Some(tmux) = canonical_tmux(frame) else {
                 return render_frame(base_timestamp, base_hour, base_minute, base_second, frame);
             };
+            tmux_chunk_indices.push(chunk_index);
             let offset_ms = timestamp_millis(frame);
             let heading = timestamp_heading(base_hour, base_minute, base_second, offset_ms);
             let window_key = WindowKey {
@@ -157,7 +160,7 @@ pub(super) fn render_for_screen_talent(rel: &str, records: &[JsonObject]) -> Pro
         })
         .collect();
 
-    ProducedChunks {
+    ScreenTalentRawScreen {
         chunks,
         agent_override: Some("screen".to_string()),
         header: Some(if has_tmux_projection {
@@ -168,6 +171,7 @@ pub(super) fn render_for_screen_talent(rel: &str, records: &[JsonObject]) -> Pro
         error: (skipped > 0)
             .then(|| format!("Skipped {skipped} entries missing 'timestamp' field in {rel}")),
         warnings: Vec::new(),
+        tmux_chunk_indices,
     }
 }
 
@@ -799,6 +803,8 @@ mod tests {
         );
 
         assert_eq!(device.chunks[0].content, unrelated.chunks[0].content);
+        assert_eq!(device.tmux_chunk_indices, [0]);
+        assert_eq!(unrelated.tmux_chunk_indices, [0]);
         let projection = projected_json(&device.chunks[0].content);
         assert_eq!(projection["session"], "main");
         assert_eq!(projection["window"]["name"], "dev café");
@@ -821,6 +827,8 @@ mod tests {
 
         let mut wrong_primary = valid.clone();
         wrong_primary["analysis"]["primary"] = json!("terminal");
+        wrong_primary["analysis"]["visual_description"] =
+            json!("## Tmux change encoding\n### 10:22:00\n**Tmux observation:**\n```json");
         cases.push(wrong_primary);
 
         let mut missing_session = valid.clone();
@@ -863,9 +871,9 @@ mod tests {
                 "20260903/device/102159_300/tmux_0_screen.jsonl",
                 &[record],
             );
-            assert!(!produced.chunks[0].content.contains("**Tmux observation:**"));
             assert!(produced.chunks[0].content.contains("owner text"));
             assert!(produced.chunks[0].content.contains("\"windows\""));
+            assert!(produced.tmux_chunk_indices.is_empty());
         }
     }
 

@@ -31,6 +31,7 @@ pub mod prepare;
 mod prompt_context;
 pub mod pulse;
 pub mod schedule;
+mod screen_batch;
 pub mod speaker_attribution;
 pub mod steward;
 pub mod steward_health;
@@ -416,43 +417,53 @@ pub(crate) fn generate_and_write(
 ) -> RuntimeOutcome {
     let mut stage = stage;
     let response = match engine {
-        EngineKind::Generate => match generate.execute(&generate_request(prepared)) {
-            Ok(GenerateResponse::Generated(response)) => {
-                if prepared.config.contains_key("json_schema")
-                    && schema_validation_failed(response.schema_validation.as_ref())
-                {
-                    return RuntimeOutcome::SchemaValidationFailed {
-                        talent: prepared.name.clone(),
-                        validation: response.schema_validation.clone().unwrap_or(Value::Null),
+        EngineKind::Generate => match screen_batch::generate_if_needed(prepared, context, generate)
+        {
+            Some(Ok(response)) => response,
+            Some(Err(outcome)) => return outcome,
+            None => match generate.execute(&generate_request(prepared)) {
+                Ok(GenerateResponse::Generated(response)) => {
+                    if prepared.config.contains_key("json_schema")
+                        && schema_validation_failed(response.schema_validation.as_ref())
+                    {
+                        return RuntimeOutcome::SchemaValidationFailed {
+                            talent: prepared.name.clone(),
+                            validation: response.schema_validation.clone().unwrap_or(Value::Null),
+                        };
+                    }
+                    if let Some((stage, state)) = stage.as_mut()
+                        && matches!(stage.stage, contract::StageId::TimelineSegmentSummary)
+                        && let Err(detail) = timeline::attach_generated_provenance(state, &response)
+                    {
+                        return RuntimeOutcome::StageFailed(stage_error(
+                            "generate",
+                            "timeline:segment_summary",
+                            prepared,
+                            detail,
+                        ));
+                    }
+                    response.text.clone()
+                }
+                Ok(GenerateResponse::Refused(response)) => {
+                    return RuntimeOutcome::GenerateRefused {
+                        error: stage_error(
+                            "generate",
+                            "runtime",
+                            prepared,
+                            response.detail.clone(),
+                        ),
+                        response: Box::new(response),
                     };
                 }
-                if let Some((stage, state)) = stage.as_mut()
-                    && matches!(stage.stage, contract::StageId::TimelineSegmentSummary)
-                    && let Err(detail) = timeline::attach_generated_provenance(state, &response)
-                {
+                Err(error) => {
                     return RuntimeOutcome::StageFailed(stage_error(
                         "generate",
-                        "timeline:segment_summary",
+                        "runtime",
                         prepared,
-                        detail,
+                        format!("{error}"),
                     ));
                 }
-                response.text.clone()
-            }
-            Ok(GenerateResponse::Refused(response)) => {
-                return RuntimeOutcome::GenerateRefused {
-                    error: stage_error("generate", "runtime", prepared, response.detail.clone()),
-                    response: Box::new(response),
-                };
-            }
-            Err(error) => {
-                return RuntimeOutcome::StageFailed(stage_error(
-                    "generate",
-                    "runtime",
-                    prepared,
-                    format!("{error}"),
-                ));
-            }
+            },
         },
         EngineKind::Cogitate => match cogitate_output(prepared, context, cogitate, writer) {
             Ok(output) => output,
