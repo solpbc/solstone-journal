@@ -600,7 +600,10 @@ fn exited_convey_restarts_under_restart_policy() {
     let outcome = await_outcome(
         WaitPolarity::Positive,
         Duration::from_millis(5),
-        200,
+        // Fast fixture timing caps the restart backoff, but a restart can still
+        // follow the remaining supervised stack's admission work under a loaded
+        // full-CI shard.
+        400,
         Instant::now,
         || {
             if fixture_process_running(child.id(), &state_path.display().to_string()) {
