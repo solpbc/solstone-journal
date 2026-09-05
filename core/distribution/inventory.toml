@@ -75,7 +75,7 @@ triple_apple = "aarch64-apple-darwin"
 min_macos = "14.0"
 
 # Windows target is declared so inventory validation owns the field set. No
-# production entry is admitted for it in this lode; Windows dests live in
+# production entry is admitted for it yet; Windows dests live in
 # synthetic test inventories only.
 [[target]]
 id = "windows-x86_64"

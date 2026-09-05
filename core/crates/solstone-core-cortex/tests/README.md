@@ -129,7 +129,7 @@ Both identities below were merged into
 14. `…stop_group_waits_for_a_graceful_exit_within_ten_seconds::scheduling`
 15. `…running_state::process`
 
-Non-owned rows were not edited. The original lode validation recorded 625
+Non-owned rows were not edited. The original validation run recorded 625
 findings before rebase. On the final landed parent, `solstone-ci validate`
 moves from 192 to 193 Cargo integration targets and from 311 to 296 findings;
 package scopes (126) and named legs (13) are unchanged.
@@ -154,7 +154,7 @@ compile, and discovery only.
 | 2 | `cargo clippy -p solstone-core-cortex --lib --bins -D warnings` | 0 | default features; no `unreachable_pub` from the visibility widening |
 | 3 | `cargo build -p solstone-core-cortex` | 0 | see "default-build absence" below |
 | 4 | `cargo test -p solstone-core-cortex --lib -- --test-threads=1` | 0 | 69 passed; 0 failed; 0 ignored |
-| 5 | `solstone-ci validate` | 0 | Original lode run: 156 Cargo integration targets, 126 package scopes, 13 named legs, 625 routine-boundary findings. Final landed rerun: 193, 126, 13, 296; its parent is 192, 126, 13, 311. |
+| 5 | `solstone-ci validate` | 0 | Original run: 156 Cargo integration targets, 126 package scopes, 13 named legs, 625 routine-boundary findings. Final landed rerun: 193, 126, 13, 296; its parent is 192, 126, 13, 311. |
 | 6 | `cargo clippy -p solstone-core-cortex --all-targets --features test-hooks -D warnings` | 0 | after two minimal fixes (below) |
 | 7 | `cargo test -p solstone-core-cortex --test cortex_child_supervisor --features test-hooks --no-run` | 0 | links `cortex_child_supervisor-94b7b40f7affb01f` |
 | 8 | `cargo test ... --features test-hooks -- --list` | 0 | **10 tests, 0 benchmarks**; no body executed |

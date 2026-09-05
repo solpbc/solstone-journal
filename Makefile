@@ -399,7 +399,7 @@ uv.lock: pyproject.toml
 # `make ci` is fmt + CI topology + Clippy + unit tests, all cargo, and none of
 # those targets depends on `.installed`. The three ONNX crates are outside the
 # unit gate via RUST_HOST_EXCLUDES, so the native runtime stages are `install`'s
-# business rather than a lode's. A populated cargo registry is therefore the
+# business, not this target's. A populated cargo registry is therefore the
 # whole requirement -- and it must be populated, because the CI topology check
 # runs `cargo run --locked --offline`.
 .PHONY: hopper-install
