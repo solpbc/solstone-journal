@@ -312,7 +312,7 @@ mod merge_recovery {
             return;
         };
         let phase = std::env::var("SOLSTONE_ENTITY_MERGE_CRASH_PHASE").unwrap();
-        let _ = commit_entity_merge_with_injector(
+        let result = commit_entity_merge_with_injector(
             Path::new(&journal),
             "source",
             "target",
@@ -324,7 +324,7 @@ mod merge_recovery {
                 false
             }),
         );
-        panic!("crash point was not reached");
+        panic!("crash point was not reached: {result:?}");
     }
 
     fn crash_merge(journal: &Path, phase: &str) {

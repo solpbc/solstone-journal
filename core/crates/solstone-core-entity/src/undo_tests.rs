@@ -120,8 +120,10 @@ fn comparable_journal_tree(journal: &std::path::Path, target_id: &str) -> Vec<(S
             let relative = path
                 .strip_prefix(root)
                 .unwrap()
-                .to_string_lossy()
-                .into_owned();
+                .components()
+                .map(|component| component.as_os_str().to_str().unwrap())
+                .collect::<Vec<_>>()
+                .join("/");
             let relative_directory = format!("{relative}/");
             if excluded(&relative, target_id) || excluded(&relative_directory, target_id) {
                 continue;

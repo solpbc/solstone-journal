@@ -1608,6 +1608,7 @@ fn index_failure_retains_committed_source_and_retry_repairs_without_remerging() 
         )
         .unwrap();
     assert_eq!(target_edges, 1);
+    drop(connection);
     fs::remove_dir_all(journal).unwrap();
 }
 
