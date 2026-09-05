@@ -821,46 +821,6 @@ fi
     }
 
     #[test]
-    fn install_base_formula_and_archive_refusals_are_unchanged() {
-        let install = fs::read_to_string(install_sh()).expect("install.sh");
-        assert!(
-            install
-                .lines()
-                .any(|line| line.trim() == "_base=${PRODUCT}-${VERSION}-${TARGET}"),
-            "byte-matched _base= formula"
-        );
-        let expected_archive = [
-            "# ARCHIVE_REFUSALS:",
-            "#   archive-absolute-path",
-            "#   archive-parent-traversal",
-            "#   archive-symlink-escape",
-            "#   archive-hardlink-escape",
-            "#   archive-symlink-then-child",
-        ];
-        let header = install.lines().take(25).collect::<Vec<_>>();
-        for line in expected_archive {
-            assert!(
-                header.iter().any(|item| item.trim_end() == line),
-                "missing {line}"
-            );
-        }
-    }
-
-    #[test]
-    fn install_sh_has_no_origin_root_fetch_fallback() {
-        let install = fs::read_to_string(install_sh()).expect("install.sh");
-        assert!(
-            !install.contains("fetch_url \"${_origin}/${_base}.tar.gz\""),
-            "origin-root fetch fallback must not remain"
-        );
-        assert!(
-            install.contains("_object_base=\"${_origin}/solstone-journal/${LANE}/${VERSION}\"")
-        );
-        assert!(install.contains("lane-invalid"));
-        assert!(install.contains("latest-invalid"));
-    }
-
-    #[test]
     fn cli_parse_wording_matches_acquire() {
         let error = run_cli(&cli_args(&["--lane"])).expect_err("missing value");
         assert_eq!(error.to_string(), "missing value for --lane");

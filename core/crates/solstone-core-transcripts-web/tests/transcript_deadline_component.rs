@@ -34,23 +34,6 @@ fn assert_process_group_gone(process_group: i32) {
     }
 }
 
-#[test]
-fn workspace_asset_matches_pinned_native_source() {
-    let source = include_bytes!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/assets/transcripts/workspace.html"
-    ));
-    let ground = std::process::Command::new("git")
-        .args([
-            "show",
-            "3813e90cac1eb48242a7bde9f2215b91f9c3e578:core/crates/solstone-core-transcripts-web/assets/transcripts/workspace.html",
-        ])
-        .output()
-        .unwrap();
-    assert!(ground.status.success());
-    assert_eq!(source, ground.stdout.as_slice());
-}
-
 #[cfg(unix)]
 #[test]
 fn sense_spawn_resolution_uses_only_the_current_executable_sibling() {

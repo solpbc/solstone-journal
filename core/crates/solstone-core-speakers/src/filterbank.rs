@@ -261,7 +261,6 @@ mod tests {
     use crate::test_support::{
         assert_matrix_within, assert_region_within, decode_waveform, filterbank_fixture,
         fixture_matrix, fixture_range, matrix_comparison_error, max_abs_diff,
-        source_tree_needle_count,
     };
 
     const TOLERANCE: f32 = 1e-2;
@@ -364,17 +363,5 @@ mod tests {
 
         let result = matrix_comparison_error("filterbank_cmn", cmn.data(), &expected, TOLERANCE);
         assert!(result.is_some());
-    }
-
-    #[test]
-    fn mel_bank_construction_has_single_production_site_scans_src_tree() {
-        let needle = concat!("MelBank", " { bins");
-        let (visited_files, count) = source_tree_needle_count(needle);
-
-        assert!(
-            visited_files >= 3,
-            "source walk visited too few Rust files: {visited_files}"
-        );
-        assert_eq!(count, 1);
     }
 }

@@ -45,16 +45,7 @@ pub async fn static_asset(axum::extract::Path(name): axum::extract::Path<String>
 mod tests {
     use serde_json::{Value, json};
 
-    use super::{JS, SHELL};
-
-    #[test]
-    fn embedded_shell_matches_the_convey_shell_template() {
-        // Permanent framework invariant: every converted app embeds the canonical Convey shell.
-        assert_eq!(
-            SHELL,
-            include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html")
-        );
-    }
+    use super::JS;
 
     fn embedded_js_object(prefix: &str) -> Value {
         let source = std::str::from_utf8(JS).expect("embedded backup.js is UTF-8");

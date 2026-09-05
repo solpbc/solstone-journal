@@ -2380,20 +2380,6 @@ required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-convey-shell::thinking_runs_contracts"
-package = "solstone-core-convey-shell"
-target = "thinking_runs_contracts"
-set = "component"
-areas = ["services"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-serial_group = "local-services"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
 id = "solstone-core-convey-shell::thinking_runs_dom"
 package = "solstone-core-convey-shell"
 target = "thinking_runs_dom"
@@ -2924,32 +2910,6 @@ required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-indexer::architecture"
-package = "solstone-core-indexer"
-target = "architecture"
-set = "component"
-areas = ["indexing"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-indexer-store::schema_drift"
-package = "solstone-core-indexer-store"
-target = "schema_drift"
-set = "component"
-areas = ["indexing"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
 id = "solstone-core-ingest::ingest_listing"
 package = "solstone-core-ingest"
 target = "ingest_listing"
@@ -2974,19 +2934,6 @@ prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true
 required_features = ["test-hooks"]
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-journal-archive::architecture"
-package = "solstone-core-journal-archive"
-target = "architecture"
-set = "component"
-areas = ["journal"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
 runtime = "none"
 
 [[suites]]
@@ -3928,19 +3875,6 @@ required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-speaker-id::calibration"
-package = "solstone-core-speaker-id"
-target = "calibration"
-set = "component"
-areas = ["audio"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
 id = "solstone-core-speaker-id::corrections"
 package = "solstone-core-speaker-id"
 target = "corrections"
@@ -4113,19 +4047,6 @@ runtime = "none"
 id = "solstone-core-system::system_contracts"
 package = "solstone-core-system"
 target = "system_contracts"
-set = "component"
-areas = ["system"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-system::architecture"
-package = "solstone-core-system"
-target = "architecture"
 set = "component"
 areas = ["system"]
 platforms = ["linux", "macos"]

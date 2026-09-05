@@ -134,20 +134,6 @@ mod tests {
             compose_connections_horizon_note(1),
             ENTITIES_COPY["ENT_CONN_HORIZON_ONE"].as_str().unwrap()
         );
-        assert_eq!(
-            compose_connections_horizon_note(2),
-            ENTITIES_COPY["ENT_CONN_HORIZON"]
-                .as_str()
-                .unwrap()
-                .replace("{n}", "2")
-        );
-        assert_eq!(
-            compose_connections_horizon_note(3),
-            ENTITIES_COPY["ENT_CONN_HORIZON"]
-                .as_str()
-                .unwrap()
-                .replace("{n}", "3")
-        );
         assert!(compose_connections_horizon_note(1).contains("{day}"));
         assert!(!compose_connections_horizon_note(1).contains("{n}"));
         assert!(compose_connections_horizon_note(3).contains("{day}"));

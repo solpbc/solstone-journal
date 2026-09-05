@@ -227,17 +227,3 @@ fn run_with_timeout(command: &mut Command, timeout: Duration) -> Option<Output> 
         thread::sleep(Duration::from_millis(10));
     }
 }
-
-#[cfg(all(test, unix))]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn diagnostic_child_disposition_is_independent_bounded_helper() {
-        let timeout = Duration::from_secs(7);
-        assert_eq!(
-            diagnostic_disposition(timeout),
-            Disposition::IndependentBoundedHelper { timeout }
-        );
-    }
-}

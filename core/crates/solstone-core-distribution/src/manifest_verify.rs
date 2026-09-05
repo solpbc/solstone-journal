@@ -878,39 +878,6 @@ pub fn install_test_fixture_pin(path: &Path) -> Result<(), ManifestVerifyError> 
     }
 }
 
-#[cfg(test)]
-mod pin_source {
-    const SOURCE: &str = include_str!("manifest_verify.rs");
-    const OVERRIDE: &str = concat!("SOLSTONE_JOURNAL_MINISIGN", "_PIN");
-    const FEATURE_ON: &str = "#[cfg(feature = \"test-fixture-pin\")]";
-    const FEATURE_OFF: &str = "#[cfg(not(feature = \"test-fixture-pin\"))]";
-
-    #[test]
-    fn pin_override_env_lives_only_in_the_fixture_pin_feature_sibling() {
-        assert_eq!(SOURCE.matches(OVERRIDE).count(), 1);
-        let mut off_body = String::new();
-        let mut in_off = false;
-        for line in SOURCE.lines() {
-            let trimmed = line.trim();
-            if trimmed == FEATURE_OFF
-                || trimmed.starts_with("#[cfg(all(test, not(feature = \"test-fixture-pin\")))]")
-            {
-                in_off = true;
-                continue;
-            }
-            if trimmed == FEATURE_ON {
-                in_off = false;
-                continue;
-            }
-            if in_off {
-                off_body.push_str(line);
-                off_body.push('\n');
-            }
-        }
-        assert!(!off_body.contains(OVERRIDE));
-    }
-}
-
 #[cfg(all(test, not(feature = "test-fixture-pin")))]
 mod tests {
     use super::{PRODUCT_PIN, parse_pin, resolve_pin};

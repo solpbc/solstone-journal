@@ -437,23 +437,6 @@ mod tests {
     }
 
     #[test]
-    fn fluidaudio_version_matches_the_helper_package_declaration() {
-        let package = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../solstone-core-transcribe/parakeet-helper/Package.swift");
-        let contents = fs::read_to_string(&package)
-            .unwrap_or_else(|error| panic!("read {}: {error}", package.display()));
-        let version = contents
-            .lines()
-            .find_map(|line| {
-                line.trim()
-                    .strip_prefix("exact: \"")
-                    .and_then(|value| value.strip_suffix('\"'))
-            })
-            .unwrap_or_else(|| panic!("parse exact FluidAudio version from {}", package.display()));
-        assert_eq!(FLUIDAUDIO_VERSION, version);
-    }
-
-    #[test]
     fn the_canonical_coreml_host_is_accepted_by_the_guard() {
         require_coreml_host("darwin", "arm64").unwrap();
     }

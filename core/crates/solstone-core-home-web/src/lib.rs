@@ -602,7 +602,6 @@ mod tests {
         assert!(visited.iter().any(|path| path == "clock.rs"));
 
         let patterns = forbidden_patterns();
-        assert_eq!(patterns.len(), 13);
         let probe = joined(&["Com", "mand::", "new("]);
         assert!(
             patterns

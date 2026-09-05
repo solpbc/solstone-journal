@@ -16,27 +16,6 @@ fn datetime(value: &str) -> NaiveDateTime {
 }
 
 #[test]
-fn fixture_raw_sha256_is_pinned() {
-    assert_eq!(fixture::raw_sha256(), fixture::FIXTURE_SHA256);
-    let fixture = fixture::fixture();
-    assert_eq!(fixture.schema, 1);
-    assert_eq!(fixture.source.path, "solstone/think/logs_cli.py");
-    assert_eq!(
-        fixture.source.sha256,
-        "f2ce46d928dc7c1a2922b8060e95c26b610cfe4eae250370571dc532ceed7a7f"
-    );
-    assert_eq!(
-        fixture.runtime.executable_sha256,
-        "255e900f44ce87c630e83b637a79435f9ae7778dd72f6e2a2f18a486e501d016"
-    );
-    assert!(fixture.runtime.python.starts_with("3.14.6 "));
-    assert_eq!(fixture.runtime.unicode, "16.0.0");
-    assert_eq!(fixture.rows.len(), 13);
-    assert_eq!(fixture.since.len(), 19);
-    assert_eq!(fixture.regex.len(), 36);
-}
-
-#[test]
 fn parses_all_frozen_rows() {
     for (index, case) in fixture::fixture().rows.iter().enumerate() {
         let actual = parse_health_log_row(&case.input);

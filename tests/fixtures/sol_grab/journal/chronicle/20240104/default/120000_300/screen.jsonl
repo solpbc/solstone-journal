@@ -1,2 +1,0 @@
-{"raw": "screen.webm"}
-{"frame_id": 7, "timestamp": 1.0, "requests": [{"type": "describe", "model": "gemini-2.5-flash-lite", "duration": 0.4}], "analysis": {"visual_description": "Archived planning board metadata.", "primary": "productivity", "secondary": "none", "overlap": true}}

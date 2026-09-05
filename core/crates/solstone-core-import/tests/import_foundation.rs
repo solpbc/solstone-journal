@@ -13,11 +13,7 @@ mod owner_source_capability;
 mod resolution;
 #[path = "stream_name_oracle.rs"]
 mod stream_name_oracle;
-#[path = "stub_table.rs"]
-mod stub_table;
 #[path = "sync_state.rs"]
 mod sync_state;
 #[path = "timestamp.rs"]
 mod timestamp;
-#[path = "windowed_source_hash.rs"]
-mod windowed_source_hash;

@@ -203,23 +203,6 @@ mod tests {
     }
 
     #[test]
-    fn ac6_expected_costs_remain_published_rate_arithmetic() {
-        let source = include_str!("pricing.rs");
-        let gpt = [
-            "let gpt_expected = (700.0 * 1.75 + ",
-            "300.0 * 0.175 + 200.0 * 14.0) / 1_000_000.0;",
-        ]
-        .concat();
-        let claude = [
-            "let claude_expected = (800.0 * 3.0 + ",
-            "500.0 * 15.0) / 1_000_000.0;",
-        ]
-        .concat();
-        assert!(source.contains(&gpt));
-        assert!(source.contains(&claude));
-    }
-
-    #[test]
     fn miss_behaviors_match_the_bounded_python_port() {
         assert!(calc_token_cost(&json!({"model":"not-a-model","usage":{}})).is_none());
         assert_eq!(

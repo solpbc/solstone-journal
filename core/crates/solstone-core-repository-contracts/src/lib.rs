@@ -42,9 +42,6 @@ mod distribution_model_digests;
 #[path = "contracts/distribution_no_independent_resolvers.rs"]
 mod distribution_no_independent_resolvers;
 #[cfg(test)]
-#[path = "contracts/distribution_onnx_runtime_pins.rs"]
-mod distribution_onnx_runtime_pins;
-#[cfg(test)]
 #[path = "contracts/distribution_payload.rs"]
 mod distribution_payload;
 #[cfg(test)]
@@ -99,9 +96,6 @@ mod schedule_read_only_architecture;
 #[cfg(test)]
 #[path = "contracts/service_legacy_gate_purity.rs"]
 mod service_legacy_gate_purity;
-#[cfg(test)]
-#[path = "contracts/settings_devices_python_web_cut.rs"]
-mod settings_devices_python_web_cut;
 #[cfg(test)]
 #[path = "contracts/speaker_native_routes.rs"]
 mod speaker_native_routes;

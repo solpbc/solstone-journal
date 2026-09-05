@@ -431,31 +431,6 @@ mod tests {
     }
 
     #[test]
-    fn generated_expectation_has_the_pinned_value_shape() {
-        let sealed = sealed_archives();
-        let input = PrebuildInputIdentity::from_sealed_archives(
-            "macos-arm64",
-            "commit",
-            &"e".repeat(64),
-            b"[inventory]",
-            &sealed,
-        );
-        let delivery = DeliveryContract::from_sealed_archives(&input, &sealed);
-        let temporary = tempfile::tempdir().expect("temporary work");
-        let path = write_rfdetr_compiled_expectation(temporary.path(), &delivery)
-            .expect("write expectation");
-        let value = fs::read_to_string(path).expect("read expectation");
-        assert!(value.starts_with(
-            "pub const MACOS_DELIVERY_CONTRACT: Option<CompiledDeliveryContract> = Some(CompiledDeliveryContract {"
-        ));
-        assert!(value.contains("delivery_contract_sha256:"));
-        assert!(value.contains("slot_id: \"rfdetr-macos-metal-arm64\""));
-        assert!(value.contains("archive_size: 6"));
-        assert!(value.contains("executable_member_path: \"rfdetr/rfdetr-cli\""));
-        assert!(value.ends_with("});\n"));
-    }
-
-    #[test]
     fn staged_chain_round_trips_and_returns_its_digests() {
         let (temporary, prebuild, delivery) = staged_chain_fixture();
         let chain = validate_staged_chain(

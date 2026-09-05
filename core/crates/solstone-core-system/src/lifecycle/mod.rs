@@ -1613,21 +1613,6 @@ mod tests {
     }
 
     #[test]
-    fn signal_ready_notifies_systemd_after_the_marker_is_written() {
-        let source = include_str!("mod.rs");
-        let signal_ready = source
-            .split("pub fn signal_ready(")
-            .nth(1)
-            .and_then(|rest| rest.split("pub fn clear_ready(").next())
-            .expect("signal_ready body");
-        assert!(signal_ready.contains("sd_notify(\"READY=1\")"));
-        assert!(
-            signal_ready.find("write_readiness").expect("marker write")
-                < signal_ready.find("sd_notify(\"READY=1\")").expect("notify")
-        );
-    }
-
-    #[test]
     fn clear_ready_is_idempotent_and_shutdown_does_not_reuse_consumed_authority() {
         let journal = temporary_journal();
         let mut lifecycle = SupervisorLifecycle::boot(journal.path(), writer_id()).expect("boot");

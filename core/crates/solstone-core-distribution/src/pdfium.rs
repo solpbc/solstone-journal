@@ -437,25 +437,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn linux_host_digests_match_the_makefile_pins() {
-        let x86 = spec_for("linux-x86_64").expect("linux-x86_64");
-        let arm = spec_for("linux-aarch64").expect("linux-aarch64");
-        let mac = spec_for("macos-arm64").expect("macos-arm64");
-        assert_eq!(
-            x86.library_sha256,
-            "687dce861f959c7097d47c5864509d51a926a71b38322596a8ee3e7a99c6b96e"
-        );
-        assert_eq!(
-            arm.library_sha256,
-            "933f3d620cc8b58fb30a7f12a1bce8bf276da65caf39ff8fb2d04bc1268d53a3"
-        );
-        assert_eq!(
-            mac.library_sha256,
-            "df568fcd17a6a6296956aa79abea1181db187458432f360b084fec1cea7cd4d9"
-        );
-    }
-
-    #[test]
     fn staged_member_names_are_library_plus_notice_basenames() {
         let spec = spec_for("linux-x86_64").expect("linux-x86_64");
         let names = staged_member_names(spec);

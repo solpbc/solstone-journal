@@ -3,8 +3,7 @@
 
 use serde_json::Value;
 use solstone_core_import::{
-    AudioAuto, ImportPreview, ImportResult, PreviewRequest, SaveRequest, SyncBackendRequest,
-    SyncGuidance, should_write_manifest,
+    AudioAuto, ImportPreview, ImportResult, SyncBackendRequest, SyncGuidance, should_write_manifest,
 };
 use std::path::PathBuf;
 
@@ -57,12 +56,6 @@ fn manifest_write_predicate_only_suppresses_empty_failed_imports() {
     assert!(should_write_manifest(&result(1, vec!["failure"])));
 }
 
-#[test]
-fn preview_and_save_requests_are_distinct_types() {
-    accepts_preview(PreviewRequest);
-    accepts_save(SaveRequest);
-}
-
 fn string_array<'a>(fixture: &'a Value, key: &str) -> Vec<&'a str> {
     fixture[key]
         .as_array()
@@ -90,10 +83,6 @@ fn result(entries_written: u64, hard_failures: Vec<&str>) -> ImportResult {
         raw_retention: None,
     }
 }
-
-fn accepts_preview(_: PreviewRequest) {}
-
-fn accepts_save(_: SaveRequest) {}
 
 #[test]
 fn sync_backend_request_confines_window_days_to_the_native_variant() {

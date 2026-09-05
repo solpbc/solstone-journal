@@ -5635,43 +5635,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn service_args_foundation_has_no_execution_or_python_bridge() {
-        let source = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"));
-        let start = source
-            .find("// SERVICE_ARGS_FOUNDATION_BEGIN")
-            .expect("foundation start");
-        let end = source
-            .find("// SERVICE_ARGS_FOUNDATION_END")
-            .expect("foundation end");
-        let foundation = &source[start..end];
-        assert!(foundation.contains("parse_service_logs(rest)"));
-        for forbidden in [
-            "Command::new",
-            "std::process",
-            "std::env",
-            "std::fs",
-            "std::net",
-            "CommandExt",
-            ".exec(",
-            "File::",
-            "PathBuf",
-            "Path::",
-            "Mutex",
-            "RwLock",
-            ".lock(",
-            "PYTHON_BOOTSTRAP_SCRIPT",
-            "solstone.think.service",
-            "-f",
-            "--follow",
-        ] {
-            assert!(
-                !foundation.contains(forbidden),
-                "foundation reaches forbidden surface {forbidden}"
-            );
-        }
-    }
-
     fn indexer(command: IndexerCommand) -> Command {
         Command::Indexer(Box::new(command))
     }

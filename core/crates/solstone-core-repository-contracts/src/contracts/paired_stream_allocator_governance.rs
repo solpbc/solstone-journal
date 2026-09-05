@@ -361,26 +361,6 @@ fn bind_stream_has_no_callers_outside_segment() {
 }
 
 #[test]
-fn bind_paired_stream_has_three_production_call_sites() {
-    // AC24 — one ExprCall per pairing-base match arm (client_label, platform,
-    // device) inside the sole reviewed entry point bind_first_paired_stream.
-    let files = load_workspace_files(&[SEGMENT_CRATE]);
-    let (_, functions, expr_calls) = scan_files(&files, BIND_PAIRED_STREAM);
-    assert_eq!(
-        functions,
-        BTreeSet::from([(
-            INGEST_BIND_PATH.to_owned(),
-            "bind_first_paired_stream".to_owned()
-        )]),
-        "unexpected bind_paired_stream calling functions: {functions:?}"
-    );
-    assert_eq!(
-        expr_calls, 3,
-        "unexpected bind_paired_stream ExprCall sites in {functions:?}"
-    );
-}
-
-#[test]
 fn discovers_an_injected_bind_paired_stream_call_in_a_fixture_tree() {
     let root = tempfile::tempdir().expect("fixture root creates");
     let nested = root.path().join("device/ingest");

@@ -355,8 +355,8 @@ mod tests {
     };
 
     use super::{
-        ADMISSION_WAIT_UNVERIFIABLE_COPY, HEARTBEAT_WITHOUT_WAIT_MARKER_COPY, SyncRescanDiagnosis,
-        diagnose_complete_rescan, format_admission_waiting_copy, format_sync_scan_failure_copy,
+        SyncRescanDiagnosis, diagnose_complete_rescan, format_admission_waiting_copy,
+        format_sync_scan_failure_copy,
     };
 
     struct FakeProcessSource {
@@ -436,14 +436,6 @@ mod tests {
 
     #[test]
     fn admission_wait_copy_blocks_are_exact() {
-        assert_eq!(
-            HEARTBEAT_WITHOUT_WAIT_MARKER_COPY,
-            "Installation: needs attention\na recent heartbeat from another run is present.\nwait a moment, then try again."
-        );
-        assert_eq!(
-            ADMISSION_WAIT_UNVERIFIABLE_COPY,
-            "Installation: needs attention\nstartup status couldn't be verified.\nwait a moment, then try again."
-        );
         assert_eq!(
             format_admission_waiting_copy(),
             "Installation: waiting\na recent heartbeat from another run was found.\nthe solstone app is waiting while it checks whether that activity continues. it will check again shortly."

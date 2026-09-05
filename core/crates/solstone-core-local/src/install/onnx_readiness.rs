@@ -104,15 +104,3 @@ fn declared_onnx_members(
 pub fn verified_windows_onnx_package() -> Result<WindowsOnnxPackage, String> {
     Err("Windows ONNX package verification requires a Windows runtime".to_owned())
 }
-
-#[cfg(test)]
-mod tests {
-    #[cfg(not(windows))]
-    use super::*;
-
-    #[cfg(not(windows))]
-    #[test]
-    fn non_windows_refuses_the_windows_package_boundary() {
-        assert!(verified_windows_onnx_package().is_err());
-    }
-}

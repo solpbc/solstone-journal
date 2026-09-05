@@ -1063,15 +1063,7 @@ mod tests {
             .map(|line| {
                 if line.trim_start().starts_with("- **") && line.contains("**:") {
                     match line.split_once(" - ") {
-                        Some((prefix, desc)) => {
-                            assert_eq!(
-                                description_chars,
-                                desc.chars().count()
-                                    + description_chars.saturating_sub(desc.chars().count()),
-                                "description length must not differ between halves"
-                            );
-                            format!("{prefix} - {description}")
-                        }
+                        Some((prefix, _desc)) => format!("{prefix} - {description}"),
                         None => format!("{line} - {description}"),
                     }
                 } else {

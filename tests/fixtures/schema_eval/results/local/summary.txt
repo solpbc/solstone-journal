@@ -1,3 +1,0 @@
-cases: 10
-schema_valid: 10/10
-average_content_preservation: 0.893

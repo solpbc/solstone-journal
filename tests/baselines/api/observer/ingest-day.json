@@ -1,5 +1,0 @@
-{
-  "detail": "Authorization required",
-  "error": "I couldn't verify this request.",
-  "reason_code": "auth_required"
-}

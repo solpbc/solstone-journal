@@ -21,8 +21,6 @@ mod media_routes;
 mod network_corpus;
 #[path = "network_write_routes.rs"]
 mod network_write_routes;
-#[path = "populated_corpus.rs"]
-mod populated_corpus;
 #[path = "push_mount.rs"]
 mod push_mount;
 #[path = "quality_known_routes.rs"]

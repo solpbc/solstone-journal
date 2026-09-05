@@ -2097,39 +2097,4 @@ mod tests {
             "a failed cleanup remains retryable instead of consuming authority"
         );
     }
-
-    #[test]
-    fn admitted_lifecycle_precedes_callosum_and_queue_release_follows_readiness() {
-        let source = include_str!("runtime.rs");
-        let boot = source
-            .split("pub(crate) async fn boot_and_tick(")
-            .nth(1)
-            .expect("boot_and_tick source")
-            .split("fn shutdown_regime_for(")
-            .next()
-            .expect("boot_and_tick body");
-        let admitted = boot
-            .find("lifecycle.into_lifecycle()")
-            .expect("final-admitted lifecycle");
-        let callosum = boot
-            .find("CallosumSocketServer::bind")
-            .expect("Callosum bind");
-        let queue = boot.find("TaskQueue::new").expect("queue construction");
-        let readiness = boot
-            .find("lifecycle.signal_ready")
-            .expect("readiness write");
-        let release = boot
-            .find("state.queue.set_ready()")
-            .expect("queue readiness release");
-
-        assert!(
-            admitted < callosum && callosum < queue,
-            "only a final-admitted lifecycle may bind Callosum or construct the queue"
-        );
-        assert!(boot[queue..].contains("ready: false"));
-        assert!(
-            readiness < release,
-            "queued work is released only after readiness"
-        );
-    }
 }

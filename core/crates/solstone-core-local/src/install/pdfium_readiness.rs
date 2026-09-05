@@ -86,15 +86,3 @@ fn declared_pdfium_members(
 pub fn verified_windows_pdfium_package() -> Result<WindowsPdfiumPackage, String> {
     Err("Windows PDF package verification requires a Windows runtime".to_owned())
 }
-
-#[cfg(test)]
-mod tests {
-    #[cfg(not(windows))]
-    use super::*;
-
-    #[cfg(not(windows))]
-    #[test]
-    fn non_windows_refuses_the_windows_package_boundary() {
-        assert!(verified_windows_pdfium_package().is_err());
-    }
-}

@@ -14,8 +14,6 @@ mod body_ledger_validator_framing;
 mod body_ledger_validator_poisoning;
 #[path = "body_ledger_validator_public_api.rs"]
 mod body_ledger_validator_public_api;
-#[path = "body_ledger_validator_shape.rs"]
-mod body_ledger_validator_shape;
 #[path = "candidate_precedence.rs"]
 mod candidate_precedence;
 #[path = "candidate_public_api.rs"]

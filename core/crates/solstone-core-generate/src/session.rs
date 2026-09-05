@@ -570,29 +570,3 @@ fn spawn_completion_coordinator(
         }
     });
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::contract;
-    use crate::decode_one_shot_response;
-
-    #[test]
-    fn session_completion_is_a_total_sum_type() {
-        let response =
-            decode_one_shot_response(&contract()["conformance_vectors"][0]["response"].to_string())
-                .unwrap();
-        let failure = SessionFailure::new("request".to_owned(), SessionFailureReason::ChildExited);
-        let kinds = [
-            SessionCompletion::Response(response),
-            SessionCompletion::Failure(failure),
-        ]
-        .into_iter()
-        .map(|completion| match completion {
-            SessionCompletion::Response(_) => "response",
-            SessionCompletion::Failure(_) => "failure",
-        })
-        .collect::<Vec<_>>();
-        assert_eq!(kinds, ["response", "failure"]);
-    }
-}

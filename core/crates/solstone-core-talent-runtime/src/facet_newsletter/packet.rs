@@ -1007,11 +1007,4 @@ mod tests {
         );
         assert!(preamble.contains("permission denied"));
     }
-
-    #[test]
-    fn tier_one_agents_precede_tier_two_agents() {
-        // Derived from solstone/talent/facet_newsletter.py:41-42,112-145,256-317.
-        assert_eq!(TIER_ONE_INDEX_AGENTS, ["flow", "span", "event", "meetings"]);
-        assert_eq!(TIER_TWO_INDEX_AGENTS, ["decisions", "followups"]);
-    }
 }

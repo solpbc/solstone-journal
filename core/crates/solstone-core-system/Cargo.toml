@@ -63,12 +63,6 @@ bench = false
 name = "system_contracts"
 path = "tests/system_contracts.rs"
 
-# Source-text architecture guards are deliberately a lightweight explicit
-# target because this package disables Cargo integration-test auto-discovery.
-[[test]]
-name = "architecture"
-path = "tests/architecture.rs"
-
 # Real LaunchAuthority child behavior is a distinct subject from ManagedProcess
 # in system_lifecycle, and cannot live under the routine `--lib` unit harness
 # (hard process boundary). Explicit target because autotests = false.

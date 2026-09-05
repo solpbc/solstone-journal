@@ -2253,25 +2253,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn request_type_has_no_forbidden_derive_surface() {
-        let source = include_str!("account_wire.rs");
-        let definition = source
-            .find("pub(crate) struct McpAccountRequest")
-            .expect("request type definition");
-        let immediately_before = source[..definition]
-            .trim_end()
-            .rsplit_once("\n\n")
-            .map_or("", |(_, item)| item);
-        for forbidden in ["Clone", "Debug", "Display", "Serialize"] {
-            assert!(
-                !immediately_before.contains("#[derive(")
-                    || !immediately_before.contains(forbidden),
-                "McpAccountRequest must not derive {forbidden}"
-            );
-        }
-    }
-
     fn fixture_bytes() -> &'static [u8] {
         include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),

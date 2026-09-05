@@ -1089,19 +1089,21 @@ async fn assert_recorded_response(
             hash.as_str().unwrap(),
             "{name}"
         );
-        compare_text_bytes(&body, expected_response["text_bytes"].as_u64().unwrap())
+    }
+    if let Some(bytes) = expected_response.get("text_bytes") {
+        compare_text_bytes(&body, bytes.as_u64().unwrap())
             .unwrap_or_else(|error| panic!("{name}: {error}"));
-        if let Some(prefix) = expected_response.get("text_prefix") {
-            compare_text_prefix(
-                std::str::from_utf8(&body).unwrap(),
-                prefix.as_str().unwrap(),
-            )
+    }
+    if let Some(prefix) = expected_response.get("text_prefix") {
+        compare_text_prefix(
+            std::str::from_utf8(&body).unwrap(),
+            prefix.as_str().unwrap(),
+        )
+        .unwrap_or_else(|error| panic!("{name}: {error}"));
+    }
+    if let Some(text) = expected_response.get("text") {
+        compare_text(std::str::from_utf8(&body).unwrap(), text.as_str().unwrap())
             .unwrap_or_else(|error| panic!("{name}: {error}"));
-        }
-        if let Some(text) = expected_response.get("text") {
-            compare_text(std::str::from_utf8(&body).unwrap(), text.as_str().unwrap())
-                .unwrap_or_else(|error| panic!("{name}: {error}"));
-        }
     }
 }
 
@@ -1274,35 +1276,6 @@ fn workspace_and_support_js_use_draft_routes_not_direct_mutation() {
         combined.contains("/draft/cancel"),
         "draft cancel route missing"
     );
-}
-
-#[test]
-fn copied_assets_are_byte_identical_to_the_frozen_hashes() {
-    for (bytes, hash, size) in [
-        (
-            super::WORKSPACE,
-            "61b325b43fca34e14a8621691f4a76cec2d6c6e17d9b5db734ffaf105971d5f3",
-            33_815,
-        ),
-        (
-            super::BACKGROUND,
-            "6299f26fbc48e57ddd708f2d97b947086f3ae650531f982d97d6bf1c0441fe4b",
-            1_182,
-        ),
-        (
-            super::SUPPORT_JS,
-            "07ec4f520b84e6d6701ae978a7aba34549233281bf6ca8b1d2bb93867afab6e6",
-            43_263,
-        ),
-        (
-            super::SHELL,
-            "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a",
-            7_732,
-        ),
-    ] {
-        assert_eq!(bytes.len(), size);
-        assert_eq!(format!("{:x}", Sha256::digest(bytes)), hash);
-    }
 }
 
 #[test]

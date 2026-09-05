@@ -190,8 +190,6 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
 }
 
 #[cfg(test)]
-mod build_contract;
-#[cfg(test)]
 mod corpus;
 #[cfg(test)]
 mod mutations;

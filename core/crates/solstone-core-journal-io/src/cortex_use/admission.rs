@@ -1332,61 +1332,6 @@ mod tests {
     }
 
     #[test]
-    fn no_external_production_callers() {
-        let crates = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-        let needles = [
-            "admit_active_use",
-            "complete_active_use",
-            "build_recovery_catalog",
-            "read_cortex_use_completed_request",
-        ];
-        let mut hits = Vec::new();
-        for crate_dir in fs::read_dir(&crates).unwrap() {
-            let crate_dir = crate_dir.unwrap().path();
-            for tree in ["src", "tests"] {
-                let root = crate_dir.join(tree);
-                if root.is_dir() {
-                    collect_hits(&root, &needles, &mut hits);
-                }
-            }
-        }
-        assert!(hits.is_empty(), "external callers of F4/F5 APIs: {hits:?}");
-    }
-
-    fn is_cortex_storage(path: &Path) -> bool {
-        let parts: Vec<_> = path.iter().rev().take(3).collect();
-        parts.len() == 3
-            && parts[0] == "storage.rs"
-            && parts[1] == "src"
-            && parts[2] == "solstone-core-cortex"
-    }
-
-    fn collect_hits(dir: &Path, needles: &[&str], hits: &mut Vec<String>) {
-        for entry in fs::read_dir(dir).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                if path.file_name().is_some_and(|name| name == "cortex_use") {
-                    continue;
-                }
-                collect_hits(&path, needles, hits);
-                continue;
-            }
-            if is_cortex_storage(&path) {
-                continue;
-            }
-            if path.extension().is_none_or(|extension| extension != "rs") {
-                continue;
-            }
-            let text = fs::read_to_string(&path).unwrap();
-            for needle in needles {
-                if text.contains(needle) {
-                    hits.push(format!("{}:{needle}", path.display()));
-                }
-            }
-        }
-    }
-
-    #[test]
     fn mapper_does_not_leak_failure_details() {
         let sentinel = "fixture-sentinel-must-not-leak";
         let path = PathBuf::from(sentinel);

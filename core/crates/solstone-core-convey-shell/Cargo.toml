@@ -52,10 +52,6 @@ name = "thinking_provider_status_probe_contract"
 path = "tests/thinking_provider_status_probe_contract.rs"
 
 [[test]]
-name = "thinking_runs_contracts"
-path = "tests/thinking_runs_contracts.rs"
-
-[[test]]
 name = "thinking_runs_dom"
 path = "tests/thinking_runs_dom.rs"
 

@@ -18,8 +18,7 @@
         "why": "the root gate: its redirect target is the whole first-run branch"
       },
       {
-        "body_bytes": 15086,
-        "body_sha256": "eef53c598ad186c7cd94dc271a94323f186e56f4bd31f7aa8a2a1fd482a26ed0",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "image/x-icon",
         "method": "GET",
@@ -312,8 +311,7 @@
         "why": "the root gate: its redirect target is the whole first-run branch"
       },
       {
-        "body_bytes": 15086,
-        "body_sha256": "eef53c598ad186c7cd94dc271a94323f186e56f4bd31f7aa8a2a1fd482a26ed0",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "image/x-icon",
         "method": "GET",
@@ -1110,8 +1108,7 @@
         "why": "the root gate: its redirect target is the whole first-run branch"
       },
       {
-        "body_bytes": 15086,
-        "body_sha256": "eef53c598ad186c7cd94dc271a94323f186e56f4bd31f7aa8a2a1fd482a26ed0",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "image/x-icon",
         "method": "GET",

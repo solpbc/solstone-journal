@@ -1,9 +1,0 @@
-{
-  "labels": [
-    {"sentence_id": 1, "speaker": "edge_speaker", "confidence": "high", "method": "fixture"},
-    {"sentence_id": 2, "speaker": "speaker_b", "confidence": "high", "method": "fixture"},
-    {"sentence_id": 3, "speaker": "speaker_c", "confidence": "medium", "method": "fixture"}
-  ],
-  "owner_centroid_last_refreshed_at": "fixture-v1",
-  "voiceprint_versions": {}
-}

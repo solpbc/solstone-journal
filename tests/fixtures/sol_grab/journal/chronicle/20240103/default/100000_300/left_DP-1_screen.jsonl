@@ -1,4 +1,0 @@
-{"raw": "left_DP-1_screen.webm"}
-{"frame_id": 1, "timestamp": 0.0, "requests": [{"type": "describe", "model": "gemini-2.5-flash-lite", "duration": 0.3}], "analysis": {"visual_description": "Left monitor with editor tabs.", "primary": "code", "secondary": "none", "overlap": true}}
-{"frame_id": 4, "timestamp": 0.5, "requests": [{"type": "describe", "model": "gemini-2.5-flash-lite", "duration": 0.3}], "analysis": {"visual_description": "Left monitor terminal output.", "primary": "terminal", "secondary": "none", "overlap": true}}
-{"frame_id": 9, "timestamp": 1.333333, "requests": [{"type": "describe", "model": "gemini-2.5-flash-lite", "duration": 0.4}], "analysis": {"visual_description": "Left monitor notes window.", "primary": "reading", "secondary": "none", "overlap": true}}

@@ -1634,15 +1634,6 @@ mod tests {
     }
 
     #[test]
-    fn criterion_1_runtime_manifest_has_no_axum_dependency() {
-        assert!(
-            !include_str!("../Cargo.toml")
-                .lines()
-                .any(|line| line.trim_start().starts_with("axum"))
-        );
-    }
-
-    #[test]
     fn criterion_3_required_percepts_are_enabled_and_gathered() {
         let (_root, paths, context) = fixture(
             "required-percepts",

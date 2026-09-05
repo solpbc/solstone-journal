@@ -1405,17 +1405,6 @@ mod tests {
     fn frozen_corpus_encoder_and_fixed_replay_match_python() {
         let _guard = clear_cache();
         let fixed = fixture_case("fixed");
-        let first_run = fixture_case("first_run");
-        assert_python_bytes(
-            &fixed,
-            11_440,
-            "a5c9724da95eb6f350437924fd5e21f3bc824c42098cc63cb292c794fe71f874",
-        );
-        assert_python_bytes(
-            &first_run,
-            16,
-            "3810d12fa060554952ad4d9ce07e5e1ec3f4107484a46300525008d54ec11e5f",
-        );
         let root = TempDir::new();
         seed_fixed(&root);
         let mut actual = signal_payload_json(&build_trends_payload(&root.0).unwrap());

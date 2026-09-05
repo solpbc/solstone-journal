@@ -2,16 +2,16 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::BTreeMap;
-use std::fs::{self, File};
-use std::io::{Cursor, Read, Write};
+use std::fs;
+use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
-use solstone_core_npy::{parse_npy, write_npy};
+use solstone_core_npy::write_npy;
 use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipArchive, ZipWriter};
+use zip::{CompressionMethod, ZipWriter};
 
 /// Byte-for-byte file snapshot of a journal tree, used to prove mutation
 /// refusals write nothing.
@@ -257,31 +257,6 @@ pub fn oracle_voiceprints() -> BTreeMap<String, Vec<Vec<f32>>> {
         "../../../../fixtures/populated_journal_voiceprints.json"
     ))
     .expect("voiceprint oracle fixture parses")
-}
-
-/// Read one fixed-schema embeddings member back from a test NPZ archive.
-pub fn read_embeddings_npz(path: &Path) -> Vec<Vec<f32>> {
-    let file = File::open(path).expect("NPZ opens");
-    let mut archive = ZipArchive::new(file).expect("NPZ parses");
-    let mut member = archive
-        .by_name("embeddings.npy")
-        .expect("embeddings member exists");
-    let mut bytes = Vec::new();
-    member
-        .read_to_end(&mut bytes)
-        .expect("embeddings member reads");
-    let blob = parse_npy(&bytes).expect("embeddings NPY parses");
-    assert_eq!(blob.descr, "<f4");
-    assert!(!blob.fortran_order);
-    assert_eq!(blob.shape.len(), 2);
-    assert_eq!(blob.shape[1], 256);
-    blob.payload
-        .chunks_exact(4)
-        .map(|bytes| f32::from_le_bytes(bytes.try_into().expect("f32 chunk")))
-        .collect::<Vec<_>>()
-        .chunks_exact(256)
-        .map(|row| row.to_vec())
-        .collect()
 }
 
 fn temporary_journal_root() -> PathBuf {

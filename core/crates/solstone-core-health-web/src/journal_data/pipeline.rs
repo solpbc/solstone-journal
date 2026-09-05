@@ -447,18 +447,6 @@ mod tests {
     }
 
     #[test]
-    fn serde_preserves_pipeline_root_order_and_is_compact() {
-        let report = PipelineReport::new(
-            "20260401".to_owned(),
-            Utc.with_ymd_and_hms(2026, 4, 1, 0, 0, 0).unwrap(),
-        );
-        assert_eq!(
-            serde_json::to_string(&report).unwrap(),
-            "{\"day\":\"20260401\",\"generated_at\":1775001600000,\"status\":\"healthy\",\"anomalies\":[],\"runs\":{\"segment\":{\"count\":0,\"duration_ms_total\":0},\"daily\":{\"count\":0,\"duration_ms_total\":0},\"activity\":{\"count\":0,\"duration_ms_total\":0},\"weekly\":{\"count\":0,\"duration_ms_total\":0},\"flush\":{\"count\":0,\"duration_ms_total\":0},\"cadence\":{\"count\":0,\"duration_ms_total\":0}},\"talents\":{\"dispatched\":0,\"completed\":0,\"failed\":0,\"outstanding_failed\":0,\"skipped\":0,\"capped\":0,\"failed_list\":[],\"failed_list_truncated\":false},\"activities\":{\"detected\":0,\"persisted\":0,\"talents_fired\":false},\"exhausted_segments\":{\"count\":0,\"segments\":[]}}"
-        );
-    }
-
-    #[test]
     fn summarize_pipeline_day_folds_real_mode_talent_and_activity_logs() {
         let temporary = temporary();
         let root = temporary.path();

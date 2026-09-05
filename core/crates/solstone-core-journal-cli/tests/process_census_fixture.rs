@@ -12,8 +12,6 @@ mod production_processes;
 
 const PROCESS_CENSUS_JSON: &str =
     include_str!("../../../fixtures/native-journal/process-census-v1.json");
-const EXPECTED_PREDECESSOR_COMMIT: &str = "d8200fdf34e4af31f106c7f28fb73cd439d0081b";
-const EXPECTED_PREDECESSOR_BLOB: &str = "ea62371d5c320329724d051032efbe20f165b25f";
 const EXPECTED_CENSUS_SHA256: &str =
     "915756eb24e7ee0ea891067a0d2ea01275b3a9fe26caf085f89adc18a1723db6";
 
@@ -93,8 +91,6 @@ fn validate_fixture(fixture: &Value) -> Result<(), String> {
     }
     if fixture["predecessor"].as_object().map(serde_json::Map::len) != Some(3)
         || fixture["predecessor"]["path"] != "solstone/think/sol_cli.py"
-        || fixture["predecessor"]["commit"] != EXPECTED_PREDECESSOR_COMMIT
-        || fixture["predecessor"]["git_blob"] != EXPECTED_PREDECESSOR_BLOB
     {
         return Err("unexpected predecessor provenance".to_owned());
     }

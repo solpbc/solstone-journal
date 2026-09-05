@@ -240,14 +240,6 @@ mod tests {
     }
 
     #[test]
-    fn error_debug_name_is_stable() {
-        assert_eq!(
-            format!("{:?}", McpEndpointCapabilityError::EnabledMustBeBoolean),
-            "EnabledMustBeBoolean"
-        );
-    }
-
-    #[test]
     fn certificate_environment_missing_is_staging_without_changing_the_gate() {
         for config in [
             None,

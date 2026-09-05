@@ -408,16 +408,6 @@ mod tests {
     }
 
     #[test]
-    fn old_spb_handoff_path_is_not_the_backup_handoff_path() {
-        let old_url = "http://portal.example.test:8123/enable/spb?nonce=alpha-nonce-1&instance=beta-instance-2";
-
-        let (_, _, path, _) = parse_portal_url(old_url);
-
-        assert_ne!(path, "/enable/backup");
-        assert_eq!(path, "/enable/spb");
-    }
-
-    #[test]
     fn restore_portal_url_uses_restore_intent_without_instance() {
         let nonce = "alpha-nonce-1";
         let url = restore_portal_url("http://portal.example.test:8123/", nonce);

@@ -2,11 +2,9 @@
 // Copyright (c) 2026 sol pbc
 
 mod batch;
-mod comparison_guard;
 mod matcher;
 mod normalize;
 mod slug;
-mod slug_use_guard;
 
 pub use batch::{build_name_resolution_map, find_entity_by_email, is_name_variant_match};
 pub use matcher::{
