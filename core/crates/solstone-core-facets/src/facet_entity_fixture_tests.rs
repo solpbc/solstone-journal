@@ -24,7 +24,6 @@ struct Entry {
     query: String,
     candidate_ids: Vec<String>,
     candidate_name: String,
-    reference_outcome: Value,
     native_outcome: Value,
 }
 
