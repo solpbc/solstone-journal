@@ -1129,7 +1129,7 @@ a.body-day-cell:focus-visible {
         ` &middot; <span class="body-num">${escapeHtml(archive.import_count)}</span> health `,
         Number(archive.import_count) === 1 ? "import" : "imports",
         '</p>',
-      ]) : '<p class="body-subtitle">No body data present yet. Health imports will appear here.</p>',
+      ]) : '<p class="body-subtitle">no body data yet. body imports will appear here.</p>',
       '</div>',
       '</section>',
     ]);
@@ -1445,7 +1445,7 @@ a.body-day-cell:focus-visible {
 
   function renderOverviewAudit(status) {
     const imports = asArray(status.imports);
-    if (!imports.length) return '<p class="drawer-empty">no imports yet — body data appears here when a health export is imported.</p>';
+    if (!imports.length) return '';
     const latestRows = Object.entries(asObject(status.latest_by_source)).map(([name, latest]) => [`latest ${name}`, formatSourceTime(latest) || latest]);
     const bodyHtml = html([
       renderImportEvidence(imports),
@@ -1536,13 +1536,13 @@ a.body-day-cell:focus-visible {
     const nearest = asObject(bodyDay.nearest);
     return html([
       '<section class="body-card" aria-label="Empty day">',
-      '<p class="body-empty">No body data present for this day.</p>',
+      '<p class="body-empty">no body data for this day.</p>',
       (nearest.prev || nearest.next) ? html([
-        '<p>Nearest days with data: ',
+        '<p>nearby days with data: ',
         nearest.prev ? `<a class="body-link" href="${bodyDayHref(nearest.prev)}">&larr; ${escapeHtml(nearest.prev_label)}</a> ` : "",
         nearest.next ? `<a class="body-link" href="${bodyDayHref(nearest.next)}">${escapeHtml(nearest.next_label)} &rarr;</a>` : "",
         '</p>',
-      ]) : '<p class="body-muted">No body days with data yet.</p>',
+      ]) : '<p class="body-muted">body imports will appear here. <a class="body-link" href="/app/body/">view body archive →</a></p>',
       '</section>',
     ]);
   }
@@ -1723,7 +1723,7 @@ a.body-day-cell:focus-visible {
   function renderDayAudit(bodyDay) {
     const audit = asObject(bodyDay.audit);
     if (dayAuditHasNothingToDisclose(bodyDay)) {
-      return '<p class="drawer-empty">no import bookkeeping for this day.</p>';
+      return '';
     }
     const importIds = asArray(audit.import_ids);
     const appendix = asArray(audit.oura_appendix);

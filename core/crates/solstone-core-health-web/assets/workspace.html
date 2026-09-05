@@ -1331,6 +1331,14 @@ h2.card-title {
 }
 
 .vitals-status.unavailable{background:#e5e7eb;color:#4b5563}.observe-card[data-unavailable=true]{border-left-color:#9ca3af}
+
+.vitals-content > #schedulesSection {grid-column:1 / -1;border-left:0;padding-left:0;border-top:1px solid #e5e7eb;padding-top:12px;min-width:0}
+#schedulesValue {display:block}
+#schedulesValue summary {cursor:pointer;min-height:46px;padding:10px 0}
+#schedulesValue ul {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px;list-style:none;padding:0}
+#schedulesValue li {padding:10px;border:1px solid #e5e7eb;border-radius:8px;overflow-wrap:anywhere}
+#schedulesValue code {display:block;font-size:12px;color:#59616e}
+#brainHealthStatus summary {cursor:pointer;min-height:46px;padding:10px 0}
 </style>
 
 <div class="health-dashboard">
@@ -1343,7 +1351,7 @@ h2.card-title {
       </a>
       <div class="glance-metric glance-metric-activity" id="glanceActivity">
         <span class="glance-metric-value" id="glanceActivityValue">0</span>
-        <span class="glance-metric-label">events last hour</span>
+        <span class="glance-metric-label">events since opened</span>
       </div>
       <a class="glance-metric glance-metric-errors" href="#focus=recent-errors" id="glanceErrors">
         <span class="glance-metric-value" id="glanceErrorsValue">—</span>
@@ -1410,7 +1418,7 @@ h2.card-title {
       </div>
       <div class="vitals-section" id="schedulesSection" role="group" aria-label="Schedules: unavailable">
         <div class="vitals-label" aria-hidden="true">schedules</div>
-        <div class="vitals-value" id="schedulesValue" aria-hidden="true">unavailable</div>
+        <div class="vitals-value" id="schedulesValue">unavailable</div>
       </div>
     </div>
   </div>

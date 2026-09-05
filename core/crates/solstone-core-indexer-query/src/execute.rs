@@ -240,11 +240,62 @@ fn open_read_only(journal: &Path) -> Result<QueryConnection, IndexAccessError> {
             },
         },
     )?;
+    open_index_reader(journal)
+}
+
+fn open_index_reader(journal: &Path) -> Result<QueryConnection, IndexAccessError> {
+    let path = solstone_core_indexer_store::db::db_path(journal);
+    if !path.is_file() {
+        return Err(IndexAccessError::Absent { path });
+    }
     let connection = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|error| classify_sql_error(path.clone(), error))?;
     let mut connection = QueryConnection::new(connection, path);
     connection.require_nonempty_chunks()?;
     Ok(connection)
+}
+
+/// A bounded snapshot of one entry as stored in the search index.
+#[derive(Debug, PartialEq)]
+pub enum IndexedEntry {
+    Found(String),
+    TooLarge,
+    NotFound,
+}
+
+/// Read a result without modifying the index or opening its source file.
+/// The path and chunk index guard against a row id reused by a later index build.
+pub fn read_indexed_entry(
+    journal: &Path,
+    path: &str,
+    idx: i64,
+    row_id: i64,
+    max_bytes: u64,
+) -> Result<IndexedEntry, IndexAccessError> {
+    let reader = open_index_reader(journal)?;
+    let found: Option<(i64, Option<String>)> = reader
+        .connection
+        .query_row(
+            "SELECT length(CAST(content AS BLOB)),
+                CASE WHEN length(CAST(content AS BLOB)) <= ?4 THEN content ELSE NULL END
+         FROM chunks WHERE rowid=?1 AND path=?2 AND idx=?3
+           AND NOT (path LIKE '________/chat/%/chat.jsonl'
+                    OR path LIKE 'chronicle/________/chat/%/chat.jsonl') LIMIT 1",
+            params![
+                row_id,
+                path,
+                idx,
+                i64::try_from(max_bytes).unwrap_or(i64::MAX)
+            ],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|error| reader.classify(error))?;
+    Ok(match found {
+        None => IndexedEntry::NotFound,
+        Some((_, Some(content))) => IndexedEntry::Found(content),
+        Some(_) => IndexedEntry::TooLarge,
+    })
 }
 
 impl QueryConnection {
@@ -347,7 +398,7 @@ impl QueryConnection {
             Order::Recency => "ORDER BY day DESC, rowid DESC",
         };
         let sql = format!(
-            "SELECT content, path, day, facet, agent, stream, idx, bm25(chunks) \
+            "SELECT content, path, day, facet, agent, stream, idx, bm25(chunks), rowid \
              FROM chunks WHERE {} {ordering} LIMIT ? OFFSET ?",
             plan.where_clause
         );
@@ -370,6 +421,7 @@ impl QueryConnection {
                 let score: f64 = row.get(7)?;
                 let agent = agent.unwrap_or_default();
                 Ok(SearchHit {
+                    row_id: row.get(8)?,
                     id: format!("{path}:{idx}"),
                     text: content,
                     metadata: SearchMetadata {

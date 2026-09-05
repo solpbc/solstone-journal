@@ -78,10 +78,7 @@ const COPY: [(&str, &str); 47] = [
         "CUR_ENTITY_BATCH_FAILED_NOTE",
         "{failed} still need attention below.",
     ),
-    (
-        "CUR_AMBIGUITY_BODY",
-        "solstone found more than one possible match for \"{query}\".",
-    ),
+    ("CUR_AMBIGUITY_BODY", "which entry matches \"{query}\"?"),
     ("CUR_AMBIGUITY_ORIGIN_LABEL", "noticed in"),
     ("CUR_AMBIGUITY_CHOOSE_ACTION", "choose {name}"),
     ("CUR_UNDO_ACTION", "undo merge"),

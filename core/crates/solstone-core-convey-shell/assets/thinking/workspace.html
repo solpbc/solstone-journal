@@ -715,6 +715,7 @@
       }
     }
    .thinking-runs-filters{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:16px 0}.thinking-runs-filters label{display:flex;align-items:center;gap:8px;min-height:44px}.thinking-runs-filters input{width:20px;height:20px}.thinking-run-failed{background:#fff2eb}.thinking-runs-filters a{color:var(--orange-text-aa,#a15f17)}#thinkingRunsContent>section{overflow-x:auto}
+#thinkingIdentityDetails summary {cursor:pointer;min-height:46px;padding:10px 0}
 </style>
 
   <div id="thinking-loading">
@@ -726,7 +727,6 @@
 
   <div class="appframe" id="thinkingApp" hidden>
     <header class="thinking-runs-header">
-      <p class="brandlock">your journal is always private, only yours.</p>
       <h1 id="thinkingHeading" tabindex="-1"></h1>
       <div class="thinking-runs-tabs" id="thinkingSectionTabs" role="tablist">
         <button type="button" class="thinking-runs-tab" id="thinkingSetupTab" role="tab" aria-selected="true" aria-controls="thinkingSetupPanel" tabindex="0">setup</button>
@@ -741,6 +741,7 @@
         <div class="glabel" id="thinkingActiveLane"></div>
         <div class="gval" id="thinkingActiveValue"></div>
         <p class="gsub" id="thinkingActiveDetail"></p>
+        <details id="thinkingIdentityDetails" hidden><summary>processing details</summary><p class="gsub" id="thinkingActiveIdentity"></p></details>
         <button type="button" class="trail" id="brainCheckAction" hidden></button>
       </div>
 

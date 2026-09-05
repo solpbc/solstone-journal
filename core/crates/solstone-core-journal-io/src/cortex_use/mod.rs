@@ -351,7 +351,8 @@ fn expected_completed_use_id(leaf: &OsStr) -> Option<&str> {
         .filter(|stem| !stem.is_empty())
 }
 
-fn parse_cortex_use_request(
+/// Validate the current Cortex request row against its talent directory and use identity.
+pub fn parse_cortex_use_request(
     talent_directory: &Path,
     expected_use_id: &str,
     first_row: &[u8],

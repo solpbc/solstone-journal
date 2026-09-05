@@ -196,6 +196,7 @@ mod tests {
         };
         let result = serialize_response(SearchResponse {
             results: vec![SearchHit {
+                row_id: 1,
                 id: "notes/jose.txt:0".to_owned(),
                 text: "José handoff".to_owned(),
                 metadata: SearchMetadata {

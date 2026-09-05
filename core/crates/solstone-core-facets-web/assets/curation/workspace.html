@@ -261,7 +261,8 @@
     width: 100%;
   }
 }
-.curation-group{border:1px solid #dfd6c9;border-radius:12px;background:#fff}.curation-group>summary{padding:18px;cursor:pointer;font-weight:600;min-height:48px}.curation-group-items{padding:0 18px 18px;display:grid;gap:16px}.curation-group-items>.curation-item{content-visibility:auto;contain-intrinsic-size:auto 240px}.curation-group:focus-within{outline-color:#b06a1a}.curation-group>summary:focus-visible{outline:2px solid #b06a1a;outline-offset:2px}
+.curation-group{border:1px solid #dfd6c9;border-radius:12px;background:#fff}.curation-group>summary{padding:18px;cursor:pointer;font-weight:600;min-height:48px}.curation-group-items{padding:0 18px 18px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.curation-group-items>.curation-item{min-width:0;overflow-wrap:anywhere}.curation-group-items>.curation-item{content-visibility:auto;contain-intrinsic-block-size:auto 240px}.curation-group:focus-within{outline-color:#b06a1a}.curation-group>summary:focus-visible{outline:2px solid #b06a1a;outline-offset:2px}
+.curation-source-dates{display:flex;flex-wrap:wrap;gap:8px 16px}.curation-source-dates a{display:inline-flex;align-items:center;min-height:46px}.curation-origin-details summary{cursor:pointer;padding:12px 0}.curation-origin-details li{overflow-wrap:anywhere}
 </style>
 
 <section class="curation-shell" data-curation-root>
@@ -393,12 +394,17 @@ window.CUR_COPY = CUR_COPY;
 
   function ambiguityItemHtml(item) {
     const origins = item?.evidence?.origins || [];
-    const originLanes = origins.map((origin) => origin.lane).filter(Boolean).join(', ');
+    const days = [...new Set(origins.map(origin => origin.day).filter(day => /^\d{8}$/.test(day)))].sort();
+    const sourceIds = [...new Set(origins.map(origin => [origin.lane, origin.field].filter(Boolean).join(' · ')).filter(Boolean))];
+    const evidence = origins.length ? `<details class="curation-origin-details">
+      <summary>source evidence</summary>
+      <div class="curation-source-dates">${days.map(day => `<a href="/app/transcripts/${day}">${escapeHtml(window.JournalFormat.day(day))}</a>`).join('')}</div>
+      ${sourceIds.length ? `<details><summary>source identifiers</summary><ul>${sourceIds.map(id => `<li>${escapeHtml(id)}</li>`).join('')}</ul></details>` : ''}
+    </details>` : '';
     const candidates = item?.evidence?.ranked_candidates || [];
     return `
       <article class="curation-item" data-curation-item data-kind="entity_ambiguity" data-ambiguity-id="${escapeHtml(item.key)}">
         <p class="curation-body">${escapeHtml(copyFormat(CUR_COPY.CUR_AMBIGUITY_BODY, {query: item.name || item.source}))}</p>
-        <p class="curation-ambiguity-origin">${escapeHtml(CUR_COPY.CUR_AMBIGUITY_ORIGIN_LABEL)}: ${escapeHtml(originLanes)}</p>
         <div class="curation-actions">
           ${candidates.map((candidate) => `
             <button class="curation-button curation-button-primary" type="button" data-action="ambiguity-resolve" data-ambiguity-id="${escapeHtml(item.key)}" data-entity-id="${escapeHtml(candidate.id)}">
@@ -406,6 +412,7 @@ window.CUR_COPY = CUR_COPY;
             </button>
           `).join('')}
         </div>
+        ${evidence}
         <p class="curation-item-error" hidden></p>
       </article>
     `;

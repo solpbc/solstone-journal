@@ -14,7 +14,9 @@ use chrono::{Datelike, Local, NaiveDate};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
-use solstone_core_indexer_query::{SearchRequest, search, search_counts};
+use solstone_core_indexer_query::{
+    IndexedEntry, SearchRequest, read_indexed_entry, search, search_counts,
+};
 use solstone_core_journal_io::bounded_read::{JournalReadError, MAX_BYTES, read_text};
 
 use crate::talent_outputs;
@@ -25,7 +27,12 @@ const WORKSPACE: &str = include_str!("../assets/search.html");
 pub fn router(journal_root: PathBuf) -> Router {
     let search_root = journal_root.clone();
     let agents_root = journal_root.clone();
+    let entry_root = journal_root.clone();
     Router::new()
+        .route(
+            "/app/search/api/entry",
+            get(move |query: Query<EntryQuery>| entry_api(entry_root.clone(), query)),
+        )
         .route(
             "/app/search/api/search",
             get(move |query: Query<SearchQuery>| search_api(search_root.clone(), query)),
@@ -131,6 +138,7 @@ async fn search_api(journal_root: PathBuf, Query(query): Query<SearchQuery>) -> 
             .map(|hit| {
                 json!({
                     "id": hit.id,
+                    "entry_id": hit.row_id,
                     "day": hit.metadata.day,
                     "agent": hit.metadata.agent,
                     "agent_label": agent_label(&hit.metadata.agent),
@@ -177,6 +185,39 @@ async fn agents_api(journal_root: PathBuf, Query(query): Query<AgentsQuery>) -> 
     match talent_outputs::list(&journal_root, &day, none_if_blank(query.segment).as_deref()) {
         Ok(value) => axum::Json(value).into_response(),
         Err(detail) => invalid_value(&detail),
+    }
+}
+
+#[derive(Deserialize)]
+struct EntryQuery {
+    path: String,
+    idx: i64,
+    entry_id: i64,
+}
+
+async fn entry_api(journal_root: PathBuf, Query(query): Query<EntryQuery>) -> Response {
+    if query.path.is_empty() || query.path.len() > 4096 || query.idx < 0 || query.entry_id <= 0 {
+        return invalid_value("invalid entry reference");
+    }
+    let result = tokio::task::spawn_blocking(move || {
+        read_indexed_entry(
+            &journal_root,
+            &query.path,
+            query.idx,
+            query.entry_id,
+            MAX_BYTES,
+        )
+    })
+    .await;
+    match result {
+        Ok(Ok(IndexedEntry::Found(content))) => {
+            axum::Json(json!({"content": content})).into_response()
+        }
+        Ok(Ok(IndexedEntry::TooLarge)) => invalid_value("this entry is too long to display here."),
+        Ok(Ok(IndexedEntry::NotFound)) => {
+            file_not_found("this entry is no longer indexed. search again to refresh the results.")
+        }
+        Ok(Err(_)) | Err(_) => file_read_failed("the search index couldn't be read. try again."),
     }
 }
 

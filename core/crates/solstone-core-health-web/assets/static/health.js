@@ -60,7 +60,7 @@
 
   // State management
   let connectError = false;
-  let recentEventTimestamps = [];
+  let receivedEventCount = 0;
 
   const state = {
     supervisorSeen: false,
@@ -566,8 +566,7 @@
       ? window.JournalFormat.compactTokens(state.todayTokens)
       : '—';
 
-    const recentActivity = recentEventTimestamps.filter(ts => (now - ts) < 3600000).length;
-    elements.glanceActivityValue.textContent = state.lastEventTs ? String(recentActivity) : '—';
+    elements.glanceActivityValue.textContent = state.lastEventTs ? receivedEventCount.toLocaleString() : '—';
 
     const today = todayKey();
     if (!state.agentErrorsOk) {
@@ -592,19 +591,33 @@
     if (identity.lane && identity.provider && identity.model) {
       if (brain.state === 'ready') {
         const checked = evidence.age_text ? `, checked ${evidence.age_text} ago` : '';
-        lines.push(`${identity.lane} ${identity.provider}/${identity.model}${checked}`);
+        lines.push(`${window.JournalFormat.processingLane(identity.lane)}${checked}`);
       } else {
-        lines.push(`${identity.lane} ${identity.provider}/${identity.model} — ${brain.reason_text || ''}${component}`);
+        lines.push(`${window.JournalFormat.processingLane(identity.lane)}: ${brain.reason_text || ''}${component}`);
       }
     } else if (identity.lane || identity.provider || identity.model) {
       lines.push(`${brain.reason_text || ''}${component}`);
     }
+    const identityOpen = box.querySelector('details')?.open || false;
+    const identityFocused = document.activeElement === box.querySelector('summary');
     box.innerHTML = '';
     lines.forEach((line) => {
       const p = document.createElement('p');
       p.textContent = line;
       box.appendChild(p);
     });
+    const identityText = [identity.lane, identity.provider, identity.model].filter(Boolean).join(' · ');
+    if (identityText) {
+      const details = document.createElement('details');
+      details.open = identityOpen;
+      const summary = document.createElement('summary');
+      summary.textContent = 'processing details';
+      const value = document.createElement('p');
+      value.textContent = identityText;
+      details.append(summary, value);
+      box.appendChild(details);
+      if (identityFocused) summary.focus({preventScroll: true});
+    }
     const action = brain.action || null;
     const button = elements.brainCheckBtn;
     if (!button) return;
@@ -1161,11 +1174,7 @@
 
     sections[5]?.setAttribute(
       'aria-label',
-      'Schedules: ' + (state.schedules.map(schedule => {
-        const name = schedule.name || 'unnamed';
-        const next = formatNextRun(schedule.next_run);
-        return next ? name + ' next ' + next : name;
-      }).join(', ') || (state.supervisorSeen ? 'none' : 'unavailable'))
+      'Schedules: ' + (state.schedules.length ? state.schedules.length + ' scheduled' : state.supervisorSeen ? 'none' : 'unavailable')
     );
   }
 
@@ -1319,37 +1328,24 @@
       elements.queuesValue.textContent = state.supervisorSeen ? 'none' : 'unavailable';
     }
 
-    // Schedules (always visible, enriched)
+    // Keep the inventory available without turning the glance into a long list.
     if (state.schedules.length > 0) {
-      let wrapper = elements.schedulesValue.querySelector('.vitals-chips');
-      if (!wrapper) {
-        elements.schedulesValue.textContent = '';
-        wrapper = document.createElement('div');
-        wrapper.className = 'vitals-chips';
-        elements.schedulesValue.appendChild(wrapper);
+      let details = elements.schedulesValue.querySelector('details');
+      if (!details) {
+        details = document.createElement('details');
+        details.append(document.createElement('summary'), document.createElement('ul'));
+        elements.schedulesValue.replaceChildren(details);
       }
-      const existingByKey = new Map();
-      for (const child of Array.from(wrapper.children)) {
-        existingByKey.set(child.getAttribute('data-key'), child);
-      }
-      const newKeys = new Set(state.schedules.map(s => s.name || 'unnamed'));
-      for (const [key, child] of existingByKey) {
-        if (!newKeys.has(key)) wrapper.removeChild(child);
-      }
-      for (const s of state.schedules) {
-        const key = s.name || 'unnamed';
-        const next = formatNextRun(s.next_run);
-        const due = s.due ? `<span aria-hidden="true">${(window.ConveyIcons?.svg('alarm-clock') || '')}</span>` : '';
-        let chip = existingByKey.get(key);
-        if (!chip) {
-          chip = document.createElement('span');
-          chip.className = 'vitals-chip';
-          chip.setAttribute('data-key', key);
-          wrapper.appendChild(chip);
-        }
-        chip.innerHTML = escapeHtml(key) + due + (next ? ' · ' + escapeHtml(next) : '');
-        chip.setAttribute('title', s.every || '');
-      }
+      const schedules = [...state.schedules].sort((a, b) => Number(a.next_run || Infinity) - Number(b.next_run || Infinity));
+      const next = formatNextRun(schedules[0].next_run);
+      details.querySelector('summary').textContent = `${schedules.length} scheduled${next ? ' · next ' + next : ''}`;
+      const labels = {brain: 'processing check', cadence: 'processing schedule', heartbeat: 'journal review', 'facet-candidates': 'facet suggestions'};
+      details.querySelector('ul').innerHTML = schedules.map(schedule => {
+        const name = schedule.name || 'unnamed';
+        const label = labels[name] || name.replace(/^maintenance:/, '').replace(/[:_-]+/g, ' ');
+        const next = schedule.due ? 'due now' : formatNextRun(schedule.next_run);
+        return `<li>${escapeHtml(label)}${next ? ' · ' + escapeHtml(next) : ''}<code>${escapeHtml(name)}</code></li>`;
+      }).join('');
     } else {
       elements.schedulesValue.textContent = state.supervisorSeen ? 'none' : 'unavailable';
     }
@@ -2541,12 +2537,7 @@
   function handleEvent(msg) {
     const eventTs = Date.now();
     state.lastEventTs = eventTs;
-    recentEventTimestamps.push(eventTs);
-    const cutoff = eventTs - 3600000;
-    recentEventTimestamps = recentEventTimestamps.filter(ts => ts >= cutoff);
-    if (recentEventTimestamps.length > 500) {
-      recentEventTimestamps.splice(0, recentEventTimestamps.length - 500);
-    }
+    receivedEventCount += 1;
     const tract = msg.tract;
     if (tract === 'supervisor') handleSupervisorEvent(msg);
     else if (tract === 'cortex') handleCortexEvent(msg);

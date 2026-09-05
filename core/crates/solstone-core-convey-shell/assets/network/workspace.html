@@ -167,7 +167,7 @@
       </div>
     </div>
     <section aria-label="devices">
-      <h2 class="section-title">devices</h2>
+      <h2 class="section-title" id="devices" tabindex="-1">devices</h2>
       <div id="clientsList" role="list">
         <div class="surface-state surface-state--loading" role="status" aria-busy="true">
           <div class="surface-state-spinner" aria-hidden="true"></div>
@@ -1766,7 +1766,13 @@ async function unpairClient(cid, button) {
 }
 
 function initClients() {
-  loadClients();
+  loadClients().then(() => {
+    const devices = document.getElementById('devices');
+    if (location.hash === '#devices' && devices?.isConnected) {
+      devices.focus({preventScroll: true});
+      devices.scrollIntoView({block: 'start'});
+    }
+  });
 
   setInterval(loadClients, 30000);
 }

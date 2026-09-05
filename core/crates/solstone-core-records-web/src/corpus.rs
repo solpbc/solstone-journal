@@ -559,3 +559,45 @@ fn today_day() -> String {
 fn with_utc<F: FnOnce()>(body: F) {
     temp_env::with_var("TZ", Some("UTC"), body);
 }
+
+#[tokio::test]
+async fn matched_entry_read_keeps_large_source_bounded_and_checks_reference() {
+    let fixture = seeded_journal();
+    let result =
+        response_json(request(&fixture.root, "/app/search/api/search?q=needle").await).await;
+    let hit = &result["days"][0]["results"][0];
+    let path = hit["path"].as_str().unwrap();
+    write(
+        &fixture.root.join("chronicle").join(path),
+        &"x".repeat(20000),
+    );
+    let query = format!(
+        "/app/search/api/entry?path={path}&idx={}&entry_id={}",
+        hit["idx"], hit["entry_id"]
+    );
+    let response = request(&fixture.root, &query).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let content = response_json(response).await;
+    assert!(content["content"].as_str().unwrap().contains("needle"));
+    assert_eq!(
+        request(&fixture.root, &format!("/app/search/api/read?path={path}"))
+            .await
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        request(&fixture.root, &query.replace("entry_id=", "entry_id=999"))
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        request(
+            &fixture.root,
+            "/app/search/api/entry?path=x&idx=-1&entry_id=1"
+        )
+        .await
+        .status(),
+        StatusCode::BAD_REQUEST
+    );
+}

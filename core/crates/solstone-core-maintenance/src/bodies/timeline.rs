@@ -485,6 +485,12 @@ fn day_source_digest(rows: &[SegmentRow], top: usize) -> Result<String, Timeline
     curation_jobs_digest(&day_curation_jobs(rows, top))
 }
 
+/// Read the live day inputs using the same eligibility and source checks as publication.
+pub fn current_day_source_digest(journal: &Path, day: &str, top: usize) -> Result<String, String> {
+    let entries = verified_day_entries(day, load_day_segments(journal, day)?)?;
+    day_source_digest(&entries, top).map_err(|error| error.to_string())
+}
+
 fn day_curation_jobs(rows: &[SegmentRow], top: usize) -> Vec<CurationJobV1> {
     let mut jobs = group_by_hour(rows)
         .into_iter()

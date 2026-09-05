@@ -157,6 +157,79 @@ async fn recovery_fixture_converges_legacy_segment_population_to_verified_owner_
     );
 }
 
+#[tokio::test]
+async fn day_api_currentness_follows_changed_and_incomplete_native_inputs() {
+    let journal = tempfile::tempdir().unwrap();
+    let segments = build_recovery_fixture(journal.path());
+    repair_segment_population(journal.path(), &segments);
+    let day = DAYS[0];
+    let publish = [
+        "run",
+        "timeline:rollup-day",
+        "--day",
+        day,
+        "--commit",
+        "--top",
+        "100",
+    ];
+    let preview = ["run", "timeline:rollup-day", "--day", day, "--top", "100"];
+    assert_eq!(run_timeline(journal.path(), &publish).exit_code, 0);
+    let route = format!("/app/timeline/api/day/{day}");
+    let before = api_payload(journal.path(), &route).await;
+    assert_eq!(before["status"], "current");
+    let artifact_path = day_timeline_path(journal.path(), day);
+    let artifact = fs::read(&artifact_path).unwrap();
+
+    let binding = SegmentBindingV1 {
+        day: day.to_owned(),
+        stream: "_default".to_owned(),
+        segment: "090000_300".to_owned(),
+    };
+    let source = journal
+        .path()
+        .join("chronicle")
+        .join(day)
+        .join("090000_300/talents/activity.md");
+    fs::create_dir_all(source.parent().unwrap()).unwrap();
+    fs::write(&source, "New activity after the day publication.\n").unwrap();
+    assert_eq!(run_timeline(journal.path(), &preview).exit_code, 1);
+    let incomplete = api_payload(journal.path(), &route).await;
+    assert_eq!(incomplete["status"], "stale");
+    assert_eq!(incomplete["artifact_outcome"], "source_unavailable");
+    assert_eq!(incomplete["day_top"], before["day_top"]);
+    assert_eq!(fs::read(&artifact_path).unwrap(), artifact);
+
+    repair_segment_population(
+        journal.path(),
+        &[FixtureSegment {
+            binding,
+            missing: true,
+        }],
+    );
+    let native = run_timeline(journal.path(), &preview);
+    assert_eq!(native.exit_code, 0);
+    assert!(native.stdout.contains("[stale]"));
+    let stale = api_payload(journal.path(), &route).await;
+    assert_eq!(stale["status"], "stale");
+    assert_eq!(stale["artifact_outcome"], "digest_mismatch");
+    assert_eq!(fs::read(&artifact_path).unwrap(), artifact);
+
+    assert_eq!(run_timeline(journal.path(), &publish).exit_code, 0);
+    assert_eq!(
+        api_payload(journal.path(), &route).await["status"],
+        "current"
+    );
+    let source_bytes = fs::read(&source).unwrap();
+    fs::write(&source, "Changed activity after segment publication.\n").unwrap();
+    assert_eq!(run_timeline(journal.path(), &preview).exit_code, 1);
+    assert_eq!(api_payload(journal.path(), &route).await["status"], "stale");
+    fs::write(&source, source_bytes).unwrap();
+    assert_eq!(
+        api_payload(journal.path(), &route).await["status"],
+        "current"
+    );
+}
+
 fn build_recovery_fixture(journal: &Path) -> Vec<FixtureSegment> {
     let state = TimelineRecordV1 {
         schema_version: CURRENT_SCHEMA_VERSION,

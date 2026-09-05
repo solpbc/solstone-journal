@@ -2646,17 +2646,6 @@ button:focus:not(:focus-visible) {
       </div>
 
       <div class="settings-field">
-        <div class="toggle-container" style="justify-content: flex-start; gap: 1em;">
-          <label class="toggle-switch toggle-positive">
-            <input type="checkbox" id="field-reporting-enabled">
-            <span class="slider"></span>
-          </label>
-          <label for="field-reporting-enabled" class="toggle-label" style="cursor: pointer;">diagnostic reports</label>
-        </div>
-        <small>include diagnostic context (chat reason, correlation ID, recent console entries) when filing a support report. on by default.</small>
-      </div>
-
-      <div class="settings-field">
         <label for="field-support-portal-url">portal URL</label>
         <input type="text" id="field-support-portal-url" data-section="support" data-key="portal_url" placeholder="https://support.solstone.app">
         <small>support portal endpoint. change this if you run your own portal.</small>
@@ -3316,31 +3305,13 @@ async function loadConfig() {
     // Load transcribe backends first (populates select options)
     await loadTranscribeBackends();
 
-    const conveyConfigRequest = fetch('/api/config/convey')
-      .then(response => response.json())
-      .catch(err => {
-        console.error('Error loading convey config:', err);
-        return {};
-      });
-    const [journalConfig, conveyConfig] = await Promise.all([
-      fetch('api/config').then(response => response.json()),
-      conveyConfigRequest,
-    ]);
+    const journalConfig = await window.apiJson('api/config');
     configData = journalConfig;
     populateFields(configData);
-    populateConveyFields(conveyConfig);
   } catch (err) {
     console.error('Error loading config:', err);
     notifyError( 'Load Failed', 'Error loading configuration');
   }
-}
-
-function populateConveyFields(cfg) {
-  const reportingField = document.getElementById('field-reporting-enabled');
-  if (!reportingField) return;
-  const conveyConfig = cfg?.config || {};
-  reportingField.checked = conveyConfig.reporting?.enabled !== false;
-  reportingField.__lastKnownValue = reportingField.checked;
 }
 
 function populateFields(config) {
@@ -3527,18 +3498,6 @@ async function saveConfigValue(section, key, value) {
   throw new Error(result.error || 'Save failed');
 }
 
-async function saveConveyReportingEnabled(checked) {
-  const result = await window.apiJson('/api/config/convey', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ reporting: { enabled: checked } })
-  });
-  if (result.success) {
-    return result;
-  }
-  throw new Error(result.error || 'Save failed');
-}
-
 function applyEnvSaveEffects(el, key, result) {
   el.value = '';
   if (result.key_validation) {
@@ -3559,28 +3518,6 @@ function setupAutoSave() {
     el.addEventListener('change', () => handleFieldChange(el));
     el.addEventListener('blur', () => handleFieldChange(el));
   });
-  const reportingField = document.getElementById('field-reporting-enabled');
-  if (reportingField) {
-    reportingField.addEventListener('change', () => handleConveyReportingChange(reportingField));
-  }
-}
-
-async function handleConveyReportingChange(el) {
-  const previousValue = typeof el.__lastKnownValue === 'boolean' ? el.__lastKnownValue : true;
-  const nextValue = el.checked;
-  el.disabled = true;
-  try {
-    await saveConveyReportingEnabled(nextValue);
-    el.__lastKnownValue = nextValue;
-    showFieldStatus(el, 'saved');
-  } catch (err) {
-    el.checked = previousValue;
-    showFieldStatus(el, 'error', err?.serverMessage || err?.message || 'Save failed');
-    console.error('Error saving convey reporting config:', err);
-    window.logError(err, { context: 'settings: saveConveyReportingEnabled failed' });
-  } finally {
-    el.disabled = false;
-  }
 }
 
 function handleFieldChange(el) {
