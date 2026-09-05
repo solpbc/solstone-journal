@@ -141,8 +141,8 @@ pub struct BusTaskRequest {
 
 impl BusTaskRequest {
     /// Decode an ordinary bus message. Its return type intentionally cannot
-    /// produce `ExecutionRequest::Scheduled`; only `ScheduledRequest::new`
-    /// reaches that enum arm.
+    /// produce `ExecutionRequest::Scheduled`; scheduled work requires an
+    /// internal `ScheduledRequest`.
     pub fn decode(
         wire: WireTaskRequest,
         fallback_reference: impl Into<String>,
@@ -167,7 +167,8 @@ pub struct ScheduledRequest {
     pub max_runtime: Option<Duration>,
     pub reference: String,
     pub day: Option<String>,
-    pub scheduler_name: String,
+    /// Completion bookkeeping is absent for event-triggered schedule followups.
+    pub scheduler_name: Option<String>,
 }
 
 impl ScheduledRequest {
@@ -181,7 +182,7 @@ impl ScheduledRequest {
             cmd,
             reference: reference.into(),
             day: None,
-            scheduler_name: scheduler_name.into(),
+            scheduler_name: Some(scheduler_name.into()),
             max_runtime: None,
         }
     }

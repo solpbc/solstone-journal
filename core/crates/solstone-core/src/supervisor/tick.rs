@@ -28,7 +28,8 @@ use solstone_core_system::provider_runtime::{
     RuntimeStore, RuntimeStoreError, cancel_start, store_error_phase,
 };
 use solstone_core_system::request::{
-    BusTaskRequest, DailyCatchupProvenance, ExecutionRequest, TaskArgv,
+    BusTaskRequest, DailyCatchupProvenance, ExecutionRequest, ScheduledArgv, ScheduledRequest,
+    TaskArgv,
 };
 use solstone_core_system::schedule::{ScheduleNow, ScheduleStatus};
 use solstone_core_system::status_wire::{
@@ -1150,7 +1151,10 @@ fn handle_activity_recorded(state: &mut SupervisorState, message: &CallosumEnvel
     );
 }
 
-fn daily_timeline_rollup_command(journal: &Path, day: &str) -> Result<Option<Vec<String>>, String> {
+fn daily_timeline_rollup_request(
+    journal: &Path,
+    day: &str,
+) -> Result<Option<ScheduledRequest>, String> {
     if processing_is_deferred(journal) || no_thinking_engine_chosen(journal) {
         return Ok(None);
     }
@@ -1186,7 +1190,13 @@ fn daily_timeline_rollup_command(journal: &Path, day: &str) -> Result<Option<Vec
     }
     let mut command = entry.cmd;
     command.extend(["--day".to_owned(), day.to_owned()]);
-    Ok(Some(command))
+    Ok(Some(ScheduledRequest {
+        cmd: ScheduledArgv::from_wire(command).expect("validated Timeline schedule argv"),
+        max_runtime: entry.max_runtime,
+        reference: format!("supervisor-timeline-rollup-{day}"),
+        day: Some(day.to_owned()),
+        scheduler_name: None,
+    }))
 }
 
 fn handle_daily_timeline_rollup(state: &SupervisorState, message: &CallosumEnvelope) {
@@ -1200,8 +1210,8 @@ fn handle_daily_timeline_rollup(state: &SupervisorState, message: &CallosumEnvel
     let Some(day) = message_string(message, "day") else {
         return;
     };
-    let command = match daily_timeline_rollup_command(&state.journal, day) {
-        Ok(Some(command)) => command,
+    let request = match daily_timeline_rollup_request(&state.journal, day) {
+        Ok(Some(request)) => request,
         Ok(None) => return,
         Err(error) => {
             log::warn!("supervisor: could not queue completed-day timeline: {error}");
@@ -1211,14 +1221,7 @@ fn handle_daily_timeline_rollup(state: &SupervisorState, message: &CallosumEnvel
     // Use the existing bounded queue and native day→master publisher. The day
     // has settled, even when the earlier clock-triggered attempt ran too soon.
     // A master failure must not undo daily completion or suppress heartbeat.
-    if submit_task(
-        &state.queue,
-        command,
-        format!("supervisor-timeline-rollup-{day}"),
-        Some(day),
-        None,
-    ) == SubmitOutcome::Rejected
-    {
+    if state.queue.submit(ExecutionRequest::Scheduled(request)) == SubmitOutcome::Rejected {
         log::warn!("supervisor: completed-day timeline task was rejected for {day}");
     }
 }
@@ -1598,7 +1601,7 @@ mod tests {
             "--commit"
         ]);
         assert!(
-            daily_timeline_rollup_command(journal.path(), "20260102")
+            daily_timeline_rollup_request(journal.path(), "20260102")
                 .unwrap()
                 .is_none()
         );
@@ -1623,14 +1626,17 @@ mod tests {
             (true, "daily", standard, true),
         ] {
             let bytes = serde_json::to_vec(&json!({"maintenance:timeline:rollup": {
-                "cmd": command, "every": cadence, "enabled": enabled
+                "cmd": command, "every": cadence, "enabled": enabled, "max_runtime": "95m"
             }}))
             .unwrap();
             fs::write(&config, &bytes).unwrap();
-            let actual = daily_timeline_rollup_command(journal.path(), "20260102").unwrap();
+            let actual = daily_timeline_rollup_request(journal.path(), "20260102").unwrap();
             assert_eq!(actual.is_some(), expected);
             if let Some(actual) = actual {
-                assert_eq!(&actual[actual.len() - 2..], ["--day", "20260102"]);
+                let argv = actual.cmd.as_wire();
+                assert_eq!(&argv[argv.len() - 2..], ["--day", "20260102"]);
+                assert!(actual.scheduler_name.is_none());
+                assert_eq!(actual.max_runtime, Some(Duration::from_secs(5700)));
             }
             assert_eq!(
                 fs::read(&config).unwrap(),
@@ -1647,7 +1653,7 @@ mod tests {
             "+0260102",
             "2026 1 2",
         ] {
-            assert!(daily_timeline_rollup_command(journal.path(), invalid).is_err());
+            assert!(daily_timeline_rollup_request(journal.path(), invalid).is_err());
         }
         for settings in [
             json!({"providers":{"active":{"provider":"local"}},"processing":{"mode":"deferred"}}),
@@ -1655,7 +1661,7 @@ mod tests {
         ] {
             fs::write(&journal_config, serde_json::to_vec(&settings).unwrap()).unwrap();
             assert!(
-                daily_timeline_rollup_command(journal.path(), "20260102")
+                daily_timeline_rollup_request(journal.path(), "20260102")
                     .unwrap()
                     .is_none()
             );
@@ -1663,7 +1669,7 @@ mod tests {
         fs::write(&journal_config, serde_json::to_vec(&active).unwrap()).unwrap();
         fs::write(&config, b"{broken").unwrap();
         assert!(
-            daily_timeline_rollup_command(journal.path(), "20260102")
+            daily_timeline_rollup_request(journal.path(), "20260102")
                 .unwrap()
                 .is_none()
         );

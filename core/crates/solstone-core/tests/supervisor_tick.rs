@@ -1014,6 +1014,16 @@ async fn daily_complete_retries_standard_timeline_rollup_for_the_completed_day()
     let journal = TempJournal::new();
     journal.enable_thinking();
     let _stub_marker = journal.install_journal_stub();
+    fs::write(
+        journal.0.join("test-bin/journal"),
+        format!(
+            "#!/bin/sh\nexec {} ready-wait {}/ready-\"${{6:-other}}\" {}/release-\"${{6:-other}}\"\n",
+            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+            journal.0.display(),
+            journal.0.display(),
+        ),
+    )
+    .unwrap();
     let command = [
         "journal",
         "maintenance",
@@ -1024,7 +1034,7 @@ async fn daily_complete_retries_standard_timeline_rollup_for_the_completed_day()
     fs::write(
         journal.0.join("config/schedules.json"),
         serde_json::to_vec(&json!({"maintenance:timeline:rollup": {
-            "cmd": command, "every": "daily", "max_runtime": "60m"
+            "cmd": command, "every": "daily", "max_runtime": "95m"
         }}))
         .unwrap(),
     )
@@ -1066,6 +1076,72 @@ async fn daily_complete_retries_standard_timeline_rollup_for_the_completed_day()
     )
     .await;
     assert_eq!(started["ref"], "supervisor-timeline-rollup-20260102");
+    let first = receive_timeline_task(&mut reader, "20260102").await;
+    assert_eq!(first["max_runtime_seconds"], 5700);
+
+    // The second day captures the old budget while the first still runs.
+    send_message(
+        &mut write,
+        json!({"tract": "think", "event": "daily_complete", "day": "20260103"}),
+    )
+    .await;
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            let status = receive_status(&mut reader).await;
+            if status["queues"]["maintenance:timeline:rollup"] == 1 {
+                break;
+            }
+        }
+    })
+    .await
+    .expect("second day queued before configuration reload");
+    fs::write(
+        journal.0.join("config/schedules.json"),
+        serde_json::to_vec(&json!({"maintenance:timeline:rollup": {
+            "cmd": command, "every": "daily", "max_runtime": "125m"
+        }}))
+        .unwrap(),
+    )
+    .unwrap();
+    send_message(
+        &mut write,
+        json!({"tract": "think", "event": "daily_complete", "day": "20260104"}),
+    )
+    .await;
+    fs::write(journal.0.join("release-20260102"), b"").unwrap();
+    let second = receive_timeline_task(&mut reader, "20260103").await;
+    assert_eq!(second["max_runtime_seconds"], 5700);
+    fs::write(journal.0.join("release-20260103"), b"").unwrap();
+    let third = receive_timeline_task(&mut reader, "20260104").await;
+    assert_eq!(third["max_runtime_seconds"], 7500);
+    let scheduler: Value =
+        serde_json::from_slice(&fs::read(journal.0.join("health/scheduler.json")).unwrap())
+            .unwrap();
+    assert_eq!(scheduler["maintenance:timeline:rollup"]["last_run"], later);
+    assert_eq!(
+        scheduler["maintenance:timeline:rollup"]["last_status"],
+        "error"
+    );
+}
+
+async fn receive_timeline_task(
+    reader: &mut tokio::io::BufReader<tokio::net::unix::OwnedReadHalf>,
+    day: &str,
+) -> Value {
+    let reference = format!("supervisor-timeline-rollup-{day}");
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            let status = receive_status(reader).await;
+            if let Some(task) = status["tasks"]
+                .as_array()
+                .and_then(|tasks| tasks.iter().find(|task| task["ref"] == reference))
+            {
+                return task.clone();
+            }
+        }
+    })
+    .await
+    .expect("Timeline followup task appears in supervisor status")
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

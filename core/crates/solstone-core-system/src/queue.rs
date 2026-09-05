@@ -950,7 +950,7 @@ fn normalize_request(request: ExecutionRequest, caps: &dyn CapResolver) -> Submi
             command: request.cmd.as_wire().to_vec(),
             reference: request.reference,
             day: request.day,
-            scheduler_name: Some(request.scheduler_name),
+            scheduler_name: request.scheduler_name,
             daily_catchup_provenance: None,
         },
     }

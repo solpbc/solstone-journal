@@ -68,7 +68,7 @@ impl Sink {
             .lock()
             .expect("sink")
             .iter()
-            .map(|request| request.scheduler_name.clone())
+            .map(|request| request.scheduler_name.clone().expect("clock schedule name"))
             .collect()
     }
 }
