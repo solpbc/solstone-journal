@@ -1479,7 +1479,7 @@ fn history_phase_injection_rolls_back_and_retry_succeeds() {
 }
 
 #[test]
-fn edges_phase_injection_rolls_back_and_retry_succeeds() {
+fn index_failure_retains_committed_source_and_retry_repairs_without_remerging() {
     let journal = voiceprint_journal();
     for id in ["source", "target"] {
         save_entity_identity(
@@ -1507,6 +1507,12 @@ fn edges_phase_injection_rolls_back_and_retry_succeeds() {
             Some(&|phase, artifact_index| phase == "edges" && artifact_index == 0)
         )
         .is_err()
+    );
+    assert!(!journal.join("entities/source").exists());
+    assert!(
+        journal
+            .join("health/entity-merge-recovery/state.json")
+            .exists()
     );
     let connection = solstone_core_indexer_store::db::open_index(&journal).unwrap();
     let source_edges: i64 = connection
@@ -2155,5 +2161,63 @@ fn merge_facets_relinks_when_target_has_no_relationship_dir() {
         "{\"content\":\"kept\"}\n"
     );
     assert!(!journal.join("facets/work/entities/tgt-id").exists());
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn failed_merge_preserves_an_unrelated_committed_index_write() {
+    let journal = voiceprint_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(&journal, id, &json!({"id":id,"name":id}), None).unwrap();
+    }
+    let connection = solstone_core_indexer_store::db::open_index(&journal).unwrap();
+    connection
+        .execute("CREATE TABLE independent_write(value TEXT)", [])
+        .unwrap();
+    let injected = connection;
+    let result = commit_entity_merge_with_injector(
+        &journal,
+        "source",
+        "target",
+        EntityMergeOptions::default(),
+        Some(&move |phase, _| {
+            if phase == "history" {
+                injected
+                    .execute("INSERT INTO independent_write VALUES ('acknowledged')", [])
+                    .unwrap();
+                true
+            } else {
+                false
+            }
+        }),
+    );
+    assert!(result.is_err());
+    assert!(journal.join("entities/source").exists());
+    let connection = solstone_core_indexer_store::db::open_index(&journal).unwrap();
+    let retained: String = connection
+        .query_row("SELECT value FROM independent_write", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(retained, "acknowledged");
+    drop(connection);
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn malformed_recovery_journal_leaves_source_untouched() {
+    let journal = voiceprint_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(&journal, id, &json!({"id":id,"name":id}), None).unwrap();
+    }
+    let root = journal.join("health/entity-merge-recovery");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("state.json"), "{broken").unwrap();
+    let entities = solstone_core_journal_io::capture_snapshot(&journal, "entities").unwrap();
+    assert!(
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).is_err()
+    );
+    assert_eq!(
+        solstone_core_journal_io::capture_snapshot(&journal, "entities").unwrap(),
+        entities
+    );
     fs::remove_dir_all(journal).unwrap();
 }

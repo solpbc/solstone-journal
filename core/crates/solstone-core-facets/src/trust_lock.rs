@@ -58,6 +58,7 @@ impl From<LockError> for FacetTrustLockError {
 #[derive(Debug)]
 pub struct FacetTrustLock {
     lock_path: PathBuf,
+    _entity: solstone_core_entity::EntityTrustLock,
     _not_send: PhantomData<*const ()>,
 }
 
@@ -88,6 +89,19 @@ pub(crate) fn hold_facet_trust_lock_with_options(
     journal_root: &Path,
     options: LockOptions,
 ) -> Result<FacetTrustLock, FacetTrustLockError> {
+    // Entity merges also rewrite facet memory. Every nested acquisition uses
+    // entity -> facet -> individual artifact, including calls from entity code.
+    let entity =
+        solstone_core_entity::hold_entity_trust_lock(journal_root).map_err(
+            |error| match error {
+                solstone_core_entity::EntityTrustLockError::Path(error) => {
+                    FacetTrustLockError::Path(error)
+                }
+                solstone_core_entity::EntityTrustLockError::Lock(error) => {
+                    FacetTrustLockError::Lock(error)
+                }
+            },
+        )?;
     let lock_path = contained_path(journal_root, TRUST_LOCK_RELATIVE_PATH)?;
     let owner = thread::current().id();
     let coordinator = coordinator();
@@ -100,7 +114,7 @@ pub(crate) fn hold_facet_trust_lock_with_options(
                 ..
             }) if *held_owner == owner => {
                 *depth += 1;
-                return Ok(FacetTrustLock::new(lock_path));
+                return Ok(FacetTrustLock::new(lock_path, entity));
             }
             Some(TrustLockState::Acquiring {
                 owner: acquiring_owner,
@@ -134,7 +148,7 @@ pub(crate) fn hold_facet_trust_lock_with_options(
                 }) if acquiring_owner == owner
             ));
             coordinator.available.notify_all();
-            Ok(FacetTrustLock::new(lock_path))
+            Ok(FacetTrustLock::new(lock_path, entity))
         }
         Err(error) => {
             let mut state = lock_state(coordinator);
@@ -163,9 +177,10 @@ pub fn hold_facet_trust_lock_raw_for_test(
 }
 
 impl FacetTrustLock {
-    fn new(lock_path: PathBuf) -> Self {
+    fn new(lock_path: PathBuf, entity: solstone_core_entity::EntityTrustLock) -> Self {
         Self {
             lock_path,
+            _entity: entity,
             _not_send: PhantomData,
         }
     }

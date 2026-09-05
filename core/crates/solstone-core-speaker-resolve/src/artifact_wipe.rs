@@ -51,6 +51,17 @@ pub fn wipe_speaker_artifacts(
     journal_root: &Path,
     dry_run: bool,
 ) -> Result<WipeReport, ArtifactWipeError> {
+    let _trust = (!dry_run)
+        .then(|| solstone_core_entity::hold_entity_trust_lock(journal_root))
+        .transpose()
+        .map_err(|error| match error {
+            solstone_core_entity::EntityTrustLockError::Path(error) => {
+                ArtifactWipeError::Path(error)
+            }
+            solstone_core_entity::EntityTrustLockError::Lock(error) => {
+                ArtifactWipeError::Lock(error)
+            }
+        })?;
     let mut report = WipeReport {
         dry_run,
         ..WipeReport::default()

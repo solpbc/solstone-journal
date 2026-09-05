@@ -84,3 +84,26 @@ mod trust_lock_tests;
 mod undo_tests;
 #[cfg(test)]
 mod voiceprint_tests;
+
+#[cfg(feature = "test-hooks")]
+pub type MergeFailureInjectorForTest = dyn Fn(&str, usize) -> bool;
+
+/// Exercise merge interruption boundaries from the component test harness.
+#[cfg(feature = "test-hooks")]
+pub fn commit_entity_merge_with_injector_for_test(
+    journal: &std::path::Path,
+    source_id: &str,
+    target_id: &str,
+    options: EntityMergeOptions,
+    fallback_encoder: &EncoderIdentity,
+    injector: Option<&MergeFailureInjectorForTest>,
+) -> Result<EntityMergeReport, EntityMergeError> {
+    store::merge::commit_entity_merge_with_injector(
+        journal,
+        source_id,
+        target_id,
+        options,
+        fallback_encoder,
+        injector,
+    )
+}

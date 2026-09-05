@@ -161,6 +161,15 @@ fn locked_modify_day_records<T>(
         Vec<ActivityRecord>,
     ) -> Result<(Vec<ActivityRecord>, T), ActivityRecordStoreError>,
 ) -> Result<T, ActivityRecordStoreError> {
+    let _entity =
+        solstone_core_entity::hold_entity_trust_lock(root).map_err(|error| match error {
+            solstone_core_entity::EntityTrustLockError::Path(error) => {
+                ActivityRecordStoreError::Path(error)
+            }
+            solstone_core_entity::EntityTrustLockError::Lock(error) => {
+                ActivityRecordStoreError::Lock(error)
+            }
+        })?;
     let path = day_path(root, facet, day)?;
     let _lock = hold_lock(&path, LockOptions::default())?;
     let existed = path.exists();

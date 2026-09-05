@@ -276,3 +276,217 @@ fn concurrent_batch_saves_preserve_both_updates() {
         2
     );
 }
+
+mod merge_recovery {
+    use super::*;
+    use solstone_core_entity::{EntityMergeOptions, save_entity_identity};
+    fn commit_entity_merge(
+        journal: &Path,
+        source: &str,
+        target: &str,
+        options: EntityMergeOptions,
+    ) -> Result<solstone_core_entity::EntityMergeReport, solstone_core_entity::EntityMergeError>
+    {
+        solstone_core_entity::commit_entity_merge(journal, source, target, options, &test_encoder())
+    }
+    fn commit_entity_merge_with_injector(
+        journal: &Path,
+        source: &str,
+        target: &str,
+        options: EntityMergeOptions,
+        injector: Option<&solstone_core_entity::MergeFailureInjectorForTest>,
+    ) -> Result<solstone_core_entity::EntityMergeReport, solstone_core_entity::EntityMergeError>
+    {
+        solstone_core_entity::commit_entity_merge_with_injector_for_test(
+            journal,
+            source,
+            target,
+            options,
+            &test_encoder(),
+            injector,
+        )
+    }
+    #[test]
+    fn interrupted_merge_child() {
+        let Some(journal) = std::env::var_os("SOLSTONE_ENTITY_MERGE_CRASH_JOURNAL") else {
+            return;
+        };
+        let phase = std::env::var("SOLSTONE_ENTITY_MERGE_CRASH_PHASE").unwrap();
+        let _ = commit_entity_merge_with_injector(
+            Path::new(&journal),
+            "source",
+            "target",
+            EntityMergeOptions::default(),
+            Some(&move |observed, _| {
+                if observed == phase {
+                    std::process::exit(77);
+                }
+                false
+            }),
+        );
+        panic!("crash point was not reached");
+    }
+
+    fn crash_merge(journal: &Path, phase: &str) {
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "merge_recovery::interrupted_merge_child",
+                "--nocapture",
+            ])
+            .env("SOLSTONE_ENTITY_MERGE_CRASH_JOURNAL", journal)
+            .env("SOLSTONE_ENTITY_MERGE_CRASH_PHASE", phase)
+            .status()
+            .unwrap();
+        assert_eq!(status.code(), Some(77));
+    }
+
+    fn recovery_fixture() -> PathBuf {
+        let journal = std::env::temp_dir().join(format!(
+            "solstone-merge-recovery-{}-{}",
+            std::process::id(),
+            NEXT_TEMP_DIR.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&journal).unwrap();
+        for id in ["source", "target"] {
+            save_entity_identity(&journal, id, &json!({"id":id,"name":id}), None).unwrap();
+            let facet = journal.join(format!("facets/work/entities/{id}"));
+            fs::create_dir_all(&facet).unwrap();
+            fs::write(
+                facet.join("entity.json"),
+                format!("{{\"entity_id\":\"{id}\"}}"),
+            )
+            .unwrap();
+            fs::write(
+                facet.join("observations.jsonl"),
+                format!("{{\"content\":\"{id} memory\"}}\n"),
+            )
+            .unwrap();
+        }
+        journal
+    }
+
+    #[test]
+    fn checkpointed_process_interruption_recovers_through_merge_retry() {
+        for phase in ["history", "edges"] {
+            let journal = recovery_fixture();
+            crash_merge(&journal, phase);
+            assert!(!journal.join("entities/source").exists());
+            assert!(
+                journal
+                    .join("health/entity-merge-recovery/state.json")
+                    .exists()
+            );
+            let report =
+                commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
+                    .unwrap();
+            assert_eq!(report.target_id, "target");
+            assert!(!journal.join("health/entity-merge-recovery").exists());
+            let rows =
+                fs::read_to_string(journal.join("facets/work/entities/target/observations.jsonl"))
+                    .unwrap();
+            assert!(rows.contains("source memory"));
+            assert!(rows.contains("target memory"));
+            fs::remove_dir_all(journal).unwrap();
+        }
+    }
+
+    #[test]
+    fn interrupted_recovery_refuses_new_owner_changes_and_retains_before_images() {
+        let journal = recovery_fixture();
+        crash_merge(&journal, "history");
+        save_entity_identity(
+            &journal,
+            "target",
+            &json!({"id":"target","name":"new owner name"}),
+            None,
+        )
+        .unwrap();
+        let before = fs::read(journal.join("entities/target/entity.json")).unwrap();
+        let error =
+            commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
+                .unwrap_err();
+        assert!(error.to_string().contains("recovery conflicts"));
+        assert_eq!(
+            fs::read(journal.join("entities/target/entity.json")).unwrap(),
+            before
+        );
+        assert!(
+            journal
+                .join("health/entity-merge-recovery/00000000.json")
+                .exists()
+        );
+        fs::remove_dir_all(journal).unwrap();
+    }
+
+    #[test]
+    fn interruption_inside_a_phase_refuses_without_discarding_recovery_evidence() {
+        let journal = recovery_fixture();
+        crash_merge(&journal, "facets");
+        let before = fs::read(journal.join("facets/work/entities/target/entity.json")).unwrap();
+        let error =
+            commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
+                .unwrap_err();
+        assert!(error.to_string().contains("recovery conflicts"));
+        assert_eq!(
+            fs::read(journal.join("facets/work/entities/target/entity.json")).unwrap(),
+            before
+        );
+        assert!(
+            journal
+                .join("health/entity-merge-recovery/00000000.json")
+                .exists()
+        );
+        fs::remove_dir_all(journal).unwrap();
+    }
+
+    #[test]
+    fn interrupted_recovery_rejects_corrupt_or_missing_before_images_before_any_restore() {
+        for corruption in [
+            "nested_path",
+            "missing_record",
+            "new_child",
+            "unexpected_record",
+        ] {
+            let journal = recovery_fixture();
+            crash_merge(&journal, "history");
+            let root = journal.join("health/entity-merge-recovery");
+            match corruption {
+                "nested_path" => {
+                    let path = root.join("00000000.json");
+                    let mut value: serde_json::Value =
+                        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                    value["entries"][0]["path"] = json!("entities/other/entity.json");
+                    fs::write(path, serde_json::to_vec(&value).unwrap()).unwrap();
+                }
+                "unexpected_record" => {
+                    fs::write(root.join("unknown-before-image"), "keep evidence").unwrap();
+                }
+                "missing_record" => {
+                    fs::remove_file(root.join("00000000.json")).unwrap();
+                }
+                "new_child" => {
+                    fs::write(journal.join("entities/target/new-owner-file"), "new bytes").unwrap();
+                }
+                _ => unreachable!(),
+            }
+            let entities =
+                solstone_core_journal_io::capture_snapshot(&journal, "entities").unwrap();
+            let facets = solstone_core_journal_io::capture_snapshot(&journal, "facets").unwrap();
+            let error =
+                commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
+                    .unwrap_err();
+            assert!(error.to_string().contains("recovery"), "{error}");
+            assert_eq!(
+                solstone_core_journal_io::capture_snapshot(&journal, "entities").unwrap(),
+                entities
+            );
+            assert_eq!(
+                solstone_core_journal_io::capture_snapshot(&journal, "facets").unwrap(),
+                facets
+            );
+            assert!(root.join("state.json").exists());
+            fs::remove_dir_all(journal).unwrap();
+        }
+    }
+}

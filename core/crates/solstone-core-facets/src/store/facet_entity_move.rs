@@ -9,10 +9,11 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
 use solstone_core_entity_matching::{entity_slug, normalize_resolution_query};
+use solstone_core_journal_io::{AtomicWriteOptions, write_text};
 
 use crate::hold_facet_trust_lock;
 
-use super::error::FacetEntityWriteError;
+use super::error::{FacetEntityWriteError, FacetWriteError};
 use super::facet_entities::list_scoped_facet_entities;
 use super::identity::read_facet_entity_link;
 use super::write::save_facet_entity_link;
@@ -180,10 +181,12 @@ fn merge_observations(source: &Path, destination: &Path) -> Result<(), FacetEnti
             lines.push(line.to_owned());
         }
     }
-    fs::write(
+    write_text(
         destination,
-        lines.join("\n") + if lines.is_empty() { "" } else { "\n" },
-    )?;
+        &(lines.join("\n") + if lines.is_empty() { "" } else { "\n" }),
+        AtomicWriteOptions::default(),
+    )
+    .map_err(FacetWriteError::ContentWrite)?;
     Ok(())
 }
 

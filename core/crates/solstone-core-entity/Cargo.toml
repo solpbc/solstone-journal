@@ -9,6 +9,9 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+test-hooks = []
+
 [dependencies]
 caseless = "0.2.2"
 chrono.workspace = true
@@ -33,3 +36,4 @@ workspace = true
 [[test]]
 name = "entity_trust_lock_component"
 path = "tests/entity_trust_lock_component.rs"
+required-features = ["test-hooks"]

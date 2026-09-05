@@ -39,7 +39,7 @@ use super::merge_rollback::MergeRollback;
 
 type FailureInjector = dyn Fn(&str, usize) -> bool;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EntityUndoReport {
     pub merge_id: String,
     pub source_id: String,
@@ -119,6 +119,15 @@ pub(crate) fn undo_entity_merge_with_injector(
     caller: Value,
     injector: Option<&FailureInjector>,
 ) -> Result<EntityUndoReport, EntityUndoError> {
+    let _trust = hold_entity_trust_lock(journal)
+        .map_err(|error| EntityUndoError::Write(EntityWriteError::TrustLock(error)))?;
+    if let Some(recovered) = super::merge_rollback::recover(journal)?
+        && recovered["operation"] == "undo"
+        && recovered["report"]["merge_id"] == merge_id
+    {
+        return serde_json::from_value(recovered["report"].clone())
+            .map_err(|error| EntityUndoError::Refused(error.to_string()));
+    }
     let target_id = find_payload_holder(journal, merge_id)?;
     let target_dir = resolve_entity_dir(journal, &target_id)
         .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
@@ -131,39 +140,46 @@ pub(crate) fn undo_entity_merge_with_injector(
             EntityUndoError::Refused("merge payload missing source entity id".to_owned())
         })?
         .to_owned();
-    let source_snapshots = source_state_snapshots(&payload)?;
+    let source_snapshots = preflight_source_restoration(
+        journal,
+        &target_id,
+        source_state_snapshots(&payload)?,
+        &payload,
+    )?;
     let report = EntityUndoReport {
         merge_id: merge_id.to_owned(),
         source_id: source_id.clone(),
         target_id: target_id.clone(),
     };
-    let _trust = hold_entity_trust_lock(journal).map_err(|error| EntityUndoError::Failed {
-        failed_phase: "trust_lock".to_owned(),
-        report: Box::new(report.clone()),
-        rollback_error: Some(error.to_string()),
-    })?;
-    let mut rollback = MergeRollback::default();
+    let mut rollback = MergeRollback::begin(journal)?;
     let mut phase = "snapshot";
     let result: Result<(), EntityUndoError> = (|| {
-        let mut paths = HashSet::from([format!("entities/{target_dir}"), "indexer".to_owned()]);
+        let mut paths = HashSet::from([format!("entities/{target_dir}")]);
         paths.extend(source_snapshots.iter().map(snapshot_path));
         for path in paths {
             rollback.capture(journal, &path)?;
         }
+        rollback.checkpoint(journal)?;
         phase = "source_state";
         for snapshot in &source_snapshots {
             restore_snapshot(journal, snapshot)?;
         }
+        rollback.checkpoint(journal)?;
         phase = "voiceprints";
         undo_voiceprints(journal, &target_dir, &payload, &mut rollback)?;
+        rollback.checkpoint(journal)?;
         phase = "segments";
         undo_segments(journal, &payload, &mut rollback, injector)?;
+        rollback.checkpoint(journal)?;
         phase = "activities";
         undo_activities(journal, &payload, &mut rollback, injector)?;
+        rollback.checkpoint(journal)?;
         phase = "observations";
         undo_observation_relations(journal, &payload, &mut rollback, injector)?;
+        rollback.checkpoint(journal)?;
         phase = "facets";
         undo_facets(journal, &target_id, &payload, &mut rollback, injector)?;
+        rollback.checkpoint(journal)?;
         phase = "lineage";
         let source_dir = resolve_entity_dir(journal, &source_id)
             .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
@@ -175,6 +191,7 @@ pub(crate) fn undo_entity_merge_with_injector(
             &payload,
             &mut rollback,
         )?;
+        rollback.checkpoint(journal)?;
         phase = "identity";
         let target_after_undo =
             replay_target_identity(journal, &target_dir, &payload, &active_payloads)?;
@@ -193,11 +210,10 @@ pub(crate) fn undo_entity_merge_with_injector(
                 }),
             }),
         )?;
+        rollback.checkpoint(journal)?;
         phase = "private_payload";
         remove_entity_merge_payload(journal, &target_dir, merge_id)?;
-        phase = "edges";
-        solstone_core_indexer_store::merge::rebuild_edges_for_recorded_merge_undo(journal)
-            .map_err(EntityUndoError::Index)?;
+        rollback.checkpoint(journal)?;
         Ok(())
     })();
     if let Err(error) = result {
@@ -211,6 +227,23 @@ pub(crate) fn undo_entity_merge_with_injector(
             rollback_error: rollback_error.or_else(|| Some(error.to_string())),
         });
     }
+    let mut committed = serde_json::json!({"operation":"undo", "report":report});
+    rollback.commit_source(journal, "undo", &committed["report"])?;
+    if injector.is_some_and(|injector| injector("edges", 0)) {
+        return Err(EntityUndoError::Refused(
+            "entity merge undo committed; index repair pending: injected failure".to_owned(),
+        ));
+    }
+    super::merge_rollback::repair_index(journal, &mut committed).map_err(|error| {
+        EntityUndoError::Refused(format!(
+            "entity merge undo committed; index repair pending: {error}"
+        ))
+    })?;
+    rollback.finish(journal).map_err(|error| {
+        EntityUndoError::Refused(format!(
+            "entity merge undo committed; recovery cleanup pending: {error}"
+        ))
+    })?;
     Ok(report)
 }
 
@@ -829,6 +862,7 @@ fn undo_segments(
         })?;
         let destination = contained_path(journal, path)
             .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
+        rollback.lock_file(&destination)?;
         let mut value: Value = read_json(&destination, Value::Null, MalformedPolicy::Raise)
             .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
         let object = value
@@ -882,6 +916,7 @@ fn undo_activities(
         })?;
         let destination = contained_path(journal, path)
             .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
+        rollback.lock_file(&destination)?;
         let mut rows: Vec<Value> = read_jsonl(&destination, Vec::new(), MalformedPolicy::Raise)
             .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
         let row = rows
@@ -983,6 +1018,95 @@ fn find_payload_holder(journal: &Path, merge_id: &str) -> Result<String, EntityU
     Err(EntityUndoError::Refused(format!(
         "private merge payload not found: {merge_id}"
     )))
+}
+
+fn preflight_source_restoration(
+    journal: &Path,
+    target_id: &str,
+    snapshots: Vec<JournalSnapshot>,
+    payload: &Value,
+) -> Result<Vec<JournalSnapshot>, EntityUndoError> {
+    for entry in payload["manifest"]["facets"]["entries"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        if entry["kind"] == "move" {
+            return Err(EntityUndoError::Refused(
+                "cannot safely undo legacy moved facet without recorded target state".to_owned(),
+            ));
+        }
+        if entry["kind"] == "merge" {
+            let facet = entry["facet"].as_str().ok_or_else(|| {
+                EntityUndoError::Refused("merge payload facet is missing".to_owned())
+            })?;
+            let directory = entry["target_dir"].as_str().ok_or_else(|| {
+                EntityUndoError::Refused("merge payload target directory is missing".to_owned())
+            })?;
+            for name in ["entity.json", "observations.jsonl"] {
+                let relative = format!("facets/{facet}/entities/{directory}/{name}");
+                let expected = entry["undo_expected"][name].as_str().ok_or_else(|| {
+                    EntityUndoError::Refused(format!(
+                        "cannot safely undo merge: recorded target state is missing at {relative}"
+                    ))
+                })?;
+                let current = solstone_core_journal_io::capture_snapshot(journal, &relative)?;
+                if super::merge_rollback::fingerprint(&current) != expected {
+                    return Err(EntityUndoError::Refused(format!(
+                        "cannot undo merge: target facet changed at {relative}"
+                    )));
+                }
+            }
+        }
+    }
+    let relinks: HashSet<String> = payload["manifest"]["facets"]["entries"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|entry| entry["kind"] == "relink")
+        .filter_map(|entry| {
+            Some(format!(
+                "facets/{}/entities/{}",
+                entry["facet"].as_str()?,
+                entry["target_dir"].as_str()?
+            ))
+        })
+        .collect();
+    let mut restore = Vec::new();
+    for snapshot in snapshots {
+        super::merge_rollback::validate_before_image(journal, &snapshot, None)?;
+        let relative = snapshot_path(&snapshot);
+        if !(relative.starts_with("entities/") || relative.starts_with("facets/")) {
+            return Err(EntityUndoError::Refused(
+                "invalid undo source snapshot path".to_owned(),
+            ));
+        }
+        let path = contained_path(journal, &relative)
+            .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
+        if relinks.contains(&relative) {
+            // This directory now belongs to the target. Keep its newer memory;
+            // the facet phase reverses only the recorded entity link.
+            let link: Value = read_json(
+                path.join("entity.json"),
+                Value::Null,
+                MalformedPolicy::Raise,
+            )
+            .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
+            if link["entity_id"] != target_id {
+                return Err(EntityUndoError::Refused(format!(
+                    "cannot undo merge: facet link changed at {relative}"
+                )));
+            }
+        } else {
+            if path_lexists(&path).map_err(|error| EntityUndoError::Refused(error.to_string()))? {
+                return Err(EntityUndoError::Refused(format!(
+                    "cannot undo merge: source destination is occupied at {relative}"
+                )));
+            }
+            restore.push(snapshot);
+        }
+    }
+    Ok(restore)
 }
 
 fn source_state_snapshots(payload: &Value) -> Result<Vec<JournalSnapshot>, EntityUndoError> {

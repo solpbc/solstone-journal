@@ -287,6 +287,15 @@ pub fn write_owner_centroid(
     principal_entity_id: &str,
     input: &OwnerCentroidWriteInput,
 ) -> Result<(), OwnerCentroidWriteError> {
+    // Refuse an unadmitted target without creating lock artifacts; recheck
+    // admission below under the guard before resolving the writable path.
+    require_admitted_owner_target(journal_root, principal_entity_id)
+        .map_err(write_admission_failure)?;
+    let _trust = solstone_core_entity::hold_entity_trust_lock(journal_root).map_err(|error| {
+        OwnerCentroidWriteError::EntityPath(solstone_core_entity::EntityLifecycleError::TrustLock(
+            error,
+        ))
+    })?;
     require_admitted_owner_target(journal_root, principal_entity_id)
         .map_err(write_admission_failure)?;
     let centroid = normalize_embedding(&input.centroid).ok_or_else(|| {
@@ -309,6 +318,15 @@ pub fn rebuild_owner_centroid(
     principal_entity_id: &str,
     input: &OwnerCentroidRebuildInput,
 ) -> Result<OwnerCentroidRebuildOutcome, OwnerCentroidWriteError> {
+    // Refuse an unadmitted target without creating lock artifacts; recheck
+    // admission below under the guard before resolving the writable path.
+    require_admitted_owner_target(journal_root, principal_entity_id)
+        .map_err(write_admission_failure)?;
+    let _trust = solstone_core_entity::hold_entity_trust_lock(journal_root).map_err(|error| {
+        OwnerCentroidWriteError::EntityPath(solstone_core_entity::EntityLifecycleError::TrustLock(
+            error,
+        ))
+    })?;
     require_admitted_owner_target(journal_root, principal_entity_id)
         .map_err(write_admission_failure)?;
     let candidate = normalize_embedding(&input.centroid).ok_or_else(|| {

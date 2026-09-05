@@ -1119,3 +1119,170 @@ fn undo_entity_merge_restores_remapped_source_and_target_directories() {
     assert!(!journal.join("entities/target").exists());
     fs::remove_dir_all(journal).unwrap();
 }
+
+#[test]
+fn failed_undo_preserves_unrelated_index_commit_and_pending_repair_retries() {
+    let journal = undo_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(&journal, id, &json!({"id":id,"name":id}), None).unwrap();
+    }
+    let facet = journal.join("facets/work/entities/source");
+    fs::create_dir_all(&facet).unwrap();
+    fs::write(facet.join("entity.json"), br#"{"entity_id":"source"}"#).unwrap();
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    let connection = solstone_core_indexer_store::db::open_index(&journal).unwrap();
+    connection
+        .execute("CREATE TABLE independent_write(value TEXT)", [])
+        .unwrap();
+    let failure = undo_entity_merge_with_injector(
+        &journal,
+        &merge.merge_id,
+        Value::Null,
+        Some(&move |phase, _| {
+            if phase == "facets" {
+                connection
+                    .execute("INSERT INTO independent_write VALUES ('acknowledged')", [])
+                    .unwrap();
+                true
+            } else {
+                false
+            }
+        }),
+    );
+    assert!(failure.is_err());
+    let fresh = solstone_core_indexer_store::db::open_index(&journal).unwrap();
+    let value: String = fresh
+        .query_row("SELECT value FROM independent_write", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(value, "acknowledged");
+    drop(fresh);
+
+    let pending = undo_entity_merge_with_injector(
+        &journal,
+        &merge.merge_id,
+        Value::Null,
+        Some(&|phase, _| phase == "edges"),
+    )
+    .unwrap_err();
+    assert!(
+        pending
+            .to_string()
+            .contains("undo committed; index repair pending")
+    );
+    assert!(journal.join("entities/source/entity.json").exists());
+    undo_entity_merge(&journal, &merge.merge_id, Value::Null).unwrap();
+    assert!(!journal.join("health/entity-merge-recovery").exists());
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn undo_preserves_new_relinked_facet_memory_and_refuses_recreated_source() {
+    for occupied in [
+        None,
+        Some("entities/source"),
+        Some("facets/work/entities/source"),
+    ] {
+        let journal = undo_journal();
+        for id in ["source", "target"] {
+            save_entity_identity(&journal, id, &json!({"id":id,"name":id}), None).unwrap();
+        }
+        let facet = journal.join("facets/work/entities/source");
+        fs::create_dir_all(&facet).unwrap();
+        fs::write(facet.join("entity.json"), br#"{"entity_id":"source"}"#).unwrap();
+        // A merged facet leaves an absent source destination; relink intentionally keeps it.
+        if occupied == Some("facets/work/entities/source") {
+            let target = journal.join("facets/work/entities/target");
+            fs::create_dir_all(&target).unwrap();
+            fs::write(target.join("entity.json"), br#"{"entity_id":"target"}"#).unwrap();
+        }
+        let merged =
+            commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
+                .unwrap();
+        if let Some(occupied) = occupied {
+            let path = journal.join(occupied);
+            fs::create_dir_all(&path).unwrap();
+            fs::write(path.join("new-owner-file"), "keep me").unwrap();
+            let entities =
+                solstone_core_journal_io::capture_snapshot(&journal, "entities").unwrap();
+            let facets = solstone_core_journal_io::capture_snapshot(&journal, "facets").unwrap();
+            let error = undo_entity_merge(&journal, &merged.merge_id, Value::Null).unwrap_err();
+            assert!(error.to_string().contains("source destination is occupied"));
+            assert_eq!(
+                solstone_core_journal_io::capture_snapshot(&journal, "entities").unwrap(),
+                entities
+            );
+            assert_eq!(
+                solstone_core_journal_io::capture_snapshot(&journal, "facets").unwrap(),
+                facets
+            );
+        } else {
+            fs::write(
+                facet.join("observations.jsonl"),
+                "{\"content\":\"new owner memory\"}\n",
+            )
+            .unwrap();
+            undo_entity_merge(&journal, &merged.merge_id, Value::Null).unwrap();
+            assert!(
+                fs::read_to_string(facet.join("observations.jsonl"))
+                    .unwrap()
+                    .contains("new owner memory")
+            );
+            let link: Value =
+                serde_json::from_slice(&fs::read(facet.join("entity.json")).unwrap()).unwrap();
+            assert_eq!(link["entity_id"], "source");
+        }
+        fs::remove_dir_all(journal).unwrap();
+    }
+}
+
+#[test]
+fn merged_facet_undo_without_recorded_after_state_refuses_before_source_mutation() {
+    let journal = undo_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(&journal, id, &json!({"id":id,"name":id}), None).unwrap();
+        let facet = journal.join(format!("facets/work/entities/{id}"));
+        fs::create_dir_all(&facet).unwrap();
+        fs::write(
+            facet.join("entity.json"),
+            serde_json::to_vec(&json!({"entity_id":id})).unwrap(),
+        )
+        .unwrap();
+    }
+    let merged =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    let mut payload = super::store::merge_payload::load_entity_merge_payload(
+        &journal,
+        "target",
+        &merged.merge_id,
+    )
+    .unwrap();
+    payload["manifest"]["facets"]["entries"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("undo_expected");
+    super::store::merge_payload::record_entity_merge_payload(
+        &journal,
+        "target",
+        &merged.merge_id,
+        &payload,
+    )
+    .unwrap();
+    let entities = solstone_core_journal_io::capture_snapshot(&journal, "entities").unwrap();
+    let facets = solstone_core_journal_io::capture_snapshot(&journal, "facets").unwrap();
+    let error = undo_entity_merge(&journal, &merged.merge_id, Value::Null).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("recorded target state is missing")
+    );
+    assert_eq!(
+        solstone_core_journal_io::capture_snapshot(&journal, "entities").unwrap(),
+        entities
+    );
+    assert_eq!(
+        solstone_core_journal_io::capture_snapshot(&journal, "facets").unwrap(),
+        facets
+    );
+    fs::remove_dir_all(journal).unwrap();
+}

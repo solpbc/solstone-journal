@@ -371,6 +371,8 @@ pub fn save_voiceprints_batch(
     if new_items.is_empty() {
         return Ok(0);
     }
+    let _trust =
+        crate::hold_entity_trust_lock(journal_root).map_err(EntityLifecycleError::TrustLock)?;
     let (_directory, path) = resolve_voiceprint_path(journal_root, entity_id, true)?;
     let _lock = hold_lock(&path, LockOptions::default())?;
     let mut archive = load_voiceprints(&path)?.unwrap_or_else(empty_archive);
@@ -394,6 +396,8 @@ pub fn rewrite_voiceprint_metadata<F>(
 where
     F: FnOnce(&mut [Value]) -> usize,
 {
+    let _trust =
+        crate::hold_entity_trust_lock(journal_root).map_err(EntityLifecycleError::TrustLock)?;
     let Ok((_directory, path)) = resolve_voiceprint_path(journal_root, entity_id, false) else {
         return Ok(0);
     };
@@ -429,6 +433,8 @@ pub fn remove_voiceprints_by_key(
     if removals.is_empty() {
         return Ok(report);
     }
+    let _trust =
+        crate::hold_entity_trust_lock(journal_root).map_err(EntityLifecycleError::TrustLock)?;
     let Ok((directory, path)) = resolve_voiceprint_path(journal_root, entity_id, false) else {
         mark_all_missing(&mut report, removals.len());
         return Ok(report);

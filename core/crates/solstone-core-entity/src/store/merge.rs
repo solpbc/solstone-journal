@@ -49,7 +49,7 @@ use super::voiceprints::{
     resolve_voiceprint_path, write_voiceprints_npz,
 };
 
-const PHASES: [&str; 11] = [
+const PHASES: [&str; 10] = [
     "private_payload",
     "voiceprints",
     "facets",
@@ -59,7 +59,6 @@ const PHASES: [&str; 11] = [
     "cleanup",
     "observation relation remap",
     "history",
-    "edges",
     "audit",
 ];
 type VoiceprintKey = (Option<Value>, Option<Value>, Option<Value>, Option<Value>);
@@ -79,7 +78,7 @@ pub struct EntityMergePreview {
     pub emails_added: usize,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EntityMergeReport {
     pub merge_id: String,
     pub source_id: String,
@@ -124,8 +123,6 @@ struct MergeStats {
     activities_files_scanned: usize,
     activities_files_rewritten: usize,
     observation_relations_rewritten: usize,
-    edges_rows_folded: usize,
-    edges_self_edges_dropped: usize,
 }
 fn audit_counts(
     stats: &MergeStats,
@@ -133,7 +130,7 @@ fn audit_counts(
     emails_added: usize,
     principal_transferred: bool,
 ) -> Value {
-    json!({"identity":{"akas_added":akas_added,"emails_added":emails_added,"principal_transferred":principal_transferred},"voiceprints":{"added":stats.voiceprints_added,"skipped_duplicate":stats.voiceprints_skipped_duplicate,"target_total":stats.voiceprints_target_total},"facets":{"moved":stats.facets_moved,"merged":stats.facets_merged,"observations_appended":stats.facets_observations_appended,"observation_relations_rewritten":stats.observation_relations_rewritten},"segments":{"labels_rewritten":stats.segments_labels_rewritten,"corrections_rewritten":stats.segments_corrections_rewritten,"files_scanned":stats.segments_files_scanned,"errors":0},"activities":{"records_rewritten":stats.activities_records_rewritten,"fields_rewritten":stats.activities_fields_rewritten,"files_scanned":stats.activities_files_scanned,"files_rewritten":stats.activities_files_rewritten,"errors":0},"edges":{"rows_folded":stats.edges_rows_folded,"self_edges_dropped":stats.edges_self_edges_dropped,"error":null}})
+    json!({"identity":{"akas_added":akas_added,"emails_added":emails_added,"principal_transferred":principal_transferred},"voiceprints":{"added":stats.voiceprints_added,"skipped_duplicate":stats.voiceprints_skipped_duplicate,"target_total":stats.voiceprints_target_total},"facets":{"moved":stats.facets_moved,"merged":stats.facets_merged,"observations_appended":stats.facets_observations_appended,"observation_relations_rewritten":stats.observation_relations_rewritten},"segments":{"labels_rewritten":stats.segments_labels_rewritten,"corrections_rewritten":stats.segments_corrections_rewritten,"files_scanned":stats.segments_files_scanned,"errors":0},"activities":{"records_rewritten":stats.activities_records_rewritten,"fields_rewritten":stats.activities_fields_rewritten,"files_scanned":stats.activities_files_scanned,"files_rewritten":stats.activities_files_rewritten,"errors":0},"edges":{"rows_folded":null,"self_edges_dropped":null,"error":null}})
 }
 
 #[derive(Debug)]
@@ -260,6 +257,14 @@ pub(crate) fn commit_entity_merge_with_injector(
     injector: Option<&FailureInjector>,
 ) -> Result<EntityMergeReport, EntityMergeError> {
     let _trust = hold_entity_trust_lock(journal).map_err(EntityWriteError::TrustLock)?;
+    if let Some(recovered) = super::merge_rollback::recover(journal)?
+        && recovered["operation"] == "merge"
+        && recovered["report"]["source_id"] == source_id
+        && recovered["report"]["target_id"] == target_id
+    {
+        return serde_json::from_value(recovered["report"].clone())
+            .map_err(|error| EntityMergeError::Refused(error.to_string()));
+    }
     let plan = plan_merge(journal, source_id, target_id, options)?;
     ensure_voiceprint_merge_compatible(journal, source_id, target_id)?;
     let source_dir = resolve_entity_dir(journal, source_id)?;
@@ -271,12 +276,11 @@ pub(crate) fn commit_entity_merge_with_injector(
             .map_err(|error| EntityMergeError::Refused(error.to_string()))?
             .as_nanos()
     );
-    let mut rollback = MergeRollback::default();
+    let mut rollback = MergeRollback::begin(journal)?;
     for path in [
         format!("entities/{source_dir}"),
         format!("entities/{target_dir}"),
         format!("entities/{target_dir}/history/private/{merge_id}.json"),
-        "indexer".to_owned(),
     ] {
         rollback.capture(journal, &path)?;
     }
@@ -302,20 +306,134 @@ pub(crate) fn commit_entity_merge_with_injector(
     let mut removed_source_dirs = Vec::new();
     let mut stats = MergeStats::default();
     for phase in PHASES {
+        if phase == "history" {
+            payload["result_counts"] = audit_counts(
+                &stats,
+                plan.aliases_added,
+                plan.emails_added,
+                plan.principal_transferred,
+            );
+        }
         let result = match phase {
-            "private_payload" => record_entity_merge_payload(journal, &target_dir, &merge_id, &payload).map(|_| ()).map_err(Into::into),
-            "voiceprints" => merge_voiceprints(journal, source_id, target_id, fallback_encoder, LockOptions::default()).map(|result| { stats.voiceprints_added=result.added; stats.voiceprints_skipped_duplicate=result.skipped_duplicate; stats.voiceprints_target_total=result.target_total; payload["manifest"]["voiceprints"]["support"] = Value::Array(result.support); }),
-            "facets" => merge_facets(journal, source_id, target_id, Some(&mut rollback), injector).map(|result| { stats.facets_moved=result.moved_count; stats.facets_merged=result.merged_count; stats.facets_observations_appended=result.observations_appended; touched_facets = result.touched_facets; removed_source_dirs = result.removed_source_dirs; payload["manifest"]["facets"]["entries"] = Value::Array(result.entries); }),
-            "history" => save_entity_identity(journal, target_id, &plan.target_after, Some(&EntityOperationContext { kind: EntityOperationKind::Merge, caller: Value::Null, actor: Value::Null, metadata: json!({"merge_id": merge_id, "source_id": source_id, "target_id": target_id}) })).map_err(EntityMergeError::Write).and_then(|saved| { let sequence = saved.event.and_then(|event| event.get("seq").cloned()).ok_or_else(|| EntityMergeError::Refused("merge history event was not written".to_owned()))?; payload["commit_seq"] = sequence; record_entity_merge_payload(journal, &target_dir, &merge_id, &payload)?; Ok(()) }),
-            "cleanup" => cleanup_merge(journal, &source_dir, &removed_source_dirs, Some(&mut rollback)),
-            "edges" => solstone_core_indexer_store::merge::fold_entity_edges_for_recorded_merge(journal, source_id, target_id).map_err(EntityMergeError::Index).and_then(|result| { stats.edges_rows_folded=result.rows_folded; stats.edges_self_edges_dropped=result.self_edges_dropped; payload["result_counts"] = audit_counts(&stats, plan.aliases_added, plan.emails_added, plan.principal_transferred); record_entity_merge_payload(journal, &target_dir, &merge_id, &payload)?; Ok(()) }),
-            "audit" => { let path = contained_path(journal, "logs/entity-merges.jsonl").map_err(|error| EntityMergeError::Refused(error.to_string()))?; rollback.capture(journal, "logs/entity-merges.jsonl")?; let ts = u64::try_from(SystemTime::now().duration_since(UNIX_EPOCH).map_err(|error| EntityMergeError::Refused(error.to_string()))?.as_millis()).map_err(|_| EntityMergeError::Refused("merge audit timestamp exceeds u64".to_owned()))?; append_jsonl(path, &json!({"ts":ts,"merge_id":merge_id,"source_id":source_id,"source_display_name":plan.source_display_name,"target_id":target_id,"target_display_name":plan.target_display_name,"principal_transferred":plan.principal_transferred,"counts":audit_counts(&stats, plan.aliases_added, plan.emails_added, plan.principal_transferred),"caller":Value::Null})).map_err(EntityMergeError::Audit) },
-            "segments" => merge_segment_labels(journal, source_id, target_id, Some(&mut rollback), injector).map(|result| { stats.segments_labels_rewritten=result.labels_rewritten; stats.segments_corrections_rewritten=result.corrections_rewritten; stats.segments_files_scanned=result.files_scanned; payload["manifest"]["segments"]["entries"] = Value::Array(result.entries); }),
-            "activities" => merge_activities(journal, source_id, target_id, Some(&mut rollback), injector).map(|result| { stats.activities_records_rewritten=result.records_rewritten; stats.activities_fields_rewritten=result.fields_rewritten; stats.activities_files_scanned=result.files_scanned; stats.activities_files_rewritten=result.files_rewritten; payload["manifest"]["activities"]["entries"] = Value::Array(result.entries); }),
-            "observation relation remap" => merge_observation_relations(journal, source_id, target_id, Some(&mut rollback), injector).map(|result| { stats.observation_relations_rewritten=result.rows_rewritten; payload["manifest"]["observation_relations"]["entries"] = Value::Array(result.entries); }),
-            "lineage" => rebase_lineage(journal, source_id, target_id, &source_dir, &target_dir, &plan.target_after).and_then(|ids| { if !ids.is_empty() { payload["manifest"]["rebased_merge_ids"] = Value::Array(ids.into_iter().map(Value::String).collect()); record_entity_merge_payload(journal, &target_dir, &merge_id, &payload)?; } Ok(()) }),
+            "private_payload" => {
+                record_entity_merge_payload(journal, &target_dir, &merge_id, &payload)
+                    .map(|_| ())
+                    .map_err(Into::into)
+            }
+            "voiceprints" => merge_voiceprints(
+                journal,
+                source_id,
+                target_id,
+                fallback_encoder,
+                LockOptions::default(),
+            )
+            .map(|result| {
+                stats.voiceprints_added = result.added;
+                stats.voiceprints_skipped_duplicate = result.skipped_duplicate;
+                stats.voiceprints_target_total = result.target_total;
+                payload["manifest"]["voiceprints"]["support"] = Value::Array(result.support);
+            }),
+            "facets" => merge_facets(journal, source_id, target_id, Some(&mut rollback), injector)
+                .map(|result| {
+                    stats.facets_moved = result.moved_count;
+                    stats.facets_merged = result.merged_count;
+                    stats.facets_observations_appended = result.observations_appended;
+                    touched_facets = result.touched_facets;
+                    removed_source_dirs = result.removed_source_dirs;
+                    payload["manifest"]["facets"]["entries"] = Value::Array(result.entries);
+                }),
+            "history" => (|| {
+                capture_facet_undo_expected(journal, &mut payload)?;
+                let saved = save_entity_identity(journal, target_id, &plan.target_after, Some(&EntityOperationContext {
+                    kind: EntityOperationKind::Merge, caller: Value::Null, actor: Value::Null,
+                    metadata: json!({"merge_id":merge_id,"source_id":source_id,"target_id":target_id}),
+                })).map_err(EntityMergeError::Write)?;
+                let sequence = saved
+                    .event
+                    .and_then(|event| event.get("seq").cloned())
+                    .ok_or_else(|| {
+                        EntityMergeError::Refused("merge history event was not written".to_owned())
+                    })?;
+                payload["commit_seq"] = sequence;
+                record_entity_merge_payload(journal, &target_dir, &merge_id, &payload)?;
+                Ok(())
+            })(),
+            "cleanup" => cleanup_merge(
+                journal,
+                &source_dir,
+                &removed_source_dirs,
+                Some(&mut rollback),
+            ),
+            "audit" => (|| {
+                let path = contained_path(journal, "logs/entity-merges.jsonl")
+                    .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+                rollback.capture(journal, "logs/entity-merges.jsonl")?;
+                let ts = u64::try_from(
+                    SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map_err(|error| EntityMergeError::Refused(error.to_string()))?
+                        .as_millis(),
+                )
+                .map_err(|_| {
+                    EntityMergeError::Refused("merge audit timestamp exceeds u64".to_owned())
+                })?;
+                append_jsonl(path, &json!({"ts":ts,"merge_id":merge_id,"source_id":source_id,"source_display_name":plan.source_display_name,"target_id":target_id,"target_display_name":plan.target_display_name,"principal_transferred":plan.principal_transferred,"counts":audit_counts(&stats, plan.aliases_added, plan.emails_added, plan.principal_transferred),"caller":Value::Null})).map_err(EntityMergeError::Audit)
+            })(),
+            "segments" => {
+                merge_segment_labels(journal, source_id, target_id, Some(&mut rollback), injector)
+                    .map(|result| {
+                        stats.segments_labels_rewritten = result.labels_rewritten;
+                        stats.segments_corrections_rewritten = result.corrections_rewritten;
+                        stats.segments_files_scanned = result.files_scanned;
+                        payload["manifest"]["segments"]["entries"] = Value::Array(result.entries);
+                    })
+            }
+            "activities" => {
+                merge_activities(journal, source_id, target_id, Some(&mut rollback), injector).map(
+                    |result| {
+                        stats.activities_records_rewritten = result.records_rewritten;
+                        stats.activities_fields_rewritten = result.fields_rewritten;
+                        stats.activities_files_scanned = result.files_scanned;
+                        stats.activities_files_rewritten = result.files_rewritten;
+                        payload["manifest"]["activities"]["entries"] = Value::Array(result.entries);
+                    },
+                )
+            }
+            "observation relation remap" => merge_observation_relations(
+                journal,
+                source_id,
+                target_id,
+                Some(&mut rollback),
+                injector,
+            )
+            .map(|result| {
+                stats.observation_relations_rewritten = result.rows_rewritten;
+                payload["manifest"]["observation_relations"]["entries"] =
+                    Value::Array(result.entries);
+            }),
+            "lineage" => rebase_lineage(
+                journal,
+                source_id,
+                target_id,
+                &source_dir,
+                &target_dir,
+                &plan.target_after,
+            )
+            .and_then(|ids| {
+                if !ids.is_empty() {
+                    payload["manifest"]["rebased_merge_ids"] =
+                        Value::Array(ids.into_iter().map(Value::String).collect());
+                    record_entity_merge_payload(journal, &target_dir, &merge_id, &payload)?;
+                }
+                Ok(())
+            }),
             _ => unreachable!("merge phase list is fixed"),
         };
+        let result = result.and_then(|()| {
+            rollback
+                .checkpoint(journal)
+                .map_err(EntityMergeError::Snapshot)
+        });
         if let Err(error) = result {
             let rollback_error = rollback
                 .restore(journal)
@@ -351,7 +469,54 @@ pub(crate) fn commit_entity_merge_with_injector(
         plan.emails_added,
         plan.principal_transferred,
     );
-    Ok(report)
+    // Index changes are derived work. Once this marker is durable, neither
+    // an index lock refusal nor a restart may roll source state back.
+    let mut committed = json!({"operation":"merge", "report":report});
+    rollback.commit_source(journal, "merge", &committed["report"])?;
+    if injector.is_some_and(|injector| injector("edges", 0)) {
+        return Err(EntityMergeError::Refused(
+            "entity merge committed; index repair pending: injected failure".to_owned(),
+        ));
+    }
+    super::merge_rollback::repair_index(journal, &mut committed).map_err(|error| {
+        EntityMergeError::Refused(format!(
+            "entity merge committed; index repair pending: {error}"
+        ))
+    })?;
+    rollback.finish(journal).map_err(|error| {
+        EntityMergeError::Refused(format!(
+            "entity merge committed; recovery cleanup pending: {error}"
+        ))
+    })?;
+    serde_json::from_value(committed["report"].clone())
+        .map_err(|error| EntityMergeError::Refused(error.to_string()))
+}
+
+fn capture_facet_undo_expected(
+    journal: &Path,
+    payload: &mut Value,
+) -> Result<(), EntityMergeError> {
+    // Undo may replace these two artifacts only while they still match
+    // this committed merge, including relation remapping above.
+    for entry in payload["manifest"]["facets"]["entries"]
+        .as_array_mut()
+        .into_iter()
+        .flatten()
+    {
+        if entry["kind"] == "merge" {
+            let directory = format!(
+                "facets/{}/entities/{}",
+                entry["facet"].as_str().unwrap(),
+                entry["target_dir"].as_str().unwrap()
+            );
+            for name in ["entity.json", "observations.jsonl"] {
+                entry["undo_expected"][name] = json!(super::merge_rollback::fingerprint(
+                    &capture_snapshot(journal, &format!("{directory}/{name}"))?
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn inject_failure(
@@ -607,6 +772,9 @@ pub(crate) fn merge_segment_labels(
                 {
                     continue;
                 }
+                if let Some(rollback) = rollback.as_deref_mut() {
+                    rollback.lock_file(&path)?;
+                }
                 let mut value: Value = read_json(&path, Value::Null, MalformedPolicy::Raise)
                     .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
                 let relative_path = path
@@ -665,6 +833,9 @@ pub(crate) fn merge_segment_labels(
                 .any(|bytes| bytes == source_id.as_bytes())
             {
                 continue;
+            }
+            if let Some(rollback) = rollback.as_deref_mut() {
+                rollback.lock_file(&path)?;
             }
             let mut value: Value = read_json(&path, Value::Null, MalformedPolicy::Raise)
                 .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
@@ -921,19 +1092,6 @@ fn cleanup_merge(
             rollback.capture(journal, path)?;
         }
         restore_snapshot(journal, &JournalSnapshot::Missing { path: path.clone() })?;
-    }
-    let discovery = contained_path(journal, "awareness/discovery_clusters.json")
-        .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-    if path_lexists(&discovery).map_err(|error| EntityMergeError::Refused(error.to_string()))? {
-        if let Some(rollback) = rollback {
-            rollback.capture(journal, "awareness/discovery_clusters.json")?;
-        }
-        restore_snapshot(
-            journal,
-            &JournalSnapshot::Missing {
-                path: "awareness/discovery_clusters.json".to_owned(),
-            },
-        )?;
     }
     restore_snapshot(
         journal,
