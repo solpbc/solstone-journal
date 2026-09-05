@@ -51,7 +51,7 @@
   }
 
   function plainRow(fields) {
-    const text = [fields.day, fields.stream, fields.segment]
+    const text = [fields.day && global.JournalFormat.day(fields.day), fields.stream && global.JournalFormat.stream(fields.stream), fields.segment && global.JournalFormat.segmentTime(fields.segment)]
       .map((part) => String(part ?? '').trim())
       .filter(Boolean)
       .join(META_SEPARATOR);
@@ -64,12 +64,12 @@
     const dayHref = `/app/timeline/${fields.day}`;
     const segmentHref = `/app/transcripts/${fields.day}#${fields.segment}`;
     const streamHtml = fields.stream
-      ? `<span class="ev-meta">${escapeHtml(fields.stream)}</span>`
+      ? `<span class="ev-meta">${escapeHtml(global.JournalFormat.stream(fields.stream))}</span>`
       : '';
     return '<li class="drawer-evidence-row">' +
-      `<a class="drawer-evidence-title" href="${escapeHtml(dayHref)}">${escapeHtml(fields.day)}</a>` +
+      `<a class="drawer-evidence-title" href="${escapeHtml(dayHref)}">${escapeHtml(global.JournalFormat.day(fields.day))}</a>` +
       streamHtml +
-      `<a class="ev-meta" href="${escapeHtml(segmentHref)}">${escapeHtml(fields.segment)}</a>` +
+      `<a class="ev-meta" href="${escapeHtml(segmentHref)}">${escapeHtml(global.JournalFormat.segmentTime(fields.segment))}</a>` +
       '</li>';
   }
 

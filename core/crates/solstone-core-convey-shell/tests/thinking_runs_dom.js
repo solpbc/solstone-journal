@@ -270,7 +270,16 @@ async function main() {
     setTimeout,
     clearTimeout,
   };
+  vm.runInNewContext(fs.readFileSync(path.join(manifestDir, 'assets/static/date_format.js'), 'utf8'), context);
   vm.runInNewContext(source, context, {filename: 'thinking.js'});
+  const format = window.JournalFormat;
+  assert.strictEqual(format.segmentTime('125903_60'), '12:59:03');
+  assert.strictEqual(format.segmentTime('246099_60'), 'time unavailable');
+  assert.strictEqual(format.duration(59.6), '1 min 0 sec');
+  assert.strictEqual(format.compactTokens(999500), '1M');
+  assert.strictEqual(format.compactTokens(12000), '12K');
+  assert.strictEqual(format.timestamp(null), 'time unavailable');
+  assert.strictEqual(format.stream('import.chatgpt'), 'import chatgpt');
   const thinking = window.__thinkingRuns;
   assert(thinking, 'test exports present');
   assert.strictEqual(source.includes('window.selectedFacet'), false, 'Thinking does not read the shared selected facet');

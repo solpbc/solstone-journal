@@ -129,7 +129,6 @@ fn request(journal: &TempJournal, dry_run: bool) -> Value {
         "output_path": null,
         "schedule": "daily",
         "max_turns": 4,
-        "cost_cap_usd": 1.0,
         "context_window": 4096,
         "timeout_ms": 30_000,
         "read_call_budget": 5,

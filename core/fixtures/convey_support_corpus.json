@@ -54,6 +54,7 @@
       "The redaction captured here is the redactor's OUTPUT on one authored seed. Four of the seven diagnostics collectors redact nothing at all, which is the reference's behaviour and not an oversight.",
       "collect_version and collect_revision are normalized, so this corpus pins their PRESENCE and their key, never their derivation."
     ],
+    "shell_presentation_update": "2026-09-04: shared shell status moved into navigation, with inline Health details. Only page_index shell bytes/hash are refreshed; portal/API/mutation captures are unchanged.",
     "what_a_green_replay_is_not_evidence_about": "Every response body a portal-backed route returns here is the STUB's, not a production portal's: this corpus pins what the reference DID with a response, never what a real portal sends. It says nothing about the local operation ledger's state machine, nothing about the diagnostics redactor's coverage, and nothing about the twelve-arm outcome matrix, all of which are invisible to a replay and are proven by derivation tests over injected inputs in the implementation."
   },
   "expected_case_counts": {

@@ -85,7 +85,7 @@
 }
 
 .glance-metric-link:hover,
-.glance-metric-cost:hover,
+.glance-metric-tokens:hover,
 .glance-metric-errors:hover {
   border-color: #d1d5db;
   background: #f3f4f6;
@@ -95,7 +95,7 @@
   color: #dc2626;
 }
 
-.glance-metric-cost .glance-metric-value {
+.glance-metric-tokens .glance-metric-value {
   color: #374151;
 }
 
@@ -1336,9 +1336,9 @@ h2.card-title {
   <div class="health-glance" id="healthGlance">
     <p class="glance-sentence" id="healthGlanceSentence" aria-live="polite"></p>
     <div class="glance-metrics" aria-label="health summary metrics">
-      <a class="glance-metric glance-metric-cost" href="/app/stats/#cost" id="glanceCost">
-        <span class="glance-metric-value" id="glanceCostValue">—</span>
-        <span class="glance-metric-label">today</span>
+      <a class="glance-metric glance-metric-tokens" href="/app/stats/#tokens" id="glanceTokens">
+        <span class="glance-metric-value" id="glanceTokensValue">—</span>
+        <span class="glance-metric-label">tokens today</span>
       </a>
       <div class="glance-metric glance-metric-activity" id="glanceActivity">
         <span class="glance-metric-value" id="glanceActivityValue">0</span>
@@ -1434,8 +1434,8 @@ h2.card-title {
     <div class="observe-source-note hidden" id="observeSourceNote"></div>
     <div id="observeEmpty">
       <div class="surface-state surface-state--empty">
-        <h2 class="surface-state-heading">the solstone app isn't running on any device yet.</h2>
-        <div class="surface-state-action"><a href="/app/network/">set up a device →</a></div>
+        <h2 class="surface-state-heading">checking device activity…</h2>
+        <div class="surface-state-action"><a href="/app/network/">view devices →</a></div>
       </div>
     </div>
     <div class="observe-content hidden" id="observeContent">
@@ -1567,6 +1567,6 @@ h2.card-title {
     <div id="logsAnnouncer" class="logs-announcer" role="status" aria-live="polite"></div>
 
   </div>
+  <section id="healthSystemDetails" class="dashboard-card"><h2 class="card-title">journal status details</h2></section>
 </div>
-
 <script src="/app/health/static/health.js"></script>

@@ -2431,7 +2431,7 @@ button:focus:not(:focus-visible) {
     <!-- Vision Section -->
     <section class="settings-section" id="section-vision" role="tabpanel" aria-labelledby="tab-vision">
       <h2>vision</h2>
-      <p class="settings-section-desc">screen analysis settings for observe-describe.</p>
+      <p class="settings-section-desc">settings for understanding what’s on your screen.</p>
 
       <form class="settings-form" onsubmit="return false;">
 
@@ -2532,10 +2532,10 @@ button:focus:not(:focus-visible) {
     <section class="settings-section" id="section-storage" role="tabpanel" aria-labelledby="tab-storage">
       <h2>your original media (audio, video, screen frames)</h2>
       <p class="settings-section-desc">manage original-media retention and view storage usage.</p>
-      <div id="storageLoadState" class="settings-load-state" aria-live="polite"></div>
+      <div id="storageLoadState" class="settings-load-state" aria-live="polite">loading storage settings…</div>
       <div id="storageWarnings"></div>
 
-      <form class="settings-form" onsubmit="return false;">
+      <form id="storageSettingsForm" class="settings-form" onsubmit="return false;" hidden inert>
 
       <div id="storageSummaryCard" class="settings-summary-card">
         <div class="storage-summary-grid">
@@ -5529,6 +5529,8 @@ async function loadStorage() {
     setStorageControlsDisabled(false);
     storageLoadedOnce = true;
     populateStorage(storageData);
+    document.getElementById("storageSettingsForm").hidden = false;
+    document.getElementById("storageSettingsForm").inert = false;
   } catch (err) {
     setStorageControlsDisabled(true);
     setLoadState('storageLoadState', storageLoadedOnce

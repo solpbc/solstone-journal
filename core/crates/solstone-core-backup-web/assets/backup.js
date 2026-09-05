@@ -1889,7 +1889,9 @@
       if (window.logError) {
         window.logError(err, { context: 'backup initial status failed' });
       }
-      renderStatus();
+      const loading = root.querySelector('[data-backup-loading]');
+      loading.textContent = "couldn't load backup settings. reload this page to try again.";
+      return;
     }
     try {
       await refreshOffloadStatus();
@@ -1899,6 +1901,7 @@
       }
       renderOffloadUnavailable();
     }
+    root.querySelector('[data-backup-loading]').hidden = true;
     showPanel(initialPanel());
   }
 

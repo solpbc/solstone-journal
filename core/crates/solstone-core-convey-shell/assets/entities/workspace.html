@@ -32,10 +32,14 @@
 }
 
 .entity-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   background: #f8f9fa;
   border: 1px solid var(--hairline-2);
   border-radius: 8px;
-  padding: 1.1em 1.2em;
+  padding: 1.5em 2.2em 1.7em 1.2em;
   cursor: pointer;
   transition: all 0.15s;
   box-shadow: 0 1px 2px rgba(0,0,0,0.04);
@@ -173,9 +177,7 @@
 
 /* Entity type indicator dot */
 .entity-card-type-indicator {
-  position: absolute;
-  bottom: 0.65em;
-  left: 0.85em;
+  flex-shrink: 0;
   width: 10px;
   height: 10px;
   border-radius: 50%;
@@ -1292,8 +1294,12 @@ tr:hover .entity-delete-btn {
 /* Facet dots on entity cards */
 .entity-card-facet-dots {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  min-height: 10px;
   gap: 4px;
-  margin-top: 6px;
+  margin-top: auto;
+  padding-top: 8px;
 }
 
 .entity-facet-dot {
@@ -1757,7 +1763,7 @@ tr:hover .entity-delete-btn {
 /* ── Responsive: Tablet (≤768px) ── */
 @media (max-width: 768px) {
   .entity-cards-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .entity-detail-header {
@@ -1773,7 +1779,7 @@ tr:hover .entity-delete-btn {
 @media (max-width: 480px) {
   /* Card grid: single column */
   .entity-cards-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   /* Card touch targets */
@@ -5154,7 +5160,13 @@ function appendTypeIndicator(card, type) {
   const dot = document.createElement('span');
   dot.className = 'entity-card-type-indicator';
   dot.title = type || 'Other';
-  card.appendChild(dot);
+  let markers = card.querySelector('.entity-card-facet-dots');
+  if (!markers) {
+    markers = document.createElement('div');
+    markers.className = 'entity-card-facet-dots';
+    card.appendChild(markers);
+  }
+  markers.appendChild(dot);
 }
 
 function appendDetailAffordance(card) {

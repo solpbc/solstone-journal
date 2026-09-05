@@ -18,7 +18,7 @@
 //! `solstone-core-cogitate`'s `DETERMINISTIC_FAILURE_CAPS` and is enforced by a
 //! caller, not this crate. A genuine detector trip and either budget ladder's
 //! stage-3 force-stop pause share that `agent_stuck` condition, but the outcome
-//! tail checks cost/turn exhaustion before stuck/paused. Therefore a
+//! tail checks context/turn exhaustion before stuck/paused. Therefore a
 //! force-stopped run reports its own budget reason first and never also
 //! double-reports as `agent_stuck`.
 

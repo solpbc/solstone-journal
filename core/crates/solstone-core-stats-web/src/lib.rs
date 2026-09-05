@@ -11,7 +11,6 @@ use std::path::PathBuf;
 
 mod assets;
 mod clock;
-mod pricing;
 mod tokens;
 pub use clock::Clock;
 
@@ -76,14 +75,14 @@ async fn usage(root: PathBuf, clock: Clock, Query(query): Query<UsageQuery>) -> 
     }
 }
 async fn index(root: PathBuf) -> impl IntoResponse {
-    match tokens::cost_stats(&root, None) {
+    match tokens::usage_stats(&root, None) {
         Ok(days) => {
             let mut months = Map::new();
-            for (day, cost) in days.as_object().expect("cost rows") {
+            for (day, tokens) in days.as_object().expect("usage rows") {
                 let month = &day[..6];
                 let total = months.get(month).and_then(Value::as_f64).unwrap_or(0.0)
-                    + cost.as_f64().unwrap_or(0.0);
-                months.insert(month.to_owned(), json!(round(total, 2)));
+                    + tokens.as_f64().unwrap_or(0.0);
+                months.insert(month.to_owned(), json!(total));
             }
             let coverage = days
                 .as_object()
@@ -113,7 +112,7 @@ async fn month_stats(root: PathBuf, month: String) -> impl IntoResponse {
             "Invalid month format, expected YYYYMM",
         );
     }
-    match tokens::cost_stats(&root, Some(&month)) {
+    match tokens::usage_stats(&root, Some(&month)) {
         Ok(value) => (StatusCode::OK, Json(value)).into_response(),
         Err(_) => api_error(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -217,10 +216,6 @@ async fn stats_data(root: PathBuf) -> impl IntoResponse {
 }
 fn digits(value: &str, len: usize) -> bool {
     value.len() == len && value.bytes().all(|byte| byte.is_ascii_digit())
-}
-fn round(value: f64, decimals: i32) -> f64 {
-    let factor = 10_f64.powi(decimals);
-    (value * factor).round() / factor
 }
 fn api_error(
     status: StatusCode,

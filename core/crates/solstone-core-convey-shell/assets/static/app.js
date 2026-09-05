@@ -816,25 +816,6 @@ window.AppServices = {
         this._updateInterval = null;
       }
 
-      this._syncStatusPaneOffset();
-    },
-
-    /**
-     * The notification stack and the status pane share the same fixed
-     * top-right anchor. Push the status pane below any active cards so it
-     * never renders underneath them (F6/F15: accumulating cards otherwise
-     * bury the pane's own state/version/activity content out of view).
-     * @private
-     */
-    _syncStatusPaneOffset() {
-      if (!this._container) return;
-      const hasActiveCard = !!this._container.querySelector('.notification-card:not(.notification-card--dismissing)');
-      if (!hasActiveCard) {
-        document.documentElement.style.removeProperty('--status-pane-top');
-        return;
-      }
-      const rect = this._container.getBoundingClientRect();
-      document.documentElement.style.setProperty('--status-pane-top', `${rect.top + this._container.scrollHeight + 12}px`);
     },
 
     /**
@@ -1091,6 +1072,10 @@ window.AppServices = {
         this._updateBadge();
       },
 
+      unviewedCount() {
+        return this._unviewed;
+      },
+
       getAll() {
         return [...this._notifs].reverse();
       },
@@ -1102,6 +1087,7 @@ window.AppServices = {
       },
 
       _updateBadge() {
+        window.updateStatusLabel?.();
         const badge = document.getElementById('quiet-notif-badge');
         if (!badge) return;
         if (this._unviewed > 0) {
