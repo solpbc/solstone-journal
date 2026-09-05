@@ -105,6 +105,7 @@ impl ServeStarter {
             request.bundle.instance_id.clone(),
             ca_fp_prefix_hex,
             request.bundle.paired_at.clone(),
+            Some(runtime.handle().clone()),
         ));
         let opener = Arc::new(SolstoneCarrierOpener {
             client,
@@ -390,6 +391,7 @@ pub struct StatusTracker {
     instance_id: String,
     ca_fp_prefix_hex: String,
     paired_at: String,
+    runtime_handle: Option<tokio::runtime::Handle>,
 }
 
 #[derive(Debug, Default)]
@@ -422,6 +424,7 @@ impl StatusTracker {
             String::new(),
             String::new(),
             String::new(),
+            None,
         )
     }
 
@@ -431,6 +434,7 @@ impl StatusTracker {
         instance_id: String,
         ca_fp_prefix_hex: String,
         paired_at: String,
+        runtime_handle: Option<tokio::runtime::Handle>,
     ) -> Self {
         let cached_version = if bundle_dir.as_os_str().is_empty() {
             None
@@ -457,6 +461,7 @@ impl StatusTracker {
             instance_id,
             ca_fp_prefix_hex,
             paired_at,
+            runtime_handle,
         }
     }
 
@@ -470,7 +475,7 @@ impl StatusTracker {
                 .filter(|&pending| state.fetching_generation == Some(pending))
         };
         if let Some(target_gen) = dispatch_generation
-            && let Ok(handle) = tokio::runtime::Handle::try_current()
+            && let Some(handle) = self.runtime_handle.as_ref()
         {
             let tracker = Arc::clone(self);
             handle.spawn_blocking(move || {
@@ -497,9 +502,7 @@ impl StatusTracker {
             }
             (state.bound_port, current_generation, should_fetch)
         };
-        if should_fetch
-            && let (Some(port), Ok(handle)) = (port, tokio::runtime::Handle::try_current())
-        {
+        if should_fetch && let (Some(port), Some(handle)) = (port, self.runtime_handle.as_ref()) {
             let tracker = Arc::clone(self);
             handle.spawn_blocking(move || {
                 refresh_journal_version(tracker, port, new_generation);
@@ -510,6 +513,7 @@ impl StatusTracker {
     fn carrier_open_failed(&self, error: &TransportError) {
         let mut state = self.inner.lock().expect("status tracker lock");
         state.reconnect_count = state.reconnect_count.saturating_add(1);
+        state.generation = state.generation.saturating_add(1);
         state.last_failure = Some(failure_from_transport(error, self.clock.now_unix_seconds()));
         state.version_fresh = false;
     }
@@ -555,7 +559,6 @@ impl StatusTracker {
         &self,
         target_generation: u64,
         parsed: Option<String>,
-        current_paired_at_on_disk: Option<String>,
     ) -> ApplyOutcome {
         let mut state = self.inner.lock().expect("status tracker lock");
         if state.generation != target_generation {
@@ -565,16 +568,27 @@ impl StatusTracker {
         let Some(version) = parsed else {
             return ApplyOutcome::FetchFailed;
         };
-        state.cached_version = Some(version.clone());
-        state.version_fresh = true;
 
         if self.bundle_dir.as_os_str().is_empty() {
+            state.cached_version = Some(version);
+            state.version_fresh = true;
             return ApplyOutcome::UpdatedNoPersist;
         }
+
+        let current_paired_at_on_disk = std::fs::read_to_string(self.bundle_dir.join("peer.json"))
+            .ok()
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+            .and_then(|v| {
+                v.get("paired_at")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            });
 
         if !self.paired_at.is_empty()
             && current_paired_at_on_disk.as_deref() == Some(&self.paired_at)
         {
+            state.cached_version = Some(version.clone());
+            state.version_fresh = true;
             let metadata = LinkJournalMetadata {
                 instance_id: self.instance_id.clone(),
                 ca_fp_prefix: self.ca_fp_prefix_hex.clone(),
@@ -632,20 +646,7 @@ fn refresh_journal_version(tracker: Arc<StatusTracker>, port: u16, target_genera
             }
         });
 
-    let current_paired_at_on_disk = if tracker.bundle_dir.as_os_str().is_empty() {
-        None
-    } else {
-        std::fs::read_to_string(tracker.bundle_dir.join("peer.json"))
-            .ok()
-            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-            .and_then(|v| {
-                v.get("paired_at")
-                    .and_then(Value::as_str)
-                    .map(str::to_string)
-            })
-    };
-
-    tracker.apply_fetch_result(target_generation, parsed_version, current_paired_at_on_disk);
+    tracker.apply_fetch_result(target_generation, parsed_version);
 }
 
 #[cfg(not(feature = "host"))]
@@ -1116,6 +1117,7 @@ mod tests {
             "inst-123".to_string(),
             "abcd".to_string(),
             "2026-07-26T00:00:00Z".to_string(),
+            None,
         );
         let snap = tracker.snapshot(bridge_status(true, false));
         assert_eq!(snap.journal_version.as_deref(), Some("2026.07.26"));
@@ -1130,6 +1132,7 @@ mod tests {
             "other-inst".to_string(),
             "abcd".to_string(),
             "2026-07-26T00:00:00Z".to_string(),
+            None,
         );
         let snap_mismatch_inst = tracker_mismatch_inst.snapshot(bridge_status(true, false));
         assert_eq!(snap_mismatch_inst.journal_version, None);
@@ -1142,6 +1145,7 @@ mod tests {
             "inst-123".to_string(),
             "mismatch-ca".to_string(),
             "2026-07-26T00:00:00Z".to_string(),
+            None,
         );
         let snap_mismatch_ca = tracker_mismatch_ca.snapshot(bridge_status(true, false));
         assert_eq!(snap_mismatch_ca.journal_version, None);
@@ -1165,6 +1169,7 @@ mod tests {
             "inst-123".to_string(),
             "abcd".to_string(),
             "2026-07-26T00:00:00Z".to_string(),
+            None,
         );
         let snap_invalid = tracker_invalid.snapshot(bridge_status(true, false));
         assert_eq!(snap_invalid.journal_version, None);
@@ -1183,11 +1188,7 @@ mod tests {
         }
 
         // Apply older generation result
-        let outcome = tracker.apply_fetch_result(
-            2,
-            Some("2026.07.26".to_string()),
-            Some("2026-07-26T00:00:00Z".to_string()),
-        );
+        let outcome = tracker.apply_fetch_result(2, Some("2026.07.26".to_string()));
         assert_eq!(outcome, ApplyOutcome::StaleGeneration);
 
         let snap = tracker.snapshot(bridge_status(true, true));
@@ -1205,31 +1206,34 @@ mod tests {
             "inst-123".to_string(),
             "abcd".to_string(),
             "2026-07-26T00:00:00Z".to_string(),
+            None,
         );
         {
             let mut state = tracker.inner.lock().expect("lock");
             state.generation = 1;
         }
 
-        // 1. When on-disk peer.json paired_at does not match tracker's paired_at: write is skipped
-        let outcome_mismatch = tracker.apply_fetch_result(
-            1,
-            Some("2026.07.26".to_string()),
-            Some("different-paired-at".to_string()),
-        );
+        // 1. When on-disk peer.json paired_at does not match tracker's paired_at: write is skipped and in-memory state is NOT updated
+        std::fs::write(
+            temp_dir.path().join("peer.json"),
+            json!({ "paired_at": "different-paired-at" }).to_string(),
+        )
+        .expect("write peer.json");
+        let outcome_mismatch = tracker.apply_fetch_result(1, Some("2026.07.26".to_string()));
         assert_eq!(outcome_mismatch, ApplyOutcome::PairingMismatch);
         assert!(!temp_dir.path().join("journal_metadata.json").exists());
-        // But memory state updated for running process
+        // Memory state must remain untouched
         let snap_mismatch = tracker.snapshot(bridge_status(true, true));
-        assert_eq!(snap_mismatch.journal_version.as_deref(), Some("2026.07.26"));
-        assert!(snap_mismatch.journal_version_fresh);
+        assert_eq!(snap_mismatch.journal_version, None);
+        assert!(!snap_mismatch.journal_version_fresh);
 
-        // 2. When on-disk peer.json paired_at matches: write persists
-        let outcome_match = tracker.apply_fetch_result(
-            1,
-            Some("2026.07.26".to_string()),
-            Some("2026-07-26T00:00:00Z".to_string()),
-        );
+        // 2. When on-disk peer.json paired_at matches: in-memory state updated and write persists
+        std::fs::write(
+            temp_dir.path().join("peer.json"),
+            json!({ "paired_at": "2026-07-26T00:00:00Z" }).to_string(),
+        )
+        .expect("write peer.json");
+        let outcome_match = tracker.apply_fetch_result(1, Some("2026.07.26".to_string()));
         assert_eq!(outcome_match, ApplyOutcome::Persisted);
         assert!(temp_dir.path().join("journal_metadata.json").exists());
         let meta: LinkJournalMetadata = serde_json::from_slice(
@@ -1239,6 +1243,9 @@ mod tests {
         assert_eq!(meta.journal_version, "2026.07.26");
         assert_eq!(meta.instance_id, "inst-123");
         assert_eq!(meta.ca_fp_prefix, "abcd");
+        let snap_match = tracker.snapshot(bridge_status(true, true));
+        assert_eq!(snap_match.journal_version.as_deref(), Some("2026.07.26"));
+        assert!(snap_match.journal_version_fresh);
     }
 
     #[test]
@@ -1284,6 +1291,77 @@ mod tests {
             assert_eq!(state.bound_port, Some(5015));
             assert_eq!(state.pending_fetch_generation, None);
         }
+    }
+
+    #[tokio::test]
+    async fn set_bound_port_dispatches_pending_fetch_from_non_runtime_thread() {
+        let clock = Arc::new(FixedStatusClock::new(100.0));
+        let handle = tokio::runtime::Handle::current();
+        let tracker = Arc::new(StatusTracker::with_metadata(
+            clock,
+            PathBuf::new(),
+            "inst-123".to_string(),
+            "abcd".to_string(),
+            "2026-07-26T00:00:00Z".to_string(),
+            Some(handle),
+        ));
+
+        // Trigger carrier_open_succeeded when bound_port is None
+        tracker.carrier_open_succeeded();
+        {
+            let state = tracker.inner.lock().expect("lock");
+            assert_eq!(state.generation, 1);
+            assert_eq!(state.fetching_generation, Some(1));
+            assert_eq!(state.pending_fetch_generation, Some(1));
+            assert_eq!(state.bound_port, None);
+        }
+
+        // Call set_bound_port from a plain OS thread where Handle::try_current() returns Err
+        let tracker_clone = tracker.clone();
+        let thread_handle = std::thread::spawn(move || {
+            assert!(
+                tokio::runtime::Handle::try_current().is_err(),
+                "test thread must not have an ambient tokio runtime context"
+            );
+            tracker_clone.set_bound_port(5015);
+        });
+        thread_handle.join().expect("join thread");
+
+        // The pending generation was claimed and dispatched
+        {
+            let state = tracker.inner.lock().expect("lock");
+            assert_eq!(state.bound_port, Some(5015));
+            assert_eq!(state.pending_fetch_generation, None);
+        }
+
+        // Wait for spawn_blocking task to complete (fetching_generation will be cleared by apply_fetch_result)
+        let start = std::time::Instant::now();
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            let state = tracker.inner.lock().expect("lock");
+            if state.fetching_generation.is_none() {
+                break;
+            }
+            if start.elapsed() > std::time::Duration::from_secs(3) {
+                panic!("timed out waiting for dispatched refresh task to finish");
+            }
+        }
+    }
+
+    #[test]
+    fn carrier_open_failed_bumps_generation() {
+        let clock = Arc::new(FixedStatusClock::new(100.0));
+        let tracker = StatusTracker::new(clock);
+        {
+            let mut state = tracker.inner.lock().expect("lock");
+            state.generation = 5;
+        }
+
+        tracker.carrier_open_failed(&TransportError::NoEndpoint);
+        let state = tracker.inner.lock().expect("lock");
+        assert_eq!(state.generation, 6);
+        assert_eq!(state.reconnect_count, 1);
+        assert!(!state.version_fresh);
     }
 
     #[test]
