@@ -825,7 +825,11 @@ fn migrate_segment_aggregate(
     Ok(SegmentMigrationOutcome::Complete(warnings))
 }
 
-fn index_entity_search(conn: &Connection, journal: &Path, force: bool) -> Result<(), StoreError> {
+fn index_entity_search(
+    conn: &Transaction<'_>,
+    journal: &Path,
+    force: bool,
+) -> Result<(), StoreError> {
     let build = build_entity_search(journal)?;
     let watermark = read_entity_search_watermark(conn)?;
     let (stored_mtime, stored_count, migrating) = match watermark {
@@ -837,7 +841,10 @@ fn index_entity_search(conn: &Connection, journal: &Path, force: bool) -> Result
         ),
     };
     let built_rows = group_entity_search_rows(build.rows.iter().cloned());
-    let stored_rows = stored_entity_search_rows(conn)?;
+    let StoredEntitySearchRows {
+        rows: stored_rows,
+        row_ids,
+    } = stored_entity_search_rows(conn)?;
     let complete = built_rows.keys().eq(stored_rows.keys());
 
     let entity_changed = force
@@ -850,16 +857,22 @@ fn index_entity_search(conn: &Connection, journal: &Path, force: bool) -> Result
             .chain(stored_rows.keys())
             .cloned()
             .collect::<BTreeSet<_>>();
+        let mut delete =
+            conn.prepare("DELETE FROM chunks WHERE rowid=? AND agent='entity' AND path=?")?;
         for path in paths {
             let built = built_rows.get(&path);
             let stored = stored_rows.get(&path);
             if built == stored {
                 continue;
             }
-            conn.execute(
-                "DELETE FROM chunks WHERE agent='entity' AND path=?",
-                [&path],
-            )?;
+            // FTS5 indexes rowids, not path equality. Keep the IDs from the
+            // existing transaction's read instead of scanning all chunks for
+            // every changed entity. A new entity has nothing to delete.
+            if let Some(ids) = row_ids.get(&path) {
+                for id in ids {
+                    delete.execute(params![id, path])?;
+                }
+            }
             if let Some(rows) = built {
                 insert_entity_search_rows(conn, rows)?;
             }
@@ -897,33 +910,47 @@ fn group_entity_search_rows(
     grouped
 }
 
-fn stored_entity_search_rows(
-    conn: &Connection,
-) -> Result<BTreeMap<String, Vec<EntitySearchRow>>, StoreError> {
+struct StoredEntitySearchRows {
+    rows: BTreeMap<String, Vec<EntitySearchRow>>,
+    row_ids: BTreeMap<String, Vec<i64>>,
+}
+
+fn stored_entity_search_rows(conn: &Connection) -> Result<StoredEntitySearchRows, StoreError> {
     let mut statement = conn.prepare(
-        "SELECT path, content, day, facet, agent, stream, idx, time_bucket FROM chunks WHERE agent='entity' ORDER BY path, idx",
+        "SELECT path, content, day, facet, agent, stream, idx, time_bucket, rowid FROM chunks WHERE agent='entity' ORDER BY path, idx",
     )?;
     let rows = statement.query_map([], |row| {
-        Ok(EntitySearchRow {
-            path: row.get(0)?,
-            content: row.get(1)?,
-            day: row.get(2)?,
-            facet: row.get(3)?,
-            agent: row.get(4)?,
-            stream: row.get(5)?,
-            idx: row.get(6)?,
-            time_bucket: row.get(7)?,
-        })
+        Ok((
+            row.get::<_, i64>(8)?,
+            EntitySearchRow {
+                path: row.get(0)?,
+                content: row.get(1)?,
+                day: row.get(2)?,
+                facet: row.get(3)?,
+                agent: row.get(4)?,
+                stream: row.get(5)?,
+                idx: row.get(6)?,
+                time_bucket: row.get(7)?,
+            },
+        ))
     })?;
     let mut grouped = BTreeMap::new();
+    let mut row_ids = BTreeMap::new();
     for row in rows {
-        let row = row?;
+        let (id, row) = row?;
+        row_ids
+            .entry(row.path.clone())
+            .or_insert_with(Vec::new)
+            .push(id);
         grouped
             .entry(row.path.clone())
             .or_insert_with(Vec::new)
             .push(row);
     }
-    Ok(grouped)
+    Ok(StoredEntitySearchRows {
+        rows: grouped,
+        row_ids,
+    })
 }
 
 fn insert_entity_search_rows(
@@ -4165,6 +4192,49 @@ mod tests {
     }
 
     #[test]
+    fn entity_search_replacement_removes_all_old_chunks_but_preserves_other_agents() {
+        let root = temp_root("entity-search-duplicate-chunks");
+        write(
+            &root,
+            "entities/alice/entity.json",
+            r#"{"name":"Alice","type":"Person"}"#,
+        );
+        let mut conn = open_index(&root).expect("open index");
+        for (path, agent, content) in [
+            ("entity_search:alice", "entity", "old first"),
+            ("entity_search:alice", "entity", "old duplicate"),
+            ("entity_search:alice", "other", "unrelated"),
+            ("entity_search:removed", "entity", "removed entity"),
+            ("entity_search:removed", "other", "unrelated removed path"),
+        ] {
+            conn.execute(
+                "INSERT INTO chunks(content,path,day,facet,agent,stream,idx,time_bucket) VALUES (?,?,'','',?,'',0,'')",
+                params![content, path, agent],
+            ).expect("seed mixed rows");
+        }
+        let tx = conn.transaction().expect("start entity update");
+        index_entity_search(&tx, &root, true).expect("replace entity rows");
+        tx.commit().expect("commit entity update");
+        assert_eq!(
+            count(&conn, "SELECT count(*) FROM chunks WHERE agent='entity'"),
+            1
+        );
+        assert_eq!(
+            count(&conn, "SELECT count(*) FROM chunks WHERE agent='other'"),
+            2
+        );
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT count(*) FROM chunks WHERE content='Alice (Person)' AND path='entity_search:alice' AND agent='entity'"
+            ),
+            1
+        );
+        assert_sqlite_and_fts_integrity(&conn);
+        fs::remove_dir_all(root).expect("cleanup mixed entity rows root");
+    }
+
+    #[test]
     fn entity_search_rewrites_only_changed_entity_rows() {
         let root = temp_root("entity-search-per-entity-diff");
         write(
@@ -4297,14 +4367,18 @@ mod tests {
 
         scan_journal(&root, true).expect("full recovery scan");
         let conn = Connection::open(db_path(&root)).expect("open recovered index");
-        let recovered = stored_entity_search_rows(&conn).expect("read recovered rows");
+        let recovered = stored_entity_search_rows(&conn)
+            .expect("read recovered rows")
+            .rows;
         drop(conn);
 
         reset_index(&root).expect("reset index for from-empty comparison");
         scan_journal(&root, true).expect("from-empty full scan");
         let conn = Connection::open(db_path(&root)).expect("open from-empty index");
         assert_eq!(
-            stored_entity_search_rows(&conn).expect("read from-empty rows"),
+            stored_entity_search_rows(&conn)
+                .expect("read from-empty rows")
+                .rows,
             recovered
         );
         fs::remove_dir_all(root).expect("cleanup full recovery root");
