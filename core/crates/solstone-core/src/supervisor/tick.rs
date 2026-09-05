@@ -2,13 +2,11 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::BTreeSet;
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::path::Path;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value, json};
-use solstone_core_callosum::CallosumEnvelope;
+use solstone_core_callosum::{CallosumEnvelope, DurableEvent, append_durable_event};
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_journal_io::day_path;
 use solstone_core_local::nvidia::{ArtifactTrust, NvidiaProbe};
@@ -973,7 +971,7 @@ fn handle_message(state: &mut SupervisorState, message: CallosumEnvelope) {
     handle_segment_observed(state, &message);
     handle_activity_recorded(state, &message);
     handle_think_daily_complete(state, &message);
-    handle_segment_event_log(state, &message);
+    handle_segment_event_log(&state.journal, &message);
     handle_cortex_outcome(state, &message);
 }
 
@@ -1177,7 +1175,7 @@ fn handle_think_daily_complete(state: &mut SupervisorState, message: &CallosumEn
     );
 }
 
-fn handle_segment_event_log(state: &SupervisorState, message: &CallosumEnvelope) {
+fn handle_segment_event_log(journal: &Path, message: &CallosumEnvelope) {
     if !matches!(message.tract.as_str(), "observe" | "think" | "activity") {
         return;
     }
@@ -1187,7 +1185,7 @@ fn handle_segment_event_log(state: &SupervisorState, message: &CallosumEnvelope)
     ) else {
         return;
     };
-    let day_dir = match day_path(&state.journal, Some(day), false) {
+    let day_dir = match day_path(journal, Some(day), false) {
         Ok(path) => path,
         Err(error) => {
             eprintln!("supervisor: could not resolve event-log day {day}: {error}");
@@ -1201,14 +1199,7 @@ fn handle_segment_event_log(state: &SupervisorState, message: &CallosumEnvelope)
     if !segment_dir.is_dir() {
         return;
     }
-    let result = (|| -> std::io::Result<()> {
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(segment_dir.join("events.jsonl"))?;
-        serde_json::to_writer(&mut file, message).map_err(std::io::Error::other)?;
-        file.write_all(b"\n")
-    })();
+    let result = append_durable_event(&segment_dir, &DurableEvent::Callosum(message.clone()));
     if let Err(error) = result {
         eprintln!("supervisor: failed to append segment event log: {error}");
     }
@@ -1466,6 +1457,54 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn segment_event_log_keeps_concurrent_custody_rows_intact() {
+        let bed = Bed::new("event-log-concurrent");
+        let segment = bed.root.join("chronicle/20260804/device/120000_60");
+        fs::create_dir_all(&segment).unwrap();
+        let event: solstone_core_callosum::DeviceIngestEvent = serde_json::from_value(json!({
+            "record_type": "device_ingest", "record_version": 1, "protocol_version": 3,
+            "outcome": "accepted", "cid": "test-device", "source": "", "stream": "device",
+            "day": "20260804", "segment": "120000_60", "files": [], "meta": {}
+        }))
+        .unwrap();
+        let message: CallosumEnvelope = serde_json::from_value(json!({
+            "tract": "observe", "event": "observed", "day": "20260804",
+            "stream": "device", "segment": "120000_60", "detail": "x".repeat(8192)
+        }))
+        .unwrap();
+        let barrier = std::sync::Barrier::new(2);
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                for _ in 0..64 {
+                    barrier.wait();
+                    handle_segment_event_log(&bed.root, &message);
+                }
+            });
+            scope.spawn(|| {
+                for _ in 0..64 {
+                    barrier.wait();
+                    append_durable_event(&segment, &DurableEvent::DeviceIngest(event.clone()))
+                        .unwrap();
+                }
+            });
+        });
+        let report = solstone_core_callosum::read_durable_events(&segment).unwrap();
+        assert_eq!(report.unparseable, 0);
+        assert_eq!(report.unrecognized, 0);
+        assert_eq!(report.records.len(), 128);
+        let receipts = solstone_core_callosum::read_device_ingest_events(&segment).unwrap();
+        assert_eq!(receipts.records.len(), 64);
+        assert_eq!(receipts.wrong_family, 64);
+        let expected = serde_json::to_value(&event).unwrap();
+        assert!(
+            receipts
+                .records
+                .iter()
+                .all(|receipt| serde_json::to_value(receipt).unwrap() == expected)
+        );
+    }
 
     static NEXT_PATH: AtomicUsize = AtomicUsize::new(0);
 

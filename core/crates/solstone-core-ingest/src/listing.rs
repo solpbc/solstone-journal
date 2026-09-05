@@ -80,24 +80,40 @@ pub(crate) fn native_events(
         let identity = segment
             .record_identity()
             .map_err(|_| ListingError::JournalRead)?;
-        let report =
-            read_device_ingest_events(segment.path()).map_err(|_| ListingError::JournalRead)?;
-        if report.unparseable > 0 {
-            return Err(ListingError::JournalRead);
-        }
-        for event in report.records {
-            if event.cid != cid
+        events.extend(segment_events(
+            segment.path(),
+            day,
+            stream,
+            identity.name,
+            cid,
+            source,
+        )?);
+    }
+    Ok(events)
+}
+
+/// Read one segment's custody receipts without accepting corrupt or foreign rows.
+pub(crate) fn segment_events(
+    path: &Path,
+    day: &str,
+    stream: &str,
+    segment: &str,
+    cid: &str,
+    source: &str,
+) -> Result<Vec<DeviceIngestEvent>, ListingError> {
+    let report = read_device_ingest_events(path).map_err(|_| ListingError::JournalRead)?;
+    if report.unparseable > 0
+        || report.records.iter().any(|event| {
+            event.cid != cid
                 || event.source != source
                 || event.stream != stream
                 || event.day != day
-                || event.segment != identity.name
-            {
-                return Err(ListingError::JournalRead);
-            }
-            events.push(event);
-        }
+                || event.segment != segment
+        })
+    {
+        return Err(ListingError::JournalRead);
     }
-    Ok(events)
+    Ok(report.records)
 }
 
 /// Combine every native durable event per segment.

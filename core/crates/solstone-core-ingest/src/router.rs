@@ -26,7 +26,7 @@ use solstone_core_ingest_resolve::{
 };
 use solstone_core_segment::{
     ContentName, Kind, SegmentDir, StreamHints, advance_bound_stream, hold_source_mutation,
-    lookup_stream_state,
+    retry_bound_stream,
 };
 use solstone_core_sol_link::ledger::{AcceptedSegment, AuthorizationLedger};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
@@ -637,16 +637,67 @@ fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> I
         }
     };
     let descriptors = descriptors(&envelope.files, &applied.files);
-    let announced_files = written_descriptors(&applied.files)
-        .into_iter()
-        .map(|file| file.written)
+    // Held bytes may be a retry after a durable write but a failed notification.
+    // Terminal proof without retained bytes must never enqueue absent raw media.
+    let announced_files = applied
+        .files
+        .iter()
+        .filter(|file| !matches!(file.disposition, AppliedDisposition::Unwritten))
+        .map(|file| file.name.as_str().to_owned())
         .collect::<Vec<_>>();
     let outcome = match applied.status {
         solstone_core_ingest_resolve::PlanStatus::Ok => "ok",
         solstone_core_ingest_resolve::PlanStatus::Collision => "collision",
         solstone_core_ingest_resolve::PlanStatus::Duplicate => "duplicate",
     };
-    if !announced_files.is_empty() {
+    let needs_dirty_marker = if applied
+        .files
+        .iter()
+        .any(|file| file.disposition == AppliedDisposition::Written)
+    {
+        true
+    } else if announced_files.is_empty() {
+        false
+    } else {
+        // A receipt is appended only after the dirty marker succeeds. Reuse that
+        // evidence on a held-byte retry instead of invalidating a completed day.
+        let receipts = match crate::listing::segment_events(
+            applied.segment.path(),
+            &envelope.day,
+            &bound.stream,
+            &applied.landed_segment,
+            cid,
+            &envelope.source,
+        ) {
+            Ok(receipts) => receipts,
+            Err(_) => {
+                return IngestCompletion::rejected(
+                    ReasonCode::EventAppendFailed,
+                    outcome_error(
+                        "failed",
+                        ReasonCode::EventAppendFailed,
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "cannot read ingest receipts",
+                    ),
+                );
+            }
+        };
+        applied
+            .files
+            .iter()
+            .filter(|file| file.disposition == AppliedDisposition::AlreadyHeld)
+            .any(|file| {
+                !receipts.iter().any(|receipt| {
+                    matches!(receipt.outcome.as_str(), "accepted" | "duplicate")
+                        && receipt.files.iter().any(|held| {
+                            held.written == file.name.as_str()
+                                && held.size == file.size
+                                && held.sha256 == file.sha256
+                        })
+                })
+            })
+    };
+    if needs_dirty_marker {
         // A later custody failure intentionally leaves this day dirty.
         if solstone_core_ingest_resolve::bump_stream_marker(&state.journal_root, &envelope.day)
             .is_err()
@@ -687,23 +738,21 @@ fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> I
             ),
         );
     }
-    let needs_first_advance = || {
-        lookup_stream_state(&state.journal_root, cid, &envelope.source)
-            .ok()
-            .flatten()
-            .is_some_and(|binding| binding.seq == 0)
+    let complete_stream = if applied.should_advance {
+        advance_bound_stream
+    } else {
+        retry_bound_stream
     };
-    if (applied.should_advance || needs_first_advance())
-        && advance_bound_stream(
-            &bound.stream,
-            &envelope.day,
-            &applied.landed_segment,
-            &applied.segment,
-            hints.clone(),
-            cid,
-            &envelope.source,
-        )
-        .is_err()
+    if complete_stream(
+        &bound.stream,
+        &envelope.day,
+        &applied.landed_segment,
+        &applied.segment,
+        hints.clone(),
+        cid,
+        &envelope.source,
+    )
+    .is_err()
     {
         return IngestCompletion::rejected(
             ReasonCode::StreamAdvanceFailed,
@@ -2042,6 +2091,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn older_unmarked_retry_refuses_without_appending_the_segment_again() {
+        let dir = root();
+        let root = dir.path();
+        let spy = SpyNotifier::succeeding();
+        let app = api_router_with_notifier(root, spy.clone());
+        let first = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        let second = envelope("20260804", "120001_1", json!([{"submitted":"audio.flac"}]));
+        assert_eq!(
+            call_upload(&app, first.clone(), "audio.flac", b"first")
+                .await
+                .0,
+            StatusCode::OK
+        );
+        assert_eq!(
+            call_upload(&app, second, "audio.flac", b"second").await.0,
+            StatusCode::OK
+        );
+        let marker = root.join("chronicle/20260804/device/120000_1/stream.json");
+        fs::remove_file(&marker).unwrap();
+        let before = fs::read(root.join("streams/device.json")).unwrap();
+        let (status, body) = call_upload(&app, first, "audio.flac", b"first").await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["reason_code"], "stream_advance_failed");
+        assert_eq!(fs::read(root.join("streams/device.json")).unwrap(), before);
+        assert!(!marker.exists());
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 2);
+        assert_eq!(stream_marker_generation(root, "20260804"), 2);
+    }
+
+    #[tokio::test]
     async fn notification_failure_is_5xx_and_leaves_durable_writes() {
         let dir = root();
         let root = dir.path().to_path_buf();
@@ -2062,8 +2141,8 @@ mod tests {
         let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["status"], "duplicate");
-        // All files are already held on retry, so it is not re-announced.
-        assert_eq!(spy.calls.load(Ordering::SeqCst), 1);
+        // Retry re-announces durable bytes without invalidating a completed day.
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 2);
         assert_eq!(stream_marker_generation(&root, "20260804"), 1);
         assert_eq!(stream_record(&root, "device")["seq"], 1);
     }
@@ -2219,14 +2298,6 @@ mod tests {
         assert_eq!(listing["items"][0]["files"][0]["status"], "present");
     }
 
-    /// Marker-write faults are not the `seq == 0` incomplete-binding signal.
-    ///
-    /// `advance_stream` writes `StreamRecord` before `stream.json` on purpose:
-    /// rebuild tooling treats markers as ground truth and recovers an orphaned
-    /// advance offline. After this fault, `seq == 1` with `stream.json` still
-    /// blocked, so `stream_binding_incomplete` (which only checks `seq == 0`)
-    /// cannot see it and online retry does not repair the marker. Recovery is
-    /// `repair_stream_tail_from_markers`, not a gap this task introduced.
     #[tokio::test]
     async fn first_binding_chain_advance_fault_then_retry_converges_once() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -2268,20 +2339,38 @@ mod tests {
         assert_ne!(listing["reason_code"], "stream_binding_incomplete");
         assert_eq!(listing["items"][0]["files"][0]["status"], "present");
 
-        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
+        // Recreate the router to prove the recovery authority is on disk.
+        let app = router(&root);
+        let (status, body) = call_upload(&app, request.clone(), "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["reason_code"], "stream_advance_failed");
+        assert_eq!(stream_record(&root, stream)["seq"], 1);
+        fs::remove_dir(segment.join("stream.json")).unwrap();
+
+        // A newer upload must finish the old marker before replacing its tail.
+        let mut newer = request.clone();
+        newer["segment"] = json!("120001_1");
+        let (status, _) = call_upload(&app, newer, "audio.flac", b"newer").await;
+        assert_eq!(status, StatusCode::OK);
+        let marker: Value =
+            serde_json::from_slice(&fs::read(segment.join("stream.json")).unwrap()).unwrap();
+        assert_eq!(marker["seq"], 1);
+        assert_eq!(marker["prev_day"], Value::Null);
+        assert_eq!(marker["prev_segment"], Value::Null);
+        let newer_marker: Value = serde_json::from_slice(
+            &fs::read(root.join(format!("chronicle/20260804/{stream}/120001_1/stream.json")))
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(newer_marker["seq"], 2);
+        assert_eq!(newer_marker["prev_segment"], "120000_1");
+
+        let (status, body) = call_upload(&router(&root), request, "audio.flac", b"sound").await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["status"], "duplicate");
-        assert_eq!(
-            stream_record(&root, stream)["seq"],
-            1,
-            "online retry must not re-advance after a marker-orphaned seq==1 state"
-        );
-        assert!(
-            segment.join("stream.json").is_dir(),
-            "online retry does not repair an orphaned stream.json marker"
-        );
-        let events = fs::read_to_string(segment.join("events.jsonl")).unwrap();
-        assert_eq!(events.lines().count(), 2);
+        assert_eq!(stream_record(&root, stream)["seq"], 2);
+        assert_eq!(stream_record(&root, stream)["last_segment"], "120001_1");
+        assert_eq!(fs::read(segment.join("audio.flac")).unwrap(), b"sound");
     }
 
     #[tokio::test]
@@ -2471,7 +2560,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mixed_written_and_already_held_files_bump_once_and_announce_only_written() {
+    async fn mixed_written_and_already_held_files_bump_once_and_announce_held_bytes() {
         let dir = root();
         let root = dir.path().to_path_buf();
         let spy = SpyNotifier::succeeding();
@@ -2500,7 +2589,7 @@ mod tests {
         assert_eq!(
             spy.notices.lock().unwrap().last().unwrap(),
             &SpyNotice {
-                files: vec!["notes.json".to_owned()],
+                files: vec!["audio.flac".to_owned(), "notes.json".to_owned()],
                 cid: CID_A.to_owned(),
                 source: String::new(),
             }
@@ -2551,15 +2640,59 @@ mod tests {
         let spy = SpyNotifier::succeeding();
         let app = api_router_with_notifier(&root, spy.clone());
         let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
-        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
+        let (status, body) = call_upload(&app, request.clone(), "audio.flac", b"sound").await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(body["reason_code"], "event_append_failed");
         assert_eq!(spy.calls.load(Ordering::SeqCst), 0);
         assert_eq!(stream_marker_generation(&root, "20260804"), 1);
+        fs::remove_dir(segment.join("events.jsonl")).unwrap();
+        let (status, body) = call_upload(&app, request.clone(), "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "duplicate");
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(stream_record(&root, "device")["seq"], 1);
+        let generation = stream_marker_generation(&root, "20260804");
+        assert_eq!(
+            call_upload(&app, request, "audio.flac", b"sound").await.0,
+            StatusCode::OK
+        );
+        assert_eq!(stream_marker_generation(&root, "20260804"), generation);
     }
 
     #[tokio::test]
-    async fn malformed_stream_marker_fails_written_request_but_held_retry_does_not_repair_it() {
+    async fn held_retry_refuses_corrupt_or_foreign_custody_receipts() {
+        for foreign in [false, true] {
+            let dir = root();
+            let root = dir.path();
+            let spy = SpyNotifier::succeeding();
+            let app = api_router_with_notifier(root, spy.clone());
+            let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+            assert_eq!(
+                call_upload(&app, request.clone(), "audio.flac", b"sound")
+                    .await
+                    .0,
+                StatusCode::OK
+            );
+            let path = root.join("chronicle/20260804/device/120000_1/events.jsonl");
+            if foreign {
+                let mut event: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                event["cid"] = json!(CID_B);
+                fs::write(&path, serde_json::to_vec(&event).unwrap()).unwrap();
+            } else {
+                fs::write(&path, b"not-json\n").unwrap();
+            }
+            let before = fs::read(&path).unwrap();
+            let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
+            assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+            assert_eq!(body["reason_code"], "event_append_failed");
+            assert_eq!(fs::read(&path).unwrap(), before);
+            assert_eq!(spy.calls.load(Ordering::SeqCst), 1);
+            assert_eq!(stream_marker_generation(root, "20260804"), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn malformed_stream_marker_refuses_held_retry_until_repaired() {
         let dir = root();
         let root = dir.path().to_path_buf();
         let marker = stream_marker_path(&root, "20260804");
@@ -2581,11 +2714,18 @@ mod tests {
         );
         assert_eq!(fs::read(&marker).unwrap(), before);
 
+        let (status, body) = call_upload(&app, request.clone(), "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["reason_code"], "stream_marker_bump_failed");
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(fs::read(&marker).unwrap(), before);
+        fs::remove_file(&marker).unwrap();
         let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["status"], "duplicate");
-        assert_eq!(spy.calls.load(Ordering::SeqCst), 0);
-        assert_eq!(fs::read(&marker).unwrap(), before);
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(stream_marker_generation(&root, "20260804"), 1);
+        assert_eq!(stream_record(&root, "device")["seq"], 1);
     }
 
     #[tokio::test]

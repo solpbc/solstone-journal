@@ -121,6 +121,7 @@ pub fn repair_stream_tail_from_markers(
     }
     let mut value = value;
     let object = value.as_object_mut().expect("object checked above");
+    object.remove("last_marker");
     object.insert("last_day".to_owned(), json!(marker_tail.last_day));
     object.insert("last_segment".to_owned(), json!(marker_tail.last_segment));
     object.insert("seq".to_owned(), json!(marker_tail.max_seq));
@@ -150,6 +151,7 @@ pub fn set_stream_tail_unconditionally(
         );
     if let Some((mut value, record)) = existing {
         let object = value.as_object_mut().expect("object checked above");
+        object.remove("last_marker");
         object.insert("last_day".to_owned(), json!(last_day));
         object.insert("last_segment".to_owned(), json!(last_segment));
         object.insert("seq".to_owned(), json!(record.seq.max(max_seq)));
@@ -206,6 +208,7 @@ fn default_stream_record(
         cid: None,
         source: None,
         allocation: None,
+        last_marker: None,
     }
 }
 

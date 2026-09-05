@@ -74,7 +74,7 @@ pub use stream_record::{
     StreamHints, StreamRecord, UnboundStreamAdvanceError, advance_bound_stream,
     advance_unbound_stream, bind_named_stream, bind_paired_stream, bind_stream,
     delete_stream_record, has_unattributed_stream_record, lookup_stream, lookup_stream_state,
-    resolve_stream,
+    resolve_stream, retry_bound_stream,
 };
 pub use stream_repair::{
     MarkerTail, RepairOutcome, StreamBackfillReport, StreamBackfillSignal, StreamClassification,

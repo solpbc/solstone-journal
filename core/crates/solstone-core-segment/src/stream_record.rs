@@ -89,6 +89,10 @@ pub struct StreamRecord {
     pub source: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allocation: Option<StreamAllocation>,
+    /// Exact marker for the recorded tail, retained until the next advance so
+    /// a failed marker write can be completed without changing chain order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_marker: Option<StreamAdvance>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -98,7 +102,7 @@ pub struct StreamHints {
     pub platform: Option<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct StreamAdvance {
     pub prev_day: Option<String>,
     pub prev_segment: Option<String>,
@@ -376,6 +380,31 @@ pub fn advance_bound_stream(
         segment_dir,
         hints,
         StreamBinding { cid, source },
+        false,
+    )
+}
+
+/// Complete an existing segment's bound advance without guessing its sequence.
+/// An unmarked initial reservation can advance; an unmarked older segment is
+/// ambiguous and requires repair rather than being appended to the chain again.
+pub fn retry_bound_stream(
+    stream: &str,
+    day: &str,
+    segment: &str,
+    segment_dir: &SegmentDir,
+    hints: StreamHints,
+    cid: &str,
+    source: &str,
+) -> Result<StreamAdvance, SegmentError> {
+    validate_cid(cid)?;
+    advance_stream(
+        stream,
+        day,
+        segment,
+        segment_dir,
+        hints,
+        StreamBinding { cid, source },
+        true,
     )
 }
 
@@ -826,12 +855,9 @@ fn sha256_hex(input: &str) -> String {
     format!("{:x}", Sha256::digest(input.as_bytes()))
 }
 
-/// Advance one reserved stream, then atomically write its matching segment marker.
-///
-/// This is deliberately two durable writes, not a cross-file transaction. The
-/// state is written before the marker because stream-state rebuild tooling
-/// treats markers as ground truth and can recover by skipping an orphaned
-/// advance after a marker failure. That rebuild tooling is outside this crate.
+/// Advance one reserved stream, retaining the exact marker in its registry row.
+/// Every advance first completes the prior tail marker. A retry of an already
+/// marked segment never moves the tail, including after a newer segment.
 fn advance_stream(
     name: &str,
     day: &str,
@@ -839,6 +865,7 @@ fn advance_stream(
     segment_dir: &SegmentDir,
     hints: StreamHints,
     binding: StreamBinding<'_>,
+    retry: bool,
 ) -> Result<StreamAdvance, SegmentError> {
     if name.is_empty() || name.contains('/') || name.contains('\\') {
         return Err(SegmentError::StreamInput(
@@ -854,13 +881,42 @@ fn advance_stream(
     let _lock = hold_lock(&state_path, LockOptions::default())?;
     let record = read_typed_stream_record(&state_path)?;
     if let Some(record) = record.as_ref()
-        && !binding_matches(record, binding)
+        && (record.name != name || !binding_matches(record, binding))
     {
         return Err(SegmentError::StreamBindingConflict {
             name: name.to_owned(),
         });
     }
-    let (record, advance) = update_record(record, name, day, segment, hints, binding)?;
+    if let Some(record) = record.as_ref() {
+        finish_tail_marker(&segment_dir.journal, record)?;
+        if record.seq > 0
+            && let Some(marker) = read_stream_marker(&segment_dir.path.join("stream.json"))?
+        {
+            if marker.stream != name
+                || marker.seq == 0
+                || marker.seq > record.seq
+                || (marker.seq == record.seq
+                    && (record.last_day.as_deref() != Some(day)
+                        || record.last_segment.as_deref() != Some(segment)))
+            {
+                return Err(SegmentError::StreamInput(
+                    "segment marker conflicts with stream state",
+                ));
+            }
+            return Ok(StreamAdvance {
+                prev_day: marker.prev_day,
+                prev_segment: marker.prev_segment,
+                seq: marker.seq,
+            });
+        }
+        if retry && record.seq > 0 {
+            return Err(SegmentError::StreamInput(
+                "existing segment has no marker proving its stream sequence",
+            ));
+        }
+    }
+    let (mut record, advance) = update_record(record, name, day, segment, hints, binding)?;
+    record.last_marker = Some(advance.clone());
     write_stream_record(&state_path, &record)?;
     let marker = StreamMarker {
         stream: name.to_owned(),
@@ -874,6 +930,56 @@ fn advance_stream(
         JsonWriteOptions::default(),
     )?;
     Ok(advance)
+}
+
+fn finish_tail_marker(journal: &Path, record: &StreamRecord) -> Result<(), SegmentError> {
+    if record.last_marker.is_none() && record.last_day.is_none() && record.last_segment.is_none() {
+        return Ok(());
+    }
+    let (Some(day), Some(segment)) = (&record.last_day, &record.last_segment) else {
+        return Err(SegmentError::StreamInput("stream tail identity is missing"));
+    };
+    let tail = SegmentDir::resolve(journal, day, segment, &record.name)?;
+    let path = tail.path.join("stream.json");
+    let existing = read_stream_marker(&path)?;
+    let expected = record.last_marker.as_ref().map(|advance| StreamMarker {
+        stream: record.name.clone(),
+        prev_day: advance.prev_day.clone(),
+        prev_segment: advance.prev_segment.clone(),
+        seq: advance.seq,
+    });
+    if expected
+        .as_ref()
+        .is_some_and(|marker| marker.seq != record.seq)
+    {
+        return Err(SegmentError::StreamInput(
+            "recorded tail marker sequence conflicts with stream state",
+        ));
+    }
+    if let Some(marker) = existing {
+        if marker.stream != record.name
+            || marker.seq == 0
+            || marker.seq > record.seq
+            || expected
+                .as_ref()
+                .is_some_and(|expected| expected != &marker)
+        {
+            return Err(SegmentError::StreamInput(
+                "tail marker conflicts with stream state",
+            ));
+        }
+        return Ok(());
+    }
+    let marker = expected.ok_or(SegmentError::StreamInput(
+        "stream tail marker is missing and its predecessor is not recorded",
+    ))?;
+    if !tail.path.is_dir() {
+        return Err(SegmentError::StreamInput(
+            "stream tail directory is missing",
+        ));
+    }
+    write_json(path, &marker, JsonWriteOptions::default())?;
+    Ok(())
 }
 
 fn read_registry_records(journal: &Path) -> Result<BTreeMap<String, StreamRecord>, SegmentError> {
@@ -1005,6 +1111,7 @@ fn reservation_record(
         cid: Some(binding.cid.to_owned()),
         source: Some(binding.source.to_owned()),
         allocation,
+        last_marker: None,
     })
 }
 
@@ -1029,6 +1136,7 @@ fn unbound_reservation_record(
         cid: None,
         source: None,
         allocation: None,
+        last_marker: None,
     })
 }
 
@@ -1204,6 +1312,7 @@ mod tests {
             cid: cid.map(str::to_owned),
             source: source.map(str::to_owned),
             allocation: None,
+            last_marker: None,
         }
     }
 
@@ -1214,6 +1323,132 @@ mod tests {
             JsonWriteOptions::default(),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn bound_marker_failure_blocks_newer_advance_and_recovers_exact_predecessor() {
+        let temporary = TempDir::new();
+        let root = temporary.path();
+        let advance = |key: &str| {
+            let bound = bind_stream(root, "20260804", key, "phone", CID_A, "", &hints()).unwrap();
+            advance_bound_stream(
+                &bound.stream,
+                "20260804",
+                key,
+                &bound.segment,
+                hints(),
+                CID_A,
+                "",
+            )
+        };
+        assert_eq!(advance("120000_60").unwrap().seq, 1);
+        let second = SegmentDir::resolve(root, "20260804", "120100_60", "phone").unwrap();
+        assert_eq!(advance("120100_60").unwrap().seq, 2);
+        // Remove the marker half of a real domain advance to model interrupted publication.
+        fs::remove_file(second.path().join("stream.json")).unwrap();
+        assert_eq!(load_record(root, "phone").seq, 2);
+        fs::create_dir(second.path().join("stream.json")).unwrap();
+        assert!(advance("120200_60").is_err());
+        assert_eq!(load_record(root, "phone").seq, 2);
+        fs::remove_dir(second.path().join("stream.json")).unwrap();
+        assert_eq!(advance("120200_60").unwrap().seq, 3);
+        let repaired = read_stream_marker(&second.path().join("stream.json"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(repaired.seq, 2);
+        assert_eq!(repaired.prev_day.as_deref(), Some("20260804"));
+        assert_eq!(repaired.prev_segment.as_deref(), Some("120000_60"));
+        assert_eq!(advance("120100_60").unwrap().seq, 2);
+        assert_eq!(load_record(root, "phone").seq, 3);
+        assert_eq!(
+            load_record(root, "phone").last_segment.as_deref(),
+            Some("120200_60")
+        );
+    }
+
+    #[test]
+    fn bound_legacy_orphan_refuses_without_inventing_a_predecessor() {
+        let temporary = TempDir::new();
+        let root = temporary.path();
+        let bound =
+            bind_stream(root, "20260804", "120000_60", "phone", CID_A, "", &hints()).unwrap();
+        advance_bound_stream(
+            "phone",
+            "20260804",
+            "120000_60",
+            &bound.segment,
+            hints(),
+            CID_A,
+            "",
+        )
+        .unwrap();
+        let mut record = load_record(root, "phone");
+        record.last_marker = None;
+        write_record(root, &record);
+        fs::remove_file(bound.segment.path().join("stream.json")).unwrap();
+        let before = fs::read(stream_record_path(root, "phone")).unwrap();
+        assert!(
+            advance_bound_stream(
+                "phone",
+                "20260804",
+                "120000_60",
+                &bound.segment,
+                hints(),
+                CID_A,
+                ""
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read(stream_record_path(root, "phone")).unwrap(), before);
+        assert!(!bound.segment.path().join("stream.json").exists());
+    }
+
+    #[test]
+    fn bound_retry_refuses_a_marker_from_another_stream() {
+        let temporary = TempDir::new();
+        let root = temporary.path();
+        let first =
+            bind_stream(root, "20260804", "120000_60", "phone", CID_A, "", &hints()).unwrap();
+        advance_bound_stream(
+            "phone",
+            "20260804",
+            "120000_60",
+            &first.segment,
+            hints(),
+            CID_A,
+            "",
+        )
+        .unwrap();
+        let second =
+            bind_stream(root, "20260804", "120100_60", "phone", CID_A, "", &hints()).unwrap();
+        advance_bound_stream(
+            "phone",
+            "20260804",
+            "120100_60",
+            &second.segment,
+            hints(),
+            CID_A,
+            "",
+        )
+        .unwrap();
+        let path = first.segment.path().join("stream.json");
+        let mut marker = read_stream_marker(&path).unwrap().unwrap();
+        marker.stream = "another".to_owned();
+        write_json(&path, &marker, JsonWriteOptions::default()).unwrap();
+        assert!(
+            advance_bound_stream(
+                "phone",
+                "20260804",
+                "120000_60",
+                &first.segment,
+                hints(),
+                CID_A,
+                ""
+            )
+            .is_err()
+        );
+        assert_eq!(load_record(root, "phone").seq, 2);
+        assert_eq!(read_stream_marker(&path).unwrap().unwrap(), marker);
     }
 
     #[test]
@@ -1236,6 +1471,7 @@ mod tests {
                 cid: CID_A,
                 source: "",
             },
+            false,
         );
         assert!(matches!(
             result,
@@ -1535,6 +1771,7 @@ mod tests {
                     cid: CID_A,
                     source: ""
                 },
+                false,
             ),
             Err(SegmentError::MalformedStreamRecord { .. })
         ));
@@ -1578,6 +1815,7 @@ mod tests {
                     cid: CID_A,
                     source: ""
                 },
+                false,
             )
             .is_err()
         );
