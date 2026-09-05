@@ -251,6 +251,14 @@ fn main() {
             std::fs::write(ready_path, std::process::id().to_string()).expect("signal readiness");
             std::thread::sleep(Duration::from_secs(30));
         }
+        "ready-wait" => {
+            let ready_path = args.next().expect("ready path");
+            let release_path = args.next().expect("release path");
+            std::fs::write(ready_path, fixture_ready_marker()).expect("signal readiness");
+            while !std::path::Path::new(&release_path).exists() {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
         "ready-sleep" => {
             let ready_path = args.next().expect("ready path");
             let millis: u64 = args

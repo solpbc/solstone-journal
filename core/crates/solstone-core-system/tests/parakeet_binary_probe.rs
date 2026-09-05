@@ -23,10 +23,14 @@ fn binary_probe_classifies_openmp_loader_failure() {
     let mut permissions = fs::metadata(&binary).unwrap().permissions();
     permissions.set_mode(0o755);
     fs::set_permissions(&binary, permissions).unwrap();
-    assert!(matches!(
-        probe_parakeet_cpp_binary(&binary, Duration::from_secs(1)),
-        ParakeetCppReadiness::OpenMpRuntimeUnavailable { .. }
-    ));
+    let readiness = probe_parakeet_cpp_binary(&binary, Duration::from_secs(1));
+    assert!(
+        matches!(
+            readiness,
+            ParakeetCppReadiness::OpenMpRuntimeUnavailable { .. }
+        ),
+        "unexpected readiness: {readiness:?}"
+    );
 }
 
 #[test]
@@ -43,10 +47,11 @@ fn binary_probe_reaps_a_timed_out_child() {
     permissions.set_mode(0o755);
     fs::set_permissions(&binary, permissions).unwrap();
 
-    assert!(matches!(
-        probe_parakeet_cpp_binary(&binary, Duration::from_secs(1)),
-        ParakeetCppReadiness::BinaryUnstartable { .. }
-    ));
+    let readiness = probe_parakeet_cpp_binary(&binary, Duration::from_secs(1));
+    assert!(
+        matches!(readiness, ParakeetCppReadiness::BinaryUnstartable { .. }),
+        "unexpected readiness: {readiness:?}"
+    );
     // ⚠ The child writes its pid and then sleeps; the probe's 1 s timeout can elapse
     // before the shell has flushed that write, so reading it straight away raced and
     // panicked with `NotFound` under parallel suite load. Wait for the file instead of
@@ -55,8 +60,9 @@ fn binary_probe_reaps_a_timed_out_child() {
     while !pid.exists() && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(10));
     }
-    let child_pid = fs::read_to_string(&pid)
-        .expect("the probed child must have recorded its pid before the probe reaped it");
+    let child_pid = fs::read_to_string(&pid).unwrap_or_else(|error| {
+        panic!("the probed child must have recorded its pid before the probe reaped it: {error}; readiness: {readiness:?}")
+    });
     let status = Command::new("sh")
         .args(["-c", &format!("kill -0 {} 2>/dev/null", child_pid.trim())])
         .status()

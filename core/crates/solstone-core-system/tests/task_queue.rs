@@ -299,6 +299,7 @@ fn ac7_different_partitions_do_not_block_each_other() {
     ));
     wait_for_ready(&ready_a);
     wait_for_ready(&ready_b);
+    wait_until(|| queue.active_process_handles().len() == 2);
     assert_eq!(queue.active_process_handles().len(), 2);
 }
 
@@ -310,14 +311,16 @@ fn ac8_busy_partition_queues_without_second_process() {
     let ready = bed.root.join("ready");
     queue.submit(request(
         "one",
-        &command(&["ready-sleep", ready.to_str().expect("utf8"), "300"]),
+        &command(&["ready-park", ready.to_str().expect("utf8")]),
         None,
         None,
     ));
     wait_for_ready(&ready);
+    wait_until(|| !started_references(&sink).is_empty());
     queue.submit(request("two", &command(&["lines"]), None, None));
     assert_eq!(queue.collect_queue_counts().values().sum::<usize>(), 1);
     assert_eq!(started_references(&sink), vec!["one"]);
+    assert_eq!(queue.shutdown().active_count, 1);
 }
 
 #[test]
@@ -615,11 +618,12 @@ fn ac18_cap_overrun_is_terminated_and_labeled_timeout() {
     let ready = bed.root.join("ready");
     queue.submit(request(
         "overrun",
-        &command(&["ready-sleep", ready.to_str().expect("utf8"), "1000"]),
+        &command(&["ready-park", ready.to_str().expect("utf8")]),
         None,
         None,
     ));
     wait_for_ready(&ready);
+    wait_until(|| queue.active_process_handles().len() == 1);
     queue.enforce_deadlines(Instant::now() + Duration::from_secs(1));
     wait_for_history(&queue, 1);
     assert_eq!(queue.history()[0].exit_status, TIMEOUT_EXIT_STATUS);
@@ -637,6 +641,7 @@ fn ac19_two_stopped_ticks_terminate_with_the_same_timeout_label() {
         None,
     ));
     wait_for_ready(&ready);
+    wait_until(|| queue.active_process_handles().len() == 1);
     let pid = i32::try_from(queue.active_process_handles()[0].pid()).expect("pid");
     nix::sys::signal::kill(
         nix::unistd::Pid::from_raw(pid),
@@ -657,13 +662,15 @@ fn ac20_under_cap_task_is_not_terminated() {
     let ready = bed.root.join("ready");
     queue.submit(request(
         "under",
-        &command(&["ready-sleep", ready.to_str().expect("utf8"), "250"]),
+        &command(&["ready-park", ready.to_str().expect("utf8")]),
         None,
         None,
     ));
     wait_for_ready(&ready);
+    wait_until(|| queue.active_process_handles().len() == 1);
     queue.enforce_deadlines(Instant::now());
     assert_eq!(queue.active_process_handles().len(), 1);
+    assert_eq!(queue.shutdown().active_count, 1);
 }
 
 #[test]
@@ -678,6 +685,7 @@ fn ac21_stopped_ticks_reset_after_resume() {
         None,
     ));
     wait_for_ready(&ready);
+    wait_until(|| queue.active_process_handles().len() == 1);
     let pid = i32::try_from(queue.active_process_handles()[0].pid()).expect("pid");
     let process = nix::unistd::Pid::from_raw(pid);
     nix::sys::signal::kill(process, nix::sys::signal::Signal::SIGSTOP).expect("stop child");
@@ -711,6 +719,7 @@ fn ac22_three_deadline_passes_start_one_termination_attempt() {
         None,
     ));
     wait_for_ready(&ready);
+    wait_until(|| queue.active_process_handles().len() == 1);
     for _ in 0..3 {
         queue.enforce_deadlines(Instant::now() + Duration::from_secs(1));
     }
@@ -747,13 +756,19 @@ fn ac23_completed_during_probe_window_is_not_resurrected_as_timeout() {
         Some(hook),
     );
     let ready = bed.root.join("ready");
+    let finish = bed.root.join("finish");
     queue.submit(request(
         "fast",
-        &command(&["ready-sleep", ready.to_str().expect("utf8"), "20"]),
+        &command(&[
+            "ready-wait",
+            ready.to_str().expect("utf8"),
+            finish.to_str().expect("utf8"),
+        ]),
         None,
         None,
     ));
     wait_for_ready(&ready);
+    wait_until(|| queue.active_process_handles().len() == 1);
     let enforcing = {
         let queue = queue.clone();
         std::thread::spawn(move || queue.enforce_deadlines(Instant::now() + Duration::from_secs(1)))
@@ -761,6 +776,7 @@ fn ac23_completed_during_probe_window_is_not_resurrected_as_timeout() {
     entered_rx
         .recv_timeout(Duration::from_secs(2))
         .expect("phase b reached");
+    fs::write(&finish, b"finish").expect("release child during probe window");
     wait_for_history(&queue, 1);
     release_tx.send(()).expect("release phase c");
     enforcing.join().expect("enforcement thread");
@@ -804,6 +820,7 @@ fn ac24_probe_runs_without_holding_queue_lock() {
         None,
     ));
     wait_for_ready(&ready);
+    wait_until(|| queue.active_process_handles().len() == 1);
     let enforcing = {
         let queue = queue.clone();
         std::thread::spawn(move || queue.enforce_deadlines(Instant::now()))
@@ -832,11 +849,12 @@ fn ac26_shutdown_returns_active_snapshot_count_and_blocks_advancement() {
     let ready = bed.root.join("ready");
     queue.submit(request(
         "running",
-        &command(&["ready-sleep", ready.to_str().expect("utf8"), "5000"]),
+        &command(&["ready-park", ready.to_str().expect("utf8")]),
         None,
         None,
     ));
     wait_for_ready(&ready);
+    wait_until(|| !started_references(&sink).is_empty());
     queue.submit(request("queued", &command(&["lines"]), None, None));
     assert_eq!(queue.shutdown().active_count, 1);
     wait_for_history(&queue, 1);
@@ -856,6 +874,7 @@ fn ac27_status_truncates_while_enforcement_uses_fractional_duration() {
         None,
     ));
     wait_for_ready(&ready);
+    wait_until(|| queue.active_process_handles().len() == 1);
     let now = Instant::now();
     let status = queue.collect_task_status(now + Duration::from_millis(3_900));
     assert_eq!(status[0].cap_seconds, 4);
@@ -884,6 +903,7 @@ fn shutdown_waits_for_an_already_running_deadline_termination() {
         None,
     ));
     wait_for_ready(&ready);
+    wait_until(|| queue.active_process_handles().len() == 1);
     queue.enforce_deadlines(Instant::now() + Duration::from_secs(1));
     wait_until(|| count.exists());
     assert_eq!(queue.shutdown().active_count, 1);
@@ -941,6 +961,7 @@ fn phase_a_snapshot_does_not_wait_for_a_terminating_process_mutex() {
     ));
     wait_for_ready(&blocked_ready);
     wait_for_ready(&probe_ready);
+    wait_until(|| queue.active_process_handles().len() == 2);
     queue.enforce_deadlines(Instant::now() + Duration::from_secs(1));
     wait_until(|| count.exists());
     let enforcing = {
@@ -1046,6 +1067,7 @@ fn ac32_cap_termination_drains_continuous_output_without_partial_lines() {
         None,
     ));
     wait_for_ready(&ready);
+    wait_until(|| queue.active_process_handles().len() == 1);
     wait_until(|| {
         process_sink
             .0
@@ -1087,6 +1109,7 @@ fn ac33_dropping_one_clone_does_not_terminate_worker_another_clone_holds() {
         None,
     ));
     wait_for_ready(&ready);
+    wait_until(|| queue.active_process_handles().len() == 1);
     let pid = queue.active_process_handles()[0].pid();
     drop(clone);
     assert!(

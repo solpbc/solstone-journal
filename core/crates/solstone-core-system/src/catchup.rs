@@ -27,6 +27,7 @@ pub const MAX_UPDATED_CATCHUP: usize = 4;
 pub const CATCHUP_STATE_VERSION: u64 = 1;
 pub const KIND_DAILY_CATCHUP: &str = "daily-catchup";
 pub const KIND_SEGMENT_REPAIR: &str = "segment-repair";
+const SEGMENT_REPAIR_AT_ADMISSION: &str = "segment_repair_at_admission";
 
 const RAW_HASHED_NAMES: [&str; 5] = [
     "audio.json",
@@ -334,6 +335,18 @@ pub fn record_daily_catchup_attempt(
         record.insert("daily_progress".to_owned(), Value::Null);
         record.insert("exit_code".to_owned(), Value::Null);
         record.insert("exit_status".to_owned(), Value::Null);
+        // Only an inactive repair already present at admission can be settled
+        // by this daily attempt. Comparing its complete record at completion
+        // preserves repairs that overlap or begin while the daily task runs.
+        let prior_repair = entries
+            .get(&catchup_state_key(day, KIND_SEGMENT_REPAIR))
+            .filter(|repair| {
+                repair.get("active").is_some_and(Value::is_null)
+                    && repair.get("fingerprint").and_then(Value::as_str) == Some(fingerprint)
+            })
+            .cloned()
+            .unwrap_or(Value::Null);
+        record.insert(SEGMENT_REPAIR_AT_ADMISSION.to_owned(), prior_repair);
         record.insert(
             "active".to_owned(),
             json!({"ref": reference, "started_at": started_at}),
@@ -341,6 +354,19 @@ pub fn record_daily_catchup_attempt(
         entries.insert(key, Value::Object(record));
         true
     });
+}
+
+#[cfg(unix)]
+fn settled_segment_repair_key(
+    entries: &Map<String, Value>,
+    day: &str,
+    daily: &Map<String, Value>,
+) -> Option<String> {
+    let prior = daily
+        .get(SEGMENT_REPAIR_AT_ADMISSION)
+        .filter(|value| !value.is_null())?;
+    let key = catchup_state_key(day, KIND_SEGMENT_REPAIR);
+    (entries.get(&key) == Some(prior)).then_some(key)
 }
 
 /// The stream/raw tuple sampled when a catchup task becomes the queue primary.
@@ -420,6 +446,7 @@ pub fn record_daily_catchup_admission_failure(journal: &Path, day: &str, started
         record.insert("active".to_owned(), Value::Null);
         record.insert("admitted_generation".to_owned(), Value::Null);
         record.insert("daily_progress".to_owned(), Value::Null);
+        record.remove(SEGMENT_REPAIR_AT_ADMISSION);
         record.insert("exit_code".to_owned(), json!(-1));
         record.insert("exit_status".to_owned(), json!("error"));
         record.insert("last_outcome".to_owned(), json!("error"));
@@ -592,6 +619,12 @@ where
                     apply_no_progress_backoff(&mut record, outcome.ended_at);
                 }
             }
+            if daily_completed
+                && let Some(repair_key) = settled_segment_repair_key(entries, day, &record)
+            {
+                entries.remove(&repair_key);
+            }
+            record.remove(SEGMENT_REPAIR_AT_ADMISSION);
             entries.insert(key, Value::Object(record));
             recorded = true;
             true
@@ -712,7 +745,18 @@ where
                     record.insert("reason_code".to_owned(), json!("interrupted"));
                     apply_no_progress_backoff(&mut record, ended_at);
                 }
+                let repair_to_settle = if kind == KIND_DAILY_CATCHUP
+                    && record.get("last_outcome").and_then(Value::as_str) == Some("completed")
+                {
+                    settled_segment_repair_key(entries, day, &record)
+                } else {
+                    None
+                };
+                record.remove(SEGMENT_REPAIR_AT_ADMISSION);
                 entries.insert(key, Value::Object(record));
+                if let Some(repair_key) = repair_to_settle {
+                    entries.remove(&repair_key);
+                }
                 changed = true;
             }
             changed
@@ -1403,6 +1447,155 @@ mod tests {
 
         assert!(matches!(result, Err(CatchupError::CapabilityUnavailable)));
         assert_eq!(fs::read(state_path).expect("catchup state"), before);
+    }
+
+    #[test]
+    fn completed_daily_catchup_settles_preexisting_inactive_segment_repair() {
+        for reconcile in [false, true] {
+            let bed = Bed::new("daily-settles-repair");
+            let day = "20260101";
+            let fingerprint = empty_fingerprint();
+            record_segment_repair_attempt(&bed.root, day, 1.0);
+            record_segment_repair_outcome(
+                &bed.root,
+                day,
+                SegmentRepairOutcome {
+                    success: false,
+                    timed_out: false,
+                    timeout_seconds: None,
+                    ended_at: 5.0,
+                    cleared: Some(32),
+                    remaining: Some(2),
+                },
+            );
+            record_daily_catchup_attempt(&bed.root, day, "catchup", 10.0, 2, &fingerprint);
+            bed.write(
+                "chronicle/20260101/health/daily.updated",
+                daily_marker(2, &fingerprint),
+            );
+            if reconcile {
+                reconcile_stale_catchup_attempts(&bed.root, UNIX_EPOCH + Duration::from_secs(20))
+                    .unwrap();
+            } else {
+                assert!(
+                    record_daily_catchup_outcome(
+                        &bed.root,
+                        day,
+                        "catchup",
+                        2,
+                        &fingerprint,
+                        daily_outcome(20.0, 0),
+                    )
+                    .unwrap()
+                );
+            }
+            let state = read_catchup_state(&bed.root);
+            let entries = catchup_entries(&state).unwrap();
+            assert_eq!(
+                entries[&catchup_state_key(day, KIND_DAILY_CATCHUP)]["last_outcome"],
+                "completed"
+            );
+            assert!(!entries.contains_key(&catchup_state_key(day, KIND_SEGMENT_REPAIR)));
+            assert!(
+                !entries[&catchup_state_key(day, KIND_DAILY_CATCHUP)]
+                    .as_object()
+                    .unwrap()
+                    .contains_key(SEGMENT_REPAIR_AT_ADMISSION)
+            );
+        }
+    }
+
+    #[test]
+    fn daily_catchup_preserves_unproven_or_overlapping_repairs() {
+        for case in [
+            "active-before",
+            "overlap-finishes",
+            "changed-after",
+            "new-after",
+            "different-input",
+            "no-marker",
+            "wrong-reference",
+            "wrong-generation",
+        ] {
+            let bed = Bed::new(case);
+            let day = "20260101";
+            let fingerprint = empty_fingerprint();
+            let failed = SegmentRepairOutcome {
+                success: false,
+                timed_out: false,
+                timeout_seconds: None,
+                ended_at: 5.0,
+                cleared: Some(32),
+                remaining: Some(2),
+            };
+            if case != "new-after" {
+                record_segment_repair_attempt(&bed.root, day, 1.0);
+                if !matches!(case, "active-before" | "overlap-finishes") {
+                    record_segment_repair_outcome(&bed.root, day, failed);
+                }
+            }
+            if case == "different-input" {
+                update_catchup_state(&bed.root, false, |entries| {
+                    entries
+                        .get_mut(&catchup_state_key(day, KIND_SEGMENT_REPAIR))
+                        .unwrap()["fingerprint"] = json!("different-input");
+                    true
+                });
+            }
+            record_daily_catchup_attempt(&bed.root, day, "catchup", 10.0, 2, &fingerprint);
+            if matches!(case, "changed-after" | "new-after") {
+                record_segment_repair_attempt(&bed.root, day, 15.0);
+                record_segment_repair_outcome(
+                    &bed.root,
+                    day,
+                    SegmentRepairOutcome {
+                        ended_at: 16.0,
+                        ..failed
+                    },
+                );
+            } else if case == "overlap-finishes" {
+                record_segment_repair_outcome(
+                    &bed.root,
+                    day,
+                    SegmentRepairOutcome {
+                        ended_at: 16.0,
+                        ..failed
+                    },
+                );
+            }
+            let repair_key = catchup_state_key(day, KIND_SEGMENT_REPAIR);
+            let before = read_catchup_state(&bed.root)["entries"][&repair_key].clone();
+            assert!(before.is_object());
+            if case != "no-marker" {
+                bed.write(
+                    "chronicle/20260101/health/daily.updated",
+                    daily_marker(2, &fingerprint),
+                );
+            }
+            let recorded = record_daily_catchup_outcome(
+                &bed.root,
+                day,
+                if case == "wrong-reference" {
+                    "old-catchup"
+                } else {
+                    "catchup"
+                },
+                if case == "wrong-generation" { 1 } else { 2 },
+                &fingerprint,
+                daily_outcome(20.0, 0),
+            )
+            .unwrap();
+            assert_eq!(
+                recorded,
+                !matches!(case, "wrong-reference" | "wrong-generation"),
+                "{case}"
+            );
+            assert_eq!(
+                read_catchup_state(&bed.root)["entries"][&repair_key],
+                before,
+                "{case}"
+            );
+        }
     }
 
     #[test]
