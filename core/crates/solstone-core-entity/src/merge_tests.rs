@@ -89,6 +89,36 @@ fn voiceprint_journal() -> PathBuf {
 
 #[cfg(unix)]
 #[test]
+fn merge_and_undo_accept_an_aliased_journal_root() {
+    let journal = voiceprint_journal();
+    let alias = journal.with_extension("alias");
+    std::os::unix::fs::symlink(&journal, &alias).unwrap();
+    for id in ["source", "target"] {
+        save_entity_identity(&journal, id, &json!({"id":id,"name":id}), None).unwrap();
+        let facet = journal.join(format!("facets/work/entities/{id}"));
+        fs::create_dir_all(&facet).unwrap();
+        fs::write(
+            facet.join("entity.json"),
+            json!({"entity_id":id}).to_string(),
+        )
+        .unwrap();
+        fs::write(
+            facet.join("observations.jsonl"),
+            json!({"content":id}).to_string(),
+        )
+        .unwrap();
+    }
+    let merged =
+        commit_entity_merge(&alias, "source", "target", EntityMergeOptions::default()).unwrap();
+    assert!(!journal.join("entities/source").exists());
+    crate::undo_entity_merge(&alias, &merged.merge_id, serde_json::Value::Null).unwrap();
+    assert!(journal.join("entities/source/entity.json").is_file());
+    fs::remove_file(alias).unwrap();
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
 fn source_namespace_sync_failure_keeps_uncommitted_recovery_and_retry_succeeds() {
     for relative in [".", "entities", "entities/target/history/private", "logs"] {
         let journal = voiceprint_journal();

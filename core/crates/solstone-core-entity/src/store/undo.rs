@@ -119,6 +119,9 @@ pub(crate) fn undo_entity_merge_with_injector(
     caller: Value,
     injector: Option<&FailureInjector>,
 ) -> Result<EntityUndoReport, EntityUndoError> {
+    let canonical_journal =
+        solstone_core_journal_io::realpath_non_strict(journal).map_err(SnapshotError::Path)?;
+    let journal = canonical_journal.as_path();
     let _trust = hold_entity_trust_lock(journal)
         .map_err(|error| EntityUndoError::Write(EntityWriteError::TrustLock(error)))?;
     if let Some(recovered) = super::merge_rollback::recover(journal)?
