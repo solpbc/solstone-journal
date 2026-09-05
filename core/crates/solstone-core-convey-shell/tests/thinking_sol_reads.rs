@@ -91,7 +91,7 @@ fn seed_populated(fixture: &Fixture, failures_today: usize) {
     fixture.established();
     let day = "20260403";
     write_jsonl(
-        &fixture.0.join("talents/daily/1710000000000.jsonl"),
+        &fixture.0.join("talents/daily_digest/1710000000000.jsonl"),
         &[
             request_event("1710000000000", day, "daily_digest", Some("work")),
             json!({"event":"start", "model":"gpt-5.5", "provider":"openai", "ts":1710000000100i64}),
@@ -395,7 +395,6 @@ async fn ac4_run_detail_missing_or_wrong_use_id_is_not_found() {
 
 #[tokio::test]
 async fn ac4_decoy_does_not_mask_genuine_match_in_either_directory_order() {
-    let genuine = request_event("run-x", "20260403", "genuine", None);
     let wrong = serde_json::to_vec(&request_event("other", "20260403", "decoy", None)).unwrap();
     let cases: [(&str, &[u8], &str, bool, StatusCode); 3] = [
         ("5a", wrong.as_slice(), "run-x.jsonl", false, StatusCode::OK),
@@ -409,6 +408,7 @@ async fn ac4_decoy_does_not_mask_genuine_match_in_either_directory_order() {
             "run-x.jsonl"
         };
         for (decoy_dir, genuine_dir) in [("aaa", "zzz"), ("zzz", "aaa")] {
+            let genuine = request_event("run-x", "20260403", genuine_dir, None);
             let fixture = Fixture::new();
             fixture.established();
             let decoy_path = fixture.0.join("talents").join(decoy_dir).join(decoy_file);
@@ -433,7 +433,7 @@ async fn ac4_decoy_does_not_mask_genuine_match_in_either_directory_order() {
                 "{label} {decoy_dir}->{genuine_dir}: {body}"
             );
             if expected == StatusCode::OK {
-                assert_eq!(body["name"], "genuine", "{label}: {body}");
+                assert_eq!(body["name"], genuine_dir, "{label}: {body}");
             } else {
                 assert_eq!(body["reason_code"], "talent_run_pending", "{label}: {body}");
             }
@@ -720,7 +720,7 @@ async fn ac5_derived_output_paths_use_env_stream() {
     streamed_request["segment"] = json!("segment-a");
     streamed_request["env"] = json!({"SOL_STREAM":"stream-a"});
     write_jsonl(
-        &fixture.0.join("talents/derived/streamed.jsonl"),
+        &fixture.0.join("talents/streamed/streamed.jsonl"),
         &[
             streamed_request,
             json!({"event":"finish", "usage":{"input_tokens":1,"output_tokens":1}}),
@@ -730,7 +730,7 @@ async fn ac5_derived_output_paths_use_env_stream() {
     no_env_request["output"] = json!("md");
     no_env_request["segment"] = json!("segment-a");
     write_jsonl(
-        &fixture.0.join("talents/derived/no-env.jsonl"),
+        &fixture.0.join("talents/no-env/no-env.jsonl"),
         &[
             no_env_request,
             json!({"event":"finish", "usage":{"input_tokens":1,"output_tokens":1}}),
@@ -741,7 +741,9 @@ async fn ac5_derived_output_paths_use_env_stream() {
     active_request["segment"] = json!("segment-a");
     active_request["env"] = json!({"SOL_STREAM":"stream-a"});
     write_jsonl(
-        &fixture.0.join("talents/derived/active-stream_active.jsonl"),
+        &fixture
+            .0
+            .join("talents/active-stream/active-stream_active.jsonl"),
         &[active_request],
     );
 
@@ -1044,4 +1046,75 @@ fn run_convey_from_isolated_dir_returns_diagnostic_without_panicking() {
         error.contains(&bin.display().to_string()),
         "diagnostic must name the executable dir: {error}"
     );
+}
+
+#[tokio::test]
+async fn native_request_rows_without_event_or_ts_remain_readable() {
+    let fixture = Fixture::new();
+    fixture.established();
+    let start = 1788639954771i64;
+    for (offset, ending) in [(0, "finish"), (10000, "error")] {
+        let id = (start + offset).to_string();
+        write_jsonl(
+            &fixture.0.join(format!("talents/participation/{id}.jsonl")),
+            &[
+                json!({"name":"participation", "use_id":id, "day":"20260905", "prompt":"review"}),
+                json!({"event":"start", "ts":start + offset + 10, "model":"test-model"}),
+                json!({"event":ending, "ts":start + offset + 2000, "reason_code":"context_window_exceeded", "error":"context full"}),
+            ],
+        );
+        let (status, body) = get(
+            router(fixture.0.clone()),
+            &format!("/app/thinking/api/run/{id}"),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["start"], start + offset);
+        assert_eq!(body["runtime_seconds"], 2.0);
+        assert_eq!(body["failed"], ending == "error");
+        if ending == "error" {
+            assert_eq!(body["reason_code"], "context_window_exceeded");
+        }
+    }
+    let active_id = (start + 20000).to_string();
+    write_jsonl(
+        &fixture
+            .0
+            .join(format!("talents/participation/{active_id}_active.jsonl")),
+        &[json!({"name":"participation", "use_id":active_id, "day":"20260905"})],
+    );
+    let (status, body) = get(
+        router(fixture.0.clone()),
+        "/app/thinking/api/talents/20260905",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let active = body["uses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == active_id)
+        .expect("native active request visible");
+    assert_eq!(active["start"], start + 20000);
+    assert_eq!(active["status"], "running");
+    let (status, _) = get(
+        router(fixture.0.clone()),
+        &format!("/app/thinking/api/run/{active_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    write_jsonl(
+        &fixture.0.join("talents/participation/mismatch.jsonl"),
+        &[json!({"name":"other", "use_id":"mismatch", "day":"20260905"})],
+    );
+    let (status, _) = get(
+        router(fixture.0.clone()),
+        "/app/thinking/api/run/mismatch",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
 }

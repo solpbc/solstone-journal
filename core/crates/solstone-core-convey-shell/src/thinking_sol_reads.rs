@@ -18,6 +18,7 @@ use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_facets::{list_declared_facet_names, read_facet_declaration};
 use solstone_core_facets_web::date_nav_index;
 use solstone_core_journal_config::read_journal_config;
+use solstone_core_journal_io::cortex_use::{CortexUseCandidateRead, parse_cortex_use_request};
 use solstone_core_journal_io::paths::resolve_journal_path;
 use solstone_core_system::catchup::updated_days;
 use solstone_core_talent_cli::compose_talent;
@@ -449,17 +450,14 @@ fn read_day_index(path: &Path, facet_filter: Option<&str>) -> Vec<Value> {
 fn active_use(path: &Path, journal: &Path) -> Option<(String, Value)> {
     let text = fs::read_to_string(path).ok()?;
     let mut lines = text.lines();
-    let request = serde_json::from_str::<Value>(lines.next()?.trim()).ok()?;
-    if request.get("event").and_then(Value::as_str) != Some("request") {
-        return None;
-    }
-    let parsed = parse_events(lines);
-    let output_file = output_file(&request, journal).ok().flatten();
     let id = path
         .file_stem()?
         .to_str()?
         .strip_suffix("_active")?
         .to_owned();
+    let request = read_request(lines.next()?.trim(), path, &id).ok()?;
+    let parsed = parse_events(lines);
+    let output_file = output_file(&request, journal).ok().flatten();
     let day = request
         .get("day")
         .and_then(Value::as_str)
@@ -471,7 +469,7 @@ fn active_use(path: &Path, journal: &Path) -> Option<(String, Value)> {
         json!({
             "id": id,
             "name": request.get("name").cloned().unwrap_or(Value::Null),
-            "start": request.get("ts").cloned().unwrap_or_else(|| json!(0)),
+            "start": request_start(&request, &id),
             "status": "running",
             "prompt": request.get("prompt").cloned().unwrap_or_else(|| json!("")),
             "facet": request.get("facet").cloned().unwrap_or(Value::Null),
@@ -591,22 +589,35 @@ enum RunError {
     Operation(String),
 }
 
+fn read_request(first: &str, path: &Path, use_id: &str) -> Result<Value, RunError> {
+    let directory = path.parent().ok_or(RunError::Malformed)?;
+    if !matches!(
+        parse_cortex_use_request(directory, use_id, first.as_bytes()),
+        CortexUseCandidateRead::Accepted(_)
+    ) {
+        return Err(RunError::Malformed);
+    }
+    serde_json::from_str(first).map_err(|_| RunError::Malformed)
+}
+
+fn request_start(request: &Value, use_id: &str) -> i64 {
+    request
+        .get("ts")
+        .and_then(Value::as_i64)
+        .filter(|ts| *ts != 0)
+        .unwrap_or_else(|| use_id.parse().unwrap_or_default())
+}
+
 fn read_run(path: &Path, journal: &Path, use_id: &str) -> Result<Value, RunError> {
     let text = fs::read_to_string(path).map_err(|error| RunError::Operation(error.to_string()))?;
     let mut lines = text.lines();
     let Some(first) = lines.next().map(str::trim).filter(|line| !line.is_empty()) else {
         return Err(RunError::Malformed);
     };
-    let request = serde_json::from_str::<Value>(first).map_err(|_| RunError::Malformed)?;
-    if request.get("event").and_then(Value::as_str) != Some("request") {
-        return Err(RunError::Malformed);
-    }
+    let request = read_request(first, path, use_id)?;
     let parsed = parse_events(lines);
     let output_file = output_file(&request, journal).map_err(RunError::Operation)?;
-    let start = request
-        .get("ts")
-        .and_then(Value::as_i64)
-        .unwrap_or_default();
+    let start = request_start(&request, use_id);
     let end = parsed.finish_ts.or(parsed.error_ts);
     let runtime_seconds = end
         .filter(|_| start != 0)
