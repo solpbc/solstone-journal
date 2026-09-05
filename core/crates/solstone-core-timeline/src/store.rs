@@ -34,7 +34,6 @@ pub fn publish_segment_timeline(
     let locks = acquire_timeline_locks(
         journal,
         TimelineLockRequest {
-            days: vec![binding.day.clone()],
             subjects: vec![TimelineLockSubject::Segment(binding.clone())],
             ..TimelineLockRequest::default()
         },

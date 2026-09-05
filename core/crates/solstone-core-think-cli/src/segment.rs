@@ -1339,7 +1339,6 @@ fn write_sense_and_change(
     let _locks = acquire_timeline_locks(
         &context.journal,
         TimelineLockRequest {
-            days: vec![binding.day.clone()],
             subjects: vec![TimelineLockSubject::Segment(binding.clone())],
             ..TimelineLockRequest::default()
         },

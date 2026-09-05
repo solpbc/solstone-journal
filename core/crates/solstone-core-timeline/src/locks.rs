@@ -17,7 +17,6 @@ pub enum TimelineLockSubject {
 
 #[derive(Debug, Clone, Default)]
 pub struct TimelineLockRequest {
-    pub days: Vec<String>,
     pub subjects: Vec<TimelineLockSubject>,
     pub options: LockOptions,
 }
@@ -26,7 +25,7 @@ pub struct TimelineLockRequest {
 pub struct TimelineLockSet {
     subjects: Vec<FileLock>,
     population: FileLock,
-    days: Vec<FileLock>,
+    options: LockOptions,
 }
 
 impl TimelineLockSet {
@@ -50,22 +49,43 @@ impl TimelineLockSet {
         })
     }
 
+    /// Run slow work while retaining subject ownership, then reacquire publication access.
+    pub fn without_population<T>(
+        self,
+        work: impl FnOnce() -> T,
+    ) -> Result<(Self, T), TimelineError> {
+        let Self {
+            subjects,
+            population,
+            options,
+        } = self;
+        let path = population.path().to_path_buf();
+        drop(population);
+        let result = work();
+        let population = acquire(path, options)?;
+        Ok((
+            Self {
+                subjects,
+                population,
+                options,
+            },
+            result,
+        ))
+    }
+
     pub fn protected_paths(&self) -> Vec<&Path> {
         self.subjects
             .iter()
             .map(FileLock::path)
             .chain(std::iter::once(self.population.path()))
-            .chain(self.days.iter().map(FileLock::path))
             .collect()
     }
 }
 
 pub fn acquire_timeline_locks(
     journal: &Path,
-    mut request: TimelineLockRequest,
+    request: TimelineLockRequest,
 ) -> Result<TimelineLockSet, TimelineError> {
-    request.days.sort();
-    request.days.dedup();
     let root = journal.join("health/timeline/locks");
     let mut subject_paths = request
         .subjects
@@ -79,20 +99,10 @@ pub fn acquire_timeline_locks(
         .map(|path| acquire(path, request.options))
         .collect::<Result<Vec<_>, _>>()?;
     let population = acquire(root.join("population"), request.options)?;
-    let days = request
-        .days
-        .iter()
-        .map(|day| {
-            acquire(
-                root.join("days").join(format!("{day}.order")),
-                request.options,
-            )
-        })
-        .collect::<Result<Vec<_>, _>>()?;
     Ok(TimelineLockSet {
         subjects,
         population,
-        days,
+        options: request.options,
     })
 }
 
@@ -133,12 +143,11 @@ mod tests {
     }
 
     #[test]
-    fn acquisition_orders_unsorted_day_and_subject_requests() {
+    fn acquisition_orders_subject_requests() {
         let journal = tempfile::tempdir().unwrap();
         let locks = acquire_timeline_locks(
             journal.path(),
             TimelineLockRequest {
-                days: vec!["20260402".to_owned(), "20260401".to_owned()],
                 subjects: vec![
                     TimelineLockSubject::Master,
                     TimelineLockSubject::Day("20260401".to_owned()),
@@ -159,12 +168,46 @@ mod tests {
 
         assert!(paths[..3].windows(2).all(|pair| pair[0] <= pair[1]));
         assert_eq!(paths[3], PathBuf::from("health/timeline/locks/population"));
-        assert_eq!(
-            &paths[4..],
-            [
-                PathBuf::from("health/timeline/locks/days/20260401.order"),
-                PathBuf::from("health/timeline/locks/days/20260402.order"),
-            ]
+        assert_eq!(paths.len(), 4);
+    }
+
+    #[test]
+    fn slow_work_retains_subject_and_reacquires_population_even_on_work_error() {
+        let journal = tempfile::tempdir().unwrap();
+        let request = |subject| TimelineLockRequest {
+            subjects: vec![subject],
+            options: LockOptions {
+                timeout: Duration::ZERO,
+                ..LockOptions::default()
+            },
+        };
+        let locks =
+            acquire_timeline_locks(journal.path(), request(TimelineLockSubject::Master)).unwrap();
+        let (locks, result) = locks
+            .without_population(|| {
+                let unrelated = acquire_timeline_locks(
+                    journal.path(),
+                    request(TimelineLockSubject::Segment(binding())),
+                )
+                .unwrap();
+                drop(unrelated);
+                assert!(
+                    acquire_timeline_locks(journal.path(), request(TimelineLockSubject::Master),)
+                        .is_err()
+                );
+                Err::<(), _>("model failed")
+            })
+            .unwrap();
+        assert_eq!(result, Err("model failed"));
+        locks.require_subject(journal.path(), "master").unwrap();
+        assert!(
+            acquire_timeline_locks(
+                journal.path(),
+                request(TimelineLockSubject::Segment(binding())),
+            )
+            .is_err()
         );
+        drop(locks);
+        acquire_timeline_locks(journal.path(), request(TimelineLockSubject::Master)).unwrap();
     }
 }

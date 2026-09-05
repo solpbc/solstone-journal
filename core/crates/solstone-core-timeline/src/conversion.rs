@@ -415,7 +415,6 @@ mod tests {
                             timeout: Duration::ZERO,
                             ..LockOptions::default()
                         },
-                        ..TimelineLockRequest::default()
                     },
                 );
                 assert!(matches!(
