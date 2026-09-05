@@ -102,19 +102,19 @@
 }
 
 .curation-button-primary {
-  border-color: #2563eb;
-  background: #2563eb;
-  color: #fff;
+  border-color: #b06a1a;
+  background: #e8913a;
+  color: #211b14;
 }
 
 .curation-button-primary:hover:not(:disabled) {
-  background: #1d4ed8;
+  background: #df8126;
 }
 
 .curation-button-link {
   border-color: transparent;
   background: transparent;
-  color: #2563eb;
+  color: var(--orange-text-aa, #a15f17);
   padding-left: 0;
   padding-right: 0;
 }
@@ -261,6 +261,7 @@
     width: 100%;
   }
 }
+.curation-group{border:1px solid #dfd6c9;border-radius:12px;background:#fff}.curation-group>summary{padding:18px;cursor:pointer;font-weight:600;min-height:48px}.curation-group-items{padding:0 18px 18px;display:grid;gap:16px}.curation-group-items>.curation-item{content-visibility:auto;contain-intrinsic-size:auto 240px}.curation-group:focus-within{outline-color:#b06a1a}.curation-group>summary:focus-visible{outline:2px solid #b06a1a;outline-offset:2px}
 </style>
 
 <section class="curation-shell" data-curation-root>
@@ -455,6 +456,19 @@ window.CUR_COPY = CUR_COPY;
     `;
   }
 
+  const openReviewGroups = new Set();
+  function reviewGroup(key, label, items, renderItem, toolbar = '') {
+    if (!items.length) return '';
+    return `<details class="curation-group" data-review-group="${key}" ${openReviewGroups.has(key) ? 'open' : ''}><summary>${label} <span data-group-count>(${items.length})</span></summary><div class="curation-group-items">${toolbar}${items.map(renderItem).join('')}</div></details>`;
+  }
+  function refreshGroupCounts() {
+    root.querySelectorAll('[data-review-group]').forEach(group => {
+      group.querySelector('[data-group-count]').textContent = `(${group.querySelectorAll('[data-curation-item]').length})`;
+    });
+    const count = root.querySelector('[data-review-total]');
+    const total = root.querySelectorAll('[data-curation-item]').length;
+    if (count) count.textContent = total ? `${total} suggestions to review. choose a group to begin.` : '';
+  }
   function renderState(payload, preserveOutcomes = false) {
     const savedOutcomes = preserveOutcomes
       ? Array.from(root.querySelector('[data-curation-outcomes]')?.children || [])
@@ -471,18 +485,22 @@ window.CUR_COPY = CUR_COPY;
       root.innerHTML = `
         <h1 class="curation-header">${escapeHtml(CUR_COPY.CUR_HEADING)}</h1>
         ${empty ? `<p class="curation-empty">${escapeHtml(CUR_COPY.CUR_EMPTY_STATE)}</p>` : ''}
+        <p data-review-total></p>
         <div class="curation-outcomes" data-curation-outcomes></div>
         <div class="curation-list" data-curation-list>
-          ${facetItems.map(facetItemHtml).join('')}
-          ${entityItems.length ? entityBatchHtml() : ''}
-          ${entityItems.map(entityItemHtml).join('')}
-          ${ambiguityItems.map(ambiguityItemHtml).join('')}
-          ${speakerItems.map(speakerItemHtml).join('')}
-          ${speakerCandidatePairItems.map(speakerCandidatePairItemHtml).join('')}
+          ${reviewGroup('facet', 'facet suggestions', facetItems, facetItemHtml)}
+          ${reviewGroup('merge', 'possible duplicate entities', entityItems, entityItemHtml, entityBatchHtml())}
+          ${reviewGroup('ambiguity', 'names to clarify', ambiguityItems, ambiguityItemHtml)}
+          ${reviewGroup('speaker', 'possible duplicate speaker names', speakerItems, speakerItemHtml)}
+          ${reviewGroup('pair', 'possible duplicate voices', speakerCandidatePairItems, speakerCandidatePairItemHtml)}
         </div>
       `;
       const outcomes = root.querySelector('[data-curation-outcomes]');
       savedOutcomes.forEach((outcome) => outcomes?.appendChild(outcome));
+      root.querySelectorAll('[data-review-group]').forEach(group => group.addEventListener('toggle', () => {
+        if (group.open) openReviewGroups.add(group.dataset.reviewGroup); else openReviewGroups.delete(group.dataset.reviewGroup);
+      }));
+      refreshGroupCounts();
       refreshToolbar();
     });
   }
@@ -563,6 +581,7 @@ window.CUR_COPY = CUR_COPY;
     if (!item) return;
     item.dataset.removing = 'true';
     item.remove();
+    refreshGroupCounts();
     refreshToolbar();
   }
 
@@ -645,6 +664,7 @@ window.CUR_COPY = CUR_COPY;
   }
 
   function refreshToolbar() {
+    refreshGroupCounts();
     const toolbar = root.querySelector('[data-curation-toolbar]');
     const confirm = root.querySelector('.curation-batch-confirm');
     if (!toolbar) return;

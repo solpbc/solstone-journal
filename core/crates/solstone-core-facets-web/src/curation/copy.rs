@@ -17,7 +17,7 @@ const COPY: [(&str, &str); 47] = [
     ("CUR_HEADING", "suggestions"),
     (
         "CUR_FACET_BODY",
-        "recent activity doesn't fit your facets well. create the \"{name}\" facet?",
+        "journal activity doesn't fit your facets well. create the \"{name}\" facet?",
     ),
     ("CUR_FACET_CREATE_ACTION", "create facet"),
     ("CUR_FACET_DISMISS_ACTION", "not now"),

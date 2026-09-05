@@ -5,14 +5,13 @@ pub const NEWS_KICKER: &str = "facet newsletter";
 pub const NEWS_INDEX_H1: &str = "newsletters";
 pub const NEWS_SUBTITLE: &str = "daily per-facet summaries from your journal.";
 pub const NEWS_EMPTY_BODY: &str = "every day, one newsletter is written per facet that had activity: your meetings, decisions, follow-ups, and what changed for that part of your life. a short read per facet, in your journal.";
-pub const NEWS_EMPTY_TOMORROW_WITH_DATE: &str = "Your first newsletters arrive {tomorrow}.";
+pub const NEWS_EMPTY_PENDING: &str = "no newsletters have been prepared yet.";
 pub const NEWS_EMPTY_NO_DATE: &str = "Newsletters arrive as your journal fills.";
 pub const NEWS_EMPTY_UNTIL_THEN: &str = "Until then, this page will be empty. Newsletters appear here every day, newest first, grouped by facet.";
 pub const NEWS_SAMPLE_LINK_LABEL: &str = "see a sample newsletter →";
 pub const NEWS_POPULATED_FRAMING: &str =
     "every day, one newsletter is written per facet with activity. newest below.";
 pub const NEWS_POPULATED_SAMPLE_LINK: &str = "see a sample";
-pub const NEWS_POPULATED_NEXT_FOOTER: &str = "next newsletters: {when}";
 pub const NEWS_GRID_TITLE: &str = "newsletter days";
 pub const NEWS_GRID_LEDE_ONE: &str = "1 newsletter since {month}.";
 pub const NEWS_GRID_LEDE_OTHER: &str = "{count} newsletters since {month}.";

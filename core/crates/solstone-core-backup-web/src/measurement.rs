@@ -1,6 +1,6 @@
 use serde_json::{Value, json};
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -13,11 +13,17 @@ pub struct DeviceGeometry {
 
 pub struct MeasurementCache {
     entry: Option<(Instant, Value)>,
-    geometry: DeviceGeometry,
+    source: GeometrySource,
 }
+enum GeometrySource {
+    Journal(PathBuf),
+    #[cfg(test)]
+    Fixed(DeviceGeometry),
+}
+
 pub type SharedMeasurementCache = Arc<Mutex<MeasurementCache>>;
 pub fn new(journal_root: &Path) -> SharedMeasurementCache {
-    cache(device_geometry(journal_root))
+    cache(GeometrySource::Journal(journal_root.to_path_buf()))
 }
 
 #[cfg(unix)]
@@ -76,13 +82,13 @@ fn device_geometry(_journal_root: &Path) -> DeviceGeometry {
 
 #[cfg(test)]
 pub fn with_geometry(geometry: DeviceGeometry) -> SharedMeasurementCache {
-    cache(geometry)
+    cache(GeometrySource::Fixed(geometry))
 }
 
-fn cache(geometry: DeviceGeometry) -> SharedMeasurementCache {
+fn cache(source: GeometrySource) -> SharedMeasurementCache {
     Arc::new(Mutex::new(MeasurementCache {
         entry: None,
-        geometry,
+        source,
     }))
 }
 pub fn snapshot(cache: &SharedMeasurementCache) -> Value {
@@ -92,15 +98,20 @@ pub fn snapshot(cache: &SharedMeasurementCache) -> Value {
     {
         return value.clone();
     }
+    let geometry = match &cache.source {
+        GeometrySource::Journal(root) => device_geometry(root),
+        #[cfg(test)]
+        GeometrySource::Fixed(geometry) => *geometry,
+    };
     // The Rust surface deliberately makes unavailable host geometry explicit rather
     // than allowing a zero total to panic the whole handler.
-    let value = match cache.geometry.total_bytes {
+    let value = match geometry.total_bytes {
         Some(0) => {
-            json!({"free_bytes": cache.geometry.free_bytes, "total_bytes": 0, "suggested_defaults": Value::Null})
+            json!({"free_bytes": geometry.free_bytes, "total_bytes": 0, "suggested_defaults": Value::Null})
         }
         Some(total) => {
             let floor = (total / 10).max(20_000_000_000).min(total / 4);
-            json!({"free_bytes": cache.geometry.free_bytes, "total_bytes": total, "suggested_defaults": {"budget_bytes": total / 2, "floor_bytes": floor}})
+            json!({"free_bytes": geometry.free_bytes, "total_bytes": total, "suggested_defaults": {"budget_bytes": total / 2, "floor_bytes": floor}})
         }
         None => {
             json!({"free_bytes": Value::Null, "total_bytes": Value::Null, "suggested_defaults": Value::Null})

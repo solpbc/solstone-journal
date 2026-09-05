@@ -78,7 +78,7 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
     let flow = load_flow_md(context, &today);
     let flow_updated_at = flow.updated_at.and_then(|timestamp| {
         DateTime::from_timestamp(timestamp as i64, 0)
-            .map(|time| time.with_timezone(&Utc).format("%H:%M").to_string())
+            .map(|time| time.with_timezone(&Utc).to_rfc3339())
     });
     let narrative = load_pulse_narrative(context, &today);
     let (narrative_content, narrative_updated_at, narrative_source, narrative_header, pulse_needs) =

@@ -141,6 +141,7 @@ async function main() {
   const document = {
     activeElement: null,
     getElementById(id) { return nodes.get(id) || null; },
+    createTextNode(text) { const node = new Element(); node.textContent = text; return node; },
     createElement() {
       const node = new Element();
       node.document = document;
@@ -371,10 +372,10 @@ async function main() {
   assert.strictEqual(window.location.hash, '#runs/20260111/actual-talent/cached-id', 'cached record provenance rewrites the hash');
   assert.strictEqual(nodes.get('thinkingRunsDetailHeading').textContent, 'actual-talent', 'cached record renders under its source talent');
   assert.strictEqual(requests.filter((url) => url === '/app/thinking/api/talents/20260111').length, 1, 'cached provenance reloads the corrected day');
-  correctedDay.resolve({uses: [{id: 'contextual-day', name: 'corrected-day'}], facets: []});
+  correctedDay.resolve({uses: [{id: 'contextual-day', name: 'actual-talent'}], facets: []});
   await settle();
   assert.strictEqual(nodes.get('thinkingRunsDate').value, '2026-01-11', 'corrected day controls render from cached-record provenance');
-  assert.strictEqual(nodes.get('thinkingRunsContent').children[0].children[0].textContent, 'corrected-day', 'corrected day content replaces the mismatched context');
+  assert.strictEqual(nodes.get('thinkingRunsContent').children[1].children[0].textContent, 'actual-talent', 'corrected day content replaces the mismatched context');
   mismatchedDay.resolve({uses: [{id: 'stale-context', name: 'stale-day'}], facets: []});
   await settle();
 
@@ -629,7 +630,7 @@ async function main() {
   await settle();
   assert.strictEqual(thinking.state.runsCache.day.has('day:20260104:facet:'), false, 'stale day response is not cached');
   assert.strictEqual(thinking.state.runsCache.day.has('day:20260105:facet:'), true, 'current day response is cached without a cookie sentinel');
-  assert.strictEqual(nodes.get('thinkingRunsContent').children[0].children[0].textContent, 'current-day', 'stale day response does not replace the current render');
+  assert.strictEqual(nodes.get('thinkingRunsContent').children[1].children[0].textContent, 'current-day', 'stale day response does not replace the current render');
 
   const firstRun = deferred();
   const secondRun = deferred();

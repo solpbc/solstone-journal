@@ -156,7 +156,7 @@
       "title": "media offload",
       "stakes": "after this, your backup holds the only copy of your older days. if you lose your recovery key, no one can recover them. not even sol pbc.",
       "stalled_lead": "offload is paused: your backup isn't working. nothing has been deleted.",
-      "backup_only_label": "in your backup",
+      "backup_only_label": "kept only in backup",
       "restore_expectation": "restoring {size} from your backup. a large restore can take a while.",
       "disable_note": "this stops. days already in your backup stay there, protected and restorable.",
       "unavailable_lead": "can't read offload status right now.",

@@ -168,13 +168,12 @@ fn label_item(row: &store::NewsRow) -> Value {
     json!({"facet": row.facet, "day": row.day, "label": dates::format_news_list_date(&row.day), "url": format!("/app/news/{}/{}", row.facet, row.day)})
 }
 
-async fn state(root: PathBuf, clock: Clock) -> Response {
+async fn state(root: PathBuf, _clock: Clock) -> Response {
     let rows = rows(&root);
     let total_count = rows.len();
     let observer = journal_has_any_observer_input(&root);
-    let when = dates::next_newsletter_when(clock.now().date());
     let empty_next = if observer {
-        copy::NEWS_EMPTY_TOMORROW_WITH_DATE.replace("{tomorrow}", when)
+        copy::NEWS_EMPTY_PENDING.to_owned()
     } else {
         copy::NEWS_EMPTY_NO_DATE.to_owned()
     };
@@ -190,7 +189,7 @@ async fn state(root: PathBuf, clock: Clock) -> Response {
     });
     json_response(
         json!({"newsletters": rows.iter().take(60).map(label_item).collect::<Vec<_>>(), "total_count": total_count,
-      "copy": {"kicker": copy::NEWS_KICKER, "index_h1": copy::NEWS_INDEX_H1, "subtitle": copy::NEWS_SUBTITLE, "empty_body": copy::NEWS_EMPTY_BODY, "empty_next": empty_next, "empty_until_then": copy::NEWS_EMPTY_UNTIL_THEN, "sample_link_label": copy::NEWS_SAMPLE_LINK_LABEL, "sample_url": "/app/news/sample", "populated_framing": copy::NEWS_POPULATED_FRAMING, "populated_sample_link": copy::NEWS_POPULATED_SAMPLE_LINK, "populated_next_footer": copy::NEWS_POPULATED_NEXT_FOOTER.replace("{when}", when), "grid_title": copy::NEWS_GRID_TITLE, "grid_lede": grid_lede, "grid_unit_one": copy::NEWS_GRID_UNIT_ONE, "grid_unit_other": copy::NEWS_GRID_UNIT_OTHER, "grid_unit_none": copy::NEWS_GRID_UNIT_NONE}}),
+      "copy": {"kicker": copy::NEWS_KICKER, "index_h1": copy::NEWS_INDEX_H1, "subtitle": copy::NEWS_SUBTITLE, "empty_body": copy::NEWS_EMPTY_BODY, "empty_next": empty_next, "empty_until_then": copy::NEWS_EMPTY_UNTIL_THEN, "sample_link_label": copy::NEWS_SAMPLE_LINK_LABEL, "sample_url": "/app/news/sample", "populated_framing": copy::NEWS_POPULATED_FRAMING, "populated_sample_link": copy::NEWS_POPULATED_SAMPLE_LINK, "populated_next_footer": "", "grid_title": copy::NEWS_GRID_TITLE, "grid_lede": grid_lede, "grid_unit_one": copy::NEWS_GRID_UNIT_ONE, "grid_unit_other": copy::NEWS_GRID_UNIT_OTHER, "grid_unit_none": copy::NEWS_GRID_UNIT_NONE}}),
     )
 }
 async fn index(root: PathBuf) -> Response {

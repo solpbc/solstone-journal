@@ -263,15 +263,15 @@
 
   function renderNarrativeHtml(pulse) {
     if (pulse.narrative_content !== null && pulse.narrative_content !== undefined) {
-      const updated = pulse.narrative_updated_at ? '<div class="pulse-narrative-meta">updated at ' + esc(pulse.narrative_updated_at) + '</div>' : '';
+      const updated = pulse.narrative_updated_at ? '<div class="pulse-narrative-meta">updated at ' + esc(window.JournalFormat.timestamp(pulse.narrative_updated_at)) + '</div>' : '';
       return '<div class="pulse-narrative" id="pulse-narrative" data-home-surface="narrative" data-section-collapsed="true">'
         + '<div class="pulse-section-toggle" role="button" tabindex="0" aria-expanded="false">'
         + '<h2 class="pulse-section-header">' + esc(pulse.narrative_header || "today's flow") + '</h2>'
-        + '<span class="pulse-section-summary">' + esc(pulse.narrative_summary || '') + '</span>'
+        + '<span class="pulse-section-summary">' + esc(pulse.narrative_updated_at ? 'updated ' + window.JournalFormat.timestamp(pulse.narrative_updated_at) : pulse.narrative_header || '') + '</span>'
         + '</div>'
         + '<div class="pulse-section-body">'
         + '<div class="pulse-narrative-content" id="pulse-narrative-content">' + markdown(pulse.narrative_content || '') + '</div>'
-        + '<span class="pulse-tell-more">tell me more →</span>'
+        + '<a class="pulse-tell-more" href="/app/thinking/#runs/' + encodeURIComponent(pulse.today) + '/' + encodeURIComponent(pulse.narrative_source || 'pulse') + '">view generation →</a>'
         + updated
         + '</div>'
         + '</div>';
@@ -347,7 +347,7 @@
       activities.slice(0, 6).forEach(function (activity) {
         const description = activity.description || activity.activity || '';
         html += '<div class="pulse-activity">'
-          + '<span class="pulse-activity-time">' + esc(activity.display_time || '') + '</span>'
+          + '<span class="pulse-activity-time">' + esc(activity.display_time ? window.JournalFormat.timestamp(activity.display_time) : '') + '</span>'
           + '<span>' + esc(description) + '</span>'
           + '</div>';
       });
@@ -507,6 +507,7 @@
       + '<a class="pulse-connections-name" href="' + esc(connectionEntityHref(entityId)) + '">' + esc(name) + '</a>'
       + connectionKindChipsHtml(neighbor, connections)
       + '<span class="pulse-connections-meta">' + esc(connectionRowMeta(neighbor, referenceDay)) + '</span>'
+      + (neighbor.latest_label ? '<span class="pulse-connections-evidence">' + esc(neighbor.latest_label) + '</span>' : '')
       + '</div>';
   }
 
@@ -539,8 +540,10 @@
     if (connections.state !== 'ok' || !Array.isArray(connections.neighbors)) return '';
 
     const neighbors = connections.neighbors.filter(isPlainObject);
+    const mentionOnly = neighbor => Array.isArray(neighbor.kinds) && neighbor.kinds.length > 0 && neighbor.kinds.every(item => item.kind === 'mentioned');
+    const mentionRows = neighbors.filter(mentionOnly).slice(0, 6);
     const relationshipRows = neighbors
-      .filter(function (neighbor) { return neighbor.evidence_class !== 'attendance'; })
+      .filter(function (neighbor) { return neighbor.evidence_class !== 'attendance' && !mentionOnly(neighbor); })
       .slice(0, 6);
     const attendanceRows = neighbors
       .filter(function (neighbor) { return neighbor.evidence_class === 'attendance'; })
@@ -555,12 +558,12 @@
 
     if (relationshipItems.length) {
       html += '<div class="pulse-connections-shelf">'
-        + '<div class="pulse-connections-shelf-label">relationships</div>'
+        + '<div class="pulse-connections-shelf-label">connections found in your journal</div>'
         + '<div class="pulse-connections-list">'
         + relationshipItems.join('')
         + '</div></div>';
     } else {
-      html += '<div class="pulse-connections-note">no direct evidence yet. who&#39;s who isn&#39;t named yet.</div>';
+      html += '<div class="pulse-connections-note">no direct connections found yet.</div>';
     }
 
     if (attendanceItems.length) {
@@ -570,7 +573,11 @@
         + '</div>';
     }
 
-    const rendered = relationshipItems.length + attendanceItems.length;
+    if (mentionRows.length) {
+      html += '<details class="pulse-connections-shelf"><summary>mentioned in your journal</summary><div class="pulse-connections-list">'
+        + mentionRows.map(neighbor => connectionRowHtml(neighbor, connections, referenceDay)).join('') + '</div></details>';
+    }
+    const rendered = relationshipItems.length + attendanceItems.length + mentionRows.length;
     if (typeof connections.horizon_note === 'string' && connections.horizon_note
         && typeof connections.horizon_day === 'string' && connections.horizon_day) {
       html += '<div class="pulse-connections-horizon">'

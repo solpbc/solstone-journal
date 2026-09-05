@@ -52,7 +52,7 @@
     "done.unknown": "deleting stopped before i could tell what happened. i don't know what was deleted and what wasn't.",
     "done.kept_policy": "kept for now. it'll be back the next time i rebuild that part of the list.",
     "done.kept_offload": "kept for now. it'll be back after your next backup.",
-    "done.too_many": "something went wrong. nothing was deleted.",
+    "done.too_many": "choose up to {n} items at a time. nothing was deleted.",
     "done.declined_failed": "i couldn't take it off the list, so it stays. nothing was deleted.",
     "done.declined_unknown": "nothing was deleted. i don't know whether it's still on the list.",
     "done.recovered": "i finished the deletions that had stopped.",
@@ -78,6 +78,9 @@
   let confirmation = null;
   let outcomeHtml = '';
   let selected = new Set();
+  let pageIndex = 0;
+  let expanded = false;
+  const PAGE_SIZE = 20;
 
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (char) => ({
@@ -115,28 +118,28 @@
   function formatBytes(bytes) {
     const value = Number(bytes) || 0;
     if (value < 1024) return value + ' B';
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
     let amount = value;
-    let unit = 'KB';
+    let unit = 'KiB';
     for (let index = 1; index < units.length; index += 1) {
       if (amount < 1024) break;
       amount /= 1024;
       unit = units[index];
     }
-    return amount >= 1024 && unit === 'TB'
-      ? (amount / 1024).toFixed(1) + ' PB'
+    return amount >= 1024 && unit === 'TiB'
+      ? (amount / 1024).toFixed(1) + ' PiB'
       : amount.toFixed(1) + ' ' + unit;
   }
 
   function streamLabel(stream) {
     if (stream === '_default') return null;
-    return typeof stream === 'string' ? stream : null;
+    return typeof stream === 'string' ? window.JournalFormat.stream(stream) : null;
   }
 
   function identityText(row) {
     const stream = streamLabel(row.stream);
-    if (stream === null) return escapeHtml(row.day);
-    return copy("row.identity", { date: row.day, stream: stream });
+    if (stream === null) return escapeHtml(window.JournalFormat.day(row.day));
+    return copy("row.identity", { date: window.JournalFormat.day(row.day), stream: stream });
   }
 
   function identity(text) {
@@ -168,7 +171,7 @@
     const checked = selected.has(row.id) ? ' checked' : '';
     return '<article class="removals-card-row" data-removal-row data-mark-id="' + escapeHtml(row.id) + '">'
       + identity(identityText(row))
-      + '<input type="checkbox" data-removal-select data-mark-id="' + escapeHtml(row.id) + '"' + checked + '>'
+      + '<label class="removals-select"><input type="checkbox" data-removal-select data-mark-id="' + escapeHtml(row.id) + '"' + checked + '> select this item</label>'
       + '<p class="removals-card-origin">' + copyForCount('row.origin_' + rowOrigin, count) + '</p>'
       + '<p class="removals-card-what">' + copyForCount('row.what', count, { n: count, size: row.size }) + '</p>'
       + '<p class="removals-card-kept">' + copyForCount('row.kept', count) + '</p>'
@@ -204,7 +207,7 @@
   }
 
   function cardRows() {
-    return rows.map(function (row) {
+    return rows.slice(pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE).map(function (row) {
       return row.state === 'failed' ? failedRow(row) : markedRow(row);
     }).join('');
   }
@@ -254,7 +257,7 @@
       const count = rowCount(row);
       const stream = streamLabel(row.stream);
       const bodyKey = 'confirm.body_' + origin(row) + '_' + cardinality(count);
-      const values = { n: count, date: row.day, stream: stream };
+      const values = { n: count, date: window.JournalFormat.day(row.day), stream: stream };
       const body = stream === null ? copyWithoutDefaultStream(bodyKey, values) : copy(bodyKey, values);
       return '<section class="removals-card-confirm" role="dialog">'
         + '<h3>' + copyForCount('confirm.heading', count) + '</h3>'
@@ -276,6 +279,7 @@
 
   function render() {
     if (!card) return;
+    pageIndex = Math.min(pageIndex, Math.max(0, Math.ceil(rows.length / PAGE_SIZE) - 1));
     const heading = '<h2>' + copy("card.heading") + '</h2><p>' + copy("card.subhead") + '</p>';
     if (listState === 'list.empty') {
       card.innerHTML = '<section class="removals-card">' + heading
@@ -285,12 +289,17 @@
       card.innerHTML = '<section class="removals-card">' + heading
         + '<p class="removals-card-total">'
         + copyForCount('card.total', totals.count, { n: totals.count, size: formatBytes(totals.bytes) })
-        + '</p>' + toolbarHtml() + cardRows() + finishHtml() + confirmationHtml() + outcomeHtml + '</section>';
+        + '</p><details class="removals-review"' + (expanded ? ' open' : '') + '><summary>review originals' + (rows.some(row => row.state === 'failed') ? ' · unfinished deletions need review' : '') + '</summary>'
+        + toolbarHtml() + '<p class="removals-card-scope">selection applies across every page. choose up to ' + MAX_SELECTED_MARKS + ' items per action.</p>' + cardRows()
+        + '<nav class="removals-card-pages" aria-label="originals pages"><button type="button" data-removal-action="previous"' + (pageIndex === 0 ? ' disabled' : '') + '>previous</button><span>page ' + (pageIndex + 1) + ' of ' + Math.max(1, Math.ceil(rows.length / PAGE_SIZE)) + '</span><button type="button" data-removal-action="next"' + ((pageIndex + 1) * PAGE_SIZE >= rows.length ? ' disabled' : '') + '>next</button></nav>'
+        + finishHtml() + '</details>' + confirmationHtml() + outcomeHtml + '</section>';
     } else {
       card.innerHTML = '<section class="removals-card">' + heading
         + '<p>' + copy("card.unavailable") + '</p>' + outcomeHtml + '</section>';
     }
     wire();
+    const focus = card.querySelector('.removals-card-confirm');
+    if (focus) { focus.tabIndex = -1; focus.focus(); }
   }
 
   function refusalItems(response) {
@@ -360,7 +369,7 @@
         setOutcome('<p>' + nothingRan + '</p>');
         break;
       case 'request.too_large':
-        setOutcome('<p>' + copy("done.too_many") + '</p>');
+        setOutcome('<p>' + copy("done.too_many", { n: MAX_SELECTED_MARKS }) + '</p>');
         break;
       case 'declined.partial':
       case 'declined.refused':
@@ -461,23 +470,30 @@
   }
 
   function openDeleteConfirmation(rows) {
+    expanded = true;
     confirmation = { kind: 'delete', rows: rows };
     render();
   }
 
   function tooManySelected() {
-    setOutcome('<p>' + copy("done.too_many") + '</p>');
+    setOutcome('<p>' + copy("done.too_many", { n: MAX_SELECTED_MARKS }) + '</p>');
     render();
   }
 
   function wire() {
     if (!card) return;
+    card.querySelector('.removals-review')?.addEventListener('toggle', event => { expanded = event.currentTarget.open; });
     card.querySelectorAll('[data-removal-action]').forEach(function (control) {
       control.addEventListener('click', function () {
         const action = control.dataset.removalAction;
         const row = rows.find(function (candidate) {
           return candidate.id === control.dataset.markId;
         });
+        if (action === 'previous' || action === 'next') {
+          pageIndex += action === 'next' ? 1 : -1; expanded = true; render();
+          card.querySelector('.removals-card-pages button:not(:disabled)')?.focus();
+          return;
+        }
         if (action === 'approve' && row) openDeleteConfirmation([row]);
         if (action === 'decline' && row) submit('decline', [row]);
         if (action === 'cancel') {

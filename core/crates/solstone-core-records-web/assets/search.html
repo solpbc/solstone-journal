@@ -1,0 +1,90 @@
+<style>
+.search-app{max-width:1000px;margin:auto;padding:32px 24px;color:var(--text-primary,#29251f);overflow-wrap:anywhere}.search-app *{box-sizing:border-box}.search-app h1{font-size:2rem;margin:0 0 8px}.search-app p{line-height:1.6}.search-app label{display:block;font-weight:600;margin-bottom:6px}.search-app input,.search-app button,.search-app .search-link{font:inherit;min-height:46px;border:1px solid #d5c8b5;border-radius:8px;padding:10px 14px}.search-app input{background:#fff;color:inherit;min-width:0;max-width:100%}.search-query-row{display:flex;gap:10px}.search-query-row input{flex:1}.search-app button{cursor:pointer;background:#fff;color:inherit}.search-app button[type=submit]{background:#e8913a;color:#211b14;font-weight:600}.search-app :focus-visible{outline:2px solid #b06a1a;outline-offset:3px}.search-app a{color:var(--orange-text-aa,#a15f17)}.search-app summary{cursor:pointer;padding:12px 0}.search-dates{display:flex;gap:16px;flex-wrap:wrap}.search-dates>div{flex:1;min-width:150px}.search-dates input{width:100%}.search-status{padding:16px 0;color:#655c50}.search-day{margin:24px 0}.search-day h2{font-size:1.2rem}.search-result{padding:18px;background:#fff;border:1px solid #e2d9cc;border-radius:10px;margin:12px 0}.search-meta{color:#655c50;font-size:.9rem;display:flex;flex-wrap:wrap;gap:8px}.search-excerpt{margin:12px 0}.search-source{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-height:60vh;overflow:auto;background:#faf7f1;padding:16px;border-radius:8px}.search-source[hidden]{display:none}.search-actions{display:flex;align-items:center;gap:16px;flex-wrap:wrap}.search-paging{display:flex;gap:16px;flex-wrap:wrap;margin:28px 0}.search-error{color:#963d20}.search-app mark{background:#ffedc4;color:inherit}.search-app details{margin:8px 0}@media(max-width:600px){.search-app{padding:24px 16px}.search-query-row{flex-wrap:wrap}.search-query-row input{flex-basis:100%}.search-query-row button{width:100%}}
+</style>
+<section class="search-app" id="journal-search">
+<h1>search your journal</h1>
+<p>find words and phrases in your journal, then open the source.</p>
+<form action="/app/search/" method="get" role="search">
+<label for="journal-search-query">words or phrase</label>
+<div class="search-query-row"><input id="journal-search-query" name="q" type="search" required placeholder="what would you like to find?" autocomplete="off"><button type="submit">search</button></div>
+<details id="search-date-options"><summary>date range</summary><div class="search-dates"><div><label for="search-from">from</label><input id="search-from" name="from" type="date"></div><div><label for="search-to">through</label><input id="search-to" name="to" type="date"></div></div></details>
+</form>
+<div class="search-status" role="status" aria-live="polite">enter a few words to search.</div>
+<div class="search-results"></div>
+<nav class="search-paging" aria-label="search result pages"></nav>
+</section>
+<script>
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+(function(){
+ const root=document.getElementById('journal-search');
+ const params=new URLSearchParams(location.search);
+ const query=root.querySelector('[name=q]');const from=root.querySelector('[name=from]');const to=root.querySelector('[name=to]');
+ const status=root.querySelector('.search-status');const results=root.querySelector('.search-results');const paging=root.querySelector('.search-paging');
+ query.value=params.get('q')||'';from.value=params.get('from')||'';to.value=params.get('to')||'';
+ root.querySelector('#search-date-options').open=Boolean(from.value||to.value);
+ const offset=Math.max(0,Number.parseInt(params.get('offset')||'0',10)||0);
+ const exactDay=Boolean(from.value&&from.value===to.value);const limit=exactDay?100:5;
+ function pageUrl(changes){const p=new URLSearchParams(params);p.delete('offset');Object.entries(changes).forEach(([k,v])=>p.set(k,v));return '/app/search/?'+p.toString();}
+ function node(tag,cls,text){const e=document.createElement(tag);e.className=cls||'';if(text!==undefined)e.textContent=text;return e;}
+ function sourceLink(hit){
+  const path=String(hit.path||'');
+  if(path.startsWith('entity_search:'))return '/app/entities/#'+encodeURIComponent(path.slice('entity_search:'.length));
+  const segment=/^(?:chronicle\/)?(\d{8})\/(?:(?<stream>[^/]+)\/)?([^/]+)\/(?:audio|screen|[^/]+_(?:audio|screen))\.jsonl/.exec(path);
+  if(segment)return '/app/transcripts/'+segment[1]+(segment.groups.stream?'?stream='+encodeURIComponent(segment.groups.stream):'')+'#'+encodeURIComponent(segment[3]);
+  return null;
+ }
+ function excerpt(value){
+  // The API returns escaped excerpts with strong tags. Keep only text and that emphasis.
+  const doc=new DOMParser().parseFromString(String(value||''),'text/html');const out=document.createDocumentFragment();
+  function append(n,parent){if(n.nodeType===3){parent.append(document.createTextNode(n.textContent));return;}if(n.nodeType!==1)return;const dest=n.tagName==='STRONG'?node('mark'):parent;if(dest!==parent)parent.append(dest);for(const child of n.childNodes)append(child,dest);}
+  for(const child of doc.body.childNodes)append(child,out);return out;
+ }
+ function renderHit(hit){
+  const card=node('article','search-result');const meta=node('div','search-meta');
+  for(const text of [hit.agent_label,hit.facet_title,window.JournalFormat.stream(hit.stream)])if(text)meta.append(node('span','',text));
+  card.append(meta);const text=node('p','search-excerpt');text.append(excerpt(hit.text));card.append(text);
+  const actions=node('div','search-actions');const destination=sourceLink(hit);
+  if(destination){const a=node('a','search-link',String(hit.path).startsWith('entity_search:')?'open entity':'open transcript');a.href=destination;actions.append(a);}
+  const path=String(hit.path||'').replace(/:\d+$/,'');
+  if(path&&!path.startsWith('entity_search:')){
+   const button=node('button','','read source');button.type='button';button.setAttribute('aria-expanded','false');const content=node('pre','search-source');content.hidden=true;
+   button.addEventListener('click',async()=>{
+    if(!content.hidden){content.hidden=true;button.setAttribute('aria-expanded','false');button.textContent='read source';return;}
+    content.hidden=false;button.setAttribute('aria-expanded','true');button.textContent='close source';
+    if(content.dataset.loaded)return;
+    content.textContent='loading source…';
+    try{const data=await window.apiJson('/app/search/api/read?'+new URLSearchParams({path}));if(!root.isConnected)return;content.textContent=data.content;content.dataset.loaded='true';}
+    catch(error){if(!root.isConnected)return;content.textContent='couldn’t open this source. '+String(error.serverMessage||error.message||'try again.');if(error.rawDetail)content.textContent+=' '+String(error.rawDetail);}
+   });actions.append(button);card.append(actions,content);
+  }else card.append(actions);
+  return card;
+ }
+ async function load(){
+  if(!query.value.trim())return;
+  if(from.value&&to.value&&from.value>to.value){status.textContent='choose an end date on or after the start date.';status.classList.add('search-error');return;}
+  results.replaceChildren();paging.replaceChildren();
+  status.textContent='searching your journal…';root.setAttribute('aria-busy','true');
+  const p=new URLSearchParams({q:query.value.trim(),limit:String(limit),offset:String(offset)});
+  if(from.value)p.set('day_from',from.value.replaceAll('-',''));if(to.value)p.set('day_to',to.value.replaceAll('-',''));
+  try{
+   const data=await window.apiJson('/app/search/api/search?'+p);if(!root.isConnected)return;
+   status.textContent=data.total?`${data.total.toLocaleString()} matches across ${data.total_days.toLocaleString()} ${data.total_days===1?'day':'days'}.`:'no matches. try fewer words or a wider date range.';
+   if(data.relaxed)status.append(node('p','','showing broader matches because the original search had few results.'));
+   for(const day of data.days){
+    const section=node('section','search-day');section.append(node('h2','',window.JournalFormat.day(day.day)));
+    if(day.total>day.showing)section.append(node('p','search-meta',`showing the top ${day.showing} of ${day.total} matches for this day.`));
+    for(const hit of day.results)section.append(renderHit(hit));
+    if(day.total>day.showing&&!exactDay){const a=node('a','search-link','more from this day');const date=day.day.replace(/(\d{4})(\d{2})(\d{2})/,'$1-$2-$3');a.href=pageUrl({from:date,to:date});section.append(a);}
+    else if(day.total>day.showing)section.append(node('p','search-meta','add words to narrow these matches.'));
+    results.append(section);
+   }
+   if(offset>0){const a=node('a','search-link','newer matching days');a.href=pageUrl({offset:String(Math.max(0,offset-20))});paging.append(a);}
+   if(offset+data.days.length<data.total_days){const a=node('a','search-link','older matching days');a.href=pageUrl({offset:String(offset+20)});paging.append(a);}
+   if(offset>0&&!data.days.length){const a=node('a','search-link','back to first results');a.href=pageUrl({offset:'0'});paging.append(a);}
+  }catch(error){if(!root.isConnected)return;status.classList.add('search-error');status.textContent='couldn’t search your journal. '+String(error.serverMessage||error.message||'try again.');const button=node('button','','try again');button.type='button';button.onclick=()=>{status.classList.remove('search-error');load();};status.append(node('br'),button);}
+  finally{root.removeAttribute('aria-busy');}
+ }
+ load();
+})();
+</script>

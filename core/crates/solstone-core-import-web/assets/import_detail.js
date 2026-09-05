@@ -307,14 +307,14 @@
     const facts = [
       derived.status,
       source,
-      day,
+      day ? window.JournalFormat.day(day) : '',
       formatCount(importedJson.entries_written, strings.entry, strings.entries),
       formatCount(importedJson.entities_seeded, strings.entity, strings.entities),
       formatCount(importedJson.total_files_created, strings.file, strings.files)
     ].filter(hasValue);
     const encodedDay = day ? encodeURIComponent(day) : '';
     const links = day
-      ? `<div class="import-leads-links"><a href="/app/activities/${escapeHtml(encodedDay)}">${escapeHtml(strings.activities)}</a><a href="/app/timeline/${escapeHtml(encodedDay)}">${escapeHtml(strings.timeline)}</a></div>`
+      ? `<div class="import-leads-links"><a href="#content">view imported content</a><a href="/app/timeline/${escapeHtml(encodedDay)}">${escapeHtml(strings.timeline)}</a></div>`
       : '';
 
     return `<section class="import-leads-card"><h2>${escapeHtml(strings.leads_title)}</h2><div class="import-leads-facts">${facts.map((fact) => `<span>${escapeHtml(fact)}</span>`).join('')}</div>${links}</section>`;

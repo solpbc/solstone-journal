@@ -152,7 +152,7 @@ pub fn load_pulse_narrative(context: &HomeContext, day: &str) -> PulseNarrative 
         .get("ts")
         .and_then(Value::as_i64)
         .and_then(DateTime::from_timestamp_millis)
-        .map(|time| time.with_timezone(&Utc).format("%H:%M").to_string());
+        .map(|time| time.with_timezone(&Utc).to_rfc3339());
     PulseNarrative {
         content: Some(content.to_owned()),
         updated_at,
@@ -223,9 +223,7 @@ pub fn collect_activities(context: &HomeContext, day: &str) -> Vec<Value> {
                             record.insert(
                                 "display_time".to_owned(),
                                 DateTime::from_timestamp_millis(created)
-                                    .map(|time| {
-                                        time.with_timezone(&Utc).format("%H:%M").to_string()
-                                    })
+                                    .map(|time| time.with_timezone(&Utc).to_rfc3339())
                                     .unwrap_or_default()
                                     .into(),
                             );

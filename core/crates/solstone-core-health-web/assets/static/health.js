@@ -63,6 +63,8 @@
   let recentEventTimestamps = [];
 
   const state = {
+    supervisorSeen: false,
+    cortexSeen: false,
     registeredClients: null,
     registeredClientsFailed: false,
     services: new Map(),        // Running services
@@ -382,8 +384,10 @@
     for (const el of targets) {
       if (el && el.querySelector('.skeleton, .skeleton-dark')) {
         el.textContent = 'unavailable';
+        el.classList.add('unavailable');
       }
     }
+    updateVitalsA11y();
   }
 
   function armSkeletonTimeout() {
@@ -561,7 +565,7 @@
       : '—';
 
     const recentActivity = recentEventTimestamps.filter(ts => (now - ts) < 3600000).length;
-    elements.glanceActivityValue.textContent = String(recentActivity);
+    elements.glanceActivityValue.textContent = state.lastEventTs ? String(recentActivity) : '—';
 
     const today = todayKey();
     if (!state.agentErrorsOk) {
@@ -1128,13 +1132,13 @@
     if (runningCount > 0) serviceParts.push(runningCount + ' active');
     if (retryingCount > 0) serviceParts.push(retryingCount + ' retrying');
     if (crashedCount > 0) serviceParts.push(crashedCount + ' needs attention');
-    sections[0]?.setAttribute('aria-label', 'Services: ' + (serviceParts.join(', ') || 'none'));
+    sections[0]?.setAttribute('aria-label', 'Services: ' + (state.supervisorSeen ? serviceParts.join(', ') || 'none' : 'unavailable'));
 
-    sections[1]?.setAttribute('aria-label', 'Talents: ' + state.agentCount + ' running');
-    sections[2]?.setAttribute('aria-label', 'Tasks: ' + state.tasks.length + ' active');
+    sections[1]?.setAttribute('aria-label', 'Talents: ' + (state.cortexSeen ? state.agentCount + ' running' : 'unavailable'));
+    sections[2]?.setAttribute('aria-label', 'Tasks: ' + (state.supervisorSeen ? state.tasks.length + ' active' : 'unavailable'));
 
     const staleCount = state.health?.stale_heartbeats?.length || 0;
-    let healthLabel = 'loading';
+    let healthLabel = timeoutFired ? 'unavailable' : 'loading';
     if (staleCount > 0) {
       healthLabel = 'warning, ' + staleCount + ' service' + (staleCount === 1 ? '' : 's') + ' not responding';
     } else if (crashedCount > 0) {
@@ -1149,7 +1153,7 @@
     const queueEntries = Object.entries(state.queues).filter(([, count]) => count > 0);
     sections[4]?.setAttribute(
       'aria-label',
-      'Queues: ' + (queueEntries.map(([cmd, count]) => cmd + ' ' + count).join(', ') || 'none')
+      'Queues: ' + (queueEntries.map(([cmd, count]) => cmd + ' ' + count).join(', ') || (state.supervisorSeen ? 'none' : 'unavailable'))
     );
 
     sections[5]?.setAttribute(
@@ -1158,7 +1162,7 @@
         const name = schedule.name || 'unnamed';
         const next = formatNextRun(schedule.next_run);
         return next ? name + ' next ' + next : name;
-      }).join(', ') || 'none')
+      }).join(', ') || (state.supervisorSeen ? 'none' : 'unavailable'))
     );
   }
 
@@ -1231,11 +1235,11 @@
     }
 
     // Agents count
-    elements.agentsValue.firstElementChild.textContent = state.agentCount + ' running';
+    elements.agentsValue.firstElementChild.textContent = state.cortexSeen ? state.agentCount + ' running' : 'unavailable';
 
     // Tasks
     const taskCount = state.tasks.length;
-    elements.tasksValue.firstElementChild.textContent = taskCount + ' active';
+    elements.tasksValue.firstElementChild.textContent = state.supervisorSeen ? taskCount + ' active' : 'unavailable';
 
     // Health with stale heartbeat names
     if (state.health) {
@@ -1314,7 +1318,7 @@
         chip.textContent = cmd + ': ' + count;
       }
     } else {
-      elements.queuesValue.textContent = '—';
+      elements.queuesValue.textContent = state.supervisorSeen ? 'none' : 'unavailable';
     }
 
     // Schedules (always visible, enriched)
@@ -1349,7 +1353,7 @@
         chip.setAttribute('title', s.every || '');
       }
     } else {
-      elements.schedulesValue.textContent = '—';
+      elements.schedulesValue.textContent = state.supervisorSeen ? 'none' : 'unavailable';
     }
 
     updateVitalsA11y();
@@ -1358,7 +1362,7 @@
 
   function updateVitalsStatus(status) {
     const el = elements.vitalsStatus;
-    el.classList.remove('warning', 'error');
+    el.classList.remove('warning', 'error', 'unavailable');
 
     // Ensure stable child structure: [indicator, text, severity-label]
     if (!el.querySelector('.status-indicator') || el.children.length < 3 || !el.querySelector('.severity-label')) {
@@ -1426,6 +1430,7 @@
 
   // Update observe card
   function updateObserve() {
+    document.querySelector('.observe-card').dataset.unavailable = String(state.clients.size === 0);
     if (state.clients.size === 0) {
       elements.observeEmpty.classList.remove('hidden');
       const heading = elements.observeEmpty.querySelector('.surface-state-heading');
@@ -2318,6 +2323,7 @@
   // Event handlers by tract
   function handleSupervisorEvent(msg) {
     if (msg.event === 'status') {
+      state.supervisorSeen = true;
       if (!state.connected) {
         state.connected = true;
         connectError = false;
@@ -2361,6 +2367,7 @@
     // Handle status event first (no use_id at top level)
     if (msg.event === 'status') {
       // Update agent count for vitals
+      state.cortexSeen = true;
       state.agentCount = msg.running_uses || 0;
 
       // Status event contains array of uses

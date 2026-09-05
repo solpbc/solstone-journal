@@ -5156,3 +5156,20 @@ async fn hosted_secrets_and_binding_mode_are_never_exposed() {
         }
     }
 }
+
+#[test]
+fn invalidated_geometry_is_measured_again() {
+    let root = tempfile::tempdir().unwrap();
+    let cache = crate::measurement::new(root.path());
+    assert!(
+        crate::measurement::snapshot(&cache)["total_bytes"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    root.close().unwrap();
+    // The cached reading remains stable until expiry or explicit invalidation.
+    assert!(crate::measurement::snapshot(&cache)["total_bytes"].is_number());
+    crate::measurement::invalidate(&cache);
+    assert!(crate::measurement::snapshot(&cache)["total_bytes"].is_null());
+}

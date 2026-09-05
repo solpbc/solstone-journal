@@ -1330,6 +1330,7 @@ h2.card-title {
   }
 }
 
+.vitals-status.unavailable{background:#e5e7eb;color:#4b5563}.observe-card[data-unavailable=true]{border-left-color:#9ca3af}
 </style>
 
 <div class="health-dashboard">
@@ -1370,7 +1371,7 @@ h2.card-title {
       <div class="vitals-title">
         system vitals
       </div>
-      <div class="vitals-status" id="vitalsStatus" role="status" aria-live="polite">
+      <div class="vitals-status unavailable" id="vitalsStatus" role="status" aria-live="polite">
         <span class="skeleton" style="width: 120px; height: 1em;">&nbsp;</span>
       </div>
       <span class="connection-indicator" id="connectionIndicator"></span>
@@ -1385,16 +1386,16 @@ h2.card-title {
           </div>
         </div>
       </div>
-      <div class="vitals-section" role="group" aria-label="Talents: 0 running">
+      <div class="vitals-section" role="group" aria-label="Talents: unavailable">
         <div class="vitals-label" aria-hidden="true">talents</div>
         <div class="vitals-value" id="agentsValue" aria-hidden="true">
-          <span>0 running</span>
+          <span>unavailable</span>
         </div>
       </div>
-      <div class="vitals-section" role="group" aria-label="Tasks: 0 active">
+      <div class="vitals-section" role="group" aria-label="Tasks: unavailable">
         <div class="vitals-label" aria-hidden="true">tasks</div>
         <div class="vitals-value" id="tasksValue" aria-hidden="true">
-          <span>0 active</span>
+          <span>unavailable</span>
         </div>
       </div>
       <div class="vitals-section" role="group" aria-label="Health: loading">
@@ -1403,13 +1404,13 @@ h2.card-title {
           <span class="skeleton" style="width: 100px; height: 0.9em;">&nbsp;</span>
         </div>
       </div>
-      <div class="vitals-section" id="queuesSection" role="group" aria-label="Queues: none">
+      <div class="vitals-section" id="queuesSection" role="group" aria-label="Queues: unavailable">
         <div class="vitals-label" aria-hidden="true">queues</div>
-        <div class="vitals-value" id="queuesValue" aria-hidden="true"></div>
+        <div class="vitals-value" id="queuesValue" aria-hidden="true">unavailable</div>
       </div>
-      <div class="vitals-section" id="schedulesSection" role="group" aria-label="Schedules: none">
+      <div class="vitals-section" id="schedulesSection" role="group" aria-label="Schedules: unavailable">
         <div class="vitals-label" aria-hidden="true">schedules</div>
-        <div class="vitals-value" id="schedulesValue" aria-hidden="true"></div>
+        <div class="vitals-value" id="schedulesValue" aria-hidden="true">unavailable</div>
       </div>
     </div>
   </div>

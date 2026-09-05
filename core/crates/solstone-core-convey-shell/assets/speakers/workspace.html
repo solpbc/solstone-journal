@@ -2539,6 +2539,8 @@
     `;
   }
 
+  let dayDiscoveryOpen = false;
+
   function renderDayDiscoveryBanner() {
     const clusters = dayDiscoveryClusters;
     if (!clusters.length && !dayDiscoveryNotice) {
@@ -2550,7 +2552,8 @@
       <div class="spk-discovery-panel">
         ${renderDayDiscoveryNotice(dayDiscoveryNotice)}
         ${clusters.length ? `
-          <div class="spk-discovery-title">new speakers found</div>
+          <details class="spk-day-discovery" ${dayDiscoveryOpen ? 'open' : ''}>
+          <summary class="spk-discovery-title">unnamed voices across your journal (${clusters.length})</summary>
           <div class="spk-discovery-copy">
             ${clusters.length} recurring voice pattern${clusters.length > 1 ? 's' : ''} ${clusters.length > 1 ? "don't" : "doesn't"} match anyone you've named. listen to a few samples and name them.
           </div>
@@ -2563,7 +2566,7 @@
                 ${(cluster.samples || []).map(sample => `
                   <div class="spk-discovery-sample">
                     <div class="spk-discovery-sample-text">${escapeHtml(sample.text || '(no transcript)')}</div>
-                    ${sample.audio_url ? `<audio controls preload="metadata" src="${escapeHtml(sample.audio_url)}"></audio>` : ''}
+                    ${sample.audio_url ? `<audio controls preload="none" src="${escapeHtml(sample.audio_url)}"></audio>` : ''}
                   </div>
                 `).join('')}
                 <button type="button" class="spk-discovery-btn spk-who-trigger" aria-haspopup="dialog" aria-expanded="false">
@@ -2572,10 +2575,12 @@
               </div>
             `).join('')}
           </div>
+          </details>
         ` : ''}
       </div>
     `;
 
+    discoveryBanner.querySelector('.spk-day-discovery')?.addEventListener('toggle', event => { dayDiscoveryOpen = event.currentTarget.open; });
     attachAudioErrorListeners(discoveryBanner);
     discoveryBanner.querySelectorAll('.spk-who-trigger').forEach((trigger) => {
       const card = trigger.closest('.spk-discovery-cluster');

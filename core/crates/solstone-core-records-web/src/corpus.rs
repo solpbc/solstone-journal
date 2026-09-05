@@ -316,9 +316,7 @@ async fn search_document_routes_serve_the_shell_workspace_and_redirect() {
             .to_vec(),
     )
     .expect("workspace UTF-8");
-    assert!(
-        body.contains("search lives in the CLI with <code>solstone call journal search</code>")
-    );
+    assert!(body.contains("role=\"search\"") && body.contains("/app/search/api/search"));
     let bare = request(&fixture.root, "/app/search").await;
     assert!(bare.status().is_redirection());
     assert_eq!(

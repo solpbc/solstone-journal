@@ -1122,7 +1122,7 @@ function renderImportRow(imp) {
   html += `<td class="file-size nowrap">${formatFileSize(imp.file_size)}</td>`;
   html += '<td class="nowrap">';
   if (imp.target_day) {
-    html += `<a href="/app/activities/${imp.target_day}" class="timestamp-link" onclick="event.stopPropagation();">${targetDay}</a>`;
+    html += `<a href="/app/import/${encodeURIComponent(imp.timestamp)}" class="timestamp-link" onclick="event.stopPropagation();">${targetDay}</a>`;
   } else {
     html += '-';
   }
@@ -1949,7 +1949,6 @@ function showProgressView(importId, eventData = null) {
   if (currentEvent?.event === 'completed' || importInfo?.status === 'success') {
     const completedInfo = currentEvent || importInfo || {};
     const range = completedInfo.date_range || importInfo?.date_range || null;
-    const day = range?.[0] || importInfo?.target_day || null;
     completionHtml = `
       <div class="import-completion-summary">
         <div><strong>Entries written:</strong> ${completedInfo.entries_written || importInfo?.entries_written || 0}</div>
@@ -1958,7 +1957,6 @@ function showProgressView(importId, eventData = null) {
         <div><strong>Duration:</strong> ${formatElapsed(completedInfo.duration_ms || 0)}</div>
         <div class="import-action-row">
           <a class="import-secondary-btn" href="/app/import/${completedInfo.processed_timestamp || importId}#content">browse what was imported →</a>
-          ${day ? `<a class="import-secondary-btn" href="/app/activities/${day}">view in activities</a>` : ''}
           <a href="#" class="import-secondary-btn" onclick="showGrid(); return false;">import another source</a>
         </div>
       </div>
@@ -2364,8 +2362,7 @@ function renderContentItems(items) {
       highlight_group: 'Highlights',
       note: 'Note',
     }[item.type] || item.type;
-    const date = item.date ? `${item.date.slice(0, 4)}-${item.date.slice(4, 6)}-${item.date.slice(6, 8)}` : '';
-    const calLink = item.date ? `/app/activities/${item.date}` : '';
+    const date = item.date ? window.JournalFormat.day(item.date) : '';
     html += `
       <div class="import-content-item" data-item-id="${item.id}" tabindex="0" role="button" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleContentItem(this)}">
         <div class="import-content-item-header" onclick="toggleContentItem(this.parentElement)">
@@ -2381,7 +2378,6 @@ function renderContentItems(items) {
           ${item.meta?.location ? ` · ${escapeContentHtml(item.meta.location)}` : ''}
           ${item.meta?.author ? `· ${escapeContentHtml(item.meta.author)}` : ''}
           ${item.meta?.tags?.length ? `· ${item.meta.tags.map(t => escapeContentHtml(t)).join(', ')}` : ''}
-          ${calLink ? ` · <a href="${calLink}" class="import-content-cal-link" onclick="event.stopPropagation();">view in activities →</a>` : ''}
         </div>
         ${item.preview ? `<div class="import-content-item-preview">${escapeContentHtml(stripMarkdown(item.preview))}</div>` : ''}
         <div class="import-content-item-body"><div class="no-data">Loading...</div></div>
@@ -2506,7 +2502,7 @@ function initImportDetail() {
   if (detailView) detailView.style.display = '';
 
   const heading = document.getElementById('importDetailHeading');
-  if (heading) heading.textContent = `import: ${importDetailTimestamp}`;
+  if (heading) heading.textContent = `import: ${window.JournalFormat.day(importDetailTimestamp.slice(0, 8))} · ${window.JournalFormat.segmentTime(importDetailTimestamp.slice(9))}`;
 
   loadImportDetail();
 
@@ -2516,11 +2512,14 @@ function initImportDetail() {
     loadImportDetail();
   });
 
-  if (window.location.hash === '#content') {
+  function openContentFromHash() {
+    if (window.location.hash !== '#content' || !detailView?.isConnected) return;
     tabs.forEach(t => t.classList.toggle('active', t.dataset.target === 'content'));
     contents.forEach(c => c.classList.toggle('active', c.id === 'content'));
-    loadContent(1);
+    if (!contentLoaded) loadContent(1);
   }
+  window.addEventListener('hashchange', openContentFromHash);
+  openContentFromHash();
 }
 
 window.loadContent = loadContent;

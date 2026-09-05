@@ -17,10 +17,6 @@ pub fn format_news_month(day: &str) -> String {
         .unwrap_or_else(|_| day.to_owned())
 }
 
-pub fn next_newsletter_when<T>(_today: T) -> &'static str {
-    "tomorrow morning"
-}
-
 #[cfg(test)]
 mod tests {
     use super::{format_news_list_date, format_news_month};

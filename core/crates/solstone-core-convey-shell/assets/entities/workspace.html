@@ -1933,6 +1933,7 @@ body.presentation-mode .entities-table td { font-size: 1.05em; padding: 14px 1.5
 body.presentation-mode .entity-name { font-weight: 600; color: #0b1220; }
 body.presentation-mode .entity-desc { color: #4b5563; }
 
+.journal-entity-filter{display:flex;gap:10px;align-items:center;margin:12px 0}.journal-entity-filter select,.journal-entity-pages button{font:inherit;min-height:46px;padding:10px 14px;border:1px solid #d5c8b5;background:white;border-radius:8px;color:inherit}.journal-entity-pages{display:flex;gap:16px;margin:24px 0}.journal-entity-pages button{cursor:pointer}.journal-entity-pages button:disabled{opacity:.5}.journal-entity-filter select:focus-visible,.journal-entity-pages button:focus-visible{outline:2px solid #b06a1a;outline-offset:3px}
 </style>
 
 <div class="workspace-content">
@@ -5093,64 +5094,56 @@ function renderEntities(searchTerm = '') {
   renderDetectedTable(searchTerm);
 }
 
+let journalEntityPage = 0;
+let journalEntityType = '';
+let journalEntitySearch = '';
+const JOURNAL_ENTITY_PAGE_SIZE = 60;
 function renderJournalEntities(searchTerm = '') {
   const container = document.getElementById('journal-entity-cards-content');
   const noEntities = document.getElementById('no-journal-entities');
   const countEl = document.getElementById('journal-card-search-count');
   const noMatchEl = document.getElementById('no-journal-card-matches');
-
-  container.innerHTML = '';
-
   const entities = journalEntitiesData || [];
-  const totalCount = entities.length;
   const term = searchTerm.toLowerCase();
-
-  if (entities.length === 0) {
-    noEntities.style.display = 'block';
-    countEl.style.display = 'none';
-    noMatchEl.style.display = 'none';
-    return;
+  if (term !== journalEntitySearch) { journalEntityPage = 0; journalEntitySearch = term; }
+  let filter = document.getElementById('journal-entity-type-filter');
+  if (!filter) {
+    const label = document.createElement('label');
+    label.className = 'journal-entity-filter'; label.textContent = 'type ';
+    filter = document.createElement('select'); filter.id = 'journal-entity-type-filter';
+    label.append(filter); container.before(label);
+    filter.addEventListener('change', () => { journalEntityType = filter.value; journalEntityPage = 0; renderJournalEntities(journalEntitySearch); });
   }
-
-  noEntities.style.display = 'none';
-
-  groupEntitiesByType(entities).forEach(({label, items}) => {
-    const filteredEntities = term
-      ? items.filter(entity => entity.name.toLowerCase().includes(term))
-      : items;
-    if (filteredEntities.length === 0) return;
-
-    // Sort by activity date (most recent first)
-    filteredEntities.sort((a, b) => (b.last_active_ts || 0) - (a.last_active_ts || 0));
-
-    const groupDiv = document.createElement('div');
-    groupDiv.className = 'entity-type-group';
-
-    const header = document.createElement('div');
-    header.className = 'entity-type-header';
-    header.textContent = label;
-    groupDiv.appendChild(header);
-
-    const grid = document.createElement('div');
-    grid.className = 'entity-cards-grid';
-
-    filteredEntities.forEach(entity => {
-      const card = createJournalEntityCard(entity);
-      grid.appendChild(card);
-    });
-
-    groupDiv.appendChild(grid);
-    container.appendChild(groupDiv);
+  const groups = groupEntitiesByType(entities);
+  filter.replaceChildren();
+  const all = document.createElement('option'); all.value = ''; all.textContent = `all types (${entities.length})`; filter.append(all);
+  groups.forEach(({label, items}) => { const option = document.createElement('option'); option.value = label; option.textContent = `${label} (${items.length})`; filter.append(option); });
+  if (journalEntityType && !groups.some(group => group.label === journalEntityType)) journalEntityType = '';
+  filter.value = journalEntityType;
+  const matches = groups.filter(group => !journalEntityType || group.label === journalEntityType).flatMap(({label, items}) => items.filter(entity => !term || entity.name.toLowerCase().includes(term)).sort((a,b) => (b.last_active_ts || 0) - (a.last_active_ts || 0)).map(entity => ({label, entity})));
+  journalEntityPage = Math.min(journalEntityPage, Math.max(0, Math.ceil(matches.length / JOURNAL_ENTITY_PAGE_SIZE) - 1));
+  container.replaceChildren(); noEntities.style.display = entities.length ? 'none' : 'block';
+  noMatchEl.style.display = entities.length && !matches.length ? '' : 'none';
+  countEl.style.display = '';
+  const start = journalEntityPage * JOURNAL_ENTITY_PAGE_SIZE;
+  countEl.textContent = matches.length ? `${start+1}–${Math.min(start+JOURNAL_ENTITY_PAGE_SIZE,matches.length)} of ${matches.length} entities` : '0 entities';
+  let label = null, grid = null;
+  matches.slice(start,start+JOURNAL_ENTITY_PAGE_SIZE).forEach(item => {
+    if (item.label !== label) {
+      label = item.label; const group = document.createElement('section'); group.className = 'entity-type-group';
+      const heading = document.createElement('h2'); heading.className = 'entity-type-header'; heading.textContent = label;
+      grid = document.createElement('div'); grid.className = 'entity-cards-grid'; group.append(heading,grid); container.append(group);
+    }
+    grid.append(createJournalEntityCard(item.entity));
   });
-
-  const matchCount = container.querySelectorAll('.entity-card').length;
-  if (term) {
-    countEl.textContent = `${matchCount} of ${totalCount} entities`;
-    countEl.style.display = '';
-    noMatchEl.style.display = matchCount === 0 && totalCount > 0 ? '' : 'none';
-  } else {
-    countEl.style.display = 'none';
-    noMatchEl.style.display = 'none';
+  if (matches.length > JOURNAL_ENTITY_PAGE_SIZE) {
+    const nav = document.createElement('nav'); nav.className = 'journal-entity-pages'; nav.setAttribute('aria-label','entity pages');
+    for (const [text,delta,disabled] of [['previous',-1,journalEntityPage===0],['next',1,start+JOURNAL_ENTITY_PAGE_SIZE>=matches.length]]) {
+      const button = document.createElement('button'); button.type = 'button'; button.textContent = text; button.disabled = disabled;
+      button.onclick = () => { journalEntityPage += delta; renderJournalEntities(journalEntitySearch); countEl.tabIndex = -1; countEl.focus(); countEl.scrollIntoView({block:'center'}); };
+      nav.append(button);
+    }
+    container.append(nav);
   }
 }
 

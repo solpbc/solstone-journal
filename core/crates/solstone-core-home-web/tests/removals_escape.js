@@ -69,6 +69,8 @@ class Element {
     return [];
   }
 
+  querySelector() { return null; }
+
   setAttribute() {}
 }
 
@@ -92,10 +94,12 @@ function copyTable(source) {
 }
 
 function rendered(copy, key, values) {
+  values = { ...values, ...(values.date ? { date: 'Thu Jan 1' } : {}), ...(values.stream ? { stream: values.stream.replace(/[._-]+/g, ' ').trim() } : {}) };
   return copy[key].replace(/\{([^}]+)\}/g, (_, name) => String(values[name] ?? ''));
 }
 
 function defaultStreamRendered(copy, key, values) {
+  values = { ...values, ...(values.date ? { date: 'Thu Jan 1' } : {}) };
   return copy[key].replace(' · {stream}', '').replace(/\{([^}]+)\}/g, (_, name) => String(values[name] ?? ''));
 }
 
@@ -135,6 +139,8 @@ async function boot(source, lists, responses) {
     querySelector(selector) { return selector === '[data-home-root]' ? root : null; }
   };
   window.window = window;
+  class FixtureDate extends Date { constructor(...args) { super(...(args.length ? args : [2026, 8, 5])); } }
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../solstone-core-convey-shell/assets/static/date_format.js'), 'utf8'), { window, Date: FixtureDate });
   vm.runInNewContext(source, { document, Promise, setImmediate, window, Set }, { filename: 'removals.js' });
   await settle();
   const card = root.children[0];
@@ -263,7 +269,7 @@ async function main() {
     { state: 'list.ready', removals: [defaultRow] },
     { approve: { state: 'approve.refused_before_start', refusals: [] } }
   );
-  assert(defaultCard.innerHTML.includes('data-removal-identity>20260101</p>'));
+  assert(defaultCard.innerHTML.includes('data-removal-identity>Thu Jan 1</p>'));
   assert(!defaultCard.innerHTML.includes('20260101 ·'));
   assert(!defaultCard.innerHTML.includes('_default'));
   await confirmation(defaultCard, 'default');
@@ -308,7 +314,7 @@ async function main() {
     ['declined.refused', copy['done.declined_failed']],
     ['declined.unknown', copy['done.declined_unknown']],
     ['tool.unavailable', copy['done.declined_failed']],
-    ['request.too_large', copy['done.too_many']],
+    ['request.too_large', rendered(copy, 'done.too_many', { n: 32 })],
     ['outcome.unknown', copy['done.declined_unknown']],
     ['request.invalid', '']
   ];
@@ -397,9 +403,22 @@ async function main() {
   await settle();
   click(overCard, 'delete-selected');
   await settle();
-  assert(outcome(overCard).includes(copy['done.too_many']));
+  assert(outcome(overCard).includes(rendered(copy, 'done.too_many', { n: 32 })));
   assert.strictEqual(confirmSection(overCard), '');
   assert.strictEqual(posts(overCard, '/app/home/api/approve').length, 0);
+
+  const pagedRows = Array.from({ length: 25 }, (_, index) => marked(`page-${index}`, 'policy', 1, 'mic'));
+  const pagedCard = await boot(source, { state: 'list.ready', removals: pagedRows }, { approve: { state: 'approve.refused_before_start', refusals: [] } });
+  assert.strictEqual(pagedCard.selects.length, 20);
+  clickSelect(pagedCard, 'page-0');
+  click(pagedCard, 'next');
+  assert.strictEqual(pagedCard.selects.length, 5);
+  clickSelect(pagedCard, 'page-24');
+  click(pagedCard, 'delete-selected');
+  assert.strictEqual(posts(pagedCard, '/app/home/api/approve').length, 0);
+  click(pagedCard, 'confirm');
+  await settle();
+  assert.deepStrictEqual(JSON.parse(posts(pagedCard, '/app/home/api/approve')[0].options.body).mark_ids, ['page-0', 'page-24']);
 
   const failedOnly = { id: 'failed-only', state: 'failed', day: '20260101', stream: 'kitchen-mic' };
   const recoverCard = await boot(

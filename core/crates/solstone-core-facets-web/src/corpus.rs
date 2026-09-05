@@ -210,7 +210,7 @@ async fn replay_record(router: Router, root: &Path, expected: &Value) {
         {
             assert_eq!(
                 prompt,
-                "recent activity doesn't fit your facets well. create the \"{name}\" facet?"
+                "journal activity doesn't fit your facets well. create the \"{name}\" facet?"
             );
             *prompt = Value::String("solstone noticed recent activity that doesn't fit your facets well. create a \"{name}\" facet?".into());
         }
@@ -599,6 +599,16 @@ async fn ac1_replay_all_120_news_records() {
             };
             let mut recorded_body = expected["json"].clone();
             rewrite_sol_urls_in_value(&mut recorded_body);
+            if path == "/app/news/api/state" && recorded_body.get("copy").is_some() {
+                recorded_body["copy"]["populated_next_footer"] = serde_json::json!("");
+                if recorded_body["copy"]["empty_next"]
+                    .as_str()
+                    .is_some_and(|text| text.contains("tomorrow"))
+                {
+                    recorded_body["copy"]["empty_next"] =
+                        serde_json::json!(crate::news::copy::NEWS_EMPTY_PENDING);
+                }
+            }
             let expected_digest = if recorded_body != expected["json"] {
                 Some(format!("{:x}", Sha256::digest(canonical(&recorded_body))))
             } else {
@@ -915,10 +925,6 @@ async fn ac8_live_pdf_ac10_frontmatter_and_ac11_dates() {
             "text/html; charset=utf-8"
         );
     }
-    let values = ["20260510", "20260610", "bad"].map(crate::news::dates::next_newsletter_when);
-    assert!(values.windows(2).all(|values| values[0] == values[1]));
-    // [check] Current copy; argument-independence above is the test contract.
-    assert_eq!(values[0], "tomorrow morning");
 }
 
 #[tokio::test]

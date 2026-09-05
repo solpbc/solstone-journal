@@ -244,6 +244,7 @@
     grid-column: 2;
   }
 }
+.news-earlier>summary{min-height:46px;padding:14px 0;cursor:pointer;font-weight:600}.news-day-group h3{font-size:1.05rem}.news-index-link{gap:16px;flex-wrap:wrap}.news-index-link>span:last-child{font-size:.9rem}.news-earlier>summary:focus-visible{outline:2px solid #b06a1a;outline-offset:3px}
 </style>
 
 <div class="news-shell" id="newsApp">
@@ -433,24 +434,12 @@
   function renderIndex(payload) {
     const copy = payload.copy || {};
     const newsletters = payload.newsletters || [];
+    const groups = new Map();
+    newsletters.forEach(item => { if (!groups.has(item.day)) groups.set(item.day, []); groups.get(item.day).push(item); });
+    const days = [...groups.keys()].sort().reverse();
+    const groupHtml = day => `<section class="news-day-group"><h3>${escapeHtml(groups.get(day)[0].label)}</h3><ul class="news-index-list">${groups.get(day).map(item => `<li><a class="news-index-link" href="${escapeHtml(item.url)}"><span class="news-index-facet">${escapeHtml(item.facet)}</span><span>read newsletter →</span></a></li>`).join('')}</ul></section>`;
     const listHtml = newsletters.length
-      ? `
-        <div class="news-populated-framing">
-          <p>${escapeHtml(copy.populated_framing)} <a href="${escapeHtml(copy.sample_url)}">${escapeHtml(copy.populated_sample_link)}</a></p>
-        </div>
-        <ul class="news-index-list">
-          ${newsletters.map((item) => `
-            <li>
-              <a class="news-index-link" href="${escapeHtml(item.url)}">
-                <span class="news-index-facet">${escapeHtml(item.facet)}</span>
-                <span class="news-index-day">${escapeHtml(item.label)}</span>
-                <span class="news-index-token">${escapeHtml(item.day)}</span>
-              </a>
-            </li>
-          `).join('')}
-        </ul>
-        ${copy.populated_next_footer ? `<p class="news-next-footer">${escapeHtml(copy.populated_next_footer)}</p>` : ''}
-      `
+      ? `<h3>latest newsletters</h3>${groupHtml(days[0])}${days.length > 1 ? `<details class="news-earlier"><summary>earlier newsletters</summary>${days.slice(1).map(groupHtml).join('')}</details>` : ''}`
       : (window.SurfaceState
         ? window.SurfaceState.empty({
             icon: window.ConveyIcons.svg('mailbox'),
@@ -474,13 +463,13 @@
           <p class="news-subtitle">${escapeHtml(copy.subtitle)}</p>
         </div>
       </header>
+      <section class="news-index">${listHtml}</section>
       <section class="news-grid-card" id="newsGridCard" hidden>
         <h3 class="news-grid-title">${escapeHtml(copy.grid_title)}</h3>
         <p class="news-grid-lede">${escapeHtml(copy.grid_lede)}</p>
         <div class="news-grid-host" id="newsGridHost"></div>
         <div class="news-grid-legend" id="newsGridLegend"></div>
       </section>
-      <section class="news-index">${listHtml}</section>
     `;
     renderNewsGrid(copy);
   }

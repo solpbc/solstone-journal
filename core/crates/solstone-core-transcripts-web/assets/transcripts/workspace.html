@@ -3380,6 +3380,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     } else if (think === 'awaiting') {
       el.classList.add('tr-seg-awaiting');
     }
+    el.dataset.startMinute = startMin;
+    el.dataset.endMinute = endMin;
     el.style.top = y(startMin) + 'px';
     el.style.height = Math.max(2, y(endMin) - y(startMin)) + 'px';
     el.classList.add(column === 1 ? 'tr-seg-col-1' : 'tr-seg-col-0');
@@ -3435,6 +3437,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       }
       const block = document.createElement('div');
       block.className = 'tr-body-event tr-body-event-' + (event.kind === 'sleep' ? 'sleep' : 'workout');
+      block.dataset.startMinute = visStart;
+      block.dataset.endMinute = visEnd;
       block.style.top = y(visStart) + 'px';
       block.style.height = Math.max(4, y(visEnd) - y(visStart)) + 'px';
       block.setAttribute('role', 'button');
@@ -3620,6 +3624,18 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     });
   }
 
+  function segmentLocation(seg, tab) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('stream', seg.stream);
+    url.hash = `${seg.key}/${tab}`;
+    return url.pathname + url.search + url.hash;
+  }
+
+  function linkedSegment(key) {
+    const stream = new URLSearchParams(window.location.search).get('stream');
+    return allSegments.find(segment => segment.key === key && (!stream || segment.stream === stream));
+  }
+
   function selectSegment(seg, updateHash = true, requestedTabId = null) {
     selectedSegment = seg;
 
@@ -3641,7 +3657,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     // Update URL hash for shareable links
     if (updateHash) {
       const tab = activeTab || 'transcript';
-      history.replaceState(null, '', `#${seg.key}/${tab}`);
+      history.replaceState(null, '', segmentLocation(seg, tab));
     }
 
     // Update active state in zoom view
@@ -3960,7 +3976,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     pane.classList.add('active');
     activeTab = tabId;
     if (selectedSegment) {
-      history.replaceState(null, '', `#${selectedSegment.key}/${tabId}`);
+      history.replaceState(null, '', segmentLocation(selectedSegment, tabId));
     }
   }
 
@@ -5645,7 +5661,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       const rawHash = window.location.hash.slice(1);
       const [segKey, tabIdFromHash] = rawHash.split('/', 2);
       if (segKey) {
-        const seg = allSegments.find(s => s.key === segKey);
+        const seg = linkedSegment(segKey);
         if (seg) {
           // selectSegment recenters the detail zoom range when needed.
           selectSegment(seg, false, tabIdFromHash);
@@ -5668,12 +5684,22 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 	    });
 	  }
 
+  function resizeOverviewIndicators() {
+    document.querySelectorAll('.tr-seg, .tr-body-event').forEach(el => {
+      const start = Number(el.dataset.startMinute);
+      const end = Number(el.dataset.endMinute);
+      el.style.top = y(start) + 'px';
+      el.style.height = Math.max(el.classList.contains('tr-body-event') ? 4 : 2, y(end) - y(start)) + 'px';
+    });
+  }
+
   function initTranscripts() {
     // Resize observers
     new ResizeObserver(() => {
       height = timeline.clientHeight - DAY_PADDING;
       ppm = height / (timelineEnd - timelineStart);
       buildGrid();
+      resizeOverviewIndicators();
       renderTimeline();
       if (updateNowPosition) updateNowPosition();
     }).observe(timeline);
@@ -5692,12 +5718,12 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         return;
       }
 
-      const seg = allSegments.find(s => s.key === segKey);
+      const seg = linkedSegment(segKey);
       if (!seg) {
         return;
       }
 
-      if (!selectedSegment || selectedSegment.key !== segKey) {
+      if (!selectedSegment || selectedSegment.key !== segKey || selectedSegment.stream !== seg.stream) {
         selectSegment(seg, false, tabIdFromHash);
         return;
       }

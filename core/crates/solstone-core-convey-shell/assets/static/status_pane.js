@@ -18,7 +18,7 @@ window.whenShellReady(() => {
     statusIcon.setAttribute('aria-label', label);
     statusIcon.setAttribute('title', label);
     const unread = window.AppServices?.quietNotifs?.unviewedCount?.() || 0;
-    statusIcon.href = lastCaptureStatusForPane === 'degraded'
+    statusIcon.href = ['degraded', 'offline'].includes(lastCaptureStatusForPane)
       ? '/app/health/#registeredClientsCard'
       : unread ? '/app/health/#quiet-notifs-section' : '/app/health/#healthSystemDetails';
     const visibleLabel = document.querySelector('#status-instrument .status-label');
@@ -262,7 +262,7 @@ window.whenShellReady(() => {
 	    if (status === 'no_clients') {
 	      text.textContent = 'no devices are running the solstone app yet. set one up to start your journal.';
 	    } else if (status === 'active' || status === 'offline') {
-	      text.textContent = 'device ' + status;
+	      text.textContent = status === 'offline' ? 'a device hasn’t added to your journal recently' : 'devices are adding to your journal';
 	    } else {
 	      text.textContent = "i don't know the status of your devices right now.";
 	    }

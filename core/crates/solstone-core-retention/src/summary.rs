@@ -109,12 +109,12 @@ fn derived_bytes(path: &Path) -> u64 {
 }
 
 pub fn human_bytes(bytes: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
     if bytes < 1024 {
         return format!("{bytes} B");
     }
     let mut value = bytes as f64;
-    let mut unit = "KB";
+    let mut unit = "KiB";
     for candidate in UNITS.iter().skip(1) {
         if value < 1024.0 {
             break;
@@ -122,8 +122,8 @@ pub fn human_bytes(bytes: u64) -> String {
         value /= 1024.0;
         unit = candidate;
     }
-    if value >= 1024.0 && unit == "TB" {
-        format!("{:.1} PB", value / 1024.0)
+    if value >= 1024.0 && unit == "TiB" {
+        format!("{:.1} PiB", value / 1024.0)
     } else {
         format!("{value:.1} {unit}")
     }
@@ -159,10 +159,10 @@ mod tests {
         assert_eq!(summary.segments_purged, 1);
         assert_eq!(summary.raw_media_bytes, 6144);
         assert_eq!(summary.derived_bytes, 41);
-        assert_eq!(summary.raw_media_human(), "6.0 KB");
+        assert_eq!(summary.raw_media_human(), "6.0 KiB");
         assert_eq!(summary.derived_human(), "41 B");
         assert_eq!(human_bytes(0), "0 B");
-        assert_eq!(human_bytes(1024_u64.pow(5)), "1.0 PB");
+        assert_eq!(human_bytes(1024_u64.pow(5)), "1.0 PiB");
         Ok(())
     }
 }

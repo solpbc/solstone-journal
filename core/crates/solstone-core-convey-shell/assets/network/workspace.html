@@ -821,6 +821,7 @@
 .ws-error-dismiss {
   transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
+.client-card.neutral{border-left-color:var(--border,#ddd)}.client-status.neutral{background:#f0f0ed;color:#555}.client-details summary{display:flex;align-items:center;gap:12px;cursor:pointer;min-height:44px}.client-details summary:focus-visible{outline:2px solid var(--orange,#f59e0b);outline-offset:3px}.client-stats dd{overflow-wrap:anywhere}.client-last-material{color:var(--text-secondary,#666);font-size:.9rem;margin:8px 0}.client-details .client-actions{margin-top:12px}
 </style>
 
 <script>
@@ -1512,11 +1513,12 @@ const wsErrorCountdown = document.getElementById('wsErrorCountdown');
 let errorAutoHideTimer = null;
 let countdownInterval = null;
 let lastPollTime = Date.now();
-const GROUP_ORDER = ['active', 'stale', 'inactive'];
+const GROUP_ORDER = ['active', 'stale', 'inactive', 'unknown'];
 const GROUP_LABELS = {
-  active: 'Active',
-  stale: 'Stale',
-  inactive: 'Inactive'
+  active: 'connected devices',
+  stale: 'devices to check',
+  inactive: 'offline devices',
+  unknown: 'connection unavailable'
 };
 
 function emptyStateHTML() {
@@ -1533,12 +1535,12 @@ function emptyStateHTML() {
 function captureLabel(client) {
   if (client.failing) return 'failing';
   return {
-    active: 'capturing',
-    stale: 'capture stale',
-    offline: 'capture offline',
-    no_capture: 'no capture yet',
-    unknown: 'capture unknown',
-  }[client.capture_state] || 'capture unknown';
+    active: 'adding to your journal',
+    stale: 'no recent material',
+    offline: 'no recent material',
+    no_capture: 'no material received yet',
+    unknown: 'delivery unavailable',
+  }[client.capture_state] || 'delivery unavailable';
 }
 
 function timestampLabel(timestamp) {
@@ -1554,8 +1556,8 @@ function clientStatsHTML(client) {
   return `<dl>
     <div><dt>connection</dt><dd>${escapeHtml(client.label || client.state || 'unknown')}</dd></div>
     <div><dt>last check-in</dt><dd>${escapeHtml(timestampLabel(client.last_seen_at))}</dd></div>
-    <div><dt>capture</dt><dd>${escapeHtml(timestampLabel(client.last_accepted_ingest_at))}</dd></div>
-    <div><dt>last segment</dt><dd>${escapeHtml(segmentLabel)}</dd></div>
+    <div><dt>last material received</dt><dd>${escapeHtml(timestampLabel(client.last_accepted_ingest_at))}</dd></div>
+    <div><dt>last journal segment</dt><dd>${escapeHtml(segmentLabel)}</dd></div>
     ${failure ? `<div><dt>capture detail</dt><dd>${escapeHtml(failure)}</dd></div>` : ''}
   </dl>`;
 }
@@ -1620,11 +1622,11 @@ function captureClass(client) {
   if (client.failing || client.capture_state === 'degraded') return 'stale';
   if (client.capture_state === 'active') return 'connected';
   if (client.capture_state === 'stale') return 'stale';
-  return 'disconnected';
+  return 'neutral';
 }
 
 function groupFor(client) {
-  return GROUP_ORDER.includes(client.group) ? client.group : 'inactive';
+  return GROUP_ORDER.includes(client.group) ? client.group : 'unknown';
 }
 
 function groupHeaderHTML(group) {
@@ -1638,17 +1640,19 @@ function clientCardHTML(client) {
   const connectionLabel = client.label || client.state || 'unknown';
   const ariaLabel = [displayName, connectionLabel, captureLabel(client)].filter(Boolean).join(', ');
   return `
-    <div class="client-card ${connectionClassName}" data-cid="${escapeHtml(client.cid)}" role="listitem" aria-label="${escapeHtml(ariaLabel)}">
+    <div class="client-card ${client.failing ? 'stale' : 'neutral'}" data-cid="${escapeHtml(client.cid)}" role="listitem" aria-label="${escapeHtml(ariaLabel)}">
       <div class="client-header">
         <span class="client-name">${escapeHtml(displayName)}</span>
-        <span class="client-source">${escapeHtml(client.cid_short)}</span>
-        <span class="client-status ${connectionClassName}">${escapeHtml(connectionLabel)}</span>
         <span class="client-status ${captureClassName}">${escapeHtml(captureLabel(client))}</span>
       </div>
-      <div class="client-stats">${clientStatsHTML(client)}</div>
+      <p class="client-last-material">last material received: ${escapeHtml(timestampLabel(client.last_accepted_ingest_at))}</p>
+      <details class="client-details" data-client-details="${escapeHtml(client.cid)}">
+        <summary>device details <span class="client-status ${connectionClassName}">${escapeHtml(connectionLabel)}</span></summary>
+        <div class="client-stats">${clientStatsHTML(client)}<dl><div><dt>device id</dt><dd>${escapeHtml(client.cid)}</dd></div></dl></div>
       <div class="client-actions">
         <button class="danger" data-cid="${escapeHtml(client.cid)}" onclick="unpairClient(this.dataset.cid, this)">unpair</button>
       </div>
+      </details>
     </div>
   `;
 }
@@ -1661,7 +1665,8 @@ function renderClients(clients) {
   const groups = {
     active: [],
     stale: [],
-    inactive: []
+    inactive: [],
+    unknown: []
   };
   for (const client of clients) {
     const group = groupFor(client);
@@ -1708,9 +1713,14 @@ async function loadClients() {
         }
       }
     }
+    const openDetails = new Set([...clientsList.querySelectorAll('details[open]')].map(el => el.dataset.clientDetails));
+    if (activeEl?.matches('summary')) {
+      focusSelector = `[data-client-details="${CSS.escape(activeEl.parentElement.dataset.clientDetails)}"] > summary`;
+    }
     const scrollTop = clientsList.scrollTop;
 
     clientsList.innerHTML = renderClients(clients);
+    clientsList.querySelectorAll('details').forEach(el => { el.open = openDetails.has(el.dataset.clientDetails); });
     clearError();
     clientsList.scrollTop = scrollTop;
 

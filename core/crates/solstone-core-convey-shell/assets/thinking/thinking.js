@@ -31,6 +31,7 @@
       prompt: new Map(),
       output: new Map(),
     },
+    runsFailuresOnly: false,
     runsFacet: '',
     runsFacetExplicit: false,
     runsSelectedUseId: '',
@@ -1221,6 +1222,7 @@
       ['model', run.model],
       ['provider', run.provider],
       ['runtime', window.JournalFormat.duration(run.runtime_seconds)],
+      ['status', run.failed ? 'failed' : (run.status || 'unknown').replaceAll('_', ' ')],
       ['thinking events', run.thinking_count],
       ['tool calls', run.tool_count],
       ['facet', run.facet],
@@ -1281,7 +1283,7 @@
     table.className = 'thinking-runs-table';
     const head = document.createElement('thead');
     const headRow = document.createElement('tr');
-    for (const label of ['time', 'model', 'provider', 'runtime', 'thinking events', 'tool calls', 'facet', 'output', 'prompt']) {
+    for (const label of ['time', 'status', 'model', 'provider', 'runtime', 'thinking events', 'tool calls', 'facet', 'output', 'prompt']) {
       const cell = document.createElement('th');
       cell.scope = 'col';
       cell.textContent = label;
@@ -1292,7 +1294,8 @@
     const body = document.createElement('tbody');
     runs.forEach((run) => {
       const row = document.createElement('tr');
-      for (const value of [window.JournalFormat.timestamp(run.start), run.model, run.provider, window.JournalFormat.duration(run.runtime_seconds), run.thinking_count, run.tool_count, run.facet]) {
+      if (run.failed) row.className = 'thinking-run-failed';
+      for (const value of [window.JournalFormat.timestamp(run.start), run.failed ? 'failed' : (run.status || 'unknown').replaceAll('_', ' '), run.model, run.provider, window.JournalFormat.duration(run.runtime_seconds), run.thinking_count, run.tool_count, run.facet]) {
         const cell = document.createElement('td');
         if (value !== null && value !== undefined && value !== '') cell.textContent = value;
         row.appendChild(cell);
@@ -1323,7 +1326,8 @@
   }
 
   function renderThinkingRunsDay(payload, route) {
-    const runs = normalizedThinkingRuns(payload);
+    const matchingRuns = normalizedThinkingRuns(payload).filter(run => !route.talent || run.name === route.talent);
+    const runs = state.runsFailuresOnly ? matchingRuns.filter(run => run.failed) : matchingRuns;
     const date = $('thinkingRunsDate');
     if (date) date.value = runsDayInputValue(route.day);
     const facet = $('thinkingRunsFacet');
@@ -1353,12 +1357,28 @@
     host.replaceChildren();
     $('thinkingRunsDetail').hidden = !route.useId;
     if (!route.useId) $('thinkingRunsNoOutput').hidden = true;
-    renderThinkingRunsSummary(runs);
+    renderThinkingRunsSummary(matchingRuns);
+    const controls = document.createElement('div');
+    controls.className = 'thinking-runs-filters';
+    if (route.talent) {
+      const context = document.createElement('span');
+      context.textContent = route.talent.replaceAll('_', ' ');
+      const all = document.createElement('a');
+      all.href = thinkingRunsHash(thinkingRunsRoute({...route, talent: '', useId: ''}));
+      all.textContent = 'all talents for this day';
+      controls.append(context, all);
+    }
+    const label = document.createElement('label');
+    const input = document.createElement('input');
+    input.type = 'checkbox'; input.checked = state.runsFailuresOnly;
+    input.addEventListener('change', () => { state.runsFailuresOnly = input.checked; renderThinkingRunsDay(payload, route); host.querySelector('input[type=checkbox]')?.focus(); });
+    label.append(input, document.createTextNode(' failed runs only'));
+    controls.append(label); host.append(controls);
     if (!runs.length) {
       const heading = document.createElement('p');
-      heading.textContent = 'no talent runs on this day';
+      heading.textContent = state.runsFailuresOnly ? 'no failed runs match this view' : route.talent ? 'no runs found for this talent on this day' : 'no talent runs on this day';
       const detail = document.createElement('p');
-      detail.textContent = 'talent runs will appear here after they finish.';
+      detail.textContent = route.talent ? 'this day has no matching run record in the current view. try all talents or another day.' : 'runs appear here when processing takes place.';
       host.append(heading, detail);
       return;
     }
