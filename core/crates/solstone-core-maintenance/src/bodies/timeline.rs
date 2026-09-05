@@ -281,6 +281,11 @@ fn rollup_day(journal: &Path, options: DayOptions, services: &TimelineServices<'
             .replace('-', "")
         }
     };
+    if let Err(error) =
+        solstone_core_timeline::ensure_timeline_conversion(journal, &day_subject_key(&day))
+    {
+        return failure(error.to_string());
+    }
     if !options.commit {
         let scan = match load_day_segments(journal, &day) {
             Ok(scan) => scan,
@@ -312,7 +317,7 @@ fn rollup_day(journal: &Path, options: DayOptions, services: &TimelineServices<'
         };
     }
 
-    let _locks = match acquire_timeline_locks(
+    let locks = match acquire_timeline_locks(
         journal,
         TimelineLockRequest {
             days: vec![day.clone()],
@@ -343,7 +348,9 @@ fn rollup_day(journal: &Path, options: DayOptions, services: &TimelineServices<'
     }
     let generated_at_ms = services.now.timestamp_millis();
     let attempt = day_attempt(&day, &source_digest, generated_at_ms);
-    if let Err(error) = record_attempt_started(journal, &day_subject_key(&day), attempt.clone()) {
+    if let Err(error) =
+        record_attempt_started(journal, &day_subject_key(&day), attempt.clone(), &locks)
+    {
         return failure(error.to_string());
     }
     let by_hour = group_by_hour(&entries);
@@ -363,13 +370,13 @@ fn rollup_day(journal: &Path, options: DayOptions, services: &TimelineServices<'
         options.jobs,
     ) {
         Ok(results) => results,
-        Err(error) => return day_curation_failure(journal, &day, &attempt, &error),
+        Err(error) => return day_curation_failure(journal, &day, &attempt, &error, &locks),
     };
     let mut hours = BTreeMap::new();
     for result in hour_results {
         let picked = match result.result {
             Ok(picked) => picked,
-            Err(error) => return day_curation_failure(journal, &day, &attempt, &error),
+            Err(error) => return day_curation_failure(journal, &day, &attempt, &error, &locks),
         };
         hours.insert(
             result.key,
@@ -392,7 +399,7 @@ fn rollup_day(journal: &Path, options: DayOptions, services: &TimelineServices<'
         TimelineCurationStage::Day,
     ) {
         Ok(picked) => picked,
-        Err(error) => return day_curation_failure(journal, &day, &attempt, &error),
+        Err(error) => return day_curation_failure(journal, &day, &attempt, &error, &locks),
     };
     let timeline = DayTimelineV1 {
         schema_version: CURRENT_SCHEMA_VERSION,
@@ -406,7 +413,7 @@ fn rollup_day(journal: &Path, options: DayOptions, services: &TimelineServices<'
         hours,
         day_curation: curation_record(day_candidates.len(), day_picked),
     };
-    if let Err(error) = publish_day_timeline_after_start(journal, &timeline, attempt) {
+    if let Err(error) = publish_day_timeline_after_start(journal, &timeline, attempt, &locks) {
         return failure(error.to_string());
     }
     success(format!(
@@ -528,6 +535,7 @@ fn day_curation_failure(
     day: &str,
     attempt: &AttemptStateV1,
     error: &TimelineError,
+    locks: &solstone_core_timeline::TimelineLockSet,
 ) -> CliRun {
     let detail = bounded_diagnostic_detail(&error.to_string());
     if let Err(state_error) = record_attempt_outcome(
@@ -537,6 +545,7 @@ fn day_curation_failure(
         AttemptOutcome::Failed,
         &detail,
         attempt.started_at_ms,
+        locks,
     ) {
         return failure(bounded_diagnostic_detail(&format!(
             "terminal timeline state write failed: {state_error}; primary failure: {detail}"
@@ -550,6 +559,11 @@ fn rollup_master(
     options: MasterOptions,
     services: &TimelineServices<'_>,
 ) -> CliRun {
+    if let Err(error) =
+        solstone_core_timeline::ensure_timeline_conversion(journal, master_subject_key())
+    {
+        return failure(error.to_string());
+    }
     if !options.commit {
         let scan = match load_day_rollups(journal) {
             Ok(scan) => scan,
@@ -566,7 +580,6 @@ fn rollup_master(
         Ok(value) => value,
         Err(error) => return failure(error),
     };
-    let _locks = locks;
     if days.is_empty() {
         return empty_master(journal);
     }
@@ -583,7 +596,9 @@ fn rollup_master(
     }
     let generated_at_ms = services.now.timestamp_millis();
     let attempt = master_attempt(&source_digest, generated_at_ms);
-    if let Err(error) = record_attempt_started(journal, master_subject_key(), attempt.clone()) {
+    if let Err(error) =
+        record_attempt_started(journal, master_subject_key(), attempt.clone(), &locks)
+    {
         return failure(error.to_string());
     }
     let by_month = group_by_month(&days);
@@ -606,13 +621,13 @@ fn rollup_master(
         options.jobs,
     ) {
         Ok(results) => results,
-        Err(error) => return master_curation_failure(journal, &attempt, &error),
+        Err(error) => return master_curation_failure(journal, &attempt, &error, &locks),
     };
     let mut months = BTreeMap::new();
     for result in month_results {
         let picked = match result.result {
             Ok(picked) => picked,
-            Err(error) => return master_curation_failure(journal, &attempt, &error),
+            Err(error) => return master_curation_failure(journal, &attempt, &error, &locks),
         };
         let day_keys = &by_month[&result.key];
         let month_days = day_keys
@@ -636,7 +651,7 @@ fn rollup_master(
         TimelineCurationStage::Master,
     ) {
         Ok(picked) => picked,
-        Err(error) => return master_curation_failure(journal, &attempt, &error),
+        Err(error) => return master_curation_failure(journal, &attempt, &error, &locks),
     };
     let year_top = year_picked
         .picks
@@ -656,7 +671,7 @@ fn rollup_master(
         year_top,
         year_curation: curation_record(candidates.len(), year_picked),
     };
-    if let Err(error) = publish_master_timeline_after_start(journal, &timeline, attempt) {
+    if let Err(error) = publish_master_timeline_after_start(journal, &timeline, attempt, &locks) {
         return failure(error.to_string());
     }
     success(format!(
@@ -839,6 +854,7 @@ fn master_curation_failure(
     journal: &Path,
     attempt: &AttemptStateV1,
     error: &TimelineError,
+    locks: &solstone_core_timeline::TimelineLockSet,
 ) -> CliRun {
     let detail = bounded_diagnostic_detail(&error.to_string());
     if let Err(state_error) = record_attempt_outcome(
@@ -848,6 +864,7 @@ fn master_curation_failure(
         AttemptOutcome::Failed,
         &detail,
         attempt.started_at_ms,
+        locks,
     ) {
         return failure(bounded_diagnostic_detail(&format!(
             "terminal timeline state write failed: {state_error}; primary failure: {detail}"
@@ -1613,9 +1630,10 @@ mod tests {
     use solstone_core_timeline::{
         AttemptOutcome, CURRENT_SCHEMA_VERSION, CurationRecordV1, DayTimelineV1, SegmentBindingV1,
         SegmentSummaryV1, SegmentTimelineV1, TimelineCurationFailureReason, TimelineEntryV1,
-        TimelineError, TimelineKind, curation_input_digest, curation_jobs_digest,
-        load_timeline_state, publish_day_timeline, publish_segment_timeline,
-        record_attempt_outcome, segment_subject_key,
+        TimelineError, TimelineKind, TimelineLockRequest, TimelineLockSubject,
+        acquire_timeline_locks, curation_input_digest, curation_jobs_digest, load_timeline_record,
+        publish_day_timeline, publish_segment_timeline, record_attempt_outcome,
+        segment_subject_key,
     };
     use std::collections::{BTreeMap, VecDeque};
     use std::path::{Path, PathBuf};
@@ -2700,10 +2718,11 @@ mod tests {
                 .exists()
         );
         assert!(
-            load_timeline_state(journal.path())
+            load_timeline_record(journal.path(), "day:20260301")
+                .unwrap()
                 .unwrap()
                 .attempts
-                .values()
+                .iter()
                 .any(|attempt| attempt.outcome == AttemptOutcome::Failed)
         );
     }
@@ -2816,6 +2835,14 @@ mod tests {
             outcome: AttemptOutcome::Running,
             detail: String::new(),
         };
+        let locks = acquire_timeline_locks(
+            journal.path(),
+            TimelineLockRequest {
+                subjects: vec![TimelineLockSubject::Segment(binding.clone())],
+                ..TimelineLockRequest::default()
+            },
+        )
+        .unwrap();
         record_attempt_outcome(
             journal.path(),
             &segment_subject_key(&binding),
@@ -2823,8 +2850,10 @@ mod tests {
             AttemptOutcome::Failed,
             "fixture failure",
             3,
+            &locks,
         )
         .unwrap();
+        drop(locks);
 
         let preview = run(
             "timeline:rollup-day",
@@ -3111,8 +3140,7 @@ mod tests {
         assert_eq!(contradictory_modes.exit_code, 2);
 
         let artifact_before = std::fs::read(journal.path().join("timeline.json")).unwrap();
-        let state_before =
-            std::fs::read(journal.path().join("health/timeline/state.json")).unwrap();
+        let state_before = std::fs::read(journal.path().join("timeline.state.json")).unwrap();
         let calls_before = picker.call_count();
         for month_value in ["202601", "", ",,,"] {
             let filtered_commit = run(
@@ -3132,7 +3160,7 @@ mod tests {
                 artifact_before
             );
             assert_eq!(
-                std::fs::read(journal.path().join("health/timeline/state.json")).unwrap(),
+                std::fs::read(journal.path().join("timeline.state.json")).unwrap(),
                 state_before
             );
         }
@@ -3289,10 +3317,11 @@ mod tests {
         assert!(result.stderr.contains("duplicate"));
         assert!(!journal.path().join("timeline.json").exists());
         assert!(
-            load_timeline_state(journal.path())
+            load_timeline_record(journal.path(), "master")
+                .unwrap()
                 .unwrap()
                 .attempts
-                .values()
+                .iter()
                 .any(|attempt| attempt.outcome == AttemptOutcome::Failed)
         );
     }
@@ -3498,5 +3527,45 @@ mod tests {
 
     fn read_json(path: &Path) -> Value {
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    }
+    #[test]
+    fn conversion_gate_stops_preview_commit_and_force_before_generation() {
+        let journal = tempfile::tempdir().unwrap();
+        let picker = Picker::canned([]);
+        let model = Model::new("unused");
+        std::fs::create_dir_all(journal.path().join("health/timeline")).unwrap();
+        std::fs::write(
+            solstone_core_timeline::timeline_state_path(journal.path()),
+            b"legacy bytes are not read by the gate",
+        )
+        .unwrap();
+        for marked in [false, true] {
+            if marked {
+                std::fs::write(solstone_core_timeline::timeline_conversion_marker_path(journal.path()), br#"{"schema_version":1,"refused":{"day:20260101":"unplaceable fixture","master":"unplaceable fixture"}}"#).unwrap();
+            }
+            for mode in [
+                vec![],
+                vec!["--dry-run"],
+                vec!["--commit"],
+                vec!["--commit", "--force"],
+            ] {
+                for routine in ["timeline:rollup-day", "timeline:rollup-master"] {
+                    let mut args = mode.iter().map(|v| (*v).to_owned()).collect::<Vec<_>>();
+                    if routine.ends_with("day") {
+                        args.extend(["--day".to_owned(), "20260101".to_owned()]);
+                    }
+                    let result = run(routine, &args, journal.path(), &services(&picker, &model));
+                    assert_ne!(result.exit_code, 0, "{routine} {mode:?}");
+                    assert!(
+                        result.stderr.contains("timeline conversion required"),
+                        "{}",
+                        result.stderr
+                    );
+                }
+            }
+        }
+        assert_eq!(picker.call_count(), 0);
+        assert!(!journal.path().join("timeline.json").exists());
+        assert!(!journal.path().join("chronicle").exists());
     }
 }

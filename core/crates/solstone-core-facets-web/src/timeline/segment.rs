@@ -252,18 +252,20 @@ mod tests {
     #[test]
     fn segment_status_is_stale_after_a_newer_failed_recuration_attempt() {
         let root = phase_root("populated");
-        let state_path = root.path().join("health/timeline/state.json");
+        let state_path = root
+            .path()
+            .join("chronicle/20260510/100000_300/timeline.state.json");
         let mut state: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&state_path).expect("state"))
                 .expect("state JSON");
-        state["attempts"]["segment:20260510/_default/100000_300:newer-failed"] = json!({
+        state["attempts"] = json!([{
             "attempt_id": "newer-failed",
             "input_digest": "changed-source-input",
             "started_at_ms": 1770000050001_i64,
             "finished_at_ms": 1770000050002_i64,
             "outcome": "failed",
             "detail": "fixture failure",
-        });
+        }]);
         crate::test_support::write(
             &state_path,
             &serde_json::to_string(&state).expect("state JSON"),

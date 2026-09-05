@@ -281,21 +281,28 @@ fn write_timeline_artifacts(root: &Path, day_path: &Path) {
         "year_curation": timeline_curation("master-input", 1, vec![default], "One seeded month.", "corpus-master-model"),
     });
     let master_text = write_json(&root.join("timeline.json"), &master);
-    write_json(
-        &root.join("health/timeline/state.json"),
-        &serde_json::json!({
-            "schema_version": 1,
-            "revision": 1,
-            "artifacts": {
-                "master": artifact("master-input", &master_text),
-                "day:20260510": artifact("day-input", &day_text),
-                "segment:20260510/_default/100000_300": artifact(default_digest, default_text),
-                "segment:20260510/_default/103000_300": artifact(second_digest, second_text),
-                "segment:20260510/workstation.browser/140000_300": artifact(browser_digest, browser_text),
-            },
-            "attempts": {},
-        }),
-    );
+    for (subject, mut published) in [
+        ("master", artifact("master-input", &master_text)),
+        ("day:20260510", artifact("day-input", &day_text)),
+        (
+            "segment:20260510/_default/100000_300",
+            artifact(default_digest, default_text),
+        ),
+        (
+            "segment:20260510/_default/103000_300",
+            artifact(second_digest, second_text),
+        ),
+        (
+            "segment:20260510/workstation.browser/140000_300",
+            artifact(browser_digest, browser_text),
+        ),
+    ] {
+        published.as_object_mut().unwrap().remove("generation");
+        write_json(
+            &solstone_core_timeline::timeline_record_path(root, subject).unwrap(),
+            &serde_json::json!({"schema_version":1,"subject":subject,"published":published,"attempts":[]}),
+        );
+    }
 }
 
 fn entry(title: &str, description: &str, stream: &str, segment: &str) -> serde_json::Value {

@@ -12,6 +12,8 @@ pub const USAGE: &str = "usage: journal maintenance <command> [options]\n";
 const LIST_USAGE: &str = "usage: journal maintenance list\n";
 const SYNC_USAGE: &str = "usage: journal maintenance sync\n";
 const RUN_USAGE: &str = "usage: journal maintenance run ID [ARGS...]\n";
+const CONVERT_STATE_USAGE: &str =
+    "usage: journal maintenance convert-timeline-state [--commit] [--allow-regeneration SUBJECT]\n";
 const MIGRATE_USAGE: &str = "usage: journal maintenance migrate-timeline [--commit] [--limit N]\n";
 
 pub(crate) fn run(
@@ -44,6 +46,7 @@ pub(crate) fn run(
         // nothing. `--commit` is required to write, because the failure mode of this command
         // is the loss of the owner's historical journal prose.
         "migrate-timeline" => migrate_timeline(rest, journal),
+        "convert-timeline-state" => convert_timeline_state(rest, journal),
         _ => usage_error(USAGE, &args.join(" ")),
     }
 }
@@ -86,7 +89,50 @@ fn usage_for_scope(args: &[String]) -> &'static str {
         Some("sync") => SYNC_USAGE,
         Some("run") => RUN_USAGE,
         Some("migrate-timeline") => MIGRATE_USAGE,
+        Some("convert-timeline-state") => CONVERT_STATE_USAGE,
         _ => USAGE,
+    }
+}
+
+fn convert_timeline_state(args: &[String], journal: &Path) -> CliRun {
+    let mut commit = false;
+    let mut release = None;
+    let mut rest = args.iter();
+    while let Some(argument) = rest.next() {
+        match argument.as_str() {
+            "--commit" => commit = true,
+            "--allow-regeneration" => {
+                let Some(subject) = rest.next() else {
+                    return usage_error(
+                        CONVERT_STATE_USAGE,
+                        "--allow-regeneration needs a subject",
+                    );
+                };
+                release = Some(subject);
+            }
+            other => return usage_error(CONVERT_STATE_USAGE, other),
+        }
+    }
+    let result = if let Some(subject) = release {
+        if !commit {
+            return usage_error(
+                CONVERT_STATE_USAGE,
+                "--allow-regeneration requires --commit",
+            );
+        }
+        solstone_core_timeline::release_timeline_refusal(journal, subject)
+            .map(|()| format!("regeneration allowed for {subject}\n"))
+    } else {
+        solstone_core_timeline::convert_timeline_state(journal, commit)
+            .and_then(|report| serde_json::to_string_pretty(&report).map_err(Into::into))
+    };
+    match result {
+        Ok(stdout) => success(stdout),
+        Err(error) => CliRun {
+            stdout: String::new(),
+            stderr: format!("{error}\n"),
+            exit_code: 1,
+        },
     }
 }
 
