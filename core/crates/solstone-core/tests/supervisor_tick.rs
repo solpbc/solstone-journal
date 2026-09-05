@@ -1010,6 +1010,65 @@ async fn activity_recorded_submits_activity_think_over_socket() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn daily_complete_retries_standard_timeline_rollup_for_the_completed_day() {
+    let journal = TempJournal::new();
+    journal.enable_thinking();
+    let _stub_marker = journal.install_journal_stub();
+    let command = [
+        "journal",
+        "maintenance",
+        "run",
+        "timeline:rollup",
+        "--commit",
+    ];
+    fs::write(
+        journal.0.join("config/schedules.json"),
+        serde_json::to_vec(&json!({"maintenance:timeline:rollup": {
+            "cmd": command, "every": "daily", "max_runtime": "60m"
+        }}))
+        .unwrap(),
+    )
+    .unwrap();
+    fs::create_dir_all(journal.0.join("health")).unwrap();
+    let later = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64()
+        + 7200.0;
+    fs::write(
+        journal.0.join("health/scheduler.json"),
+        serde_json::to_vec(&json!({"maintenance:timeline:rollup": {
+            "last_run": later, "last_status": "error"
+        }}))
+        .unwrap(),
+    )
+    .unwrap();
+    let mut child = start(&journal, None, &["--no-daily"]);
+    let socket = journal.0.join("health/callosum.sock");
+    wait_for_socket(&mut child, &socket);
+    let (mut reader, mut write) = connect(&socket).await;
+    send_message(
+        &mut write,
+        json!({"tract": "think", "event": "daily_complete", "day": "20260102"}),
+    )
+    .await;
+    let started = receive_started_command(
+        &mut reader,
+        &[
+            "journal",
+            "maintenance",
+            "run",
+            "timeline:rollup",
+            "--commit",
+            "--day",
+            "20260102",
+        ],
+    )
+    .await;
+    assert_eq!(started["ref"], "supervisor-timeline-rollup-20260102");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn daily_complete_submits_heartbeat_when_pid_file_is_absent() {
     let journal = TempJournal::new();
     let _stub_marker = journal.install_journal_stub();

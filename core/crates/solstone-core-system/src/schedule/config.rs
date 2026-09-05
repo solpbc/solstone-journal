@@ -70,6 +70,15 @@ pub(crate) fn load_runtime(path: &Path) -> Result<ConfigLoad, ScheduleError> {
     Ok(validate(raw))
 }
 
+/// Read one enabled entry from current configuration without changing scheduler state.
+pub fn read_enabled_schedule_entry(
+    path: &Path,
+    name: &str,
+) -> Result<(Option<ScheduleEntry>, Vec<ConfigDiagnostic>), ScheduleError> {
+    let mut loaded = load_runtime(path)?;
+    Ok((loaded.config.entries.remove(name), loaded.diagnostics))
+}
+
 pub(crate) fn register_defaults(
     path: &Path,
     _loaded: &ScheduleConfig,
