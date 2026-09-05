@@ -47,4 +47,3 @@ handler = "link_status"
 params = [
   { name = "label", kind = "option", type = "text", required = false, nargs = 1, multiple = false, options = ["--label"], secondary = [], hidden = false, is_flag = false, count = false },
 ]
-
