@@ -284,7 +284,29 @@ fn capture_issue(capture: &Value) -> Option<Value> {
         },
         _ => base,
     };
-    Some(json!({"text":text,"severity":severity,"href":"/app/health"}))
+    let names = capture
+        .get("clients")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|client| {
+            matches!(
+                capture.get("status").and_then(Value::as_str),
+                Some("stale" | "offline")
+            ) && matches!(
+                client.get("status").and_then(Value::as_str),
+                Some("stale" | "offline")
+            )
+        })
+        .filter_map(|client| client.get("name").and_then(Value::as_str))
+        .filter(|name| !name.trim().is_empty())
+        .collect::<Vec<_>>();
+    if names.is_empty() {
+        return Some(json!({"text":text,"severity":severity,"href":"/app/health"}));
+    }
+    Some(
+        json!({"text":format!("{}: {text}", names.join(", ")),"severity":severity,"href":"/app/network/#devices"}),
+    )
 }
 fn pipeline_issue(pipeline: &Value) -> Option<Value> {
     if !pipeline.is_object() || pipeline.as_object().is_some_and(|row| row.is_empty()) {
@@ -576,7 +598,7 @@ mod tests {
         assert_eq!(stale_g["verdict"], "attention");
         assert_eq!(stale_g["severity"], "amber");
         assert_eq!(stale_g["issues"].as_array().unwrap().len(), 1);
-        assert_eq!(stale_g["issues"][0]["href"], "/app/health");
+        assert_eq!(stale_g["issues"][0]["href"], "/app/network/#devices");
         assert!(
             stale_g["issues"][0]["text"]
                 .as_str()
@@ -598,7 +620,7 @@ mod tests {
             offline_g["issues"][0]["text"]
                 .as_str()
                 .unwrap()
-                .starts_with(OFFLINE_ISSUE)
+                .contains(OFFLINE_ISSUE)
         );
 
         let degraded_invalid = json!({

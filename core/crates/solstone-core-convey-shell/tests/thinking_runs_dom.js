@@ -30,6 +30,7 @@ class Element {
     this.id = id;
     this.dataset = {...dataset};
     this.hidden = false;
+    this.isConnected = true;
     this.tabIndex = 0;
     this.textContent = '';
     this.className = '';
@@ -67,6 +68,8 @@ class Element {
       ...event,
     });
   }
+
+  scrollIntoView() { this.scrolledIntoView = true; }
 
   focus() {
     this.focused = true;
@@ -269,6 +272,7 @@ async function main() {
     URLSearchParams,
     fetch() { throw new Error('unexpected fetch'); },
     setTimeout,
+    requestAnimationFrame: (callback) => callback(),
     clearTimeout,
   };
   vm.runInNewContext(fs.readFileSync(path.join(manifestDir, 'assets/static/date_format.js'), 'utf8'), context);

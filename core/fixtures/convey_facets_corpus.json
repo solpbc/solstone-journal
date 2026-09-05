@@ -1140,8 +1140,8 @@
       "why": "the candidate list after both decisions"
     },
     {
-      "body_bytes": 4559,
-      "body_sha256": "828137b86118f4d13512ebd891767cd23183b045dadecffcc82c4f373f66affd",
+      "body_bytes": 4530,
+      "body_sha256": "25dd87ea157a1b0588b7ff235c8859a8c40a1794053a5e0c2fafbb885f9dede1",
       "body_sha256_basis": "normalized-json",
       "content_type": "application/json",
       "json": {
@@ -1187,7 +1187,7 @@
           }
         ],
         "copy": {
-          "CUR_AMBIGUITY_BODY": "solstone found more than one possible match for \"{query}\".",
+          "CUR_AMBIGUITY_BODY": "which entry matches \"{query}\"?",
           "CUR_AMBIGUITY_CHOOSE_ACTION": "choose {name}",
           "CUR_AMBIGUITY_ORIGIN_LABEL": "noticed in",
           "CUR_EMPTY_STATE": "nothing to review \u2014 solstone hasn't spotted new structure to suggest.",
@@ -3563,14 +3563,14 @@
         "why": "per-app static"
       },
       {
-        "body_bytes": 2801,
-        "body_sha256": "c9f06692711421979e54f69d35b0fe3fd5e49a56ec2713a8b4d33e59ac34495f",
+        "body_bytes": 2772,
+        "body_sha256": "275ba9880910218395e1c300704ff5151199ca2c5c5ac49be1a8280f6ca98697",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "ambiguity_items": [],
           "copy": {
-            "CUR_AMBIGUITY_BODY": "solstone found more than one possible match for \"{query}\".",
+            "CUR_AMBIGUITY_BODY": "which entry matches \"{query}\"?",
             "CUR_AMBIGUITY_CHOOSE_ACTION": "choose {name}",
             "CUR_AMBIGUITY_ORIGIN_LABEL": "noticed in",
             "CUR_EMPTY_STATE": "nothing to review \u2014 solstone hasn't spotted new structure to suggest.",
@@ -5174,8 +5174,8 @@
         "why": "per-app static"
       },
       {
-        "body_bytes": 5155,
-        "body_sha256": "40a1ddaf22355c2cc8084002c902798978fcdc001b88c227a375ddce5958d7aa",
+        "body_bytes": 5126,
+        "body_sha256": "92bea898f8b42eb1d06c0a63ee9b9de00c9de06b773d859c757e8ea46b9f4491",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -5221,7 +5221,7 @@
             }
           ],
           "copy": {
-            "CUR_AMBIGUITY_BODY": "solstone found more than one possible match for \"{query}\".",
+            "CUR_AMBIGUITY_BODY": "which entry matches \"{query}\"?",
             "CUR_AMBIGUITY_CHOOSE_ACTION": "choose {name}",
             "CUR_AMBIGUITY_ORIGIN_LABEL": "noticed in",
             "CUR_EMPTY_STATE": "nothing to review \u2014 solstone hasn't spotted new structure to suggest.",

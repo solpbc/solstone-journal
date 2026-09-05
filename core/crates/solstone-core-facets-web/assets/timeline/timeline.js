@@ -883,11 +883,20 @@ async function renderMonth(index) {
   const monthEvents = Object.values(month.dayEvents || {}).filter(Boolean);
 
   if (!monthEvents.length) {
+    if (!monthCache[month.ym]) {
+      timeline.innerHTML = renderErrorState();
+      return;
+    }
     timeline.innerHTML = renderEmptyState(
-      `nothing in your journal for ${month.name}`,
-      "this month has no timeline rollups yet.",
+      `timeline summaries aren't available for ${month.name}`,
+      "choose a day to browse your journal.",
       { detailHtml: renderArtifactTruth(monthCache[month.ym]) },
-    );
+    ) + `<nav class="timeline-month-days" aria-label="${escapeHtml(month.name)} days">
+      ${Array.from({ length: month.days }, (_, i) => {
+        const day = i + 1;
+        return `<a href="/app/timeline/${isoDay(index, day)}" aria-label="${escapeHtml(month.name)} ${day}">${day}</a>`;
+      }).join("")}
+    </nav>`;
     return;
   }
 

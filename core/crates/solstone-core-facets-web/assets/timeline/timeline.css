@@ -1654,6 +1654,9 @@
   .timeline-shell .day-event,
   .timeline-shell .day-event.timeline-top,
   .timeline-shell .day-event.timeline-bottom {
+    position: static;
+    inset: auto;
+    transform: none;
     width: 100%;
     margin: 0 0 18px;
   }
@@ -1717,6 +1720,9 @@
   .timeline-shell .hour-event,
   .timeline-shell .hour-event.timeline-top,
   .timeline-shell .hour-event.timeline-bottom {
+    position: static;
+    inset: auto;
+    transform: none;
     width: 100%;
     margin: 0 0 18px;
   }
@@ -1782,6 +1788,9 @@
   .timeline-shell .minute-event,
   .timeline-shell .minute-event.timeline-top,
   .timeline-shell .minute-event.timeline-bottom {
+    position: static;
+    inset: auto;
+    transform: none;
     width: 100%;
     margin: 0 0 18px;
   }
@@ -1902,4 +1911,30 @@
 .timeline-shell .timeline-origin-chip:hover,
 .timeline-shell .timeline-origin-chip:focus {
   text-decoration: underline;
+}
+
+.timeline-shell .timeline-month-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  width: min(100%, 520px);
+  margin: 24px auto;
+}
+.timeline-shell .timeline-month-days a {
+  display: grid;
+  place-items: center;
+  min-height: 46px;
+  border: 1px solid var(--soft-line);
+  border-radius: 8px;
+  color: var(--ink);
+}
+
+@media (max-width: 768px) {
+  .timeline-shell .events-lane,
+  .timeline-shell .hour-lane,
+  .timeline-shell .minute-lane { height: auto; }
+  .timeline-shell .month-connectors,
+  .timeline-shell .day-connectors,
+  .timeline-shell .minute-connectors { display: none; }
+  .timeline-shell .day-grid { position: static; transform: none; }
 }

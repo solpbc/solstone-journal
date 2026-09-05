@@ -1557,6 +1557,13 @@
 
   function loadThinkingRun(route) {
     if (!route?.useId) return;
+    const selectedDetail = $('thinkingRunsDetail');
+    if (selectedDetail) {
+      selectedDetail.hidden = false;
+      requestAnimationFrame(() => {
+        if (selectedDetail.isConnected) selectedDetail.scrollIntoView({block: 'start'});
+      });
+    }
     const key = thinkingCacheKey('run', {useId: route.useId});
     const cached = readThinkingCache('run', key);
     if (cached) {
@@ -1839,15 +1846,18 @@
     if (identity.lane && identity.provider && identity.model) {
       if (brain.state === 'ready') {
         const checked = evidence.age_text ? `, checked ${evidence.age_text} ago` : '';
-        setText('thinkingActiveDetail', `${identity.lane} ${identity.provider}/${identity.model}${checked}`);
+        setText('thinkingActiveDetail', `${window.JournalFormat.processingLane(identity.lane)}${checked}`);
       } else {
-        setText('thinkingActiveDetail', `${identity.lane} ${identity.provider}/${identity.model} — ${brain.reason_text || ''}${component}`);
+        setText('thinkingActiveDetail', `${window.JournalFormat.processingLane(identity.lane)}: ${brain.reason_text || ''}${component}`);
       }
     } else if (identity.lane || identity.provider || identity.model) {
       setText('thinkingActiveDetail', `${brain.reason_text || ''}${component}`);
     } else {
       setText('thinkingActiveDetail', '');
     }
+    const identityText = [identity.lane, identity.provider, identity.model].filter(Boolean).join(' · ');
+    setText('thinkingActiveIdentity', identityText);
+    $('thinkingIdentityDetails').hidden = !identityText;
     renderBrainAction(brain.action || null);
   }
 
@@ -2079,7 +2089,10 @@
       setText('localLaneStatus', 'manage →');
     } else if (endpointOverride) {
       setPill('localLanePill', 'endpoint');
-      setText('localLaneDescription', "you're pointed at your own URL — clear it to run the bundled model.");
+      const managed = state.providers.active_lane?.lane === 'confidential';
+      setText('localLaneDescription', managed
+        ? 'confidential processing is selected. clear its endpoint to set up the bundled model.'
+        : 'a custom endpoint is configured. clear it to set up the bundled model.');
       setText('localLaneStatus', 'clear endpoint →');
     } else if (gpuBlocked) {
       setPill('localLanePill', 'unavailable', 'bad');

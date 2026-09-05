@@ -667,7 +667,7 @@ const Dashboard = (function() {
     if (!options.expanded && whyLabels.length > 0) {
       children.push(
         el('details', {}, [
-          el('summary', {}, [copy]),
+          el('summary', {}, ['work remaining']),
           el('ul', {className: 'backlog-why-list'}, whyLabels.map(label => el('li', {}, [label])))
         ])
       );
@@ -714,15 +714,12 @@ const Dashboard = (function() {
     const days = (Array.isArray(bl.days) ? bl.days : []).filter(day => catchingUpDay(day, bl));
     if (!days.length) return null;
 
-    const heading = fmt(C.CATCHING_UP_AGGREGATE, {pending: counts.pending});
-    const children = [
-      el('h2', {}, [heading])
-    ];
+    const children = [el('summary', {}, ['processing details'])];
     children.push(el('p', {className: 'backlog-routine-note'}, [C.CATCHING_UP_TAIL]));
     children.push(
       el('div', {className: 'backlog-rows'}, days.map(day => backlogRow(day, C, bl)))
     );
-    return el('section', {className: 'backlog-list'}, children);
+    return el('details', {className: 'backlog-list'}, children);
   }
 
   function renderBacklog(stats) {

@@ -98,6 +98,11 @@
     return value < 60 ? `${Math.round(value)} sec` : `${Math.floor(value / 60)} min ${Math.round(value % 60)} sec`;
   }
 
-  window.JournalFormat = { compactTokens: value => value >= 999500 ? `${Math.round(value / 1000000)}M` : value >= 1000 ? `${Math.round(value / 1000)}K` : String(Math.round(value)),  day: formatDateShort, stream: formatStreamLabel, segmentTime: formatSegmentTime, timestamp: formatTimestamp, duration: formatDuration };
+  function processingLane(lane) {
+    return ({spp: 'confidential processing', local: 'local processing', openai: 'OpenAI',
+      anthropic: 'Anthropic', google: 'Google'})[lane] || 'processing';
+  }
+
+  window.JournalFormat = { processingLane, compactTokens: value => value >= 999500 ? `${Math.round(value / 1000000)}M` : value >= 1000 ? `${Math.round(value / 1000)}K` : String(Math.round(value)),  day: formatDateShort, stream: formatStreamLabel, segmentTime: formatSegmentTime, timestamp: formatTimestamp, duration: formatDuration };
   window.formatDateShort = formatDateShort;
 })();
