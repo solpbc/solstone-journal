@@ -93,7 +93,7 @@ fn reason(value: Option<&Value>) -> String {
 
 fn human_bytes(bytes: i64) -> String {
     let mut value = bytes as f64;
-    for unit in ["B", "KB", "MB", "GB", "TB"] {
+    for unit in ["B", "KiB", "MiB", "GiB", "TiB"] {
         if value.abs() < 1024.0 {
             return if unit == "B" {
                 format!("{} B", value as i64)
@@ -103,7 +103,7 @@ fn human_bytes(bytes: i64) -> String {
         }
         value /= 1024.0;
     }
-    format!("{value:.1} PB")
+    format!("{value:.1} PiB")
 }
 
 fn compaction_result(stats: Option<&Map<String, Value>>, dry_run: bool) -> Value {

@@ -16037,7 +16037,7 @@
       },
       "GET api/storage": {
         "content_type": "application/json",
-        "digest": "8fbbe156c7a6e2f9",
+        "digest": "e90e6c31fb34440d",
         "normalized": {
           "retention": {
             "journal_logs": {
@@ -16065,7 +16065,7 @@
             "derived_bytes": 41,
             "derived_human": "41 B",
             "raw_media_bytes": 6144,
-            "raw_media_human": "6.0 KB",
+            "raw_media_human": "6.0 KiB",
             "segments_purged": 1,
             "segments_with_raw": 1,
             "total_segments": 3

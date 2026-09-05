@@ -93,7 +93,7 @@ fn storage_warnings(
         let current = round(summary.raw_media_bytes as f64 / 1024_f64.powi(3), 2);
         if current >= threshold {
             let mut message = format!(
-                "raw media is {current} GB (threshold: {threshold} GB). you can adjust your retention settings, or build the list to see what original media is ready for removal."
+                "raw media is {current} GiB (threshold: {threshold} GiB). you can adjust your retention settings, or build the list to see what original media is ready for removal."
             );
             if keep_mode {
                 message.push_str(nudge);
@@ -201,6 +201,9 @@ mod tests {
         assert_eq!(warnings.len(), 3);
         assert_eq!(warnings[0]["type"], "disk_percent");
         assert_eq!(warnings[1]["type"], "raw_media_gb");
+        assert_eq!(warnings[1]["current"], 1.0);
+        assert_eq!(warnings[1]["threshold"], 1.0);
+        assert!(warnings[1]["message"].as_str().unwrap().contains("1 GiB"));
         assert_eq!(warnings[2]["type"], "offload_stalled");
         assert_eq!(warnings[2]["current"], Value::Null);
         assert_eq!(warnings[2]["threshold"], Value::Null);
