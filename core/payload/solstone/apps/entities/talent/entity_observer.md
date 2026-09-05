@@ -77,7 +77,7 @@ Rules:
 - Use the `entity_id` from context.
 - Include every field on each operation; set non-applicable fields (`target_index`, `content`, `target_quote`, `relation`) to `null`.
 - Prefer `update` or `drop` over adding a near-duplicate observation.
-- For `update` and `drop`, include a short verbatim `target_quote` from the target observation.
+- For `update` and `drop`, include a verbatim `target_quote` of at most 300 characters from the target observation. Use a short identifying excerpt; do not copy the whole observation when it exceeds that limit.
 - At most one operation may target a given observation index for an entity.
 - Use `add` only for facts that pass the durability litmus.
 - One fact per observation — no compound sentences.
