@@ -204,6 +204,16 @@ async fn replay_record(router: Router, root: &Path, expected: &Value) {
     } else {
         let mut value: Value = serde_json::from_slice(&body).expect("JSON body");
         normalize(&mut value, root);
+        // Preserve the captured contract except the deliberately revised facet prompt.
+        if let Some(copy) = value.get_mut("copy").and_then(Value::as_object_mut) {
+            if let Some(prompt) = copy.get_mut("CUR_FACET_BODY") {
+                assert_eq!(
+                    prompt,
+                    "recent activity doesn't fit your facets well. create the \"{name}\" facet?"
+                );
+                *prompt = Value::String("solstone noticed recent activity that doesn't fit your facets well. create a \"{name}\" facet?".into());
+            }
+        }
         Sha256::digest(canonical(&value))
     };
     assert_eq!(
