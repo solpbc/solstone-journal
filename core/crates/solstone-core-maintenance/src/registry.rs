@@ -30,7 +30,14 @@ pub struct RoutineDescriptor {
     pub args: &'static [&'static str],
 }
 
-const ROUTINES: [RoutineDescriptor; 9] = [
+const ROUTINES: [RoutineDescriptor; 10] = [
+    RoutineDescriptor {
+        id: "speakers:consolidate-pool",
+        description: "Consolidate dense speaker candidates.",
+        cadence: Cadence::Daily,
+        max_runtime: Some("10m"),
+        args: &[],
+    },
     RoutineDescriptor {
         id: "backup:run",
         description: "run encrypted backup.",
@@ -108,7 +115,13 @@ pub fn routine(id: &str) -> Option<&'static RoutineDescriptor> {
 
 #[cfg(test)]
 fn validate_census(routines: &[RoutineDescriptor]) -> Result<(), String> {
-    const EXPECTED: [(&str, Cadence, Option<&str>, &[&str]); 9] = [
+    const EXPECTED: [(&str, Cadence, Option<&str>, &[&str]); 10] = [
+        (
+            "speakers:consolidate-pool",
+            Cadence::Daily,
+            Some("10m"),
+            &[],
+        ),
         ("backup:run", Cadence::Hourly, Some("49h"), &[]),
         ("backup:prune", Cadence::Daily, Some("3h"), &[]),
         ("backup:verify", Cadence::Weekly, Some("90m"), &[]),
@@ -159,9 +172,9 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
-    fn census_has_nine_unique_well_formed_ids() {
+    fn census_has_ten_unique_well_formed_ids() {
         let all = routines();
-        assert_eq!(all.len(), 9);
+        assert_eq!(all.len(), 10);
         let ids = all
             .iter()
             .map(|descriptor| descriptor.id)
@@ -199,7 +212,10 @@ mod tests {
         assert!(error.contains("count"));
 
         let mut wrong_cap = routines().to_vec();
-        wrong_cap[0] = RoutineDescriptor {
+        *wrong_cap
+            .iter_mut()
+            .find(|routine| routine.id == "backup:run")
+            .unwrap() = RoutineDescriptor {
             id: "backup:run",
             description: "different wording remains allowed",
             cadence: Cadence::Hourly,
