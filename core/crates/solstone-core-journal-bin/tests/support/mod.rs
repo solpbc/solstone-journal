@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#[path = "../../../../ci/cargo_environment.rs"]
+mod cargo_environment;
+
 use std::env;
 use std::path::PathBuf;
-use std::process::Command;
 
 pub fn locate_workspace_binary(package: &str, binary: &str) -> PathBuf {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -13,7 +15,7 @@ pub fn locate_workspace_binary(package: &str, binary: &str) -> PathBuf {
         .parent()
         .expect("core dir")
         .join("Cargo.toml");
-    let output = Command::new(env!("CARGO"))
+    let output = cargo_environment::cargo_command(env!("CARGO"))
         .args(["build", "--manifest-path"])
         .arg(&workspace_manifest)
         .args(["-p", package, "--bin", binary, "--message-format=json"])

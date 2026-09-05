@@ -4,6 +4,10 @@
 //! Native CLI contract for `solstone-core install-provider` on staged journals.
 
 #[cfg(target_os = "linux")]
+#[path = "../../../ci/cargo_environment.rs"]
+mod cargo_environment;
+
+#[cfg(target_os = "linux")]
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "linux")]
 use std::process::{Command, Output};
@@ -29,7 +33,7 @@ fn repository_root() -> PathBuf {
 #[cfg(target_os = "linux")]
 fn locate_solstone_core_binary() -> PathBuf {
     let root = repository_root();
-    let output = Command::new(env!("CARGO"))
+    let output = cargo_environment::cargo_command(env!("CARGO"))
         .args(["build", "--manifest-path"])
         .arg(root.join("core/Cargo.toml"))
         .args([

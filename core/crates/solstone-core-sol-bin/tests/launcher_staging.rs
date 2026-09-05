@@ -6,6 +6,9 @@
 // This target shells out to Cargo, which is process-global setup unsuitable for the
 // identity-only harness.
 
+#[path = "../../../ci/cargo_environment.rs"]
+mod cargo_environment;
+
 use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -30,7 +33,7 @@ fn repository_root() -> PathBuf {
 }
 
 fn built_binary() -> PathBuf {
-    let output = Command::new(env!("CARGO"))
+    let output = cargo_environment::cargo_command(env!("CARGO"))
         .args(["build", "--manifest-path"])
         .arg(workspace_manifest())
         .args(["-p", "solstone-core-sol-bin", "--message-format=json"])

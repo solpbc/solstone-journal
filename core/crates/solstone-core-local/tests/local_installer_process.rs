@@ -3,6 +3,9 @@
 
 #![cfg(unix)]
 
+#[path = "../../../ci/cargo_environment.rs"]
+mod cargo_environment;
+
 use std::fs;
 use std::io::{self, ErrorKind};
 use std::os::unix::fs::PermissionsExt;
@@ -309,7 +312,9 @@ fn checked_in_rfdetr_model() -> PathBuf {
 
 fn build_fresh_rfdetr_probe(expectation: Option<&Path>) -> PathBuf {
     let core = repository_root().join("core");
-    let mut command = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
+    let mut command = cargo_environment::cargo_command(
+        std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()),
+    );
     command
         .args([
             "test",

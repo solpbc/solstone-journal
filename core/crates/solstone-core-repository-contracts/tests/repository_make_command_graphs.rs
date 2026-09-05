@@ -49,19 +49,31 @@ fn fixture_make_command(root: &Path, shims: &Path, target: &str) -> Command {
 }
 
 #[test]
-fn spawned_ci_commands_do_not_inherit_the_runner_package_directory() {
+fn spawned_ci_commands_drop_package_metadata_and_keep_build_configuration() {
     let mut command = Command::new("sh");
     command
         .env("CARGO_MANIFEST_DIR", "/runner/package")
+        .env("CARGO_MANIFEST_PATH", "/runner/package/Cargo.toml")
+        .env("CARGO_MANIFEST_LINKS", "runner-native")
+        .env("CARGO_PKG_NAME", "runner-package")
+        .env("CARGO_PKG_VERSION_MAJOR", "2")
+        .env("CARGO_PKG_VERSION_PRE", "")
         .env("CARGO_INCREMENTAL", "1")
         .env("CARGO_PROFILE_DEV_DEBUG", "2")
         .env("CARGO_TARGET_DIR", "/caller/target")
+        .env("CARGO_HOME", "/caller/cargo")
+        .env("ORT_LIB_PATH", "/caller/runtime")
+        .env("BINDGEN_EXTRA_CLANG_ARGS", "-I/caller/include")
         .args([
             "-c",
-            "test -z \"${CARGO_MANIFEST_DIR+x}\" && \
+            "test -z \"${CARGO_MANIFEST_DIR+x}${CARGO_MANIFEST_PATH+x}${CARGO_MANIFEST_LINKS+x}\" && \
+             test -z \"${CARGO_PKG_NAME+x}${CARGO_PKG_VERSION_MAJOR+x}${CARGO_PKG_VERSION_PRE+x}\" && \
              test \"$CARGO_INCREMENTAL\" = 0 && \
              test \"$CARGO_PROFILE_DEV_DEBUG\" = 0 && \
-             test \"$CARGO_TARGET_DIR\" = /caller/target",
+             test \"$CARGO_TARGET_DIR\" = /caller/target && \
+             test \"$CARGO_HOME\" = /caller/cargo && \
+             test \"$ORT_LIB_PATH\" = /caller/runtime && \
+             test \"$BINDGEN_EXTRA_CLANG_ARGS\" = -I/caller/include",
         ]);
     solstone_core_repository_contracts::ci::pin_ci_cargo_environment(&mut command);
     assert!(command.status().expect("start environment probe").success());

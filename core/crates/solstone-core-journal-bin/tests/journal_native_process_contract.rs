@@ -3,6 +3,9 @@
 
 #![cfg(unix)]
 
+#[path = "../../../ci/cargo_environment.rs"]
+mod cargo_environment;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
@@ -900,7 +903,7 @@ fn locate_workspace_binary(package: &str, binary: &str) -> PathBuf {
         .parent()
         .expect("core dir")
         .join("Cargo.toml");
-    let mut command = Command::new(env!("CARGO"));
+    let mut command = cargo_environment::cargo_command(env!("CARGO"));
     command
         .args(["build", "--manifest-path"])
         .arg(&workspace_manifest)

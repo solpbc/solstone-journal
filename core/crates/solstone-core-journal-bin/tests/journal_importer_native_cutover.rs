@@ -3,6 +3,9 @@
 
 #![cfg(unix)]
 
+#[path = "../../../ci/cargo_environment.rs"]
+mod cargo_environment;
+
 use std::env;
 use std::fs::{self, File};
 use std::io::Write;
@@ -34,7 +37,7 @@ fn build_solstone_core_binary() -> PathBuf {
         .parent()
         .expect("core")
         .join("Cargo.toml");
-    let output = Command::new("cargo")
+    let output = cargo_environment::cargo_command("cargo")
         .args(["build", "--manifest-path"])
         .arg(workspace)
         .args([

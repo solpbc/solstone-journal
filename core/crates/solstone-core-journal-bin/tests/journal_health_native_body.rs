@@ -7,6 +7,9 @@
 
 #![cfg(unix)]
 
+#[path = "../../../ci/cargo_environment.rs"]
+mod cargo_environment;
+
 use std::collections::BTreeSet;
 use std::env;
 use std::fs;
@@ -202,7 +205,7 @@ fn locate_workspace_binary(package: &str, binary: &str) -> PathBuf {
         .and_then(|candidate| candidate["id"].as_str())
         .expect("exact workspace package identity");
 
-    let output = Command::new(env!("CARGO"))
+    let output = cargo_environment::cargo_command(env!("CARGO"))
         .args(["build", "--manifest-path"])
         .arg(&workspace_manifest)
         .args(["-p", package, "--bin", binary, "--message-format=json"])

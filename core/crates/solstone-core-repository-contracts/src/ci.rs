@@ -9,15 +9,15 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use syn::visit::{self, Visit};
 
+#[path = "../../../ci/cargo_environment.rs"]
+pub mod cargo_environment;
+
 const CI_CARGO_ENVIRONMENT: [(&str, &str); 2] =
     [("CARGO_INCREMENTAL", "0"), ("CARGO_PROFILE_DEV_DEBUG", "0")];
 
 pub fn pin_ci_cargo_environment(command: &mut Command) {
     command.envs(CI_CARGO_ENVIRONMENT);
-    // `cargo run` supplies this runner's package directory. Passing it to a
-    // nested Cargo invocation invalidates dependencies such as ring whose build
-    // scripts track this variable, even when the dependency's source is fresh.
-    command.env_remove("CARGO_MANIFEST_DIR");
+    cargo_environment::clear_package_environment(command);
 }
 
 pub const HOST_EXCLUDES: &[&str] = &[
