@@ -58,9 +58,13 @@ fn fixture_case(file: &str) -> FixtureCase {
         .expect("fixture case")
 }
 
-fn frames_only(file: &str) -> Command {
+fn frames_only(file: &str, journal: &Path) -> Command {
     let mut command = Command::new(BINARY);
-    command.arg("--frames-only").arg(corpus_path(file));
+    command
+        .arg("--frames-only")
+        .arg(corpus_path(file))
+        .arg("--journal")
+        .arg(journal);
     command
 }
 
@@ -162,8 +166,9 @@ fn notification(listener: &UnixListener) -> Value {
 
 #[test]
 fn frames_only_matches_the_frozen_oracle() {
+    let journal = tempfile::tempdir().expect("temporary journal");
     let case = fixture_case("mixed_vp8_screen.webm");
-    let output = frames_only(&case.file)
+    let output = frames_only(&case.file, journal.path())
         .output()
         .expect("run describe binary");
     assert!(
@@ -295,15 +300,10 @@ fn env_selected_malformed_describe_configuration_refuses_before_generation() {
 
 #[test]
 fn explicit_empty_journal_uses_defaults() {
-    let journal =
-        std::env::temp_dir().join(format!("solstone-describe-cli-{}", std::process::id()));
-    fs::create_dir(&journal).expect("create temporary journal");
-    let output = frames_only("mixed_vp8_screen.webm")
-        .arg("--journal")
-        .arg(&journal)
+    let journal = tempfile::tempdir().expect("temporary journal");
+    let output = frames_only("mixed_vp8_screen.webm", journal.path())
         .output()
         .expect("run describe binary");
-    fs::remove_dir(&journal).expect("remove temporary journal");
     assert!(
         output.status.success(),
         "{}",
@@ -313,8 +313,9 @@ fn explicit_empty_journal_uses_defaults() {
 
 #[test]
 fn frames_only_owner_debug_and_verbose_flags_are_noops() {
+    let journal = tempfile::tempdir().expect("temporary journal");
     for flag in ["-v", "-d"] {
-        let output = frames_only("mixed_vp8_screen.webm")
+        let output = frames_only("mixed_vp8_screen.webm", journal.path())
             .arg(flag)
             .output()
             .expect("run describe binary");
@@ -348,12 +349,15 @@ fn version_names_libavcodec() {
 
 #[test]
 fn decode_failures_use_exit_code_two() {
+    let journal = tempfile::tempdir().expect("temporary journal");
     for file in [
         "audio_only_screen.mov",
         "not_a_video_screen.webm",
         "corrupted_mid_screen.webm",
     ] {
-        let output = frames_only(file).output().expect("run describe binary");
+        let output = frames_only(file, journal.path())
+            .output()
+            .expect("run describe binary");
         assert_eq!(output.status.code(), Some(2), "{file}");
         assert!(output.stdout.is_empty(), "{file}");
     }
