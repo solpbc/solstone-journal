@@ -350,6 +350,7 @@ struct RunningSlot {
 #[derive(Clone)]
 struct Submission {
     partition: Partition,
+    cap: Duration,
     command: Vec<String>,
     reference: String,
     day: Option<String>,
@@ -360,6 +361,7 @@ struct Submission {
 #[derive(Clone)]
 struct QueuedEntry {
     references: Vec<String>,
+    cap: Duration,
     command: Vec<String>,
     day: Option<String>,
     scheduler_name: Option<String>,
@@ -375,6 +377,7 @@ struct Dispatch {
 
 struct ActiveEntry {
     partition: Partition,
+    cap: Duration,
     command: Vec<String>,
     started_at: Instant,
     started_at_unix: u64,
@@ -470,7 +473,7 @@ impl TaskQueue {
     }
 
     pub fn submit(&self, request: ExecutionRequest) -> SubmitOutcome {
-        let submission = normalize_request(request);
+        let submission = normalize_request(request, self.inner.options.cap_resolver.as_ref());
         let partition = submission.partition.clone();
         let (outcome, dispatch, event) = {
             let mut state = self.inner.state.lock().expect("queue state lock poisoned");
@@ -529,8 +532,7 @@ impl TaskQueue {
         }
     }
 
-    /// Enforce effective caps. `CapResolver::cap_for` preserves zero-cap fallback
-    /// to the default cap; see `cap.rs:43-50`.
+    /// Enforce the effective budget retained when each task was admitted.
     ///
     /// Phase A snapshots under the queue lock, Phase B decides cap-first then stopped
     /// outcomes without it, Phase C commits guarded additions/unconditional removals,
@@ -546,7 +548,7 @@ impl TaskQueue {
                     reference: reference.clone(),
                     pid: active.pid,
                     started_at: active.started_at,
-                    cap: self.inner.options.cap_resolver.cap_for(&active.partition),
+                    cap: active.cap,
                     timeout_marked: state.timeout_marked.contains(reference),
                     stopped_ticks: state.stopped_ticks.get(reference).copied().unwrap_or(0),
                 })
@@ -785,12 +787,7 @@ impl TaskQueue {
             .iter()
             .map(|(reference, active)| {
                 let duration_seconds = now.saturating_duration_since(active.started_at).as_secs();
-                let cap_seconds = self
-                    .inner
-                    .options
-                    .cap_resolver
-                    .cap_for(&active.partition)
-                    .as_secs();
+                let cap_seconds = active.cap.as_secs();
                 let (slow, stuck) = task_status_flags(duration_seconds, cap_seconds);
                 TaskStatus {
                     partition: active.partition.clone(),
@@ -933,9 +930,10 @@ fn task_status_flags(duration_seconds: u64, cap_seconds: u64) -> (bool, bool) {
 }
 
 // Normalize at this one consumer instead of widening request.rs with a trait used nowhere else.
-fn normalize_request(request: ExecutionRequest) -> Submission {
+fn normalize_request(request: ExecutionRequest, caps: &dyn CapResolver) -> Submission {
     match request {
         ExecutionRequest::Bus(request) => Submission {
+            cap: caps.cap_for(&request.cmd.partition()),
             partition: request.cmd.partition(),
             command: request.cmd.as_wire().to_vec(),
             reference: request.reference,
@@ -944,6 +942,10 @@ fn normalize_request(request: ExecutionRequest) -> Submission {
             daily_catchup_provenance: request.daily_catchup_provenance,
         },
         ExecutionRequest::Scheduled(request) => Submission {
+            cap: request
+                .max_runtime
+                .filter(|cap| !cap.is_zero())
+                .unwrap_or_else(|| caps.cap_for(&request.cmd.partition())),
             partition: request.cmd.partition(),
             command: request.cmd.as_wire().to_vec(),
             reference: request.reference,
@@ -965,7 +967,7 @@ fn admit_locked(
             .or_default();
         if let Some(entry) = queue
             .iter_mut()
-            .find(|entry| entry.command == submission.command)
+            .find(|entry| entry.command == submission.command && entry.cap == submission.cap)
         {
             if entry.references.contains(&submission.reference) {
                 return (SubmitOutcome::DuplicateQueuedReference, None);
@@ -976,6 +978,7 @@ fn admit_locked(
         // Coalesced callers add only refs: the first queued submitter owns its
         // day, scheduler, and automatic-catchup provenance.
         queue.push_back(QueuedEntry {
+            cap: submission.cap,
             references: vec![submission.reference.clone()],
             command: submission.command.clone(),
             day: submission.day.clone(),
@@ -1119,10 +1122,7 @@ fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
             .lock()
             .expect("queue worker spawner lock poisoned"),
     );
-    let timeout = inner
-        .options
-        .cap_resolver
-        .cap_for(&dispatch.submission.partition);
+    let timeout = dispatch.submission.cap;
     let process = spawner(
         dispatch.submission.command.clone(),
         SpawnOptions {
@@ -1146,6 +1146,7 @@ fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
         state.active.insert(
             primary.clone(),
             ActiveEntry {
+                cap: timeout,
                 partition: dispatch.submission.partition.clone(),
                 command: dispatch.submission.command.clone(),
                 started_at,
@@ -1239,13 +1240,7 @@ fn record_completion(
             DailyCatchupOutcome {
                 success: exit_code == 0 && !timed_out,
                 timed_out,
-                timeout_seconds: timed_out.then(|| {
-                    inner
-                        .options
-                        .cap_resolver
-                        .cap_for(&dispatch.submission.partition)
-                        .as_secs_f64()
-                }),
+                timeout_seconds: timed_out.then(|| dispatch.submission.cap.as_secs_f64()),
                 ended_at: unix_seconds_f64(),
                 exit_code,
                 exit_status: status,
@@ -1288,6 +1283,7 @@ fn finish_worker(inner: &QueueInner, partition: &Partition, reference: &str) -> 
             .and_then(VecDeque::pop_front)
             .map(|entry| {
                 let submission = Submission {
+                    cap: entry.cap,
                     partition: partition.clone(),
                     command: entry.command,
                     reference: entry.references[0].clone(),
@@ -1773,6 +1769,7 @@ mod tests {
     fn dispatch(reference: &str) -> Dispatch {
         Dispatch {
             submission: Submission {
+                cap: Duration::from_secs(10),
                 partition: Partition::new("svc"),
                 command: vec!["svc".to_owned()],
                 reference: reference.to_owned(),
@@ -1802,6 +1799,11 @@ mod tests {
             .insert(
                 reference.to_owned(),
                 ActiveEntry {
+                    cap: queue
+                        .inner
+                        .options
+                        .cap_resolver
+                        .cap_for(&Partition::new("svc")),
                     partition: Partition::new("svc"),
                     command: vec!["svc".to_owned()],
                     started_at: Instant::now(),
@@ -1895,6 +1897,7 @@ mod tests {
             .insert(
                 Partition::new("svc"),
                 VecDeque::from([QueuedEntry {
+                    cap: Duration::from_secs(10),
                     references: vec!["queued".to_owned()],
                     command: vec!["svc".to_owned()],
                     day: None,
@@ -2532,6 +2535,53 @@ mod tests {
         assert_eq!(snapshot.tasks[0].reference, "follower");
         assert!(snapshot.queues.is_empty());
         release.wait();
+    }
+
+    #[test]
+    fn scheduled_budgets_survive_pending_queueing_and_do_not_coalesce_different_caps() {
+        use crate::request::{ScheduledArgv, ScheduledRequest};
+        let queue = queue(false, 42, VecDeque::new());
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&captured);
+        queue.set_worker_spawner(Arc::new(move |_, options, timeout| {
+            recorded
+                .lock()
+                .expect("captured budgets")
+                .push((options.reference, timeout));
+            Ok(Arc::new(Mutex::new(Box::new(FakeProcess::complete(
+                1,
+                Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            )))))
+        }));
+        for (reference, cap) in [("short", 3), ("long", 7), ("zero", 0)] {
+            let mut scheduled = ScheduledRequest::new(
+                ScheduledArgv::from_wire(vec!["svc".to_owned()]).expect("argv"),
+                reference,
+                "scheduled",
+            );
+            scheduled.max_runtime = Some(Duration::from_secs(cap));
+            assert_eq!(
+                queue.submit(ExecutionRequest::Scheduled(scheduled)),
+                SubmitOutcome::Pending
+            );
+        }
+        assert_eq!(queue.submit(request("bus")), SubmitOutcome::Pending);
+        queue.set_ready();
+        // The zero override and ordinary bus request share the same effective
+        // budget and may coalesce; different scheduled budgets must not.
+        queue
+            .join_test_workers(3, TEST_TRANSITION_TIMEOUT)
+            .expect("workers");
+        let mut actual = captured.lock().expect("budgets").clone();
+        actual.sort();
+        assert_eq!(
+            actual,
+            vec![
+                ("long".to_owned(), Duration::from_secs(7)),
+                ("short".to_owned(), Duration::from_secs(3)),
+                ("zero".to_owned(), Duration::from_secs(42)),
+            ]
+        );
     }
 
     #[test]

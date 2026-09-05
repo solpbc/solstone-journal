@@ -427,7 +427,6 @@ fn ac16_non_ascii_max_runtime_is_a_diagnostic_not_a_panic() {
             .iter()
             .any(|item| item.name == "heartbeat")
     );
-    assert!(engine.runtime_cap_contributions().is_empty());
 }
 
 #[test]
@@ -646,28 +645,44 @@ fn ac24_status_omits_empty_time_metadata() {
 }
 
 #[test]
-fn ac25_baseline_then_schedule_caps_preserve_last_writer_wins() {
+fn scheduled_caps_follow_each_loaded_entry_without_changing_partition_baselines() {
     let bed = Bed::new("caps");
     bed.write_config(json!({
-        "daily": {"cmd": ["journal", "think"], "every": "daily", "max_runtime": "10m"},
-        "other": {"cmd": ["journal", "heartbeat"], "every": "daily", "max_runtime": "20m"}
+        "edges": {"cmd": ["journal", "indexer", "--rebuild-edges"], "every": "hourly", "max_runtime": "10m"},
+        "rescan": {"cmd": ["journal", "indexer", "--rescan"], "every": "hourly", "max_runtime": "20m"}
     }));
-    let (engine, _) =
+    let (mut engine, _) =
         ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 10, 0)).expect("init");
+    let sink = Sink {
+        accepted: true,
+        ..Sink::default()
+    };
+    engine
+        .check(now(2026, 3, 22, 11, 0), &sink)
+        .expect("first tick");
+    let first = sink.requests.lock().expect("sink").clone();
+    assert_eq!(first.len(), 2);
+    assert_eq!(first[0].max_runtime, Some(Duration::from_secs(600)));
+    assert_eq!(first[1].max_runtime, Some(Duration::from_secs(1200)));
+    assert_eq!(first[0].cmd.partition(), first[1].cmd.partition());
+
+    bed.write_config(json!({
+        "edges": {"cmd": ["journal", "indexer", "--rebuild-edges"], "every": "hourly", "max_runtime": "25m"},
+        "rescan": {"cmd": ["journal", "indexer", "--rescan"], "every": "hourly"}
+    }));
+    engine
+        .check(now(2026, 3, 22, 12, 0), &sink)
+        .expect("reload tick");
+    let requests = sink.requests.lock().expect("sink");
+    assert_eq!(requests.len(), 4);
+    assert_eq!(requests[0].max_runtime, Some(Duration::from_secs(600)));
+    assert_eq!(requests[2].max_runtime, Some(Duration::from_secs(1500)));
+    assert_eq!(requests[3].max_runtime, None);
+
     let mut resolver = DefaultCapResolver::default();
     for (partition, cap) in baseline_cap_contributions() {
         resolver.set_override(partition, cap);
     }
-    let segment = partition_for(&[
-        "journal".to_owned(),
-        "think".to_owned(),
-        "--segment".to_owned(),
-    ]);
-    assert_eq!(resolver.cap_for(&segment), Duration::from_secs(4_500));
-    for (partition, cap) in engine.runtime_cap_contributions() {
-        resolver.set_override(partition, cap);
-    }
-    assert_eq!(resolver.cap_for(&segment), Duration::from_secs(4_500));
-    let daily = partition_for(&["journal".to_owned(), "think".to_owned()]);
-    assert_eq!(resolver.cap_for(&daily), Duration::from_secs(600));
+    let indexer = partition_for(&["journal".to_owned(), "indexer".to_owned()]);
+    assert_eq!(resolver.cap_for(&indexer), Duration::from_secs(7200));
 }

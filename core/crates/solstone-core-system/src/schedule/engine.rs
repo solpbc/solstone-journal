@@ -4,15 +4,12 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::Duration;
 
 use chrono::{NaiveDateTime, Timelike};
 use serde_json::{Map, Value};
 
-use crate::partition::Partition;
 use crate::request::{ScheduledArgv, ScheduledRequest};
 
-use super::caps::runtime_cap_contributions;
 use super::completion::{load_runtime_state, record_completion};
 use super::config::{ConfigDiagnostic, load_runtime, minute_interval, register_defaults};
 use super::due::{compute_next_run, current_marks, effective_every, is_due, state_entry};
@@ -89,11 +86,6 @@ impl ScheduleEngine {
             self.config = load_runtime(&self.config_path)?.config;
         }
         Ok(changed)
-    }
-
-    /// Return schedule-provided caps from this exact loaded configuration.
-    pub fn runtime_cap_contributions(&self) -> Vec<(Partition, Duration)> {
-        runtime_cap_contributions(&self.config)
     }
 
     /// Retry pending coarse emissions and submit entries crossing a new boundary.
@@ -270,9 +262,8 @@ fn submit(
     sink: &dyn ScheduleSubmissionSink,
 ) -> bool {
     let command = ScheduledArgv::from_wire(entry.cmd.clone()).expect("validated non-empty command");
-    sink.submit(ScheduledRequest::new(
-        command,
-        format!("sched:{name}:{}", now.unix_millis),
-        name,
-    ))
+    let mut request =
+        ScheduledRequest::new(command, format!("sched:{name}:{}", now.unix_millis), name);
+    request.max_runtime = entry.max_runtime;
+    sink.submit(request)
 }

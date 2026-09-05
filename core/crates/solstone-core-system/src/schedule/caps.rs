@@ -5,8 +5,6 @@ use std::time::Duration;
 
 use crate::partition::{Partition, partition_for};
 
-use super::ScheduleConfig;
-
 /// Caps that apply before schedule-configured overrides.
 pub fn baseline_cap_contributions() -> Vec<(Partition, Duration)> {
     [
@@ -28,16 +26,4 @@ pub fn baseline_cap_contributions() -> Vec<(Partition, Duration)> {
         (partition_for(&cmd), duration)
     })
     .collect()
-}
-
-pub(crate) fn runtime_cap_contributions(config: &ScheduleConfig) -> Vec<(Partition, Duration)> {
-    config
-        .entries
-        .values()
-        .filter_map(|entry| {
-            entry
-                .max_runtime
-                .map(|duration| (partition_for(&entry.cmd), duration))
-        })
-        .collect()
 }

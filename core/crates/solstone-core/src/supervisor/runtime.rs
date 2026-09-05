@@ -1274,10 +1274,14 @@ pub(crate) async fn boot_and_tick(
         .and_then(|value| value.parse::<u64>().ok())
         .map(Duration::from_secs)
         .unwrap_or(DEFAULT_TASK_MAX_RUNTIME);
+    let mut cap_resolver = DefaultCapResolver::new(default_cap);
+    for (partition, cap) in solstone_core_system::schedule::baseline_cap_contributions() {
+        cap_resolver.set_override(partition, cap);
+    }
     let parakeet_shared = Arc::new(ParakeetRuntimeShared::default());
     let queue = TaskQueue::new(TaskQueueOptions {
         journal_root: journal.clone(),
-        cap_resolver: Arc::new(DefaultCapResolver::new(default_cap)),
+        cap_resolver: Arc::new(cap_resolver),
         process_state_probe: Arc::new(SystemProcessStateProbe),
         queue_sink: Some(Arc::new(SupervisorTaskQueueSink(Arc::clone(&server)))),
         process_sink: Some(Arc::new(SupervisorProcessSink {

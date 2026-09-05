@@ -163,6 +163,8 @@ impl BusTaskRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScheduledRequest {
     pub cmd: ScheduledArgv,
+    /// Budget from the configuration that admitted this scheduled run.
+    pub max_runtime: Option<Duration>,
     pub reference: String,
     pub day: Option<String>,
     pub scheduler_name: String,
@@ -180,6 +182,7 @@ impl ScheduledRequest {
             reference: reference.into(),
             day: None,
             scheduler_name: scheduler_name.into(),
+            max_runtime: None,
         }
     }
 }

@@ -630,6 +630,30 @@ fn ac18_cap_overrun_is_terminated_and_labeled_timeout() {
 }
 
 #[test]
+fn scheduled_budget_controls_status_and_deadline_independently_of_partition_default() {
+    use solstone_core_system::request::{ScheduledArgv, ScheduledRequest};
+    let bed = Bed::new("scheduled-cap");
+    let queue = queue(&bed, Duration::from_secs(600), true, None, None);
+    let ready = bed.root.join("ready");
+    let mut scheduled = ScheduledRequest::new(
+        ScheduledArgv::from_wire(command(&["ready-park", ready.to_str().expect("utf8")]))
+            .expect("scheduled argv"),
+        "scheduled-short",
+        "test-schedule",
+    );
+    scheduled.max_runtime = Some(Duration::from_secs(30));
+    queue.submit(ExecutionRequest::Scheduled(scheduled));
+    wait_for_ready(&ready);
+    wait_until(|| queue.active_process_handles().len() == 1);
+    let now = Instant::now();
+    let status = queue.collect_task_status(now);
+    assert_eq!(status[0].cap_seconds, 30);
+    queue.enforce_deadlines(now + Duration::from_secs(31));
+    wait_for_history(&queue, 1);
+    assert_eq!(queue.history()[0].exit_status, TIMEOUT_EXIT_STATUS);
+}
+
+#[test]
 fn ac19_two_stopped_ticks_terminate_with_the_same_timeout_label() {
     let bed = Bed::new("ac19");
     let queue = queue(&bed, Duration::from_secs(5), true, None, None);
