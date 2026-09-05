@@ -49,10 +49,13 @@ fn claim_one(
             .join(request["name"].as_str().unwrap())
             .join(format!("{use_id}_active.jsonl"));
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        let body = terminal.unwrap_or("{\"event\":\"request\"}");
-        let mut value: Value = serde_json::from_str(body).unwrap();
-        value["use_id"] = Value::String(use_id.to_string());
-        fs::write(path, format!("{value}\n")).unwrap();
+        let mut body = format!("{request}\n");
+        if let Some(terminal) = terminal {
+            let mut value: Value = serde_json::from_str(terminal).unwrap();
+            value["use_id"] = Value::String(use_id.to_string());
+            body.push_str(&format!("{value}\n"));
+        }
+        fs::write(path, body).unwrap();
         request
     })
 }

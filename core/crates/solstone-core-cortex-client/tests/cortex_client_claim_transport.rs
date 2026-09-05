@@ -104,7 +104,8 @@ fn successful_write_claims_active_and_completed_existing_use_files() {
         (
             "completed",
             false,
-            br#"{"event":"finish","use_id":"completed","name":"steward"}"#.as_slice(),
+            b"{\"event\":\"request\",\"use_id\":\"completed\",\"name\":\"steward\"}\n{\"event\":\"finish\",\"use_id\":\"completed\"}\n"
+                .as_slice(),
         ),
     ] {
         let journal = tempfile::tempdir().expect("claim journal");
@@ -176,6 +177,26 @@ fn another_talents_matching_id_does_not_acknowledge_the_request() {
         })
     );
     accept_lines(&listener, 3, "shared");
+}
+
+#[test]
+fn mismatched_request_identity_in_the_expected_file_is_not_claimed() {
+    for body in [
+        br#"{"event":"request","use_id":"shared","name":"other"}"#.as_slice(),
+        br#"{"event":"request","use_id":"other","name":"steward"}"#.as_slice(),
+        br#"{"event":"request","use_id":"shared"}"#.as_slice(),
+    ] {
+        let journal = tempfile::tempdir().unwrap();
+        let listener = bind(journal.path());
+        write_use(journal.path(), "shared", true, body);
+        assert_eq!(
+            dispatch(journal.path(), "shared"),
+            Err(DispatchError::NotClaimed {
+                use_id: "shared".into()
+            })
+        );
+        accept_lines(&listener, 3, "shared");
+    }
 }
 
 #[test]

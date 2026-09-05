@@ -135,17 +135,12 @@ fn start_refresh_server(journal: &TestJournal) -> thread::JoinHandle<Value> {
         let active = journal_path
             .join("talents/steward")
             .join(format!("{use_id}_active.jsonl"));
-        write(
-            &active,
-            &format!("{{\"event\":\"request\",\"use_id\":\"{use_id}\"}}\n"),
-        );
+        write(&active, &format!("{request}\n"));
 
         let (mut subscriber, _) = listener.accept().expect("accept outcome subscriber");
         write(
             &active,
-            &format!(
-                "{{\"event\":\"request\",\"use_id\":\"{use_id}\"}}\n{{\"event\":\"finish\"}}\n"
-            ),
+            &format!("{request}\n{{\"event\":\"finish\",\"use_id\":\"{use_id}\"}}\n"),
         );
         fs::rename(&active, active.with_file_name(format!("{use_id}.jsonl")))
             .expect("finalize steward output");
