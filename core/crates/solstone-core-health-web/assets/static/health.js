@@ -24,7 +24,7 @@
   let brainSnapshot = null;
   let backlogCopy = {};
 
-  fetch('/app/health/api/info')
+  const healthInfoReady = fetch('/app/health/api/info')
     .then(r => r.json())
     .then(info => {
       state.localHost = info.hostname;
@@ -2726,6 +2726,7 @@
 		  }
 
 			  // Listen to all Callosum events
+  const registeredClientsReady = loadRegisteredClients();
 	  let healthInitialized = false;
 
 	  function initHealthRealtime() {
@@ -2741,7 +2742,9 @@
 	    if (healthInitialized) return;
 	    healthInitialized = true;
 	    applyHealthCopy();
-	    loadHealthState();
+    Promise.all([healthInfoReady, registeredClientsReady, loadHealthState()]).then(() => {
+      document.dispatchEvent(new CustomEvent('health:initial-ready'));
+    });
 	    focusRecentErrors();
 	    window.addEventListener('hashchange', focusRecentErrors);
 	    document.getElementById('glanceErrors')?.addEventListener('click', (e) => {
@@ -2813,7 +2816,6 @@
   // Sweep stale agents and imports every 60s
   let staleSweepTimer = setInterval(sweepStale, 60000);
 
-  loadRegisteredClients();
   let registeredClientsTimer = setInterval(loadRegisteredClients, 60000);
 
   // Connection health indicator — updated every 5s

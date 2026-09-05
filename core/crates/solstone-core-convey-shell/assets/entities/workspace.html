@@ -177,9 +177,7 @@
 
 /* Entity type indicator dot */
 .entity-card-type-indicator {
-  position: absolute;
-  bottom: 0.65em;
-  left: 0.85em;
+  flex-shrink: 0;
   width: 10px;
   height: 10px;
   border-radius: 50%;
@@ -5162,7 +5160,13 @@ function appendTypeIndicator(card, type) {
   const dot = document.createElement('span');
   dot.className = 'entity-card-type-indicator';
   dot.title = type || 'Other';
-  card.appendChild(dot);
+  let markers = card.querySelector('.entity-card-facet-dots');
+  if (!markers) {
+    markers = document.createElement('div');
+    markers.className = 'entity-card-facet-dots';
+    card.appendChild(markers);
+  }
+  markers.appendChild(dot);
 }
 
 function appendDetailAffordance(card) {

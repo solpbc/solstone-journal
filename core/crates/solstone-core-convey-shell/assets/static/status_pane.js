@@ -35,8 +35,9 @@ window.whenShellReady(() => {
   }
 
   let initialDestinationPending = true;
+  let initialHealthReady = false;
   function revealInitialDestination() {
-    if (!statusPaneOpen || !initialDestinationPending) return;
+    if (!statusPaneOpen || !initialDestinationPending || !initialHealthReady) return;
     const id = window.location.hash.slice(1);
     if (!['healthSystemDetails', 'quiet-notifs-section', 'registeredClientsCard'].includes(id)) return;
     const target = document.getElementById(id);
@@ -44,7 +45,11 @@ window.whenShellReady(() => {
     initialDestinationPending = false;
     requestAnimationFrame(() => target.scrollIntoView({block: 'start'}));
   }
-  document.addEventListener('health:devices-loaded', revealInitialDestination);
+  // Initial API renders can change the page height after the workspace mounts.
+  document.addEventListener('health:initial-ready', () => {
+    initialHealthReady = true;
+    revealInitialDestination();
+  });
 
   document.addEventListener('workspace:mounted', () => {
     const host = document.getElementById('healthSystemDetails');
