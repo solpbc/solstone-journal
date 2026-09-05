@@ -90,6 +90,9 @@ async fn sweep_populated_corpus(app: axum::Router) -> usize {
         if let Some(expected_json) = case.get("json") {
             let actual: Value = serde_json::from_slice(&body).expect("JSON response parses");
             assert_json_case(path, actual, expected_json.clone());
+        } else if path == "/app/speakers/20260731" {
+            // Pin the intentionally revised shell while retaining the captured API/audio cases.
+            assert_eq!(body, include_bytes!("../assets/static/shell.html"));
         } else {
             assert_eq!(
                 body.len(),

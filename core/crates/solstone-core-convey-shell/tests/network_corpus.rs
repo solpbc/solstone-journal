@@ -239,6 +239,9 @@ async fn network_corpus_replays_gated_cases_without_native_deferrals() {
                     case["body"],
                     "{phase} {path} body"
                 );
+            } else if phase == "established" && path == "/app/network/" {
+                // The shared status/navigation presentation has deliberately changed.
+                assert_eq!(response.3, include_bytes!("../assets/static/shell.html"));
             } else {
                 let body = normalized_raw(&response.3, fields, &journal.0);
                 assert_eq!(
