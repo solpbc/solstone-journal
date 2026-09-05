@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Shell-owned chronicle segment catalog on journal-io locators.
+//! Speaker chronicle segment catalog on journal-io locators.
 
 use std::error::Error;
 use std::fmt;
@@ -14,17 +14,16 @@ use solstone_core_journal_io::{
 };
 
 /// Voice-approved Direct-layout refusal reason code for `err(...)`.
-pub(crate) const UNSUPPORTED_LAYOUT_REASON: &str = "speaker_segment_layout_unsupported";
+pub const UNSUPPORTED_LAYOUT_REASON: &str = "speaker_segment_layout_unsupported";
 /// First line of the Direct-layout refusal (`err` message slot).
-pub(crate) const UNSUPPORTED_LAYOUT_MESSAGE: &str =
-    "This command can't change that speaker review.";
+pub const UNSUPPORTED_LAYOUT_MESSAGE: &str = "This command can't change that speaker review.";
 /// Second line of the Direct-layout refusal (`err` detail slot).
-pub(crate) const UNSUPPORTED_LAYOUT_DETAIL: &str =
+pub const UNSUPPORTED_LAYOUT_DETAIL: &str =
     "This segment uses the direct journal layout, which this command doesn't support.";
 
 /// One cataloged chronicle segment with a resolver-validated path.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CatalogedSegment {
+pub struct CatalogedSegment {
     /// Chronicle day (`YYYYMMDD`).
     pub day: String,
     /// Explicit on-disk layout. Never inferred from the stream spelling.
@@ -41,7 +40,7 @@ pub(crate) struct CatalogedSegment {
 
 /// Failure while building a catalog snapshot.
 #[derive(Debug)]
-pub(crate) enum CatalogBuildError {
+pub enum CatalogBuildError {
     /// Stream directory or segment basename is not UTF-8.
     NotUtf8 { path: PathBuf },
     /// Lossless locator identity was internally inconsistent.
@@ -93,7 +92,7 @@ impl Error for CatalogBuildError {
 
 /// Rejected `stream_layout` spelling or JSON type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LayoutDecodeError {
+pub enum LayoutDecodeError {
     /// Anything other than absent / `"direct"` / `"named"`.
     Malformed,
 }
@@ -108,7 +107,7 @@ impl Error for LayoutDecodeError {}
 
 /// Whether a Direct hit is admitted on this surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum DirectSupport {
+pub enum DirectSupport {
     /// GET-style reads may open a Direct segment.
     Allow,
     /// Mutations refuse Direct with [`UNSUPPORTED_LAYOUT_REASON`].
@@ -117,7 +116,7 @@ pub(crate) enum DirectSupport {
 
 /// Classified result of resolving one request identity.
 #[derive(Debug)]
-pub(crate) enum SegmentLookup {
+pub enum SegmentLookup {
     /// Admitted, resolver-validated directory.
     Present(PathBuf),
     /// Resolver returned `Ok(None)`.
@@ -133,7 +132,7 @@ pub(crate) enum SegmentLookup {
 /// One multi-target lookup row, including a decoded (or failed) layout.
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub(crate) struct SegmentTarget<'a> {
+pub struct SegmentTarget<'a> {
     pub day: &'a str,
     pub stream: &'a str,
     pub name: &'a str,
@@ -143,7 +142,7 @@ pub(crate) struct SegmentTarget<'a> {
 /// Catalog every representable segment on `day`.
 ///
 /// Missing chronicle or an empty day is `Ok(vec![])`.
-pub(crate) fn catalog_day(
+pub fn catalog_day(
     journal_root: &Path,
     day: &str,
 ) -> Result<Vec<CatalogedSegment>, CatalogBuildError> {
@@ -198,9 +197,7 @@ pub(crate) fn catalog_day(
 /// Catalog every representable segment in the journal.
 ///
 /// Missing chronicle is `Ok(vec![])`. One bad day fails the whole build.
-pub(crate) fn catalog_journal(
-    journal_root: &Path,
-) -> Result<Vec<CatalogedSegment>, CatalogBuildError> {
+pub fn catalog_journal(journal_root: &Path) -> Result<Vec<CatalogedSegment>, CatalogBuildError> {
     let days = catalog_days(journal_root)?;
     let mut cataloged = Vec::new();
     for day in days {
@@ -214,7 +211,7 @@ pub(crate) fn catalog_journal(
 /// Missing chronicle is `Ok(vec![])`. This stays separate from
 /// [`catalog_journal`] so window/count callers do not accidentally derive the
 /// day inventory from segment-bearing rows.
-pub(crate) fn catalog_days(journal_root: &Path) -> Result<Vec<String>, CatalogBuildError> {
+pub fn catalog_days(journal_root: &Path) -> Result<Vec<String>, CatalogBuildError> {
     let mut days: Vec<_> = journal_day_dirs(journal_root)
         .map_err(CatalogBuildError::Walk)?
         .into_keys()
@@ -226,7 +223,7 @@ pub(crate) fn catalog_days(journal_root: &Path) -> Result<Vec<String>, CatalogBu
 /// Decode a request or query `stream_layout` string.
 ///
 /// `None` is Named. Only lowercase `"direct"` / `"named"` are accepted.
-pub(crate) fn decode_stream_layout(raw: Option<&str>) -> Result<SegmentLayout, LayoutDecodeError> {
+pub fn decode_stream_layout(raw: Option<&str>) -> Result<SegmentLayout, LayoutDecodeError> {
     match raw {
         None => Ok(SegmentLayout::Named),
         Some("direct") => Ok(SegmentLayout::Direct),
@@ -238,9 +235,7 @@ pub(crate) fn decode_stream_layout(raw: Option<&str>) -> Result<SegmentLayout, L
 /// Decode a durable-row or JSON-body `stream_layout` value.
 ///
 /// Missing and `Null` are Named. Non-strings are Malformed.
-pub(crate) fn decode_stream_layout_value(
-    raw: Option<&Value>,
-) -> Result<SegmentLayout, LayoutDecodeError> {
+pub fn decode_stream_layout_value(raw: Option<&Value>) -> Result<SegmentLayout, LayoutDecodeError> {
     match raw {
         None | Some(Value::Null) => Ok(SegmentLayout::Named),
         Some(Value::String(value)) => decode_stream_layout(Some(value.as_str())),
@@ -251,7 +246,7 @@ pub(crate) fn decode_stream_layout_value(
 /// Thin adapter over [`resolve_segment_locator_exact`].
 ///
 /// `segment_name` is the exact basename, never the parsed key.
-pub(crate) fn resolve_exact(
+pub fn resolve_exact(
     journal_root: &Path,
     day: &str,
     stream: &str,
@@ -262,7 +257,7 @@ pub(crate) fn resolve_exact(
 }
 
 /// Resolve one identity and classify the result for Shell callers.
-pub(crate) fn lookup_segment(
+pub fn lookup_segment(
     journal_root: &Path,
     day: &str,
     stream: &str,
@@ -295,7 +290,7 @@ pub(crate) fn lookup_segment(
 /// The first non-[`SegmentLookup::Present`] outcome is returned and no paths
 /// are kept, including targets that already resolved.
 #[allow(dead_code)]
-pub(crate) fn lookup_named_segments(
+pub fn lookup_named_segments(
     journal_root: &Path,
     targets: &[SegmentTarget<'_>],
 ) -> Result<Vec<PathBuf>, SegmentLookup> {

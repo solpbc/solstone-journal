@@ -19,7 +19,7 @@ use solstone_core_entity::{is_admissible_person, load_all_journal_entities};
 use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
-use crate::speakers_segment_catalog::{
+use solstone_core_speaker_resolve::segment_catalog::{
     DirectSupport, SegmentLookup, UNSUPPORTED_LAYOUT_DETAIL, UNSUPPORTED_LAYOUT_MESSAGE,
     UNSUPPORTED_LAYOUT_REASON, catalog_journal, decode_stream_layout_value, lookup_segment,
 };

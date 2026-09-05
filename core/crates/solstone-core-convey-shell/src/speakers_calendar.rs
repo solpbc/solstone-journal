@@ -17,7 +17,7 @@ use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
 use crate::speakers_review::is_admissible_speaker_entity;
-use crate::speakers_segment_catalog::{
+use solstone_core_speaker_resolve::segment_catalog::{
     CatalogBuildError, CatalogedSegment, catalog_day, catalog_days,
 };
 

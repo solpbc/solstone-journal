@@ -23,7 +23,7 @@ use crate::speakers_calendar::{
 };
 use crate::speakers_quality::{label_has_ineligible_speaker, quality_tier_for_label};
 use crate::speakers_review::is_admissible_speaker_entity;
-use crate::speakers_segment_catalog::{
+use solstone_core_speaker_resolve::segment_catalog::{
     CatalogedSegment, DirectSupport, SegmentLookup, catalog_journal, decode_stream_layout,
     lookup_segment,
 };

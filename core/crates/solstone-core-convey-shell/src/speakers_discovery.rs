@@ -23,10 +23,10 @@ use crate::speakers_calendar::{
     value_truthy,
 };
 use crate::speakers_review::{find_matching_entity, is_admissible_speaker_entity};
-use crate::speakers_segment_catalog::{
+use solstone_core_speaker_resolve::audio_sample::audio_info;
+use solstone_core_speaker_resolve::segment_catalog::{
     DirectSupport, SegmentLookup, decode_stream_layout_value, lookup_segment,
 };
-use solstone_core_speaker_resolve::audio_sample::audio_info;
 
 #[derive(Debug, Deserialize)]
 pub struct ResolveStatementQuery {
@@ -146,7 +146,7 @@ pub async fn resolve_statement(
     Extension(root): Extension<Arc<JournalRoot>>,
     Query(query): Query<ResolveStatementQuery>,
 ) -> Response {
-    let layout = match crate::speakers_segment_catalog::decode_stream_layout(
+    let layout = match solstone_core_speaker_resolve::segment_catalog::decode_stream_layout(
         query.voice_stream_layout.as_deref(),
     ) {
         Ok(layout) => MemberLayout::from_layout(layout),

@@ -27,7 +27,7 @@ use crate::speakers_calendar::{
     load_speaker_labels, parse_segment, speaker_sentence_needs_review, value_truthy,
 };
 use crate::speakers_npz::{SegmentEmbeddings, load_segment_embeddings};
-use crate::speakers_segment_catalog::{
+use solstone_core_speaker_resolve::segment_catalog::{
     DirectSupport, SegmentLookup, decode_stream_layout, lookup_segment,
 };
 

@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 //! The stats request graph is deliberately source-audited. The sole shell
-//! spawn, speakers_analyze_client.rs:96, is outside this graph and is not
+//! spawn, speaker-resolve discovery_helper.rs, is outside this graph and is not
 //! silently covered by this test.
 
 const CORE_DISPATCH: &str = include_str!("../../../solstone-core/src/main.rs");

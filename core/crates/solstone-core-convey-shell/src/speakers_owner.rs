@@ -18,7 +18,7 @@ use crate::speakers_npz::{load_voiceprints, npz_row_count, owner_centroid_summar
 use crate::speakers_quality::{
     ManualOwnerTagStats, awareness_voiceprint, manual_owner_tag_stats, segment_overlap_fraction,
 };
-use crate::speakers_segment_catalog::{CatalogBuildError, catalog_journal};
+use solstone_core_speaker_resolve::segment_catalog::{CatalogBuildError, catalog_journal};
 
 const OWNER_BOOTSTRAP_MIN_STATEMENTS: usize = 30;
 const OWNER_REJECTION_COOLDOWN_DAYS: i64 = 14;

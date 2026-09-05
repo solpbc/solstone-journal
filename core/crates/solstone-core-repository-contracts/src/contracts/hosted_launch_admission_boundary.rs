@@ -330,9 +330,9 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
         include_str!("../../../solstone-core-convey-shell/src/speakers.rs"),
     ),
     (
-        "convey",
-        "speakers_analyze_client",
-        include_str!("../../../solstone-core-convey-shell/src/speakers_analyze_client.rs"),
+        "speaker-resolve",
+        "discovery_helper",
+        include_str!("../../../solstone-core-speaker-resolve/src/discovery_helper.rs"),
     ),
     (
         "convey",
@@ -415,9 +415,9 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
         include_str!("../../../solstone-core-convey-shell/src/speakers_review.rs"),
     ),
     (
-        "convey",
-        "speakers_segment_catalog",
-        include_str!("../../../solstone-core-convey-shell/src/speakers_segment_catalog.rs"),
+        "speaker-resolve",
+        "segment_catalog",
+        include_str!("../../../solstone-core-speaker-resolve/src/segment_catalog.rs"),
     ),
     (
         "convey",
@@ -668,7 +668,7 @@ fn every_service_like_hosted_launch_selects_provenance() {
     let supervisor_runtime = production_source(source("supervisor", "runtime"));
     let cortex_process = production_source(source("cortex", "process"));
     let sense_dispatch = production_source(source("sense", "dispatch"));
-    let convey_speakers_analyze = production_source(source("convey", "speakers_analyze_client"));
+    let speaker_discovery_helper = production_source(source("speaker-resolve", "discovery_helper"));
     let spl_service_process = production_source(source("spl", "service_process"));
 
     assert!(supervisor_runtime.contains("launch_managed_hosted("));
@@ -677,8 +677,8 @@ fn every_service_like_hosted_launch_selects_provenance() {
     assert!(cortex_process.contains("child_launch_provenance("));
     assert!(sense_dispatch.contains("launch_managed_hosted("));
     assert!(sense_dispatch.contains("child_launch_provenance("));
-    assert!(convey_speakers_analyze.contains("launch_command_hosted("));
-    assert!(convey_speakers_analyze.contains("child_launch_provenance("));
+    assert!(speaker_discovery_helper.contains("launch_command_hosted("));
+    assert!(speaker_discovery_helper.contains("child_launch_provenance("));
 
     // SPL has no service-like child-launch boundary in the closed inventory.
     for forbidden in ["launch_command", "launch_managed", "CommandLaunchRequest"] {

@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use axum::body::to_bytes;
 use axum::extract::Request;
@@ -20,44 +19,27 @@ use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_journal_io::{LockOptions, SegmentLayout, hold_lock};
 
 use crate::speakers_attribution::action;
-use crate::speakers_segment_catalog::{
-    DirectSupport, SegmentLookup, UNSUPPORTED_LAYOUT_DETAIL, UNSUPPORTED_LAYOUT_MESSAGE,
-    UNSUPPORTED_LAYOUT_REASON, catalog_journal, decode_stream_layout_value, lookup_segment,
-};
 use crate::{HostedLaunchContext, JournalRoot};
+#[cfg(test)]
+use solstone_core_speaker_resolve::discovery_scan::{
+    DiscoveryCandidate, MAX_UNMATCHED_EMBEDDINGS, numpy_choice_indexes, retain_discovery_clusters,
+};
+use solstone_core_speaker_resolve::discovery_scan::{
+    DiscoveryRefresh, DiscoveryRefreshError, refresh_discovery_cache,
+};
+use solstone_core_speaker_resolve::segment_catalog::{
+    DirectSupport, SegmentLookup, UNSUPPORTED_LAYOUT_DETAIL, UNSUPPORTED_LAYOUT_MESSAGE,
+    UNSUPPORTED_LAYOUT_REASON, decode_stream_layout_value, lookup_segment,
+};
 
-const DISCOVERY_UNIT_NORM_TOLERANCE: f32 = 1.0e-3;
-const MIN_CLUSTER_SIZE: usize = 5;
-const MAX_UNMATCHED_EMBEDDINGS: usize = 10_000;
 const OWNER_VOICE_UNAVAILABLE: &str = "speaker_discovery_owner_voice_unavailable";
 const OWNER_VOICE_UNAVAILABLE_MESSAGE: &str =
     "i need your voice set up before looking for new voices.";
 const INVALID_EMBEDDINGS: &str = "speaker_discovery_invalid_embeddings";
 const INVALID_EMBEDDINGS_MESSAGE: &str =
     "i skipped some voice samples because they were not usable.";
-static DISCOVERY_CACHE_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 type DiscoveryMember = (String, String, String, String, String, i64);
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct DiscoveryCandidate {
-    pub(crate) day: String,
-    pub(crate) stream_layout: SegmentLayout,
-    pub(crate) stream: String,
-    pub(crate) segment_key: String,
-    pub(crate) source: String,
-    pub(crate) sentence_id: i64,
-    pub(crate) embedding: Vec<f32>,
-}
-
-pub(crate) enum DiscoveryCandidates {
-    IdentityInvalid,
-    NoConfirmedOwner,
-    Candidates {
-        rows: Vec<DiscoveryCandidate>,
-        dropped_invalid: usize,
-    },
-}
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum IdentifyPreflightError {
@@ -138,188 +120,6 @@ pub(crate) fn preflight_identify_cluster(
         }
     }
     Ok(())
-}
-
-pub(crate) fn discovery_candidates(root: &std::path::Path) -> Result<DiscoveryCandidates, String> {
-    let principal = match solstone_core_speaker_resolve::owner_admission::admitted_owner_id(root) {
-        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Admitted(id) => id,
-        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid => {
-            return Ok(DiscoveryCandidates::IdentityInvalid);
-        }
-    };
-    let owner = match solstone_core_speaker_resolve::owner_centroid::load_owner_centroid(
-        root, &principal,
-    ) {
-        Ok(Some(owner)) => owner,
-        Ok(None) => return Ok(DiscoveryCandidates::NoConfirmedOwner),
-        Err(
-            solstone_core_speaker_resolve::owner_centroid::OwnerCentroidError::IdentityInvalid
-            | solstone_core_speaker_resolve::owner_centroid::OwnerCentroidError::TargetMismatch {
-                ..
-            },
-        ) => return Ok(DiscoveryCandidates::IdentityInvalid),
-        Err(error) => return Err(error.to_string()),
-    };
-    let mut rows = Vec::new();
-    let mut dropped = 0;
-    for segment in catalog_journal(root).map_err(|error| error.to_string())? {
-        let labels_path = segment.path.join("talents/speaker_labels.json");
-        let attributed = match fs::read(&labels_path) {
-            Ok(bytes) => {
-                let value = serde_json::from_slice::<Value>(&bytes).map_err(|error| {
-                    format!("failed to parse {}: {error}", labels_path.display())
-                })?;
-                let labels = value
-                    .get("labels")
-                    .and_then(Value::as_array)
-                    .ok_or_else(|| {
-                        format!("invalid speaker labels at {}", labels_path.display())
-                    })?;
-                let mut attributed = BTreeSet::new();
-                for row in labels {
-                    if row.get("speaker").is_some_and(|value| !value.is_null()) {
-                        let sentence_id = row
-                            .get("sentence_id")
-                            .and_then(Value::as_i64)
-                            .ok_or_else(|| {
-                                format!(
-                                    "invalid attributed sentence id at {}",
-                                    labels_path.display()
-                                )
-                            })?;
-                        attributed.insert(sentence_id);
-                    }
-                }
-                attributed
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => BTreeSet::new(),
-            Err(error) => {
-                return Err(format!("failed to read {}: {error}", labels_path.display()));
-            }
-        };
-        let entries = fs::read_dir(&segment.path)
-            .map_err(|error| format!("failed to read {}: {error}", segment.path.display()))?;
-        for entry in entries {
-            let entry = entry.map_err(|error| {
-                format!(
-                    "failed to read entry in {}: {error}",
-                    segment.path.display()
-                )
-            })?;
-            let path = entry.path();
-            let Some(source) = path.file_stem().and_then(|name| name.to_str()) else {
-                continue;
-            };
-            if path.extension().and_then(|ext| ext.to_str()) != Some("npz") {
-                continue;
-            }
-            let Some(file) = solstone_core_speaker_id::embeddings::load_embeddings_file(&path)
-                .map_err(|error| format!("failed to load {}: {error}", path.display()))?
-            else {
-                continue;
-            };
-            for (sentence_id, embedding) in file.statements {
-                if attributed.contains(&sentence_id) {
-                    continue;
-                }
-                let norm = embedding
-                    .iter()
-                    .map(|value| value * value)
-                    .sum::<f32>()
-                    .sqrt();
-                if !norm.is_finite()
-                    || embedding.iter().any(|value| !value.is_finite())
-                    || (norm - 1.0).abs() > DISCOVERY_UNIT_NORM_TOLERANCE
-                {
-                    dropped += 1;
-                    continue;
-                }
-                let score: f32 = embedding
-                    .iter()
-                    .zip(&owner.centroid)
-                    .map(|(left, right)| left * right)
-                    .sum();
-                if score >= owner.threshold {
-                    continue;
-                }
-                rows.push(DiscoveryCandidate {
-                    day: segment.day.clone(),
-                    stream_layout: segment.layout,
-                    stream: segment.stream.clone(),
-                    segment_key: segment.name.clone(),
-                    source: source.to_owned(),
-                    sentence_id,
-                    embedding,
-                });
-            }
-        }
-    }
-    Ok(DiscoveryCandidates::Candidates {
-        rows,
-        dropped_invalid: dropped,
-    })
-}
-
-pub(crate) fn retain_discovery_clusters(
-    rows: &[DiscoveryCandidate],
-    labels: &[i64],
-) -> std::collections::BTreeMap<String, Vec<Value>> {
-    let mut output = std::collections::BTreeMap::new();
-    for label in labels
-        .iter()
-        .copied()
-        .filter(|label| *label != -1)
-        .collect::<std::collections::BTreeSet<_>>()
-    {
-        let selected = rows
-            .iter()
-            .zip(labels)
-            .filter(|(_, current)| **current == label)
-            .map(|(row, _)| row)
-            .collect::<Vec<_>>();
-        if selected
-            .iter()
-            .map(|row| {
-                (
-                    &row.day,
-                    layout_name(row.stream_layout),
-                    &row.stream,
-                    &row.segment_key,
-                )
-            })
-            .collect::<std::collections::BTreeSet<_>>()
-            .len()
-            < 3
-        {
-            continue;
-        }
-        let mut mean = vec![0.0; selected[0].embedding.len()];
-        for row in &selected {
-            for (value, input) in mean.iter_mut().zip(&row.embedding) {
-                *value += *input
-            }
-        }
-        let norm = mean.iter().map(|value| value * value).sum::<f32>().sqrt();
-        if norm == 0.0 {
-            continue;
-        }
-        for value in &mut mean {
-            *value /= norm
-        }
-        let mut selected = selected;
-        selected.sort_by(|left, right| {
-            let score = |row: &DiscoveryCandidate| {
-                row.embedding
-                    .iter()
-                    .zip(&mean)
-                    .map(|(a, b)| a * b)
-                    .sum::<f32>()
-            };
-            score(right).total_cmp(&score(left))
-        });
-        output.insert(label.to_string(),selected.into_iter().map(|row|json!({"day":row.day,"stream_layout":layout_name(row.stream_layout),"stream":row.stream,"segment_key":row.segment_key,"source":row.source,"sentence_id":row.sentence_id})).collect());
-    }
-    output
 }
 
 pub async fn identify(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
@@ -508,8 +308,12 @@ pub async fn scan(
     Extension(root): Extension<Arc<JournalRoot>>,
     Extension(hosted_launch): Extension<HostedLaunchContext>,
 ) -> Response {
-    let (rows, issues) = match discovery_candidates(&root.0) {
-        Ok(DiscoveryCandidates::IdentityInvalid) => {
+    let scan_root = root.clone();
+    let result =
+        tokio::task::spawn_blocking(move || refresh_discovery_cache(&scan_root.0, hosted_launch.0))
+            .await;
+    let (clusters, dropped_invalid) = match result {
+        Ok(Ok(DiscoveryRefresh::IdentityInvalid)) => {
             return error(
                 "speaker_owner_identity_invalid",
                 "I couldn't look for new voices because your configured owner identity needs attention.",
@@ -517,187 +321,51 @@ pub async fn scan(
                 StatusCode::BAD_REQUEST,
             );
         }
-        Ok(DiscoveryCandidates::NoConfirmedOwner) => {
+        Ok(Ok(DiscoveryRefresh::NoConfirmedOwner)) => {
             return Json(json!({
-                "status": "degraded",
-                "clusters": [],
-                "issues": [issue(OWNER_VOICE_UNAVAILABLE, OWNER_VOICE_UNAVAILABLE_MESSAGE, 0)],
+                "status":"degraded", "clusters":[],
+                "issues":[issue(OWNER_VOICE_UNAVAILABLE, OWNER_VOICE_UNAVAILABLE_MESSAGE, 0)],
             }))
             .into_response();
         }
-        Ok(DiscoveryCandidates::Candidates {
-            rows,
+        Ok(Ok(DiscoveryRefresh::Refreshed {
+            clusters,
             dropped_invalid,
-        }) => {
-            let issues = (dropped_invalid != 0)
-                .then(|| {
-                    issue(
-                        INVALID_EMBEDDINGS,
-                        INVALID_EMBEDDINGS_MESSAGE,
-                        dropped_invalid,
-                    )
-                })
-                .into_iter()
-                .collect();
-            (rows, issues)
-        }
-        Err(error) => return command(error, StatusCode::INTERNAL_SERVER_ERROR),
-    };
-
-    if rows.len() < MIN_CLUSTER_SIZE {
-        if let Err(error) = clear_discovery_cache(&root.0) {
+        })) => (clusters, dropped_invalid),
+        Ok(Err(DiscoveryRefreshError::Input(error))) => {
             return command(error, StatusCode::INTERNAL_SERVER_ERROR);
         }
-        return Json(scan_result(Vec::new(), issues)).into_response();
-    }
-
-    let rows = cap_discovery_candidates(rows);
-    let embeddings = rows
-        .iter()
-        .map(|row| row.embedding.clone())
-        .collect::<Vec<_>>();
-    let labels = match crate::speakers_analyze_client::discovery_cluster(
-        embeddings,
-        hosted_launch.0,
-    )
-    .await
-    {
-        Ok(labels) => labels,
-        Err(error) => {
-            let status = if error.stage == "invoke" {
+        failure => {
+            let retryable = !matches!(failure, Ok(Err(DiscoveryRefreshError::Helper(ref error))) if error.stage != "invoke");
+            let status = if retryable {
                 StatusCode::SERVICE_UNAVAILABLE
             } else {
                 StatusCode::INTERNAL_SERVER_ERROR
             };
-            let retryable = error.stage == "invoke";
-            return (
-                status,
-                Json(json!({
-                    "error": "i couldn't look for new voices right now.",
-                    "reason_code": "speaker_discovery_failed",
-                    "detail": "",
-                    "retryable": retryable,
-                })),
-            )
-                .into_response();
+            return (status, Json(json!({
+                "error":"i couldn't look for new voices right now.", "reason_code":"speaker_discovery_failed",
+                "detail":"", "retryable":retryable,
+            }))).into_response();
         }
     };
-    let clusters = retain_discovery_clusters(&rows, &labels);
+    let issues = (dropped_invalid != 0)
+        .then(|| {
+            issue(
+                INVALID_EMBEDDINGS,
+                INVALID_EMBEDDINGS_MESSAGE,
+                dropped_invalid,
+            )
+        })
+        .into_iter()
+        .collect();
     if clusters.is_empty() {
-        if let Err(error) = clear_discovery_cache(&root.0) {
-            return command(error, StatusCode::INTERNAL_SERVER_ERROR);
-        }
         return Json(scan_result(Vec::new(), issues)).into_response();
-    }
-    if let Err(error) = write_discovery_cache(&root.0, &clusters) {
-        return command(error, StatusCode::INTERNAL_SERVER_ERROR);
     }
     let visible_clusters = match serialize_scan_clusters(&root.0, &clusters) {
         Ok(clusters) => clusters,
         Err(error) => return command(error, StatusCode::INTERNAL_SERVER_ERROR),
     };
     Json(scan_result(visible_clusters, issues)).into_response()
-}
-
-/// Match Python's `default_rng(42).choice(..., replace=False)` admission cap.
-///
-/// Python sorts the sampled indexes before carrying provenance forward, so the
-/// result is stable and independent of the helper's clustering order.
-fn cap_discovery_candidates(rows: Vec<DiscoveryCandidate>) -> Vec<DiscoveryCandidate> {
-    if rows.len() <= MAX_UNMATCHED_EMBEDDINGS {
-        return rows;
-    }
-    let indexes = numpy_choice_indexes(rows.len(), MAX_UNMATCHED_EMBEDDINGS);
-    indexes
-        .into_iter()
-        .map(|index| rows[index].clone())
-        .collect()
-}
-
-/// Exact subset selection used by NumPy 2.x's `default_rng(42).choice` here.
-///
-/// This ports its seeded PCG64 stream, Lemire-bounded draws, and its tail
-/// shuffle/Floyd choice split. Callers sort no further: this function returns
-/// the same ascending indexes Python produces after `indices.sort()`.
-fn numpy_choice_indexes(population: usize, size: usize) -> Vec<usize> {
-    debug_assert!(size <= population);
-    let mut rng = NumpyPcg64::seed_42();
-    let mut indexes = if population > 10_000 && size > population / 50 {
-        let mut values = (0..population).collect::<Vec<_>>();
-        for index in (population - size..population).rev() {
-            let selected = rng.bounded_usize(index);
-            values.swap(selected, index);
-        }
-        values.split_off(population - size)
-    } else {
-        let mut values = Vec::with_capacity(size);
-        let mut seen = HashSet::with_capacity(size);
-        for value in population - size..population {
-            let selected = rng.bounded_usize(value);
-            if !seen.insert(selected) {
-                values.push(value);
-                seen.insert(value);
-            } else {
-                values.push(selected);
-            }
-        }
-        values
-    };
-    indexes.sort_unstable();
-    indexes
-}
-
-struct NumpyPcg64 {
-    state: u128,
-    increment: u128,
-    cached_u32: Option<u32>,
-}
-
-impl NumpyPcg64 {
-    // State emitted by NumPy's `default_rng(42).bit_generator.state`.
-    const SEED_42_STATE: u128 = 274_674_114_334_540_486_603_088_602_300_644_985_544;
-    const SEED_42_INCREMENT: u128 = 332_724_090_758_049_132_448_979_897_138_935_081_983;
-    const MULTIPLIER: u128 = 0x2360_ed05_1fc6_5da4_4385_df64_9fcc_f645;
-
-    fn seed_42() -> Self {
-        Self {
-            state: Self::SEED_42_STATE,
-            increment: Self::SEED_42_INCREMENT,
-            cached_u32: None,
-        }
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        self.state = self
-            .state
-            .wrapping_mul(Self::MULTIPLIER)
-            .wrapping_add(self.increment);
-        let high = (self.state >> 64) as u64;
-        let low = self.state as u64;
-        (high ^ low).rotate_right((high >> 58) as u32)
-    }
-
-    fn next_u32(&mut self) -> u32 {
-        if let Some(value) = self.cached_u32.take() {
-            return value;
-        }
-        let value = self.next_u64();
-        self.cached_u32 = Some((value >> 32) as u32);
-        value as u32
-    }
-
-    fn bounded_usize(&mut self, inclusive_max: usize) -> usize {
-        debug_assert!(inclusive_max <= u32::MAX as usize);
-        let range = inclusive_max as u32;
-        let range_exclusive = range.wrapping_add(1);
-        loop {
-            let product = self.next_u32() as u64 * range_exclusive as u64;
-            let leftover = product as u32;
-            if leftover >= range_exclusive || leftover >= (u32::MAX - range) % range_exclusive {
-                return (product >> 32) as usize;
-            }
-        }
-    }
 }
 
 fn issue(reason_code: &str, message: &str, count: usize) -> Value {
@@ -710,46 +378,6 @@ fn scan_result(clusters: Vec<Value>, issues: Vec<Value>) -> Value {
         "clusters": clusters,
         "issues": issues,
     })
-}
-
-fn clear_discovery_cache(root: &Path) -> Result<(), String> {
-    for name in [
-        "discovery_clusters.json",
-        "discovery_clusters.resolved.json",
-    ] {
-        let path = root.join("awareness").join(name);
-        match fs::remove_file(path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.to_string()),
-        }
-    }
-    Ok(())
-}
-
-fn write_discovery_cache(
-    root: &Path,
-    clusters: &std::collections::BTreeMap<String, Vec<Value>>,
-) -> Result<(), String> {
-    let awareness = root.join("awareness");
-    fs::create_dir_all(&awareness).map_err(|error| error.to_string())?;
-    let cache = awareness.join("discovery_clusters.json");
-    let temp = awareness.join(format!(
-        "discovery_clusters.{}.{}.tmp",
-        std::process::id(),
-        DISCOVERY_CACHE_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed),
-    ));
-    let payload = json!({
-        "version": Utc::now().to_rfc3339(),
-        "clusters": clusters,
-    });
-    let bytes = serde_json::to_vec_pretty(&payload).map_err(|error| error.to_string())?;
-    let result = fs::write(&temp, bytes).and_then(|()| fs::rename(&temp, &cache));
-    if let Err(error) = result {
-        let _ = fs::remove_file(&temp);
-        return Err(error.to_string());
-    }
-    Ok(())
 }
 
 fn serialize_scan_clusters(
@@ -936,13 +564,6 @@ fn canonical_members(members: &[Value]) -> Result<Vec<Value>, String> {
         ));
     }
     Ok(tuples.into_iter().map(|(day, stream_layout, stream, segment_key, source, sentence_id)| json!({"day":day,"stream_layout":stream_layout,"stream":stream,"segment_key":segment_key,"source":source,"sentence_id":sentence_id})).collect())
-}
-
-fn layout_name(layout: SegmentLayout) -> &'static str {
-    match layout {
-        SegmentLayout::Direct => "direct",
-        SegmentLayout::Named => "named",
-    }
 }
 
 fn preflight_error(failure: IdentifyPreflightError) -> Response {

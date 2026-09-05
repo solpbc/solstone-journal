@@ -25,7 +25,7 @@ use solstone_core_speaker_resolve::owner_contamination_screen::{
 use solstone_core_speaker_resolve::owner_provisional::OwnerTierReason;
 
 use crate::JournalRoot;
-use crate::speakers_segment_catalog::{
+use solstone_core_speaker_resolve::segment_catalog::{
     DirectSupport, SegmentLookup, UNSUPPORTED_LAYOUT_DETAIL, UNSUPPORTED_LAYOUT_MESSAGE,
     UNSUPPORTED_LAYOUT_REASON, catalog_journal, decode_stream_layout_value, lookup_segment,
 };
@@ -544,12 +544,12 @@ fn propagate_speaker_correction(
     commit: bool,
 ) -> Result<Value, PropagationError> {
     struct PreflightTarget {
-        segment: crate::speakers_segment_catalog::CatalogedSegment,
+        segment: solstone_core_speaker_resolve::segment_catalog::CatalogedSegment,
         current: Vec<Value>,
     }
 
     struct Target {
-        segment: crate::speakers_segment_catalog::CatalogedSegment,
+        segment: solstone_core_speaker_resolve::segment_catalog::CatalogedSegment,
         current: Vec<Value>,
         outcome: solstone_core_speaker_resolve::resolve::ResolveOutcome,
     }

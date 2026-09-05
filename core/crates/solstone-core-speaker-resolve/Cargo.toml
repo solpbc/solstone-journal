@@ -33,7 +33,11 @@ path = "tests/speaker_voiceprint_contracts.rs"
 [lints]
 workspace = true
 
+[features]
+test-hooks = []
+
 [dependencies]
+solstone-core-system.workspace = true
 percent-encoding = "2.3.2"
 log.workspace = true
 chrono.workspace = true
@@ -56,3 +60,6 @@ thiserror.workspace = true
 
 [dev-dependencies]
 tempfile = "3.24.0"
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["signal"] }

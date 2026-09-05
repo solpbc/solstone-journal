@@ -5,7 +5,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::time::{Duration, Instant};
 
-use solstone_core_convey_shell::drive_discovery_cluster_helper;
+use solstone_core_speaker_resolve::discovery_helper::drive_discovery_cluster_helper;
 
 const TIMEOUT: Duration = Duration::from_millis(500);
 const TERMINATE_GRACE: Duration = Duration::from_millis(1500);

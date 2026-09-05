@@ -87,8 +87,129 @@ pub(crate) fn candidate_pairs(args: &[String], journal: &Path) -> CliRun {
     }
 }
 
+pub(crate) fn discovery(args: &[String], journal: &Path) -> CliRun {
+    use solstone_core_speaker_resolve::discovery_scan::{
+        DiscoveryRefresh, DiscoveryRefreshError, refresh_discovery_cache,
+    };
+    if !args.is_empty() {
+        return CliRun {
+            stdout: String::new(),
+            stderr: "usage: journal maintenance run speakers:discover-voices\n".to_owned(),
+            exit_code: 2,
+        };
+    }
+    let report = match refresh_discovery_cache(journal, None) {
+        Ok(DiscoveryRefresh::IdentityInvalid) => {
+            serde_json::json!({"status":"skipped","reason_code":"speaker_owner_identity_invalid"})
+        }
+        Ok(DiscoveryRefresh::NoConfirmedOwner) => {
+            serde_json::json!({"status":"skipped","reason_code":"speaker_discovery_owner_voice_unavailable"})
+        }
+        Ok(DiscoveryRefresh::Refreshed {
+            clusters,
+            dropped_invalid,
+        }) => {
+            serde_json::json!({"status":if dropped_invalid==0 {"ok"} else {"degraded"},"clusters":clusters.len(),"dropped_invalid":dropped_invalid})
+        }
+        Err(error) => {
+            let exit_code = if matches!(error, DiscoveryRefreshError::Helper(_)) {
+                2
+            } else {
+                1
+            };
+            return CliRun {
+                stdout: String::new(),
+                stderr: format!("{error}\n"),
+                exit_code,
+            };
+        }
+    };
+    CliRun {
+        stdout: format!("{report}\n"),
+        stderr: String::new(),
+        exit_code: 0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn registered_discovery_preserves_cache_until_owner_voice_is_available() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("awareness")).unwrap();
+        let cache = root.path().join("awareness/discovery_clusters.json");
+        std::fs::write(&cache, "prior cache").unwrap();
+        let mut args = vec!["run".to_owned(), "speakers:discover-voices".to_owned()];
+        let result = crate::run_cli(&args, root.path());
+        assert_eq!(result.exit_code, 0, "{}", result.stderr);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&result.stdout).unwrap()["status"],
+            "skipped"
+        );
+        std::fs::create_dir_all(root.path().join("entities/owner")).unwrap();
+        std::fs::write(
+            root.path().join("entities/owner/entity.json"),
+            r#"{"id":"owner","name":"Owner","type":"Person","is_principal":true}"#,
+        )
+        .unwrap();
+        let result = crate::run_cli(&args, root.path());
+        assert_eq!(result.exit_code, 0, "{}", result.stderr);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&result.stdout).unwrap()["reason_code"],
+            "speaker_discovery_owner_voice_unavailable"
+        );
+        assert_eq!(std::fs::read(&cache).unwrap(), b"prior cache");
+        args.push("--commit".to_owned());
+        assert_eq!(crate::run_cli(&args, root.path()).exit_code, 2);
+        assert_eq!(std::fs::read(&cache).unwrap(), b"prior cache");
+    }
+
+    #[test]
+    fn registered_discovery_clears_empty_cache_with_confirmed_owner_without_invoking_helper() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("entities/owner")).unwrap();
+        std::fs::write(
+            root.path().join("entities/owner/entity.json"),
+            r#"{"id":"owner","name":"Owner","type":"Person","is_principal":true}"#,
+        )
+        .unwrap();
+        let mut centroid = vec![0.0; 256];
+        centroid[0] = 1.0;
+        solstone_core_speaker_resolve::owner_centroid::write_owner_centroid(
+            root.path(),
+            "owner",
+            &solstone_core_speaker_resolve::owner_centroid::OwnerCentroidWriteInput {
+                centroid,
+                cluster_size: 5,
+                timestamp: "2026-08-08T00:00:00Z".to_owned(),
+                evidence_tier: "standard".to_owned(),
+            },
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.path().join("awareness")).unwrap();
+        for name in [
+            "discovery_clusters.json",
+            "discovery_clusters.resolved.json",
+        ] {
+            std::fs::write(root.path().join("awareness").join(name), "prior cache").unwrap();
+        }
+        let result = crate::run_cli(
+            &["run".to_owned(), "speakers:discover-voices".to_owned()],
+            root.path(),
+        );
+        assert_eq!(result.exit_code, 0, "{}", result.stderr);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&result.stdout).unwrap()["clusters"],
+            0
+        );
+        for name in [
+            "discovery_clusters.json",
+            "discovery_clusters.resolved.json",
+        ] {
+            assert!(!root.path().join("awareness").join(name).exists());
+        }
+    }
+
     #[test]
     fn registered_candidate_pairs_run_and_reject_arguments() {
         let root = tempfile::tempdir().unwrap();

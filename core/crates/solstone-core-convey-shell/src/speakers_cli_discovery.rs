@@ -15,7 +15,7 @@ use solstone_core_convey_http::envelope::error_envelope;
 
 use crate::JournalRoot;
 use crate::speakers_discovery_write::{IdentifyPreflightError, preflight_identify_cluster};
-use crate::speakers_segment_catalog::{
+use solstone_core_speaker_resolve::segment_catalog::{
     UNSUPPORTED_LAYOUT_DETAIL, UNSUPPORTED_LAYOUT_MESSAGE, UNSUPPORTED_LAYOUT_REASON,
 };
 

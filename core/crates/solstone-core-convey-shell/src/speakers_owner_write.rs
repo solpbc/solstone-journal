@@ -34,7 +34,7 @@ use crate::JournalRoot;
 use crate::speakers_attribution::action;
 use crate::speakers_known::intra_cosine_p25;
 use crate::speakers_quality::awareness_voiceprint;
-use crate::speakers_segment_catalog::{
+use solstone_core_speaker_resolve::segment_catalog::{
     DirectSupport, SegmentLookup, decode_stream_layout_value, lookup_segment,
 };
 

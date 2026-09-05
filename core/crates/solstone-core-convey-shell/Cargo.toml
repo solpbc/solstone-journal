@@ -78,7 +78,7 @@ workspace = true
 
 [features]
 default = ["host"]
-test-hooks = []
+test-hooks = ["solstone-core-speaker-resolve/test-hooks"]
 host = [
     "dep:percent-encoding",
     "dep:solstone-core-callosum",

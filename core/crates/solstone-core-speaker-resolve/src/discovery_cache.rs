@@ -17,10 +17,10 @@ pub fn discovery_cache_path(journal_root: &Path) -> PathBuf {
     journal_root.join("awareness/discovery_clusters.json")
 }
 
-/// Load the Python-owned discovery cache if it is present and structurally valid.
+/// Load the discovery cache if it is present and structurally valid.
 ///
 /// This intentionally treats a missing, unreadable, malformed, or incomplete cache
-/// as unavailable rather than as an error: Rust is only a reader of this artifact.
+/// as unavailable rather than as an error. Publication is owned by `discovery_scan`.
 #[must_use]
 pub fn load_discovery_cache(journal_root: &Path) -> Option<Value> {
     let path = discovery_cache_path(journal_root);

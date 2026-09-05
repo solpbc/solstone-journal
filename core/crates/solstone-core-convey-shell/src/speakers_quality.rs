@@ -20,7 +20,7 @@ use crate::speakers_calendar::{
     label_has_admitted_speaker, load_all_journal_entities,
 };
 use crate::speakers_npz::{load_voiceprints, owner_centroid_summary};
-use crate::speakers_segment_catalog::{
+use solstone_core_speaker_resolve::segment_catalog::{
     CatalogBuildError, DirectSupport, SegmentLookup, decode_stream_layout_value, lookup_segment,
 };
 

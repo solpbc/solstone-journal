@@ -132,11 +132,6 @@ mod relay_admission;
 pub mod session;
 pub mod session_gate;
 mod speakers;
-mod speakers_analyze_client;
-#[cfg(test)]
-mod status_mark;
-#[cfg(any(test, feature = "test-hooks"))]
-pub use speakers_analyze_client::drive_discovery_cluster_helper;
 mod speakers_attribution;
 mod speakers_calendar;
 mod speakers_cli_discovery;
@@ -153,8 +148,9 @@ mod speakers_owner;
 mod speakers_owner_write;
 mod speakers_quality;
 mod speakers_review;
-mod speakers_segment_catalog;
 mod sse;
+#[cfg(test)]
+mod status_mark;
 mod system;
 #[cfg(feature = "host")]
 mod thinking;

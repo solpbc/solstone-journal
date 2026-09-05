@@ -47,23 +47,20 @@ const DEFAULT_BUDGET: InvocationBudget = InvocationBudget {
     stderr_limit: STDERR_LIMIT,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DiscoveryHelperError {
-    pub(crate) stage: &'static str,
-    pub(crate) reason: String,
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("speaker discovery helper failed at {stage}: {reason}")]
+pub struct DiscoveryHelperError {
+    pub stage: &'static str,
+    pub reason: String,
 }
 
-pub(crate) async fn discovery_cluster(
+/// Run the bounded clustering helper using the caller's hosted process authority.
+pub fn discovery_cluster(
     embeddings: Vec<Vec<f32>>,
     hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
 ) -> Result<Vec<i64>, DiscoveryHelperError> {
     let helper = sibling_helper()?;
-    tokio::task::spawn_blocking(move || run(&helper, &embeddings, hosted_parent))
-        .await
-        .map_err(|_| DiscoveryHelperError {
-            stage: "invoke",
-            reason: "task-join".to_owned(),
-        })?
+    run(&helper, &embeddings, hosted_parent)
 }
 
 fn sibling_helper() -> Result<PathBuf, DiscoveryHelperError> {
