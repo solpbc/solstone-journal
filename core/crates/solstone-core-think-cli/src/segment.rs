@@ -484,9 +484,7 @@ fn select_agents<'a>(
             log_skip(log, context, "screen", segment, "no_config", stream);
         }
     } else {
-        // Source-derived, not measured: thinking.py:1884-1903 deliberately
-        // leaves this skip untagged with stream because it is not fold-consumed.
-        log_skip(log, context, "screen", segment, "not_recommended", None);
+        log_skip(log, context, "screen", segment, "not_recommended", stream);
     }
     let speakers_recommended = recommend
         .get("speaker_attribution")
@@ -513,7 +511,7 @@ fn select_agents<'a>(
             "speaker_attribution",
             segment,
             "not_recommended",
-            None,
+            stream,
         );
     }
     Ok(selected)

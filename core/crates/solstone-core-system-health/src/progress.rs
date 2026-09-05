@@ -13,6 +13,7 @@ enum ProgressKind {
     Complete,
     Fail,
     Capped,
+    NotRecommended,
 }
 
 #[derive(Debug, Clone)]
@@ -101,6 +102,23 @@ pub fn read_segment_progress<S: HealthLogSource>(
                     unconfigured.entry(key).or_default().insert(name);
                 }
             }
+            HealthEvent::TalentSkip(_)
+                if payload.reason.as_deref() == Some("not_recommended")
+                    && matches!(
+                        payload.name.as_deref(),
+                        Some("screen" | "speaker_attribution")
+                    ) =>
+            {
+                push_record(
+                    &mut records,
+                    &mut sequence,
+                    key,
+                    payload.name.clone(),
+                    record.ts,
+                    ProgressKind::NotRecommended,
+                    None,
+                )
+            }
             _ => {}
         }
     }
@@ -120,9 +138,18 @@ pub fn read_segment_progress<S: HealthLogSource>(
             if let Some(by_name) = records.remove(&key) {
                 for (name, mut entries) in by_name {
                     entries.sort_by_key(|item| (item.ts, item.sequence));
+                    // A fresh selection can withdraw optional work. A later
+                    // dispatch restores the obligation; late worker outcomes
+                    // cannot restore work that is no longer recommended.
                     if entries
                         .iter()
-                        .any(|item| item.kind == ProgressKind::Dispatch)
+                        .rfind(|item| {
+                            matches!(
+                                item.kind,
+                                ProgressKind::Dispatch | ProgressKind::NotRecommended
+                            )
+                        })
+                        .is_some_and(|item| item.kind == ProgressKind::Dispatch)
                     {
                         dispatched.insert(name.clone());
                     }

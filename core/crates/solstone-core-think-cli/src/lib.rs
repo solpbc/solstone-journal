@@ -3641,6 +3641,28 @@ mod tests {
                 .iter()
                 .any(|request| request.name == "speaker_attribution")
         );
+        let health_source =
+            solstone_core_system_health::FilesystemHealthLogSource::new(journal.path());
+        let health_records = solstone_core_system_health::HealthLogSource::health_log_paths(
+            &health_source,
+            "20260813",
+        )
+        .unwrap();
+        let skips = health_records
+            .iter()
+            .flat_map(|path| {
+                fs::read_to_string(path)
+                    .unwrap()
+                    .lines()
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .filter_map(|line| serde_json::from_str::<Value>(&line).ok())
+            .filter(|row| row["event"] == "talent.skip" && row["reason"] == "not_recommended")
+            .collect::<Vec<_>>();
+        assert_eq!(skips.len(), 1);
+        assert_eq!(skips[0]["name"], "speaker_attribution");
+        assert_eq!(skips[0]["stream"], "default");
         let path = journal.path().join("chronicle/20260813/default/090000_300");
         fs::write(path.join("audio.npz"), []).unwrap();
         let second = run_segment(&context, journal.path(), "090000_300", true, false);
