@@ -52,6 +52,8 @@ struct Inner {
     queued: HashMap<String, Work>,
     running: HashMap<String, RunningUse>,
     finalizers: HashSet<String>,
+    // Retain admission through durable completion, after the finalizer is taken.
+    admitted: HashSet<String>,
     pending_spawns: usize,
     accepting: bool,
 }
@@ -109,12 +111,20 @@ impl CortexState {
             eprintln!("cortex: request without name for {use_id}");
             return;
         };
-        if !self
-            .inner
-            .lock()
-            .expect("cortex state lock poisoned")
-            .accepting
-        {
+        let mut inner = self.inner.lock().expect("cortex state lock poisoned");
+        if !inner.accepting {
+            return;
+        }
+        if inner.admitted.contains(&use_id) {
+            if inner
+                .requests
+                .get(&use_id)
+                .and_then(|request| request.get("name"))
+                .and_then(Value::as_str)
+                != Some(name)
+            {
+                eprintln!("cortex: refusing conflicting talent for active use {use_id}");
+            }
             return;
         }
         let Ok(Some((active, identity))) = self.store.claim(name, &use_id, &request) else {
@@ -127,13 +137,12 @@ impl CortexState {
             identity,
             request: request.clone(),
         };
-        {
-            let mut inner = self.inner.lock().expect("cortex state lock poisoned");
-            inner.requests.insert(use_id.clone(), request.clone());
-            inner.finalizers.insert(use_id.clone());
-            inner.pending_spawns += 1;
-            inner.queued.insert(use_id.clone(), work.clone());
-        }
+        inner.requests.insert(use_id.clone(), request.clone());
+        inner.finalizers.insert(use_id.clone());
+        inner.admitted.insert(use_id.clone());
+        inner.pending_spawns += 1;
+        inner.queued.insert(use_id.clone(), work.clone());
+        drop(inner);
         if self.spawn.send(work.clone()).is_err() {
             self.abort(work, "Spawn worker error: spawn queue unavailable".into());
             self.spawn_finished();
@@ -274,6 +283,22 @@ impl CortexState {
         Some(FinalizedUse { running, request })
     }
 
+    fn complete(
+        &self,
+        use_id: &str,
+        name: &str,
+        identity: CortexUseFileIdentity,
+        request: Option<&Map<String, Value>>,
+    ) {
+        if self.store.complete(use_id, name, identity, request) {
+            self.inner
+                .lock()
+                .expect("cortex state lock poisoned")
+                .admitted
+                .remove(use_id);
+        }
+    }
+
     pub(crate) fn abort(&self, work: Work, message: String) {
         // Abort deliberately uses the same compare-and-take as normal completion:
         // losing the race means another terminal path already removed this use.
@@ -283,7 +308,7 @@ impl CortexState {
         let mut event = synthesized_error(&work.use_id, message);
         event.insert("reason_code".into(), Value::String("talent_aborted".into()));
         let _ = self.store.append_active(&work.active, &event);
-        self.store.complete(
+        self.complete(
             &work.use_id,
             &work.talent_name,
             work.identity,
@@ -318,7 +343,7 @@ impl CortexState {
             );
             self.append_and_relay(use_id, &running.active, error);
         }
-        self.store.complete(
+        self.complete(
             use_id,
             &running.talent_name,
             running.identity,
@@ -338,7 +363,7 @@ impl CortexState {
         let mut event = synthesized_error(use_id, "Talent cancelled by watchdog");
         event.insert("reason_code".into(), Value::String(reason.to_owned()));
         self.append_and_relay(use_id, &running.active, event);
-        self.store.complete(
+        self.complete(
             use_id,
             &running.talent_name,
             running.identity,
@@ -354,7 +379,7 @@ impl CortexState {
             synthesized_error(use_id, format!("Talent timed out after {seconds} seconds"));
         event.insert("reason_code".into(), Value::String("talent_timeout".into()));
         self.append_and_relay(use_id, &running.active, event);
-        self.store.complete(
+        self.complete(
             use_id,
             &running.talent_name,
             running.identity,
@@ -454,6 +479,150 @@ mod tests {
     }
 
     #[test]
+    fn conflicting_active_id_cannot_claim_a_second_talent_or_replace_state() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let (spawn_tx, spawn_rx) = mpsc::channel();
+        let (cancel_tx, _) = mpsc::channel();
+        let (outbound_tx, outbound_rx) = mpsc::channel();
+        let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
+        let original: Map<String, Value> = serde_json::from_value(serde_json::json!({
+            "use_id":"1700000000000", "name":"first", "prompt":"original",
+        }))
+        .unwrap();
+        state.request(original.clone());
+        let work = spawn_rx.recv().unwrap();
+        let conflict = serde_json::from_value(serde_json::json!({
+            "use_id":"1700000000000", "name":"second", "prompt":"conflict",
+        }))
+        .unwrap();
+        let retry = state.clone();
+        std::thread::spawn(move || retry.request(conflict))
+            .join()
+            .unwrap();
+        state.request(original.clone());
+        assert_eq!(state.request_for(&work.use_id), Some(original));
+        assert_eq!(state.queue_depth(), 1);
+        assert!(spawn_rx.try_recv().is_err());
+        assert!(outbound_rx.try_recv().is_err());
+        assert!(!directory.path().join("talents/second").exists());
+        state.abort(work, "original ends".into());
+        let log =
+            fs::read_to_string(directory.path().join("talents/first/1700000000000.jsonl")).unwrap();
+        assert!(log.contains("original ends"));
+        assert!(!log.contains("conflict"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reserved_ids_isolate_cancellation_finalization_and_recovery() {
+        use solstone_core_journal_io::cortex_use::allocate_cortex_use_id;
+        use solstone_core_system::process::{self, Disposition, LaunchError};
+        use std::time::Duration;
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let (spawn_tx, spawn_rx) = mpsc::channel();
+        let (cancel_tx, cancel_rx) = mpsc::channel();
+        let (outbound_tx, _) = mpsc::channel();
+        let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
+        let mut work = Vec::new();
+        for name in ["cancelled", "finished", "recovered"] {
+            let id = allocate_cortex_use_id(directory.path(), 1_700_000_000_000)
+                .unwrap()
+                .to_string();
+            state.request(
+                serde_json::from_value(serde_json::json!({
+                    "event":"request", "use_id":id, "name":name, "prompt":name,
+                }))
+                .unwrap(),
+            );
+            work.push(spawn_rx.recv().unwrap());
+        }
+        for item in &work[..2] {
+            let mut authority = process::launch(
+                Disposition::IndependentBoundedHelper {
+                    timeout: Duration::from_secs(2),
+                },
+                || std::process::Command::new("/bin/true").spawn(),
+                Box::new(|child, _| child.kill().map_err(LaunchError::Terminate)),
+            )
+            .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while authority.poll().unwrap().is_none() {
+                assert!(Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            // Model the interval after child exit, before Cortex handles completion.
+            state.spawn_begin(&item.use_id);
+            state.spawn_started(
+                item,
+                Arc::new(Mutex::new(authority)),
+                Arc::new(Mutex::new(Vec::new())),
+            );
+            state.spawn_finished();
+        }
+        state.queue_cancel(
+            &serde_json::from_value(serde_json::json!({
+                "use_id":work[0].use_id, "reason_code":"test_cancel",
+            }))
+            .unwrap(),
+        );
+        let (cancelled, reason) = cancel_rx.recv().unwrap();
+        assert_eq!(cancelled, work[0].use_id);
+        assert!(state.cancel_running(&cancelled, &reason).is_some());
+        assert!(state.request_for(&work[1].use_id).is_some());
+        assert!(state.request_for(&work[2].use_id).is_some());
+        state.append_and_relay(&work[1].use_id, &work[1].active,
+            serde_json::from_value(serde_json::json!({"event":"finish", "use_id":work[1].use_id, "result":"second result"})).unwrap());
+        state.finish(&work[1].use_id, 0);
+        state.finish(&work[0].use_id, 0); // A late completion cannot finalize twice.
+        assert_eq!(
+            state.inner.lock().unwrap().admitted,
+            HashSet::from([work[2].use_id.clone()])
+        );
+        drop(state);
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        store.recover().unwrap();
+        for (index, expected) in [(0, "test_cancel"), (1, "second result"), (2, "error")] {
+            let log = fs::read_to_string(
+                directory
+                    .path()
+                    .join("talents")
+                    .join(&work[index].talent_name)
+                    .join(format!("{}.jsonl", work[index].use_id)),
+            )
+            .unwrap();
+            assert!(log.contains(expected), "{log}");
+            assert!(!work[index].active.exists());
+        }
+        let day = chrono::DateTime::from_timestamp_millis(work[0].use_id.parse().unwrap())
+            .unwrap()
+            .with_timezone(&chrono::Local)
+            .format("%Y%m%d")
+            .to_string();
+        let rows = fs::read_to_string(
+            directory
+                .path()
+                .join("talents")
+                .join(format!("{day}.jsonl")),
+        )
+        .unwrap();
+        let rows = rows
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 3);
+        for item in work {
+            assert_eq!(
+                rows.iter()
+                    .filter(|row| row["use_id"] == item.use_id)
+                    .count(),
+                1
+            );
+        }
+    }
+
+    #[test]
     fn compare_and_take_finalization_allows_only_one_terminal_owner() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
@@ -469,6 +638,10 @@ mod tests {
         );
         assert!(state.claim_finalize("one").is_some());
         assert!(state.claim_finalize("one").is_none());
+        state.request(
+            serde_json::from_value(serde_json::json!({"use_id":"one", "name":"other"})).unwrap(),
+        );
+        assert!(!directory.path().join("talents/other").exists());
     }
 
     #[test]

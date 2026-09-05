@@ -15,6 +15,7 @@ workspace = true
 [dependencies]
 serde_json.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
+solstone-core-journal-io.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "time"] }
 
 [dev-dependencies]

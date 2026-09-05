@@ -10,7 +10,8 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use solstone_core_cortex_client::{
-    CortexRequest, CortexRequestClient, CortexRequestPolicy, DispatchError,
+    CortexRequest, CortexRequestClient, CortexRequestPolicy, DispatchError, UseEndState,
+    UseIdAllocator, get_use_end_state,
 };
 
 const IO_DEADLINE: Duration = Duration::from_secs(2);
@@ -30,7 +31,7 @@ fn bind(journal: &Path) -> UnixListener {
 fn write_use(journal: &Path, use_id: &str, active: bool, body: &[u8]) {
     let suffix = if active { "_active.jsonl" } else { ".jsonl" };
     let path = journal
-        .join("talents/test")
+        .join("talents/steward")
         .join(format!("{use_id}{suffix}"));
     fs::create_dir_all(path.parent().expect("use file parent")).expect("create talent directory");
     fs::write(path, body).expect("write durable use file");
@@ -98,12 +99,12 @@ fn successful_write_claims_active_and_completed_existing_use_files() {
         (
             "active",
             true,
-            br#"{"event":"request","use_id":"active"}"#.as_slice(),
+            br#"{"event":"request","use_id":"active","name":"steward"}"#.as_slice(),
         ),
         (
             "completed",
             false,
-            br#"{"event":"finish","use_id":"completed"}"#.as_slice(),
+            br#"{"event":"finish","use_id":"completed","name":"steward"}"#.as_slice(),
         ),
     ] {
         let journal = tempfile::tempdir().expect("claim journal");
@@ -155,5 +156,107 @@ fn unavailable_transport_and_unreadable_claim_storage_are_unavailable() {
     assert_eq!(
         dispatch(unreadable.path(), "storage"),
         Err(DispatchError::Unavailable)
+    );
+}
+
+#[test]
+fn another_talents_matching_id_does_not_acknowledge_the_request() {
+    let journal = tempfile::tempdir().unwrap();
+    let listener = bind(journal.path());
+    fs::create_dir_all(journal.path().join("talents/other")).unwrap();
+    fs::write(
+        journal.path().join("talents/other/shared_active.jsonl"),
+        br#"{"event":"request","use_id":"shared","name":"other"}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        dispatch(journal.path(), "shared"),
+        Err(DispatchError::NotClaimed {
+            use_id: "shared".into()
+        })
+    );
+    accept_lines(&listener, 3, "shared");
+}
+
+#[test]
+fn independent_clients_at_the_same_clock_keep_durable_outcomes_separate() {
+    let journal = tempfile::tempdir().unwrap();
+    let listener = bind(journal.path());
+    listener.set_nonblocking(true).unwrap();
+    let root = journal.path().to_path_buf();
+    let server = std::thread::spawn(move || {
+        for _ in 0..2 {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                        assert!(Instant::now() < deadline, "client did not send");
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("accept: {error}"),
+                }
+            };
+            stream.set_read_timeout(Some(IO_DEADLINE)).unwrap();
+            let mut body = String::new();
+            stream.read_to_string(&mut body).unwrap();
+            let request: serde_json::Value = serde_json::from_str(&body).unwrap();
+            let name = request["name"].as_str().unwrap();
+            let id = request["use_id"].as_str().unwrap();
+            let directory = root.join("talents").join(name);
+            fs::create_dir_all(&directory).unwrap();
+            let event = if name == "first" { "finish" } else { "error" };
+            body.push_str(&format!("{{\"event\":\"{event}\",\"use_id\":\"{id}\"}}\n"));
+            fs::write(directory.join(format!("{id}.jsonl")), body).unwrap();
+        }
+    });
+    let make_client = || {
+        CortexRequestClient::with_allocator(
+            journal.path(),
+            CortexRequestPolicy::interactive(),
+            UseIdAllocator::new(|| Some(1_700_000_000_000)),
+        )
+    };
+    let first = make_client();
+    let second = make_client();
+    let (first_id, second_id) = runtime().block_on(async {
+        let first_request = CortexRequest::new("first prompt", "first");
+        let second_request = CortexRequest::new("second prompt", "second");
+        tokio::join!(
+            first.dispatch(&first_request),
+            second.dispatch(&second_request)
+        )
+    });
+    server.join().unwrap();
+    let first_id = first_id.unwrap();
+    let second_id = second_id.unwrap();
+    assert_ne!(first_id, second_id);
+    assert_eq!(first_id, "1700000000000");
+    assert_eq!(second_id, "1700000000001");
+    assert_eq!(
+        get_use_end_state(journal.path(), &first_id).unwrap(),
+        UseEndState::Finish
+    );
+    assert_eq!(
+        get_use_end_state(journal.path(), &second_id).unwrap(),
+        UseEndState::Error
+    );
+}
+
+#[test]
+fn damaged_counter_refuses_before_request_publication() {
+    let journal = tempfile::tempdir().unwrap();
+    let listener = bind(journal.path());
+    listener.set_nonblocking(true).unwrap();
+    fs::write(journal.path().join("health/cortex-use-id.json"), b"damaged").unwrap();
+    let result = runtime().block_on(
+        CortexRequestClient::new(journal.path(), CortexRequestPolicy::interactive())
+            .dispatch(&CortexRequest::new("prompt", "steward")),
+    );
+    assert_eq!(result, Err(DispatchError::Unavailable));
+    assert!(matches!(listener.accept(), Err(error) if error.kind() == io::ErrorKind::WouldBlock));
+    assert_eq!(
+        fs::read(journal.path().join("health/cortex-use-id.json")).unwrap(),
+        b"damaged"
     );
 }

@@ -9,6 +9,7 @@ use std::path::{Component, Path};
 use serde_json::Value;
 
 mod admission;
+mod allocation;
 mod catalog;
 pub(crate) mod census;
 mod lock;
@@ -29,6 +30,7 @@ pub use admission::{
     complete_active_use_with_test_timing, recover_active_use_with_test_timing,
     run_with_cortex_admission_fault,
 };
+pub use allocation::allocate_cortex_use_id;
 pub use catalog::{
     CortexCatalogError, CortexRecoveryCandidate, CortexRecoveryCatalog, CortexRecoveryDisposition,
     CortexRecoveryTalent, build_recovery_catalog,

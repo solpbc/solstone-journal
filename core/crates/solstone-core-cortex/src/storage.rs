@@ -144,16 +144,18 @@ impl CortexStore {
         name: &str,
         identity: CortexUseFileIdentity,
         request: Option<&Map<String, Value>>,
-    ) {
+    ) -> bool {
         if let Err(error) = complete_active_use(&self.authority, name, use_id, identity) {
             eprintln!("cortex: failed to complete talent file {use_id}: {error}");
-            return;
+            return false;
         }
         let completed = self
             .active_path(name, use_id)
             .with_file_name(format!("{use_id}.jsonl"));
-        let Some(request) = request else { return };
-        self.append_day_index(use_id, request, &completed);
+        if let Some(request) = request {
+            self.append_day_index(use_id, request, &completed);
+        }
+        true
     }
 
     pub(crate) fn has_finish(&self, active: &Path) -> bool {

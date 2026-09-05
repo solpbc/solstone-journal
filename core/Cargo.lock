@@ -3844,6 +3844,7 @@ version = "2.0.0"
 dependencies = [
  "serde_json",
  "solstone-core-callosum",
+ "solstone-core-journal-io",
  "tempfile",
  "tokio",
 ]

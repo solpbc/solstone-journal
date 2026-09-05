@@ -12,6 +12,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value};
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender, CallosumSocketConnection};
+use solstone_core_journal_io::cortex_use::{allocate_cortex_use_id, talent_directory_name};
 
 const CLAIM_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const OUTCOME_POLL_INTERVAL: Duration = Duration::from_millis(500);
@@ -173,8 +174,8 @@ impl From<DispatchError> for CortexClientError {
     }
 }
 
-/// One flat Cortex request. `config` is merged after the required fields, as in
-/// the reference client, so the think orchestrator can carry its full config.
+/// One flat Cortex request. Configuration cannot replace its allocated identity
+/// or talent name.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CortexRequest {
     pub prompt: String,
@@ -204,6 +205,8 @@ impl CortexRequest {
         extra.insert("prompt".to_owned(), Value::String(self.prompt.clone()));
         extra.insert("name".to_owned(), Value::String(self.name.clone()));
         extra.extend(self.config.clone());
+        extra.insert("name".to_owned(), Value::String(self.name.clone()));
+        extra.insert("use_id".to_owned(), Value::String(use_id.to_owned()));
         let envelope = CallosumEnvelope {
             tract: "cortex".to_owned(),
             event: "request".to_owned(),
@@ -244,7 +247,10 @@ impl UseIdAllocator {
     pub fn next(&self) -> Result<i64, DispatchError> {
         let now = (self.clock)().ok_or(DispatchError::Unavailable)?;
         let mut previous = self.previous.lock().expect("use-id mutex is not poisoned");
-        let issued = previous.map_or(now, |last| now.max(last.saturating_add(1)));
+        let issued = match *previous {
+            Some(last) => now.max(last.checked_add(1).ok_or(DispatchError::Unavailable)?),
+            None => now,
+        };
         *previous = Some(issued);
         Ok(issued)
     }
@@ -277,7 +283,10 @@ impl CortexRequestClient {
     }
 
     pub async fn dispatch(&self, request: &CortexRequest) -> Result<String, DispatchError> {
-        let ts = self.use_ids.next()?;
+        let ts = allocate_cortex_use_id(&self.journal, self.use_ids.next()?).map_err(|error| {
+            eprintln!("cortex: could not reserve use identity: {error}");
+            DispatchError::Unavailable
+        })?;
         self.dispatch_with_use_id(request, ts, ts.to_string()).await
     }
 
@@ -306,7 +315,7 @@ impl CortexRequestClient {
             sender
                 .send_line(&line)
                 .map_err(|_| DispatchError::Unavailable)?;
-            if wait_for_durable_claim(&talents_dir, &use_id, *window)
+            if wait_for_durable_claim(&talents_dir, &request.name, &use_id, *window)
                 .await
                 .map_err(|_| DispatchError::Unavailable)?
             {
@@ -339,10 +348,11 @@ impl CortexRequestClient {
 /// Poll for a durable Cortex use file after one broadcast.
 async fn wait_for_durable_claim(
     talents_dir: &Path,
+    name: &str,
     use_id: &str,
     window: Duration,
 ) -> Result<bool, io::Error> {
-    if use_file_status(talents_dir, use_id)? != UseFileStatus::NotFound {
+    if request_is_claimed(talents_dir, name, use_id)? {
         return Ok(true);
     }
     let deadline = tokio::time::Instant::now() + window;
@@ -352,10 +362,24 @@ async fn wait_for_durable_claim(
             return Ok(false);
         }
         tokio::time::sleep(CLAIM_POLL_INTERVAL.min(remaining)).await;
-        if use_file_status(talents_dir, use_id)? != UseFileStatus::NotFound {
+        if request_is_claimed(talents_dir, name, use_id)? {
             return Ok(true);
         }
     }
+}
+
+fn request_is_claimed(talents_dir: &Path, name: &str, use_id: &str) -> io::Result<bool> {
+    let directory = talents_dir.join(talent_directory_name(name));
+    for suffix in [".jsonl", "_active.jsonl"] {
+        let path = directory.join(format!("{use_id}{suffix}"));
+        if read_use_request(&path)?.is_some_and(|request| {
+            request.get("use_id").and_then(Value::as_str) == Some(use_id)
+                && request.get("name").and_then(Value::as_str) == Some(name)
+        }) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Read the last recognized terminal event from a durable use log.
@@ -427,23 +451,25 @@ fn find_use_file(
 }
 
 fn candidate_matches(path: &Path, use_id: &str) -> io::Result<bool> {
+    Ok(read_use_request(path)?
+        .is_some_and(|event| event.get("use_id").and_then(Value::as_str) == Some(use_id)))
+}
+
+fn read_use_request(path: &Path) -> io::Result<Option<Value>> {
     let file = match File::open(path) {
         Ok(file) => file,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error),
     };
     let Some(line) = BufReader::new(file).lines().next() else {
-        return Ok(false);
+        return Ok(None);
     };
     let line = line?;
     let line = line.trim();
     if line.is_empty() {
-        return Ok(false);
+        return Ok(None);
     }
-    Ok(match serde_json::from_str::<Value>(line) {
-        Ok(event) => event.get("use_id").and_then(Value::as_str) == Some(use_id),
-        Err(_) => false,
-    })
+    Ok(serde_json::from_str(line).ok())
 }
 
 fn read_events_at(path: &Path) -> Result<Vec<Value>, io::Error> {
@@ -671,6 +697,16 @@ mod tests {
         assert_eq!(value["output"], "md");
         assert_eq!(value["refresh"], true);
         assert_eq!(value["schedule"], "daily");
+    }
+
+    #[test]
+    fn request_config_cannot_replace_reserved_identity_or_talent() {
+        let config =
+            serde_json::from_value(serde_json::json!({"use_id":"other", "name":"other"})).unwrap();
+        let request = CortexRequest::new("prompt", "talent").with_config(config);
+        let value: Value = serde_json::from_str(&request.request_line(42, "42").unwrap()).unwrap();
+        assert_eq!(value["use_id"], "42");
+        assert_eq!(value["name"], "talent");
     }
 
     #[test]
