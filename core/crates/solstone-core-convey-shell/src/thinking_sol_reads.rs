@@ -19,7 +19,6 @@ use solstone_core_facets::{list_declared_facet_names, read_facet_declaration};
 use solstone_core_facets_web::date_nav_index;
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_journal_io::paths::resolve_journal_path;
-use solstone_core_model_pricing::{Usage as PricingUsage, agent_cost};
 use solstone_core_system::catchup::updated_days;
 use solstone_core_talent_cli::compose_talent;
 use solstone_core_talent_config::{
@@ -437,7 +436,6 @@ fn read_day_index(path: &Path, facet_filter: Option<&str>) -> Vec<Value> {
                 "runtime_seconds": entry.get("runtime_seconds").cloned().unwrap_or(Value::Null),
                 "thinking_count": entry.get("thinking_count").cloned().unwrap_or(Value::Null),
                 "tool_count": entry.get("tool_count").cloned().unwrap_or(Value::Null),
-                "cost": entry.get("cost").cloned().unwrap_or(Value::Null),
                 "model": entry.get("model").cloned().unwrap_or(Value::Null),
                 "provider": entry.get("provider").cloned().unwrap_or(Value::Null),
                 "error_message": entry.get("error_message").cloned().unwrap_or(Value::Null),
@@ -481,7 +479,6 @@ fn active_use(path: &Path, journal: &Path) -> Option<(String, Value)> {
             "runtime_seconds": Value::Null,
             "thinking_count": parsed.thinking_count,
             "tool_count": parsed.tool_count,
-            "cost": Value::Null,
             "model": parsed.model,
             "provider": request.get("provider").cloned().or(parsed.provider).unwrap_or(Value::Null),
             "error_message": Value::Null,
@@ -615,7 +612,6 @@ fn read_run(path: &Path, journal: &Path, use_id: &str) -> Result<Value, RunError
         .filter(|_| start != 0)
         .map(|end| (end - start) as f64 / 1000.0);
     let end_state = parsed.end_state.as_deref().unwrap_or("unknown");
-    let cost = run_cost(&parsed.model, parsed.usage.as_ref());
     Ok(json!({
         "id": use_id,
         "name": request.get("name").cloned().unwrap_or(Value::Null),
@@ -627,7 +623,6 @@ fn read_run(path: &Path, journal: &Path, use_id: &str) -> Result<Value, RunError
         "runtime_seconds": runtime_seconds,
         "thinking_count": parsed.thinking_count,
         "tool_count": parsed.tool_count,
-        "cost": cost,
         "model": parsed.model,
         "provider": request.get("provider").cloned().or(parsed.provider).unwrap_or(Value::Null),
         "error_message": parsed.error_message,
@@ -636,35 +631,6 @@ fn read_run(path: &Path, journal: &Path, use_id: &str) -> Result<Value, RunError
         "events": parsed.events,
         "day": request.get("day").cloned().unwrap_or_else(|| json!("")),
     }))
-}
-
-fn run_cost(model: &Value, usage: Option<&Value>) -> Option<f64> {
-    // Match calc_agent_cost: reject missing model and falsey/non-mapping usage
-    // before model_version can replace the start-event model.
-    let model = model.as_str().filter(|model| !model.is_empty())?;
-    let usage = usage?.as_object().filter(|usage| !usage.is_empty())?;
-    agent_cost(
-        Some(model),
-        Some(PricingUsage {
-            input_tokens: usage
-                .get("input_tokens")
-                .and_then(Value::as_u64)
-                .unwrap_or_default(),
-            output_tokens: usage
-                .get("output_tokens")
-                .and_then(Value::as_u64)
-                .unwrap_or_default(),
-            reasoning_tokens: usage
-                .get("reasoning_tokens")
-                .and_then(Value::as_u64)
-                .unwrap_or_default(),
-            cached_tokens: usage
-                .get("cached_tokens")
-                .and_then(Value::as_u64)
-                .unwrap_or_default(),
-            model_version: usage.get("model_version").and_then(Value::as_str),
-        }),
-    )
 }
 
 struct ParsedEvents {

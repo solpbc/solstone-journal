@@ -731,7 +731,7 @@
         <button type="button" class="thinking-runs-tab" id="thinkingSetupTab" role="tab" aria-selected="true" aria-controls="thinkingSetupPanel" tabindex="0">setup</button>
         <button type="button" class="thinking-runs-tab" id="thinkingRunsTab" role="tab" aria-selected="false" aria-controls="thinkingRunsPanel" tabindex="-1">runs</button>
       </div>
-      <p class="intro">processing needs an engine. choose one. you can switch anytime.</p>
+      <p class="intro" id="thinkingIntro">loading your processing setup…</p>
     </header>
 
     <section class="view" data-view="main" id="thinkingSetupPanel" role="tabpanel" aria-labelledby="thinkingSetupTab">
@@ -951,7 +951,6 @@
           <div class="inline-actions">
             <button type="button" class="btn" id="byoCustomCheck"></button>
           </div>
-          <p class="micro" id="byoCustomCostNote"></p>
           <div class="message" id="byoCustomStatus" aria-live="polite"></div>
         </section>
         <div class="message" id="byoModelStatus" aria-live="polite"></div>

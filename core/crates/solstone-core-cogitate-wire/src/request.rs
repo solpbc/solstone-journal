@@ -27,7 +27,6 @@ pub struct CogitateRequest {
     pub output_path: Option<String>,
     pub schedule: Option<String>,
     pub max_turns: usize,
-    pub cost_cap_usd: f64,
     pub context_window: Option<u64>,
     pub timeout_ms: u64,
     pub read_call_budget: i64,
@@ -82,7 +81,6 @@ impl CogitateRequest {
             output_path: optional_string(object, "output_path")?,
             schedule: optional_string(object, "schedule")?,
             max_turns: required_positive_usize(object, "max_turns")?,
-            cost_cap_usd: required_positive_f64(object, "cost_cap_usd")?,
             context_window: optional_positive_u64(object, "context_window")?,
             timeout_ms: required_positive_u64(object, "timeout_ms")?,
             read_call_budget: required_positive_i64(object, "read_call_budget")?,
@@ -106,7 +104,6 @@ impl CogitateRequest {
             "output_path": self.output_path,
             "schedule": self.schedule,
             "max_turns": self.max_turns,
-            "cost_cap_usd": self.cost_cap_usd,
             "context_window": self.context_window,
             "timeout_ms": self.timeout_ms,
             "read_call_budget": self.read_call_budget,
@@ -136,7 +133,6 @@ impl CogitateRequest {
                 outbound_approval: self.outbound_approval.clone(),
                 expects_emit_final,
                 max_turns: self.max_turns,
-                cost_cap_usd: self.cost_cap_usd,
                 context_window: self.context_window,
                 timeout: Duration::from_millis(self.timeout_ms),
                 read_call_budget: self.read_call_budget,
@@ -162,7 +158,6 @@ fn reject_unknown_fields(object: &Map<String, Value>) -> Result<(), MalformedReq
         "output_path",
         "schedule",
         "max_turns",
-        "cost_cap_usd",
         "context_window",
         "timeout_ms",
         "read_call_budget",
@@ -278,17 +273,6 @@ fn optional_positive_u64(
             .map(Some)
             .ok_or_else(|| malformed(format!("{field} must be a positive integer or null"))),
     }
-}
-
-fn required_positive_f64(
-    object: &Map<String, Value>,
-    field: &str,
-) -> Result<f64, MalformedRequest> {
-    object
-        .get(field)
-        .and_then(Value::as_f64)
-        .filter(|value| value.is_finite() && *value > 0.0)
-        .ok_or_else(|| malformed(format!("{field} must be a positive number")))
 }
 
 fn malformed(message: impl Into<String>) -> MalformedRequest {

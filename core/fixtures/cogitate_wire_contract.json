@@ -6,7 +6,6 @@
       "schema": "string",
       "access_tier": "string",
       "max_turns": "positive_integer",
-      "cost_cap_usd": "positive_number",
       "context_window": "null_or_positive_integer",
       "timeout_ms": "positive_integer",
       "read_call_budget": "positive_integer",

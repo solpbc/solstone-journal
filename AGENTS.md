@@ -93,7 +93,6 @@ Verified against `Makefile`. Grouped by use.
 | `make install` | **Retired.** Install the journal from the distribution tree; develop against this checkout with Cargo directly. |
 | `make skills` | Regenerate generated router references, then rewrite the `solstone` + `journal` router skill symlinks into `journal/`. |
 | `make update` | Upgrade all deps to latest, regenerate `uv.lock` (the remaining `scripts/` Python tooling's own dependencies — not a product dependency set). |
-| `make update-prices` | Refresh genai-prices model-cost data when adding a new provider model or when pricing tests fail. |
 | `make clean` | Remove build artifacts, caches, and the skill symlink dirs (`journal/.agents/`, `journal/.claude/`). Does not touch `.venv/`. Before `cargo clean`, refuses if a live process has an open file, mapping, cwd, or executable under this checkout's `RUST_TARGET_DIR` (`core/target`, or `CARGO_TARGET_DIR` if set) and prints blocker pids+paths. Override with `CLEAN_FORCE=1`. |
 | `make clean-install` | Runs `clean` first (same live-use refuse / `CLEAN_FORCE=1`), then deletes `.venv/` and `.installed`, then exits 1 as retired. |
 

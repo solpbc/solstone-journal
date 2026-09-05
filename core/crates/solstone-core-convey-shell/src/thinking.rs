@@ -1485,7 +1485,17 @@ mod tests {
             .iter()
             .find(|case| case["path"] == "/app/thinking/api/state")
             .expect("state case");
-        assert_eq!(body["copy"], expected["json"]["copy"]);
+        // Dollar estimates were retired after this capture; all other copy stays pinned.
+        let mut expected_copy = expected["json"]["copy"].clone();
+        expected_copy["byo_setup"]
+            .as_object_mut()
+            .unwrap()
+            .remove("custom_cost_note");
+        expected_copy["byo_setup"]["tier_blurb_top"] =
+            json!("the most capable, for the heaviest thinking.");
+        expected_copy["byo_setup"]["tier_blurb_lite"] =
+            json!("light and quick. tuned for small models, so this one does the job well.");
+        assert_eq!(body["copy"], expected_copy);
         let _ = fs::remove_dir_all(root);
     }
 

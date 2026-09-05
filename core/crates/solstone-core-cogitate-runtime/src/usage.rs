@@ -63,16 +63,6 @@ impl Usage {
         self.reasoning_tokens = self.reasoning_tokens.saturating_add(turn.reasoning_tokens);
         self.requests = self.requests.saturating_add(turn.requests);
     }
-
-    /// The reference's conservative cost fallback. Generate-wire exposes no
-    /// accumulated SDK price, so this native runtime always takes this path.
-    pub fn fallback_cost_usd(&self) -> f64 {
-        let fresh = self
-            .input_tokens
-            .saturating_sub(self.cached_tokens)
-            .saturating_add(self.output_tokens);
-        fresh as f64 * 0.000_002_5
-    }
 }
 
 fn number(value: &Value, key: &str) -> u64 {

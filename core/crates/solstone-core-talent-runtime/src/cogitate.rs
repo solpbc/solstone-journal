@@ -84,10 +84,6 @@ pub fn cogitate_request(
         "max_turns".to_owned(),
         json!(positive_usize(prepared.config.get("max_turns")).unwrap_or(60)),
     );
-    object.insert(
-        "cost_cap_usd".to_owned(),
-        json!(positive_f64(prepared.config.get("max_run_cost_usd")).unwrap_or(1.0)),
-    );
     if let Some(window) = positive_u64(prepared.config.get("context_window")) {
         object.insert("context_window".to_owned(), json!(window));
     }
@@ -193,12 +189,6 @@ fn positive_u64(value: Option<&Value>) -> Option<u64> {
 
 fn positive_i64(value: Option<&Value>) -> Option<i64> {
     value.and_then(Value::as_i64).filter(|value| *value > 0)
-}
-
-fn positive_f64(value: Option<&Value>) -> Option<f64> {
-    value
-        .and_then(Value::as_f64)
-        .filter(|value| value.is_finite() && *value > 0.0)
 }
 
 fn failed(prepared: &PreparedTalent, detail: impl Into<String>) -> RuntimeOutcome {
@@ -358,7 +348,6 @@ mod tests {
         );
         assert_eq!(weekly.talent_instruction.as_deref(), Some("weekly body"));
         assert_eq!(weekly.max_turns, 100);
-        assert_eq!(weekly.cost_cap_usd, 5.0);
         assert_eq!(weekly.timeout_ms, 600_000);
         assert_eq!(weekly.read_call_budget, 200);
         assert_eq!(weekly.sol_tool_name.as_deref(), Some("solstone"));
@@ -393,7 +382,6 @@ mod tests {
         assert_eq!(partner.schedule.as_deref(), Some("weekly"));
         assert_eq!(partner.output_path, None);
         assert_eq!(partner.max_turns, 100);
-        assert_eq!(partner.cost_cap_usd, 1.0);
         assert_eq!(partner.read_scope, ["chronicle/20260813"]);
         assert!(!partner.diagnostic);
         assert!(partner.to_run_input().config.expects_emit_final);
@@ -407,7 +395,6 @@ mod tests {
         assert_eq!(assist.schedule, None);
         assert_eq!(assist.output_path, None);
         assert_eq!(assist.max_turns, 60);
-        assert_eq!(assist.cost_cap_usd, 1.0);
         assert!(assist.read_scope.is_empty());
         assert_eq!(assist.initial_prompt, "add Alice Chen as a person");
         assert!(!assist.to_run_input().config.expects_emit_final);

@@ -123,7 +123,6 @@ mod tests {
             "schema": REQUEST_SCHEMA,
             "access_tier": "normal",
             "max_turns": 4,
-            "cost_cap_usd": 1.5,
             "timeout_ms": 30_000,
             "read_call_budget": 5,
             "model": "fixture-model",

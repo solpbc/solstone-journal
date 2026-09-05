@@ -32,7 +32,6 @@ fn request_value() -> Value {
         "output_path": null,
         "schedule": "daily",
         "max_turns": 4,
-        "cost_cap_usd": 1.5,
         "context_window": 4096,
         "timeout_ms": 30_000,
         "read_call_budget": 5,
@@ -107,7 +106,7 @@ fn request_contract_fixture_describes_the_record_the_parser_accepts() {
     );
 
     // The retired v1 fields must be gone from the description too.
-    for retired in ["expects_emit_final", "system_instruction"] {
+    for retired in ["expects_emit_final", "system_instruction", "cost_cap_usd"] {
         assert!(
             !declared.iter().any(|field| field == retired),
             "{retired:?} is retired in v2 but still declared in the fixture"
