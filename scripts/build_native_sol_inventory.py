@@ -55,7 +55,7 @@ FINAL_ORACLE_TOTAL = 166
 FINAL_HTTP_TOTAL = 161
 FINAL_JOURNAL_PYTHON_COMPAT_TOTAL = 2
 FINAL_TOP_LEVEL_IMPORT_TOTAL = 1
-FINAL_TOP_LEVEL_LINK_TOTAL = 2
+FINAL_TOP_LEVEL_LINK_TOTAL = 3
 FINAL_TOP_LEVEL_STATUS_TOTAL = 1
 FINAL_STUB_COUNTS = {"moved-stub": 2, "local": 1}
 FINAL_HTTP_GROUP_COUNTS = {
@@ -375,23 +375,24 @@ def discover(root: Path) -> list[AuthorityEntry]:
             "matches nothing would leave every gate below vacuously green"
         )
     entries: list[AuthorityEntry] = []
-    seen_paths: dict[tuple[str, ...], Path] = {}
+    seen_paths: dict[tuple[str, tuple[str, ...]], Path] = {}
     seen_operations: dict[str, Path] = {}
     for authority in authority_paths:
         if is_private_app_authority(authority, root):
             continue
         for entry in load_authority(authority, root):
-            if entry.path in seen_paths:
+            path_key = (entry.surface, entry.path)
+            if path_key in seen_paths:
                 raise ValueError(
-                    f"{entry.authority}: duplicate path {list(entry.path)!r}; "
-                    f"first declared in {seen_paths[entry.path]}"
+                    f"{entry.authority}: duplicate path {list(entry.path)!r} on surface {entry.surface!r}; "
+                    f"first declared in {seen_paths[path_key]}"
                 )
             if entry.operation_id in seen_operations:
                 raise ValueError(
                     f"{entry.authority}: duplicate operation_id {entry.operation_id!r}; "
                     f"first declared in {seen_operations[entry.operation_id]}"
                 )
-            seen_paths[entry.path] = entry.authority
+            seen_paths[path_key] = entry.authority
             seen_operations[entry.operation_id] = entry.authority
             entries.append(entry)
     return entries

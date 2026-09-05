@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde_json::Value as JsonValue;
 
 use crate::error::ClientError;
-use crate::seam::HttpTransport;
+use crate::seam::{HttpTransport, LinkStatusProbe};
 
 const API_CONNECT_SECONDS: u64 = 2;
 const API_READ_SECONDS: u64 = 20;
@@ -225,6 +225,41 @@ impl UreqHttpTransport {
             TimeoutPolicy::Upload => &self.upload_agent,
             TimeoutPolicy::SseOpen => &self.sse_agent,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct UreqLinkStatusProbe;
+
+impl LinkStatusProbe for UreqLinkStatusProbe {
+    fn probe(&self, port: u16) -> Result<HttpResponse, ClientError> {
+        let config = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .max_redirects(0)
+            .proxy(None)
+            .timeout_global(Some(Duration::from_secs(5)))
+            .build();
+        let agent = ureq::Agent::new_with_config(config);
+        let url = format!("http://127.0.0.1:{port}/_solstone/link/status");
+        let response = agent
+            .get(&url)
+            .header("Cache-Control", "no-cache")
+            .header("Pragma", "no-cache")
+            .call()
+            .map_err(|error| {
+                map_ureq_error(
+                    error,
+                    TimeoutPolicy::Api,
+                    HttpMethod::Get,
+                    "/_solstone/link/status",
+                )
+            })?;
+        collect_response(
+            response,
+            TimeoutPolicy::Api,
+            HttpMethod::Get,
+            "/_solstone/link/status",
+        )
     }
 }
 

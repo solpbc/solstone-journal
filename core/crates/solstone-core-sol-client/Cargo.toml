@@ -7,8 +7,10 @@ license.workspace = true
 publish = false
 
 [dependencies]
+base64 = "0.22.1"
 chrono = { workspace = true }
 rustix = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 solstone-core-format = { workspace = true }
 spl-core = { workspace = true }

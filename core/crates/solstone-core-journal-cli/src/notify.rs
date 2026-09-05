@@ -58,6 +58,7 @@ pub(crate) fn notify(owner_argv: &[OsString]) -> Outcome {
         notification_sink: Some(&sink),
         link_pairing: None,
         link_serve: None,
+        link_status_probe: None,
     }))
 }
 

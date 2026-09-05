@@ -41,6 +41,14 @@ pub fn resident_handler_bindings() -> &'static [ResidentHandler] {
 
 #[must_use]
 pub fn handler_for(path: &[&str]) -> Option<(&'static InventoryEntry, Handler)> {
+    handler_for_surface("sol-call", path)
+}
+
+#[must_use]
+pub fn handler_for_surface(
+    surface: &str,
+    path: &[&str],
+) -> Option<(&'static InventoryEntry, Handler)> {
     let mut handler_index = 0;
     for entry in inventory::ENTRIES {
         if entry.resident {
@@ -51,7 +59,7 @@ pub fn handler_for(path: &[&str]) -> Option<(&'static InventoryEntry, Handler)> 
             .copied()
             .expect("generated buffered handler table must match inventory");
         handler_index += 1;
-        if entry.path == path {
+        if entry.surface == surface && entry.path == path {
             return Some((entry, handler));
         }
     }
@@ -60,6 +68,14 @@ pub fn handler_for(path: &[&str]) -> Option<(&'static InventoryEntry, Handler)> 
 
 #[must_use]
 pub fn resident_handler_for(path: &[&str]) -> Option<(&'static InventoryEntry, ResidentHandler)> {
+    resident_handler_for_surface("sol-call", path)
+}
+
+#[must_use]
+pub fn resident_handler_for_surface(
+    surface: &str,
+    path: &[&str],
+) -> Option<(&'static InventoryEntry, ResidentHandler)> {
     let mut handler_index = 0;
     for entry in inventory::ENTRIES {
         if !entry.resident {
@@ -70,7 +86,7 @@ pub fn resident_handler_for(path: &[&str]) -> Option<(&'static InventoryEntry, R
             .copied()
             .expect("generated resident handler table must match inventory");
         handler_index += 1;
-        if entry.path == path {
+        if entry.surface == surface && entry.path == path {
             return Some((entry, handler));
         }
     }

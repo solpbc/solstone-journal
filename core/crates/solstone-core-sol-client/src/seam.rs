@@ -8,10 +8,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use serde::{Deserialize, Serialize};
+
 use crate::error::ClientError;
-use crate::transport::{
-    ApiRequest, HttpResponse, SseRequest, SseStream, UploadRequest, memory_sse_stream,
-    ordered_query_pairs,
+pub use crate::transport::{
+    ApiRequest, HttpResponse, SseRequest, SseStream, TimeoutPolicy, UploadRequest,
+    memory_sse_stream, ordered_query_pairs,
 };
 
 pub trait HttpTransport {
@@ -174,6 +176,7 @@ pub struct LinkServeBundle {
     pub home_attestation: String,
     pub instance_id: String,
     pub home_label: String,
+    pub paired_at: String,
     pub endpoints: Vec<LinkServeEndpoint>,
     pub local_endpoints: serde_json::Value,
 }
@@ -192,16 +195,17 @@ pub struct LinkServeRequest {
     pub policy: LinkServeCarrierPolicy,
     pub relay_origin: Option<String>,
     pub bundle: LinkServeBundle,
+    pub bundle_dir: PathBuf,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LinkServeFailure {
     pub reason: String,
     pub detail: String,
     pub at: f64,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LinkServeStatusSnapshot {
     pub health: String,
     pub state: String,
@@ -212,6 +216,29 @@ pub struct LinkServeStatusSnapshot {
     pub next_retry_at: Option<f64>,
     pub reconnect_count: u64,
     pub active_requests: usize,
+    pub journal_version: Option<String>,
+    pub journal_version_fresh: bool,
+    pub instance_id: String,
+    pub ca_fp_prefix: String,
+    pub paired_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LinkJournalMetadata {
+    pub instance_id: String,
+    pub ca_fp_prefix: String,
+    pub paired_at: String,
+    pub journal_version: String,
+    pub observed_at: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkServeRuntimeRecord {
+    pub port: u16,
+}
+
+pub trait LinkStatusProbe {
+    fn probe(&self, port: u16) -> Result<HttpResponse, ClientError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -349,6 +376,12 @@ pub struct RecordedMultipartFile {
 pub struct ScriptedHttpTransport {
     calls: RefCell<VecDeque<ExpectedHttpCall>>,
     recorded: RefCell<Vec<RecordedHttpCall>>,
+}
+
+#[derive(Debug, Default)]
+pub struct ScriptedLinkStatusProbe {
+    probes: RefCell<VecDeque<(u16, Result<HttpResponse, ClientError>)>>,
+    recorded: RefCell<Vec<u16>>,
 }
 
 #[derive(Debug, Default)]
@@ -645,6 +678,34 @@ impl HttpTransport for ScriptedHttpTransport {
             }
             other => panic!("expected HTTP SSE call, got {other:?}"),
         }
+    }
+}
+
+impl ScriptedLinkStatusProbe {
+    #[must_use]
+    pub fn new(probes: Vec<(u16, Result<HttpResponse, ClientError>)>) -> Self {
+        Self {
+            probes: RefCell::new(probes.into()),
+            recorded: RefCell::new(Vec::new()),
+        }
+    }
+
+    #[must_use]
+    pub fn recorded(&self) -> Vec<u16> {
+        self.recorded.borrow().clone()
+    }
+}
+
+impl LinkStatusProbe for ScriptedLinkStatusProbe {
+    fn probe(&self, port: u16) -> Result<HttpResponse, ClientError> {
+        self.recorded.borrow_mut().push(port);
+        let (expected_port, result) = self
+            .probes
+            .borrow_mut()
+            .pop_front()
+            .expect("scripted probe call available");
+        assert_eq!(port, expected_port, "scripted probe port mismatch");
+        result
     }
 }
 

@@ -4958,9 +4958,11 @@ dependencies = [
 name = "solstone-core-sol-client"
 version = "2.0.0"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "nix",
  "rustix",
+ "serde",
  "serde_json",
  "solstone-core-format",
  "spl-core",
@@ -5005,6 +5007,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower",
+ "ureq",
  "x509-parser",
 ]
 

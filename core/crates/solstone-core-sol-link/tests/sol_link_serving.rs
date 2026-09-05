@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
@@ -641,12 +642,14 @@ fn resident_serve_request(
             home_attestation: "attestation.jwt".to_string(),
             instance_id: "home-instance".to_string(),
             home_label: "Home".to_string(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
             endpoints: vec![LinkServeEndpoint {
                 host: "127.0.0.1".to_string(),
                 port: endpoint_port,
             }],
             local_endpoints: json!([{"ip": "127.0.0.1", "port": 7657}]),
         },
+        bundle_dir: PathBuf::new(),
     }
 }
 
