@@ -17,7 +17,7 @@ mod terminal_proof;
 pub use apply::{
     AppliedDisposition, AppliedFile, ApplyError, ApplyFailure, ApplyResult, apply_plan,
 };
-pub use manifest::write_ingest_manifest;
+pub use manifest::{complete_stream_advance, write_ingest_manifest};
 pub use notify::{IngestNotice, IngestNotifier};
 pub use quarantine::{QuarantineReceipt, quarantine_failed};
 pub use resolve::{

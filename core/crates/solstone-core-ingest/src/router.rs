@@ -764,6 +764,17 @@ fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> I
             ),
         );
     }
+    if solstone_core_ingest_resolve::complete_stream_advance(&applied.segment).is_err() {
+        return IngestCompletion::rejected(
+            ReasonCode::JournalWriteFailed,
+            outcome_error(
+                "failed",
+                ReasonCode::JournalWriteFailed,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot complete ingest stream metadata",
+            ),
+        );
+    }
     if !announced_files.is_empty() {
         let notice = IngestNotice {
             cid,
@@ -2091,6 +2102,104 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn second_segment_pre_advance_failures_retry_even_after_newer_admission() {
+        for fault in ["dirty", "receipt", "registry"] {
+            for newer in [false, true] {
+                let dir = root();
+                let root = dir.path().to_path_buf();
+                let spy = SpyNotifier::succeeding();
+                let app = api_router_with_notifier(&root, spy.clone());
+                let request = |key| envelope("20260804", key, json!([{"submitted":"audio.flac"}]));
+                assert_eq!(
+                    call_upload(&app, request("120000_1"), "audio.flac", b"first")
+                        .await
+                        .0,
+                    StatusCode::OK
+                );
+                let health = stream_marker_path(&root, "20260804");
+                let health_before = fs::read(&health).unwrap();
+                let registry = root.join("streams/device.json");
+                let registry_before = fs::read(&registry).unwrap();
+                let hook_root = root.clone();
+                set_before_apply_hook(move |plan| match fault {
+                    "dirty" => {
+                        fs::write(stream_marker_path(&hook_root, "20260804"), b"bad-json").unwrap()
+                    }
+                    "receipt" => {
+                        fs::create_dir_all(plan.segment.path().join("events.jsonl")).unwrap()
+                    }
+                    "registry" => {
+                        let path = hook_root.join("streams/device.json");
+                        fs::remove_file(&path).unwrap();
+                        fs::create_dir(&path).unwrap();
+                    }
+                    _ => unreachable!(),
+                });
+                let second = request("120001_1");
+                let (status, body) =
+                    call_upload(&app, second.clone(), "audio.flac", b"second").await;
+                clear_before_apply_hook();
+                assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{fault}");
+                assert_eq!(
+                    body["reason_code"],
+                    match fault {
+                        "dirty" => "stream_marker_bump_failed",
+                        "receipt" => "event_append_failed",
+                        _ => "stream_advance_failed",
+                    }
+                );
+                let segment = root.join("chronicle/20260804/device/120001_1");
+                let manifest = || -> Value {
+                    serde_json::from_slice(&fs::read(segment.join("ingest.json")).unwrap()).unwrap()
+                };
+                assert_eq!(manifest()["stream_advance_pending"], true);
+                assert_eq!(fs::read(segment.join("audio.flac")).unwrap(), b"second");
+                assert!(!segment.join("stream.json").exists());
+                match fault {
+                    "dirty" => fs::write(&health, &health_before).unwrap(),
+                    "receipt" => fs::remove_dir(segment.join("events.jsonl")).unwrap(),
+                    "registry" => {
+                        fs::remove_dir(&registry).unwrap();
+                        fs::write(&registry, &registry_before).unwrap();
+                    }
+                    _ => unreachable!(),
+                }
+                assert_eq!(stream_record(&root, "device")["seq"], 1);
+                if newer {
+                    assert_eq!(
+                        call_upload(&app, request("120002_1"), "audio.flac", b"newer")
+                            .await
+                            .0,
+                        StatusCode::OK
+                    );
+                }
+                let app = api_router_with_notifier(&root, spy.clone());
+                let (status, body) =
+                    call_upload(&app, second.clone(), "audio.flac", b"second").await;
+                assert_eq!(status, StatusCode::OK, "{fault}, newer={newer}: {body}");
+                assert_eq!(body["status"], "duplicate");
+                let sequence = if newer { 3 } else { 2 };
+                assert_eq!(stream_record(&root, "device")["seq"], sequence);
+                let marker: Value =
+                    serde_json::from_slice(&fs::read(segment.join("stream.json")).unwrap())
+                        .unwrap();
+                assert_eq!(marker["seq"], sequence);
+                assert_eq!(
+                    marker["prev_segment"],
+                    if newer { "120002_1" } else { "120000_1" }
+                );
+                assert_eq!(manifest()["stream_advance_pending"], false);
+                assert_eq!(
+                    call_upload(&app, second, "audio.flac", b"second").await.0,
+                    StatusCode::OK
+                );
+                assert_eq!(stream_record(&root, "device")["seq"], sequence);
+                assert_eq!(spy.calls.load(Ordering::SeqCst), if newer { 4 } else { 3 });
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn older_unmarked_retry_refuses_without_appending_the_segment_again() {
         let dir = root();
         let root = dir.path();
@@ -2419,11 +2528,10 @@ mod tests {
     async fn partial_append_failure_leaves_day_dirty_without_notification() {
         let dir = root();
         let root = dir.path().to_path_buf();
-        let segment = root.join("chronicle/20260804/device/120000_1");
-        fs::create_dir_all(segment.join("events.jsonl")).unwrap();
         let spy = SpyNotifier::succeeding();
         let app = api_router_with_notifier(&root, spy.clone());
         set_before_apply_hook(|plan| {
+            fs::create_dir_all(plan.segment.path().join("events.jsonl")).unwrap();
             fs::create_dir_all(plan.segment.path().join("notes.json")).unwrap();
         });
         let request = envelope(
@@ -2636,11 +2744,14 @@ mod tests {
         let dir = root();
         let root = dir.path().to_path_buf();
         let segment = root.join("chronicle/20260804/device/120000_1");
-        fs::create_dir_all(segment.join("events.jsonl")).unwrap();
+        set_before_apply_hook(|plan| {
+            fs::create_dir_all(plan.segment.path().join("events.jsonl")).unwrap();
+        });
         let spy = SpyNotifier::succeeding();
         let app = api_router_with_notifier(&root, spy.clone());
         let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
         let (status, body) = call_upload(&app, request.clone(), "audio.flac", b"sound").await;
+        clear_before_apply_hook();
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(body["reason_code"], "event_append_failed");
         assert_eq!(spy.calls.load(Ordering::SeqCst), 0);

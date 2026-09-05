@@ -6,13 +6,13 @@ use std::fmt;
 use std::io;
 use std::path::PathBuf;
 
-use solstone_core_journal_io::{AtomicWriteError, LockError, PathError};
+use solstone_core_journal_io::{AtomicWriteError, LockError, PathError, ReadError};
 use solstone_core_segment::{
     ContentName, ContentWriteOutcome, SegmentDir, SegmentError, write_content,
 };
 
 use crate::held::is_currently_held;
-use crate::manifest::write_ingest_manifest;
+use crate::manifest::{prepare_stream_advance, write_ingest_manifest};
 use crate::{ApplyPlan, FileDisposition, IngestFile, PlanStatus};
 
 /// Final file disposition published in the ingest event and response.
@@ -48,6 +48,7 @@ pub struct ApplyResult {
 pub enum ApplyError {
     Segment(SegmentError),
     Atomic(AtomicWriteError),
+    Read(ReadError),
     Lock(LockError),
     Path(PathError),
     Io { path: PathBuf, source: io::Error },
@@ -60,6 +61,7 @@ impl fmt::Display for ApplyError {
         match self {
             Self::Segment(error) => error.fmt(formatter),
             Self::Atomic(error) => error.fmt(formatter),
+            Self::Read(error) => error.fmt(formatter),
             Self::Lock(error) => error.fmt(formatter),
             Self::Path(error) => error.fmt(formatter),
             Self::Io { path, source } => write!(formatter, "{}: {source}", path.display()),
@@ -76,6 +78,7 @@ impl Error for ApplyError {
         match self {
             Self::Segment(error) => Some(error),
             Self::Atomic(error) => Some(error),
+            Self::Read(error) => Some(error),
             Self::Lock(error) => Some(error),
             Self::Path(error) => Some(error),
             Self::Io { source, .. } => Some(source),
@@ -111,6 +114,18 @@ pub fn apply_plan(plan: &ApplyPlan, files: &[IngestFile<'_>]) -> Result<ApplyRes
             applied: Vec::new(),
         });
     }
+    let should_advance = prepare_stream_advance(
+        &plan.segment,
+        &plan.requested_segment,
+        plan.created_segment,
+        plan.files
+            .iter()
+            .any(|file| matches!(file.disposition, FileDisposition::NeedsWrite { .. })),
+    )
+    .map_err(|error| ApplyFailure {
+        error,
+        applied: Vec::new(),
+    })?;
     let mut applied = Vec::with_capacity(plan.files.len());
     let mut bytes_written = 0;
     for (planned, file) in plan.files.iter().zip(files) {
@@ -197,9 +212,8 @@ pub fn apply_plan(plan: &ApplyPlan, files: &[IngestFile<'_>]) -> Result<ApplyRes
         segment: plan.segment.clone(),
         files: applied,
         bytes_written,
-        // Independent write-path parity fix: Python advances only after minting
-        // a segment directory, never merely because a candidate plan is non-duplicate.
-        should_advance: plan.created_segment,
+        // Pending first admission survives partial bytes and post-write failures.
+        should_advance,
     })
 }
 
@@ -286,11 +300,15 @@ mod tests {
         assert_eq!(failure.applied[0].name.as_str(), "audio.flac");
         assert_eq!(failure.applied[0].disposition, AppliedDisposition::Written);
         assert!(plan.segment.path().join("audio.flac").is_file());
-        assert!(!plan.segment.path().join("ingest.json").exists());
+        let manifest: Value =
+            serde_json::from_slice(&fs::read(plan.segment.path().join("ingest.json")).unwrap())
+                .unwrap();
+        assert_eq!(manifest["stream_advance_pending"], true);
+        assert_eq!(manifest["files"], serde_json::json!({}));
     }
 
     #[test]
-    fn manifest_write_failure_returns_already_written_files() {
+    fn pending_manifest_failure_prevents_raw_writes_and_can_retry() {
         let dir = root();
         let root = dir.path().to_path_buf();
         let files = [file("audio.flac", b"sound")];
@@ -303,11 +321,162 @@ mod tests {
         let failure = apply_plan(&plan, &files).unwrap_err();
         assert!(matches!(
             failure.error,
-            ApplyError::Lock(_) | ApplyError::Atomic(_)
+            ApplyError::Lock(_) | ApplyError::Atomic(_) | ApplyError::Read(_)
         ));
-        assert_eq!(failure.applied.len(), 1);
-        assert_eq!(failure.applied[0].disposition, AppliedDisposition::Written);
-        assert!(plan.segment.path().join("audio.flac").is_file());
+        assert!(failure.applied.is_empty());
+        assert!(!plan.segment.path().join("audio.flac").exists());
+        fs::remove_dir(plan.segment.path().join("ingest.json")).unwrap();
+        let Resolution::Apply(retry) =
+            resolve_ingest(&root, "20260804", "device", "120000_1", &files).unwrap()
+        else {
+            panic!("retry apply");
+        };
+        assert!(!retry.created_segment);
+        assert!(apply_plan(&retry, &files).unwrap().should_advance);
+    }
+
+    #[test]
+    fn pre_proof_orphan_refuses_before_raw_and_preserves_ambiguous_bytes() {
+        let dir = root();
+        let root = dir.path();
+        let segment = root.join("chronicle/20260804/device/120000_1");
+        fs::create_dir_all(&segment).unwrap();
+        // A crash before proof rename may leave a stage. Its name is not
+        // authority: clients may also use temp-looking content names.
+        let orphan = segment.join(".tmp_ingest-stage.tmp");
+        fs::write(&orphan, b"unfinished proof or legacy content").unwrap();
+        let files = [file("audio.flac", b"sound")];
+        let Resolution::Apply(plan) =
+            resolve_ingest(root, "20260804", "device", "120000_1", &files).unwrap()
+        else {
+            panic!("apply plan");
+        };
+        let failure = apply_plan(&plan, &files).unwrap_err();
+        assert!(failure.applied.is_empty());
+        assert!(!segment.join("audio.flac").exists());
+        assert!(!segment.join("ingest.json").exists());
+        assert_eq!(
+            fs::read(&orphan).unwrap(),
+            b"unfinished proof or legacy content"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn uncertain_pending_publication_never_admits_raw_bytes() {
+        use solstone_core_journal_io::{
+            BoundPublicationPrimitive, run_with_bound_publication_fault,
+        };
+        let dir = root();
+        let root = dir.path();
+        let files = [file("audio.flac", b"sound")];
+        let resolve =
+            || match resolve_ingest(root, "20260804", "device", "120000_1", &files).unwrap() {
+                Resolution::Apply(plan) => plan,
+                _ => panic!("apply plan"),
+            };
+        for _ in 0..2 {
+            let plan = resolve();
+            let (result, injected) = run_with_bound_publication_fault(
+                BoundPublicationPrimitive::ParentSync,
+                1,
+                5,
+                || apply_plan(&plan, &files),
+            );
+            assert!(injected);
+            let failure = result.unwrap_err();
+            assert!(failure.applied.is_empty());
+            assert!(!plan.segment.path().join("audio.flac").exists());
+        }
+        let applied = apply_plan(&resolve(), &files).unwrap();
+        assert!(applied.should_advance);
+        assert_eq!(
+            fs::read(applied.segment.path().join("audio.flac")).unwrap(),
+            b"sound"
+        );
+    }
+
+    #[test]
+    fn pending_clear_failure_retries_the_published_marker_without_readvancing() {
+        use crate::complete_stream_advance;
+        use solstone_core_segment::{StreamHints, advance_bound_stream, bind_stream};
+        let dir = root();
+        let root = dir.path();
+        let cid = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let bound = bind_stream(
+            root,
+            "20260804",
+            "120000_1",
+            "device",
+            cid,
+            "",
+            &StreamHints::default(),
+        )
+        .unwrap();
+        let files = [file("audio.flac", b"sound")];
+        let resolve =
+            || match resolve_ingest(root, "20260804", &bound.stream, "120000_1", &files).unwrap() {
+                Resolution::Apply(plan) => plan,
+                _ => panic!("apply plan"),
+            };
+        let applied = apply_plan(&resolve(), &files).unwrap();
+        assert!(applied.should_advance);
+        let advance = || {
+            advance_bound_stream(
+                &bound.stream,
+                "20260804",
+                "120000_1",
+                &bound.segment,
+                StreamHints::default(),
+                cid,
+                "",
+            )
+            .unwrap()
+        };
+        assert_eq!(advance().seq, 1);
+        let path = applied.segment.path().join("ingest.json");
+        let bytes = fs::read(&path).unwrap();
+        fs::remove_file(&path).unwrap();
+        fs::create_dir(&path).unwrap();
+        assert!(complete_stream_advance(&applied.segment).is_err());
+        fs::remove_dir(&path).unwrap();
+        fs::write(&path, bytes).unwrap();
+        assert!(apply_plan(&resolve(), &files).unwrap().should_advance);
+        assert_eq!(advance().seq, 1);
+        complete_stream_advance(&applied.segment).unwrap();
+        assert!(!apply_plan(&resolve(), &files).unwrap().should_advance);
+        assert_eq!(
+            fs::read(applied.segment.path().join("audio.flac")).unwrap(),
+            b"sound"
+        );
+    }
+
+    #[test]
+    fn existing_raw_or_legacy_manifest_never_acquires_admission_intent() {
+        for legacy_manifest in [false, true] {
+            let dir = root();
+            let root = dir.path();
+            let segment = root.join("chronicle/20260804/device/120000_1");
+            fs::create_dir_all(&segment).unwrap();
+            fs::write(segment.join("audio.flac"), b"sound").unwrap();
+            if legacy_manifest {
+                fs::write(
+                    segment.join("ingest.json"),
+                    br#"{"schema_version":1,"files":{}}"#,
+                )
+                .unwrap();
+            }
+            let files = [file("audio.flac", b"sound")];
+            let Resolution::Apply(plan) =
+                resolve_ingest(root, "20260804", "device", "120000_1", &files).unwrap()
+            else {
+                panic!("apply plan");
+            };
+            assert!(!apply_plan(&plan, &files).unwrap().should_advance);
+            let manifest: Value =
+                serde_json::from_slice(&fs::read(segment.join("ingest.json")).unwrap()).unwrap();
+            assert!(manifest.get("stream_advance_pending").is_none());
+        }
     }
 
     #[test]
