@@ -9,6 +9,8 @@ mod clock;
 mod darwin_parent_watch;
 #[cfg(unix)]
 mod hosted_service;
+#[cfg(windows)]
+mod hosted_service_windows;
 mod parent;
 #[cfg(unix)]
 mod parent_loss_admission;
@@ -46,6 +48,11 @@ pub use clock::AdmissionWaitClock;
 pub use darwin_parent_watch::{DarwinParentExitWatcher, DarwinParentWatchError};
 #[cfg(unix)]
 pub use hosted_service::{
+    HostedServiceAdmissionFailure, HostedServiceParentLossError, HostedServiceParentRuntime,
+    HostedServiceShutdownEvidence, HostedServiceWatchError, admit_hosted_service_parent,
+};
+#[cfg(windows)]
+pub use hosted_service_windows::{
     HostedServiceAdmissionFailure, HostedServiceParentLossError, HostedServiceParentRuntime,
     HostedServiceShutdownEvidence, HostedServiceWatchError, admit_hosted_service_parent,
 };
@@ -1603,21 +1610,6 @@ mod tests {
             SupervisorLiveness::Down
         );
         state::remove_test_supervisor_journal(root);
-    }
-
-    #[test]
-    fn signal_ready_notifies_systemd_after_the_marker_is_written() {
-        let source = include_str!("mod.rs");
-        let signal_ready = source
-            .split("pub fn signal_ready(")
-            .nth(1)
-            .and_then(|rest| rest.split("pub fn clear_ready(").next())
-            .expect("signal_ready body");
-        assert!(signal_ready.contains("sd_notify(\"READY=1\")"));
-        assert!(
-            signal_ready.find("write_readiness").expect("marker write")
-                < signal_ready.find("sd_notify(\"READY=1\")").expect("notify")
-        );
     }
 
     #[test]

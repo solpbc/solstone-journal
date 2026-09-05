@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
+#[cfg(unix)]
 use super::service_status;
 use crate::{
     context::CheckContext,
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
+#[cfg(unix)]
 use solstone_core_system::process::{Disposition, LaunchAuthority, LaunchError, launch};
+#[cfg(unix)]
 use std::{
     io,
     os::unix::process::CommandExt,
@@ -15,6 +18,7 @@ use std::{
 };
 
 /// Bounded diagnostic child for a service-manager query.
+#[cfg(unix)]
 struct ProcessGroupChild {
     authority: LaunchAuthority,
     group: rustix::process::Pid,
@@ -22,10 +26,12 @@ struct ProcessGroupChild {
 
 /// The inspected journal service stays externally managed; only this bounded
 /// probe child is claimed.
+#[cfg(unix)]
 fn diagnostic_disposition(timeout: Duration) -> Disposition {
     Disposition::IndependentBoundedHelper { timeout }
 }
 
+#[cfg(unix)]
 impl ProcessGroupChild {
     fn spawn(command: &mut Command, timeout: Duration) -> io::Result<Self> {
         let authority = launch(
@@ -85,6 +91,7 @@ impl ProcessGroupChild {
     }
 }
 
+#[cfg(unix)]
 fn installed(context: &CheckContext) -> bool {
     match context.platform {
         crate::vocabulary::Platform::Darwin => context
@@ -95,8 +102,10 @@ fn installed(context: &CheckContext) -> bool {
             .home_dir
             .join(".config/systemd/user/solstone.service")
             .exists(),
+        crate::vocabulary::Platform::Windows => false,
     }
 }
+#[cfg(unix)]
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     if !installed(context) {
         return Ok(make_result(
@@ -157,7 +166,17 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         None::<String>,
     ))
 }
+#[cfg(not(unix))]
+pub fn run(_context: &CheckContext, check: Check) -> RunnerResult {
+    Ok(make_result(
+        check,
+        Status::Skip,
+        "not supported on windows",
+        None::<String>,
+    ))
+}
 
+#[cfg(unix)]
 fn service_is_failed(context: &CheckContext) -> bool {
     let mut command = if let Some((program, args)) = &context.service_status_command_override {
         let mut command = Command::new(program);
@@ -178,6 +197,7 @@ fn service_is_failed(context: &CheckContext) -> bool {
                 command.args(["--user", "is-failed", "solstone"]);
                 command
             }
+            crate::vocabulary::Platform::Windows => return false,
         }
     };
     let Some(output) = run_with_timeout(&mut command, Duration::from_secs(2)) else {
@@ -192,9 +212,11 @@ fn service_is_failed(context: &CheckContext) -> bool {
             stdout.contains("\n\tstate = crashed\n") || stdout.contains("state = crashed")
         }
         crate::vocabulary::Platform::Linux => stdout.trim() == "failed",
+        crate::vocabulary::Platform::Windows => false,
     }
 }
 
+#[cfg(unix)]
 fn run_with_timeout(command: &mut Command, timeout: Duration) -> Option<Output> {
     let child = ProcessGroupChild::spawn(command, timeout).ok()?;
     let deadline = Instant::now() + timeout;
@@ -203,19 +225,5 @@ fn run_with_timeout(command: &mut Command, timeout: Duration) -> Option<Output> 
             return child.terminate_with_output().ok();
         }
         thread::sleep(Duration::from_millis(10));
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn diagnostic_child_disposition_is_independent_bounded_helper() {
-        let timeout = Duration::from_secs(7);
-        assert_eq!(
-            diagnostic_disposition(timeout),
-            Disposition::IndependentBoundedHelper { timeout }
-        );
     }
 }

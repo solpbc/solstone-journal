@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use chrono::NaiveDate;
 use serde_json::{Map, Value};
 use solstone_core_cortex_client::{TimedOutUse, UseEndState};
 use solstone_core_facets::get_activity_record;
 use solstone_core_talent_config::{TalentFilter, get_output_name, load_talent_configs};
+use solstone_core_talent_runtime::activity_contract;
 
 use crate::context::{DispatchFailure, ThinkContext};
 use crate::dispatch::{
@@ -33,15 +33,7 @@ pub(crate) fn run(
         // activity record as failure rather than an empty successful run.
         return Ok(failed("activity record"));
     };
-    if record
-        .get("source")
-        .and_then(Value::as_str)
-        .is_some_and(|value| matches!(value, "cogitate" | "anticipated"))
-        || record
-            .get("segments")
-            .and_then(Value::as_array)
-            .is_none_or(Vec::is_empty)
-    {
+    if activity_contract::is_synthetic(&record) || !activity_contract::has_nonempty_span(&record) {
         // Source-derived, not measured: thinking.py:3122-3130 skips synthetic
         // records and records with no input span as a successful no-op.
         return Ok(ModeResult::default());
@@ -61,7 +53,7 @@ pub(crate) fn run(
         },
     )?
     .into_iter()
-    .filter(|config| matches_activity(config, kind))
+    .filter(|config| activity_contract::matches_activity(&config.metadata, kind))
     .collect::<Vec<_>>();
     if configs.is_empty() {
         return Ok(ModeResult::default());
@@ -103,12 +95,12 @@ pub(crate) fn run(
         let mut pending = Vec::new();
         let mut group = ModeResult::default();
         for config in configs {
-            if skip_low_level_work(&config.key, kind, &record) {
+            if activity_contract::skips_low_level_work(&config.key, kind, &record) {
                 // Source-derived, not measured: thinking.py:3330-3343 skips
                 // `work` below 0.4 for browsing and reading activities.
                 log.log(
                     "talent.skip",
-                    context.now_ms,
+                    context.event_now_ms(),
                     fields(
                         context,
                         activity_id,
@@ -151,6 +143,7 @@ pub(crate) fn run(
                         &config.key,
                         Some(&use_id),
                         "request_lost",
+                        Some("request_lost"),
                     );
                 }
                 Err(DispatchFailure::Unavailable) => {
@@ -164,6 +157,7 @@ pub(crate) fn run(
                         &config.key,
                         None,
                         "send_failed",
+                        Some("send_failed"),
                     );
                 }
             }
@@ -238,30 +232,6 @@ pub(crate) fn run(
     Ok(total)
 }
 
-fn matches_activity(config: &solstone_core_talent_config::TalentConfig, kind: &str) -> bool {
-    config
-        .metadata
-        .get("activities")
-        .and_then(Value::as_array)
-        .is_some_and(|items| {
-            items
-                .iter()
-                .filter_map(Value::as_str)
-                .any(|item| item == "*" || item == kind)
-        })
-}
-
-fn skip_low_level_work(name: &str, kind: &str, record: &Map<String, Value>) -> bool {
-    // Source-derived, not measured: thinking.py:3328-3343.
-    name == "work"
-        && matches!(kind, "browsing" | "reading")
-        && record
-            .get("level_avg")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0)
-            < 0.4
-}
-
 #[allow(
     clippy::too_many_arguments,
     reason = "Mirrors the activity request shape at thinking.py:3345-3383."
@@ -276,7 +246,7 @@ fn queue(
     kind: &str,
     refresh: bool,
 ) -> Result<PendingUse, DispatchFailure> {
-    let generate = config.metadata.get("type").and_then(Value::as_str) == Some("generate");
+    let generate = activity_contract::is_explicit_generate(&config.metadata);
     let format = config
         .metadata
         .get("output")
@@ -334,20 +304,11 @@ fn queue(
         if generate {
             String::new()
         } else {
-            format!(
-                "Processing activity '{activity_id}' ({kind}) in facet '{facet}' for {}.",
-                iso_day(&context.day)
-            )
+            activity_contract::cogitate_prompt(activity_id, kind, facet, &context.day)
         },
         request,
         Some(facet),
     )
-}
-
-fn iso_day(day: &str) -> String {
-    NaiveDate::parse_from_str(day, "%Y%m%d")
-        .map(|date| date.format("%Y-%m-%d").to_string())
-        .unwrap_or_else(|_| day.to_owned())
 }
 
 fn drain_activity(
@@ -375,10 +336,10 @@ fn drain_activity(
             let wait_error = format!("wait failed: {error:?}");
             for item in pending {
                 result.failed += 1;
-                result.failed_names.push(named_failure(
-                    &item_label(&item.name, Some(facet)),
-                    &failure_cause(&context.journal, &item.use_id, &wait_error),
-                ));
+                let cause = failure_cause(&context.journal, &item.use_id, &wait_error);
+                result
+                    .failed_names
+                    .push(named_failure(&item_label(&item.name, Some(facet)), &cause));
                 log_fail(
                     log,
                     context,
@@ -387,6 +348,7 @@ fn drain_activity(
                     &item.name,
                     Some(&item.use_id),
                     "unknown",
+                    Some(&cause),
                 );
             }
             return result;
@@ -400,10 +362,8 @@ fn drain_activity(
             .find(|timeout| timeout.use_id() == item.use_id)
         {
             result.failed += 1;
-            result.failed_names.push(named_failure(
-                &label,
-                &failure_cause(&context.journal, &item.use_id, timeout_cause(timeout)),
-            ));
+            let cause = failure_cause(&context.journal, &item.use_id, timeout_cause(timeout));
+            result.failed_names.push(named_failure(&label, &cause));
             let state = match timeout {
                 TimedOutUse::LostAtDeadline { .. } => "unknown",
                 TimedOutUse::GenuineTimeout { .. } => "running",
@@ -416,6 +376,7 @@ fn drain_activity(
                 &item.name,
                 Some(&item.use_id),
                 state,
+                Some(&cause),
             );
             continue;
         }
@@ -436,14 +397,12 @@ fn drain_activity(
             }
             Some(completion) => {
                 result.failed += 1;
-                result.failed_names.push(named_failure(
-                    &label,
-                    &failure_cause(
-                        &context.journal,
-                        &item.use_id,
-                        completion.end_state.as_str(),
-                    ),
-                ));
+                let cause = failure_cause(
+                    &context.journal,
+                    &item.use_id,
+                    completion.end_state.as_str(),
+                );
+                result.failed_names.push(named_failure(&label, &cause));
                 log_fail(
                     log,
                     context,
@@ -452,14 +411,13 @@ fn drain_activity(
                     &item.name,
                     Some(&item.use_id),
                     completion.end_state.as_str(),
+                    Some(&cause),
                 );
             }
             None => {
                 result.failed += 1;
-                result.failed_names.push(named_failure(
-                    &label,
-                    &failure_cause(&context.journal, &item.use_id, "unknown"),
-                ));
+                let cause = failure_cause(&context.journal, &item.use_id, "unknown");
+                result.failed_names.push(named_failure(&label, &cause));
                 log_fail(
                     log,
                     context,
@@ -468,6 +426,7 @@ fn drain_activity(
                     &item.name,
                     Some(&item.use_id),
                     "unknown",
+                    Some(&cause),
                 );
             }
         }
@@ -507,8 +466,9 @@ fn log_dispatch(
     );
     // Source-derived, not measured: thinking.py:3403-3417 records both the
     // accepted start and the durable `talent.dispatch` sidecar event.
-    log.log("talent.started", context.now_ms, base.clone());
-    log.log("talent.dispatch", context.now_ms, base);
+    let event_ms = context.event_now_ms();
+    log.log("talent.started", event_ms, base.clone());
+    log.log("talent.dispatch", event_ms, base);
 }
 
 fn log_complete(
@@ -530,10 +490,12 @@ fn log_complete(
             ("state".to_owned(), Value::String(state.to_owned())),
         ]),
     );
-    log.log("talent.completed", context.now_ms, base.clone());
-    log.log("talent.complete", context.now_ms, base);
+    let event_ms = context.event_now_ms();
+    log.log("talent.completed", event_ms, base.clone());
+    log.log("talent.complete", event_ms, base);
 }
 
+#[allow(clippy::too_many_arguments)] // An activity terminal is keyed by activity+facet+use.
 fn log_fail(
     log: &mut RunLogWriter,
     context: &ThinkContext,
@@ -542,6 +504,7 @@ fn log_fail(
     name: &str,
     use_id: Option<&str>,
     state: &str,
+    reason: Option<&str>,
 ) {
     let mut extra = Map::from_iter([
         ("name".to_owned(), Value::String(name.to_owned())),
@@ -550,9 +513,16 @@ fn log_fail(
     if let Some(use_id) = use_id {
         extra.insert("use_id".to_owned(), Value::String(use_id.to_owned()));
     }
+    // The caller already computed this cause for the operator-facing name; recording it is
+    // what makes a `talent.fail` row explainable. Without it the durable record carries only
+    // `state`, and 195 of 374 failures on 2026-09-04 were unexplained by construction.
+    if let Some(reason) = reason {
+        extra.insert("reason_code".to_owned(), Value::String(reason.to_owned()));
+    }
     let base = fields(context, activity, facet, extra);
-    log.log("talent.completed", context.now_ms, base.clone());
-    log.log("talent.fail", context.now_ms, base);
+    let event_ms = context.event_now_ms();
+    log.log("talent.completed", event_ms, base.clone());
+    log.log("talent.fail", event_ms, base);
 }
 
 fn merge(into: &mut ModeResult, from: ModeResult) {

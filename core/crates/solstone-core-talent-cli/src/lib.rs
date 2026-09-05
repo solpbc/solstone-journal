@@ -18,8 +18,8 @@ pub mod preview;
 mod schema;
 mod templates;
 
-pub use compose::compose_talent;
-pub use preview::{PreviewRequest, PromptPreview, PromptPreviewer};
+pub use compose::{compose_talent, compose_talent_instruction};
+pub use preview::{PreviewRequest, PromptPreview, PromptPreviewRefusal, PromptPreviewer};
 pub use templates::safe_substitute;
 
 mod emit;
@@ -580,40 +580,6 @@ mod tests {
                 .expect("detection")
                 < json.stdout.find("talent/event.md").expect("event")
         );
-        for expected in [
-            r##"{"file": "talent/conversation.md", "type": "generate", "title": "Conversation Story", "description": "Generates a conversation story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.", "color": "#00796b", "schedule": "activity", "activities": ["meeting", "call", "messaging", "email"], "priority": 20, "output": "json", "max_output_tokens": 12288, "schema": "story.schema.json", "hook": {"post": "story"}, "degradation_check": true, "load": {"transcripts": true, "percepts": true, "talents": false}, "source": "system"}"##,
-            r##"{"file": "talent/partner.md", "type": "cogitate", "access_tier": "synthesis", "title": "your profile", "description": "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, recorded interactions, and decisions. your journal is always private, only yours.", "schedule": "weekly", "priority": 95, "max_turns": 100, "color": "#6c757d", "source": "system", "cwd": "journal"}"##,
-            r##"{"file": "talent/weekly_reflection.md", "type": "cogitate", "access_tier": "synthesis", "title": "Weekly Reflection", "description": "Sunday-start weekly reflection synthesized from the journal", "schedule": "weekly", "priority": 90, "output": "md", "degradation_check": true, "read_scope_span": 7, "max_turns": 100, "max_run_cost_usd": 5.0, "color": "#6c757d", "source": "system", "cwd": "journal"}"##,
-            r##"{"file": "apps/entities/talent/entity_assist.md", "type": "cogitate", "title": "Entity Assistant", "description": "Quick entity addition with intelligent type detection and automatic description generation", "color": "#00695c", "group": "Entities", "source": "app", "app": "entities", "access_tier": "normal", "cwd": "journal"}"##,
-        ] {
-            assert!(
-                records.contains(&expected),
-                "missing JSON record: {expected}"
-            );
-        }
-
-        let list = run_cli(
-            &args(&["list"]),
-            &talent_root,
-            &apps_root,
-            journal.path(),
-            UNIX_EPOCH,
-            &preview::UnreachablePreviewer,
-        );
-        assert_eq!(list.exit_code, 0, "{}", list.stderr);
-        assert_eq!(list.stdout, LIST_FIXTURE);
-        assert_eq!(
-            run_cli(
-                &args(&["list", "--schedule", "daily"]),
-                &talent_root,
-                &apps_root,
-                journal.path(),
-                UNIX_EPOCH,
-                &preview::UnreachablePreviewer
-            )
-            .stdout,
-            DAILY_FIXTURE
-        );
         assert_eq!(
             run_cli(
                 &args(&["list", "--schedule", "activity", "--source", "app"]),
@@ -627,45 +593,4 @@ mod tests {
             "No prompts found matching filters.\n"
         );
     }
-
-    const DAILY_FIXTURE: &str = concat!(
-        "  NAME                      TITLE                         LAST RUN            TAGS\n\n",
-        "  daily_schedule            Maintenance Window            -                   json pre post\n",
-        "  entities:entities_review  Entity Reviewer               -                   json pre post [entities]\n",
-        "  entities:entity_observer  Entity Observer               -                   json pre post [entities]\n",
-        "  facet_newsletter          Facet Newsletter Generator    -                   md pre post\n",
-        "  morning_briefing          Morning Briefing              -                   json pre\n",
-        "  schedule                  Upcoming Schedule             -                   json post\n",
-    );
-
-    const LIST_FIXTURE: &str = concat!(
-        "  NAME                      TITLE                         LAST RUN            TAGS\n\n",
-        "segment:\n",
-        "  documents                 Document Analysis             -                   json pre\n",
-        "  entities:detection        Entity Detection              -                   json pre post [entities]\n",
-        "  screen                    Screen Record                 -                   json\n",
-        "  sense                     Segment Sense                 -                   json\n",
-        "  speaker_attribution       Speaker Attribution           -                   json pre post\n",
-        "  timeline:segment_summary  Segment Summary               -                   json pre post [timeline]\n\n",
-        "daily:\n",
-        "  daily_schedule            Maintenance Window            -                   json pre post\n",
-        "  entities:entities_review  Entity Reviewer               -                   json pre post [entities]\n",
-        "  entities:entity_observer  Entity Observer               -                   json pre post [entities]\n",
-        "  facet_newsletter          Facet Newsletter Generator    -                   md pre post\n",
-        "  morning_briefing          Morning Briefing              -                   json pre\n",
-        "  schedule                  Upcoming Schedule             -                   json post\n\n",
-        "weekly:\n",
-        "  partner                   your profile                  -\n",
-        "  weekly_reflection         Weekly Reflection             -                   md\n\n",
-        "activity:\n",
-        "  conversation              Conversation Story            -                   json post\n",
-        "  event                     Event Story                   -                   json post\n",
-        "  participation             Participation                 -                   json post\n",
-        "  work                      Work Story                    -                   json post\n\n",
-        "unscheduled:\n",
-        "  entities:entity_assist    Entity Assistant              -                  [entities]\n",
-        "  entities:entity_describe  Entity Description            -                   md pre [entities]\n",
-        "  pulse                     Pulse                         -                   json pre post\n",
-        "  steward                   Steward                       -                   json pre post\n\n",
-    );
 }

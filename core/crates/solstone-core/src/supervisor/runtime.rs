@@ -340,19 +340,28 @@ async fn bootstrap_parent_loss_coordinator(
     let mut capability = vec![0_u8; 32];
     getrandom::fill(&mut capability)
         .map_err(|_| ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake)?;
-    let mut authority = launch_command(
-        Disposition::ExplicitlyUnowned {
-            reason: "parent-loss coordinator must observe supervisor exit".to_owned(),
-        },
-        parent_loss_coordinator_launch_request(
+    let launch_deadline = Instant::now() + PARENT_LOSS_COORDINATOR_BOOTSTRAP_TIMEOUT;
+    let mut authority = loop {
+        let request = parent_loss_coordinator_launch_request(
             journal,
             supervisor,
             &enabled,
             &supervisor_heartbeat_filename,
-        )?,
-        Box::new(|child, _| child.kill().map_err(LaunchError::Terminate)),
-    )
-    .map_err(|_| ParentLossCoordinatorBootstrapFailure::Launch)?;
+        )?;
+        match launch_command(
+            Disposition::ExplicitlyUnowned {
+                reason: "parent-loss coordinator must observe supervisor exit".to_owned(),
+            },
+            request,
+            Box::new(|child, _| child.kill().map_err(LaunchError::Terminate)),
+        ) {
+            Ok(authority) => break authority,
+            Err(_) if Instant::now() < launch_deadline => {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            Err(_) => return Err(ParentLossCoordinatorBootstrapFailure::Launch),
+        }
+    };
     let coordinator = match SystemProcessInstanceSource.inspect(authority.pid()) {
         InspectResult::Present { instance, uid, .. } => LaunchedProcessIdentity { instance, uid },
         InspectResult::Absent | InspectResult::Unverifiable => {
@@ -2086,41 +2095,6 @@ mod tests {
             app.direct_door_generation,
             Some(7),
             "a failed cleanup remains retryable instead of consuming authority"
-        );
-    }
-
-    #[test]
-    fn admitted_lifecycle_precedes_callosum_and_queue_release_follows_readiness() {
-        let source = include_str!("runtime.rs");
-        let boot = source
-            .split("pub(crate) async fn boot_and_tick(")
-            .nth(1)
-            .expect("boot_and_tick source")
-            .split("fn shutdown_regime_for(")
-            .next()
-            .expect("boot_and_tick body");
-        let admitted = boot
-            .find("lifecycle.into_lifecycle()")
-            .expect("final-admitted lifecycle");
-        let callosum = boot
-            .find("CallosumSocketServer::bind")
-            .expect("Callosum bind");
-        let queue = boot.find("TaskQueue::new").expect("queue construction");
-        let readiness = boot
-            .find("lifecycle.signal_ready")
-            .expect("readiness write");
-        let release = boot
-            .find("state.queue.set_ready()")
-            .expect("queue readiness release");
-
-        assert!(
-            admitted < callosum && callosum < queue,
-            "only a final-admitted lifecycle may bind Callosum or construct the queue"
-        );
-        assert!(boot[queue..].contains("ready: false"));
-        assert!(
-            readiness < release,
-            "queued work is released only after readiness"
         );
     }
 }

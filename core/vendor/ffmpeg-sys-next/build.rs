@@ -14,9 +14,11 @@ use std::str;
 use flate2::read::GzDecoder;
 use solstone_core_ffmpeg_build_support::{
     BUILD_RUN_ID_ENV, ConfigureReceipt, ConfigureRunRecord, EVIDENCE_DIR, SourceAdmission,
-    configure_mode_args, parse_build_profile, parse_debug_env, parse_ffmpeg_pin,
-    read_configure_receipt, run_fetch_if_selected, select_source_admission, sha256_hex,
-    verify_sha256,
+    configure_mode_args, controlled_component_args_for_audio_remux, parse_build_profile,
+    parse_component_inventory, parse_debug_env, parse_ffmpeg_pin, read_configure_receipt,
+    read_current_run_record,
+    run_fetch_if_selected, select_source_admission, sha256_hex,
+    validate_controlled_component_inventory, verify_sha256,
     write_configure_receipt, write_current_run_record,
 };
 use tar::Archive;
@@ -693,26 +695,29 @@ fn configure_command(sysroot: Option<&str>) -> io::Result<Command> {
         configure.arg(arg);
     }
 
-    // make it static
-    configure.arg("--enable-static");
-    configure.arg("--disable-shared");
+    let controlled_windows_target = env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows");
+    if controlled_windows_target {
+        let audio_remux = env::var("CARGO_FEATURE_SWRESAMPLE").is_ok();
+        for arg in controlled_component_args_for_audio_remux(audio_remux) {
+            configure.arg(arg);
+        }
+    } else {
+        // Controlled component inventories are a native Windows delivery
+        // constraint. Other supported targets retain the upstream feature
+        // selection so ordinary media behavior is not silently narrowed.
+        configure.arg("--enable-static");
+        configure.arg("--disable-shared");
+        configure.arg("--enable-pic");
+        configure.arg("--disable-autodetect");
+        configure.arg("--disable-programs");
+        configure.arg("--disable-doc");
+    }
+
     // windows includes threading in the standard library
     #[cfg(not(target_env = "msvc"))]
     {
         configure.arg("--enable-pthreads");
     }
-
-    // position independent code
-    configure.arg("--enable-pic");
-
-    // stop autodetected libraries enabling themselves, causing linking errors
-    configure.arg("--disable-autodetect");
-
-    // do not build programs since we don't need them
-    configure.arg("--disable-programs");
-
-    // do not generate documentation
-    configure.arg("--disable-doc");
 
     macro_rules! enable {
         ($conf:expr, $feat:expr, $name:expr) => {
@@ -745,6 +750,13 @@ fn configure_command(sysroot: Option<&str>) -> io::Result<Command> {
     for lib in LIBRARIES
         .iter()
         .filter(|lib| lib.is_feature)
+        .filter(|lib| {
+            !controlled_windows_target
+                || !matches!(
+                    lib.name,
+                    "avcodec" | "avdevice" | "avfilter" | "avformat" | "swresample" | "swscale"
+                )
+        })
         .filter(|lib| !(lib.name == "avresample" && ffmpeg_major_version >= 5))
         .filter(|lib| !(lib.name == "postproc" && ffmpeg_major_version >= 8))
     {
@@ -935,12 +947,38 @@ struct CapturedConfigure {
 }
 
 fn captured_configure(configure: &Command) -> CapturedConfigure {
-    CapturedConfigure {
-        program: configure.get_program().to_string_lossy().into_owned(),
-        args: configure
-            .get_args()
-            .map(|arg| arg.to_string_lossy().into_owned())
-            .collect(),
+    let program = configure.get_program().to_string_lossy().into_owned();
+    let args = configure
+        .get_args()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    if cfg!(target_os = "windows") {
+        // `sh <source>/configure` has one invocation operand before FFmpeg's
+        // configure arguments. Bind that script to the recorded program while
+        // keeping `args` as the actual FFmpeg configure flag vector that the
+        // controlled allowlist validates.
+        let (script, args) = args
+            .split_first()
+            .expect("Windows FFmpeg configure invocation must name its script");
+        CapturedConfigure {
+            program: format!("{program} {script}"),
+            args: args.to_vec(),
+        }
+    } else {
+        CapturedConfigure { program, args }
+    }
+}
+
+fn configure_log_tail() -> String {
+    const MAX_LINES: usize = 160;
+    let path = source().join("ffbuild/config.log");
+    match fs::read_to_string(&path) {
+        Ok(contents) => {
+            let mut lines = contents.lines().rev().take(MAX_LINES).collect::<Vec<_>>();
+            lines.reverse();
+            lines.join("\n")
+        }
+        Err(error) => format!("could not read {}: {error}", path.display()),
     }
 }
 
@@ -963,6 +1001,7 @@ fn build(mut configure: Command) -> io::Result<CapturedConfigure> {
             "configure stderr: {}",
             String::from_utf8_lossy(&output.stderr)
         );
+        println!("configure config.log tail: {}", configure_log_tail());
 
         return Err(io::Error::other(format!(
             "configure failed {}",
@@ -1293,27 +1332,40 @@ fn main() {
         link_to_libraries(statik, &target_os);
         let admitted = admit_source().unwrap();
         let target = env::var("TARGET").expect("missing required: TARGET");
+        let controlled_windows_target =
+            env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows");
         let configure = configure_command(sysroot.as_deref()).unwrap();
         let planned = captured_configure(&configure);
-        let expected_receipt = (admitted.admission == SourceAdmission::UseArchive).then(|| {
-            ConfigureReceipt::new(
-                &target,
-                &admitted.profile,
-                &admitted.pin.sha256,
-                &planned.program,
-                &planned.args,
-            )
-        });
         let evidence_dir = output().join(EVIDENCE_DIR);
-        let cached_receipt = expected_receipt.as_ref().and_then(|expected| {
-            search()
-                .join("lib")
-                .join("libavutil.a")
-                .is_file()
-                .then(|| read_configure_receipt(&evidence_dir, &expected.filename().unwrap()).ok())
-                .flatten()
-                .filter(|stored| stored.receipt == *expected)
-        });
+        let cached_receipt = (admitted.admission == SourceAdmission::UseArchive)
+            .then(|| {
+                search()
+                    .join("lib")
+                    .join("libavutil.a")
+                    .is_file()
+                    .then(|| {
+                        let record = read_current_run_record(&evidence_dir).ok()?;
+                        let stored =
+                            read_configure_receipt(&evidence_dir, &record.receipt_filename).ok()?;
+                        let receipt = &stored.receipt;
+                        (stored.content_sha256 == record.receipt_sha256
+                            && record.target == receipt.target
+                            && record.profile == receipt.profile
+                            && record.source_sha256 == receipt.source_sha256
+                            && receipt.target == target
+                            && receipt.profile == admitted.profile
+                            && receipt.source_sha256 == admitted.pin.sha256
+                            && receipt.program == planned.program
+                            && receipt.args == planned.args
+                            && receipt.fingerprint == record.fingerprint
+                            && (!controlled_windows_target
+                                || validate_controlled_component_inventory(&receipt.components)
+                                    .is_ok()))
+                        .then_some(stored)
+                    })
+                    .flatten()
+            })
+            .flatten();
         let (receipt, configure_executed) = if let Some(receipt) = cached_receipt {
             (receipt, false)
         } else {
@@ -1322,19 +1374,25 @@ fn main() {
             fs::create_dir_all(output()).expect("failed to create build directory");
             prepare_source(&admitted).unwrap();
             let executed = build(configure).unwrap();
+            if executed != planned {
+                panic!("configure command changed between cache check and execution");
+            }
             let source_sha256 = admitted_source_sha256(&admitted).unwrap();
+            let components = parse_component_inventory(
+                &fs::read_to_string(source().join("config_components.h")).unwrap(),
+            )
+            .unwrap();
+            if controlled_windows_target {
+                validate_controlled_component_inventory(&components).unwrap();
+            }
             let receipt = ConfigureReceipt::new(
                 &target,
                 &admitted.profile,
                 &source_sha256,
                 &executed.program,
                 &executed.args,
+                &components,
             );
-            if let Some(expected) = expected_receipt {
-                if receipt.fingerprint != expected.fingerprint {
-                    panic!("configure command changed between cache check and execution");
-                }
-            }
             (
                 write_configure_receipt(&evidence_dir, &receipt).unwrap(),
                 true,

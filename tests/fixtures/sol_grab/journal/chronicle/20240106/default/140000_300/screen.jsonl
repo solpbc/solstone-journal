@@ -1,4 +1,0 @@
-{"raw": "screen.webm"}
-{"frame_id": 1, "timestamp": 0.0, "requests": [{"type": "describe", "model": "gemini-2.5-flash-lite", "duration": 0.3}], "analysis": {"visual_description": "Diagnostics page with status rows.", "primary": "reading", "secondary": "none", "overlap": true}}
-{"frame_id": 
-{"frame_id": 2, "timestamp": 1.0, "requests": [{"type": "describe", "model": "gemini-2.5-flash-lite", "duration": 0.3}], "analysis": {"visual_description": "Terminal with fixture output.", "primary": "terminal", "secondary": "none", "overlap": true}}

@@ -176,7 +176,7 @@ fn queue(
             if let Some(facet) = facet {
                 fields.insert("facet".to_owned(), Value::String(facet.to_owned()));
             }
-            log.log("talent.dispatch", context.now_ms, fields);
+            log.log("talent.dispatch", context.event_now_ms(), fields);
             pending.push(item);
         }
         Err(DispatchFailure::NotClaimed { use_id }) => {
@@ -191,7 +191,7 @@ fn queue(
             if let Some(facet) = facet {
                 fields.insert("facet".to_owned(), Value::String(facet.to_owned()));
             }
-            log.log("talent.fail", context.now_ms, fields);
+            log.log("talent.fail", context.event_now_ms(), fields);
             result.failed += 1;
             result
                 .failed_names
@@ -219,7 +219,7 @@ fn log_skip(
     if let Some(facet) = facet {
         fields.insert("facet".to_owned(), Value::String(facet.to_owned()));
     }
-    log.log("talent.skip", context.now_ms, fields);
+    log.log("talent.skip", context.event_now_ms(), fields);
 }
 fn drain_if_full(
     context: &ThinkContext,

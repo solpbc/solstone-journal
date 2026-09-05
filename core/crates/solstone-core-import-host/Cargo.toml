@@ -14,12 +14,15 @@ autotests = false
 name = "import_host"
 path = "tests/import_host.rs"
 
+[features]
+native-remux-corpus = ["dep:tempfile"]
+
 [lints]
 workspace = true
 
 [dependencies]
 chrono.workspace = true
-ffmpeg-next = { version = "9.0.0", default-features = false, features = ["format", "build"] }
+ffmpeg-next = { version = "9.0.0", default-features = false, features = ["format", "software-resampling", "build"] }
 ffmpeg-sys-next = { version = "9.0.0", default-features = false, features = ["build-portable"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
@@ -30,6 +33,7 @@ solstone-core-journal-io.workspace = true
 solstone-core-processing-record.workspace = true
 solstone-core-segment.workspace = true
 solstone-core-system-health.workspace = true
+tempfile = { version = "3.24.0", optional = true }
 tokio = { workspace = true, features = ["macros", "rt", "time", "net"] }
 
 [dev-dependencies]

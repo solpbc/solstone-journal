@@ -133,7 +133,10 @@ pub(crate) fn write_archive<W: Write + Seek>(
             .open_file(entry)
             .map_err(|source| source_error(Some(member), source))?;
         let expected_size = opened.inventoried_size();
+        #[cfg(unix)]
         let mut file = opened.into_file();
+        #[cfg(windows)]
+        let mut file = std::io::Cursor::new(opened.into_bytes());
         #[cfg(any(test, feature = "test-hooks"))]
         crate::encode::test_set_boundary(if test_first_entry {
             crate::encode::TestBoundary::SourceStart

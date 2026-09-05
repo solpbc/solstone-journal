@@ -69,10 +69,39 @@ impl Drop for TempDir {
 }
 
 fn corpus() -> Value {
-    serde_json::from_str(include_str!(
+    let mut corpus: Value = serde_json::from_str(include_str!(
         "../../../fixtures/convey_thinking_corpus.json"
     ))
-    .expect("thinking corpus parses")
+    .expect("thinking corpus parses");
+    // Project only the retired pricing copy onto the frozen reference responses.
+    // All other copy, provider state, and refusal contracts remain captured pins.
+    for cases in corpus["phases"]
+        .as_object_mut()
+        .expect("phases")
+        .values_mut()
+    {
+        for case in cases.as_array_mut().expect("phase cases") {
+            if let Some(setup) = case
+                .pointer_mut("/json/copy/byo_setup")
+                .and_then(Value::as_object_mut)
+            {
+                setup.remove("custom_cost_note");
+                setup.insert(
+                    "tier_blurb_lite".into(),
+                    json!(
+                        "light and quick. tuned for small models, so this one does the job well."
+                    ),
+                );
+                setup.insert(
+                    "tier_blurb_top".into(),
+                    json!("the most capable, for the heaviest thinking."),
+                );
+                assert_eq!(case["body_sha256_basis"], "normalized-json");
+                case["body_sha256"] = json!(sha256(canonical_json(&case["json"]).as_bytes()));
+            }
+        }
+    }
+    corpus
 }
 
 fn confidential() -> Value {
@@ -454,6 +483,18 @@ fn replay_full_recorded_case(
         case.get("location").and_then(Value::as_str),
         "{phase} {path} location"
     );
+    // A record with no `body_sha256` is deliberately not body-asserted: served
+    // frontend assets (html/js/css) keep their status, content-type and location
+    // pins above and drop the whole-file digest. See the fixture's
+    // corpus_maintenance note. `superseded_presentation_asset` below is the
+    // stronger form of the same idea -- compare against the asset on disk.
+    if case.get("body_sha256").and_then(Value::as_str).is_none() {
+        return (
+            body_arm(case),
+            false,
+            runtime_status_deviation_path(phase, case).is_some(),
+        );
+    }
     let mut normalized_response = None;
     let actual_hash = match (
         case["body_sha256_basis"].as_str(),

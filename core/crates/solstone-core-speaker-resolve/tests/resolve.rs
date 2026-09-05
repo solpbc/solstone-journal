@@ -240,6 +240,38 @@ fn resolve_smoke_applies_owner_and_structural_layers() {
 }
 
 #[test]
+fn direct_record_reads_speech_instead_of_named_default_decoy() {
+    let temporary = TempDir::new();
+    let direct = temporary.path().join("chronicle/20260808/120000_300");
+    let named = temporary
+        .path()
+        .join("chronicle/20260808/_default/120000_300");
+    fs::create_dir_all(direct.join("talents")).unwrap();
+    fs::create_dir_all(&named).unwrap();
+    fs::write(named.join("mic_audio.npz"), b"unrelated named-layout data").unwrap();
+    seed_owner(temporary.path());
+    embeddings(&direct.join("mic_audio.npz"), &[1], &[embedding(1.0, 0.0)]);
+    let outcome = resolve(
+        temporary.path(),
+        "20260808",
+        "_default",
+        "120000_300",
+        true,
+        1,
+    )
+    .expect("resolve direct-layout speech");
+    let ResolveOutcome::Resolved(output) = outcome else {
+        panic!("direct speech must not become an empty source result");
+    };
+    assert_eq!(output.labels.len(), 1);
+    assert_eq!(output.labels[0].speaker.as_deref(), Some("principal"));
+    assert_eq!(
+        fs::read(named.join("mic_audio.npz")).unwrap(),
+        b"unrelated named-layout data"
+    );
+}
+
+#[test]
 fn ac5_resolve_candidates_contain_only_admitted_person_names() {
     let temporary = TempDir::new();
     let segment = segment(temporary.path());

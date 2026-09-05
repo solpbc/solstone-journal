@@ -39,6 +39,9 @@ pub(crate) fn run(
     options: &ShowOptions,
     previewer: &dyn PromptPreviewer,
 ) -> CliRun {
+    if options.prompt && options.activity.is_some() {
+        return render_runtime_preview(journal_root, options, previewer);
+    }
     let resolved = resolve(&options.name, talent_root, apps_root);
     if !resolved.path.is_file() {
         return not_found(&options.name, &resolved.file, options.prompt);
@@ -69,11 +72,11 @@ pub(crate) fn run(
             "Prompt '{}' is a hook prompt and cannot be run directly.",
             options.name
         )),
-        _ => render_generate_preview(journal_root, options, previewer),
+        _ => render_runtime_preview(journal_root, options, previewer),
     }
 }
 
-fn render_generate_preview(
+fn render_runtime_preview(
     journal_root: &Path,
     options: &ShowOptions,
     previewer: &dyn PromptPreviewer,
@@ -85,6 +88,7 @@ fn render_generate_preview(
             day: options.day.clone(),
             segment: options.segment.clone(),
             facet: options.facet.clone(),
+            activity: options.activity.clone(),
         },
     );
     match preview {
@@ -118,6 +122,7 @@ fn render_generate_preview(
             stderr: String::new(),
             exit_code: 1,
         },
+        PromptPreview::Refused(refusal) => render_preview_refusal(options, refusal),
         PromptPreview::UnavailablePreStep => CliRun {
             stdout: "Prompt preview cannot assemble this talent: a required pre-step is not available.\n"
                 .to_owned(),
@@ -125,6 +130,46 @@ fn render_generate_preview(
             exit_code: 1,
         },
         PromptPreview::Failed { error } => failure(error),
+    }
+}
+
+fn render_preview_refusal(
+    options: &ShowOptions,
+    refusal: crate::preview::PromptPreviewRefusal,
+) -> CliRun {
+    if options.json {
+        let mut value = Map::from_iter([
+            ("code".to_owned(), Value::String(refusal.code)),
+            (
+                "day".to_owned(),
+                options.day.clone().map_or(Value::Null, Value::String),
+            ),
+            (
+                "facet".to_owned(),
+                options.facet.clone().map_or(Value::Null, Value::String),
+            ),
+            (
+                "activity".to_owned(),
+                options.activity.clone().map_or(Value::Null, Value::String),
+            ),
+            ("recovery".to_owned(), Value::String(refusal.recovery)),
+        ]);
+        if let Some(segment) = refusal.segment {
+            value.insert("segment".to_owned(), Value::String(segment));
+        }
+        return CliRun {
+            stdout: String::new(),
+            stderr: format!(
+                "{}\n",
+                solstone_core_format::json_compact_ascii(&Value::Object(value))
+            ),
+            exit_code: 1,
+        };
+    }
+    CliRun {
+        stdout: String::new(),
+        stderr: format!("{}: {}\n", refusal.code, refusal.recovery),
+        exit_code: 1,
     }
 }
 
@@ -546,6 +591,21 @@ mod tests {
         }
     }
 
+    struct ActivityPreviewer;
+
+    impl PromptPreviewer for ActivityPreviewer {
+        fn preview(&self, _: &Path, request: &PreviewRequest) -> PromptPreview {
+            assert_eq!(request.day.as_deref(), Some("20260101"));
+            assert_eq!(request.facet.as_deref(), Some("work"));
+            assert_eq!(request.activity.as_deref(), Some("activity-a"));
+            PromptPreview::Refused(crate::preview::PromptPreviewRefusal {
+                code: "activity_not_found".to_owned(),
+                segment: Some("090000_60".to_owned()),
+                recovery: "Choose a stored activity.".to_owned(),
+            })
+        }
+    }
+
     #[test]
     fn default_view_orders_formats_and_scans_fields() {
         let root = root();
@@ -818,6 +878,47 @@ mod tests {
         assert_eq!(output.exit_code, 1);
         assert_eq!(output.stdout, "This talent would not run: disabled\n");
         assert!(output.stderr.is_empty());
+    }
+
+    #[test]
+    fn activity_preview_request_is_forwarded_and_json_refusal_is_one_stderr_object() {
+        let root = root();
+        fs::write(
+            root.path().join("talent/generate.md"),
+            "{\n\"type\": \"generate\"\n}\nbody",
+        )
+        .expect("generate");
+        let output = run_with(
+            &root,
+            &[
+                "show",
+                "generate",
+                "--prompt",
+                "--json",
+                "--day",
+                "20260101",
+                "--facet",
+                "work",
+                "--activity",
+                "activity-a",
+            ],
+            &ActivityPreviewer,
+        );
+        assert_eq!(output.exit_code, 1);
+        assert!(output.stdout.is_empty());
+        let error: Value = serde_json::from_str(output.stderr.trim()).expect("one JSON object");
+        assert_eq!(
+            error,
+            json!({
+                "code":"activity_not_found",
+                "day":"20260101",
+                "facet":"work",
+                "activity":"activity-a",
+                "segment":"090000_60",
+                "recovery":"Choose a stored activity."
+            })
+        );
+        assert_eq!(output.stderr.lines().count(), 1);
     }
 
     #[test]

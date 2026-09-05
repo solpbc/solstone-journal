@@ -58,6 +58,8 @@ pub struct ProfileBrief {
     pub name: String,
     #[serde(rename = "type")]
     pub r#type: String,
+    /// Whether the owner has blocked this entity. Reported, never filtered on.
+    pub blocked: bool,
     pub description: Option<String>,
     pub last_seen: Option<String>,
     pub open_loop_count: usize,
@@ -72,7 +74,16 @@ pub struct Profile {
     pub r#type: String,
     pub aka: Vec<String>,
     pub is_self: bool,
+    /// Whether the owner has blocked this entity. Reported, never filtered on:
+    /// a blocked entity still resolves and still returns a full profile, and
+    /// what to do about the status is the caller's or the web interface's
+    /// decision. Founder ruling 2026-09-03.
+    pub blocked: bool,
+    /// Every declared facet this entity holds a relationship in, attached or not.
     pub facets: Vec<String>,
+    /// The subset of `facets` whose relationship the owner has detached. Present
+    /// so a caller can filter what this crate deliberately does not.
+    pub detached_facets: Vec<String>,
     pub description: Option<String>,
     pub cadence: Cadence,
     pub open_with_them: Vec<LedgerItem>,

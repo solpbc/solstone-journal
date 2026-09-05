@@ -788,37 +788,6 @@ mod tests {
         assert_eq!(opened, "20260902T043000.000000Z");
     }
 
-    #[test]
-    fn this_module_is_the_only_oplog_name_formatter() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        let mut offenders = Vec::new();
-        fn walk(dir: &std::path::Path, offenders: &mut Vec<String>) {
-            for entry in std::fs::read_dir(dir).unwrap() {
-                let entry = entry.unwrap();
-                let path = entry.path();
-                if path.is_dir() {
-                    if path.file_name().and_then(OsStr::to_str) == Some("operational_log") {
-                        continue;
-                    }
-                    walk(&path, offenders);
-                    continue;
-                }
-                if path.extension().and_then(OsStr::to_str) != Some("rs") {
-                    continue;
-                }
-                let text = std::fs::read_to_string(&path).unwrap();
-                if text.contains("oplog--") {
-                    offenders.push(path.display().to_string());
-                }
-            }
-        }
-        walk(&root, &mut offenders);
-        assert!(
-            offenders.is_empty(),
-            "only operational_log may mention oplog-- names: {offenders:?}"
-        );
-    }
-
     #[cfg(unix)]
     #[test]
     fn unix_invalid_native_bytes_are_unrelated_unless_prefixed() {

@@ -9,8 +9,11 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
 
+#[cfg(unix)]
 use nix::errno::Errno;
+#[cfg(unix)]
 use nix::sys::signal::{Signal, killpg};
+#[cfg(unix)]
 use nix::unistd::Pid;
 use serde_json::{Map, Value};
 use solstone_core_generate_wire::{record_usage, usage_for_log};
@@ -108,12 +111,17 @@ pub fn spawn_one(
     let disposition = Disposition::IndependentBoundedHelper {
         timeout: Duration::from_secs(timeout),
     };
+    #[cfg(unix)]
     let terminate = Box::new(|child: &mut std::process::Child, _timeout| {
         let pgid = i32::try_from(child.id()).map_err(|_| {
             LaunchError::Terminate(std::io::Error::other("child pid does not fit i32"))
         })?;
         stop_group(pgid);
         Ok(())
+    });
+    #[cfg(not(unix))]
+    let terminate = Box::new(|child: &mut std::process::Child, _timeout| {
+        child.kill().map_err(LaunchError::Terminate)
     });
     let authority = match hosted_parent {
         Some(parent) => process::launch_command_hosted(
@@ -402,10 +410,12 @@ fn context_for(name: &str) -> String {
     }
 }
 
+#[cfg(unix)]
 pub(crate) fn stop_group(pgid: i32) {
     stop_group_with_grace(pgid, Duration::from_secs(10));
 }
 
+#[cfg(unix)]
 pub fn stop_group_with_grace(pgid: i32, grace: Duration) {
     let _ = killpg(Pid::from_raw(pgid), Signal::SIGTERM);
     let deadline = std::time::Instant::now() + grace;
@@ -418,6 +428,7 @@ pub fn stop_group_with_grace(pgid: i32, grace: Duration) {
     let _ = killpg(Pid::from_raw(pgid), Signal::SIGKILL);
 }
 
+#[cfg(unix)]
 fn group_has_live_processes(pgid: i32) -> bool {
     !matches!(killpg(Pid::from_raw(pgid), None), Err(Errno::ESRCH))
 }

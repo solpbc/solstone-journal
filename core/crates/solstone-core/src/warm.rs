@@ -20,6 +20,7 @@
 
 use std::env;
 use std::io;
+#[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
@@ -435,7 +436,7 @@ fn unavailable_record(row: InventoryRow, actual: String) -> WarmRecord {
 
 fn classify_output(row: InventoryRow, status: ExitStatus, stderr: BoundedStderr) -> WarmRecord {
     let exit_code = status.code();
-    let signal = status.signal();
+    let signal = exit_signal(&status);
     let stderr_truncated = stderr.truncated;
     let loader_library = stderr.loader_library;
     let stderr = String::from_utf8_lossy(&stderr.bytes).into_owned();
@@ -487,6 +488,16 @@ fn classify_output(row: InventoryRow, status: ExitStatus, stderr: BoundedStderr)
         actual: format!("returned exit {}", exit_code.expect("numeric exit code")),
         repair: "No repair needed.",
     }
+}
+
+#[cfg(unix)]
+fn exit_signal(status: &ExitStatus) -> Option<i32> {
+    status.signal()
+}
+
+#[cfg(not(unix))]
+fn exit_signal(_status: &ExitStatus) -> Option<i32> {
+    None
 }
 
 fn verified_cargo_target_tree(executable: &Path) -> bool {

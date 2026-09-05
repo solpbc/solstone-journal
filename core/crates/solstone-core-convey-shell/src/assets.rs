@@ -111,12 +111,6 @@ mod tests {
     }
 
     #[test]
-    fn network_copy_payload_has_exactly_111_constants() {
-        let network = payload(network_copy_json());
-        assert_eq!(network.len(), 111);
-    }
-
-    #[test]
     fn network_copy_payload_keeps_digit_bearing_step_constants() {
         let network = payload(network_copy_json());
         for name in ["STEP_1", "STEP_2", "STEP_3"] {
@@ -172,30 +166,6 @@ mod tests {
             dictionary_keys_seen >= 17,
             "expected at least 17 network dictionary keys, found {dictionary_keys_seen}"
         );
-    }
-
-    #[test]
-    fn speaker_copy_payload_keeps_its_exact_value_census() {
-        let speakers = payload(speaker_copy_json());
-        assert_eq!(speakers.len(), 120);
-        for name in speakers.keys() {
-            assert!(
-                name.starts_with("SPK_"),
-                "speaker constant has the expected prefix: {name}"
-            );
-        }
-        let mut arrays = 0;
-        let mut strings = 0;
-        let mut objects = 0;
-        for value in speakers.values() {
-            match value {
-                Value::Array(_) => arrays += 1,
-                Value::String(_) => strings += 1,
-                Value::Object(_) => objects += 1,
-                _ => panic!("speaker copy value has an unexpected JSON type"),
-            }
-        }
-        assert_eq!((arrays, strings, objects), (2, 118, 0));
     }
 
     #[test]

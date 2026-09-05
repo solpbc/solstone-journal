@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use rusqlite::types::Value as SqlValue;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use solstone_core_format::content::{
     ContentResolution, Family, classify, produce_chunks, resolve_content_shape,
 };
@@ -109,6 +109,65 @@ pub enum RescanFileStatus {
     Declined,
 }
 
+/// Row IDs for paths this scan has not processed yet. FTS5 cannot index the
+/// equality predicate on its UNINDEXED path column, so scanning it once avoids
+/// a full content-table walk for every changed file. No persistent schema or
+/// source data changes are involved.
+struct PendingChunkRows {
+    paths: BTreeMap<String, Vec<i64>>,
+    data_version: Option<i64>,
+}
+
+impl PendingChunkRows {
+    fn new(paths: impl Iterator<Item = String>) -> Self {
+        Self {
+            paths: paths.map(|path| (path, Vec::new())).collect(),
+            data_version: None,
+        }
+    }
+
+    /// Caller holds an IMMEDIATE transaction: another writer cannot commit
+    /// between validating the snapshot and using the row IDs. Each path is
+    /// taken once; our own writes only affect paths already removed here.
+    fn take(&mut self, tx: &Transaction<'_>, path: &str) -> Result<Vec<i64>, StoreError> {
+        let version = tx.query_row("PRAGMA data_version", [], |row| row.get(0))?;
+        if self.data_version != Some(version) {
+            for rows in self.paths.values_mut() {
+                rows.clear();
+            }
+            let mut statement = tx.prepare("SELECT rowid, path FROM chunks")?;
+            let mut rows = statement.query([])?;
+            while let Some(row) = rows.next()? {
+                let path: Option<String> = row.get(1)?;
+                if let Some(ids) = path.as_ref().and_then(|path| self.paths.get_mut(path)) {
+                    ids.push(row.get(0)?);
+                }
+            }
+            self.data_version = Some(version);
+        }
+        Ok(self
+            .paths
+            .remove(path)
+            .expect("scan takes each pending path once"))
+    }
+}
+
+fn delete_file_chunks(
+    conn: &Connection,
+    path: &str,
+    known_rows: Option<&[i64]>,
+) -> Result<(), StoreError> {
+    if let Some(rows) = known_rows {
+        let mut statement = conn.prepare_cached("DELETE FROM chunks WHERE rowid=? AND path=?")?;
+        for id in rows {
+            statement.execute(params![id, path])?;
+        }
+    } else {
+        conn.execute("DELETE FROM chunks WHERE path=?", [path])?;
+    }
+    Ok(())
+}
+
 pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError> {
     let mut conn = open_index(journal)?;
     let mut report = ScanReport::default();
@@ -132,6 +191,13 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
         }
     }
 
+    let (removed, retained_days) = removal_candidates(&db_mtimes, &files, full);
+    let mut pending_chunks = PendingChunkRows::new(
+        to_index
+            .iter()
+            .map(|(rel, _, _)| rel.clone())
+            .chain(removed.iter().cloned()),
+    );
     for (rel, path, mtime) in &to_index {
         let family = match resolve_content_shape(path, rel) {
             ContentResolution::Indexed(family) => family,
@@ -144,8 +210,17 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
             }
             ContentResolution::Unindexed(_) | ContentResolution::IndexedElsewhere => continue,
         };
-        let tx = conn.transaction()?;
-        let warnings = match ensure_file_current(&tx, journal, rel, path, *mtime, false, family) {
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let chunk_rows = pending_chunks.take(&tx, rel)?;
+        let warnings = match ensure_file_current(
+            &tx,
+            journal,
+            rel,
+            path,
+            *mtime,
+            FileUpdate::Scan(&chunk_rows),
+            family,
+        ) {
             Ok(warnings) => warnings,
             Err(StoreError::Io(error)) => {
                 report.skipped += 1;
@@ -159,7 +234,6 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
         report.indexed += 1;
     }
 
-    let (removed, retained_days) = removal_candidates(&db_mtimes, &files, full);
     report.warnings.extend(
         retained_days
             .into_iter()
@@ -167,8 +241,9 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
     );
     let mut removed_count = 0;
     for rel in &removed {
-        let tx = conn.transaction()?;
-        tx.execute("DELETE FROM chunks WHERE path=?", [rel])?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let chunk_rows = pending_chunks.take(&tx, rel)?;
+        delete_file_chunks(&tx, rel, Some(&chunk_rows))?;
         tx.execute("DELETE FROM files WHERE path=?", [rel])?;
         tx.commit()?;
         removed_count += 1;
@@ -273,7 +348,13 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
     let mut warnings = Vec::new();
     if let Some(family) = family {
         warnings.extend(ensure_file_current(
-            &tx, journal, &rel, &path, mtime, true, family,
+            &tx,
+            journal,
+            &rel,
+            &path,
+            mtime,
+            FileUpdate::Force,
+            family,
         )?);
     }
     if edge_source.is_some() {
@@ -705,7 +786,15 @@ fn migrate_segment_aggregate(
                 )));
             }
         };
-        match ensure_file_current(&tx, journal, &rel, &path, mtime, false, family) {
+        match ensure_file_current(
+            &tx,
+            journal,
+            &rel,
+            &path,
+            mtime,
+            FileUpdate::IfChanged,
+            family,
+        ) {
             Ok(mut file_warnings) => warnings.append(&mut file_warnings),
             Err(StoreError::Io(error)) => {
                 tx.rollback()?;
@@ -736,7 +825,11 @@ fn migrate_segment_aggregate(
     Ok(SegmentMigrationOutcome::Complete(warnings))
 }
 
-fn index_entity_search(conn: &Connection, journal: &Path, force: bool) -> Result<(), StoreError> {
+fn index_entity_search(
+    conn: &Transaction<'_>,
+    journal: &Path,
+    force: bool,
+) -> Result<(), StoreError> {
     let build = build_entity_search(journal)?;
     let watermark = read_entity_search_watermark(conn)?;
     let (stored_mtime, stored_count, migrating) = match watermark {
@@ -748,7 +841,10 @@ fn index_entity_search(conn: &Connection, journal: &Path, force: bool) -> Result
         ),
     };
     let built_rows = group_entity_search_rows(build.rows.iter().cloned());
-    let stored_rows = stored_entity_search_rows(conn)?;
+    let StoredEntitySearchRows {
+        rows: stored_rows,
+        row_ids,
+    } = stored_entity_search_rows(conn)?;
     let complete = built_rows.keys().eq(stored_rows.keys());
 
     let entity_changed = force
@@ -761,16 +857,22 @@ fn index_entity_search(conn: &Connection, journal: &Path, force: bool) -> Result
             .chain(stored_rows.keys())
             .cloned()
             .collect::<BTreeSet<_>>();
+        let mut delete =
+            conn.prepare("DELETE FROM chunks WHERE rowid=? AND agent='entity' AND path=?")?;
         for path in paths {
             let built = built_rows.get(&path);
             let stored = stored_rows.get(&path);
             if built == stored {
                 continue;
             }
-            conn.execute(
-                "DELETE FROM chunks WHERE agent='entity' AND path=?",
-                [&path],
-            )?;
+            // FTS5 indexes rowids, not path equality. Keep the IDs from the
+            // existing transaction's read instead of scanning all chunks for
+            // every changed entity. A new entity has nothing to delete.
+            if let Some(ids) = row_ids.get(&path) {
+                for id in ids {
+                    delete.execute(params![id, path])?;
+                }
+            }
             if let Some(rows) = built {
                 insert_entity_search_rows(conn, rows)?;
             }
@@ -808,33 +910,47 @@ fn group_entity_search_rows(
     grouped
 }
 
-fn stored_entity_search_rows(
-    conn: &Connection,
-) -> Result<BTreeMap<String, Vec<EntitySearchRow>>, StoreError> {
+struct StoredEntitySearchRows {
+    rows: BTreeMap<String, Vec<EntitySearchRow>>,
+    row_ids: BTreeMap<String, Vec<i64>>,
+}
+
+fn stored_entity_search_rows(conn: &Connection) -> Result<StoredEntitySearchRows, StoreError> {
     let mut statement = conn.prepare(
-        "SELECT path, content, day, facet, agent, stream, idx, time_bucket FROM chunks WHERE agent='entity' ORDER BY path, idx",
+        "SELECT path, content, day, facet, agent, stream, idx, time_bucket, rowid FROM chunks WHERE agent='entity' ORDER BY path, idx",
     )?;
     let rows = statement.query_map([], |row| {
-        Ok(EntitySearchRow {
-            path: row.get(0)?,
-            content: row.get(1)?,
-            day: row.get(2)?,
-            facet: row.get(3)?,
-            agent: row.get(4)?,
-            stream: row.get(5)?,
-            idx: row.get(6)?,
-            time_bucket: row.get(7)?,
-        })
+        Ok((
+            row.get::<_, i64>(8)?,
+            EntitySearchRow {
+                path: row.get(0)?,
+                content: row.get(1)?,
+                day: row.get(2)?,
+                facet: row.get(3)?,
+                agent: row.get(4)?,
+                stream: row.get(5)?,
+                idx: row.get(6)?,
+                time_bucket: row.get(7)?,
+            },
+        ))
     })?;
     let mut grouped = BTreeMap::new();
+    let mut row_ids = BTreeMap::new();
     for row in rows {
-        let row = row?;
+        let (id, row) = row?;
+        row_ids
+            .entry(row.path.clone())
+            .or_insert_with(Vec::new)
+            .push(id);
         grouped
             .entry(row.path.clone())
             .or_insert_with(Vec::new)
             .push(row);
     }
-    Ok(grouped)
+    Ok(StoredEntitySearchRows {
+        rows: grouped,
+        row_ids,
+    })
 }
 
 fn insert_entity_search_rows(
@@ -881,6 +997,12 @@ fn stored_entity_search_count(conn: &Connection) -> Result<i64, StoreError> {
     Ok(stored.unwrap_or(0))
 }
 
+enum FileUpdate<'a> {
+    Force,
+    IfChanged,
+    Scan(&'a [i64]),
+}
+
 /// Make one child file current. The main scan and legacy aggregate migration
 /// share this path so an mtime match has one meaning everywhere.
 // The parameter list is the shared state both callers must agree on; grouping it
@@ -892,7 +1014,7 @@ fn ensure_file_current(
     rel: &str,
     path: &Path,
     mtime: i64,
-    force: bool,
+    update: FileUpdate<'_>,
     family: Family,
 ) -> Result<Vec<String>, StoreError> {
     let stored_mtime = conn
@@ -900,10 +1022,14 @@ fn ensure_file_current(
             row.get(0)
         })
         .optional()?;
-    if !force && stored_mtime == Some(mtime) {
+    if !matches!(update, FileUpdate::Force) && stored_mtime == Some(mtime) {
         return Ok(Vec::new());
     }
-    conn.execute("DELETE FROM chunks WHERE path=?", [rel])?;
+    let known_chunk_rows = match update {
+        FileUpdate::Scan(rows) => Some(rows),
+        FileUpdate::Force | FileUpdate::IfChanged => None,
+    };
+    delete_file_chunks(conn, rel, known_chunk_rows)?;
     let warnings = index_file(conn, journal, rel, path, family).map_err(|warning| {
         StoreError::Io(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
@@ -1009,6 +1135,100 @@ mod tests {
         fs::create_dir_all(path.parent().expect("test path should have parent"))
             .expect("create parent");
         fs::write(path, text).expect("write test file");
+    }
+
+    #[test]
+    fn pending_chunk_rows_refresh_after_other_writer_and_preserve_reused_ids() {
+        let root = temp_root("pending-chunks-concurrent");
+        let mut conn = open_index(&root).expect("open");
+        conn.execute(
+            "INSERT INTO chunks(rowid, content, path) VALUES (1, 'first', 'a'), (2, 'old', 'b')",
+            [],
+        )
+        .expect("seed");
+        let other = open_index(&root).expect("other writer");
+        other
+            .busy_timeout(std::time::Duration::ZERO)
+            .expect("no wait");
+        let mut pending = PendingChunkRows::new(["a", "b", "c"].into_iter().map(str::to_string));
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("begin");
+        let ids = pending.take(&tx, "a").expect("initial snapshot");
+        assert_eq!(ids, [1]);
+        assert!(
+            other
+                .execute(
+                    "INSERT INTO chunks(content, path) VALUES ('blocked', 'c')",
+                    []
+                )
+                .is_err()
+        );
+        delete_file_chunks(&tx, "a", Some(&ids)).expect("delete a");
+        tx.execute(
+            "INSERT INTO chunks(content, path) VALUES ('replacement', 'a')",
+            [],
+        )
+        .expect("own replacement");
+        tx.commit().expect("commit a");
+        other
+            .execute("DELETE FROM chunks WHERE rowid=2", [])
+            .expect("other delete");
+        other.execute("INSERT INTO chunks(rowid, content, path) VALUES (2, 'unrelated', 'elsewhere'), (4, 'new', 'b'), (5, 'newly arrived', 'c')", []).expect("other replacement");
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("begin b");
+        let ids = pending.take(&tx, "b").expect("refresh");
+        assert_eq!(ids, [4]);
+        delete_file_chunks(&tx, "b", Some(&ids)).expect("delete b");
+        tx.commit().expect("commit b");
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("begin c");
+        let ids = pending
+            .take(&tx, "c")
+            .expect("own commit does not invalidate remaining paths");
+        assert_eq!(ids, [5]);
+        delete_file_chunks(&tx, "c", Some(&ids)).expect("delete c");
+        tx.rollback().expect("rollback c");
+        assert_eq!(
+            count(&conn, "SELECT count(*) FROM chunks WHERE path='b'"),
+            0
+        );
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT count(*) FROM chunks WHERE path IN ('a', 'c', 'elsewhere')"
+            ),
+            3
+        );
+        conn.execute("INSERT INTO chunks(chunks) VALUES ('integrity-check')", [])
+            .expect("FTS integrity");
+        drop(other);
+        drop(conn);
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn pending_chunk_rows_delete_exact_paths_with_multiple_chunks_and_missing_file() {
+        let root = temp_root("pending-chunks-exact");
+        let mut conn = open_index(&root).expect("open");
+        conn.execute("INSERT INTO chunks(content, path) VALUES ('one', 'a_%'), ('two', 'a_%'), ('other', 'abc'), ('no path', NULL)", []).expect("seed");
+        let mut pending = PendingChunkRows::new(["a_%", "missing"].into_iter().map(str::to_string));
+        for path in ["a_%", "missing"] {
+            let tx = conn
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .expect("begin");
+            let ids = pending.take(&tx, path).expect("lookup");
+            assert_eq!(ids.len(), if path == "missing" { 0 } else { 2 });
+            delete_file_chunks(&tx, path, Some(&ids)).expect("delete");
+            tx.commit().expect("commit");
+        }
+        assert_eq!(count(&conn, "SELECT count(*) FROM chunks"), 2);
+        conn.execute("INSERT INTO chunks(chunks) VALUES ('integrity-check')", [])
+            .expect("FTS integrity");
+        drop(conn);
+        fs::remove_dir_all(root).expect("cleanup");
     }
 
     fn write_stream(root: &Path, day: &str, stream: &str, segment: &str) {
@@ -3972,6 +4192,49 @@ mod tests {
     }
 
     #[test]
+    fn entity_search_replacement_removes_all_old_chunks_but_preserves_other_agents() {
+        let root = temp_root("entity-search-duplicate-chunks");
+        write(
+            &root,
+            "entities/alice/entity.json",
+            r#"{"name":"Alice","type":"Person"}"#,
+        );
+        let mut conn = open_index(&root).expect("open index");
+        for (path, agent, content) in [
+            ("entity_search:alice", "entity", "old first"),
+            ("entity_search:alice", "entity", "old duplicate"),
+            ("entity_search:alice", "other", "unrelated"),
+            ("entity_search:removed", "entity", "removed entity"),
+            ("entity_search:removed", "other", "unrelated removed path"),
+        ] {
+            conn.execute(
+                "INSERT INTO chunks(content,path,day,facet,agent,stream,idx,time_bucket) VALUES (?,?,'','',?,'',0,'')",
+                params![content, path, agent],
+            ).expect("seed mixed rows");
+        }
+        let tx = conn.transaction().expect("start entity update");
+        index_entity_search(&tx, &root, true).expect("replace entity rows");
+        tx.commit().expect("commit entity update");
+        assert_eq!(
+            count(&conn, "SELECT count(*) FROM chunks WHERE agent='entity'"),
+            1
+        );
+        assert_eq!(
+            count(&conn, "SELECT count(*) FROM chunks WHERE agent='other'"),
+            2
+        );
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT count(*) FROM chunks WHERE content='Alice (Person)' AND path='entity_search:alice' AND agent='entity'"
+            ),
+            1
+        );
+        assert_sqlite_and_fts_integrity(&conn);
+        fs::remove_dir_all(root).expect("cleanup mixed entity rows root");
+    }
+
+    #[test]
     fn entity_search_rewrites_only_changed_entity_rows() {
         let root = temp_root("entity-search-per-entity-diff");
         write(
@@ -4104,14 +4367,18 @@ mod tests {
 
         scan_journal(&root, true).expect("full recovery scan");
         let conn = Connection::open(db_path(&root)).expect("open recovered index");
-        let recovered = stored_entity_search_rows(&conn).expect("read recovered rows");
+        let recovered = stored_entity_search_rows(&conn)
+            .expect("read recovered rows")
+            .rows;
         drop(conn);
 
         reset_index(&root).expect("reset index for from-empty comparison");
         scan_journal(&root, true).expect("from-empty full scan");
         let conn = Connection::open(db_path(&root)).expect("open from-empty index");
         assert_eq!(
-            stored_entity_search_rows(&conn).expect("read from-empty rows"),
+            stored_entity_search_rows(&conn)
+                .expect("read from-empty rows")
+                .rows,
             recovered
         );
         fs::remove_dir_all(root).expect("cleanup full recovery root");

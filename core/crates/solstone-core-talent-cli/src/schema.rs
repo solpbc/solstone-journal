@@ -97,4 +97,27 @@ mod tests {
             .expect_err("invalid schema");
         assert!(error.contains("talent demo: schema file is not a valid JSON Schema"));
     }
+
+    #[test]
+    fn shipped_screen_schema_rejects_an_empty_narrative() {
+        let talent_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../payload/solstone/talent")
+            .canonicalize()
+            .expect("shipped talent directory");
+        let schema = load_talent_schema("screen", &talent_dir, "screen.schema.json")
+            .expect("shipped screen schema");
+        let validator = options()
+            .with_draft(Draft::Draft202012)
+            .build(&schema)
+            .expect("valid screen schema");
+
+        assert!(!validator.is_valid(&serde_json::json!({
+            "narrative":"",
+            "entities":[]
+        })));
+        assert!(validator.is_valid(&serde_json::json!({
+            "narrative":"Recorded screen activity.",
+            "entities":[]
+        })));
+    }
 }

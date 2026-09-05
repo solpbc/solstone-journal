@@ -5,7 +5,6 @@ use std::collections::BTreeSet;
 
 use crate::events::{BudgetLadder, BudgetStage};
 
-const COST_WARN_FRAC: f64 = 0.70;
 const CONTEXT_WARN_FRAC: f64 = 0.70;
 const CONTEXT_FINAL_FRAC: f64 = 0.78;
 const TURN_WARN_FRACS: [(u8, u8); 3] = [(50, 50), (75, 75), (90, 90)];
@@ -30,9 +29,7 @@ impl ResourceLadder {
     /// response-id dedupe.
     pub(crate) fn check(
         &mut self,
-        cost: f64,
         context_fraction: Option<f64>,
-        cost_cap: f64,
         finish_tool: &str,
     ) -> Option<LadderEvent> {
         if self.force_stopped {
@@ -46,9 +43,7 @@ impl ResourceLadder {
                 message: None,
             });
         }
-        if cost >= cost_cap
-            || context_fraction.is_some_and(|fraction| fraction >= CONTEXT_FINAL_FRAC)
-        {
+        if context_fraction.is_some_and(|fraction| fraction >= CONTEXT_FINAL_FRAC) {
             self.final_turn_armed = true;
             self.wrapup_nudged = true;
             return Some(LadderEvent {
@@ -60,8 +55,7 @@ impl ResourceLadder {
             });
         }
         if !self.wrapup_nudged
-            && (cost >= COST_WARN_FRAC * cost_cap
-                || context_fraction.is_some_and(|fraction| fraction >= CONTEXT_WARN_FRAC))
+            && context_fraction.is_some_and(|fraction| fraction >= CONTEXT_WARN_FRAC)
         {
             self.wrapup_nudged = true;
             return Some(LadderEvent {

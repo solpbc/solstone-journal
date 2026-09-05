@@ -455,11 +455,6 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
         include_str!("../../../solstone-core-convey-shell/src/thinking_sol_writes.rs"),
     ),
     (
-        "convey",
-        "thinking_sol_writes_contract",
-        include_str!("../../../solstone-core-convey-shell/src/thinking_sol_writes_contract.rs"),
-    ),
-    (
         "spl",
         "admission",
         include_str!("../../../solstone-core-spl/src/admission.rs"),
@@ -579,10 +574,9 @@ const RAW_BYPASS_EXEMPT_SOURCES: &[(&str, &str)] = &[
     // generation boundary; it remains enumerated so new modules cannot evade
     // the inventory check.
     ("sense", "memory"),
-    // These modules contain source-code examples for their own contracts, not
+    // This module contains source-code examples for its own contract, not
     // production command construction.
     ("convey", "thinking_sol_reads_contract"),
-    ("convey", "thinking_sol_writes_contract"),
 ];
 
 fn declared_modules(source: &str) -> BTreeSet<&str> {

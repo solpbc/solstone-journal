@@ -18,10 +18,10 @@ use solstone_core_maintenance::{
 };
 use solstone_core_system_health::{TimelineDivergenceDiagnosis, diagnose_timeline_divergence};
 use solstone_core_timeline::{
-    ArtifactStateV1, AttemptOutcome, AttemptStateV1, CURRENT_SCHEMA_VERSION, CurationRecordV1,
-    MasterTimelineV1, SegmentBindingV1, SegmentSummaryV1, SegmentTimelineV1, TimelineKind,
-    TimelineStateV1, day_timeline_path, master_subject_key, publish_segment_timeline,
-    save_timeline_state,
+    AttemptOutcome, AttemptStateV1, CURRENT_SCHEMA_VERSION, CurationRecordV1, MasterTimelineV1,
+    PublishedArtifactV1, SegmentBindingV1, SegmentSummaryV1, SegmentTimelineV1, TimelineKind,
+    TimelineRecordV1, day_timeline_path, master_subject_key, publish_segment_timeline,
+    timeline_record_path,
 };
 use tower::ServiceExt;
 
@@ -158,17 +158,21 @@ async fn recovery_fixture_converges_legacy_segment_population_to_verified_owner_
 }
 
 fn build_recovery_fixture(journal: &Path) -> Vec<FixtureSegment> {
-    let mut state = TimelineStateV1::empty();
-    state.artifacts.insert(
-        master_subject_key().to_owned(),
-        ArtifactStateV1 {
+    let state = TimelineRecordV1 {
+        schema_version: CURRENT_SCHEMA_VERSION,
+        subject: master_subject_key().to_owned(),
+        published: Some(PublishedArtifactV1 {
             input_digest: "obsolete-master-state".to_owned(),
             artifact_sha256: "obsolete-master-bytes".to_owned(),
             published_at_ms: 1,
-            generation: 1,
-        },
-    );
-    save_timeline_state(journal, &state).expect("stale state writes");
+        }),
+        attempts: Vec::new(),
+    };
+    fs::write(
+        timeline_record_path(journal, master_subject_key()).unwrap(),
+        serde_json::to_vec(&state).unwrap(),
+    )
+    .unwrap();
     fs::write(
         journal.join("timeline.json"),
         serde_json::to_vec(&stale_master()).expect("stale master serializes"),

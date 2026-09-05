@@ -1,25 +1,50 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#[cfg(unix)]
 use nix::sys::statvfs::statvfs;
+#[cfg(unix)]
 use solstone_core_journal::{
     LAYOUT_BUNDLE_ANCHOR, LAYOUT_LAYOUT_ANCHOR, LAYOUT_TEMPLATE_ANCHOR,
     resolve_installation_root_from_executable_dir,
 };
+#[cfg(unix)]
 use std::{fs, path::Path};
 
+#[cfg(unix)]
+use crate::vocabulary::ExecutionError;
 use crate::{
     context::CheckContext,
-    vocabulary::{Check, ExecutionError, RunnerResult, Status, make_result},
+    vocabulary::{Check, RunnerResult, Status, make_result},
 };
 
 // Covers filesystem allocation and transient installation bookkeeping beyond
 // the measured replacement tree.
+#[cfg(unix)]
 const INSTALL_TREE_HEADROOM_BYTES: u64 = 1024 * 1024 * 1024;
+#[cfg(unix)]
 const NOT_LAYOUT_INSTALL_TREE_DETAIL: &str =
     "resolved installation root is not a layout install tree";
 
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
+    #[cfg(unix)]
+    {
+        run_unix(context, check)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = context;
+        Ok(make_result(
+            check,
+            Status::Skip,
+            "not supported on windows",
+            None::<String>,
+        ))
+    }
+}
+
+#[cfg(unix)]
+fn run_unix(context: &CheckContext, check: Check) -> RunnerResult {
     let Some(_resolved_root) =
         resolve_installation_root_from_executable_dir(&context.install_bin_dir)
     else {
@@ -89,6 +114,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     ))
 }
 
+#[cfg(unix)]
 pub(crate) fn required_free_space_bytes(prefix: &Path) -> Result<(u64, u64), ExecutionError> {
     let tree_bytes = ["bin", "lib", "share"]
         .into_iter()
@@ -102,6 +128,7 @@ pub(crate) fn required_free_space_bytes(prefix: &Path) -> Result<(u64, u64), Exe
     Ok((tree_bytes, INSTALL_TREE_HEADROOM_BYTES))
 }
 
+#[cfg(unix)]
 fn tree_bytes(path: &Path) -> Result<u64, ExecutionError> {
     let metadata = fs::symlink_metadata(path).map_err(|error| ExecutionError {
         kind: "InstallTreeWalkError".into(),
@@ -143,11 +170,12 @@ fn tree_bytes(path: &Path) -> Result<u64, ExecutionError> {
         })
 }
 
+#[cfg(unix)]
 fn bytes_to_gib(bytes: u64) -> f64 {
     bytes as f64 / 1024_f64.powi(3)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use crate::{

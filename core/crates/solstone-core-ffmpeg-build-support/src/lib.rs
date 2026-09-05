@@ -12,6 +12,302 @@ use sha2::{Digest, Sha256};
 pub const BUILD_RUN_ID_ENV: &str = "SOLSTONE_FFMPEG_BUILD_RUN_ID";
 pub const EVIDENCE_DIR: &str = "solstone-ffmpeg-evidence";
 
+// This is the complete component surface exercised by Journal's checked-in
+// media corpus: H.264/VP8 video; AAC/FLAC/MP3/Opus/Vorbis/PCM audio; MOV,
+// Matroska, MP3, Ogg, WAV, and FLAC demuxing; and the IPod/M4A remux path.
+// `--disable-everything` makes this an allowlist rather than a description of
+// whatever the FFmpeg defaults happened to include at build time.
+const AUDIO_REMUX_COMPONENT_ARGS: &[&str] = &[
+    "--disable-everything",
+    "--disable-network",
+    "--disable-autodetect",
+    "--disable-programs",
+    "--disable-doc",
+    "--disable-avdevice",
+    "--disable-avfilter",
+    "--disable-iconv",
+    "--enable-static",
+    "--disable-shared",
+    "--enable-pic",
+    "--enable-avcodec",
+    "--enable-avformat",
+    "--enable-avutil",
+    "--enable-swresample",
+    "--enable-swscale",
+    "--enable-protocol=file",
+    "--enable-demuxer=flac",
+    "--enable-demuxer=matroska",
+    "--enable-demuxer=mov",
+    "--enable-demuxer=mp3",
+    "--enable-demuxer=ogg",
+    "--enable-demuxer=wav",
+    "--enable-muxer=flac",
+    "--enable-muxer=ipod",
+    "--enable-muxer=mp3",
+    "--enable-muxer=ogg",
+    "--enable-muxer=opus",
+    "--enable-muxer=wav",
+    "--enable-muxer=webm",
+    "--enable-decoder=aac",
+    "--enable-decoder=flac",
+    "--enable-decoder=h264",
+    "--enable-decoder=mp3",
+    "--enable-decoder=mp3float",
+    "--enable-decoder=opus",
+    "--enable-decoder=pcm_s16le",
+    "--enable-decoder=vorbis",
+    "--enable-decoder=vp8",
+    "--enable-parser=aac",
+    "--enable-parser=flac",
+    "--enable-parser=h264",
+    "--enable-parser=mpegaudio",
+    "--enable-parser=opus",
+    "--enable-parser=vorbis",
+    "--enable-parser=vp8",
+];
+
+// FFmpeg 9.0's effective component inventory for AUDIO_REMUX_COMPONENT_ARGS.
+// This includes dependency closures selected by configure, not merely the
+// command-line requests. The source digest in the same receipt pins the
+// configure implementation to which this exact set applies.
+const AUDIO_REMUX_COMPONENT_INVENTORY: &[&str] = &[
+    "CONFIG_AAC_ADTSTOASC_BSF",
+    "CONFIG_AAC_DECODER",
+    "CONFIG_AAC_PARSER",
+    "CONFIG_AC3_PARSER",
+    "CONFIG_FILE_PROTOCOL",
+    "CONFIG_FLAC_DECODER",
+    "CONFIG_FLAC_DEMUXER",
+    "CONFIG_FLAC_MUXER",
+    "CONFIG_FLAC_PARSER",
+    "CONFIG_H264_DECODER",
+    "CONFIG_H264_PARSER",
+    "CONFIG_IPOD_MUXER",
+    "CONFIG_MATROSKA_DEMUXER",
+    "CONFIG_MOV_DEMUXER",
+    "CONFIG_MOV_MUXER",
+    "CONFIG_MP3FLOAT_DECODER",
+    "CONFIG_MP3_DECODER",
+    "CONFIG_MP3_DEMUXER",
+    "CONFIG_MP3_MUXER",
+    "CONFIG_MPEGAUDIO_PARSER",
+    "CONFIG_OGG_DEMUXER",
+    "CONFIG_OGG_MUXER",
+    "CONFIG_OPUS_DECODER",
+    "CONFIG_OPUS_MUXER",
+    "CONFIG_OPUS_PARSER",
+    "CONFIG_PCM_S16LE_DECODER",
+    "CONFIG_VORBIS_DECODER",
+    "CONFIG_VORBIS_PARSER",
+    "CONFIG_VP8_DECODER",
+    "CONFIG_VP8_PARSER",
+    "CONFIG_VP9_SUPERFRAME_BSF",
+    "CONFIG_WAV_DEMUXER",
+    "CONFIG_WAV_MUXER",
+    "CONFIG_WEBM_MUXER",
+];
+
+// Describe needs only image extraction from the journal screen recording
+// containers. Its distinct GNU lane therefore never inherits the audio import
+// remux surface merely because the two products share the vendored build script.
+const VIDEO_DECODE_COMPONENT_ARGS: &[&str] = &[
+    "--disable-everything",
+    "--disable-network",
+    "--disable-autodetect",
+    "--disable-programs",
+    "--disable-doc",
+    "--disable-avdevice",
+    "--disable-avfilter",
+    "--disable-iconv",
+    "--enable-static",
+    "--disable-shared",
+    "--enable-pic",
+    "--enable-avcodec",
+    "--enable-avformat",
+    "--enable-avutil",
+    "--enable-swscale",
+    "--enable-protocol=file",
+    "--enable-demuxer=matroska",
+    "--enable-demuxer=mov",
+    "--enable-decoder=h264",
+    "--enable-decoder=vp8",
+    "--enable-parser=h264",
+    "--enable-parser=vp8",
+];
+
+const VIDEO_DECODE_COMPONENT_INVENTORY: &[&str] = &[
+    "CONFIG_FILE_PROTOCOL",
+    "CONFIG_H264_DECODER",
+    "CONFIG_H264_PARSER",
+    "CONFIG_MATROSKA_DEMUXER",
+    "CONFIG_MOV_DEMUXER",
+    "CONFIG_VP8_DECODER",
+    "CONFIG_VP8_PARSER",
+];
+
+pub fn controlled_component_args() -> &'static [&'static str] {
+    AUDIO_REMUX_COMPONENT_ARGS
+}
+
+pub fn controlled_component_inventory() -> &'static [&'static str] {
+    AUDIO_REMUX_COMPONENT_INVENTORY
+}
+
+pub fn controlled_component_inventory_for_audio_remux(
+    audio_remux: bool,
+) -> &'static [&'static str] {
+    if audio_remux {
+        AUDIO_REMUX_COMPONENT_INVENTORY
+    } else {
+        VIDEO_DECODE_COMPONENT_INVENTORY
+    }
+}
+
+pub fn controlled_component_args_for_audio_remux(audio_remux: bool) -> &'static [&'static str] {
+    if audio_remux {
+        AUDIO_REMUX_COMPONENT_ARGS
+    } else {
+        VIDEO_DECODE_COMPONENT_ARGS
+    }
+}
+
+pub fn validate_controlled_component_args(args: &[String]) -> Result<(), String> {
+    let Some(allowed_components) = [AUDIO_REMUX_COMPONENT_ARGS, VIDEO_DECODE_COMPONENT_ARGS]
+        .into_iter()
+        .find(|candidate| {
+            candidate
+                .iter()
+                .all(|required| args.iter().filter(|arg| arg.as_str() == *required).count() == 1)
+        })
+    else {
+        return Err("unexpected:\n  controlled FFmpeg configure argument set".into());
+    };
+
+    for arg in args {
+        if !allowed_components.contains(&arg.as_str()) && !is_allowed_build_arg(arg) {
+            return Err(format!(
+                "unexpected:\n  unapproved FFmpeg configure argument {arg}"
+            ));
+        }
+    }
+    if args.iter().any(|arg| arg == "--enable-network") {
+        return Err("unexpected:\n  network-enabled FFmpeg configure argument".into());
+    }
+    Ok(())
+}
+
+fn is_allowed_build_arg(arg: &str) -> bool {
+    matches!(
+        arg,
+        "--enable-debug"
+            | "--disable-debug"
+            | "--enable-stripping"
+            | "--disable-stripping"
+            | "--enable-pthreads"
+            | "--disable-gpl"
+            | "--disable-version3"
+            | "--disable-nonfree"
+            | "--enable-cross-compile"
+            | "--disable-asm"
+            | "--disable-x86asm"
+            | "--toolchain=msvc"
+    ) || [
+        "--prefix=",
+        "--extra-cflags=",
+        "--extra-ldflags=",
+        "--cc=",
+        "--cross-prefix=",
+        "--arch=",
+        "--target-os=",
+        "--sysroot=",
+    ]
+    .iter()
+    .any(|prefix| {
+        arg.strip_prefix(prefix)
+            .is_some_and(|value| !value.is_empty())
+    })
+}
+
+pub fn parse_component_inventory(config_components: &str) -> Result<Vec<String>, String> {
+    let mut inventory = Vec::new();
+    for line in config_components.lines() {
+        let Some(rest) = line.strip_prefix("#define CONFIG_") else {
+            continue;
+        };
+        let Some((name, value)) = rest.split_once(' ') else {
+            return Err("unexpected:\n  FFmpeg config component definition".into());
+        };
+        let component = format!("CONFIG_{name}");
+        validate_component_name(&component)?;
+        match value.trim() {
+            "0" => {}
+            "1" => inventory.push(component),
+            _ => return Err("unexpected:\n  FFmpeg config component value".into()),
+        }
+    }
+    canonicalize_component_inventory(&mut inventory)?;
+    if inventory.is_empty() {
+        return Err("missing required:\n  enabled FFmpeg component inventory".into());
+    }
+    Ok(inventory)
+}
+
+pub fn validate_controlled_component_inventory(components: &[String]) -> Result<(), String> {
+    validate_component_inventory(components)?;
+    if ![
+        AUDIO_REMUX_COMPONENT_INVENTORY,
+        VIDEO_DECODE_COMPONENT_INVENTORY,
+    ]
+    .into_iter()
+    .any(|expected| {
+        components
+            .iter()
+            .map(String::as_str)
+            .eq(expected.iter().copied())
+    }) {
+        return Err("unexpected:\n  enabled FFmpeg component inventory".into());
+    }
+    Ok(())
+}
+
+fn canonicalize_component_inventory(components: &mut [String]) -> Result<(), String> {
+    components.sort_unstable();
+    for component in components.iter() {
+        validate_component_name(component)?;
+    }
+    if components.windows(2).any(|pair| pair[0] == pair[1]) {
+        return Err("unexpected:\n  duplicate FFmpeg config component".into());
+    }
+    Ok(())
+}
+
+fn validate_component_inventory(components: &[String]) -> Result<(), String> {
+    if components.is_empty() {
+        return Err("missing required:\n  enabled FFmpeg component inventory".into());
+    }
+    for component in components {
+        validate_component_name(component)?;
+    }
+    if components.windows(2).any(|pair| pair[0] >= pair[1]) {
+        return Err("unexpected:\n  non-canonical FFmpeg component inventory".into());
+    }
+    Ok(())
+}
+
+fn validate_component_name(component: &str) -> Result<(), String> {
+    if !component.starts_with("CONFIG_")
+        || component.len() == "CONFIG_".len()
+        || !component.chars().all(|character| {
+            character.is_ascii_uppercase() || character.is_ascii_digit() || character == '_'
+        })
+    {
+        return Err(format!(
+            "unexpected:\n  FFmpeg config component name {component}"
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildProfile {
     Developer,
@@ -44,12 +340,14 @@ pub fn configure_mode_args(mode: ConfigureMode, windows: bool) -> Vec<String> {
     match mode {
         ConfigureMode::Debug => vec!["--enable-debug".into(), "--disable-stripping".into()],
         ConfigureMode::Release => {
-            let mut args = vec![
-                "--disable-debug".into(),
-                "--enable-stripping".into(),
-                "--extra-cflags=-O3 -ffast-math -funroll-loops".into(),
-            ];
-            if !windows {
+            let mut args = vec!["--disable-debug".into(), "--enable-stripping".into()];
+            if windows {
+                // FFmpeg's MSVC toolchain passes these directly to cl.exe.
+                // Keep the release speed and fast-math policy without leaking
+                // GNU-only flags into the native Windows compiler probe.
+                args.push("--extra-cflags=/O2 /fp:fast".into());
+            } else {
+                args.push("--extra-cflags=-O3 -ffast-math -funroll-loops".into());
                 args.push("--extra-ldflags=-flto".into());
             }
             args
@@ -113,9 +411,10 @@ pub fn configure_fingerprint(
     source_sha256: &str,
     program: &str,
     args: &[String],
+    components: &[String],
 ) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(b"solstone-ffmpeg-configure-fingerprint-v1");
+    hasher.update(b"solstone-ffmpeg-configure-fingerprint-v2");
     fingerprint_field(&mut hasher, target);
     fingerprint_field(&mut hasher, profile);
     fingerprint_field(&mut hasher, source_sha256);
@@ -123,6 +422,10 @@ pub fn configure_fingerprint(
     hasher.update((args.len() as u64).to_be_bytes());
     for arg in args {
         fingerprint_field(&mut hasher, arg);
+    }
+    hasher.update((components.len() as u64).to_be_bytes());
+    for component in components {
+        fingerprint_field(&mut hasher, component);
     }
     format!("{:x}", hasher.finalize())
 }
@@ -139,6 +442,7 @@ pub struct ConfigureReceipt {
     pub source_sha256: String,
     pub program: String,
     pub args: Vec<String>,
+    pub components: Vec<String>,
     pub fingerprint: String,
 }
 
@@ -149,6 +453,7 @@ impl ConfigureReceipt {
         source_sha256: &str,
         program: &str,
         args: &[String],
+        components: &[String],
     ) -> Self {
         Self {
             target: target.to_owned(),
@@ -156,7 +461,15 @@ impl ConfigureReceipt {
             source_sha256: source_sha256.to_owned(),
             program: program.to_owned(),
             args: args.to_vec(),
-            fingerprint: configure_fingerprint(target, profile, source_sha256, program, args),
+            components: components.to_vec(),
+            fingerprint: configure_fingerprint(
+                target,
+                profile,
+                source_sha256,
+                program,
+                args,
+                components,
+            ),
         }
     }
 
@@ -166,13 +479,16 @@ impl ConfigureReceipt {
 
     pub fn serialize(&self) -> Result<String, String> {
         self.validate()?;
-        let mut text = String::from("version=1\n");
+        let mut text = String::from("version=2\n");
         append_line(&mut text, "target", &self.target)?;
         append_line(&mut text, "profile", &self.profile)?;
         append_line(&mut text, "source_sha256", &self.source_sha256)?;
         append_line(&mut text, "program", &self.program)?;
         for arg in &self.args {
             append_line(&mut text, "arg", arg)?;
+        }
+        for component in &self.components {
+            append_line(&mut text, "component", component)?;
         }
         append_line(&mut text, "fingerprint", &self.fingerprint)?;
         Ok(text)
@@ -185,6 +501,7 @@ impl ConfigureReceipt {
         let mut source_sha256 = None;
         let mut program = None;
         let mut args = Vec::new();
+        let mut components = Vec::new();
         let mut fingerprint = None;
         for line in text.split_terminator('\n') {
             let (key, value) = parse_line(line)?;
@@ -195,11 +512,12 @@ impl ConfigureReceipt {
                 "source_sha256" => set_once(&mut source_sha256, key, value)?,
                 "program" => set_once(&mut program, key, value)?,
                 "arg" => args.push(value.to_owned()),
+                "component" => components.push(value.to_owned()),
                 "fingerprint" => set_once(&mut fingerprint, key, value)?,
                 _ => return Err(format!("unexpected:\n  configure receipt key {key}")),
             }
         }
-        if version.as_deref() != Some("1") {
+        if version.as_deref() != Some("2") {
             return Err("unexpected:\n  configure receipt version".into());
         }
         let receipt = Self {
@@ -208,6 +526,7 @@ impl ConfigureReceipt {
             source_sha256: required_record_field(source_sha256, "source_sha256")?,
             program: required_record_field(program, "program")?,
             args,
+            components,
             fingerprint: required_record_field(fingerprint, "fingerprint")?,
         };
         receipt.validate()?;
@@ -230,12 +549,14 @@ impl ConfigureReceipt {
         for arg in &self.args {
             validate_line_value("arg", arg)?;
         }
+        validate_component_inventory(&self.components)?;
         let expected = configure_fingerprint(
             &self.target,
             &self.profile,
             &self.source_sha256,
             &self.program,
             &self.args,
+            &self.components,
         );
         if self.fingerprint != expected {
             return Err("unexpected:\n  configure receipt fingerprint".into());
@@ -260,7 +581,7 @@ pub fn configure_receipt_filename(target: &str, fingerprint: &str) -> Result<Str
     {
         return Err("unexpected:\n  configure receipt fingerprint filename".into());
     }
-    Ok(format!("configure-{target}-{fingerprint}.v1"))
+    Ok(format!("configure-{target}-{fingerprint}.v2"))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -654,6 +975,13 @@ mod tests {
                 .iter()
                 .any(|arg| arg == "--extra-ldflags=-flto")
         );
+        let windows_release_args = configure_mode_args(ConfigureMode::Release, true);
+        assert!(windows_release_args.contains(&"--extra-cflags=/O2 /fp:fast".into()));
+        assert!(
+            !windows_release_args
+                .iter()
+                .any(|arg| arg.contains("-O3") || arg.contains("-ffast-math"))
+        );
     }
 
     #[test]
@@ -758,6 +1086,7 @@ sha256 = "digest"
             &"a".repeat(64),
             "/source/configure",
             &args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>(),
+            &["CONFIG_TEST_COMPONENT".to_owned()],
         )
     }
 
@@ -775,22 +1104,40 @@ sha256 = "digest"
     #[test]
     fn configure_fingerprint_binds_every_field_without_boundary_collisions() {
         let args = vec!["a".to_owned(), "bc".to_owned()];
-        let fingerprint = configure_fingerprint("target", "release", "source", "configure", &args);
-        assert_ne!(
-            fingerprint,
-            configure_fingerprint("target", "debug", "source", "configure", &args)
+        let components = vec!["CONFIG_ONE".to_owned()];
+        let fingerprint = configure_fingerprint(
+            "target",
+            "release",
+            "source",
+            "configure",
+            &args,
+            &components,
         );
         assert_ne!(
             fingerprint,
-            configure_fingerprint("other-target", "release", "source", "configure", &args)
+            configure_fingerprint("target", "debug", "source", "configure", &args, &components)
         );
         assert_ne!(
             fingerprint,
-            configure_fingerprint("target", "release", "other-source", "configure", &args)
+            configure_fingerprint(
+                "other-target",
+                "release",
+                "source",
+                "configure",
+                &args,
+                &components
+            )
         );
         assert_ne!(
             fingerprint,
-            configure_fingerprint("target", "release", "source", "other-configure", &args)
+            configure_fingerprint(
+                "target",
+                "release",
+                "other-source",
+                "configure",
+                &args,
+                &components
+            )
         );
         assert_ne!(
             fingerprint,
@@ -798,8 +1145,9 @@ sha256 = "digest"
                 "target",
                 "release",
                 "source",
-                "configure",
-                &["ab".to_owned(), "c".to_owned()]
+                "other-configure",
+                &args,
+                &components
             )
         );
         assert_ne!(
@@ -809,7 +1157,30 @@ sha256 = "digest"
                 "release",
                 "source",
                 "configure",
-                &["a".to_owned(), "bd".to_owned()]
+                &["ab".to_owned(), "c".to_owned()],
+                &components
+            )
+        );
+        assert_ne!(
+            fingerprint,
+            configure_fingerprint(
+                "target",
+                "release",
+                "source",
+                "configure",
+                &["a".to_owned(), "bd".to_owned()],
+                &components
+            )
+        );
+        assert_ne!(
+            fingerprint,
+            configure_fingerprint(
+                "target",
+                "release",
+                "source",
+                "configure",
+                &args,
+                &["CONFIG_OTHER".to_owned()]
             )
         );
     }
@@ -852,5 +1223,69 @@ sha256 = "digest"
         write_current_run_record(&dir, &record).unwrap();
         assert_eq!(read_current_run_record(&dir).unwrap(), record);
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn controlled_component_policy_is_complete_and_rejects_widening() {
+        let args = controlled_component_args()
+            .iter()
+            .map(|arg| (*arg).to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(validate_controlled_component_args(&args), Ok(()));
+        assert_eq!(
+            validate_controlled_component_inventory(
+                &controlled_component_inventory()
+                    .iter()
+                    .map(|component| (*component).to_owned())
+                    .collect::<Vec<_>>()
+            ),
+            Ok(())
+        );
+        let video_args = controlled_component_args_for_audio_remux(false)
+            .iter()
+            .map(|arg| (*arg).to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(validate_controlled_component_args(&video_args), Ok(()));
+        assert_eq!(
+            validate_controlled_component_inventory(
+                &VIDEO_DECODE_COMPONENT_INVENTORY
+                    .iter()
+                    .map(|component| (*component).to_owned())
+                    .collect::<Vec<_>>()
+            ),
+            Ok(())
+        );
+
+        let mut widened = args;
+        widened.push("--enable-decoder=hevc".to_owned());
+        assert!(validate_controlled_component_args(&widened).is_err());
+        let mut disabled = controlled_component_args()
+            .iter()
+            .map(|arg| (*arg).to_owned())
+            .collect::<Vec<_>>();
+        disabled.push("--disable-decoder=h264".to_owned());
+        assert!(validate_controlled_component_args(&disabled).is_err());
+    }
+
+    #[test]
+    fn component_inventory_parser_refuses_malformed_or_duplicate_entries() {
+        let parsed = parse_component_inventory(
+            "#define CONFIG_MOV_DEMUXER 1\n#define CONFIG_AAC_DECODER 1\n#define CONFIG_UNUSED 0\n",
+        )
+        .unwrap();
+        assert_eq!(
+            parsed,
+            vec![
+                "CONFIG_AAC_DECODER".to_owned(),
+                "CONFIG_MOV_DEMUXER".to_owned()
+            ]
+        );
+        assert!(parse_component_inventory("#define CONFIG_AAC_DECODER yes\n").is_err());
+        assert!(
+            parse_component_inventory(
+                "#define CONFIG_AAC_DECODER 1\n#define CONFIG_AAC_DECODER 1\n"
+            )
+            .is_err()
+        );
     }
 }

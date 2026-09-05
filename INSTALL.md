@@ -1,6 +1,6 @@
 # Installing solstone
 
-These instructions are for a coding agent and human working together. solstone is a personal memory platform: the solstone app takes in what you share with it, and all of it goes into your journal. Your journal lives on a device you own; see [what material reaches your AI provider](DATA-FLOW.md) for material that leaves it. Open source, made by sol pbc.
+These instructions are for a coding agent and human working together. solstone is a personal memory platform: the solstone app takes in what you share with it, and all of it goes into your journal. Your journal is always private, only yours. It lives on a device you own; see [what material reaches your AI provider](DATA-FLOW.md) for material that leaves it. Open source, made by sol pbc.
 
 **supported platforms:** linux, and macos on Apple Silicon. windows is not yet supported. The solstone app already runs on mac; this guide is how you install the journal there too.
 
@@ -15,13 +15,11 @@ solstone --version 2>&1 && journal service status 2>&1
 ```
 
 If `solstone` is not on PATH, the install has not been done yet. Proceed.
-If the solstone app is running and healthy, skip to [install the solstone app on your devices](#install-the-solstone-app-on-your-devices).
+If both commands succeed and the second command reports healthy, skip to [install the solstone app on your devices](#install-the-solstone-app-on-your-devices).
 
 ### Prerequisites
 
-The journal ships as one self-contained tree. It needs no interpreter and no package manager of its own.
-
-On linux, the system OpenMP runtime, used by the default local Parakeet transcription provider:
+The journal ships as one self-contained tree. It needs no interpreter and no package manager of its own. The `.deb` and `.rpm` declare the OpenMP runtime used by the default local Parakeet transcription provider. For the archive route on linux, install it yourself if `journal doctor` names it:
 
 ```bash
 sudo apt install libgomp1      # Ubuntu/Debian
@@ -29,54 +27,55 @@ sudo dnf install libgomp       # Fedora/RHEL
 sudo pacman -S libgomp         # Arch
 ```
 
-⚠ The `.deb` and `.rpm` do not declare this one for you, and transcription is the part that stops working without it. `journal doctor` names it if it is missing.
-
 ## Install the journal on linux
 
 ⚠ **linux only.** the tree is built for `linux-x86_64` and `linux-aarch64`, and the bootstrap refuses any other system. For mac, see [install the journal on mac](#install-the-journal-on-mac).
 
 ### Where the files come from
 
-The release channel is `updates.solstone.app`. `install.sh` accepts only that host, re-checking on every redirect hop; loopback is allowed for testing, and `--origin` overrides. `install.sh` lives in this repository at `core/distribution/install.sh`, and is served from the origin as well.
+The release channel is `updates.solstone.app`. `install.sh` accepts only that host, re-checking on every redirect hop; loopback is allowed for testing, and `--origin` overrides. `install.sh` lives in this repository at `core/distribution/install.sh`, and is served at `https://solstone.app/install.sh` (mirrored, unchanged, at `https://updates.solstone.app/solstone-journal/install.sh`).
 
-One command does the whole thing, once a release has been published:
+One command does the whole thing, including signed-manifest verification and `journal setup`, once a release has been published:
 
 ```bash
-sh install.sh
+curl -fsSL https://solstone.app/install.sh | sh
 ```
 
-That follows the `release` lane's `latest` pointer, then fetches the archive, its checksum, and its release record from `updates.solstone.app`, verifies the digest, and installs. Pass `--version <version>` to pin a version instead of following `latest`. The archive route below is the same operation with the files already on disk.
+That follows the `release` lane's `latest` pointer, fetches the archive and signed release set from `updates.solstone.app`, verifies the manifest signature with the pinned minisign key, then checks the manifest digests for the selected archive, checksum, and release record. It installs and runs setup. Pass `--version <version>` to pin a version instead of following `latest`. A tree downgrade with `--version` proceeds only when that exact build is still inside this release's three-directory `journal-v2` window; outside the epoch or window it refuses without touching the journal. The archive route below is the same operation with the files already on disk.
 
 Every release names its files the same way: `solstone-journal-<version>-linux-<arch>`, where `<arch>` is `x86_64` or `aarch64`. The three archives are `.tar.gz`, `.deb` and `.rpm`. Each release also carries a `.sha256`, a `.manifest.json`, a `.manifest.json.minisig` and a `.release` record.
 
-### Verify first
+### Verify independently
 
-One minisign signature covers every archive in the set. You run this. `apt` and `dnf` do not.
+One minisign signature covers every archive in the set. `install.sh` verifies it with the product key pinned in the script. Keep this independent check when you want to verify the release before running any installer; `apt` and `dnf` do not perform it. Replace `<arch>` with `x86_64` or `aarch64` for your machine.
 
 ```bash
-minisign -Vm solstone-journal-<version>-linux-x86_64.manifest.json \
+minisign -Vm solstone-journal-<version>-linux-<arch>.manifest.json \
   -p solstone-journal-release.pub
+sha256sum solstone-journal-<version>-linux-<arch>.tar.gz  # or the .deb or .rpm
 ```
 
-If it refuses, stop. Then install.
+If minisign refuses, stop. Compare the artifact digest printed by `sha256sum` with that artifact's exact entry under `files` in the signed manifest. A matching manifest signature without this digest comparison does not authenticate the package or archive you are about to run.
 
 The public key is in this repository at `packaging/keys/solstone-journal-release.pub`. Once the channel is live it is also at `https://updates.solstone.app/solstone-journal/minisign.pub`. Install minisign from your distribution if you do not have it (`apt install minisign` or `dnf install minisign`).
 
-`install.sh` checks the sha256. It does not check this signature. That is why this command comes first.
+If `minisign` is absent, `install.sh` refuses and prints the install command for apt or dnf. `--skip-signature` is the explicit opt-out, and the install receipt records that verification was skipped.
 
 ### The archive
 
-This is the route that verifies a digest for you, after the signature check above. For a machine you do not administer, or a prefix you choose:
+This local-file route verifies the manifest signature, then checks its digests for the selected archive, checksum, and release record before installing. Give it all five files:
 
 ```bash
-minisign -Vm solstone-journal-<version>-linux-x86_64.manifest.json \
-  -p solstone-journal-release.pub
-sh install.sh --archive solstone-journal-<version>-linux-x86_64.tar.gz \
-              --sha256 solstone-journal-<version>-linux-x86_64.sha256 \
-              --release solstone-journal-<version>-linux-x86_64.release
+sh install.sh --archive solstone-journal-<version>-linux-<arch>.tar.gz \
+              --sha256 solstone-journal-<version>-linux-<arch>.sha256 \
+              --release solstone-journal-<version>-linux-<arch>.release \
+              --manifest solstone-journal-<version>-linux-<arch>.manifest.json \
+              --minisig solstone-journal-<version>-linux-<arch>.manifest.json.minisig
 ```
 
-With no `--prefix` it installs under `~/.local/solstone-journal`, keeps each version in its own directory, and points a `current` symlink at the live one. It adds `current/bin` to PATH by writing a block into `~/.profile` between `# BEGIN solstone-journal PATH` and `# END solstone-journal PATH`. `--no-path` skips that edit, so a throwaway or side-by-side prefix does not touch your login files. On success it prints the version, the prefix, and how to pick up PATH.
+With no `--prefix` it installs under `~/.local/solstone-journal`, keeps each version in its own directory, points `current` at the live one, and runs `journal setup --yes` from that build so the managed PATH wrapper and service follow it. It leaves a plain-text receipt at `~/.local/solstone-journal/install-receipt`. It adds `current/bin` to PATH by writing a block into `~/.profile` between `# BEGIN solstone-journal PATH` and `# END solstone-journal PATH`. `--no-path` skips that edit, so a throwaway or side-by-side prefix does not touch your login files. On success it prints the version, lane, prefix, and how to pick up PATH.
+
+`--prune` is a separate, explicit maintenance run. It keeps `current` plus the two newest other version directories; an install or upgrade never prunes as a side effect.
 
 ⚠ **`~/.profile` is read by login shells.** A new terminal window on most linux desktops is not one, and zsh does not read it at all. Either log out and back in, or:
 
@@ -86,26 +85,19 @@ With no `--prefix` it installs under `~/.local/solstone-journal`, keeps each ver
 
 ### A distribution package
 
-`apt` and `dnf` do not check our signature. Run this first, then install:
+`apt` and `dnf` do not check our signature. Complete the signature and digest comparison under [verify independently](#verify-independently) first, then install the artifact you checked.
 
 ```bash
-minisign -Vm solstone-journal-<version>-linux-x86_64.manifest.json \
-  -p solstone-journal-release.pub
-```
-
-On Debian or Ubuntu:
-
-```bash
-sudo apt install ./solstone-journal-<version>-linux-x86_64.deb
+sudo apt install ./solstone-journal-<version>-linux-<arch>.deb
 ```
 
 On Fedora or RHEL:
 
 ```bash
-sudo dnf install ./solstone-journal-<version>-linux-x86_64.rpm
+sudo dnf install ./solstone-journal-<version>-linux-<arch>.rpm
 ```
 
-Either one puts `solstone` and `journal` on PATH for every account on the machine.
+Either one puts `solstone` and `journal` on PATH for every account on the machine and installs the OpenMP runtime dependency. Run `journal setup`; that owner-scoped step writes `~/.local/share/solstone/package-install-receipt` because the packages intentionally have no maintainer scripts.
 
 ### One tree, whichever machine
 
@@ -121,18 +113,24 @@ Every release names its files `solstone-journal-<version>-macos-arm64`. The two 
 
 ### The archive
 
-This is the route to run. It does not need administrator rights and it does not write `/usr/local`. Run this first, then install. The minisign check is a step you take; it does not replace Apple's signature on the `.pkg`.
+This is the route to run. It does not need administrator rights and it does not write `/usr/local`. The installer verifies minisign itself. To verify before running it, use these commands and compare the tarball digest with its exact `files` entry in the signed manifest. This does not replace Apple's signature on the `.pkg`.
 
 ```bash
 minisign -Vm solstone-journal-<version>-macos-arm64.manifest.json \
   -p solstone-journal-release.pub
+shasum -a 256 solstone-journal-<version>-macos-arm64.tar.gz
+```
+
+```bash
 sh core/distribution/install.sh \
   --archive solstone-journal-<version>-macos-arm64.tar.gz \
   --sha256 solstone-journal-<version>-macos-arm64.sha256 \
-  --release solstone-journal-<version>-macos-arm64.release
+  --release solstone-journal-<version>-macos-arm64.release \
+  --manifest solstone-journal-<version>-macos-arm64.manifest.json \
+  --minisig solstone-journal-<version>-macos-arm64.manifest.json.minisig
 ```
 
-With no `--prefix` it installs under `~/.local/solstone-journal` and points a `current` symlink at the live version. On mac it writes the PATH block to both `~/.zprofile` (zsh, the login shell) and `~/.profile`. `--no-path` skips that edit, so a throwaway or side-by-side prefix does not touch your login files. On success it prints the version, the prefix, and how to pick up PATH.
+With no `--prefix` it installs under `~/.local/solstone-journal`, points a `current` symlink at the live version, and runs `journal setup --yes` from that build. It writes the tree receipt under that prefix. On mac it writes the PATH block to both `~/.zprofile` (zsh, the login shell) and `~/.profile`. `--no-path` skips that edit, so a throwaway or side-by-side prefix does not touch your login files. On success it prints the version, the prefix, and how to pick up PATH.
 
 macos logs you into zsh, which never reads `~/.profile`. Open a new terminal, or:
 
@@ -147,7 +145,7 @@ journal --version
 shasum -a 256 -c solstone-journal-<version>-macos-arm64.sha256
 ```
 
-The checksum file carries one line for each container. If you only have the tarball, the extra `.pkg` line will complain; that is the sidecar, not a failed digest.
+The checksum file covers the `.tar.gz`, `.pkg`, `.release`, and `.signing.json`. If you only have the archive-route files, checks for the absent `.pkg` and `.signing.json` will complain; those missing-file messages do not mean the tarball digest failed.
 
 ### The package
 
@@ -156,8 +154,11 @@ The `.pkg` is the `/usr/local` route: same tree, signed with Developer ID Instal
 ```bash
 minisign -Vm solstone-journal-<version>-macos-arm64.manifest.json \
   -p solstone-journal-release.pub
+shasum -a 256 solstone-journal-<version>-macos-arm64.pkg
 sudo installer -pkg solstone-journal-<version>-macos-arm64.pkg -target /
 ```
+
+Compare the package digest with its exact `files` entry in the signed manifest before running `installer`.
 
 That writes the live system prefix. Do not run it on a machine whose `/usr/local` you are not ready to change.
 
@@ -227,7 +228,9 @@ When setup replaces recognized legacy launchers, it keeps durable recovery backu
 
 ## Upgrading
 
-Install the newer package or archive the same way you installed the first one, then run `journal setup`. The setup step refreshes runtime artifacts and reconciles the service unit if anything has changed.
+For a tree install, `sh install.sh --upgrade` is the whole upgrade: it preserves the recorded lane unless `--lane` is explicit, verifies the signed release, flips `current`, and repoints the managed wrapper and service through setup. If a package owns the install, the tree installer refuses. This release has no package repository, so download the newer local `.deb` or `.rpm`, repeat the applicable package install command above, then run `journal setup`.
+
+If a tree install reports `setup-failed`, follow the named correction and rerun the same `install.sh` command. When setup may already have changed a managed wrapper or service, the installer keeps the candidate selected and writes `setup_status=pending` in its receipt; the same command finishes that transaction safely.
 
 The archive route keeps each version in its own directory and moves the `current` symlink, so an upgrade unpacks a second tree alongside the live one before switching.
 
@@ -235,7 +238,7 @@ The archive route keeps each version in its own directory and moves the `current
 
 A few more things happen, or need to happen, on top of the install.
 
-**Search index rebuild, on an older index schema.** An index on the older schema is dropped and rebuilt on first open after upgrade. The rebuild usually queues itself automatically, but if the service was still starting up when that happened, it can miss the window and print a message asking you to run it yourself. If search feels empty, or noticeably thinner than your journal's actual history, right after upgrading, run:
+**Search index rebuild for the v1→v2 crossing only.** There is no written-schema divergence yet within the 2.x line. An index on the v1 schema is dropped and rebuilt on first open after that crossing. The rebuild usually queues itself automatically, but if the service was still starting up when that happened, it can miss the window and print a message asking you to run it yourself. If search feels empty, or noticeably thinner than your journal's actual history, right after that crossing, run:
 
 ```bash
 journal indexer --rescan-full
@@ -269,7 +272,7 @@ With no `--journal`, setup takes `SOLSTONE_JOURNAL`, then the `journal` key in `
 3. Remove the tree, by the route you installed it:
    - `sudo apt remove solstone-journal` or `sudo dnf remove solstone-journal`
    - Archive install: delete the prefix directory (`~/.local/solstone-journal` by default) and the PATH block `install.sh` added to `~/.profile` (and on mac, `~/.zprofile`), marked with `# BEGIN solstone-journal PATH` and `# END solstone-journal PATH`.
-   - Mac `.pkg` install: use the receipt the installer registered. It names every file the
+   - mac `.pkg` install: use the receipt the installer registered. It names every file the
      package put on disk.
 
      ⚠ **do not pipe `pkgutil --files` into `rm -rf`.** it lists directories too (`bin`, `lib`,
@@ -292,13 +295,13 @@ With no `--journal`, setup takes `SOLSTONE_JOURNAL`, then the `journal` key in `
      touched. The second removes the directories it created, deepest first, and only the ones that
      are empty afterward; `rmdir` refuses a directory that still holds something else, so `bin`
      itself (shared with other tools) is left standing. the third clears the receipt.
-4. Mac only: drag `/Applications/solstone.app` to Trash.
-5. Mac only, optional: remove the solstone app's data and the Parakeet model cache:
+4. mac only: drag `/Applications/solstone.app` to Trash.
+5. mac only, optional: remove the solstone app's data and the Parakeet model cache:
    ```bash
    rm -rf ~/Library/Application\ Support/solstone/
    ```
    This evicts the Parakeet cache; reinstall will re-download it.
-6. Mac only, optional: reset privacy permissions:
+6. mac only, optional: reset privacy permissions:
    ```bash
    tccutil reset Microphone app.solstone.observer
    tccutil reset ScreenCapture app.solstone.observer

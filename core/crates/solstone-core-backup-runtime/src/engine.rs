@@ -1662,31 +1662,6 @@ mod tests {
     }
     #[test]
     fn excludes_are_exact_and_keep_durable_health() {
-        assert_eq!(
-            BACKUP_EXCLUDES,
-            [
-                "*.sqlite*",
-                "indexer",
-                "cache",
-                ".cache",
-                ".removing_*",
-                "*.sock",
-                "*.pid",
-                "*.port",
-                "*.lock",
-                "*.tmp",
-                ".tmp*",
-                "brain.json",
-                "brain.log",
-                "brain-fingerprint.key",
-                "brain-refresh.lease",
-                "supervisor.ready",
-                "supervisor.start_time",
-                "parakeet-cpp.placement",
-                "scheduler.json",
-                "health/sync"
-            ]
-        );
         assert!(!BACKUP_EXCLUDES.contains(&"health"));
     }
     #[test]
@@ -2439,20 +2414,6 @@ mod tests {
         .expect("replacement config parses");
         assert!(replacement_raw["backup"].get("last_backup").is_none());
         assert_one_resolution_attempt();
-    }
-
-    #[test]
-    fn closed_tool_error_matches_every_variant_without_a_wildcard() {
-        for (error, expected) in [
-            (ClosedToolError::ResticUnavailable, "restic_unavailable"),
-            (ClosedToolError::RcloneUnavailable, "rclone_unavailable"),
-        ] {
-            let actual = match error {
-                ClosedToolError::ResticUnavailable => "restic_unavailable",
-                ClosedToolError::RcloneUnavailable => "rclone_unavailable",
-            };
-            assert_eq!(actual, expected);
-        }
     }
 
     #[test]

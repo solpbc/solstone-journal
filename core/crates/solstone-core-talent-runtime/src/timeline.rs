@@ -99,6 +99,14 @@ pub fn gate(
     let Some((binding, segment_dir, activity)) = resolved else {
         return Ok(GateDecision::Skip("no_activity_md".to_owned()));
     };
+    if let Err(error) = solstone_core_timeline::ensure_timeline_conversion(
+        &context.journal,
+        &segment_subject_key(&binding),
+    ) {
+        return Ok(GateDecision::Skip(format!(
+            "timeline_conversion_required: {error}"
+        )));
+    }
     let source = generated_source(&activity);
     let input_digest = segment_input_digest(&binding, &source).map_err(|error| {
         stage_error(
@@ -150,6 +158,18 @@ pub fn build(
     let Some((binding, _, activity)) = resolved else {
         return Err(skipped(prepared));
     };
+    solstone_core_timeline::ensure_timeline_conversion(
+        &context.journal,
+        &segment_subject_key(&binding),
+    )
+    .map_err(|error| {
+        RuntimeOutcome::StageFailed(stage_error(
+            "build",
+            "timeline:segment_summary",
+            prepared,
+            error.to_string(),
+        ))
+    })?;
     let source = generated_source(&activity);
     let input_digest = segment_input_digest(&binding, &source).map_err(|error| {
         RuntimeOutcome::StageFailed(stage_error(
@@ -517,9 +537,41 @@ mod tests {
                 .join("chronicle/20260101/090000_300/timeline.json")
                 .exists()
         );
-        let state = solstone_core_timeline::load_timeline_state(root.path()).unwrap();
-        assert!(state.attempts.values().any(|attempt| {
+        let state = solstone_core_timeline::load_timeline_record(
+            root.path(),
+            "segment:20260101/_default/090000_300",
+        )
+        .unwrap()
+        .unwrap();
+        assert!(state.attempts.iter().any(|attempt| {
             attempt.outcome == AttemptOutcome::Failed && attempt.input_digest != original_digest
         }));
+    }
+    #[test]
+    fn conversion_gate_stops_unchanged_activity_and_refresh_before_build() {
+        let root = tempfile::tempdir().unwrap();
+        let context = seeded_context(&root);
+        fs::create_dir_all(root.path().join("health/timeline")).unwrap();
+        fs::write(
+            solstone_core_timeline::timeline_state_path(root.path()),
+            b"legacy document",
+        )
+        .unwrap();
+        for refresh in [false, true] {
+            let mut prepared = prepared(refresh);
+            assert!(
+                matches!(gate(&prepared, &context).unwrap(), GateDecision::Skip(reason) if reason.contains("timeline_conversion_required"))
+            );
+            assert!(matches!(
+                build(&mut prepared, &context),
+                Err(RuntimeOutcome::StageFailed(_))
+            ));
+        }
+        assert!(
+            !root
+                .path()
+                .join("chronicle/20260101/090000_300/timeline.state.json")
+                .exists()
+        );
     }
 }

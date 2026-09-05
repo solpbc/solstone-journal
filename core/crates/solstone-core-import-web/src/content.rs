@@ -20,6 +20,7 @@ use crate::{
     imports::source_icon,
 };
 
+#[cfg(unix)]
 const PRIVATE_IMPORT_FILE_MODE: u32 = 0o600;
 
 fn read_jsonl(path: &Path) -> Result<Vec<Value>, std::io::Error> {
@@ -58,13 +59,13 @@ fn backfill_type(source_type: &str) -> &'static str {
 }
 
 fn atomic_private_write(path: &Path, data: &str) -> Result<(), std::io::Error> {
+    #[cfg(unix)]
     use std::os::unix::fs::OpenOptionsExt;
     let temporary = path.with_extension(format!("jsonl.{}.tmp", std::process::id()));
     let mut options = fs::OpenOptions::new();
-    options
-        .write(true)
-        .create_new(true)
-        .mode(PRIVATE_IMPORT_FILE_MODE);
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(PRIVATE_IMPORT_FILE_MODE);
     use std::io::Write;
     let mut output = options.open(&temporary)?;
     output.write_all(data.as_bytes())?;

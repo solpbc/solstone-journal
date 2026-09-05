@@ -70,6 +70,9 @@ fn serve(completion: &str) -> (u16, thread::JoinHandle<usize>) {
                 "/health" => r#"{"loaded_model":"served"}"#,
                 "/props" => r#"{"n_ctx":16384,"total_slots":1}"#,
                 "/tokenize" => r#"{"tokens":[1]}"#,
+                "/v1/chat/completions/input_tokens" => {
+                    r#"{"object":"response.input_tokens","input_tokens":1}"#
+                }
                 "/v1/chat/completions" => &completion,
                 other => panic!("unexpected local HTTP path: {other}"),
             };
@@ -123,6 +126,10 @@ fn serve_recording(
                             "/health" => (200, r#"{"loaded_model":"served"}"#.to_owned()),
                             "/props" => (200, r#"{"n_ctx":16384,"total_slots":1}"#.to_owned()),
                             "/tokenize" => (200, r#"{"tokens":[1]}"#.to_owned()),
+                            "/v1/chat/completions/input_tokens" => (
+                                200,
+                                r#"{"object":"response.input_tokens","input_tokens":1}"#.to_owned(),
+                            ),
                             "/v1/chat/completions" => {
                                 let response =
                                     completions.get(completion_index).cloned().unwrap_or_else(
@@ -372,7 +379,11 @@ fn assert_only_local_requests(requests: &[RecordedRequest]) {
         assert!(
             matches!(
                 request.path.as_str(),
-                "/health" | "/props" | "/tokenize" | "/v1/chat/completions"
+                "/health"
+                    | "/props"
+                    | "/tokenize"
+                    | "/v1/chat/completions/input_tokens"
+                    | "/v1/chat/completions"
             ),
             "unaccounted loopback request: {}",
             request.path
@@ -1211,16 +1222,10 @@ fn confidential_channel_failure_uses_attestation_failed_vector() {
     assert_eq!(output.stderr, b"");
     let response = stdout_json(&output);
     let expected = &fixture_vector("refused-attestation-failed")["response"];
-    for name in [
-        "reason",
-        "reason_code",
-        "retryable",
-        "blocking",
-        "detail",
-        "provider",
-    ] {
+    for name in ["reason", "reason_code", "retryable", "blocking", "provider"] {
         assert_eq!(response[name], expected[name], "{name}");
     }
+    assert_eq!(response["detail"], "gateway_unreachable");
     dropped.join().expect("join attestation stub");
     let _ = std::fs::remove_dir_all(journal);
 }

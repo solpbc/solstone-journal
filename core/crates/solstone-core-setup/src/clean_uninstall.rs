@@ -105,6 +105,9 @@ pub fn clean_uninstall_refusal(args: &SetupArgs) -> Option<String> {
     if args.skip_wrapper {
         incompatible.push("--skip-wrapper");
     }
+    if args.skip_path {
+        incompatible.push("--skip-path");
+    }
     if args.accept_existing_journal {
         incompatible.push("--accept-existing-journal");
     }

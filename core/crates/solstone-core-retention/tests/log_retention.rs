@@ -1239,6 +1239,7 @@ fn planning_a_compaction_does_not_rewrite() {
 
 /// ⛔ The file's existing mode survives compaction.
 #[test]
+#[cfg(unix)]
 fn compaction_preserves_a_tightened_mode() {
     use std::os::unix::fs::PermissionsExt;
 

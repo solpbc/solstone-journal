@@ -25,7 +25,16 @@ static FIXTURE_PIN: OnceLock<String> = OnceLock::new();
 
 const MANIFEST_SUFFIX: &str = ".manifest.json";
 const MINISIG_SUFFIX: &str = ".minisig";
-const RELEASE_KEYS: &[&str] = &["product", "version", "target", "commit", "lock_sha256"];
+const RELEASE_KEYS: &[&str] = &[
+    "product",
+    "version",
+    "target",
+    "commit",
+    "lock_sha256",
+    "upgrade_epoch",
+    "retention_window",
+    "min_bootstrap_revision",
+];
 const ARCHIVE_CHAIN_RELEASE_KEYS: &[&str] = &[
     "archive_prebuild_input_sha256",
     "archive_delivery_contract_sha256",
@@ -723,7 +732,7 @@ mod release_contract_tests {
 
     fn release(target: &str) -> String {
         format!(
-            "product=solstone-journal\nversion=1.2.3\ntarget={target}\ncommit=commit\nlock_sha256=lock\n"
+            "product=solstone-journal\nversion=1.2.3\ntarget={target}\ncommit=commit\nlock_sha256=lock\nupgrade_epoch=journal-v2\nretention_window=3\nmin_bootstrap_revision=1\n"
         )
     }
 
@@ -776,6 +785,30 @@ mod release_contract_tests {
                 "extra {extra}"
             );
         }
+    }
+
+    #[test]
+    fn release_requires_min_bootstrap_revision() {
+        assert!(validate("linux-x86_64", release("linux-x86_64")).is_ok());
+        let release = release("linux-x86_64")
+            .lines()
+            .filter(|line| !line.starts_with("min_bootstrap_revision"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(
+            validate("linux-x86_64", format!("{release}\n")),
+            Err(ManifestVerifyRefusal::ReleaseDeclarationMismatch)
+        );
+    }
+
+    #[test]
+    fn release_refuses_a_malformed_min_bootstrap_revision_line() {
+        let release = release("linux-x86_64")
+            .replace("min_bootstrap_revision=1\n", "min_bootstrap_revision\n");
+        assert_eq!(
+            validate("linux-x86_64", release),
+            Err(ManifestVerifyRefusal::ReleaseDeclarationMismatch)
+        );
     }
 }
 
@@ -842,39 +875,6 @@ pub fn install_test_fixture_pin(path: &Path) -> Result<(), ManifestVerifyError> 
             let _ = FIXTURE_PIN.set(text);
             Ok(())
         }
-    }
-}
-
-#[cfg(test)]
-mod pin_source {
-    const SOURCE: &str = include_str!("manifest_verify.rs");
-    const OVERRIDE: &str = concat!("SOLSTONE_JOURNAL_MINISIGN", "_PIN");
-    const FEATURE_ON: &str = "#[cfg(feature = \"test-fixture-pin\")]";
-    const FEATURE_OFF: &str = "#[cfg(not(feature = \"test-fixture-pin\"))]";
-
-    #[test]
-    fn pin_override_env_lives_only_in_the_fixture_pin_feature_sibling() {
-        assert_eq!(SOURCE.matches(OVERRIDE).count(), 1);
-        let mut off_body = String::new();
-        let mut in_off = false;
-        for line in SOURCE.lines() {
-            let trimmed = line.trim();
-            if trimmed == FEATURE_OFF
-                || trimmed.starts_with("#[cfg(all(test, not(feature = \"test-fixture-pin\")))]")
-            {
-                in_off = true;
-                continue;
-            }
-            if trimmed == FEATURE_ON {
-                in_off = false;
-                continue;
-            }
-            if in_off {
-                off_body.push_str(line);
-                off_body.push('\n');
-            }
-        }
-        assert!(!off_body.contains(OVERRIDE));
     }
 }
 

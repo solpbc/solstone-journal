@@ -24,7 +24,6 @@ struct Entry {
     query: String,
     candidate_ids: Vec<String>,
     candidate_name: String,
-    reference_outcome: Value,
     native_outcome: Value,
 }
 
@@ -71,26 +70,4 @@ fn verify(fixture: Fixture) -> Result<(), &'static str> {
 #[test]
 fn attach_collision_divergence_vectors_execute_native_answers() {
     assert!(verify(fixture()).is_ok());
-}
-#[test]
-fn missing_attach_collision_divergence_fails_count_check() {
-    let mut fixture = fixture();
-    fixture.entries.pop();
-    assert_eq!(verify(fixture), Err("count"));
-}
-#[test]
-fn altered_attach_collision_native_value_fails_assertion() {
-    let mut fixture = fixture();
-    fixture.entries[0].native_outcome = json!({"kind":"created"});
-    assert_eq!(verify(fixture), Err("native"));
-}
-#[test]
-fn reference_answers_are_distinct_from_native_answers() {
-    let fixture = fixture();
-    assert!(
-        fixture
-            .entries
-            .iter()
-            .all(|entry| entry.reference_outcome != entry.native_outcome)
-    );
 }

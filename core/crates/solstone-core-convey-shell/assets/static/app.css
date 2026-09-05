@@ -129,13 +129,10 @@ body.has-managed-dialog .workspace {
   }
 }
 
-/* The instrument is the mark AND its state label, laid out as one row and
-   shrink-wrapped to their content. A fixed `width` here clamped the box to the
-   mark, so the label wrapped onto a second line and ran off the right edge. */
+/* Status stays in navigation at every viewport width. */
 #status-instrument {
-  position: fixed;
-  top: var(--status-instrument-inset);
-  right: var(--status-instrument-inset);
+  position: relative;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -165,10 +162,6 @@ body.has-managed-dialog .workspace {
   background: rgba(0, 0, 0, 0.10);
 }
 
-#status-instrument .status-icon[aria-expanded="true"] {
-  background: rgba(0, 0, 0, 0.08);
-}
-
 #status-instrument .status-icon.error {
   box-shadow: 0 0 4px 2px red;
   border-radius: 4px;
@@ -184,50 +177,8 @@ body.has-managed-dialog .workspace {
   height: 22px;
 }
 
-/* Status pane opens below the top-right instrument. When active notification
- * cards share this corner, app.js pushes --status-pane-top down past them so
- * the pane's own state/version/activity content is never rendered underneath
- * the notification stack. */
-.status-pane {
-  position: fixed;
-  top: var(--status-pane-top, calc(var(--status-instrument-inset) + var(--status-instrument-size) + var(--chrome-gap)));
-  right: var(--status-instrument-inset);
-  width: var(--status-pane-width);
-  background: white;
-  border-left: 1px solid var(--hairline);
-  border-bottom: 1px solid var(--hairline);
-  border-radius: 12px;
-  /* Shadow only on left and bottom - offset down to avoid top bleed */
-  box-shadow: 0 4px 8px -2px rgba(0, 0, 0, 0.1);
-  z-index: var(--z-notifications);
-  overflow: hidden;  /* Clip content during animation */
-
-  /* Slide animation */
-  max-height: 0;
-  opacity: 0;
-  transition: max-height 0.25s ease, opacity 0.25s ease;
-}
-
-.status-pane.visible {
-  max-height: 400px;
-  opacity: 1;
-}
-
-/* Facet-colored background tint */
-.status-pane::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: transparent;
-  border-radius: 12px;
-  pointer-events: none;
-  z-index: -1;
-}
-
 .status-pane-content {
   padding: 16px;
-  max-height: 380px;
-  overflow-y: auto;
 }
 
 .status-pane-footer {
@@ -486,12 +437,6 @@ body.has-managed-dialog .workspace {
   text-transform: none;
   letter-spacing: normal;
   color: #333;
-}
-
-.status-pane-content p {
-  margin: 0;
-  font-size: 14px;
-  color: #666;
 }
 
 .status-pane-detail {
@@ -795,7 +740,7 @@ body.has-managed-dialog .workspace {
     box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.04);
     z-index: calc(var(--z-bars) + 1);
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     place-items: center;
   }
 

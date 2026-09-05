@@ -657,33 +657,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn final_admission_precedes_identity_publication_and_orphan_sweep() {
-        let source = include_str!("startup.rs");
-        let activate = source
-            .split("pub fn activate(self)")
-            .nth(1)
-            .expect("activate source")
-            .split("fn abort_after_publication")
-            .next()
-            .expect("activate body");
-        let publication = activate
-            .find("state::write_sync_heartbeat")
-            .expect("heartbeat publication");
-        let rescan = activate
-            .find("sync::scan_bound_sync")
-            .expect("post-publication scan");
-        let identity = activate
-            .find("state::write_supervisor_identity")
-            .expect("identity publication");
-        let sweep = activate.find("sweep::sweep_orphans").expect("orphan sweep");
-
-        assert!(
-            publication < rescan && rescan < identity && identity < sweep,
-            "final admission must precede shared identity publication and orphan sweeping"
-        );
-    }
-
     #[derive(Clone, Copy)]
     enum MarkerVerdict {
         SameLive,

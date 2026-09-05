@@ -705,6 +705,7 @@ fn native_remux_slice(
         .map_err(|error| AudioSliceError::Remux { error })?;
 
     let end_seconds = start_seconds + duration_seconds;
+    let mut output_origin_timestamp = None;
     for (stream, mut packet) in input.packets() {
         if stream.index() != input_index {
             continue;
@@ -713,8 +714,18 @@ fn native_remux_slice(
             continue;
         };
         let packet_seconds = timestamp as f64 * f64::from(input_time_base);
+        if packet_seconds < start_seconds {
+            continue;
+        }
         if packet_seconds >= end_seconds {
             break;
+        }
+        let origin_timestamp = *output_origin_timestamp.get_or_insert(timestamp);
+        if let Some(pts) = packet.pts() {
+            packet.set_pts(Some(pts.saturating_sub(origin_timestamp)));
+        }
+        if let Some(dts) = packet.dts() {
+            packet.set_dts(Some(dts.saturating_sub(origin_timestamp)));
         }
         let output_time_base = output_context
             .stream(output_index)
@@ -932,5 +943,207 @@ fn processing_outcome(record: &AudioImportRecord) -> ProcessingWaitOutcome {
             .filter(|segment| segment.processing == AudioProcessingState::Stalled)
             .map(|segment| segment.key.clone())
             .collect(),
+    }
+}
+
+#[cfg(feature = "native-remux-corpus")]
+#[doc(hidden)]
+pub mod native_long_audio_remux_corpus {
+    use std::collections::hash_map::DefaultHasher;
+    use std::fs;
+    use std::hash::{Hash, Hasher};
+    use std::path::{Path, PathBuf};
+
+    use super::*;
+
+    const CHUNK_DURATION_SECONDS: f64 = 300.0;
+    const MINIMUM_LONG_SOURCE_SECONDS: f64 = 600.0;
+    const DURATION_TOLERANCE_SECONDS: f64 = 0.2;
+    const MAX_PACKET_BYTES: usize = 64 * 1024;
+
+    struct LongRemuxCase {
+        name: &'static str,
+        sha256: &'static str,
+    }
+
+    const LONG_REMUX_CASES: &[LongRemuxCase] = &[
+        LongRemuxCase {
+            name: "long-remux.m4a",
+            sha256: "9fa32cc1abf18fd45df3baa262cfde34b19b3af06683fc94533ab96e54be7b03",
+        },
+        LongRemuxCase {
+            name: "long-remux.mp3",
+            sha256: "ef3d1abba9574662379855f6ca712b3da9e897e5e263da18884c9960ea98c5a8",
+        },
+        LongRemuxCase {
+            name: "long-remux.opus",
+            sha256: "af5ee11e2dbe9e27a5e2e6a0cd93278efb107ca6b2b04f5d5f37e9d7f3ec7029",
+        },
+        LongRemuxCase {
+            name: "long-remux.wav",
+            sha256: "344a3af761f706271f6d7b23105caa8758b089773762f36046c96b419636eef7",
+        },
+    ];
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct CodecConfiguration {
+        id: ffmpeg::codec::Id,
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct PacketSummary {
+        codec: CodecConfiguration,
+        packet_count: u64,
+        packet_bytes: u64,
+        payload_hash: u64,
+        max_packet_bytes: usize,
+    }
+
+    fn repository_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..")
+    }
+
+    fn fixture_path(name: &str) -> PathBuf {
+        repository_root()
+            .join("core/fixtures/long_audio_remux_corpus")
+            .join(name)
+    }
+
+    fn codec_configuration(stream: &ffmpeg::format::stream::Stream<'_>) -> CodecConfiguration {
+        let parameters = stream.parameters();
+        CodecConfiguration {
+            id: parameters.id(),
+        }
+    }
+
+    fn packets_in_slice(path: &Path, start_seconds: f64, duration_seconds: f64) -> PacketSummary {
+        ffmpeg::init().expect("initialize FFmpeg for long remux proof");
+        let mut input = ffmpeg::format::input(path).expect("open long remux fixture");
+        let stream = input
+            .streams()
+            .best(ffmpeg::media::Type::Audio)
+            .expect("long remux fixture has audio");
+        let input_index = stream.index();
+        let input_time_base = stream.time_base();
+        let codec = codec_configuration(&stream);
+        let seek_timestamp = (start_seconds * f64::from(ffmpeg::ffi::AV_TIME_BASE)) as i64;
+        input
+            .seek(seek_timestamp, ..)
+            .expect("seek long remux fixture");
+
+        let end_seconds = start_seconds + duration_seconds;
+        let mut payload_hasher = DefaultHasher::new();
+        let mut packet_count = 0_u64;
+        let mut packet_bytes = 0_u64;
+        let mut max_packet_bytes = 0_usize;
+        let mut last_pts = None;
+        let mut last_dts = None;
+        for (packet_stream, packet) in input.packets() {
+            if packet_stream.index() != input_index {
+                continue;
+            }
+            let Some(timestamp) = packet.pts().or_else(|| packet.dts()) else {
+                continue;
+            };
+            let packet_seconds = timestamp as f64 * f64::from(input_time_base);
+            if packet_seconds < start_seconds {
+                continue;
+            }
+            if packet_seconds >= end_seconds {
+                break;
+            }
+            if let Some(pts) = packet.pts() {
+                assert!(
+                    last_pts.is_none_or(|last| pts >= last),
+                    "non-monotonic packet PTS"
+                );
+                last_pts = Some(pts);
+            }
+            if let Some(dts) = packet.dts() {
+                assert!(
+                    last_dts.is_none_or(|last| dts >= last),
+                    "non-monotonic packet DTS"
+                );
+                last_dts = Some(dts);
+            }
+            let payload = packet.data().unwrap_or_default();
+            payload.hash(&mut payload_hasher);
+            packet_count += 1;
+            packet_bytes += payload.len() as u64;
+            max_packet_bytes = max_packet_bytes.max(payload.len());
+        }
+        assert!(packet_count > 0, "long remux slice carries audio packets");
+        PacketSummary {
+            codec,
+            packet_count,
+            packet_bytes,
+            payload_hash: payload_hasher.finish(),
+            max_packet_bytes,
+        }
+    }
+
+    pub fn run() {
+        for case in LONG_REMUX_CASES {
+            let source = fixture_path(case.name);
+            assert_eq!(
+                solstone_core_import::hash_source(&source)
+                    .expect("hash long remux fixture")
+                    .into_inner(),
+                case.sha256,
+                "fixture digest changed: {}",
+                source.display()
+            );
+            let source_duration =
+                native_duration_probe(&source).expect("read long remux source duration");
+            assert!(
+                source_duration > MINIMUM_LONG_SOURCE_SECONDS,
+                "{} is not a longer-than-ten-minute source",
+                source.display()
+            );
+
+            let temporary = tempfile::tempdir().expect("create long remux temporary directory");
+            let corrupt = temporary.path().join(format!("corrupt-{}", case.name));
+            fs::write(&corrupt, b"not a media container").expect("write corrupt source");
+            assert!(matches!(
+                native_remux_slice(&corrupt, &temporary.path().join(case.name), 0.0, 1.0),
+                Err(AudioSliceError::InputUnreadable { .. })
+            ));
+
+            for (chunk_index, start_seconds) in [0.0, 300.0, 600.0].into_iter().enumerate() {
+                let expected_duration =
+                    (source_duration - start_seconds).clamp(0.0, CHUNK_DURATION_SECONDS);
+                let expected = packets_in_slice(&source, start_seconds, expected_duration);
+                let output = temporary
+                    .path()
+                    .join(format!("{chunk_index}-{}", case.name));
+                native_remux_slice(&source, &output, start_seconds, expected_duration)
+                    .expect("packet-preserving native remux succeeds");
+                let actual = packets_in_slice(&output, 0.0, f64::INFINITY);
+                assert_eq!(actual.codec, expected.codec, "codec configuration changes");
+                assert_eq!(
+                    actual.packet_count, expected.packet_count,
+                    "packet count changes"
+                );
+                assert_eq!(
+                    actual.packet_bytes, expected.packet_bytes,
+                    "packet bytes change"
+                );
+                assert_eq!(
+                    actual.payload_hash, expected.payload_hash,
+                    "packet payload changes"
+                );
+                assert!(
+                    actual.max_packet_bytes <= MAX_PACKET_BYTES,
+                    "a remux packet exceeded the bounded packet budget"
+                );
+                let output_duration =
+                    native_duration_probe(&output).expect("read packet-preserving remux duration");
+                assert!(
+                    (output_duration - expected_duration).abs() <= DURATION_TOLERANCE_SECONDS,
+                    "remux duration {output_duration} differs from expected {expected_duration} for {}",
+                    output.display()
+                );
+            }
+        }
     }
 }

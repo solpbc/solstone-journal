@@ -9,12 +9,13 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::segment_path;
 use serde_json::Value;
 use solstone_core_entity::{
     EntityLifecycleError, VoiceprintArchive, entity_memory_path, normalize_embedding,
     try_load_entity_voiceprints_file,
 };
-use solstone_core_journal_io::{day_path, segment_path};
+use solstone_core_journal_io::day_path;
 use solstone_core_speaker_id::calibration::{
     NOISY_FLYWHEEL_OVERLAP_MAX, OWNER_BOOTSTRAP_PROVISIONAL_GUARD_MIN_TAGS,
 };

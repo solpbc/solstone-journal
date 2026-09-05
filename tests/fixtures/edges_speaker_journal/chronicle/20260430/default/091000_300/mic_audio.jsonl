@@ -1,3 +1,0 @@
-{"raw":"mic_audio.flac","model":"fixture"}
-{"start":"00:00:01","source":"mic","speaker":1,"text":"Mic Target and Project Zephyr appear in the selected transcript.","description":"selected"}
-{"start":"00:00:08","source":"mic","speaker":2,"text":"Plain Target appears on the second selected line.","description":"selected-other"}

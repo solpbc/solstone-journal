@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::time::Duration;
@@ -83,6 +84,7 @@ pub fn described(
     send(journal, &row);
 }
 
+#[cfg(unix)]
 fn send(journal: &Path, row: &serde_json::Value) {
     let Ok(mut stream) = UnixStream::connect(journal.join("health/callosum.sock")) else {
         return;
@@ -90,6 +92,9 @@ fn send(journal: &Path, row: &serde_json::Value) {
     let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
     let _ = stream.write_all(format!("{row}\n").as_bytes());
 }
+
+#[cfg(not(unix))]
+fn send(_journal: &Path, _row: &serde_json::Value) {}
 
 #[cfg(all(test, not(feature = "full-tests")))]
 mod tests {

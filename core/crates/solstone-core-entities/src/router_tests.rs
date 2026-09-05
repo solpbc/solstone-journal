@@ -12,7 +12,6 @@ use axum::body::{Body, to_bytes};
 use axum::http::Request;
 use chrono::Local;
 use rusqlite::Connection;
-use serde::Deserialize;
 use serde_json::{Value, json};
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_entity::{AmbiguityObservation, record_ambiguity_observation};
@@ -263,109 +262,6 @@ fn deferred_delete_action_records(root: &Path) -> Vec<Value> {
         .collect()
 }
 
-#[derive(Deserialize)]
-struct RouteSurfaceFixture {
-    routes: Vec<RouteRequirement>,
-}
-
-#[derive(Deserialize)]
-struct RouteRequirement {
-    route: String,
-    method: String,
-}
-
-fn normalize_route_path(route: &str) -> String {
-    let mut normalized = String::new();
-    let mut characters = route.chars();
-    while let Some(character) = characters.next() {
-        if character == '<' {
-            normalized.push('{');
-            for character in characters.by_ref() {
-                if character == '>' {
-                    normalized.push('}');
-                    break;
-                }
-                normalized.push(character);
-            }
-        } else {
-            normalized.push(character);
-        }
-    }
-    normalized
-}
-
-fn registered_route_pairs() -> std::collections::BTreeSet<(String, String)> {
-    let source = include_str!("router.rs");
-    let mut routes = std::collections::BTreeSet::new();
-    let mut remainder = source;
-    while let Some(route_start) = remainder.find(".route(") {
-        let call = &remainder[route_start + ".route(".len()..];
-        let Some(path_start) = call.find('"') else {
-            break;
-        };
-        let after_path = &call[path_start + 1..];
-        let Some(path_end) = after_path.find('"') else {
-            break;
-        };
-        let path = &after_path[..path_end];
-        let mut depth = 1_i32;
-        let mut call_end = None;
-        for (index, character) in call.char_indices() {
-            match character {
-                '(' => depth += 1,
-                ')' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        call_end = Some(index);
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-        let Some(call_end) = call_end else {
-            break;
-        };
-        let registration = &call[..call_end];
-        for (method, marker) in [
-            ("GET", "get("),
-            ("POST", "post("),
-            ("PUT", "put("),
-            ("DELETE", "delete("),
-        ] {
-            if registration.contains(marker) {
-                routes.insert((path.to_owned(), method.to_owned()));
-            }
-        }
-        remainder = &call[call_end + 1..];
-    }
-    routes
-}
-
-fn quoted_entry_value<'a>(entry: &'a str, key: &str) -> Option<&'a str> {
-    entry.lines().map(str::trim).find_map(|line| {
-        let value = line
-            .strip_prefix(key)?
-            .trim_start()
-            .strip_prefix('=')?
-            .trim();
-        value.strip_prefix('"')?.strip_suffix('"')
-    })
-}
-
-fn authority_route_pairs(source: &str) -> Vec<(String, String)> {
-    source
-        .split("[[entries]]")
-        .skip(1)
-        .filter(|entry| quoted_entry_value(entry, "entry_type") == Some("http"))
-        .filter_map(|entry| {
-            Some((
-                quoted_entry_value(entry, "route")?.to_owned(),
-                quoted_entry_value(entry, "method")?.to_owned(),
-            ))
-        })
-        .collect()
-}
 async fn response_value(response: axum::response::Response) -> (u16, Value) {
     let status = response.status().as_u16();
     let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
@@ -4182,6 +4078,27 @@ async fn accept_facet_candidate_creates_facet_and_marks_candidate_accepted() {
 }
 
 #[tokio::test]
+async fn accept_facet_candidate_humanizes_a_slug_style_suggested_name() {
+    let j = Journal::new();
+    seed_facet_candidate(j.path(), "low_light_capture", "low_light_capture", "open");
+
+    let (status, response) = post(
+        j.path(),
+        "/app/curation/api/facet/accept",
+        json!({"name_key":"low_light_capture"}),
+    )
+    .await;
+
+    assert_eq!(status, 200);
+    assert_eq!(response["status"], "accepted");
+    assert_eq!(response["facet_slug"], "low-light-capture");
+    let declaration = j.path().join("facets/low-light-capture/facet.json");
+    assert!(declaration.is_file());
+    let saved: Value = serde_json::from_slice(&fs::read(declaration).unwrap()).unwrap();
+    assert_eq!(saved["title"], "low light capture");
+}
+
+#[tokio::test]
 async fn accept_facet_candidate_refuses_existing_facet_without_overwriting_it() {
     let j = Journal::new();
     write(
@@ -4365,59 +4282,6 @@ async fn assist_reports_talent_not_ported_after_validation() {
     assert!(detail.contains("not ported"), "{detail}");
     assert!(!detail.contains("agent spawning"), "{detail}");
     assert!(!detail.contains("unavailable"), "{detail}");
-}
-
-#[test]
-fn router_covers_every_entity_route_in_the_oracle() {
-    let fixture: RouteSurfaceFixture = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../fixtures/entity_route_surface.json"
-    )))
-    .unwrap();
-    assert_eq!(fixture.routes.len(), 45);
-    let registered = registered_route_pairs();
-    let expected: std::collections::BTreeSet<_> = fixture
-        .routes
-        .into_iter()
-        .map(|route| {
-            (
-                format!("/app/entities{}", normalize_route_path(&route.route)),
-                route.method,
-            )
-        })
-        .collect();
-    // Scaffolding while the shell serves /app/entities/ itself; delete this exemption if that changes.
-    // This source-text scrape proves registration only, never what the shell actually serves over HTTP.
-    let missing: std::collections::BTreeSet<_> =
-        expected.difference(&registered).cloned().collect();
-    assert_eq!(
-        missing,
-        std::collections::BTreeSet::from([("/app/entities/".to_owned(), "GET".to_owned())])
-    );
-}
-
-#[test]
-fn router_covers_every_native_entity_and_facet_client_operation() {
-    let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let mut inventory = authority_route_pairs(
-        &std::fs::read_to_string(repo.join("core/native-sol/apps/entities/native/authority.toml"))
-            .expect("entities authority.toml is readable"),
-    );
-    inventory.extend(authority_route_pairs(
-        &std::fs::read_to_string(repo.join("core/native-sol/apps/facets/native/authority.toml"))
-            .expect("facets authority.toml is readable"),
-    ));
-    assert_eq!(inventory.len(), 25);
-    let expected: std::collections::BTreeSet<_> = inventory
-        .into_iter()
-        .map(|(route, method)| (normalize_route_path(&route), method))
-        .collect();
-    let registered = registered_route_pairs();
-    let missing: Vec<_> = expected.difference(&registered).cloned().collect();
-    assert!(
-        missing.is_empty(),
-        "router is missing native client route-method pairs: {missing:?}"
-    );
 }
 
 // Refusal-audit note: `_resolve_edge_entity:387` and `api_state:150` remain

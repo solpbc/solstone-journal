@@ -6,10 +6,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+use crate::segment_path;
 use serde_json::{Map, Value, json};
 use solstone_core_entity::{EncoderIdentity, VoiceprintRemoval, remove_voiceprints_by_key};
 use solstone_core_facets::{EntityHistoryReference, delete_created_entity_if_unreferenced};
-use solstone_core_journal_io::segment_path;
 use solstone_core_speaker_id::corrections::{append_correction, read_corrections};
 use solstone_core_speaker_id::labels::{LabelRestoration, restore_label_rows};
 use thiserror::Error;
@@ -513,10 +513,10 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use crate::segment_path;
     use solstone_core_entity::{
         VoiceprintItem, load_entity_voiceprints_file, save_voiceprints_batch,
     };
-    use solstone_core_journal_io::segment_path;
 
     use super::*;
 

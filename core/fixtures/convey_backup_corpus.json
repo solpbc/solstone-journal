@@ -36,24 +36,22 @@
   "phases": {
     "broken": [
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/",
         "status": 200,
-        "why": "the app index: the SPA shell, byte-identical"
+        "why": "the app index: the SPA shell, byte-identical",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance"
       },
       {
-        "body_bytes": 21125,
-        "body_sha256": "7536bca969f3af818f0ad3d96055ee044f240b2ef8d5b6e319c5d82f21172cc0",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/workspace",
         "status": 200,
-        "why": "the app fragment bytes"
+        "why": "the app fragment bytes",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance"
       },
       {
         "body_bytes": 207,
@@ -67,24 +65,22 @@
         "why": "the background fragment"
       },
       {
-        "body_bytes": 77293,
-        "body_sha256": "677333fc78a6cf439151dcbe6763596ff33789b59f25e82682768eb3f7438a8d",
         "body_sha256_basis": "raw-body",
         "content_type": "text/javascript; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/static/backup.js",
         "status": 200,
-        "why": "per-app static script"
+        "why": "per-app static script",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance"
       },
       {
-        "body_bytes": 12266,
-        "body_sha256": "0491cf5388a0686ccfd81ede6ae03adf81760c59f6e34fc8f2a104ac45074280",
         "body_sha256_basis": "raw-body",
         "content_type": "text/css; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/static/backup.css",
         "status": 200,
-        "why": "per-app static stylesheet"
+        "why": "per-app static stylesheet",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance"
       },
       {
         "body_sha256": "010028509b983a7c69b14b03dc8291a7b2b1c068b22db00bb4ab93c3b1a2ed0b",
@@ -165,7 +161,7 @@
         "method": "GET",
         "path": "/app/backup/status",
         "status": 200,
-        "why": "\ud83d\udd34 the honesty probe: the full status view an owner's page renders from"
+        "why": "🔴 the honesty probe: the full status view an owner's page renders from"
       },
       {
         "body_sha256": "c1216953aa43dbc04e8f9689f9e9b4038e112a9249010b1b42d0ce246cac8a4d",
@@ -280,7 +276,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "",
-          "error": "I couldn't confirm that \u2014 it didn't match your recovery key.",
+          "error": "I couldn't confirm that — it didn't match your recovery key.",
           "reason_code": "recovery_key_mismatch"
         },
         "method": "POST",
@@ -346,7 +342,6 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
         "body_sha256_basis": "raw-body",
         "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
@@ -360,7 +355,6 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
         "body_sha256_basis": "raw-body",
         "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
@@ -374,7 +368,6 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
         "body_sha256_basis": "raw-body",
         "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
@@ -388,7 +381,6 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
         "body_sha256_basis": "raw-body",
         "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
@@ -402,7 +394,6 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
         "body_sha256_basis": "raw-body",
         "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
@@ -416,21 +407,19 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
         "body_sha256_basis": "raw-body",
         "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/status",
         "status": 500,
-        "why": "\ud83d\udd34 the honesty probe: the full status view an owner's page renders from"
+        "why": "🔴 the honesty probe: the full status view an owner's page renders from"
       },
       {
         "body_bytes": 183,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
         "body_sha256_basis": "raw-body",
         "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
@@ -444,7 +433,6 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
         "body_sha256_basis": "raw-body",
         "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
@@ -458,7 +446,6 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
         "body_sha256_basis": "raw-body",
         "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
@@ -475,7 +462,6 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
         "body_sha256_basis": "raw-body",
         "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
@@ -492,7 +478,6 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
         "body_sha256_basis": "raw-body",
         "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
@@ -506,7 +491,6 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
         "body_sha256_basis": "raw-body",
         "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
@@ -523,7 +507,6 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
         "body_sha256_basis": "raw-body",
         "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
@@ -538,24 +521,22 @@
     ],
     "enabled_never_run": [
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/",
         "status": 200,
-        "why": "the app index: the SPA shell, byte-identical"
+        "why": "the app index: the SPA shell, byte-identical",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance"
       },
       {
-        "body_bytes": 21125,
-        "body_sha256": "7536bca969f3af818f0ad3d96055ee044f240b2ef8d5b6e319c5d82f21172cc0",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/workspace",
         "status": 200,
-        "why": "the app fragment bytes"
+        "why": "the app fragment bytes",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance"
       },
       {
         "body_bytes": 207,
@@ -569,24 +550,22 @@
         "why": "the background fragment"
       },
       {
-        "body_bytes": 77293,
-        "body_sha256": "677333fc78a6cf439151dcbe6763596ff33789b59f25e82682768eb3f7438a8d",
         "body_sha256_basis": "raw-body",
         "content_type": "text/javascript; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/static/backup.js",
         "status": 200,
-        "why": "per-app static script"
+        "why": "per-app static script",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance"
       },
       {
-        "body_bytes": 12266,
-        "body_sha256": "0491cf5388a0686ccfd81ede6ae03adf81760c59f6e34fc8f2a104ac45074280",
         "body_sha256_basis": "raw-body",
         "content_type": "text/css; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/static/backup.css",
         "status": 200,
-        "why": "per-app static stylesheet"
+        "why": "per-app static stylesheet",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance"
       },
       {
         "body_sha256": "bf13bb0c168c0bcd5270405b3abbd4280698f8fa1325b6f2fcc7411fcbdab558",
@@ -667,7 +646,7 @@
         "method": "GET",
         "path": "/app/backup/status",
         "status": 200,
-        "why": "\ud83d\udd34 the honesty probe: the full status view an owner's page renders from"
+        "why": "🔴 the honesty probe: the full status view an owner's page renders from"
       },
       {
         "body_sha256": "ce3a4800ce2220312658172c0708b9aefeaca5dcaeefd22f4c918652f7ebbfbe",
@@ -782,7 +761,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "",
-          "error": "I couldn't confirm that \u2014 it didn't match your recovery key.",
+          "error": "I couldn't confirm that — it didn't match your recovery key.",
           "reason_code": "recovery_key_mismatch"
         },
         "method": "POST",
@@ -844,24 +823,22 @@
     ],
     "fresh": [
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/",
         "status": 200,
-        "why": "the app index: the SPA shell, byte-identical"
+        "why": "the app index: the SPA shell, byte-identical",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance"
       },
       {
-        "body_bytes": 21125,
-        "body_sha256": "7536bca969f3af818f0ad3d96055ee044f240b2ef8d5b6e319c5d82f21172cc0",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/workspace",
         "status": 200,
-        "why": "the app fragment bytes"
+        "why": "the app fragment bytes",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance"
       },
       {
         "body_bytes": 207,
@@ -875,24 +852,22 @@
         "why": "the background fragment"
       },
       {
-        "body_bytes": 77293,
-        "body_sha256": "677333fc78a6cf439151dcbe6763596ff33789b59f25e82682768eb3f7438a8d",
         "body_sha256_basis": "raw-body",
         "content_type": "text/javascript; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/static/backup.js",
         "status": 200,
-        "why": "per-app static script"
+        "why": "per-app static script",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance"
       },
       {
-        "body_bytes": 12266,
-        "body_sha256": "0491cf5388a0686ccfd81ede6ae03adf81760c59f6e34fc8f2a104ac45074280",
         "body_sha256_basis": "raw-body",
         "content_type": "text/css; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/static/backup.css",
         "status": 200,
-        "why": "per-app static stylesheet"
+        "why": "per-app static stylesheet",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance"
       },
       {
         "body_sha256": "4c8b34841a1e537f8c04ed6b975d738646f3ef2c02a729481beafb957627ec6f",
@@ -973,7 +948,7 @@
         "method": "GET",
         "path": "/app/backup/status",
         "status": 200,
-        "why": "\ud83d\udd34 the honesty probe: the full status view an owner's page renders from"
+        "why": "🔴 the honesty probe: the full status view an owner's page renders from"
       },
       {
         "body_sha256": "ce3a4800ce2220312658172c0708b9aefeaca5dcaeefd22f4c918652f7ebbfbe",
@@ -1150,24 +1125,22 @@
     ],
     "healthy": [
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/",
         "status": 200,
-        "why": "the app index: the SPA shell, byte-identical"
+        "why": "the app index: the SPA shell, byte-identical",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance"
       },
       {
-        "body_bytes": 21125,
-        "body_sha256": "7536bca969f3af818f0ad3d96055ee044f240b2ef8d5b6e319c5d82f21172cc0",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/workspace",
         "status": 200,
-        "why": "the app fragment bytes"
+        "why": "the app fragment bytes",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance"
       },
       {
         "body_bytes": 207,
@@ -1181,24 +1154,22 @@
         "why": "the background fragment"
       },
       {
-        "body_bytes": 77293,
-        "body_sha256": "677333fc78a6cf439151dcbe6763596ff33789b59f25e82682768eb3f7438a8d",
         "body_sha256_basis": "raw-body",
         "content_type": "text/javascript; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/static/backup.js",
         "status": 200,
-        "why": "per-app static script"
+        "why": "per-app static script",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance"
       },
       {
-        "body_bytes": 12266,
-        "body_sha256": "0491cf5388a0686ccfd81ede6ae03adf81760c59f6e34fc8f2a104ac45074280",
         "body_sha256_basis": "raw-body",
         "content_type": "text/css; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/static/backup.css",
         "status": 200,
-        "why": "per-app static stylesheet"
+        "why": "per-app static stylesheet",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance"
       },
       {
         "body_sha256": "b959ed45a703fcf7d299706186c5caeff82a1e12e288dbb0f7cefc13a50b593d",
@@ -1279,7 +1250,7 @@
         "method": "GET",
         "path": "/app/backup/status",
         "status": 200,
-        "why": "\ud83d\udd34 the honesty probe: the full status view an owner's page renders from"
+        "why": "🔴 the honesty probe: the full status view an owner's page renders from"
       },
       {
         "body_sha256": "d69d24559aa8663ad8562424fe8dd4f79da8f5c6af579d8ee8720d1f2d11a45f",
@@ -1394,7 +1365,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "",
-          "error": "I couldn't confirm that \u2014 it didn't match your recovery key.",
+          "error": "I couldn't confirm that — it didn't match your recovery key.",
           "reason_code": "recovery_key_mismatch"
         },
         "method": "POST",
@@ -1457,7 +1428,6 @@
     "unestablished": [
       {
         "body_bytes": 197,
-        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
@@ -1468,7 +1438,6 @@
       },
       {
         "body_bytes": 197,
-        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
@@ -1479,7 +1448,6 @@
       },
       {
         "body_bytes": 197,
-        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
@@ -1490,7 +1458,6 @@
       },
       {
         "body_bytes": 197,
-        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
@@ -1501,7 +1468,6 @@
       },
       {
         "body_bytes": 197,
-        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
@@ -1512,18 +1478,16 @@
       },
       {
         "body_bytes": 197,
-        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
         "method": "GET",
         "path": "/app/backup/status",
         "status": 302,
-        "why": "\ud83d\udd34 the honesty probe: the full status view an owner's page renders from"
+        "why": "🔴 the honesty probe: the full status view an owner's page renders from"
       },
       {
         "body_bytes": 197,
-        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
@@ -1534,7 +1498,6 @@
       },
       {
         "body_bytes": 197,
-        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
@@ -1545,7 +1508,6 @@
       },
       {
         "body_bytes": 197,
-        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
@@ -1559,7 +1521,6 @@
       },
       {
         "body_bytes": 197,
-        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
@@ -1573,7 +1534,6 @@
       },
       {
         "body_bytes": 197,
-        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
@@ -1584,7 +1544,6 @@
       },
       {
         "body_bytes": 197,
-        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
@@ -1598,7 +1557,6 @@
       },
       {
         "body_bytes": 197,
-        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
@@ -1625,5 +1583,6 @@
     "journal_root": "<JOURNAL_ROOT>"
   },
   "schema": "solstone-convey-backup-corpus-v1",
-  "tz": "UTC"
+  "tz": "UTC",
+  "corpus_maintenance": "Served frontend assets (status 200, raw-body, text/html|javascript|css) are NOT body-asserted. Their records carry body_assertion instead of body_sha256/body_bytes/body_text, and a record with no body_sha256 is not body-asserted by the replay. Pinning an asset's bytes is not a product assertion -- it reddens on every deliberate frontend edit and says nothing about what changed -- and with no recorder left the only repair was hand-patching a hash. Status, content type, content disposition and Location are still asserted for these routes, and API response bodies (normalized-json) are still fully asserted. Assert frontend CONTENT with a targeted check on the thing you care about, never a whole-file digest."
 }

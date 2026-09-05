@@ -22,10 +22,11 @@ use crate::speakers_calendar::{
     journal_principal_id, load_all_journal_entities, load_segment_speakers, load_speaker_labels,
     value_truthy,
 };
-use crate::speakers_review::{audio_info, find_matching_entity, is_admissible_speaker_entity};
+use crate::speakers_review::{find_matching_entity, is_admissible_speaker_entity};
 use crate::speakers_segment_catalog::{
     DirectSupport, SegmentLookup, decode_stream_layout_value, lookup_segment,
 };
+use solstone_core_speaker_resolve::audio_sample::audio_info;
 
 #[derive(Debug, Deserialize)]
 pub struct ResolveStatementQuery {

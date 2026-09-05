@@ -1,19 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#[cfg(unix)]
+use std::fs;
 use std::{
     env,
     ffi::OsString,
-    fs,
     path::{Path, PathBuf},
 };
-
-use nix::unistd::{AccessFlags, access};
 
 use crate::{
     checks::managed_wrapper::resolve_non_strict,
     context::CheckContext,
-    vocabulary::{Check, RunnerResult, Status, make_result},
+    vocabulary::{Check, Platform, RunnerResult, Status, make_result},
 };
 
 const MISSING_LOCAL_BIN_SOLSTONE_FIX: &str =
@@ -28,6 +27,14 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
 }
 
 fn run_with_path(context: &CheckContext, check: Check, path: Option<OsString>) -> RunnerResult {
+    if context.platform == Platform::Windows {
+        return Ok(make_result(
+            check,
+            Status::Skip,
+            "not supported on windows",
+            None::<String>,
+        ));
+    }
     let local = context.home_dir.join(".local/bin/solstone");
     let which = which_solstone(path.as_deref());
     if local.exists()
@@ -94,11 +101,19 @@ fn which_solstone(path: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
 }
 
 fn is_executable(path: &Path) -> bool {
-    fs::metadata(path).is_ok_and(|metadata| metadata.is_file())
-        && access(path, AccessFlags::X_OK).is_ok()
+    #[cfg(unix)]
+    {
+        fs::metadata(path).is_ok_and(|metadata| metadata.is_file())
+            && nix::unistd::access(path, nix::unistd::AccessFlags::X_OK).is_ok()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        false
+    }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::{
         fs,

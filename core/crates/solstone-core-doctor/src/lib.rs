@@ -345,6 +345,29 @@ mod tests {
         .unwrap();
         assert_eq!(r.status, Status::Skip);
     }
+
+    #[test]
+    fn windows_platform_is_an_explicit_skip_before_a_linux_runner() {
+        let mut c = context();
+        c.platform = Platform::Windows;
+        let r = run_entry(
+            &RegistryEntry {
+                check: Check {
+                    name: "x",
+                    severity: Severity::Blocker,
+                    platforms: &[Platform::Linux],
+                },
+                runner: |_| panic!("runner"),
+                deferred: None,
+            },
+            &c,
+        )
+        .expect("result");
+        assert_eq!(r.status, Status::Skip);
+        assert_eq!(r.detail, "not supported on windows");
+        assert_eq!(r.platform.as_deref(), Some("windows"));
+    }
+
     #[test]
     fn ac10_conflict_policy_six_rows_including_real_foreign_fixture() {
         let mut c = context();

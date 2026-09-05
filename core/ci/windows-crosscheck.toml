@@ -2,17 +2,11 @@ version = 1
 target = "x86_64-pc-windows-msvc"
 
 [baseline]
-# Re-derived from Cargo metadata after the versioned timeline owner joined the
-# workspace. The census counts a package once when any target is `lib`; each new
-# library-only crate increases both baselines by exactly one.
-workspace_packages = 138
-library_packages = 132
-
-[[exclusions]]
-package = "solstone-core-retention"
-class = "sibling-owned-platform-backend"
-reason = "Retention's compact_log still reads Unix file permissions via std::os::unix::fs::PermissionsExt."
-expected_stderr = ["cannot find `unix` in `os`"]
+# Re-derived on 2026-09-04 using cargo metadata --no-deps --format-version 1
+# after retiring model-pricing. Count workspace members, then those with any
+# target whose kind includes `lib`; one package is counted once.
+workspace_packages = 137
+library_packages = 131
 
 [[exclusions]]
 package = "ring"

@@ -4,9 +4,7 @@
 use std::collections::{BTreeSet, HashSet};
 use std::hash::Hash;
 
-use solstone_core_body_source::{
-    BundleId, LedgerEventError, LedgerEventErrorCode, LedgerEventErrorField,
-};
+use solstone_core_body_source::{LedgerEventErrorCode, LedgerEventErrorField};
 
 fn code_spelling(code: LedgerEventErrorCode) -> &'static str {
     match code {
@@ -48,26 +46,6 @@ fn field_spelling(field: LedgerEventErrorField) -> &'static str {
 }
 
 fn assert_traits<T: Copy + Eq + Ord + Hash>() {}
-
-fn read_ledger_event_error_accessors(
-    error: &LedgerEventError,
-) -> (
-    Option<&BundleId>,
-    LedgerEventErrorCode,
-    LedgerEventErrorField,
-    u64,
-) {
-    (error.bundle(), error.code(), error.field(), error.line())
-}
-
-type LedgerEventErrorAccessor = fn(
-    &LedgerEventError,
-) -> (
-    Option<&BundleId>,
-    LedgerEventErrorCode,
-    LedgerEventErrorField,
-    u64,
-);
 
 #[test]
 fn ledger_event_error_vocabulary_is_canonical_exhaustive_copyable_ordered_and_hashable() {
@@ -174,9 +152,4 @@ fn ledger_event_error_vocabulary_is_canonical_exhaustive_copyable_ordered_and_ha
         LedgerEventErrorField::ALL
     );
     assert_eq!(hashed_fields.len(), 18);
-}
-
-#[test]
-fn ledger_event_error_accessor_shape_type_checks() {
-    let _witness: LedgerEventErrorAccessor = read_ledger_event_error_accessors;
 }

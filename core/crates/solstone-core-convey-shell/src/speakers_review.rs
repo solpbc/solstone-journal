@@ -12,7 +12,6 @@ use axum::Json;
 use axum::extract::{Extension, Path as RoutePath, Query};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
@@ -20,6 +19,7 @@ use solstone_core_entity_matching::{
     EntityNameCandidate, entity_slug, find_matching_entity as match_entity_name,
 };
 use solstone_core_journal_io::SegmentLayout;
+use solstone_core_speaker_resolve::audio_sample::audio_info;
 
 use crate::JournalRoot;
 use crate::speakers_calendar::{
@@ -31,50 +31,10 @@ use crate::speakers_segment_catalog::{
     DirectSupport, SegmentLookup, decode_stream_layout, lookup_segment,
 };
 
-const PATH_COMPONENT: &AsciiSet = &CONTROLS
-    .add(b' ')
-    .add(b'!')
-    .add(b'"')
-    .add(b'#')
-    .add(b'$')
-    .add(b'%')
-    .add(b'&')
-    .add(b'\'')
-    .add(b'(')
-    .add(b')')
-    .add(b'*')
-    .add(b'+')
-    .add(b',')
-    .add(b'/')
-    .add(b':')
-    .add(b';')
-    .add(b'<')
-    .add(b'=')
-    .add(b'>')
-    .add(b'?')
-    .add(b'@')
-    .add(b'[')
-    .add(b'\\')
-    .add(b']')
-    .add(b'^')
-    .add(b'`')
-    .add(b'{')
-    .add(b'|')
-    .add(b'}');
-
 #[derive(Debug, Default, Deserialize)]
 pub struct StreamLayoutQuery {
     stream_layout: Option<String>,
 }
-
-const AUDIO_FORMATS: [(&str, &str); 6] = [
-    (".flac", "audio/flac"),
-    (".opus", "audio/opus"),
-    (".ogg", "audio/ogg"),
-    (".m4a", "audio/mp4"),
-    (".mp3", "audio/mpeg"),
-    (".wav", "audio/wav"),
-];
 
 pub async fn segment_speakers(
     Extension(root): Extension<Arc<JournalRoot>>,
@@ -511,39 +471,6 @@ fn entity_display(
         .unwrap_or(entity_id)
         .to_owned();
     (name, principal_id == Some(entity_id))
-}
-
-pub(crate) fn audio_info(
-    segment_dir: &Path,
-    day: &str,
-    stream: &str,
-    segment_key: &str,
-    source: &str,
-    layout: SegmentLayout,
-) -> (Option<String>, Option<String>) {
-    for (extension, mimetype) in AUDIO_FORMATS {
-        let filename = format!("{source}{extension}");
-        if segment_dir.join(&filename).is_file() {
-            let day = path_component(day);
-            let stream = path_component(stream);
-            let segment_key = path_component(segment_key);
-            let filename = path_component(&filename);
-            let url = match layout {
-                SegmentLayout::Direct => {
-                    format!("/app/speakers/api/serve_audio/{day}/{segment_key}/{filename}")
-                }
-                SegmentLayout::Named => {
-                    format!("/app/speakers/api/serve_audio/{day}/{stream}/{segment_key}/{filename}")
-                }
-            };
-            return (Some(url), Some(mimetype.to_owned()));
-        }
-    }
-    (None, None)
-}
-
-fn path_component(value: &str) -> String {
-    utf8_percent_encode(value, PATH_COMPONENT).to_string()
 }
 
 fn configured_principal_identity(root: &Path) -> Option<(String, String)> {

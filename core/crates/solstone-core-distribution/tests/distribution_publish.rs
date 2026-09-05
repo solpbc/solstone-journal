@@ -414,6 +414,15 @@ fi
     let mut permissions = fs::metadata(&curl).expect("curl metadata").permissions();
     permissions.set_mode(0o755);
     fs::set_permissions(&curl, permissions).expect("chmod curl");
+    // Signature semantics have their own integration matrix. This origin test
+    // needs only a verifier-shaped executable so it can reach extraction.
+    let minisign = bin.join("minisign");
+    fs::write(&minisign, "#!/bin/sh\nexit 0\n").expect("fake minisign");
+    let mut permissions = fs::metadata(&minisign)
+        .expect("minisign metadata")
+        .permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&minisign, permissions).expect("chmod minisign");
     let prefix = fixture.root.join("prefix");
     let install = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../distribution/install.sh");
     let output = std::process::Command::new("sh")
@@ -426,6 +435,12 @@ fi
             "--no-path",
         ])
         .env("FAKE_CURL_ROOT", &origin)
+        // install.sh refuses with `v1-handoff` when `$HOME/.local/bin/journal` is a Python
+        // v1 launcher. Without pinning HOME this test reads the developer's own machine and
+        // passes or fails on whether solstone v1 happens to be installed there -- it passes
+        // on a clean checkout host and fails on any box that still has v1, which is most of
+        // ours. The prefix is already explicit, so HOME is only ever the route probe here.
+        .env("HOME", &fixture.root)
         .env("SOLSTONE_UNAME_S", "Linux")
         .env("SOLSTONE_UNAME_M", "x86_64")
         .env("TMPDIR", &fixture.root)

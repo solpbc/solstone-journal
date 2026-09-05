@@ -6,20 +6,32 @@
 use std::collections::BTreeSet;
 use std::fmt;
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io;
+#[cfg(unix)]
+use std::io::Read;
+#[cfg(unix)]
+use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
 use std::process::{Command, Stdio};
+#[cfg(unix)]
 use std::sync::mpsc::{self, Receiver, TryRecvError};
+#[cfg(unix)]
 use std::thread;
-use std::time::{Duration, Instant, SystemTime};
+#[cfg(unix)]
+use std::time::Instant;
+use std::time::{Duration, SystemTime};
 
 use serde_json::{Map, Value, json};
 use solstone_core_observe_audio::{AudioError, write_f32le_exclusive};
+#[cfg(unix)]
 use solstone_core_system::process::{
     BoxedTerminateFn, Disposition, LaunchAuthority, LaunchError, launch,
 };
 
+#[cfg(unix)]
 use crate::speakers_installation::validate_speakers_analyze_runtime;
 
 const REQUEST_SCHEMA: &str = "solstone-speaker-analyze-request-v1";
@@ -27,6 +39,7 @@ const RESPONSE_SCHEMA: &str = "solstone-speaker-analyze-response-v1";
 const ERROR_SCHEMA: &str = "solstone-speaker-analyze-error-v1";
 const TEMP_ROOT: &str = "/var/tmp";
 const TEMP_PREFIX: &str = "solstone-speakers-analyze-";
+#[cfg(unix)]
 const TEMP_DIR_MODE: u32 = 0o700;
 const WESPEAKER_EMBEDDING_WIDTH: usize = 256;
 const ENCODER_ID: &str = "wespeaker-resnet34-256";
@@ -151,6 +164,7 @@ pub(crate) fn sweep_stale_speakers_analyze_dirs(max_age: Duration) -> usize {
 
 /// Run speaker analysis through the isolated sibling helper process.
 #[allow(clippy::too_many_arguments)]
+#[cfg(unix)]
 pub(crate) fn analyze_speakers(
     raw_path: &Path,
     full_audio: &[f32],
@@ -195,6 +209,28 @@ pub(crate) fn analyze_speakers(
             },
         )
     })
+}
+
+/// Windows has no admitted speaker-helper process transport yet. Refuse before
+/// creating a temporary sidecar so the required capability is visibly degraded.
+#[allow(clippy::too_many_arguments)]
+#[cfg(not(unix))]
+pub(crate) fn analyze_speakers(
+    raw_path: &Path,
+    _full_audio: &[f32],
+    _statement_audio: &[f32],
+    _reduced_audio: Option<&[f32]>,
+    _statements_pre_restore: &[Map<String, Value>],
+    _statements_restored: &[Map<String, Value>],
+    _sample_rate: u32,
+    _min_statement_duration: f64,
+) -> Result<SpeakerAnalyzeResult, SpeakerAnalyzeError> {
+    Err(SpeakerAnalyzeError::new(
+        raw_path,
+        "invoke",
+        "platform-unsupported",
+        None,
+    ))
 }
 
 fn with_cleaned_temp_dir<T, F>(
@@ -331,6 +367,7 @@ fn remove_partial_sidecar(path: &Path, error: AudioError) -> AudioError {
     error
 }
 
+#[cfg(unix)]
 pub(crate) fn invoke_speakers_analyze_helper(
     binary: &Path,
     request: &[u8],
@@ -355,6 +392,23 @@ pub(crate) fn invoke_speakers_analyze_helper(
     invoke_child(authority, request, raw_path, budget)
 }
 
+#[cfg(not(unix))]
+pub(crate) fn invoke_speakers_analyze_helper(
+    binary: &Path,
+    request: &[u8],
+    raw_path: &Path,
+    budget: SpeakersAnalyzeBudget,
+) -> Result<HelperInvocationResult, SpeakerAnalyzeError> {
+    let _ = (binary, request, budget);
+    Err(SpeakerAnalyzeError::new(
+        raw_path,
+        "invoke",
+        "platform-unsupported",
+        None,
+    ))
+}
+
+#[cfg(unix)]
 fn process_group_exited(pgid: rustix::process::Pid) -> io::Result<bool> {
     loop {
         match rustix::process::waitid(
@@ -370,6 +424,7 @@ fn process_group_exited(pgid: rustix::process::Pid) -> io::Result<bool> {
     }
 }
 
+#[cfg(unix)]
 fn signal_process_group(
     pgid: rustix::process::Pid,
     signal: rustix::process::Signal,
@@ -380,6 +435,7 @@ fn signal_process_group(
     }
 }
 
+#[cfg(unix)]
 fn wait_for_process_group_exit(pgid: rustix::process::Pid, grace: Duration) -> io::Result<bool> {
     let deadline = Instant::now() + grace;
     loop {
@@ -393,6 +449,7 @@ fn wait_for_process_group_exit(pgid: rustix::process::Pid, grace: Duration) -> i
     }
 }
 
+#[cfg(unix)]
 fn speakers_terminate_fn(terminate_grace: Duration) -> BoxedTerminateFn {
     Box::new(move |child, _timeout| {
         let Some(pgid) = i32::try_from(child.id())
@@ -415,11 +472,13 @@ fn speakers_terminate_fn(terminate_grace: Duration) -> BoxedTerminateFn {
     })
 }
 
+#[cfg(unix)]
 struct SpeakerChild {
     authority: LaunchAuthority,
     pgid: rustix::process::Pid,
 }
 
+#[cfg(unix)]
 impl SpeakerChild {
     fn new(authority: LaunchAuthority) -> io::Result<Self> {
         let pgid = i32::try_from(authority.pid())
@@ -434,6 +493,7 @@ impl SpeakerChild {
     }
 }
 
+#[cfg(unix)]
 fn invoke_child(
     authority: LaunchAuthority,
     request: &[u8],
@@ -512,6 +572,7 @@ fn invoke_child(
     })
 }
 
+#[cfg(unix)]
 fn capture_stream<R>(mut reader: R, limit: usize) -> Receiver<Result<Vec<u8>, CaptureError>>
 where
     R: Read + Send + 'static,
@@ -535,6 +596,7 @@ where
     receiver
 }
 
+#[cfg(unix)]
 fn poll_capture(
     receiver: &Receiver<Result<Vec<u8>, CaptureError>>,
     stream: &str,
@@ -567,6 +629,7 @@ fn poll_capture(
     }
 }
 
+#[cfg(unix)]
 fn receive_capture(
     captured: Option<Result<Vec<u8>, CaptureError>>,
     receiver: Receiver<Result<Vec<u8>, CaptureError>>,
@@ -1403,13 +1466,14 @@ pub(crate) struct HelperInvocationResult {
     pub(crate) stderr: String,
 }
 
+#[cfg(unix)]
 #[derive(Debug)]
 enum CaptureError {
     TooLarge,
     Io(io::Error),
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;

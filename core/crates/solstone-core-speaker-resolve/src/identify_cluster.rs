@@ -6,13 +6,13 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 
+use crate::segment_path;
 use chrono::Utc;
 use serde_json::{Value, json};
 use solstone_core_entity::{
     EncoderIdentity, VoiceprintItem, hold_entity_trust_lock, normalize_embedding,
     read_entity_identity,
 };
-use solstone_core_journal_io::segment_path;
 use thiserror::Error;
 
 use crate::candidate_tracker::{CandidateTracker, MERGE_THRESHOLD, best_matching_candidate};

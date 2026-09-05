@@ -2,7 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 use std::fs;
-use std::os::unix::fs::{PermissionsExt, symlink};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -19,6 +20,26 @@ const LEGACY_APPLE_KEY: &str = "apple-health:synthetic:legacy-1";
 const VALUE_HASH: &str = "sha256:f3d64f3c75d8c78ebe82d09f697c4c050c2002d4ea1bb1a945a4e5ac1cb64297";
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(unix)]
+fn symlink_file(original: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(original, link)
+}
+
+#[cfg(windows)]
+fn symlink_file(original: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_file(original, link)
+}
+
+#[cfg(unix)]
+fn symlink_dir(original: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(original, link)
+}
+
+#[cfg(windows)]
+fn symlink_dir(original: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_dir(original, link)
+}
 
 struct TempDir {
     path: PathBuf,
@@ -242,6 +263,7 @@ fn rebuild_replays_legacy_then_native_and_publishes_private_deterministic_sqlite
     write_native_bundle(temporary.path(), &case);
     fs::create_dir_all(temporary.path().join("imports/unrelated-import"))
         .expect("unrelated import creates");
+    #[cfg(unix)]
     fs::set_permissions(
         temporary.path().join("imports"),
         fs::Permissions::from_mode(0o755),
@@ -254,22 +276,25 @@ fn rebuild_replays_legacy_then_native_and_publishes_private_deterministic_sqlite
     assert_eq!(report.rows(), 2);
 
     let database = temporary.path().join("imports/health-dedupe.sqlite");
-    assert_eq!(
-        fs::metadata(temporary.path().join("imports"))
-            .expect("imports metadata")
-            .permissions()
-            .mode()
-            & 0o777,
-        0o700
-    );
-    assert_eq!(
-        fs::metadata(&database)
-            .expect("database metadata")
-            .permissions()
-            .mode()
-            & 0o777,
-        0o600
-    );
+    #[cfg(unix)]
+    {
+        assert_eq!(
+            fs::metadata(temporary.path().join("imports"))
+                .expect("imports metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(&database)
+                .expect("database metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+    }
     assert!(
         !temporary
             .path()
@@ -436,12 +461,14 @@ fn escaping_imports_symlink_is_refused_before_any_outside_mutation() {
     let temporary = TempDir::new();
     let outside = temporary.path().join("outside");
     fs::create_dir(&outside).expect("outside directory creates");
+    #[cfg(unix)]
     fs::set_permissions(&outside, fs::Permissions::from_mode(0o755)).expect("outside mode sets");
-    symlink(&outside, temporary.path().join("imports")).expect("imports symlink creates");
+    symlink_dir(&outside, &temporary.path().join("imports")).expect("imports symlink creates");
 
     let error = rebuild_body_store(temporary.path()).expect_err("imports symlink refuses");
     assert_eq!(error.kind(), BodyRebuildErrorKind::Publication);
     assert_eq!(error.stage(), "imports_directory");
+    #[cfg(unix)]
     assert_eq!(
         fs::metadata(&outside)
             .expect("outside metadata")
@@ -460,7 +487,8 @@ fn existing_database_symlink_is_never_opened_or_replaced() {
     fs::create_dir(&imports).expect("imports creates");
     let outside = temporary.path().join("outside.sqlite");
     fs::write(&outside, b"outside-owner-sentinel").expect("outside file writes");
-    symlink(&outside, imports.join("health-dedupe.sqlite")).expect("database symlink creates");
+    symlink_file(&outside, &imports.join("health-dedupe.sqlite"))
+        .expect("database symlink creates");
 
     let error = rebuild_body_store(temporary.path()).expect_err("database symlink refuses");
     assert_eq!(error.kind(), BodyRebuildErrorKind::Publication);

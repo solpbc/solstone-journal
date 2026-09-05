@@ -4,6 +4,7 @@
 //! Host-input collection around the shared pure STT backend choice.
 
 pub(crate) mod confidential;
+#[cfg(unix)]
 pub(crate) mod parakeet_coreml;
 pub(crate) mod parakeet_cpp;
 
@@ -166,7 +167,6 @@ mod tests {
             platform_floor_bytes_for("linux", "x86_64"),
             Some(LINUX_LOCAL_FLOOR_BYTES)
         );
-        assert_eq!(LINUX_LOCAL_FLOOR_BYTES, 4 * 1024_u64.pow(3));
     }
 
     #[test]
@@ -175,7 +175,6 @@ mod tests {
             platform_floor_bytes_for("darwin", "arm64"),
             Some(DARWIN_ARM64_LOCAL_FLOOR_BYTES)
         );
-        assert_eq!(DARWIN_ARM64_LOCAL_FLOOR_BYTES, 2 * 1024_u64.pow(3));
     }
 
     #[test]

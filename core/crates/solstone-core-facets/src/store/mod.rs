@@ -103,8 +103,8 @@ pub use repair::{
     FacetEntityLinkReport, repair_facet_entity_links, repair_facet_entity_links_journal_wide,
 };
 pub use review_candidates::{
-    FacetReviewCandidateError, accept_candidate, dismiss_candidate, facet_slug, load_candidates,
-    record_facet_candidates,
+    FacetReviewCandidateError, accept_candidate, dismiss_candidate, facet_slug,
+    humanize_facet_title, load_candidates, record_facet_candidates,
 };
 pub use seeding::{
     SeedEntitiesError, SeedEntityBaseOutcome, SeedEntityInput, SeedEntityItemResult,

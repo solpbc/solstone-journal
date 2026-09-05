@@ -58,6 +58,8 @@ mod tests {
     use std::path::Path;
     use std::time::{Duration, UNIX_EPOCH};
 
+    use serde_json::{Value, json};
+
     use super::*;
 
     fn root() -> tempfile::TempDir {
@@ -85,6 +87,92 @@ mod tests {
             contents,
         )
         .expect("talent");
+    }
+
+    fn write_facet(root: &tempfile::TempDir, facet: &str) {
+        let directory = root.path().join("facets").join(facet);
+        fs::create_dir_all(directory.join("activities")).expect("facet activities");
+        fs::write(
+            directory.join("facet.json"),
+            format!(r#"{{"name":"{facet}","description":"test facet"}}"#),
+        )
+        .expect("facet declaration");
+    }
+
+    fn write_activity_rows(root: &tempfile::TempDir, facet: &str, day: &str, rows: &[Value]) {
+        let path = root
+            .path()
+            .join("facets")
+            .join(facet)
+            .join("activities")
+            .join(format!("{day}.jsonl"));
+        let contents = rows
+            .iter()
+            .map(Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(path, format!("{contents}\n")).expect("activity rows");
+    }
+
+    fn write_segment(root: &tempfile::TempDir, day: &str, segment: &str, marker: &str) {
+        let directory = root.path().join("chronicle").join(day).join(segment);
+        fs::create_dir_all(directory.join("talents")).expect("segment");
+        fs::write(
+            directory.join("imported.md"),
+            format!("transcript-{marker}"),
+        )
+        .expect("transcript");
+        fs::write(
+            directory.join("screen.jsonl"),
+            format!(r#"{{"timestamp":0,"content":{{"marker":"percept-{marker}"}}}}"#),
+        )
+        .expect("percept");
+        fs::write(
+            directory.join("talents/sense.md"),
+            format!("sense-{marker}"),
+        )
+        .expect("sense");
+        fs::write(
+            directory.join("talents/other.md"),
+            format!("other-{marker}"),
+        )
+        .expect("other talent");
+    }
+
+    fn activity_talent(kind: &str, talents: &str) -> String {
+        format!(
+            concat!(
+                "{{\n",
+                "\"type\":\"generate\",\n",
+                "\"schedule\":\"activity\",\n",
+                "\"priority\":1,\n",
+                "\"output\":\"md\",\n",
+                "\"activities\":[\"{kind}\"],\n",
+                "\"load\":{{\"transcripts\":true,\"percepts\":true,\"talents\":{talents}}}\n",
+                "}}\n",
+                "activity body"
+            ),
+            kind = kind,
+            talents = talents,
+        )
+    }
+
+    fn copy_shipped_activity_talents(root: &tempfile::TempDir) {
+        let payload = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../payload/solstone/talent");
+        for name in ["participation", "conversation", "event", "work"] {
+            fs::copy(
+                payload.join(format!("{name}.md")),
+                root.path().join("talent").join(format!("{name}.md")),
+            )
+            .expect("shipped activity talent");
+        }
+        for schema in ["participation.schema.json", "story.schema.json"] {
+            fs::copy(
+                payload.join(schema),
+                root.path().join("talent").join(schema),
+            )
+            .expect("shipped activity schema");
+        }
     }
 
     fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
@@ -372,5 +460,667 @@ mod tests {
         let mut after = snapshot(root.path());
         after.remove(Path::new("health/.steward.lock"));
         assert_eq!(before, after);
+    }
+
+    #[test]
+    fn activity_preview_selects_the_exact_record_span_and_day_preview_stays_unchanged() {
+        let root = root();
+        write_facet(&root, "work");
+        write_talent(&root, "activity_probe", &activity_talent("*", "false"));
+        write_segment(&root, "20260101", "090000_60", "A-only");
+        write_segment(&root, "20260101", "100000_60", "B-only");
+        write_segment(&root, "20260102", "110000_60", "C-other-day");
+        // Deliberately store B first: selection may not mean first row.
+        write_activity_rows(
+            &root,
+            "work",
+            "20260101",
+            &[
+                json!({"id":"B","activity":"work","segments":["100000_60"]}),
+                json!({"id":"A","activity":"work","segments":["090000_60"]}),
+            ],
+        );
+        write_activity_rows(
+            &root,
+            "work",
+            "20260102",
+            &[json!({"id":"A","activity":"work","segments":["110000_60"]})],
+        );
+        let before = snapshot(root.path());
+
+        for (activity, own, other) in [("A", "A-only", "B-only"), ("B", "B-only", "A-only")] {
+            let output = run(
+                &root,
+                &[
+                    "show",
+                    "activity_probe",
+                    "--prompt",
+                    "--full",
+                    "--day",
+                    "20260101",
+                    "--facet",
+                    "work",
+                    "--activity",
+                    activity,
+                ],
+            );
+            assert_eq!(output.exit_code, 0, "{}", output.stderr);
+            assert!(output.stdout.contains(own), "{}", output.stdout);
+            assert!(!output.stdout.contains(other), "{}", output.stdout);
+            assert!(!output.stdout.contains("C-other-day"), "{}", output.stdout);
+        }
+
+        let day = run(
+            &root,
+            &[
+                "show",
+                "activity_probe",
+                "--prompt",
+                "--full",
+                "--day",
+                "20260101",
+                "--facet",
+                "work",
+            ],
+        );
+        assert_eq!(day.exit_code, 0, "{}", day.stderr);
+        assert!(day.stdout.contains("A-only"));
+        assert!(day.stdout.contains("B-only"));
+        assert!(!day.stdout.contains("C-other-day"));
+        assert_eq!(snapshot(root.path()), before, "preview mutated the journal");
+    }
+
+    #[test]
+    fn activity_preview_preserves_the_four_shipped_source_matrices() {
+        let root = root();
+        write_facet(&root, "work");
+        write_segment(&root, "20260101", "090000_60", "matrix");
+        write_activity_rows(
+            &root,
+            "work",
+            "20260101",
+            &[
+                json!({"id":"participation-a","activity":"meeting","segments":["090000_60"]}),
+                json!({"id":"conversation-a","activity":"meeting","segments":["090000_60"]}),
+                json!({"id":"event-a","activity":"event","segments":["090000_60"]}),
+                json!({"id":"work-a","activity":"coding","segments":["090000_60"]}),
+            ],
+        );
+        copy_shipped_activity_talents(&root);
+
+        for talent in ["participation", "conversation", "event", "work"] {
+            let id = format!("{talent}-a");
+            let output = run(
+                &root,
+                &[
+                    "show",
+                    talent,
+                    "--prompt",
+                    "--full",
+                    "--day",
+                    "20260101",
+                    "--facet",
+                    "work",
+                    "--activity",
+                    &id,
+                ],
+            );
+            assert_eq!(output.exit_code, 0, "{talent}: {}", output.stderr);
+            assert!(output.stdout.contains("transcript-matrix"), "{talent}");
+            assert!(output.stdout.contains("percept-matrix"), "{talent}");
+            if talent == "participation" {
+                assert!(output.stdout.contains("sense-matrix"));
+            } else {
+                assert!(!output.stdout.contains("sense-matrix"), "{talent}");
+            }
+            assert!(!output.stdout.contains("other-matrix"), "{talent}");
+        }
+    }
+
+    #[test]
+    fn activity_preview_json_failures_are_closed_and_read_only() {
+        let root = root();
+        write_facet(&root, "work");
+        write_talent(&root, "activity_probe", &activity_talent("work", "false"));
+        write_segment(&root, "20260101", "090000_60", "kept");
+
+        let cases = [
+            (
+                "missing",
+                json!({"id":"other","activity":"work","segments":["090000_60"]}),
+                "activity_not_found",
+            ),
+            (
+                "empty",
+                json!({"id":"empty","activity":"work","segments":[]}),
+                "activity_span_empty",
+            ),
+            (
+                "invalid",
+                json!({"id":"invalid","activity":"work","segments":["090000_60",7]}),
+                "activity_span_invalid",
+            ),
+            (
+                "unavailable",
+                json!({"id":"unavailable","activity":"work","segments":["missing_60"]}),
+                "activity_segment_unavailable",
+            ),
+        ];
+        for (id, row, code) in cases {
+            write_activity_rows(&root, "work", "20260101", &[row]);
+            let before = snapshot(root.path());
+            let output = run(
+                &root,
+                &[
+                    "show",
+                    "activity_probe",
+                    "--prompt",
+                    "--json",
+                    "--day",
+                    "20260101",
+                    "--facet",
+                    "work",
+                    "--activity",
+                    id,
+                ],
+            );
+            assert_eq!(output.exit_code, 1, "{code}");
+            assert!(output.stdout.is_empty());
+            let error: Value = serde_json::from_str(output.stderr.trim()).expect("JSON error");
+            assert_eq!(error["code"], code);
+            assert_eq!(error["day"], "20260101");
+            assert_eq!(error["facet"], "work");
+            assert_eq!(error["activity"], id);
+            assert!(
+                error["recovery"]
+                    .as_str()
+                    .is_some_and(|value| !value.is_empty())
+            );
+            assert_eq!(snapshot(root.path()), before, "{code} mutated the journal");
+        }
+
+        let duplicates = [
+            json!({"id":"duplicate","activity":"work","segments":["090000_60"],"marker":"first"}),
+            json!({"id":"duplicate","activity":"work","segments":["090000_60"],"marker":"second"}),
+        ];
+        let mut errors = Vec::new();
+        for rows in [
+            duplicates.clone(),
+            [duplicates[1].clone(), duplicates[0].clone()],
+        ] {
+            write_activity_rows(&root, "work", "20260101", &rows);
+            let output = run(
+                &root,
+                &[
+                    "show",
+                    "activity_probe",
+                    "--prompt",
+                    "--json",
+                    "--day",
+                    "20260101",
+                    "--facet",
+                    "work",
+                    "--activity",
+                    "duplicate",
+                ],
+            );
+            assert_eq!(output.exit_code, 1);
+            assert!(output.stdout.is_empty());
+            assert_eq!(
+                serde_json::from_str::<Value>(output.stderr.trim()).unwrap()["code"],
+                "activity_ambiguous"
+            );
+            errors.push(output.stderr);
+        }
+        assert_eq!(errors[0], errors[1]);
+    }
+
+    #[test]
+    fn activity_preview_reports_activity_store_io_failures() {
+        let root = root();
+        write_facet(&root, "work");
+        write_talent(&root, "activity_probe", &activity_talent("work", "false"));
+        fs::create_dir(root.path().join("facets/work/activities/20260101.jsonl"))
+            .expect("unreadable activity fixture");
+        let before = snapshot(root.path());
+
+        let output = run(
+            &root,
+            &[
+                "show",
+                "activity_probe",
+                "--prompt",
+                "--json",
+                "--day",
+                "20260101",
+                "--facet",
+                "work",
+                "--activity",
+                "unavailable",
+            ],
+        );
+
+        assert_eq!(output.exit_code, 1);
+        assert!(output.stdout.is_empty());
+        assert_eq!(
+            serde_json::from_str::<Value>(output.stderr.trim()).unwrap()["code"],
+            "activity_record_unavailable"
+        );
+        assert_eq!(snapshot(root.path()), before, "failure mutated the journal");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn activity_preview_refuses_a_segment_directory_it_cannot_enumerate() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = root();
+        write_facet(&root, "work");
+        write_talent(&root, "activity_probe", &activity_talent("work", "false"));
+        write_segment(&root, "20260101", "090000_60", "unreadable");
+        write_activity_rows(
+            &root,
+            "work",
+            "20260101",
+            &[json!({"id":"A","activity":"work","segments":["090000_60"]})],
+        );
+        let segment = root.path().join("chronicle/20260101/090000_60");
+        let mut permissions = fs::metadata(&segment).unwrap().permissions();
+        permissions.set_mode(0o000);
+        fs::set_permissions(&segment, permissions).expect("make segment unreadable");
+
+        let output = run(
+            &root,
+            &[
+                "show",
+                "activity_probe",
+                "--prompt",
+                "--json",
+                "--day",
+                "20260101",
+                "--facet",
+                "work",
+                "--activity",
+                "A",
+            ],
+        );
+
+        let mut permissions = fs::metadata(&segment).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&segment, permissions).expect("restore segment permissions");
+        assert_eq!(output.exit_code, 1);
+        assert!(output.stdout.is_empty());
+        let error = serde_json::from_str::<Value>(output.stderr.trim()).unwrap();
+        assert_eq!(error["code"], "activity_segment_unavailable");
+        assert_eq!(error["segment"], "090000_60");
+    }
+
+    #[test]
+    fn activity_preview_uses_production_validation_and_structures_prepare_failures() {
+        let absent = root();
+        let absent_output = run(
+            &absent,
+            &[
+                "show",
+                "absent_activity",
+                "--prompt",
+                "--json",
+                "--day",
+                "20260101",
+                "--facet",
+                "work",
+                "--activity",
+                "A",
+            ],
+        );
+        assert_eq!(absent_output.exit_code, 1);
+        assert!(absent_output.stdout.is_empty());
+        assert_eq!(absent_output.stderr.lines().count(), 1);
+        assert_eq!(
+            serde_json::from_str::<Value>(absent_output.stderr.trim()).unwrap()["code"],
+            "activity_talent_unavailable"
+        );
+
+        let invalid = root();
+        write_facet(&invalid, "work");
+        write_segment(&invalid, "20260101", "090000_60", "invalid-config");
+        write_activity_rows(
+            &invalid,
+            "work",
+            "20260101",
+            &[json!({"id":"A","activity":"work","segments":["090000_60"]})],
+        );
+        write_talent(
+            &invalid,
+            "invalid_activity",
+            concat!(
+                "{\n",
+                "\"type\":\"generate\",\n",
+                "\"schedule\":\"activity\",\n",
+                "\"activities\":[\"work\"]\n",
+                "}\n",
+                "invalid activity"
+            ),
+        );
+        let invalid_output = run(
+            &invalid,
+            &[
+                "show",
+                "invalid_activity",
+                "--prompt",
+                "--json",
+                "--day",
+                "20260101",
+                "--facet",
+                "work",
+                "--activity",
+                "A",
+            ],
+        );
+        assert_eq!(invalid_output.exit_code, 1);
+        assert!(invalid_output.stdout.is_empty());
+        assert_eq!(
+            serde_json::from_str::<Value>(invalid_output.stderr.trim()).unwrap()["code"],
+            "activity_talent_unavailable"
+        );
+        assert_eq!(invalid_output.stderr.lines().count(), 1);
+
+        let missing_schema = root();
+        write_facet(&missing_schema, "work");
+        write_segment(&missing_schema, "20260101", "090000_60", "missing-schema");
+        write_activity_rows(
+            &missing_schema,
+            "work",
+            "20260101",
+            &[json!({"id":"A","activity":"work","segments":["090000_60"]})],
+        );
+        write_talent(
+            &missing_schema,
+            "missing_schema",
+            concat!(
+                "{\n",
+                "\"type\":\"generate\",\n",
+                "\"schedule\":\"activity\",\n",
+                "\"priority\":1,\n",
+                "\"output\":\"json\",\n",
+                "\"schema\":\"absent.schema.json\",\n",
+                "\"activities\":[\"work\"]\n",
+                "}\n",
+                "missing schema"
+            ),
+        );
+        let before = snapshot(missing_schema.path());
+        let schema_output = run(
+            &missing_schema,
+            &[
+                "show",
+                "missing_schema",
+                "--prompt",
+                "--json",
+                "--day",
+                "20260101",
+                "--facet",
+                "work",
+                "--activity",
+                "A",
+            ],
+        );
+        assert_eq!(schema_output.exit_code, 1);
+        assert!(schema_output.stdout.is_empty());
+        assert_eq!(
+            serde_json::from_str::<Value>(schema_output.stderr.trim()).unwrap()["code"],
+            "activity_talent_unavailable"
+        );
+        assert_eq!(schema_output.stderr.lines().count(), 1);
+        assert_eq!(snapshot(missing_schema.path()), before);
+    }
+
+    #[test]
+    fn activity_preview_routes_malformed_metadata_to_structured_runtime_refusals() {
+        for (name, talent) in [
+            ("malformed", "{\nnot-json\n}\nbody"),
+            (
+                "wrong_type",
+                concat!(
+                    "{\n",
+                    "\"type\":7,\n",
+                    "\"schedule\":\"activity\",\n",
+                    "\"priority\":1,\n",
+                    "\"activities\":[\"work\"]\n",
+                    "}\n",
+                    "body"
+                ),
+            ),
+        ] {
+            let root = root();
+            write_facet(&root, "work");
+            write_segment(&root, "20260101", "090000_60", name);
+            write_activity_rows(
+                &root,
+                "work",
+                "20260101",
+                &[json!({"id":"A","activity":"work","segments":["090000_60"]})],
+            );
+            write_talent(&root, name, talent);
+
+            let output = run(
+                &root,
+                &[
+                    "show",
+                    name,
+                    "--prompt",
+                    "--json",
+                    "--day",
+                    "20260101",
+                    "--facet",
+                    "work",
+                    "--activity",
+                    "A",
+                ],
+            );
+
+            assert_eq!(output.exit_code, 1, "{name}: {}", output.stderr);
+            assert!(output.stdout.is_empty());
+            assert_eq!(output.stderr.lines().count(), 1);
+            assert_eq!(
+                serde_json::from_str::<Value>(output.stderr.trim()).unwrap()["code"],
+                "activity_talent_unavailable"
+            );
+        }
+    }
+
+    #[test]
+    fn cogitate_activity_preview_resolves_activity_before_showing_the_initial_prompt() {
+        let root = root();
+        write_facet(&root, "work");
+        write_segment(&root, "20260101", "090000_60", "cogitate");
+        write_activity_rows(
+            &root,
+            "work",
+            "20260101",
+            &[json!({"id":"A","activity":"work","segments":["090000_60"]})],
+        );
+        write_talent(
+            &root,
+            "activity_cogitate",
+            concat!(
+                "{\n",
+                "\"type\":\"cogitate\",\n",
+                "\"schedule\":\"activity\",\n",
+                "\"priority\":1,\n",
+                "\"activities\":[\"work\"],\n",
+                "\"load\":{\"transcripts\":true}\n",
+                "}\n",
+                "cogitate-activity-body"
+            ),
+        );
+
+        let missing = run(
+            &root,
+            &[
+                "show",
+                "activity_cogitate",
+                "--prompt",
+                "--json",
+                "--day",
+                "20260101",
+                "--facet",
+                "work",
+                "--activity",
+                "missing",
+            ],
+        );
+        assert_eq!(missing.exit_code, 1);
+        assert_eq!(
+            serde_json::from_str::<Value>(missing.stderr.trim()).unwrap()["code"],
+            "activity_not_found"
+        );
+
+        let before = snapshot(root.path());
+        let selected = run(
+            &root,
+            &[
+                "show",
+                "activity_cogitate",
+                "--prompt",
+                "--full",
+                "--day",
+                "20260101",
+                "--facet",
+                "work",
+                "--activity",
+                "A",
+            ],
+        );
+        assert_eq!(selected.exit_code, 0, "{}", selected.stderr);
+        assert!(
+            selected
+                .stdout
+                .contains("Processing activity 'A' (work) in facet 'work' for 2026-01-01.")
+        );
+        assert!(!selected.stdout.contains("cogitate-activity-body"));
+        assert!(!selected.stdout.contains("transcript-cogitate"));
+        assert_eq!(snapshot(root.path()), before);
+    }
+
+    #[test]
+    fn activity_preview_refuses_structural_and_production_eligibility_mismatches() {
+        let root = root();
+        write_facet(&root, "work");
+        write_segment(&root, "20260101", "090000_60", "eligible");
+        write_talent(&root, "activity_probe", &activity_talent("work", "false"));
+        write_talent(
+            &root,
+            "daily_probe",
+            "{\n\"type\":\"generate\",\"schedule\":\"daily\",\"priority\":1,\"output\":\"md\"\n}\ndaily",
+        );
+
+        let run_error = |args: &[&str]| {
+            let output = run(&root, args);
+            assert_eq!(output.exit_code, 1, "{}", output.stderr);
+            assert!(output.stdout.is_empty());
+            serde_json::from_str::<Value>(output.stderr.trim()).expect("JSON error")
+        };
+        let no_day = run_error(&[
+            "show",
+            "activity_probe",
+            "--prompt",
+            "--json",
+            "--facet",
+            "work",
+            "--activity",
+            "A",
+        ]);
+        assert_eq!(no_day["code"], "activity_requires_day");
+        let no_facet = run_error(&[
+            "show",
+            "activity_probe",
+            "--prompt",
+            "--json",
+            "--day",
+            "20260101",
+            "--activity",
+            "A",
+        ]);
+        assert_eq!(no_facet["code"], "activity_requires_facet");
+        let segment_conflict = run_error(&[
+            "show",
+            "activity_probe",
+            "--prompt",
+            "--json",
+            "--day",
+            "20260101",
+            "--facet",
+            "work",
+            "--activity",
+            "A",
+            "--segment",
+            "090000_60",
+        ]);
+        assert_eq!(segment_conflict["code"], "activity_segment_conflict");
+        assert_eq!(segment_conflict["segment"], "090000_60");
+
+        let cases = [
+            (
+                "daily_probe",
+                json!({"id":"daily","activity":"work","segments":["090000_60"]}),
+                "daily",
+                "activity_schedule_unsupported",
+            ),
+            (
+                "activity_probe",
+                json!({"id":"kind","activity":"meeting","segments":["090000_60"]}),
+                "kind",
+                "activity_kind_unsupported",
+            ),
+            (
+                "activity_probe",
+                json!({"id":"synthetic","activity":"work","source":"cogitate","segments":["090000_60"]}),
+                "synthetic",
+                "activity_synthetic",
+            ),
+        ];
+        for (talent, row, id, code) in cases {
+            write_activity_rows(&root, "work", "20260101", &[row]);
+            let error = run_error(&[
+                "show",
+                talent,
+                "--prompt",
+                "--json",
+                "--day",
+                "20260101",
+                "--facet",
+                "work",
+                "--activity",
+                id,
+            ]);
+            assert_eq!(error["code"], code);
+        }
+
+        write_talent(&root, "work", &activity_talent("reading", "false"));
+        write_activity_rows(
+            &root,
+            "work",
+            "20260101",
+            &[json!({
+                "id":"low",
+                "activity":"reading",
+                "level_avg":0.39,
+                "segments":["090000_60"]
+            })],
+        );
+        let low = run_error(&[
+            "show",
+            "work",
+            "--prompt",
+            "--json",
+            "--day",
+            "20260101",
+            "--facet",
+            "work",
+            "--activity",
+            "low",
+        ]);
+        assert_eq!(low["code"], "low_level_activity");
     }
 }

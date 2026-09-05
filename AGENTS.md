@@ -93,7 +93,6 @@ Verified against `Makefile`. Grouped by use.
 | `make install` | **Retired.** Install the journal from the distribution tree; develop against this checkout with Cargo directly. |
 | `make skills` | Regenerate generated router references, then rewrite the `solstone` + `journal` router skill symlinks into `journal/`. |
 | `make update` | Upgrade all deps to latest, regenerate `uv.lock` (the remaining `scripts/` Python tooling's own dependencies — not a product dependency set). |
-| `make update-prices` | Refresh genai-prices model-cost data when adding a new provider model or when pricing tests fail. |
 | `make clean` | Remove build artifacts, caches, and the skill symlink dirs (`journal/.agents/`, `journal/.claude/`). Does not touch `.venv/`. Before `cargo clean`, refuses if a live process has an open file, mapping, cwd, or executable under this checkout's `RUST_TARGET_DIR` (`core/target`, or `CARGO_TARGET_DIR` if set) and prints blocker pids+paths. Override with `CLEAN_FORCE=1`. |
 | `make clean-install` | Runs `clean` first (same live-use refuse / `CLEAN_FORCE=1`), then deletes `.venv/` and `.installed`, then exits 1 as retired. |
 
@@ -257,7 +256,7 @@ Verified directly against source, not against this table's own history — a sta
 | Facet newsletters (`facets/*/news/*.md`) | `core/crates/solstone-core-facets/src/store/news.rs` (`write_news_file`), called by the CLI (`journal news`) and the auto-generated newsletter talent |
 | Entity talent outcome sidecars (`chronicle/**/<seg>/talents/detection_outcome.json`, `facets/*/entities/*_{observer,review}_outcome.json`) | `core/crates/solstone-core-talent-runtime/src/entities/{detection,observer,review}.rs` |
 | Timeline (`chronicle/<day>/timeline.json`, `chronicle/**/<seg>/timeline.json`, root `timeline.json`) | `core/crates/solstone-core-timeline/src/store.rs` owns all segment, day, and master artifact writes; `binding.rs` resolves their canonical identities and paths. `solstone-core-maintenance`, `solstone-core-talent-runtime`, and `solstone-core-think-cli` are orchestration callers, not separate writers. |
-| Timeline durable artifact/attempt state (`health/timeline/state.json`) | `core/crates/solstone-core-timeline/src/state.rs` |
+| Timeline durable artifact/attempt state (`chronicle/**/timeline.state.json`, root `timeline.state.json`) | `core/crates/solstone-core-timeline/src/state.rs` |
 | Timeline lock namespace (`health/timeline/locks/**`) | `core/crates/solstone-core-timeline/src/locks.rs` |
 | Per-segment sense outputs (`chronicle/**/<seg>/talents/{sense.json,facets.json,speakers.json,density.json,change.json,activity.md,sense.md}`) | `core/crates/solstone-core-think-cli/src/segment.rs` (`write_sense_outputs`, `write_change`) |
 | `_solstone_processing` records on header-only native describe/transcribe outputs (`chronicle/**/<seg>/{screen,*_screen,audio,*_audio}.jsonl`) | Shared judgment/vocabulary only (not itself a writer): `core/crates/solstone-core-processing-record/`. Per-handler header writes: `core/crates/solstone-core-transcribe/`, `core/crates/solstone-core-describe/`, `core/crates/solstone-core-depict/`. Bulk repair CLI: `journal backfill-processing-records` (`core/crates/solstone-core-backfill-cli/`) |

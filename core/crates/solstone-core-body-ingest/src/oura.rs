@@ -2,9 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::Read;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
 use chrono::{DateTime, NaiveDate, SecondsFormat};
@@ -14,6 +13,7 @@ use sha2::{Digest, Sha256};
 use solstone_core_body_source::{BodyRawRetention, BodySourceFamily, canonicalize, parse};
 
 use crate::approval::{oura_approval, pin_journal_target};
+use crate::bounded_file::open_regular_file;
 use crate::bundle::{BodyIngestError, BodyIngestErrorKind, BodyIngestReport, NormalizedInput};
 use crate::bundle::{RawAsset, publish};
 use crate::oura_sync::hold_oura_lock;
@@ -162,11 +162,7 @@ fn read_document(path: &Path) -> Result<Vec<u8>, BodyIngestError> {
     {
         return Err(source("document_size_limit"));
     }
-    let file = OpenOptions::new()
-        .read(true)
-        .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK | nix::libc::O_CLOEXEC)
-        .open(path)
-        .map_err(|_| source("read"))?;
+    let file = open_regular_file(path).map_err(|_| source("read"))?;
     if !file
         .metadata()
         .map_err(|_| source("read"))?

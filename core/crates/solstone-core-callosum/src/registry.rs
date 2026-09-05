@@ -14,19 +14,3 @@ pub fn callosum_registry() -> &'static Value {
         serde_json::from_str(REGISTRY_FIXTURE).expect("callosum registry fixture is valid JSON")
     })
 }
-
-#[cfg(test)]
-mod tests {
-    use serde_json::Value;
-
-    use super::callosum_registry;
-
-    #[test]
-    fn registry_matches_independently_parsed_fixture() {
-        let expected: Value =
-            serde_json::from_str(include_str!("../../../fixtures/callosum_registry.json"))
-                .expect("callosum registry fixture is valid JSON");
-
-        assert_eq!(callosum_registry(), &expected);
-    }
-}

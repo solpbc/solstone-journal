@@ -249,12 +249,6 @@ impl CortexStore {
             "schedule": request.get("schedule").cloned().unwrap_or(Value::Null),
             "thinking_count": thinking_count,
             "tool_count": tool_count,
-            // Keep cost in the fixed day-index shape, but leave it null: the reference
-            // price table is generated Python source that a native artifact may not execute;
-            // a bundled snapshot silently drifts, and a conservative fallback can trip a
-            // budget ceiling early, making a measured-looking value worse than none.
-            // Dropping the field would break the exact-18-field contract.
-            "cost": Value::Null,
             "error_message": if status == "error" { error_message } else { Value::Null },
             "reason_code": if status == "error" { reason_code } else { Value::Null },
             "degraded": degraded,
@@ -438,9 +432,13 @@ fn recover_active_candidate(
         refusals.record(CortexUseRefusal::CandidateIo);
         return;
     };
-    let error = synthesized_error(
+    let mut error = synthesized_error(
         &request.use_id,
         "Recovered: Cortex restarted while talent was running",
+    );
+    error.insert(
+        "reason_code".into(),
+        Value::String("cortex_restart_recovered".into()),
     );
     match store.append_active(&active_path, &error) {
         Ok(true) => {}
@@ -843,7 +841,6 @@ mod tests {
             "schedule",
             "thinking_count",
             "tool_count",
-            "cost",
             "error_message",
             "reason_code",
             "degraded",
@@ -858,7 +855,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             expected
         );
-        assert!(row["cost"].is_null());
+        assert!(row.get("cost").is_none());
         assert!(row["output_file"].is_null());
         assert_eq!(row["model"], "priced-model");
         assert_eq!(row["runtime_seconds"], 1.3);

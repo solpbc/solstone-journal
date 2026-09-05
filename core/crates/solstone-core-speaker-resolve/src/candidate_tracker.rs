@@ -195,7 +195,7 @@ impl CandidateTracker {
         &mut self,
     ) -> Result<Vec<CandidateProfile>, CandidateTrackerError> {
         let _lock = hold_lock(&self.store_path, LockOptions::default())?;
-        self.load_tolerant();
+        self.load_strict()?;
         Ok(self.candidates())
     }
     /// Process the embedding-derived clusters for one source segment.
@@ -325,6 +325,104 @@ impl CandidateTracker {
             }
         }
         best
+    }
+    fn load_strict(&mut self) -> Result<bool, CandidateTrackerError> {
+        // A scheduled writer must not reuse the constructor's snapshot after a
+        // failed reload or silently drop malformed candidates before writing.
+        let bytes = match fs::read(&self.store_path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                self.candidates.clear();
+                self.next_id = 1;
+                self.consolidation_summary = json!({"merge_count_total":0,"last_merge":null});
+                return Ok(false);
+            }
+            Err(error) => return Err(error.into()),
+        };
+        let invalid = || {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "invalid speaker candidate pool",
+            )
+        };
+        let data: Value = serde_json::from_slice(&bytes).map_err(|_| invalid())?;
+        let object = data.as_object().ok_or_else(invalid)?;
+        let rows = object
+            .get("candidates")
+            .and_then(Value::as_array)
+            .ok_or_else(invalid)?;
+        let mut candidates = BTreeMap::new();
+        for row in rows {
+            let candidate = CandidateProfile::from_json(row).ok_or_else(invalid)?;
+            if candidate.centroid.is_empty()
+                || candidate.centroid.iter().any(|value| !value.is_finite())
+            {
+                return Err(invalid().into());
+            }
+            if candidates.insert(candidate.cand_id, candidate).is_some() {
+                return Err(invalid().into());
+            }
+        }
+        if let Some(first) = candidates.values().next()
+            && candidates
+                .values()
+                .any(|candidate| candidate.centroid.len() != first.centroid.len())
+        {
+            return Err(invalid().into());
+        }
+        let next_id = object
+            .get("next_id")
+            .and_then(Value::as_i64)
+            .ok_or_else(invalid)?;
+        if candidates.keys().any(|id| *id >= next_id) {
+            return Err(invalid().into());
+        }
+        let summary = object
+            .get("consolidation_summary")
+            .cloned()
+            .unwrap_or_else(|| json!({"merge_count_total":0,"last_merge":null}));
+        summary
+            .get("merge_count_total")
+            .and_then(Value::as_u64)
+            .ok_or_else(invalid)?;
+        self.candidates = candidates;
+        self.next_id = next_id;
+        self.consolidation_summary = summary;
+        Ok(true)
+    }
+    /// Consolidate dense pending candidates under the existing pool lock.
+    pub fn consolidate_dense_candidates(&mut self) -> Result<Value, CandidateTrackerError> {
+        let _lock = hold_lock(&self.store_path, LockOptions::default())?;
+        if !self.load_strict()? {
+            return Ok(json!({"status":"ok","merged":0,"merges":[]}));
+        }
+        let merge_count = self.consolidation_summary["merge_count_total"]
+            .as_u64()
+            .expect("strict pool reader validated count");
+        let mut merges = Vec::new();
+        while let Some((survivor_id, absorbed_id, score)) = self.best_consolidation_pair() {
+            let event = self.merge_candidate_profile(survivor_id, absorbed_id, score);
+            let survivor = self
+                .candidates
+                .get_mut(&survivor_id)
+                .expect("merged survivor exists");
+            survivor.status = "pending".to_owned();
+            survivor.confirmed_entity = None;
+            merges.push(event);
+        }
+        if let Some(last_merge) = merges.last() {
+            let total = merge_count
+                .checked_add(merges.len() as u64)
+                .ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "speaker merge count overflow",
+                    )
+                })?;
+            self.consolidation_summary = json!({"merge_count_total":total,"last_merge":last_merge});
+            self.write()?;
+        }
+        Ok(json!({"status":"ok","merged":merges.len(),"merges":merges}))
     }
     /// Manually merge two review-approved candidates addressed by source anchors.
     pub fn merge_candidate_pair(
@@ -577,7 +675,7 @@ pub fn retroactive_voiceprint_metadata(
 fn source_key(value: &Value) -> String {
     serde_json::to_string(value).unwrap_or_default()
 }
-fn source_segment_anchor(value: &Value) -> Option<String> {
+pub(crate) fn source_segment_anchor(value: &Value) -> Option<String> {
     let object = value.as_object()?;
     let day = object.get("day")?.as_str()?;
     let segment_key = object.get("segment_key")?.as_str()?;
@@ -695,6 +793,97 @@ mod tests {
             .collect();
         tracker.write().unwrap();
         (journal, tracker)
+    }
+
+    #[test]
+    fn consolidation_merges_to_fixpoint_preserves_reviewed_candidates_and_is_idempotent() {
+        let mut rows = (1..=5)
+            .map(|id| {
+                let mut row = candidate(id, &format!("seg-{id}"), vec![1.0, 0.0]);
+                row.n_intervals = CONSOLIDATE_MIN_INTERVALS;
+                row
+            })
+            .collect::<Vec<_>>();
+        rows[3].status = "confirmed".to_owned();
+        rows[3].confirmed_entity = Some("alice".to_owned());
+        rows[4].status = "rejected".to_owned();
+        let confirmed = rows[3].clone();
+        let rejected = rows[4].clone();
+        let (root, mut tracker) = tracker_with_candidates("consolidation-fixpoint", rows);
+        tracker.consolidation_summary = json!({"merge_count_total":5,"last_merge":null});
+        tracker.write().unwrap();
+        let report = tracker.consolidate_dense_candidates().unwrap();
+        assert_eq!(report["merged"], 2);
+        let reloaded = CandidateTracker::new(&root);
+        assert_eq!(reloaded.candidates.len(), 3);
+        assert_eq!(reloaded.candidates[&4], confirmed);
+        assert_eq!(reloaded.candidates[&5], rejected);
+        assert_eq!(
+            reloaded.candidates[&1].n_intervals,
+            3 * CONSOLIDATE_MIN_INTERVALS
+        );
+        assert_eq!(reloaded.candidates[&1].source_segments.len(), 3);
+        assert_eq!(reloaded.candidates[&1].status, "pending");
+        assert_eq!(reloaded.candidates[&1].confirmed_entity, None);
+        assert_eq!(reloaded.next_id, 6);
+        assert_eq!(reloaded.consolidation_summary["merge_count_total"], 7);
+        let before = fs::read(&tracker.store_path).unwrap();
+        let mtime = fs::metadata(&tracker.store_path)
+            .unwrap()
+            .modified()
+            .unwrap();
+        assert_eq!(tracker.consolidate_dense_candidates().unwrap()["merged"], 0);
+        assert_eq!(fs::read(&tracker.store_path).unwrap(), before);
+        assert_eq!(
+            fs::metadata(&tracker.store_path)
+                .unwrap()
+                .modified()
+                .unwrap(),
+            mtime
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn consolidation_reloads_current_pool_and_never_resurrects_a_removed_store() {
+        let mut left = candidate(1, "a", vec![1.0, 0.0]);
+        left.n_intervals = CONSOLIDATE_MIN_INTERVALS;
+        let mut right = candidate(2, "b", vec![1.0, 0.0]);
+        right.n_intervals = CONSOLIDATE_MIN_INTERVALS;
+        let (root, mut stale) = tracker_with_candidates("consolidation-reload", vec![left, right]);
+        let mut current = CandidateTracker::new(&root);
+        current.candidates.get_mut(&2).unwrap().status = "rejected".to_owned();
+        current.write().unwrap();
+        let before = fs::read(&stale.store_path).unwrap();
+        assert_eq!(stale.consolidate_dense_candidates().unwrap()["merged"], 0);
+        assert_eq!(fs::read(&stale.store_path).unwrap(), before);
+        fs::remove_file(&stale.store_path).unwrap();
+        assert_eq!(stale.consolidate_dense_candidates().unwrap()["merged"], 0);
+        assert!(!stale.store_path.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn consolidation_refuses_malformed_pool_without_overwriting_it() {
+        let mut left = candidate(1, "a", vec![1.0, 0.0]);
+        left.n_intervals = CONSOLIDATE_MIN_INTERVALS;
+        let mut right = candidate(2, "b", vec![1.0, 0.0]);
+        right.n_intervals = CONSOLIDATE_MIN_INTERVALS;
+        let (root, mut tracker) =
+            tracker_with_candidates("consolidation-malformed", vec![left.clone(), right.clone()]);
+        let mut wrong_width = right.clone();
+        wrong_width.centroid.push(0.0);
+        for raw in [
+            "invalid JSON".to_owned(),
+            json!({"next_id":3,"candidates":[left.to_json(),right.to_json(),{}]}).to_string(),
+            json!({"next_id":3,"candidates":[left.to_json(),left.to_json()]}).to_string(),
+            json!({"next_id":3,"candidates":[left.to_json(),wrong_width.to_json()]}).to_string(),
+        ] {
+            fs::write(&tracker.store_path, &raw).unwrap();
+            assert!(tracker.consolidate_dense_candidates().is_err());
+            assert_eq!(fs::read_to_string(&tracker.store_path).unwrap(), raw);
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

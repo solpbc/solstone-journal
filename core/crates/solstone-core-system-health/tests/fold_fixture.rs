@@ -500,3 +500,72 @@ fn capped_by_skip_anchors_to_latest_dispatch_like_completed() {
         ThoughtVerdict::Complete
     );
 }
+
+#[test]
+fn optional_recommendation_withdrawal_is_stream_scoped_and_redispatch_restores_work() {
+    let root = root();
+    for name in ["screen", "speaker_attribution"] {
+        let rows = [
+            serde_json::json!({"event":"sense.complete","ts":1,"mode":"segment","stream":"default","segment":name,"density":"active"}),
+            serde_json::json!({"event":"talent.complete","ts":2,"mode":"segment","stream":"default","segment":name,"name":"documents"}),
+            serde_json::json!({"event":"talent.dispatch","ts":3,"mode":"segment","stream":"default","segment":name,"name":name,"use_id":"old"}),
+            serde_json::json!({"event":"talent.fail","ts":4,"mode":"segment","stream":"default","segment":name,"name":name,"use_id":"old"}),
+            serde_json::json!({"event":"talent.skip","ts":5,"mode":"segment","stream":"another","segment":name,"name":name,"reason":"not_recommended"}),
+        ].map(|row| row.to_string());
+        write(
+            &root,
+            "20990202",
+            &format!("{name}.jsonl"),
+            &rows.iter().map(String::as_str).collect::<Vec<_>>(),
+        );
+        assert_eq!(
+            thought_for(&progress_for(&root, "20990202"), name),
+            ThoughtVerdict::Dispatched(name.to_owned())
+        );
+        let skip = serde_json::json!({"event":"talent.skip","ts":6,"mode":"segment","stream":"default","segment":name,"name":name,"reason":"not_recommended"}).to_string();
+        write(&root, "20990202", &format!("{name}-skip.jsonl"), &[&skip]);
+        let progress = progress_for(&root, "20990202");
+        assert_eq!(thought_for(&progress, name), ThoughtVerdict::Complete);
+        let row = lookup_segment_progress(&progress, "default", name).unwrap();
+        assert!(!row.completed.contains(name));
+        assert!(!row.capped_by_skip.contains(name));
+        let late = serde_json::json!({"event":"talent.fail","ts":7,"mode":"segment","stream":"default","segment":name,"name":name,"use_id":"old"}).to_string();
+        write(&root, "20990202", &format!("{name}-late.jsonl"), &[&late]);
+        assert_eq!(
+            thought_for(&progress_for(&root, "20990202"), name),
+            ThoughtVerdict::Complete
+        );
+        let retry = serde_json::json!({"event":"talent.dispatch","ts":8,"mode":"segment","stream":"default","segment":name,"name":name,"use_id":"new"}).to_string();
+        write(&root, "20990202", &format!("{name}-retry.jsonl"), &[&retry]);
+        assert_eq!(
+            thought_for(&progress_for(&root, "20990202"), name),
+            ThoughtVerdict::Dispatched(name.to_owned())
+        );
+    }
+}
+
+#[test]
+fn not_recommended_does_not_waive_required_or_unknown_talents() {
+    let root = root();
+    for name in ["documents", "unknown"] {
+        let rows = [
+            serde_json::json!({"event":"sense.complete","ts":1,"mode":"segment","stream":"default","segment":name,"density":"active"}),
+            serde_json::json!({"event":"talent.dispatch","ts":2,"mode":"segment","stream":"default","segment":name,"name":name}),
+            serde_json::json!({"event":"talent.skip","ts":3,"mode":"segment","stream":"default","segment":name,"name":name,"reason":"not_recommended"}),
+        ].map(|row| row.to_string());
+        write(
+            &root,
+            "20990202",
+            &format!("{name}.jsonl"),
+            &rows.iter().map(String::as_str).collect::<Vec<_>>(),
+        );
+        let progress = progress_for(&root, "20990202");
+        assert!(
+            lookup_segment_progress(&progress, "default", name)
+                .unwrap()
+                .dispatched
+                .contains(name)
+        );
+        assert_ne!(thought_for(&progress, name), ThoughtVerdict::Complete);
+    }
+}

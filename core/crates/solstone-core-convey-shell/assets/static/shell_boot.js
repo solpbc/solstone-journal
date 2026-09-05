@@ -151,6 +151,8 @@
     const rail = document.getElementById('app-rail');
     const currentApp = findApp(shell, currentAppName);
     if (!rail || !currentApp) return;
+    const status = rail.querySelector('#status-instrument');
+    if (status) document.body.appendChild(status);
     const primary = appsByRank(shell, 'rail_group', 'rail_rank', 'primary');
     const management = appsByRank(shell, 'rail_group', 'rail_rank', 'management');
     const railApps = [...primary, ...management];
@@ -167,6 +169,8 @@
     const dock = document.getElementById('app-dock');
     const currentApp = findApp(shell, currentAppName);
     if (!dock || !currentApp) return;
+    const status = dock.querySelector('#status-instrument');
+    if (status) document.body.appendChild(status);
     const dockApps = appsByRank(shell, 'rail_group', 'rail_rank', 'primary').slice(0, 3);
     dock.innerHTML = [
       ...dockApps.map((app) => appLink(app, currentAppName, 'app-dock-link')),
@@ -231,14 +235,24 @@
 
   function renderStatusInstrument() {
     const instrument = document.getElementById('status-instrument');
-    if (!instrument || instrument.querySelector('.status-icon')) return;
-    instrument.innerHTML =
-      '<button class="status-icon" type="button" aria-expanded="false" aria-controls="status-pane" aria-label="connecting">' +
+    if (!instrument) return;
+    if (!instrument.querySelector('.status-icon')) instrument.innerHTML =
+      '<a class="status-icon" href="/app/health/#healthSystemDetails" aria-label="connecting" title="connecting">' +
       '<img class="status-indicator status-indicator--connecting" src="/static/sol-status/mark-connecting.svg" width="22" height="22" alt="" aria-hidden="true">' +
       '<span id="quiet-notif-badge" class="quiet-notif-badge" style="display:none"></span>' +
-      '</button>' +
-      '<span class="status-label" aria-hidden="true">connecting</span>' +
+      '</a>' +
       '<span id="status-live-region" role="status" class="visually-hidden"></span>';
+    const mobile = window.matchMedia('(max-width: 700px)');
+    const placeStatus = () => {
+      const nav = document.getElementById(mobile.matches ? 'app-dock' : 'app-rail');
+      const divider = nav.querySelector('.app-rail-divider');
+      nav.insertBefore(instrument, divider || null);
+    };
+    placeStatus();
+    if (!instrument.dataset.placementBound) {
+      mobile.addEventListener('change', placeStatus);
+      instrument.dataset.placementBound = 'true';
+    }
   }
 
   function launcherIsOpen() {

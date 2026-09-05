@@ -3,6 +3,7 @@
   "capture_clock_day": "20260515",
   "capture_clock_epoch": 1778846400.0,
   "capture_clock_serialized": "2026-05-15T12:00:00",
+  "corpus_maintenance": "Served frontend assets (status 200, raw-body, text/html|javascript|css) are NOT body-asserted. Their records carry body_assertion instead of body_sha256/body_bytes/body_text, and a record with no body_sha256 is not body-asserted by the replay. Pinning an asset's bytes is not a product assertion -- it reddens on every deliberate frontend edit and says nothing about what changed -- and with no recorder left the only repair was hand-patching a hash. Status, content type, content disposition and Location are still asserted for these routes, and API response bodies (normalized-json) are still fully asserted. Assert frontend CONTENT with a targeted check on the thing you care about, never a whole-file digest.",
   "coverage_limitations": [
     "\u26d4 Do not quote the mutation-phase CASE COUNT as coverage. Read `mutation_census` below, which is COMPUTED from the recorded cases: it separates probes that actually mutated (2xx on a mutating method) from refusals and post-state reads, and reports how many routes were successfully called TWICE WITH THE SAME INPUT -- the only number that speaks to the fill-only-when-absent class. The replay therefore pins that a first call succeeds and says NOTHING about a second call with the same input. Two helpers under these routes are fill-only-when-absent: think/facets.create_facet raises on collision (six lines above a tolerant mkdir(exist_ok=True)), and think/activities.append_activity_record appends unless the id exists (guard in a nested closure). A port that overwrites, rotates or duplicates on a second call REPLAYS GREEN against this fixture. Assert both directions in unit tests.",
     "Captured with SOLSTONE_DISABLE_CONVEY_SIDE_RUNTIMES=1, so any field a live side runtime populates is pinned in its ABSENT state. These four surfaces are filesystem projections and none reads a side runtime -- checked, not assumed -- but do not widen that claim to a route added later.",
@@ -11,7 +12,7 @@
     "\u26a0 THIRD FAILURE MODE, on this surface's READ routes: two read-named helpers WRITE. `think/awareness._awareness_dir` and `think/facet_review_candidates.facet_review_candidates_dir` both mkdir on the way to a GET, so `GET /app/awareness/api/state` and `GET /app/curation/api/facet/candidates` are not pure reads. Both docstrings DO disclose it -- 'creating it if needed' -- but after the word 'Return', which is where the eye has already stopped. A replay cannot see a directory that gets created either way.",
     "Routes this lane DELETES are deliberately absent: the activities web UI (/, /{day}, /api/index, /api/stats/{month}, /api/day/{day}/activities, /api/activity_output/{path}) and every /app/reflections/* route. Their absence here is a decision, not an oversight."
   ],
-  "generator": "scripts/convey_facets_corpus.py",
+  "generator": "RETIRED -- scripts/convey_facets_corpus.py was removed with the Python script surface and no replacement recorder exists, so this fixture is HAND-MAINTAINED. Changing an asset under assets/** goes stale in every raw-body record that pins it, and the corpus replay tests then fail with a digest mismatch. To re-record one: recompute sha256 over the served body (for a static asset that is sha256 of the file itself) and update body_sha256, body_bytes and body_text together, for EVERY record on that path -- body_bytes and body_text are not asserted, so a digest-only fix passes CI while leaving the record self-inconsistent and misleading. Confirm the old recorded digest equals the asset at your change's parent commit before trusting the swap.",
   "mutation_census": {
     "actually_mutated_2xx": 12,
     "cases_total": 29,
@@ -2670,10 +2671,8 @@
         "why": "the app index: a redirect whose target is today"
       },
       {
-        "body_bytes": 914,
-        "body_sha256": "78cdf94d273b1432305b7a4f4c25f6cec1a4f4296ea014c83a6a85f2ec2563d5",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
-        "body_text": "<link rel=\"stylesheet\" href=\"/app/timeline/static/timeline.css\">\n<script>\n(function() {\n  const { segment } = window.solPathContext();\n  let initial = { view: \"day\", day: segment, month: null };\n  if (segment === \"year\") {\n    initial = { view: \"year\", day: null, month: null };\n  } else if (/^\\d{6}$/.test(segment || \"\")) {\n    initial = { view: \"month\", day: null, month: segment };\n  } else if (!/^\\d{8}$/.test(segment || \"\")) {\n    initial = { view: \"day\", day: null, month: null };\n  }\n  window.timelineInitial = initial;\n})();\n</script>\n\n<div class=\"workspace-content-wide\">\n  <div data-date-nav></div>\n  <div id=\"timeline-shell\" class=\"timeline-shell\">\n    <section aria-label=\"Interactive timeline\">\n      <div id=\"timeline-root\"></div>\n    </section>\n  </div>\n</div>\n\n<script defer src=\"/app/timeline/static/timeline_provenance.js\"></script>\n<script defer src=\"/app/timeline/static/timeline.js\"></script>\n",
         "content_disposition": "inline; filename=workspace.html",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -2682,10 +2681,8 @@
         "why": "the app fragment bytes"
       },
       {
-        "body_bytes": 2290,
-        "body_sha256": "a3ea9b8935b2aa625db59605d2ded7c2b1cc9f99563deabb6373c614df987f2d",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
-        "body_text": "/*\nTimeline background service: listens for rollup completion and refreshes\nthe visible view in place. Emit signatures verified against:\n  - cortex finish:      solstone/think/cortex.py:436-458\n  - supervisor stopped: core/crates/solstone-core/src/supervisor/bus.rs:110-126\n  - scheduler ref:      solstone/think/scheduler.py:418\n                        sched:<schedule-name>:<now_ms>\n                        schedule-name is maintenance:timeline:rollup\n*/\nAppServices.register(\"timeline\", {\n  _initialized: false,\n\n  initialize() {\n    if (this._initialized) return;\n    if (!window.appEvents || !window.AppServices?.badges?.app) return;\n    this._initialized = true;\n\n    window.appEvents.listen(\"cortex\", (msg) => {\n      if (!msg || msg.event !== \"finish\") return;\n      if (msg.name !== \"timeline:segment_summary\") return;\n      const visibleDay = window.timelineRefresh?.getCurrentDay?.();\n      if (!visibleDay || msg.day !== visibleDay) return;\n      window.timelineRefresh?.day?.(msg.day);\n    });\n\n    window.appEvents.listen(\"supervisor\", (msg) => {\n      if (!msg || msg.event !== \"stopped\" || msg.exit_code !== 0) return;\n      const ref = msg.ref || \"\";\n      if (/^sched:maintenance:timeline:rollup:/.test(ref)) {\n        fetch(\"/app/timeline/api/overview\", { cache: \"no-store\" })\n          .then((r) => (r.ok ? r.json() : null))\n          .then((idx) => {\n            if (!idx) return;\n            const today = todayYYYYMMDD();\n            if (idx.data_through === today) {\n              window.AppServices.badges.app.set(\"timeline\", 1);\n            }\n            const view = window.timelineRefresh?.getCurrentView?.();\n            const day = window.timelineRefresh?.getCurrentDay?.();\n            if (\n              day &&\n              (view === \"day\" || view === \"hour\" || view === \"five-minute\")\n            ) {\n              window.timelineRefresh?.day?.(day);\n            }\n          })\n          .catch(() => {});\n        window.timelineRefresh?.index?.();\n        return;\n      }\n    });\n  },\n});\n\nfunction todayYYYYMMDD() {\n  const d = new Date();\n  const y = d.getFullYear();\n  const m = String(d.getMonth() + 1).padStart(2, \"0\");\n  const da = String(d.getDate()).padStart(2, \"0\");\n  return `${y}${m}${da}`;\n}\n",
         "content_disposition": "inline; filename=background.html",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -2694,8 +2691,7 @@
         "why": "timeline is the only app in this plate with a background badge"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -2705,8 +2701,7 @@
         "why": "the year view serves the shell verbatim"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -2716,8 +2711,7 @@
         "why": "a day view: shell, not a payload"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -2738,8 +2732,7 @@
         "why": "\u26a0 an EMPTY-BODY 404, not the shared HTML 404 page"
       },
       {
-        "body_bytes": 66814,
-        "body_sha256": "6ea1c6cd052156d28884690ce5f54dac6ab226b831c07af62f8fd0412498db19",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=timeline.js",
         "content_type": "text/javascript; charset=utf-8",
@@ -2749,8 +2742,7 @@
         "why": "per-app static"
       },
       {
-        "body_bytes": 41371,
-        "body_sha256": "be1c1ab82cc8d11bd843c0fc19ad5711dfbf0cdb9d5888c6b3be8447f1a5db2e",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=timeline.css",
         "content_type": "text/css; charset=utf-8",
@@ -2760,10 +2752,8 @@
         "why": "per-app static"
       },
       {
-        "body_bytes": 2266,
-        "body_sha256": "aa6a6c702a11398c71edf1cd2e4fd181a95c396341c37874a4efffeb503e1370",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
-        "body_text": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function (global) {\n  'use strict';\n\n  // --- owner-facing strings ---\n  const PROVENANCE_PREFIX = 'rolled up';\n  const PROVENANCE_AGO = 'ago';\n  const PROVENANCE_TITLE_PREFIX = 'rolled up at';\n  const PROVENANCE_TITLE_ON = 'on';\n  const PROVENANCE_SEPARATOR = ' \u00b7 ';\n  // --- end owner-facing strings ---\n\n  function escapeHtml(value) {\n    return String(value ?? '').replace(/[&<>\"']/g, (char) => ({\n      '&': '&amp;',\n      '<': '&lt;',\n      '>': '&gt;',\n      '\"': '&quot;',\n      \"'\": '&#39;'\n    })[char]);\n  }\n\n  function pad2(value) {\n    return String(value).padStart(2, '0');\n  }\n\n  function absoluteRollupTitle(generatedAt) {\n    const date = new Date(generatedAt * 1000);\n    const hh = pad2(date.getHours());\n    const mm = pad2(date.getMinutes());\n    const y = date.getFullYear();\n    const mo = pad2(date.getMonth() + 1);\n    const da = pad2(date.getDate());\n    return `${PROVENANCE_TITLE_PREFIX} ${hh}:${mm} ${PROVENANCE_TITLE_ON} ${y}-${mo}-${da}`;\n  }\n\n  function renderDayProvenance(generatedAt, model, nowMs = Date.now()) {\n    if (!generatedAt || !model) return \"\";\n    const generatedMs = generatedAt * 1000;\n    const relative = global.relativeTime(nowMs - generatedMs);\n    const text = `${PROVENANCE_PREFIX} ${relative} ${PROVENANCE_AGO}${PROVENANCE_SEPARATOR}${model}`;\n    const title = absoluteRollupTitle(generatedAt);\n    return `<p class=\"timeline-day-provenance\" title=\"${escapeHtml(title)}\">${escapeHtml(text)}</p>`;\n  }\n\n  const TimelineProvenance = {\n    absoluteRollupTitle,\n    renderDayProvenance,\n  };\n  global.TimelineProvenance = TimelineProvenance;\n  if (typeof module !== 'undefined' && module.exports) {\n    module.exports = TimelineProvenance;\n  }\n})(typeof window !== 'undefined' ? window : globalThis);\n",
         "content_disposition": "inline; filename=timeline_provenance.js",
         "content_type": "text/javascript; charset=utf-8",
         "method": "GET",
@@ -3077,8 +3067,7 @@
         "why": "a malformed segment key: 400"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -3088,8 +3077,7 @@
         "why": "the app index serves the shell"
       },
       {
-        "body_bytes": 15622,
-        "body_sha256": "436f2f15f2a10ee12df3b153b45c38d19ac2b72091c79ce29268a76f7ac91814",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=workspace.html",
         "content_type": "text/html; charset=utf-8",
@@ -3380,8 +3368,7 @@
         "why": "a non-integer limit"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -3420,8 +3407,7 @@
         "why": "the sample as text/markdown"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -3431,8 +3417,7 @@
         "why": "a day view serves the shell"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -3548,8 +3533,7 @@
         "why": "a missing newsletter PDF: plain-text 404"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -3559,8 +3543,7 @@
         "why": "the app index serves the shell"
       },
       {
-        "body_bytes": 35738,
-        "body_sha256": "506edd60861e75d0818b2b8b133f7246e092a24531325f1cdf9c67ae16950ad3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=workspace.html",
         "content_type": "text/html; charset=utf-8",
@@ -3570,10 +3553,8 @@
         "why": "the app fragment bytes"
       },
       {
-        "body_bytes": 3272,
-        "body_sha256": "2572ac15d5830869ea4119dea45dcda918dcd7b95dc6e1f1098683e92b91b2e9",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
-        "body_text": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function (global) {\n  'use strict';\n\n  // --- owner-facing strings ---\n  const DRAWER_LABEL = 'evidence';\n  const PIECE_SINGULAR = 'piece';\n  const PIECE_PLURAL = 'pieces';\n  const COUNT_OF = 'of';\n  const META_SEPARATOR = ' \u00b7 ';\n  // --- end owner-facing strings ---\n\n  function escapeHtml(value) {\n    return String(value ?? '').replace(/[&<>\"']/g, (char) => ({\n      '&': '&amp;',\n      '<': '&lt;',\n      '>': '&gt;',\n      '\"': '&quot;',\n      \"'\": '&#39;'\n    })[char]);\n  }\n\n  function samplesFor(item) {\n    const samples = item?.evidence?.samples;\n    return Array.isArray(samples) ? samples : [];\n  }\n\n  function totalCountFor(item, sampleCount) {\n    const count = Math.trunc(Number(item?.evidence?.count));\n    return Number.isFinite(count) && count > sampleCount ? count : sampleCount;\n  }\n\n  function formatEvidenceLine(displayedCount, totalCount) {\n    if (displayedCount < totalCount) {\n      return `${displayedCount} ${COUNT_OF} ${totalCount}`;\n    }\n    if (totalCount === 1) {\n      return `1 ${PIECE_SINGULAR}`;\n    }\n    return `${totalCount} ${PIECE_PLURAL}`;\n  }\n\n  function sampleFields(sample) {\n    return {\n      day: String(sample.day ?? '').trim(),\n      stream: String(sample.stream ?? '').trim(),\n      segment: String(sample.segment ?? '').trim(),\n    };\n  }\n\n  function plainRow(fields) {\n    const text = [fields.day, fields.stream, fields.segment]\n      .map((part) => String(part ?? '').trim())\n      .filter(Boolean)\n      .join(META_SEPARATOR);\n    return '<li class=\"drawer-evidence-row\">' +\n      `<span class=\"drawer-evidence-title\">${escapeHtml(text)}</span>` +\n      '</li>';\n  }\n\n  function linkedRow(fields) {\n    const dayHref = `/app/timeline/${fields.day}`;\n    const segmentHref = `/app/transcripts/${fields.day}#${fields.segment}`;\n    const streamHtml = fields.stream\n      ? `<span class=\"ev-meta\">${escapeHtml(fields.stream)}</span>`\n      : '';\n    return '<li class=\"drawer-evidence-row\">' +\n      `<a class=\"drawer-evidence-title\" href=\"${escapeHtml(dayHref)}\">${escapeHtml(fields.day)}</a>` +\n      streamHtml +\n      `<a class=\"ev-meta\" href=\"${escapeHtml(segmentHref)}\">${escapeHtml(fields.segment)}</a>` +\n      '</li>';\n  }\n\n  function renderSample(sample) {\n    const fields = sampleFields(sample);\n    if (!fields.day || !fields.segment) return plainRow(fields);\n    return linkedRow(fields);\n  }\n\n  function buildEvidenceDrawerProps(item) {\n    const samples = samplesFor(item);\n    const sampleCount = samples.length;\n    if (sampleCount === 0) return null;\n    const totalCount = totalCountFor(item, sampleCount);\n    const bodyHtml = `<ul class=\"drawer-evidence\">${samples.map(renderSample).join('')}</ul>`;\n    return {\n      id: `curation-evidence:${String(item?.kind ?? '')}:${String(item?.key ?? '')}`,\n      open: false,\n      label: DRAWER_LABEL,\n      line: formatEvidenceLine(sampleCount, totalCount),\n      bodyHtml,\n    };\n  }\n\n  const CurationEvidence = {\n    buildEvidenceDrawerProps,\n    formatEvidenceLine,\n  };\n  global.CurationEvidence = CurationEvidence;\n  if (typeof module !== 'undefined' && module.exports) {\n    module.exports = CurationEvidence;\n  }\n})(typeof window !== 'undefined' ? window : globalThis);\n",
         "content_disposition": "inline; filename=curation_evidence.js",
         "content_type": "text/javascript; charset=utf-8",
         "method": "GET",
@@ -3898,10 +3879,8 @@
         "why": "the app index: a redirect whose target is today"
       },
       {
-        "body_bytes": 914,
-        "body_sha256": "78cdf94d273b1432305b7a4f4c25f6cec1a4f4296ea014c83a6a85f2ec2563d5",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
-        "body_text": "<link rel=\"stylesheet\" href=\"/app/timeline/static/timeline.css\">\n<script>\n(function() {\n  const { segment } = window.solPathContext();\n  let initial = { view: \"day\", day: segment, month: null };\n  if (segment === \"year\") {\n    initial = { view: \"year\", day: null, month: null };\n  } else if (/^\\d{6}$/.test(segment || \"\")) {\n    initial = { view: \"month\", day: null, month: segment };\n  } else if (!/^\\d{8}$/.test(segment || \"\")) {\n    initial = { view: \"day\", day: null, month: null };\n  }\n  window.timelineInitial = initial;\n})();\n</script>\n\n<div class=\"workspace-content-wide\">\n  <div data-date-nav></div>\n  <div id=\"timeline-shell\" class=\"timeline-shell\">\n    <section aria-label=\"Interactive timeline\">\n      <div id=\"timeline-root\"></div>\n    </section>\n  </div>\n</div>\n\n<script defer src=\"/app/timeline/static/timeline_provenance.js\"></script>\n<script defer src=\"/app/timeline/static/timeline.js\"></script>\n",
         "content_disposition": "inline; filename=workspace.html",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -3910,10 +3889,8 @@
         "why": "the app fragment bytes"
       },
       {
-        "body_bytes": 2290,
-        "body_sha256": "a3ea9b8935b2aa625db59605d2ded7c2b1cc9f99563deabb6373c614df987f2d",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
-        "body_text": "/*\nTimeline background service: listens for rollup completion and refreshes\nthe visible view in place. Emit signatures verified against:\n  - cortex finish:      solstone/think/cortex.py:436-458\n  - supervisor stopped: core/crates/solstone-core/src/supervisor/bus.rs:110-126\n  - scheduler ref:      solstone/think/scheduler.py:418\n                        sched:<schedule-name>:<now_ms>\n                        schedule-name is maintenance:timeline:rollup\n*/\nAppServices.register(\"timeline\", {\n  _initialized: false,\n\n  initialize() {\n    if (this._initialized) return;\n    if (!window.appEvents || !window.AppServices?.badges?.app) return;\n    this._initialized = true;\n\n    window.appEvents.listen(\"cortex\", (msg) => {\n      if (!msg || msg.event !== \"finish\") return;\n      if (msg.name !== \"timeline:segment_summary\") return;\n      const visibleDay = window.timelineRefresh?.getCurrentDay?.();\n      if (!visibleDay || msg.day !== visibleDay) return;\n      window.timelineRefresh?.day?.(msg.day);\n    });\n\n    window.appEvents.listen(\"supervisor\", (msg) => {\n      if (!msg || msg.event !== \"stopped\" || msg.exit_code !== 0) return;\n      const ref = msg.ref || \"\";\n      if (/^sched:maintenance:timeline:rollup:/.test(ref)) {\n        fetch(\"/app/timeline/api/overview\", { cache: \"no-store\" })\n          .then((r) => (r.ok ? r.json() : null))\n          .then((idx) => {\n            if (!idx) return;\n            const today = todayYYYYMMDD();\n            if (idx.data_through === today) {\n              window.AppServices.badges.app.set(\"timeline\", 1);\n            }\n            const view = window.timelineRefresh?.getCurrentView?.();\n            const day = window.timelineRefresh?.getCurrentDay?.();\n            if (\n              day &&\n              (view === \"day\" || view === \"hour\" || view === \"five-minute\")\n            ) {\n              window.timelineRefresh?.day?.(day);\n            }\n          })\n          .catch(() => {});\n        window.timelineRefresh?.index?.();\n        return;\n      }\n    });\n  },\n});\n\nfunction todayYYYYMMDD() {\n  const d = new Date();\n  const y = d.getFullYear();\n  const m = String(d.getMonth() + 1).padStart(2, \"0\");\n  const da = String(d.getDate()).padStart(2, \"0\");\n  return `${y}${m}${da}`;\n}\n",
         "content_disposition": "inline; filename=background.html",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -3922,8 +3899,7 @@
         "why": "timeline is the only app in this plate with a background badge"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -3933,8 +3909,7 @@
         "why": "the year view serves the shell verbatim"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -3944,8 +3919,7 @@
         "why": "a day view: shell, not a payload"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -3966,8 +3940,7 @@
         "why": "\u26a0 an EMPTY-BODY 404, not the shared HTML 404 page"
       },
       {
-        "body_bytes": 66814,
-        "body_sha256": "6ea1c6cd052156d28884690ce5f54dac6ab226b831c07af62f8fd0412498db19",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=timeline.js",
         "content_type": "text/javascript; charset=utf-8",
@@ -3977,8 +3950,7 @@
         "why": "per-app static"
       },
       {
-        "body_bytes": 41371,
-        "body_sha256": "be1c1ab82cc8d11bd843c0fc19ad5711dfbf0cdb9d5888c6b3be8447f1a5db2e",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=timeline.css",
         "content_type": "text/css; charset=utf-8",
@@ -3988,10 +3960,8 @@
         "why": "per-app static"
       },
       {
-        "body_bytes": 2266,
-        "body_sha256": "aa6a6c702a11398c71edf1cd2e4fd181a95c396341c37874a4efffeb503e1370",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
-        "body_text": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function (global) {\n  'use strict';\n\n  // --- owner-facing strings ---\n  const PROVENANCE_PREFIX = 'rolled up';\n  const PROVENANCE_AGO = 'ago';\n  const PROVENANCE_TITLE_PREFIX = 'rolled up at';\n  const PROVENANCE_TITLE_ON = 'on';\n  const PROVENANCE_SEPARATOR = ' \u00b7 ';\n  // --- end owner-facing strings ---\n\n  function escapeHtml(value) {\n    return String(value ?? '').replace(/[&<>\"']/g, (char) => ({\n      '&': '&amp;',\n      '<': '&lt;',\n      '>': '&gt;',\n      '\"': '&quot;',\n      \"'\": '&#39;'\n    })[char]);\n  }\n\n  function pad2(value) {\n    return String(value).padStart(2, '0');\n  }\n\n  function absoluteRollupTitle(generatedAt) {\n    const date = new Date(generatedAt * 1000);\n    const hh = pad2(date.getHours());\n    const mm = pad2(date.getMinutes());\n    const y = date.getFullYear();\n    const mo = pad2(date.getMonth() + 1);\n    const da = pad2(date.getDate());\n    return `${PROVENANCE_TITLE_PREFIX} ${hh}:${mm} ${PROVENANCE_TITLE_ON} ${y}-${mo}-${da}`;\n  }\n\n  function renderDayProvenance(generatedAt, model, nowMs = Date.now()) {\n    if (!generatedAt || !model) return \"\";\n    const generatedMs = generatedAt * 1000;\n    const relative = global.relativeTime(nowMs - generatedMs);\n    const text = `${PROVENANCE_PREFIX} ${relative} ${PROVENANCE_AGO}${PROVENANCE_SEPARATOR}${model}`;\n    const title = absoluteRollupTitle(generatedAt);\n    return `<p class=\"timeline-day-provenance\" title=\"${escapeHtml(title)}\">${escapeHtml(text)}</p>`;\n  }\n\n  const TimelineProvenance = {\n    absoluteRollupTitle,\n    renderDayProvenance,\n  };\n  global.TimelineProvenance = TimelineProvenance;\n  if (typeof module !== 'undefined' && module.exports) {\n    module.exports = TimelineProvenance;\n  }\n})(typeof window !== 'undefined' ? window : globalThis);\n",
         "content_disposition": "inline; filename=timeline_provenance.js",
         "content_type": "text/javascript; charset=utf-8",
         "method": "GET",
@@ -4639,8 +4609,7 @@
         "why": "a malformed segment key: 400"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -4650,8 +4619,7 @@
         "why": "the app index serves the shell"
       },
       {
-        "body_bytes": 15622,
-        "body_sha256": "436f2f15f2a10ee12df3b153b45c38d19ac2b72091c79ce29268a76f7ac91814",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=workspace.html",
         "content_type": "text/html; charset=utf-8",
@@ -5006,8 +4974,7 @@
         "why": "a non-integer limit"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -5046,8 +5013,7 @@
         "why": "the sample as text/markdown"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -5057,8 +5023,7 @@
         "why": "a day view serves the shell"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -5179,8 +5144,7 @@
         "why": "a missing newsletter PDF: plain-text 404"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=shell.html",
         "content_type": "text/html; charset=utf-8",
@@ -5190,8 +5154,7 @@
         "why": "the app index serves the shell"
       },
       {
-        "body_bytes": 35738,
-        "body_sha256": "506edd60861e75d0818b2b8b133f7246e092a24531325f1cdf9c67ae16950ad3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=workspace.html",
         "content_type": "text/html; charset=utf-8",
@@ -5201,10 +5164,8 @@
         "why": "the app fragment bytes"
       },
       {
-        "body_bytes": 3272,
-        "body_sha256": "2572ac15d5830869ea4119dea45dcda918dcd7b95dc6e1f1098683e92b91b2e9",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
-        "body_text": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function (global) {\n  'use strict';\n\n  // --- owner-facing strings ---\n  const DRAWER_LABEL = 'evidence';\n  const PIECE_SINGULAR = 'piece';\n  const PIECE_PLURAL = 'pieces';\n  const COUNT_OF = 'of';\n  const META_SEPARATOR = ' \u00b7 ';\n  // --- end owner-facing strings ---\n\n  function escapeHtml(value) {\n    return String(value ?? '').replace(/[&<>\"']/g, (char) => ({\n      '&': '&amp;',\n      '<': '&lt;',\n      '>': '&gt;',\n      '\"': '&quot;',\n      \"'\": '&#39;'\n    })[char]);\n  }\n\n  function samplesFor(item) {\n    const samples = item?.evidence?.samples;\n    return Array.isArray(samples) ? samples : [];\n  }\n\n  function totalCountFor(item, sampleCount) {\n    const count = Math.trunc(Number(item?.evidence?.count));\n    return Number.isFinite(count) && count > sampleCount ? count : sampleCount;\n  }\n\n  function formatEvidenceLine(displayedCount, totalCount) {\n    if (displayedCount < totalCount) {\n      return `${displayedCount} ${COUNT_OF} ${totalCount}`;\n    }\n    if (totalCount === 1) {\n      return `1 ${PIECE_SINGULAR}`;\n    }\n    return `${totalCount} ${PIECE_PLURAL}`;\n  }\n\n  function sampleFields(sample) {\n    return {\n      day: String(sample.day ?? '').trim(),\n      stream: String(sample.stream ?? '').trim(),\n      segment: String(sample.segment ?? '').trim(),\n    };\n  }\n\n  function plainRow(fields) {\n    const text = [fields.day, fields.stream, fields.segment]\n      .map((part) => String(part ?? '').trim())\n      .filter(Boolean)\n      .join(META_SEPARATOR);\n    return '<li class=\"drawer-evidence-row\">' +\n      `<span class=\"drawer-evidence-title\">${escapeHtml(text)}</span>` +\n      '</li>';\n  }\n\n  function linkedRow(fields) {\n    const dayHref = `/app/timeline/${fields.day}`;\n    const segmentHref = `/app/transcripts/${fields.day}#${fields.segment}`;\n    const streamHtml = fields.stream\n      ? `<span class=\"ev-meta\">${escapeHtml(fields.stream)}</span>`\n      : '';\n    return '<li class=\"drawer-evidence-row\">' +\n      `<a class=\"drawer-evidence-title\" href=\"${escapeHtml(dayHref)}\">${escapeHtml(fields.day)}</a>` +\n      streamHtml +\n      `<a class=\"ev-meta\" href=\"${escapeHtml(segmentHref)}\">${escapeHtml(fields.segment)}</a>` +\n      '</li>';\n  }\n\n  function renderSample(sample) {\n    const fields = sampleFields(sample);\n    if (!fields.day || !fields.segment) return plainRow(fields);\n    return linkedRow(fields);\n  }\n\n  function buildEvidenceDrawerProps(item) {\n    const samples = samplesFor(item);\n    const sampleCount = samples.length;\n    if (sampleCount === 0) return null;\n    const totalCount = totalCountFor(item, sampleCount);\n    const bodyHtml = `<ul class=\"drawer-evidence\">${samples.map(renderSample).join('')}</ul>`;\n    return {\n      id: `curation-evidence:${String(item?.kind ?? '')}:${String(item?.key ?? '')}`,\n      open: false,\n      label: DRAWER_LABEL,\n      line: formatEvidenceLine(sampleCount, totalCount),\n      bodyHtml,\n    };\n  }\n\n  const CurationEvidence = {\n    buildEvidenceDrawerProps,\n    formatEvidenceLine,\n  };\n  global.CurationEvidence = CurationEvidence;\n  if (typeof module !== 'undefined' && module.exports) {\n    module.exports = CurationEvidence;\n  }\n})(typeof window !== 'undefined' ? window : globalThis);\n",
         "content_disposition": "inline; filename=curation_evidence.js",
         "content_type": "text/javascript; charset=utf-8",
         "method": "GET",

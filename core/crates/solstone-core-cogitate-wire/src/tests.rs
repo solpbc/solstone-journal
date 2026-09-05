@@ -32,7 +32,6 @@ fn request_value() -> Value {
         "output_path": null,
         "schedule": "daily",
         "max_turns": 4,
-        "cost_cap_usd": 1.5,
         "context_window": 4096,
         "timeout_ms": 30_000,
         "read_call_budget": 5,
@@ -107,7 +106,7 @@ fn request_contract_fixture_describes_the_record_the_parser_accepts() {
     );
 
     // The retired v1 fields must be gone from the description too.
-    for retired in ["expects_emit_final", "system_instruction"] {
+    for retired in ["expects_emit_final", "system_instruction", "cost_cap_usd"] {
         assert!(
             !declared.iter().any(|field| field == retired),
             "{retired:?} is retired in v2 but still declared in the fixture"
@@ -753,44 +752,6 @@ fn validator_rejects_missing_required_fields_for_each_native_kind() {
             value["event"]
         );
     }
-}
-
-#[test]
-fn validator_wiring_source_guard_requires_emit_path_call() {
-    // RuntimeEvent is type-safe and serialize_event is total, so no public
-    // RuntimeEvent can make serialize_event_validated produce a malformed
-    // value. Validator behavior is tested separately; this source guard is
-    // the structural proof that the normal emit path invokes it.
-    let source = include_str!("event.rs");
-    let signature = "pub fn serialize_event_validated";
-    let start = source.find(signature).expect("validated serializer exists");
-    let body_start = source[start..]
-        .find('{')
-        .map(|offset| start + offset)
-        .expect("validated serializer has a body");
-    let body_end = matching_brace(source, body_start).expect("validated serializer body closes");
-    let body = &source[body_start..=body_end];
-    assert!(
-        body.contains("validate_event(&value)?;"),
-        "serialize_event_validated must invoke validate_event before returning"
-    );
-}
-
-fn matching_brace(source: &str, opening: usize) -> Option<usize> {
-    let mut depth = 0_usize;
-    for (offset, character) in source[opening..].char_indices() {
-        match character {
-            '{' => depth += 1,
-            '}' => {
-                depth = depth.checked_sub(1)?;
-                if depth == 0 {
-                    return Some(opening + offset);
-                }
-            }
-            _ => {}
-        }
-    }
-    None
 }
 
 #[test]

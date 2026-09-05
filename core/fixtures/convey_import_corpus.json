@@ -1,4 +1,5 @@
 {
+  "corpus_maintenance": "Served frontend assets (status 200, raw-body, text/html|javascript|css) are NOT body-asserted. Their records carry body_assertion instead of body_sha256/body_bytes/body_text, and a record with no body_sha256 is not body-asserted by the replay. Pinning an asset's bytes is not a product assertion -- it reddens on every deliberate frontend edit and says nothing about what changed -- and with no recorder left the only repair was hand-patching a hash. Status, content type, content disposition and Location are still asserted for these routes, and API response bodies (normalized-json) are still fully asserted. Assert frontend CONTENT with a targeted check on the thing you care about, never a whole-file digest.",
   "coverage_limits": {
     "mutation_census": {
       "cases_that_actually_mutated": 0,
@@ -632,8 +633,7 @@
     ],
     "empty": [
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -642,8 +642,7 @@
         "why": "the app index: the SPA shell, byte-identical"
       },
       {
-        "body_bytes": 85568,
-        "body_sha256": "ad5e6dcefa79afe6e1ddf14bf3b5a6915623dd24df8350dc098196f32c3f8485",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -663,8 +662,7 @@
         "why": "the background fragment"
       },
       {
-        "body_bytes": 19583,
-        "body_sha256": "9032b091ba7998aeb9baeff7ac390d805f408daa07a76f09421d30287ab7e677",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/javascript; charset=utf-8",
         "method": "GET",
@@ -868,8 +866,7 @@
         "why": "a guide name failing the [a-z_]+ guard: refusal, not a path read"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -1267,8 +1264,7 @@
     ],
     "populated": [
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -1277,8 +1273,7 @@
         "why": "the app index: the SPA shell, byte-identical"
       },
       {
-        "body_bytes": 85568,
-        "body_sha256": "ad5e6dcefa79afe6e1ddf14bf3b5a6915623dd24df8350dc098196f32c3f8485",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -1298,8 +1293,7 @@
         "why": "the background fragment"
       },
       {
-        "body_bytes": 19583,
-        "body_sha256": "9032b091ba7998aeb9baeff7ac390d805f408daa07a76f09421d30287ab7e677",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/javascript; charset=utf-8",
         "method": "GET",
@@ -1604,8 +1598,7 @@
         "why": "a guide name failing the [a-z_]+ guard: refusal, not a path read"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",

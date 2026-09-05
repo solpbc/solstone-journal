@@ -119,6 +119,7 @@ pub enum SkipReason {
     SkipSkills,
     SkipService,
     SkipWrapper,
+    WindowsPackageOwnsCommands,
     ProviderAlreadyConfigured,
     ProviderConfigUnexpectedShape,
     LocalProviderUnavailable,
@@ -140,6 +141,9 @@ impl SkipReason {
             Self::SkipSkills => "--skip-skills",
             Self::SkipService => "--skip-service",
             Self::SkipWrapper => "--skip-wrapper",
+            Self::WindowsPackageOwnsCommands => {
+                "Windows packages expose the commands directly; POSIX wrappers are not applicable"
+            }
             Self::ProviderAlreadyConfigured => "a provider is already configured",
             Self::ProviderConfigUnexpectedShape => "provider config is not in the expected shape",
             Self::LocalProviderUnavailable => "local provider unavailable on this host",

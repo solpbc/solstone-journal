@@ -521,19 +521,6 @@ wheels = [
 ]
 
 [[package]]
-name = "genai-prices"
-version = "0.0.55"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "httpx" },
-    { name = "pydantic" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/77/67/de9d9be180db6d80b298c281dff71502095c0776d7cc9286f486f667f61a/genai_prices-0.0.55.tar.gz", hash = "sha256:8692c65d0deefe2ad0680d71841eb12822a35945a6060d2b6adbcbdf4945e1cb", size = 59987, upload-time = "2026-02-26T17:56:41.467Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c4/98/66a06b82a5c840f896490d5ef9c7691776b147589f2e8d2fa66c67a3db9c/genai_prices-0.0.55-py3-none-any.whl", hash = "sha256:ccd795c90c926b3c71066bf5656f14c67fc11fdba6d71e072c7fb4fa311e1b12", size = 62603, upload-time = "2026-02-26T17:56:40.502Z" },
-]
-
-[[package]]
 name = "graphql-core"
 version = "3.2.11"
 source = { registry = "https://pypi.org/simple" }
@@ -2144,7 +2131,6 @@ journal-host = [
     { name = "blessed" },
     { name = "cryptography" },
     { name = "flask", extra = ["async"] },
-    { name = "genai-prices" },
     { name = "h2" },
     { name = "httpx" },
     { name = "huggingface-hub" },
@@ -2202,7 +2188,6 @@ requires-dist = [
     { name = "blessed", marker = "extra == 'journal-host'", specifier = ">=1.20.0" },
     { name = "cryptography", marker = "extra == 'journal-host'", specifier = ">=42,<47" },
     { name = "flask", extras = ["async"], marker = "extra == 'journal-host'" },
-    { name = "genai-prices", marker = "extra == 'journal-host'" },
     { name = "h2", marker = "extra == 'journal-host'" },
     { name = "httpx", marker = "extra == 'journal-host'" },
     { name = "huggingface-hub", marker = "extra == 'journal-host'", specifier = ">=0.24" },

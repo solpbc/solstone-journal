@@ -6,10 +6,10 @@ use std::path::{Path, PathBuf};
 use solstone_core_journal_io::{DetailedAtomicOutcome, atomic_replace_detailed};
 
 use crate::{
-    ArtifactStateV1, AttemptOutcome, AttemptStateV1, CURRENT_SCHEMA_VERSION, DayTimelineV1,
-    MasterTimelineV1, SegmentBindingV1, SegmentSummaryV1, SegmentTimelineV1, TimelineError,
-    TimelineLockRequest, TimelineLockSubject, acquire_timeline_locks, artifact_sha256,
-    bounded_diagnostic_detail, load_timeline_state, origin_for_binding, record_artifact_published,
+    AttemptOutcome, AttemptStateV1, CURRENT_SCHEMA_VERSION, DayTimelineV1, MasterTimelineV1,
+    PublishedArtifactV1, SegmentBindingV1, SegmentSummaryV1, SegmentTimelineV1, TimelineError,
+    TimelineLockRequest, TimelineLockSet, TimelineLockSubject, acquire_timeline_locks,
+    artifact_sha256, bounded_diagnostic_detail, origin_for_binding, record_artifact_published,
     record_attempt_outcome, record_attempt_started, resolve_activity_source, segment_directory,
     segment_input_digest, validate_day_timeline, validate_master_timeline,
     validate_segment_timeline,
@@ -30,16 +30,16 @@ pub fn publish_segment_timeline(
     validate_segment_timeline(timeline)?;
     let binding = &timeline.binding;
     let subject = segment_subject_key(binding);
-    let _locks = acquire_timeline_locks(
+    crate::ensure_timeline_conversion(journal, &segment_subject_key(&timeline.binding))?;
+    let locks = acquire_timeline_locks(
         journal,
         TimelineLockRequest {
-            days: vec![binding.day.clone()],
             subjects: vec![TimelineLockSubject::Segment(binding.clone())],
             ..TimelineLockRequest::default()
         },
     )?;
     attempt.input_digest.clone_from(&timeline.input_digest);
-    record_attempt_started(journal, &subject, attempt.clone())?;
+    record_attempt_started(journal, &subject, attempt.clone(), &locks)?;
 
     if let Err(error) = verify_segment_source(journal, timeline) {
         // A missing or unreadable source cannot be reconstructed into a live
@@ -66,6 +66,7 @@ pub fn publish_segment_timeline(
             AttemptOutcome::Failed,
             &detail,
             timeline.generated_at_ms,
+            &locks,
         )?;
         return Err(error);
     }
@@ -76,10 +77,14 @@ pub fn publish_segment_timeline(
         journal,
         &subject,
         path,
-        &timeline.input_digest,
-        timeline.generated_at_ms,
+        PublishedArtifactV1 {
+            input_digest: timeline.input_digest.clone(),
+            artifact_sha256: artifact_sha256(&serialized),
+            published_at_ms: timeline.generated_at_ms,
+        },
         serialized,
         attempt,
+        &locks,
     )
 }
 
@@ -210,15 +215,24 @@ pub fn publish_day_timeline(
     attempt: AttemptStateV1,
 ) -> Result<(), TimelineError> {
     validate_day_timeline(timeline)?;
+    crate::ensure_timeline_conversion(journal, &day_subject_key(&timeline.day))?;
+    let locks = acquire_timeline_locks(
+        journal,
+        TimelineLockRequest {
+            subjects: vec![TimelineLockSubject::Day(timeline.day.clone())],
+            ..TimelineLockRequest::default()
+        },
+    )?;
     let subject = day_subject_key(&timeline.day);
-    record_attempt_started(journal, &subject, attempt.clone())?;
-    publish_validated_day_timeline(journal, timeline, attempt)
+    record_attempt_started(journal, &subject, attempt.clone(), &locks)?;
+    publish_validated_day_timeline(journal, timeline, attempt, &locks)
 }
 
 pub fn publish_day_timeline_after_start(
     journal: &Path,
     timeline: &DayTimelineV1,
     attempt: AttemptStateV1,
+    locks: &TimelineLockSet,
 ) -> Result<(), TimelineError> {
     let subject = day_subject_key(&timeline.day);
     if let Err(error) = validate_day_timeline(timeline) {
@@ -230,16 +244,18 @@ pub fn publish_day_timeline_after_start(
             AttemptOutcome::Failed,
             &detail,
             timeline.generated_at_ms,
+            locks,
         )?;
         return Err(error);
     }
-    publish_validated_day_timeline(journal, timeline, attempt)
+    publish_validated_day_timeline(journal, timeline, attempt, locks)
 }
 
 fn publish_validated_day_timeline(
     journal: &Path,
     timeline: &DayTimelineV1,
     attempt: AttemptStateV1,
+    locks: &TimelineLockSet,
 ) -> Result<(), TimelineError> {
     let subject = day_subject_key(&timeline.day);
     let serialized = serialize_timeline(timeline)?;
@@ -247,10 +263,14 @@ fn publish_validated_day_timeline(
         journal,
         &subject,
         day_timeline_path(journal, &timeline.day),
-        &timeline.source_digest,
-        timeline.generated_at_ms,
+        PublishedArtifactV1 {
+            input_digest: timeline.source_digest.clone(),
+            artifact_sha256: artifact_sha256(&serialized),
+            published_at_ms: timeline.generated_at_ms,
+        },
         serialized,
         attempt,
+        locks,
     )
 }
 
@@ -264,15 +284,24 @@ pub fn publish_master_timeline(
     attempt: AttemptStateV1,
 ) -> Result<(), TimelineError> {
     validate_master_timeline(timeline)?;
+    crate::ensure_timeline_conversion(journal, master_subject_key())?;
+    let locks = acquire_timeline_locks(
+        journal,
+        TimelineLockRequest {
+            subjects: vec![TimelineLockSubject::Master],
+            ..TimelineLockRequest::default()
+        },
+    )?;
     let subject = master_subject_key();
-    record_attempt_started(journal, subject, attempt.clone())?;
-    publish_validated_master_timeline(journal, timeline, attempt)
+    record_attempt_started(journal, subject, attempt.clone(), &locks)?;
+    publish_validated_master_timeline(journal, timeline, attempt, &locks)
 }
 
 pub fn publish_master_timeline_after_start(
     journal: &Path,
     timeline: &MasterTimelineV1,
     attempt: AttemptStateV1,
+    locks: &TimelineLockSet,
 ) -> Result<(), TimelineError> {
     let subject = master_subject_key();
     if let Err(error) = validate_master_timeline(timeline) {
@@ -284,16 +313,18 @@ pub fn publish_master_timeline_after_start(
             AttemptOutcome::Failed,
             &detail,
             timeline.generated_at_ms,
+            locks,
         )?;
         return Err(error);
     }
-    publish_validated_master_timeline(journal, timeline, attempt)
+    publish_validated_master_timeline(journal, timeline, attempt, locks)
 }
 
 fn publish_validated_master_timeline(
     journal: &Path,
     timeline: &MasterTimelineV1,
     attempt: AttemptStateV1,
+    locks: &TimelineLockSet,
 ) -> Result<(), TimelineError> {
     let subject = master_subject_key();
     let serialized = serialize_timeline(timeline)?;
@@ -301,10 +332,14 @@ fn publish_validated_master_timeline(
         journal,
         subject,
         master_timeline_path(journal),
-        &timeline.source_digest,
-        timeline.generated_at_ms,
+        PublishedArtifactV1 {
+            input_digest: timeline.source_digest.clone(),
+            artifact_sha256: artifact_sha256(&serialized),
+            published_at_ms: timeline.generated_at_ms,
+        },
         serialized,
         attempt,
+        locks,
     )
 }
 
@@ -312,11 +347,14 @@ fn publish_timeline(
     journal: &Path,
     subject: &str,
     path: PathBuf,
-    input_digest: &str,
-    generated_at_ms: i64,
+    published: PublishedArtifactV1,
     serialized: String,
     attempt: AttemptStateV1,
+    locks: &TimelineLockSet,
 ) -> Result<(), TimelineError> {
+    locks.require_subject(journal, subject)?;
+    crate::ensure_timeline_conversion(journal, subject)?;
+    let generated_at_ms = published.published_at_ms;
     let publication = atomic_replace_detailed(&path, serialized.as_bytes(), 0o600);
     match publication {
         Err(error) => {
@@ -328,22 +366,12 @@ fn publish_timeline(
                 AttemptOutcome::Failed,
                 &detail,
                 generated_at_ms,
+                locks,
             )?;
             Err(TimelineError::Atomic(error))
         }
         Ok(DetailedAtomicOutcome::Published) => {
-            let generation = load_timeline_state(journal)?
-                .artifacts
-                .get(subject)
-                .map(|state| state.generation.saturating_add(1))
-                .unwrap_or(1);
-            let artifact = ArtifactStateV1 {
-                input_digest: input_digest.to_owned(),
-                artifact_sha256: artifact_sha256(&serialized),
-                published_at_ms: generated_at_ms,
-                generation,
-            };
-            record_artifact_published(journal, subject, attempt, artifact, generated_at_ms)
+            record_artifact_published(journal, subject, attempt, published, generated_at_ms, locks)
         }
         Ok(DetailedAtomicOutcome::PublishedDurabilityUncertain { source }) => {
             let detail = bounded_diagnostic_detail(&source.to_string());
@@ -354,6 +382,7 @@ fn publish_timeline(
                 AttemptOutcome::DurabilityUncertain,
                 &detail,
                 generated_at_ms,
+                locks,
             )?;
             Err(TimelineError::DurabilityUncertain { path, detail })
         }
@@ -371,6 +400,7 @@ fn publish_timeline(
                 AttemptOutcome::Failed,
                 &detail,
                 generated_at_ms,
+                locks,
             )?;
             Err(TimelineError::PublicationNotConfirmed { path, detail })
         }
@@ -392,6 +422,7 @@ fn publish_timeline(
                 AttemptOutcome::Failed,
                 &detail,
                 generated_at_ms,
+                locks,
             )?;
             Err(TimelineError::PublicationNotConfirmed { path, detail })
         }
@@ -405,13 +436,21 @@ fn record_terminal_failure(
     outcome: AttemptOutcome,
     primary: &str,
     finished_at_ms: i64,
+    locks: &TimelineLockSet,
 ) -> Result<(), TimelineError> {
-    record_attempt_outcome(journal, subject, attempt, outcome, primary, finished_at_ms).map_err(
-        |state_error| TimelineError::TerminalStateWriteFailed {
-            primary: bounded_diagnostic_detail(primary),
-            state: bounded_diagnostic_detail(&state_error.to_string()),
-        },
+    record_attempt_outcome(
+        journal,
+        subject,
+        attempt,
+        outcome,
+        primary,
+        finished_at_ms,
+        locks,
     )
+    .map_err(|state_error| TimelineError::TerminalStateWriteFailed {
+        primary: bounded_diagnostic_detail(primary),
+        state: bounded_diagnostic_detail(&state_error.to_string()),
+    })
 }
 
 pub fn publish_continuation_summary(
@@ -496,8 +535,29 @@ mod tests {
     use super::*;
     use crate::{
         AttemptOutcome, CurationRecordV1, DayTimelineV1, MasterTimelineV1, TimelineKind,
-        TimelineStateV1, load_timeline_state,
+        TimelineRecordV1, load_timeline_record,
     };
+
+    fn poisoned_journal() -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("health/timeline")).unwrap();
+        fs::write(
+            crate::timeline_conversion_marker_path(root.path()),
+            br#"{"schema_version":1,"refused":{}}"#,
+        )
+        .unwrap();
+        fs::write(
+            crate::timeline_state_path(root.path()),
+            b"poisoned legacy document",
+        )
+        .unwrap();
+        root
+    }
+
+    fn read_record(journal: &Path, subject: &str) -> Result<TimelineRecordV1, TimelineError> {
+        Ok(load_timeline_record(journal, subject)?
+            .unwrap_or_else(|| TimelineRecordV1::empty(subject)))
+    }
 
     fn binding() -> SegmentBindingV1 {
         SegmentBindingV1 {
@@ -511,7 +571,7 @@ mod tests {
         AttemptStateV1 {
             attempt_id: "attempt-1".to_owned(),
             input_digest: "input".to_owned(),
-            started_at_ms: 1,
+            started_at_ms: 2,
             finished_at_ms: None,
             outcome: AttemptOutcome::Running,
             detail: String::new(),
@@ -561,7 +621,7 @@ mod tests {
     }
 
     fn published_continuation() -> (tempfile::TempDir, SegmentTimelineV1, PathBuf) {
-        let journal = tempfile::tempdir().unwrap();
+        let journal = poisoned_journal();
         let talents = journal.path().join("chronicle/20260401/080000_300/talents");
         fs::create_dir_all(&talents).unwrap();
         fs::write(talents.join("activity.md"), "activity").unwrap();
@@ -596,15 +656,15 @@ mod tests {
             Some("070000_300")
         );
 
-        let state = load_timeline_state(journal.path()).unwrap();
-        assert_eq!(state.artifacts.len(), 1);
+        let state = read_record(journal.path(), &segment_subject_key(&binding())).unwrap();
+        assert!(state.published.is_some());
         assert!(
             state
                 .attempts
-                .values()
+                .iter()
                 .any(|value| value.outcome == AttemptOutcome::Published)
         );
-        assert_ne!(state, TimelineStateV1::empty());
+        assert_ne!(state, TimelineRecordV1::empty(&day_subject_key("20260401")));
 
         let last_good = fs::read(&path).unwrap();
         fs::write(
@@ -620,10 +680,10 @@ mod tests {
         publish_segment_timeline(journal.path(), &timeline, stale_attempt)
             .expect_err("changed continuation evidence must not publish");
         assert_eq!(fs::read(&path).unwrap(), last_good);
-        let state = load_timeline_state(journal.path()).unwrap();
+        let state = read_record(journal.path(), &segment_subject_key(&binding())).unwrap();
         let failed = state
             .attempts
-            .values()
+            .iter()
             .find(|attempt| attempt.attempt_id == "attempt-3")
             .expect("terminal failed attempt");
         assert_eq!(failed.outcome, AttemptOutcome::Failed);
@@ -649,10 +709,10 @@ mod tests {
                 .expect_err("unavailable continuation evidence must not publish");
 
             assert_eq!(fs::read(&path).unwrap(), last_good);
-            let state = load_timeline_state(journal.path()).unwrap();
+            let state = read_record(journal.path(), &segment_subject_key(&binding())).unwrap();
             let failed = state
                 .attempts
-                .values()
+                .iter()
                 .find(|attempt| attempt.attempt_id == "attempt-3")
                 .expect("terminal failed attempt");
             assert_ne!(failed.input_digest, timeline.input_digest);
@@ -672,7 +732,7 @@ mod tests {
 
     #[test]
     fn changed_activity_cannot_publish_a_stale_segment_result() {
-        let journal = tempfile::tempdir().unwrap();
+        let journal = poisoned_journal();
         let activity = journal
             .path()
             .join("chronicle/20260401/080000_300/talents/activity.md");
@@ -717,10 +777,10 @@ mod tests {
 
         assert!(matches!(error, TimelineError::InvalidSourceEvidence { .. }));
         assert_eq!(fs::read(&path).unwrap(), last_good);
-        let state = load_timeline_state(journal.path()).unwrap();
+        let state = read_record(journal.path(), &segment_subject_key(&binding())).unwrap();
         let failed = state
             .attempts
-            .values()
+            .iter()
             .find(|attempt| attempt.attempt_id == "attempt-2")
             .expect("terminal failed attempt");
         assert_eq!(failed.outcome, AttemptOutcome::Failed);
@@ -742,7 +802,7 @@ mod tests {
     #[test]
     fn missing_or_unreadable_activity_invalidates_the_last_good_segment_result() {
         for replacement in [None, Some(vec![0xff, 0xfe])] {
-            let journal = tempfile::tempdir().unwrap();
+            let journal = poisoned_journal();
             let activity = journal
                 .path()
                 .join("chronicle/20260401/080000_300/talents/activity.md");
@@ -787,10 +847,10 @@ mod tests {
                 .expect_err("missing or unreadable source must prevent publication");
 
             assert_eq!(fs::read(&path).unwrap(), last_good);
-            let state = load_timeline_state(journal.path()).unwrap();
+            let state = read_record(journal.path(), &segment_subject_key(&binding())).unwrap();
             let failed = state
                 .attempts
-                .values()
+                .iter()
                 .find(|attempt| attempt.attempt_id == "attempt-2")
                 .expect("terminal failed attempt");
             assert_eq!(failed.outcome, AttemptOutcome::Failed);
@@ -811,7 +871,7 @@ mod tests {
 
     #[test]
     fn day_publication_writes_typed_artifact_and_day_subject_state() {
-        let journal = tempfile::tempdir().unwrap();
+        let journal = poisoned_journal();
         fs::create_dir_all(journal.path().join("chronicle/20260401")).unwrap();
         let timeline = day_timeline();
 
@@ -822,22 +882,19 @@ mod tests {
         )
         .unwrap();
         assert_eq!(published, timeline);
-        let state = load_timeline_state(journal.path()).unwrap();
-        assert_eq!(
-            state.artifacts[&day_subject_key("20260401")].input_digest,
-            "input"
-        );
+        let state = read_record(journal.path(), &day_subject_key("20260401")).unwrap();
+        assert_eq!(state.published.as_ref().unwrap().input_digest, "input");
         assert!(
             state
                 .attempts
-                .values()
+                .iter()
                 .any(|attempt| attempt.outcome == AttemptOutcome::Published)
         );
     }
 
     #[test]
     fn day_validation_is_nonmutating_before_start_and_terminal_after_start() {
-        let journal = tempfile::tempdir().unwrap();
+        let journal = poisoned_journal();
         let mut invalid = day_timeline();
         invalid.kind = crate::TimelineKind::Segment;
 
@@ -848,29 +905,45 @@ mod tests {
             TimelineError::SchemaKindMismatch { .. }
         ));
         assert_eq!(
-            load_timeline_state(journal.path()).unwrap(),
-            TimelineStateV1::empty()
+            read_record(journal.path(), &day_subject_key("20260401")).unwrap(),
+            TimelineRecordV1::empty(&day_subject_key("20260401"))
         );
 
-        record_attempt_started(journal.path(), &day_subject_key("20260401"), attempt()).unwrap();
-        let started_error = publish_day_timeline_after_start(journal.path(), &invalid, attempt())
-            .expect_err("started attempt must reject malformed input");
+        let locks = acquire_timeline_locks(
+            journal.path(),
+            TimelineLockRequest {
+                subjects: vec![TimelineLockSubject::Day("20260401".to_owned())],
+                ..TimelineLockRequest::default()
+            },
+        )
+        .unwrap();
+        fs::create_dir_all(journal.path().join("chronicle/20260401")).unwrap();
+        record_attempt_started(
+            journal.path(),
+            &day_subject_key("20260401"),
+            attempt(),
+            &locks,
+        )
+        .unwrap();
+        let started_error =
+            publish_day_timeline_after_start(journal.path(), &invalid, attempt(), &locks)
+                .expect_err("started attempt must reject malformed input");
         assert!(matches!(
             started_error,
             TimelineError::SchemaKindMismatch { .. }
         ));
         assert!(
-            load_timeline_state(journal.path())
+            read_record(journal.path(), &day_subject_key("20260401"))
                 .unwrap()
                 .attempts
-                .values()
+                .iter()
                 .any(|attempt| attempt.outcome == AttemptOutcome::Failed)
         );
     }
 
     #[test]
     fn master_publication_writes_typed_artifact_and_master_subject_state() {
-        let journal = tempfile::tempdir().unwrap();
+        let journal = poisoned_journal();
         let timeline = master_timeline();
 
         publish_master_timeline(journal.path(), &timeline, attempt()).unwrap();
@@ -880,12 +953,12 @@ mod tests {
         )
         .unwrap();
         assert_eq!(published, timeline);
-        let state = load_timeline_state(journal.path()).unwrap();
-        assert_eq!(state.artifacts[master_subject_key()].input_digest, "input");
+        let state = read_record(journal.path(), master_subject_key()).unwrap();
+        assert_eq!(state.published.as_ref().unwrap().input_digest, "input");
         assert!(
             state
                 .attempts
-                .values()
+                .iter()
                 .any(|attempt| attempt.outcome == AttemptOutcome::Published)
         );
     }
@@ -911,7 +984,7 @@ mod tests {
                 expected_attempt: Some(AttemptOutcome::Failed),
             },
         ] {
-            let journal = tempfile::tempdir().unwrap();
+            let journal = poisoned_journal();
             fs::create_dir_all(journal.path().join("chronicle/20260401")).unwrap();
             let (result, consumed) = run_with_bound_publication_fault(
                 BoundPublicationPrimitive::TempCreate,
@@ -927,9 +1000,9 @@ mod tests {
                 case.name
             );
             assert_no_current_artifact(journal.path(), &day_subject_key("20260401"));
-            let state = load_timeline_state(journal.path()).unwrap();
+            let state = read_record(journal.path(), &day_subject_key("20260401")).unwrap();
             match case.expected_attempt {
-                Some(outcome) => assert!(state.attempts.values().any(|attempt| {
+                Some(outcome) => assert!(state.attempts.iter().any(|attempt| {
                     attempt.outcome == outcome
                         && attempt.detail.len() <= crate::MAX_DIAGNOSTIC_DETAIL_BYTES
                 })),
@@ -942,9 +1015,24 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn publication_failure_surfaces_a_second_terminal_state_write_failure() {
-        let journal = tempfile::tempdir().unwrap();
+        let journal = poisoned_journal();
         fs::create_dir_all(journal.path().join("chronicle/20260401")).unwrap();
-        record_attempt_started(journal.path(), &day_subject_key("20260401"), attempt()).unwrap();
+        let locks = acquire_timeline_locks(
+            journal.path(),
+            TimelineLockRequest {
+                subjects: vec![TimelineLockSubject::Day("20260401".to_owned())],
+                ..TimelineLockRequest::default()
+            },
+        )
+        .unwrap();
+        fs::create_dir_all(journal.path().join("chronicle/20260401")).unwrap();
+        record_attempt_started(
+            journal.path(),
+            &day_subject_key("20260401"),
+            attempt(),
+            &locks,
+        )
+        .unwrap();
         let (result, consumed) = run_with_bound_publication_fault(
             BoundPublicationPrimitive::TempCreate,
             1,
@@ -957,6 +1045,7 @@ mod tests {
                     AttemptOutcome::Failed,
                     "artifact publication failed",
                     3,
+                    &locks,
                 )
             },
         );
@@ -971,10 +1060,10 @@ mod tests {
         assert!(primary.len() <= crate::MAX_DIAGNOSTIC_DETAIL_BYTES);
         assert!(state.len() <= crate::MAX_DIAGNOSTIC_DETAIL_BYTES);
         assert!(
-            load_timeline_state(journal.path())
+            read_record(journal.path(), &day_subject_key("20260401"))
                 .unwrap()
                 .attempts
-                .values()
+                .iter()
                 .any(|attempt| attempt.outcome == AttemptOutcome::Running)
         );
         assert_no_current_artifact(journal.path(), &day_subject_key("20260401"));
@@ -983,7 +1072,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn lock_acquisition_failure_never_starts_or_publishes_a_segment_attempt() {
-        let journal = tempfile::tempdir().unwrap();
+        let journal = poisoned_journal();
         fs::create_dir_all(journal.path().join("health/timeline")).unwrap();
         fs::write(
             journal.path().join("health/timeline/locks"),
@@ -1020,7 +1109,7 @@ mod tests {
         assert!(matches!(result, Err(TimelineError::LockContention { .. })));
         assert_no_current_artifact(journal.path(), &segment_subject_key(&binding()));
         assert!(
-            load_timeline_state(journal.path())
+            read_record(journal.path(), &segment_subject_key(&binding()))
                 .unwrap()
                 .attempts
                 .is_empty()
@@ -1030,7 +1119,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn durability_uncertainty_records_only_an_uncertain_attempt() {
-        let journal = tempfile::tempdir().unwrap();
+        let journal = poisoned_journal();
         fs::create_dir_all(journal.path().join("chronicle/20260401")).unwrap();
         let (result, consumed) = run_with_bound_publication_fault(
             BoundPublicationPrimitive::ParentSync,
@@ -1047,10 +1136,10 @@ mod tests {
         assert!(day_timeline_path(journal.path(), "20260401").is_file());
         assert_no_current_artifact(journal.path(), &day_subject_key("20260401"));
         assert!(
-            load_timeline_state(journal.path())
+            read_record(journal.path(), &day_subject_key("20260401"))
                 .unwrap()
                 .attempts
-                .values()
+                .iter()
                 .any(|attempt| {
                     attempt.outcome == AttemptOutcome::DurabilityUncertain
                         && attempt.detail.len() <= crate::MAX_DIAGNOSTIC_DETAIL_BYTES
@@ -1062,7 +1151,7 @@ mod tests {
     #[test]
     fn parent_path_ambiguities_never_confirm_current_artifact_state() {
         for replace_parent in [false, true] {
-            let journal = tempfile::tempdir().unwrap();
+            let journal = poisoned_journal();
             let parent = journal.path().join("chronicle/20260401");
             fs::create_dir_all(&parent).unwrap();
             let relocated = journal.path().join("relocated-day");
@@ -1082,8 +1171,13 @@ mod tests {
 
             assert!(fired);
             let error = result.expect_err("parent ambiguity must not confirm publication");
-            let TimelineError::PublicationNotConfirmed { detail, .. } = error else {
-                panic!("expected a publication-not-confirmed error");
+            let detail = match error {
+                TimelineError::PublicationNotConfirmed { detail, .. } if replace_parent => detail,
+                TimelineError::TerminalStateWriteFailed { primary, state } if !replace_parent => {
+                    assert!(!state.is_empty());
+                    primary
+                }
+                other => panic!("unexpected parent-move failure: {other:?}"),
             };
             if replace_parent {
                 assert!(detail.contains("parent path raced"));
@@ -1092,16 +1186,28 @@ mod tests {
             }
             assert!(detail.len() <= crate::MAX_DIAGNOSTIC_DETAIL_BYTES);
             assert_no_current_artifact(journal.path(), &day_subject_key("20260401"));
-            assert!(
-                load_timeline_state(journal.path())
-                    .unwrap()
-                    .attempts
-                    .values()
-                    .any(|attempt| {
-                        attempt.outcome == AttemptOutcome::Failed
-                            && attempt.detail.len() <= crate::MAX_DIAGNOSTIC_DETAIL_BYTES
-                    })
-            );
+            let remaining = read_record(journal.path(), &day_subject_key("20260401")).unwrap();
+            if replace_parent {
+                assert!(
+                    remaining
+                        .attempts
+                        .iter()
+                        .any(|attempt| attempt.outcome == AttemptOutcome::Failed)
+                );
+            } else {
+                assert!(remaining.attempts.is_empty());
+                let moved =
+                    crate::read_timeline_record_at(&relocated.join(crate::TIMELINE_RECORD_NAME))
+                        .unwrap()
+                        .unwrap();
+                assert!(moved.published.is_none());
+                assert!(
+                    moved
+                        .attempts
+                        .iter()
+                        .any(|attempt| attempt.outcome == AttemptOutcome::Running)
+                );
+            }
             if replace_parent {
                 assert!(!parent.join("timeline.json").exists());
             } else {
@@ -1113,13 +1219,36 @@ mod tests {
 
     #[cfg(unix)]
     fn assert_no_current_artifact(journal: &Path, subject: &str) {
-        let state = load_timeline_state(journal).unwrap();
-        assert!(!state.artifacts.contains_key(subject));
+        let state = read_record(journal, subject).unwrap();
+        assert!(state.published.is_none());
         assert!(
             state
                 .attempts
-                .values()
+                .iter()
                 .all(|attempt| attempt.outcome != AttemptOutcome::Published)
+        );
+    }
+    #[test]
+    fn after_start_publisher_rejects_the_wrong_subject_before_writing_artifact() {
+        let journal = poisoned_journal();
+        fs::create_dir_all(journal.path().join("chronicle/20260401")).unwrap();
+        let locks = acquire_timeline_locks(
+            journal.path(),
+            TimelineLockRequest {
+                subjects: vec![TimelineLockSubject::Master],
+                ..TimelineLockRequest::default()
+            },
+        )
+        .unwrap();
+        assert!(matches!(
+            publish_day_timeline_after_start(journal.path(), &day_timeline(), attempt(), &locks),
+            Err(TimelineError::LockContention { .. })
+        ));
+        assert!(!day_timeline_path(journal.path(), "20260401").exists());
+        assert!(
+            !crate::timeline_record_path(journal.path(), "day:20260401")
+                .unwrap()
+                .exists()
         );
     }
 }

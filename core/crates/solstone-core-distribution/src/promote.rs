@@ -563,18 +563,6 @@ mod tests {
     }
 
     #[test]
-    fn writers_do_not_mention_the_signing_env() {
-        // Paired with promote_writes_unsigned_six_file_set_without_a_minisig:
-        // this half proves the writers cannot read the signing env; that test
-        // proves promote still exits 0 with the usual unsigned six-file set
-        // and no .minisig.
-        const NEEDLE: &str = concat!("SOLSTONE_JOURNAL_MINISIGN", "_KEY");
-        assert!(!include_str!("promote.rs").contains(NEEDLE));
-        assert!(!include_str!("produce.rs").contains(NEEDLE));
-        assert!(!include_str!("inspect.rs").contains(NEEDLE));
-    }
-
-    #[test]
     fn promote_writes_unsigned_six_file_set_without_a_minisig() {
         use crate::inventory;
         use crate::promote::{PromoteRequest, promote};

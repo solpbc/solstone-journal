@@ -225,13 +225,15 @@ fn main_header(
     let require_names = [
         "libc.so.6()(64bit)",
         "libgcc_s.so.1()(64bit)",
+        "libgomp",
         "libstdc++.so.6()(64bit)",
         "rpmlib(CompressedFileNames)",
         "rpmlib(FileDigests)",
         "rpmlib(PayloadFilesHavePrefix)",
     ];
-    let require_versions = ["", "", "", "3.0.4-1", "4.6.0-1", "4.0-1"];
+    let require_versions = ["", "", "", "", "3.0.4-1", "4.6.0-1", "4.0-1"];
     let require_flags = [
+        0,
         0,
         0,
         0,

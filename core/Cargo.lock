@@ -3783,7 +3783,6 @@ dependencies = [
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-local",
- "solstone-core-model-pricing",
  "solstone-core-npy",
  "solstone-core-profile-web",
  "solstone-core-push",
@@ -3884,7 +3883,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-assets",
- "solstone-core-cli",
+ "solstone-core-cli-boundary",
  "solstone-core-describe-categories",
  "solstone-core-format",
  "solstone-core-generate",
@@ -4538,6 +4537,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "jsonschema",
+ "serde",
  "serde_json",
  "solstone-core-artifact-download",
  "solstone-core-backup",
@@ -4548,6 +4548,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-offload",
  "solstone-core-retention",
+ "solstone-core-speaker-resolve",
  "solstone-core-system",
  "solstone-core-timeline",
  "tempfile",
@@ -4604,10 +4605,6 @@ dependencies = [
  "webpki-roots 1.0.9",
  "x509-parser",
 ]
-
-[[package]]
-name = "solstone-core-model-pricing"
-version = "2.0.0"
 
 [[package]]
 name = "solstone-core-npy"
@@ -5039,6 +5036,8 @@ version = "2.0.0"
 dependencies = [
  "chrono",
  "chrono-tz",
+ "log",
+ "percent-encoding",
  "rapidfuzz",
  "regex",
  "serde",
@@ -5050,6 +5049,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-npy",
+ "solstone-core-segment",
  "solstone-core-speaker-id",
  "tempfile",
  "thiserror 2.0.20",
@@ -5318,13 +5318,17 @@ dependencies = [
  "solstone-core-entity",
  "solstone-core-entity-matching",
  "solstone-core-facets",
+ "solstone-core-format",
  "solstone-core-generate",
+ "solstone-core-generate-wire",
  "solstone-core-home",
  "solstone-core-identity",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
  "solstone-core-journal",
+ "solstone-core-journal-config",
  "solstone-core-journal-io",
+ "solstone-core-local",
  "solstone-core-maintenance",
  "solstone-core-npy",
  "solstone-core-speaker-id",

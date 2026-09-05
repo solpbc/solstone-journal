@@ -3,4 +3,6 @@
 
 pub(crate) mod backup;
 pub(crate) mod health;
+pub mod migrate;
+pub(crate) mod speakers;
 pub mod timeline;

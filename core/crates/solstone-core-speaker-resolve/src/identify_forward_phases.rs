@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::segment_path;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_entity::{
@@ -14,7 +15,7 @@ use solstone_core_entity::{
     create_journal_entity, load_entity_voiceprints_file, normalize_embedding, read_entity_identity,
     read_visible_history,
 };
-use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace, segment_path};
+use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
 use solstone_core_speaker_id::corrections::append_correction;
 use solstone_core_speaker_id::labels::patch_labels;
 use thiserror::Error;

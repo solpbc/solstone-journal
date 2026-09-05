@@ -1,3 +1,0 @@
-{"raw":"audio.flac","model":"fixture"}
-{"start":"00:00:01","source":"mic","speaker":1,"text":"Audio Target appears only in the fallback transcript.","description":"fallback"}
-{"start":"00:00:08","source":"mic","speaker":2,"text":"This fallback line should not be selected.","description":"fallback-other"}

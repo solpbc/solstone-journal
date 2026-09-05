@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
+#[cfg(unix)]
 use std::os::unix::fs::FileTypeExt;
 use std::path::Path;
 use std::time::Duration;
@@ -238,10 +239,13 @@ fn inspect_socket(path: &Path) -> SocketInspection {
     match std::fs::metadata(path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => SocketInspection::NotFound,
         Err(error) => SocketInspection::NotInspectable(error.to_string()),
-        Ok(metadata) if !metadata.file_type().is_socket() => {
-            SocketInspection::NotInspectable("path is not a Unix socket".to_owned())
+        Ok(_metadata) => {
+            #[cfg(unix)]
+            if !_metadata.file_type().is_socket() {
+                return SocketInspection::NotInspectable("path is not a Unix socket".to_owned());
+            }
+            SocketInspection::Present
         }
-        Ok(_) => SocketInspection::Present,
     }
 }
 

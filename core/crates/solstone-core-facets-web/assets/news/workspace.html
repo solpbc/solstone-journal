@@ -299,7 +299,8 @@
 
   function suppressDateNavForDetail(context) {
     if (context.mode !== 'detail') return;
-    document.querySelector('[data-date-nav]')?.remove();
+    const host = document.querySelector('[data-date-nav]');
+    if (host) { host.dataset.dateNavSuppressed = 'true'; host.hidden = true; }
     document.querySelector('[data-date-nav-heading]')?.remove();
   }
 

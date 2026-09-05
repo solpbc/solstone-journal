@@ -6,6 +6,7 @@
 use std::fs;
 use std::path::Path;
 
+#[cfg(unix)]
 use nix::sys::statvfs::statvfs;
 use solstone_core_journal_io::paths::{PathOrDay, day_dirs, iter_segments};
 
@@ -74,17 +75,43 @@ pub fn measure_raw_media_usage(journal: &Path) -> RawMediaUsage {
 // only compile on Linux unconverted. See the note in
 // `solstone-core-backup-web::measurement` for why the lint has to be silenced
 // rather than the cast dropped.
+#[cfg(unix)]
 pub fn device_free_bytes(journal: &Path) -> Result<u64, String> {
     let stat = statvfs(journal).map_err(|error| error.to_string())?;
     #[allow(clippy::unnecessary_cast)]
     let blocks = stat.blocks_available() as u64;
     Ok(blocks.saturating_mul(stat.fragment_size()))
 }
+#[cfg(unix)]
 pub fn device_total_bytes(journal: &Path) -> Result<u64, String> {
     let stat = statvfs(journal).map_err(|error| error.to_string())?;
     #[allow(clippy::unnecessary_cast)]
     let blocks = stat.blocks() as u64;
     Ok(blocks.saturating_mul(stat.fragment_size()))
+}
+
+#[cfg(windows)]
+pub fn device_free_bytes(journal: &Path) -> Result<u64, String> {
+    solstone_core_journal_io::windows_disk_space(journal)
+        .map(|space| space.available_bytes)
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(windows)]
+pub fn device_total_bytes(journal: &Path) -> Result<u64, String> {
+    solstone_core_journal_io::windows_disk_space(journal)
+        .map(|space| space.total_bytes)
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(not(any(unix, windows)))]
+pub fn device_free_bytes(_journal: &Path) -> Result<u64, String> {
+    Err("device capacity measurement is unsupported on this platform".into())
+}
+
+#[cfg(not(any(unix, windows)))]
+pub fn device_total_bytes(_journal: &Path) -> Result<u64, String> {
+    Err("device capacity measurement is unsupported on this platform".into())
 }
 pub fn suggest_offload_defaults(total: u64) -> Result<SuggestedOffloadDefaults, String> {
     if total == 0 {

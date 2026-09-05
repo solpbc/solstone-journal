@@ -48,6 +48,8 @@ pub mod snapshot;
 pub mod staged;
 pub mod strict_segment;
 #[cfg(windows)]
+mod windows_disk_space;
+#[cfg(windows)]
 mod windows_identity;
 #[cfg(windows)]
 pub mod windows_inventory;
@@ -201,6 +203,10 @@ pub use strict_segment::{
     resolve_segment_exact, resolve_segment_locator_exact, resolve_stream_exact,
 };
 #[cfg(windows)]
+pub use windows_disk_space::{WindowsDiskSpace, windows_available_disk_bytes, windows_disk_space};
+#[cfg(windows)]
+pub use windows_identity::{WindowsFileIdentity, windows_file_identity};
+#[cfg(windows)]
 pub use windows_inventory::{
     WindowsCheckedReadSession, WindowsInventory, WindowsInventoryEntry, WindowsInventoryError,
     enumerate_windows_inventory, read_windows_inventory_file,
@@ -219,5 +225,6 @@ pub use windows_lock::{
 #[cfg(windows)]
 pub use windows_sync_dir::{
     WindowsFlatDirectory, create_or_open_windows_flat_directory_bound, list_windows_flat_directory,
-    open_windows_flat_directory_bound, read_windows_observed_file_bounded,
+    open_windows_flat_directory_bound, open_windows_regular_file_from_bound_parent,
+    read_windows_observed_file_bounded,
 };

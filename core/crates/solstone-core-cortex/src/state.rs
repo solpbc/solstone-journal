@@ -280,7 +280,8 @@ impl CortexState {
         if self.claim_finalize(&work.use_id).is_none() {
             return;
         }
-        let event = synthesized_error(&work.use_id, message);
+        let mut event = synthesized_error(&work.use_id, message);
+        event.insert("reason_code".into(), Value::String("talent_aborted".into()));
         let _ = self.store.append_active(&work.active, &event);
         self.store.complete(
             &work.use_id,
@@ -311,6 +312,10 @@ impl CortexState {
                 error.insert("trace".into(), Value::String(trace));
             }
             error.insert("exit_code".into(), Value::from(exit_code));
+            error.insert(
+                "reason_code".into(),
+                Value::String("talent_exited_without_finish".into()),
+            );
             self.append_and_relay(use_id, &running.active, error);
         }
         self.store.complete(
@@ -345,7 +350,9 @@ impl CortexState {
     pub(crate) fn timeout(&self, use_id: &str, seconds: u64) -> Option<RunningUse> {
         let finalized = self.claim_finalize(use_id)?;
         let running = finalized.running?;
-        let event = synthesized_error(use_id, format!("Talent timed out after {seconds} seconds"));
+        let mut event =
+            synthesized_error(use_id, format!("Talent timed out after {seconds} seconds"));
+        event.insert("reason_code".into(), Value::String("talent_timeout".into()));
         self.append_and_relay(use_id, &running.active, event);
         self.store.complete(
             use_id,

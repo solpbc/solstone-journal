@@ -126,7 +126,6 @@ impl Error for SpeakerFeatureError {}
 #[cfg(test)]
 pub(crate) mod test_support {
     use serde_json::Value;
-    use std::path::{Path, PathBuf};
 
     pub(crate) const FILTERBANK_FIXTURE: &str =
         include_str!("../../../fixtures/speaker_filterbank.json");
@@ -265,35 +264,5 @@ pub(crate) mod test_support {
         }
         assert_eq!(len, 0);
         out
-    }
-
-    pub(crate) fn source_tree_needle_count(needle: &str) -> (usize, usize) {
-        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        let mut files = Vec::new();
-        collect_rust_files(&src, &mut files);
-        let count = files
-            .iter()
-            .map(|path| {
-                std::fs::read_to_string(path)
-                    .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
-                    .matches(needle)
-                    .count()
-            })
-            .sum();
-        (files.len(), count)
-    }
-
-    fn collect_rust_files(path: &Path, files: &mut Vec<PathBuf>) {
-        for entry in std::fs::read_dir(path)
-            .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
-        {
-            let entry = entry.expect("directory entry");
-            let path = entry.path();
-            if path.is_dir() {
-                collect_rust_files(&path, files);
-            } else if path.extension().and_then(|value| value.to_str()) == Some("rs") {
-                files.push(path);
-            }
-        }
     }
 }

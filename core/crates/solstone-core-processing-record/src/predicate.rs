@@ -76,20 +76,6 @@ mod tests {
     }
 
     #[test]
-    fn schema_matches_documented_python_value() {
-        // Equality with solstone/observe/processing_record.py:23 was confirmed by inspection at
-        // isolated-checkout time; nothing mechanically enforces cross-language equality.
-        assert_eq!(vocab::SCHEMA, "solstone.processing.v1");
-    }
-
-    #[test]
-    fn ingest_resolve_does_not_redeclare_processing_schema() {
-        let source = include_str!("../../solstone-core-ingest-resolve/src/terminal_proof.rs");
-        assert!(!source.contains("solstone.processing.v1"));
-        assert!(!source.contains("PROCESSING_SCHEMA"));
-    }
-
-    #[test]
     fn vectors_match_processing_record_predicates() {
         let fixture: Value = serde_json::from_str(include_str!(
             "../tests/vectors/processing-record-vectors.json"

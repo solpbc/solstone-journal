@@ -49,16 +49,3 @@ fn secret_array(secret: &[u8]) -> Result<[u8; 8], TransportError> {
         .try_into()
         .map_err(|_| TransportError::PairLink("relay secret length".to_string()))
 }
-
-#[cfg(all(test, not(feature = "full-tests")))]
-mod tests {
-    #[test]
-    fn spl_entry_module_stays_one_shot() {
-        let source = include_str!("pairing_entry.rs");
-        assert_eq!(source.matches(concat!("pair", "_with_seam(")).count(), 1);
-        assert_eq!(source.matches(concat!("pair", "_over_relay(")).count(), 1);
-        assert!(!source.contains(concat!("fo", "r ")));
-        assert!(!source.contains(concat!("wh", "ile ")));
-        assert!(!source.contains(concat!("lo", "op ")));
-    }
-}

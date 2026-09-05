@@ -84,6 +84,16 @@ fn reason(day: &Map<String, Value>) -> &'static str {
         .and_then(Value::as_str)
         .filter(|s| !s.is_empty())
         .or_else(|| day.get("reason").and_then(Value::as_str));
+    match marker {
+        Some("catchup_backoff") => return "waiting to retry automatically. no action needed yet",
+        Some("segment_repair_progressing") => return "repairing itself. check back soon",
+        Some("segment_repair_degraded") => {
+            return "repair is having trouble keeping up. may need a hand";
+        }
+        Some("segment_repair_stuck") => return "repair has stalled. try again",
+        Some("segment_repair_unknown") => return "repair status is unclear right now",
+        _ => {}
+    }
     if marker == Some("corrupt_raw") {
         return "original raw media is missing or damaged — re-import it";
     }
@@ -160,13 +170,41 @@ pub fn stuck_rows(backlog: Option<&Map<String, Value>>) -> Vec<Value> {
 }
 
 pub fn copy() -> Value {
-    json!({"bucket_heading":"days that need a hand","bucket_description":"these days stopped on their own and can't pick back up without you — here's why, and what to try.","day_badge":"stuck","action_process_now":"process now","action_redo_scratch":"redo from scratch","confirm_redo_scratch":"redo this whole day from scratch? this re-does the parts already finished, so it'll take longer. the day you see now won't change until it's done.","queued_feedback":"queued, working on it now"})
+    json!({"bucket_heading":"days that need a hand","bucket_description":"some days retry automatically; others need your help. each day shows its current status.","day_badge":"stuck","action_process_now":"process now","action_redo_scratch":"redo from scratch","confirm_redo_scratch":"redo this whole day from scratch? this re-does the parts already finished, so it'll take longer. the day you see now won't change until it's done.","queued_feedback":"queued, working on it now"})
 }
 
 #[cfg(test)]
 mod tests {
     use super::{count, stuck_rows, verdict};
     use serde_json::json;
+
+    #[test]
+    fn retry_and_repair_states_keep_their_distinct_recovery_guidance() {
+        for (code, expected) in [
+            (
+                "catchup_backoff",
+                "waiting to retry automatically. no action needed yet",
+            ),
+            (
+                "segment_repair_progressing",
+                "repairing itself. check back soon",
+            ),
+            (
+                "segment_repair_degraded",
+                "repair is having trouble keeping up. may need a hand",
+            ),
+            ("segment_repair_stuck", "repair has stalled. try again"),
+            (
+                "segment_repair_unknown",
+                "repair status is unclear right now",
+            ),
+        ] {
+            let backlog = json!({"days":[{"day":"20260904","state":"stuck","reason_code":code}]});
+            let rows = stuck_rows(backlog.as_object());
+            assert_eq!(rows[0]["reason"], expected, "{code}");
+            assert_eq!(rows[0]["reason_code"], code);
+        }
+    }
 
     #[test]
     fn count_matches_python_coercions() {

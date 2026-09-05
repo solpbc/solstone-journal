@@ -16,11 +16,13 @@ use solstone_core_spp_ratls::AttestationStateStore;
 use crate::TranscribeError;
 use crate::args::should_skip_process_one_processed;
 use crate::audio::{reduce_audio_if_needed, run_vad, speech_ratio, tag_audio};
+#[cfg(target_os = "macos")]
+use crate::backend::parakeet_coreml;
+use crate::backend::parakeet_cpp;
 use crate::backend::{
     confidential, local_stt_backend, platform_floor_bytes, read_available_bytes,
     resolve_default_backend,
 };
-use crate::backend::{parakeet_coreml, parakeet_cpp};
 use crate::config::{confidential_audio_enabled, min_speech_seconds, parakeet_cpp_device};
 use crate::event::{
     Timings, TranscribedEvent, TranscribedOutcome, build_transcribed_event, emit_transcribed_event,
@@ -456,15 +458,15 @@ fn dispatch_backend(
             Ok((transcription, model_info))
         });
     }
-    if backend == "parakeet"
-        && std::env::consts::OS == "darwin"
-        && std::env::consts::ARCH == "aarch64"
     {
-        return dispatch_after_egress_gate(config, backend, || {
-            let transcription = parakeet_coreml::transcribe(statement_audio, config)?;
-            let model_info = parakeet_coreml::get_model_info(config)?;
-            Ok((transcription, model_info))
-        });
+        #[cfg(target_os = "macos")]
+        if backend == "parakeet" && std::env::consts::ARCH == "aarch64" {
+            return dispatch_after_egress_gate(config, backend, || {
+                let transcription = parakeet_coreml::transcribe(statement_audio, config)?;
+                let model_info = parakeet_coreml::get_model_info(config)?;
+                Ok((transcription, model_info))
+            });
+        }
     }
     if backend == "confidential" {
         return dispatch_after_egress_gate(config, backend, || {

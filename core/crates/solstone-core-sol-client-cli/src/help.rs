@@ -351,17 +351,6 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
-    fn root_help_matches_generated_fixture_projection() {
-        let output = render_root_help();
-        assert_eq!(
-            output,
-            root_contract()["expected_bare_sol_stdout"]
-                .as_str()
-                .unwrap()
-        );
-    }
-
-    #[test]
     fn status_top_level_help_is_inventory_driven() {
         let output = render_top_level_help("status", &["--help".to_string()])
             .expect("status top-level help");

@@ -121,6 +121,40 @@ async fn assert_case(router: axum::Router, case: &Value, phase: &str, root: &tem
         serde_json::from_slice(&bytes).expect("json")
     };
     let mut wanted = expected["body"].clone();
+    replace_text(
+        &mut wanted,
+        "these days stopped on their own and can't pick back up without you — here's why, and what to try.",
+        "some days retry automatically; others need your help. each day shows its current status.",
+    );
+    if expected["status"] == 200 && case["name"] == "index" {
+        wanted = Value::String(
+            include_str!("../../solstone-core-convey-shell/assets/static/shell.html").into(),
+        );
+    }
+
+    // These captured token routes formerly returned estimated dollars. Their
+    // status/error contracts remain; successful bodies now expose measured tokens.
+    if expected["status"] == 200 && path.contains("/app/stats/api/") {
+        let populated = matches!(
+            phase,
+            "established_populated"
+                | "populated_single_failure"
+                | "stats_absent"
+                | "stats_unparseable"
+        );
+        if path.contains("/usage?") {
+            let measured: Value = serde_json::from_str(include_str!(
+                "../../../fixtures/stats_measured_usage_contract.json"
+            ))
+            .unwrap();
+            wanted = measured[if populated { "populated" } else { "empty" }].clone();
+        } else if path.ends_with("/index") && populated {
+            wanted["months"] = serde_json::json!({"202604":2400.0});
+        } else if path.starts_with("/app/stats/api/stats/") && populated {
+            wanted = serde_json::json!({"20260403":2400});
+        }
+    }
+
     if phase == "corrupt" {
         replace_text(
             &mut wanted,
@@ -260,8 +294,8 @@ fn ac7_filename_day_fold_and_stats_rollup_agree() {
                 }
             };
             let filename_day = usage("/app/stats/api/usage?day=20260809").await;
-            assert_eq!(filename_day["total"]["tokens"], 111);
-            assert_eq!(filename_day["total"]["skipped_unknown"], 1);
+            assert_eq!(filename_day["total"]["tokens"], 148);
+            assert!(filename_day["total"].get("skipped_unknown").is_none());
             assert_eq!(usage("/app/stats/api/usage?day=20260810").await["total"]["tokens"], 0);
             let by_day = solstone_core_journal_stats_cli::scan_token_usage_by_day(
                 root.path(),
@@ -279,7 +313,7 @@ fn ac7_filename_day_fold_and_stats_rollup_agree() {
 
 #[test]
 fn merged_card_declares_each_state_and_day_scoped_selection_contract() {
-    let script = include_str!("../assets/static/cost-card.js");
+    let script = include_str!("../assets/static/token-card.js");
     let stats_script = include_str!("../assets/static/dashboard.js");
     assert!(script.contains("stats:token-rollup"));
     assert!(stats_script.contains("dispatchEvent(new CustomEvent('stats:token-rollup'"));
@@ -292,7 +326,7 @@ fn merged_card_declares_each_state_and_day_scoped_selection_contract() {
 #[test]
 fn merged_card_mounts_the_scoped_date_nav_on_its_declared_host() {
     let workspace = include_str!("../assets/workspace.html");
-    let script = include_str!("../assets/static/cost-card.js");
+    let script = include_str!("../assets/static/token-card.js");
     assert!(workspace.contains("id=\"statsDateNav\""));
     assert!(script.contains("window.DateNav && window.DateNav.mountScoped({"));
     assert!(script.contains("host: dateNavHost,"));
@@ -320,21 +354,16 @@ fn card_usage_error_state_is_declared() {
     assert_card_state("usage-error");
 }
 #[test]
-fn card_partial_state_is_declared() {
-    assert_card_state("partial");
-}
-#[test]
 fn card_index_error_state_is_declared() {
     assert_card_state("index-error");
 }
 fn assert_card_state(state: &str) {
-    let script = include_str!("../assets/static/cost-card.js");
+    let script = include_str!("../assets/static/token-card.js");
     let assignment = match state {
         "loading" => "state('loading',",
         "ready" => "state('ready',",
         "empty" => "state('empty',",
         "usage-error" => "state('usage-error',",
-        "partial" => "state('partial',",
         "index-error" => "state('index-error',",
         _ => unreachable!("known token-card state"),
     };
@@ -357,11 +386,10 @@ fn merged_workspace_retains_stats_and_contains_the_bounded_token_detail() {
         );
     }
     for merged in [
-        "id=\"cost\"",
+        "id=\"tokens\"",
         "id=\"tokenTypeComparison\"",
         "id=\"tokenProviderTable\"",
         "id=\"tokenModelTable\"",
-        "id=\"tokenUnknownModels\"",
         "class=\"token-table-scroll\"",
     ] {
         assert!(

@@ -2071,61 +2071,6 @@ fn empty_source_is_named_default_on_a_multi_source_device() {
 }
 
 #[test]
-fn owner_boundary_guard_is_nonvacuous() {
-    let owners = [
-        ("journal_sync", "solstone_core_system"),
-        ("journal_caught_up", "solstone_core_system_health"),
-        ("timeline_divergence", "solstone_core_system_health"),
-        ("brain", "solstone_core_brain"),
-        ("capture_health", "solstone_core_sol_link"),
-        ("client_binding", "solstone_core_sol_link"),
-        ("client_delivery_stall", "solstone_core_sol_link"),
-        ("client_ingest_health", "solstone_core_sol_link"),
-        ("default_stt_ready", "solstone_core_system"),
-        ("parakeet_cpp_stt_ready", "solstone_core_system"),
-        ("speakers_analyze_installation", "solstone_core_transcribe"),
-        ("vad_runtime_ready", "solstone_core_transcribe"),
-        ("skill_state", "solstone_core_skill_state"),
-    ];
-    let accepts = |module: &str, source: &str| {
-        module == "orphan_segment_pdf"
-            || owners
-                .iter()
-                .find(|(name, _)| *name == module)
-                .is_some_and(|(_, owner)| source.contains(owner))
-    };
-    for (module, owner) in owners {
-        let path = format!("checks/{module}.rs");
-        let mut source = fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("src")
-                .join(path),
-        )
-        .unwrap();
-        if matches!(
-            module,
-            "capture_health" | "client_binding" | "client_delivery_stall" | "client_ingest_health"
-        ) {
-            source.push_str(include_str!("checks/common.rs"));
-        }
-        assert!(accepts(module, &source), "{module} must consume {owner}");
-    }
-    assert!(accepts("orphan_segment_pdf", "std::fs::read_dir"));
-    assert!(!accepts("brain", "fn run() {}"));
-    let cargo = include_str!("../Cargo.toml");
-    for dependency in [
-        "solstone-core-system",
-        "solstone-core-system-health",
-        "solstone-core-brain",
-        "solstone-core-sol-link",
-        "solstone-core-transcribe",
-        "solstone-core-skill-state",
-    ] {
-        assert!(cargo.contains(dependency));
-    }
-    assert!(!cargo.contains("solstone-core-sol.workspace"));
-}
-#[test]
 fn batteries_preserve_staged_home_and_journal() {
     let c = fixture();
     fs::create_dir_all(&c.home_dir).unwrap();

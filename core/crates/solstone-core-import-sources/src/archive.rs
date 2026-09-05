@@ -66,6 +66,30 @@ const DEFAULT_ARCHIVE_CAP: u64 = 50 * GIB;
 const DEFAULT_EXPANDED_CAP: u64 = 100 * GIB;
 const DEFAULT_SPACE_RESERVE: u64 = GIB;
 
+/// Returns bytes available to the current account on the volume containing `path`.
+///
+/// Extraction always creates `path` before querying it, so this intentionally asks the
+/// destination volume rather than falling back to a parent directory.
+#[cfg(unix)]
+fn available_bytes(path: &Path) -> Result<u64, String> {
+    let stat = nix::sys::statvfs::statvfs(path).map_err(|error| error.to_string())?;
+    // Cast explicitly: `statvfs`'s field widths differ by platform (u64 on Linux,
+    // u32 on Darwin), so multiplying them unconverted only compiles on Linux.
+    (stat.blocks_available() as u64)
+        .checked_mul(stat.fragment_size() as u64)
+        .ok_or_else(|| "available disk space overflow".to_owned())
+}
+
+#[cfg(windows)]
+fn available_bytes(path: &Path) -> Result<u64, String> {
+    solstone_core_journal_io::windows_available_disk_bytes(path).map_err(|error| error.to_string())
+}
+
+#[cfg(not(any(unix, windows)))]
+fn available_bytes(_path: &Path) -> Result<u64, String> {
+    Err("disk-space inspection is unsupported on this platform".to_owned())
+}
+
 /// A request sink for the one full reindex requested after a completed merge.
 pub trait FullReindexRequester {
     /// Returns whether the request was accepted. An error is retained as rejection detail.
@@ -662,18 +686,12 @@ fn extract_zip_archive(
         detail: error.to_string(),
     })?;
     let required = expanded_size.saturating_add(options.free_space_reserve_bytes);
-    let stat = nix::sys::statvfs::statvfs(run_dir).map_err(|error| {
-        ImportSourcesError::ExtractionFailed {
+    let available =
+        available_bytes(run_dir).map_err(|detail| ImportSourcesError::ExtractionFailed {
             archive: path.to_path_buf(),
             extraction_dir: run_dir.to_path_buf(),
-            detail: error.to_string(),
-        }
-    })?;
-    // Cast explicitly: `statvfs`'s field widths differ by platform (u64 on Linux,
-    // u32 on Darwin), so multiplying them unconverted only compiles on Linux.
-    // Same defect class as `solstone-core::check` and the precedent in
-    // `solstone-core-local::install::fit_report::free_bytes`.
-    let available = (stat.blocks_available() as u64).saturating_mul(stat.fragment_size() as u64);
+            detail,
+        })?;
     if available < required {
         return cleanup_extraction(
             path,
@@ -894,14 +912,12 @@ fn materialize_v1_gzip_tar(
     })?;
     let declared = declared_v1_size(&validated.manifest, path)?;
     let required = declared.saturating_add(options.free_space_reserve_bytes);
-    let stat = nix::sys::statvfs::statvfs(run_dir).map_err(|error| {
-        ImportSourcesError::ExtractionFailed {
+    let available =
+        available_bytes(run_dir).map_err(|detail| ImportSourcesError::ExtractionFailed {
             archive: path.to_path_buf(),
             extraction_dir: run_dir.to_path_buf(),
-            detail: error.to_string(),
-        }
-    })?;
-    let available = (stat.blocks_available() as u64).saturating_mul(stat.fragment_size() as u64);
+            detail,
+        })?;
     if available < required {
         return cleanup_extraction(
             path,

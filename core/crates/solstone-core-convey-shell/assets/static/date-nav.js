@@ -992,7 +992,7 @@
     const heading = document.querySelector('[data-date-nav-heading]');
     const config = app?.date_nav || null;
 
-    if (!config) return;
+    if (!config || host?.dataset.dateNavSuppressed === 'true') return;
     if (!host) {
       logDateNavError(new Error('content date_nav config missing workspace host'), {
         context: 'date-nav:missing-host',

@@ -54,6 +54,7 @@
       "The redaction captured here is the redactor's OUTPUT on one authored seed. Four of the seven diagnostics collectors redact nothing at all, which is the reference's behaviour and not an oversight.",
       "collect_version and collect_revision are normalized, so this corpus pins their PRESENCE and their key, never their derivation."
     ],
+    "shell_presentation_update": "2026-09-04: shared shell status moved into navigation, with inline Health details. Only page_index shell bytes/hash are refreshed; portal/API/mutation captures are unchanged.",
     "what_a_green_replay_is_not_evidence_about": "Every response body a portal-backed route returns here is the STUB's, not a production portal's: this corpus pins what the reference DID with a response, never what a real portal sends. It says nothing about the local operation ledger's state machine, nothing about the diagnostics redactor's coverage, and nothing about the twelve-arm outcome matrix, all of which are invisible to a replay and are proven by derivation tests over injected inputs in the implementation."
   },
   "expected_case_counts": {
@@ -102,9 +103,7 @@
             "Content-Type": "text/plain; charset=utf-8"
           },
           "status": 500,
-          "text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "text_bytes": 183,
-          "text_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a"
+          "text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again."
         },
         "sends_idempotency_key": false
       },
@@ -121,9 +120,7 @@
             "Content-Type": "text/plain; charset=utf-8"
           },
           "status": 500,
-          "text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "text_bytes": 183,
-          "text_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a"
+          "text_prefix": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again."
         },
         "sends_idempotency_key": false
       },
@@ -685,9 +682,7 @@
             "Content-Type": "text/html; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 7783,
-          "text_prefix": "<!DOCTYPE html>\n<!-- SPDX-License-Identifier: AGPL-3.0-only -->\n<!-- Copyright (c) 2026 sol pbc -->\n<html lang=\"en\" data-solstone-shell=\"spa\">\n<head>\n<script>\n  if (new URLSearchParams(window.location",
-          "text_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3"
+          "text_prefix": "<!DOCTYPE html>\n<!-- SPDX-License-Identifier: AGPL-3.0-only -->\n<!-- Copyright (c) 2026 sol pbc -->\n<html lang=\"en\" data-solstone-shell=\"spa\">\n<head>\n<script>\n  if (new URLSearchParams(window.location"
         },
         "sends_idempotency_key": false
       },
@@ -702,9 +697,7 @@
             "Content-Type": "text/html; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 33815,
-          "text_prefix": "<style>\n  .support-nav {\n    display: flex;\n    gap: 0.75rem;\n    margin-bottom: 1rem;\n    border-bottom: 1px solid var(--facet-border, #e5e0db);\n    padding-bottom: 0;\n  }\n  .support-nav button {\n   ",
-          "text_sha256": "61b325b43fca34e14a8621691f4a76cec2d6c6e17d9b5db734ffaf105971d5f3"
+          "text_prefix": "<style>\n  .support-nav {\n    display: flex;\n    gap: 0.75rem;\n    margin-bottom: 1rem;\n    border-bottom: 1px solid var(--facet-border, #e5e0db);\n    padding-bottom: 0;\n  }\n  .support-nav button {\n   "
         },
         "sends_idempotency_key": false
       },
@@ -719,9 +712,7 @@
             "Content-Type": "text/html; charset=utf-8"
           },
           "status": 200,
-          "text": "let badgeTask = null;\n\nAppServices.register('support', {\n    initialize() {\n      badgeTask = AppServices.registerTask('support', 'badge-count', {\n        intervalMs: 5 * 60 * 1000,\n        run: async ({ apiJson }) => apiJson('/app/support/api/badge-count'),\n        onSuccess: (data) => {\n          AppServices.badges.app.set('support', data.count ?? 0);\n        }\n      });\n\n      // Listen for proactive suggestions from callosum\n      if (window.appEvents) {\n        window.appEvents.listen('support', function(msg) {\n          if (msg.event === 'proactive_suggestion') {\n            const service = msg.service || 'unknown';\n            AppServices.notifications.show({\n              app: 'support',\n              icon: 'life-buoy',\n              key: `support:proactive_suggestion:${service}`,\n              title: 'Support suggestion',\n              message: msg.message || 'Something may need attention.',\n              action: '/app/support',\n              dismissible: true,\n              autoDismiss: 30000\n            });\n          }\n        });\n      }\n    },\n\n    stop() {\n      if (badgeTask) {\n        badgeTask.stop();\n        badgeTask = null;\n      }\n    }\n  });\n",
-          "text_bytes": 1182,
-          "text_sha256": "6299f26fbc48e57ddd708f2d97b947086f3ae650531f982d97d6bf1c0441fe4b"
+          "text_prefix": "let badgeTask = null;\n\nAppServices.register('support', {\n    initialize() {\n      badgeTask = AppServices.registerTask('support', 'badge-count', {\n        intervalMs: 5 * 60 * 1000,\n        run: async"
         },
         "sends_idempotency_key": false
       },
@@ -736,9 +727,7 @@
             "Content-Type": "text/javascript; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 43263,
-          "text_prefix": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function() {\n  const REQUEST_TIMEOUT_MS = 12000;\n  const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;\n  const MAX_ATTACHMENT_FILES",
-          "text_sha256": "07ec4f520b84e6d6701ae978a7aba34549233281bf6ca8b1d2bb93867afab6e6"
+          "text_prefix": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function() {\n  const REQUEST_TIMEOUT_MS = 12000;\n  const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;\n  const MAX_ATTACHMENT_FILES"
         },
         "sends_idempotency_key": false
       },
@@ -916,7 +905,7 @@
                 "Brain Health",
                 "  thinking status unavailable",
                 "  brain record missing",
-                "  \u2192 view health: /app/health/#brain"
+                "  → view health: /app/health/#brain"
               ],
               "snapshot": {
                 "action": {
@@ -1388,9 +1377,7 @@
             "Content-Type": "text/html; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 7783,
-          "text_prefix": "<!DOCTYPE html>\n<!-- SPDX-License-Identifier: AGPL-3.0-only -->\n<!-- Copyright (c) 2026 sol pbc -->\n<html lang=\"en\" data-solstone-shell=\"spa\">\n<head>\n<script>\n  if (new URLSearchParams(window.location",
-          "text_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3"
+          "text_prefix": "<!DOCTYPE html>\n<!-- SPDX-License-Identifier: AGPL-3.0-only -->\n<!-- Copyright (c) 2026 sol pbc -->\n<html lang=\"en\" data-solstone-shell=\"spa\">\n<head>\n<script>\n  if (new URLSearchParams(window.location"
         },
         "sends_idempotency_key": false
       },
@@ -1405,9 +1392,7 @@
             "Content-Type": "text/html; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 33815,
-          "text_prefix": "<style>\n  .support-nav {\n    display: flex;\n    gap: 0.75rem;\n    margin-bottom: 1rem;\n    border-bottom: 1px solid var(--facet-border, #e5e0db);\n    padding-bottom: 0;\n  }\n  .support-nav button {\n   ",
-          "text_sha256": "61b325b43fca34e14a8621691f4a76cec2d6c6e17d9b5db734ffaf105971d5f3"
+          "text_prefix": "<style>\n  .support-nav {\n    display: flex;\n    gap: 0.75rem;\n    margin-bottom: 1rem;\n    border-bottom: 1px solid var(--facet-border, #e5e0db);\n    padding-bottom: 0;\n  }\n  .support-nav button {\n   "
         },
         "sends_idempotency_key": false
       },
@@ -1422,9 +1407,7 @@
             "Content-Type": "text/html; charset=utf-8"
           },
           "status": 200,
-          "text": "let badgeTask = null;\n\nAppServices.register('support', {\n    initialize() {\n      badgeTask = AppServices.registerTask('support', 'badge-count', {\n        intervalMs: 5 * 60 * 1000,\n        run: async ({ apiJson }) => apiJson('/app/support/api/badge-count'),\n        onSuccess: (data) => {\n          AppServices.badges.app.set('support', data.count ?? 0);\n        }\n      });\n\n      // Listen for proactive suggestions from callosum\n      if (window.appEvents) {\n        window.appEvents.listen('support', function(msg) {\n          if (msg.event === 'proactive_suggestion') {\n            const service = msg.service || 'unknown';\n            AppServices.notifications.show({\n              app: 'support',\n              icon: 'life-buoy',\n              key: `support:proactive_suggestion:${service}`,\n              title: 'Support suggestion',\n              message: msg.message || 'Something may need attention.',\n              action: '/app/support',\n              dismissible: true,\n              autoDismiss: 30000\n            });\n          }\n        });\n      }\n    },\n\n    stop() {\n      if (badgeTask) {\n        badgeTask.stop();\n        badgeTask = null;\n      }\n    }\n  });\n",
-          "text_bytes": 1182,
-          "text_sha256": "6299f26fbc48e57ddd708f2d97b947086f3ae650531f982d97d6bf1c0441fe4b"
+          "text_prefix": "let badgeTask = null;\n\nAppServices.register('support', {\n    initialize() {\n      badgeTask = AppServices.registerTask('support', 'badge-count', {\n        intervalMs: 5 * 60 * 1000,\n        run: async"
         },
         "sends_idempotency_key": false
       },
@@ -1439,9 +1422,7 @@
             "Content-Type": "text/javascript; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 43263,
-          "text_prefix": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function() {\n  const REQUEST_TIMEOUT_MS = 12000;\n  const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;\n  const MAX_ATTACHMENT_FILES",
-          "text_sha256": "07ec4f520b84e6d6701ae978a7aba34549233281bf6ca8b1d2bb93867afab6e6"
+          "text_prefix": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function() {\n  const REQUEST_TIMEOUT_MS = 12000;\n  const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;\n  const MAX_ATTACHMENT_FILES"
         },
         "sends_idempotency_key": false
       },
@@ -1710,7 +1691,7 @@
                 "Brain Health",
                 "  thinking status unavailable",
                 "  brain record missing",
-                "  \u2192 view health: /app/health/#brain"
+                "  → view health: /app/health/#brain"
               ],
               "snapshot": {
                 "action": {
@@ -2618,9 +2599,7 @@
             "Content-Type": "text/html; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 33815,
-          "text_prefix": "<style>\n  .support-nav {\n    display: flex;\n    gap: 0.75rem;\n    margin-bottom: 1rem;\n    border-bottom: 1px solid var(--facet-border, #e5e0db);\n    padding-bottom: 0;\n  }\n  .support-nav button {\n   ",
-          "text_sha256": "61b325b43fca34e14a8621691f4a76cec2d6c6e17d9b5db734ffaf105971d5f3"
+          "text_prefix": "<style>\n  .support-nav {\n    display: flex;\n    gap: 0.75rem;\n    margin-bottom: 1rem;\n    border-bottom: 1px solid var(--facet-border, #e5e0db);\n    padding-bottom: 0;\n  }\n  .support-nav button {\n   "
         },
         "sends_idempotency_key": false
       }
@@ -2656,9 +2635,7 @@
             "Location": "/init"
           },
           "status": 302,
-          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
-          "text_bytes": 197,
-          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n"
         },
         "sends_idempotency_key": false
       },
@@ -2674,9 +2651,7 @@
             "Location": "/init"
           },
           "status": 302,
-          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
-          "text_bytes": 197,
-          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+          "text_prefix": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n"
         },
         "sends_idempotency_key": false
       },
@@ -3162,9 +3137,7 @@
             "Content-Type": "text/html; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 7783,
-          "text_prefix": "<!DOCTYPE html>\n<!-- SPDX-License-Identifier: AGPL-3.0-only -->\n<!-- Copyright (c) 2026 sol pbc -->\n<html lang=\"en\" data-solstone-shell=\"spa\">\n<head>\n<script>\n  if (new URLSearchParams(window.location",
-          "text_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3"
+          "text_prefix": "<!DOCTYPE html>\n<!-- SPDX-License-Identifier: AGPL-3.0-only -->\n<!-- Copyright (c) 2026 sol pbc -->\n<html lang=\"en\" data-solstone-shell=\"spa\">\n<head>\n<script>\n  if (new URLSearchParams(window.location"
         },
         "sends_idempotency_key": false
       },
@@ -3179,9 +3152,7 @@
             "Content-Type": "text/html; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 33815,
-          "text_prefix": "<style>\n  .support-nav {\n    display: flex;\n    gap: 0.75rem;\n    margin-bottom: 1rem;\n    border-bottom: 1px solid var(--facet-border, #e5e0db);\n    padding-bottom: 0;\n  }\n  .support-nav button {\n   ",
-          "text_sha256": "61b325b43fca34e14a8621691f4a76cec2d6c6e17d9b5db734ffaf105971d5f3"
+          "text_prefix": "<style>\n  .support-nav {\n    display: flex;\n    gap: 0.75rem;\n    margin-bottom: 1rem;\n    border-bottom: 1px solid var(--facet-border, #e5e0db);\n    padding-bottom: 0;\n  }\n  .support-nav button {\n   "
         },
         "sends_idempotency_key": false
       },
@@ -3196,9 +3167,7 @@
             "Content-Type": "text/html; charset=utf-8"
           },
           "status": 200,
-          "text": "let badgeTask = null;\n\nAppServices.register('support', {\n    initialize() {\n      badgeTask = AppServices.registerTask('support', 'badge-count', {\n        intervalMs: 5 * 60 * 1000,\n        run: async ({ apiJson }) => apiJson('/app/support/api/badge-count'),\n        onSuccess: (data) => {\n          AppServices.badges.app.set('support', data.count ?? 0);\n        }\n      });\n\n      // Listen for proactive suggestions from callosum\n      if (window.appEvents) {\n        window.appEvents.listen('support', function(msg) {\n          if (msg.event === 'proactive_suggestion') {\n            const service = msg.service || 'unknown';\n            AppServices.notifications.show({\n              app: 'support',\n              icon: 'life-buoy',\n              key: `support:proactive_suggestion:${service}`,\n              title: 'Support suggestion',\n              message: msg.message || 'Something may need attention.',\n              action: '/app/support',\n              dismissible: true,\n              autoDismiss: 30000\n            });\n          }\n        });\n      }\n    },\n\n    stop() {\n      if (badgeTask) {\n        badgeTask.stop();\n        badgeTask = null;\n      }\n    }\n  });\n",
-          "text_bytes": 1182,
-          "text_sha256": "6299f26fbc48e57ddd708f2d97b947086f3ae650531f982d97d6bf1c0441fe4b"
+          "text_prefix": "let badgeTask = null;\n\nAppServices.register('support', {\n    initialize() {\n      badgeTask = AppServices.registerTask('support', 'badge-count', {\n        intervalMs: 5 * 60 * 1000,\n        run: async"
         },
         "sends_idempotency_key": false
       },
@@ -3213,9 +3182,7 @@
             "Content-Type": "text/javascript; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 43263,
-          "text_prefix": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function() {\n  const REQUEST_TIMEOUT_MS = 12000;\n  const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;\n  const MAX_ATTACHMENT_FILES",
-          "text_sha256": "07ec4f520b84e6d6701ae978a7aba34549233281bf6ca8b1d2bb93867afab6e6"
+          "text_prefix": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function() {\n  const REQUEST_TIMEOUT_MS = 12000;\n  const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;\n  const MAX_ATTACHMENT_FILES"
         },
         "sends_idempotency_key": false
       },
@@ -3582,7 +3549,7 @@
                 "Brain Health",
                 "  thinking status unavailable",
                 "  brain record missing",
-                "  \u2192 view health: /app/health/#brain"
+                "  → view health: /app/health/#brain"
               ],
               "snapshot": {
                 "action": {

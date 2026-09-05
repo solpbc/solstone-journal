@@ -89,15 +89,3 @@ fn declared_parakeet_members(
 pub fn verified_windows_parakeet_package() -> Result<WindowsParakeetPackage, String> {
     Err("Windows Parakeet package verification requires a Windows runtime".to_owned())
 }
-
-#[cfg(test)]
-mod tests {
-    #[cfg(not(windows))]
-    use super::*;
-
-    #[cfg(not(windows))]
-    #[test]
-    fn non_windows_refuses_the_windows_package_boundary() {
-        assert!(verified_windows_parakeet_package().is_err());
-    }
-}

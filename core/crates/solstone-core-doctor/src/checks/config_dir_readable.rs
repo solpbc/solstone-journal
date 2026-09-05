@@ -5,6 +5,14 @@ use crate::{
     vocabulary::{Check, Platform, RunnerResult, Status, make_result},
 };
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
+    if context.platform == Platform::Windows {
+        return Ok(make_result(
+            check,
+            Status::Skip,
+            "not supported on windows",
+            None::<String>,
+        ));
+    }
     let home = &context.home_dir;
     if !home.exists() {
         return Ok(make_result(
@@ -17,13 +25,16 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     let config = match context.platform {
         Platform::Darwin => home.join("Library/LaunchAgents"),
         Platform::Linux => home.join(".config"),
+        Platform::Windows => {
+            return Ok(make_result(
+                check,
+                Status::Skip,
+                "not supported on windows",
+                None::<String>,
+            ));
+        }
     };
-    if !accessible(
-        home,
-        nix::unistd::AccessFlags::R_OK
-            | nix::unistd::AccessFlags::W_OK
-            | nix::unistd::AccessFlags::X_OK,
-    ) {
+    if !accessible(home) {
         return Ok(make_result(
             check,
             Status::Fail,
@@ -34,14 +45,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             Some(format!("fix ownership/permissions of {}", home.display())),
         ));
     }
-    if config.exists()
-        && !accessible(
-            &config,
-            nix::unistd::AccessFlags::R_OK
-                | nix::unistd::AccessFlags::W_OK
-                | nix::unistd::AccessFlags::X_OK,
-        )
-    {
+    if config.exists() && !accessible(&config) {
         return Ok(make_result(
             check,
             Status::Fail,
@@ -62,6 +66,20 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     };
     Ok(make_result(check, Status::Ok, detail, None::<String>))
 }
-fn accessible(path: &std::path::Path, flags: nix::unistd::AccessFlags) -> bool {
-    nix::unistd::access(path, flags).is_ok()
+fn accessible(path: &std::path::Path) -> bool {
+    #[cfg(unix)]
+    {
+        nix::unistd::access(
+            path,
+            nix::unistd::AccessFlags::R_OK
+                | nix::unistd::AccessFlags::W_OK
+                | nix::unistd::AccessFlags::X_OK,
+        )
+        .is_ok()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        false
+    }
 }

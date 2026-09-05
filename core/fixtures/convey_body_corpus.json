@@ -108,8 +108,7 @@
     ],
     "first_run": [
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "endpoint": "app:body.index",
@@ -120,8 +119,7 @@
         "why": "body overview shell"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "endpoint": "app:body.trends_view",
@@ -132,8 +130,7 @@
         "why": "body trends shell"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "endpoint": "app:body.day_view",
@@ -3840,8 +3837,7 @@
         "why": "trends cache state"
       },
       {
-        "body_bytes": 77724,
-        "body_sha256": "a209c7df11366d97db940de03e79a8dd74e03269c5635329b85bd50e3b9e5ae7",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "endpoint": "app:body.workspace_fragment",
@@ -3867,8 +3863,7 @@
     ],
     "fixed": [
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "endpoint": "app:body.index",
@@ -3879,8 +3874,7 @@
         "why": "body overview shell"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "endpoint": "app:body.trends_view",
@@ -3891,8 +3885,7 @@
         "why": "body trends shell"
       },
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "endpoint": "app:body.day_view",
@@ -9910,8 +9903,7 @@
         "why": "trends cache state"
       },
       {
-        "body_bytes": 77724,
-        "body_sha256": "a209c7df11366d97db940de03e79a8dd74e03269c5635329b85bd50e3b9e5ae7",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "endpoint": "app:body.workspace_fragment",
@@ -11003,6 +10995,7 @@
       }
     ]
   },
+  "corpus_maintenance": "Served frontend assets (status 200, raw-body, text/html|javascript|css) are NOT body-asserted. Their records carry body_assertion instead of body_sha256/body_bytes/body_text, and a record with no body_sha256 is not body-asserted by the replay. Pinning an asset's bytes is not a product assertion -- it reddens on every deliberate frontend edit and says nothing about what changed -- and with no recorder left the only repair was hand-patching a hash. Status, content type, content disposition and Location are still asserted for these routes, and API response bodies (normalized-json) are still fully asserted. Assert frontend CONTENT with a targeted check on the thing you care about, never a whole-file digest.",
   "coverage_limitations": [
     {
       "also": "Read-named routes here are not side-effect free: serving a request can populate in-process module-global caches. That is process state, not owner data on disk -- but a port must not assume a GET handler writes nothing.",

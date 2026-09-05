@@ -19,6 +19,7 @@ pub mod controlled_build;
 pub mod deb;
 pub mod digest;
 pub mod elf;
+pub mod ffmpeg_windows;
 pub mod import_policy;
 pub mod inspect;
 pub mod inventory;
@@ -155,6 +156,20 @@ pub fn write_containers(stage: &Path, out_dir: &Path, meta: ContainerMeta<'_>) -
         },
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+#[test]
+fn shell_installer_upgrade_policy_matches_release_metadata() {
+    let script = include_str!("../../../distribution/install.sh");
+    assert!(
+        script
+            .lines()
+            .any(|line| { line == format!("SUPPORTED_UPGRADE_EPOCH={}", inspect::UPGRADE_EPOCH) })
+    );
+    assert!(script.lines().any(|line| {
+        line == format!("SUPPORTED_RETENTION_WINDOW={}", inspect::RETENTION_WINDOW)
+    }));
 }
 
 pub fn helper_runtime_pair() -> (onnx_runtime::TargetSpec, Vec<u8>) {
@@ -397,6 +412,12 @@ fn arch_mapping_modes_and_clean_package_depends() {
         assert!(control.contains("Package: solstone-journal"));
         assert!(control.contains(&format!("Version: {version}")));
         assert!(control.contains(&format!("Architecture: {}", target.deb_arch)));
+        assert!(
+            control
+                .split([',', '\n'])
+                .any(|item| item.trim() == "libgomp1")
+        );
+        assert!(requires.iter().any(|item| item == "libgomp"));
         assert_eq!(arch, target.rpm_arch);
         match target.id.as_str() {
             "linux-x86_64" => {

@@ -44,6 +44,7 @@ use solstone_core_transcribe::require_solstone;
 
 use crate::{EXIT_TEMPFAIL, eprint_journal_path_error, resolve_process_journal_path};
 
+#[cfg(unix)]
 mod steward;
 
 const SPECIES_PREAMBLE: &str =
@@ -150,7 +151,14 @@ fn health(journal: &Path, options: IdentityHealthOptions) -> ExitCode {
         Err(error) => return print_identity_error(error),
     };
     if options.refresh {
-        return steward::refresh(journal, &identity_dir.join("health.md"));
+        #[cfg(unix)]
+        {
+            return steward::refresh(journal, &identity_dir.join("health.md"));
+        }
+        #[cfg(not(unix))]
+        {
+            return ExitCode::from(crate::EXIT_UNAVAILABLE);
+        }
     }
     print_file_with_echo(&identity_dir.join("health.md"), "health.md")
 }

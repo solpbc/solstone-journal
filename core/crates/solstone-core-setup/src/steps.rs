@@ -22,10 +22,11 @@ use crate::args::{ResolvedSetup, SetupArgs, SetupMode, resolve_expanded_path};
 use crate::events::{ErrorCode, EventSink, EventType, SkipReason, StepName};
 use crate::manifest::{SetupManifest, can_skip, prior_steps, read_manifest, write_manifest};
 use crate::user_config::{read_user_config, write_user_config};
+#[cfg(not(windows))]
 use crate::wrapper::{
-    WrapperEnvironment, WrapperError, ensure_user_bin_on_path, is_live_app_owned_child_launcher,
-    provision_wrappers, wrapper_paths,
+    WrapperEnvironment, WrapperError, ensure_user_bin_on_path, provision_wrappers,
 };
+use crate::wrapper::{is_live_app_owned_child_launcher, wrapper_paths};
 
 const LOCAL_MODEL: &str = "local/qwen3.5-4b";
 const LOCAL_INSTALL_HINT: &str = "journal install-provider local";
@@ -1463,60 +1464,81 @@ fn step_skills_journal(context: &mut SetupContext<'_>) -> Result<StepResult, Ste
 }
 
 fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutionError> {
-    if context.args.skip_wrapper {
+    #[cfg(windows)]
+    {
         let mut result = StepResult::new(
             StepName::Wrapper,
             StepStatus::Skipped,
             Vec::new(),
             (context.now)(),
         );
-        result.reason = Some(SkipReason::SkipWrapper.as_str().to_owned());
+        result.reason = Some(SkipReason::WindowsPackageOwnsCommands.as_str().to_owned());
         return Ok(result);
     }
-    let environment = WrapperEnvironment {
-        home_dir: context.home_dir.clone(),
-        curdir: context.project_root.clone(),
-        executable_dir: context.install_bin_dir.clone(),
-        backup_dir: context.wrapper_backup_dir.clone(),
-        legacy_replacement: context.legacy_replacement,
-    };
-    let paths = wrapper_paths(&context.home_dir);
-    match provision_wrappers(
-        &environment,
-        &context.journal_path,
-        context
-            .installation_admission
-            .as_ref()
-            .expect("setup identity admission precedes mutating wrapper step")
-            .binding(),
-    ) {
-        Ok(_) => {
-            narrate(context, &ensure_user_bin_on_path(&context.home_dir));
-            Ok(StepResult::new(
+    #[cfg(not(windows))]
+    {
+        if context.args.skip_wrapper {
+            let mut result = StepResult::new(
                 StepName::Wrapper,
-                StepStatus::Ok,
-                vec![paths.solstone, paths.journal],
+                StepStatus::Skipped,
+                Vec::new(),
                 (context.now)(),
-            ))
+            );
+            result.reason = Some(SkipReason::SkipWrapper.as_str().to_owned());
+            return Ok(result);
         }
-        Err(error) => Ok(StepResult::failed(
-            StepName::Wrapper,
-            Vec::new(),
-            (context.now)(),
-            StepError {
-                code: ErrorCode::WrapperProvisionFailed,
-                message: format!(
-                    "could not provision the solstone/journal wrappers at {} ({}: {error})",
-                    context.home_dir.join(".local/bin").display(),
-                    std::any::type_name::<WrapperError>()
-                        .rsplit("::")
-                        .next()
-                        .unwrap_or("WrapperError")
-                ),
-                details: "fix permissions on ~/.local/bin and re-run `journal setup`, or invoke solstone/journal directly from the runtime".into(),
-                exit_code: 1,
-            },
-        )),
+        let environment = WrapperEnvironment {
+            home_dir: context.home_dir.clone(),
+            curdir: context.project_root.clone(),
+            executable_dir: context.install_bin_dir.clone(),
+            backup_dir: context.wrapper_backup_dir.clone(),
+            legacy_replacement: context.legacy_replacement,
+        };
+        let paths = wrapper_paths(&context.home_dir);
+        match provision_wrappers(
+            &environment,
+            &context.journal_path,
+            context
+                .installation_admission
+                .as_ref()
+                .expect("setup identity admission precedes mutating wrapper step")
+                .binding(),
+        ) {
+            Ok(_) => {
+                if context.args.skip_path {
+                    narrate(
+                        context,
+                        "left shell login files unchanged because --skip-path was selected",
+                    );
+                } else {
+                    narrate(context, &ensure_user_bin_on_path(&context.home_dir));
+                }
+                Ok(StepResult::new(
+                    StepName::Wrapper,
+                    StepStatus::Ok,
+                    vec![paths.solstone, paths.journal],
+                    (context.now)(),
+                ))
+            }
+            Err(error) => Ok(StepResult::failed(
+                StepName::Wrapper,
+                Vec::new(),
+                (context.now)(),
+                StepError {
+                    code: ErrorCode::WrapperProvisionFailed,
+                    message: format!(
+                        "could not provision the solstone/journal wrappers at {} ({}: {error})",
+                        context.home_dir.join(".local/bin").display(),
+                        std::any::type_name::<WrapperError>()
+                            .rsplit("::")
+                            .next()
+                            .unwrap_or("WrapperError")
+                    ),
+                    details: "fix permissions on ~/.local/bin and re-run `journal setup`, or invoke solstone/journal directly from the runtime".into(),
+                    exit_code: 1,
+                },
+            )),
+        }
     }
 }
 
@@ -2011,7 +2033,12 @@ fn plan_skills_journal(context: &SetupContext<'_>) -> String {
     )
 }
 fn plan_wrapper(_context: &SetupContext<'_>) -> String {
-    "would provision managed solstone and journal wrappers in-process".into()
+    if cfg!(windows) {
+        "would skip POSIX wrapper provisioning; the Windows package exposes the commands directly"
+            .into()
+    } else {
+        "would provision managed solstone and journal wrappers in-process".into()
+    }
 }
 fn plan_service(_context: &SetupContext<'_>) -> String {
     "would install and start the journal service".into()
@@ -2644,6 +2671,33 @@ mod tests {
                 .unwrap()
                 .contains(".local/bin")
         );
+    }
+
+    #[test]
+    fn skip_path_provisions_wrappers_without_touching_login_files() {
+        let (args, resolved, root, home) = fixture("wrapper-skip-path", &["--skip-path"]);
+        fs::create_dir_all(root.join("bin")).unwrap();
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        let result = step_wrapper(&mut context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        ))
+        .unwrap();
+        assert_eq!(result.status, StepStatus::Ok);
+        assert!(home.join(".local/bin/journal").exists());
+        assert!(home.join(".local/bin/solstone").exists());
+        for login_file in [".profile", ".bashrc", ".zshrc", ".config/fish/config.fish"] {
+            assert!(
+                !home.join(login_file).exists(),
+                "--skip-path must not create {login_file}"
+            );
+        }
     }
 
     /// A degraded optional asset must not cost the owner their whole journal.

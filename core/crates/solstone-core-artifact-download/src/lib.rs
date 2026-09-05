@@ -42,6 +42,10 @@ const BUILDER_INPUT_ALLOWED_HOSTS: &[&str] = &[
     "static.rust-lang.org",
     "www.python.org",
     "files.pythonhosted.org",
+    // Controlled Windows FFmpeg builder inputs. These remain builder-only;
+    // every archive is byte-pinned by the distribution input table.
+    "repo.msys2.org",
+    "www.nasm.us",
 ];
 
 #[derive(Debug, Clone, Copy)]

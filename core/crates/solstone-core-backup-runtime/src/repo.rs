@@ -3,14 +3,15 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
+#[cfg(unix)]
+use std::os::fd::{AsFd, AsRawFd};
 use std::path::Path;
 use std::time::Duration;
 
 use solstone_core_backup::{BackupError, Destination, assemble_backend_env};
 
 use crate::destination::validate_destination;
-use crate::runner::{ToolRunner, run_restic};
+use crate::runner::{PassedHandle, ToolRunner, run_restic};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ResticKeyError {
@@ -226,7 +227,7 @@ fn run(
     password: &str,
     restic_path: &Path,
     timeout: Option<Duration>,
-    pass_fds: &[BorrowedFd<'_>],
+    pass_fds: &[PassedHandle<'_>],
 ) -> Result<(), RepoError> {
     let result = run_restic(
         runner,

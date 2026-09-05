@@ -38,7 +38,12 @@
     const label = normalized === "current" ? "current" : normalized === "stale" ? "refresh needed" : "missing";
     const model = provenance?.model ? ` · ${provenance.model}` : "";
     const generated = generatedAtMs ? ` · ${absoluteRollupTitle(generatedAtMs)}` : "";
-    const reason = artifactOutcome && artifactOutcome !== "current" ? ` (${artifactOutcome.replaceAll("_", " ")})` : "";
+    // Only show the outcome in parens when it says something the status
+    // badge doesn't already say -- status "missing" with outcome "missing"
+    // has no more specific reason to add, and rendered as "MISSING (missing)".
+    const reason = artifactOutcome && artifactOutcome !== "current" && artifactOutcome !== normalized
+      ? ` (${artifactOutcome.replaceAll("_", " ")})`
+      : "";
     const recovery = normalized === "current"
       ? ""
       : '<a class="timeline-truth-action" href="/app/health">refresh timeline in system health →</a>';

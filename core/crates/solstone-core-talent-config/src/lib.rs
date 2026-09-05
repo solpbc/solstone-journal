@@ -201,6 +201,25 @@ pub fn merge(configs: &mut [TalentConfig], talent_overrides: Option<&Map<String,
                 config.metadata.insert(field.to_owned(), value.clone());
             }
         }
+        // `max_output_tokens` is owner-settable because the right value is a property of the
+        // serving backend, not of the talent. Admission is `input_tokens + max_output_tokens
+        // <= window`, so this reservation is subtracted from what a talent may read, and the
+        // window differs per provider -- 16,384 on one endpoint and 262,144 on another. A
+        // build-time constant cannot know which it is running against.
+        //
+        // Only a positive integer is accepted; anything else is ignored rather than allowed to
+        // poison the budget arithmetic. An over-large value is not rejected here because the
+        // window is not known at merge time -- the admission check refuses it with
+        // `context_budget_exceeded`, which is an honest and visible failure.
+        if let Some(tokens) = override_value
+            .get("max_output_tokens")
+            .and_then(Value::as_u64)
+            .filter(|tokens| *tokens > 0)
+        {
+            config
+                .metadata
+                .insert("max_output_tokens".to_owned(), Value::from(tokens));
+        }
     }
 }
 
@@ -788,6 +807,53 @@ mod tests {
         assert_eq!(output_extension(None), "md");
         assert_eq!(output_extension(Some("md")), "md");
         assert_eq!(output_extension(Some("other")), "md");
+    }
+
+    // AC: `max_output_tokens` is owner-settable, because admission is
+    // `input_tokens + max_output_tokens <= window` and the window is a property of the serving
+    // backend, not of the talent -- 16,384 on one endpoint and 262,144 on another. Only a
+    // positive integer is accepted; junk is ignored rather than allowed to poison the budget.
+    #[test]
+    fn max_output_tokens_is_overridable_and_rejects_non_positive_values() {
+        let base = || {
+            vec![TalentConfig {
+                key: "one".to_owned(),
+                file: String::new(),
+                metadata: Map::from_iter([("max_output_tokens".to_owned(), json!(12288))]),
+                body: String::new(),
+            }]
+        };
+        let apply = |value: Value| {
+            let mut configs = base();
+            merge(
+                &mut configs,
+                Some(&Map::from_iter([(
+                    context_key("one"),
+                    json!({"max_output_tokens": value}),
+                )])),
+            );
+            configs[0].metadata["max_output_tokens"].clone()
+        };
+
+        assert_eq!(
+            apply(json!(2048)),
+            json!(2048),
+            "a positive integer applies"
+        );
+        assert_eq!(apply(json!(0)), json!(12288), "zero is ignored");
+        assert_eq!(apply(json!(-5)), json!(12288), "a negative is ignored");
+        assert_eq!(apply(json!("lots")), json!(12288), "a string is ignored");
+
+        // an override for a different talent must not leak across
+        let mut configs = base();
+        merge(
+            &mut configs,
+            Some(&Map::from_iter([(
+                context_key("other"),
+                json!({"max_output_tokens": 2048}),
+            )])),
+        );
+        assert_eq!(configs[0].metadata["max_output_tokens"], json!(12288));
     }
 
     #[test]

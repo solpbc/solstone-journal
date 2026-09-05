@@ -9,6 +9,7 @@ use std::fmt;
 use std::fs;
 use std::path::Path;
 
+use crate::segment_path;
 use chrono::{NaiveDate, TimeZone};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
@@ -18,7 +19,6 @@ use solstone_core_entity::{
     load_entity_voiceprints_file, normalize_embedding, save_voiceprints_batch,
 };
 use solstone_core_journal_config::read_journal_config;
-use solstone_core_journal_io::segment_path;
 use solstone_core_speaker_id::calibration::{
     NOISY_FLYWHEEL_OVERLAP_MAX, VP_OUTLIER_MIN_SAMPLES, VP_OUTLIER_MIN_SIMILARITY,
 };

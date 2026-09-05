@@ -255,7 +255,7 @@ fn real_bound_read_observation_is_carried_into_the_next_provider_turn() {
 #[test]
 fn final_tool_bypasses_armed_ladders() {
     let mut config = RunConfig {
-        cost_cap_usd: 0.0,
+        context_window: Some(1),
         ..RunConfig::default()
     };
     config.expects_emit_final = true;
@@ -459,7 +459,7 @@ fn resource_ladder_uses_frozen_oracle_templates_and_latches_warning() {
         serde_json::from_str(include_str!("../../../fixtures/cogitate_oracle.json")).unwrap();
     let messages = fixture["budget_escalation"]["messages"].as_array().unwrap();
     let mut ladder = ResourceLadder::default();
-    let warning = ladder.check(0.7, None, 1.0, "finish").unwrap();
+    let warning = ladder.check(Some(0.70), "finish").unwrap();
     assert_eq!(
         warning.message.as_deref(),
         Some(
@@ -470,8 +470,8 @@ fn resource_ladder_uses_frozen_oracle_templates_and_latches_warning() {
                 .as_str()
         )
     );
-    assert!(ladder.check(0.75, None, 1.0, "finish").is_none());
-    let final_turn = ladder.check(1.0, None, 1.0, "finish").unwrap();
+    assert!(ladder.check(Some(0.75), "finish").is_none());
+    let final_turn = ladder.check(Some(0.78), "finish").unwrap();
     assert_eq!(
         final_turn.message.as_deref(),
         Some(
@@ -483,7 +483,7 @@ fn resource_ladder_uses_frozen_oracle_templates_and_latches_warning() {
         )
     );
     assert_eq!(
-        ladder.check(1.0, None, 1.0, "finish").unwrap().stage,
+        ladder.check(Some(0.78), "finish").unwrap().stage,
         BudgetStage::ForceStopped
     );
 }
@@ -511,7 +511,7 @@ fn turn_ladder_counts_off_by_one_and_dedupes_before_armed_check() {
 #[test]
 fn two_calls_in_one_response_show_resource_turn_dedupe_asymmetry() {
     let mut config = RunConfig {
-        cost_cap_usd: 0.0,
+        context_window: Some(1),
         ..RunConfig::default()
     };
     config.max_turns = 2;
@@ -575,80 +575,32 @@ fn turn_warnings_latch_and_ultimatum_suppresses_later_warnings() {
 }
 
 #[test]
-fn cost_context_and_usage_follow_reference_formulas() {
-    let usage = Usage {
-        input_tokens: 100,
-        output_tokens: 20,
-        cached_tokens: 30,
-        cache_creation_tokens: 99,
-        ..Usage::default()
-    };
-    assert!((usage.fallback_cost_usd() - 90.0 * 0.000_002_5).abs() < f64::EPSILON);
-    let config = RunConfig {
-        context_window: Some(1_000),
-        ..RunConfig::default()
-    };
-    assert_eq!(crate::runtime::context_fraction(&config, &usage), Some(0.1));
-    assert_eq!(
-        crate::runtime::context_fraction(
-            &RunConfig {
-                context_window: None,
-                ..RunConfig::default()
-            },
-            &usage
-        ),
-        None
-    );
+fn cumulative_usage_does_not_apply_a_monetary_limit() {
     let mut ladder = ResourceLadder::default();
-    let mut accumulated = Usage::default();
-    let cost_config = RunConfig {
+    let config = RunConfig {
         context_window: Some(100_000),
         ..RunConfig::default()
     };
     let per_turn = Usage {
         input_tokens: 4_000,
+        output_tokens: 100_000,
         ..Usage::default()
     };
-    let mut warning_count = 0;
-    for _ in 0..10 {
+    let mut accumulated = Usage::default();
+    for _ in 0..1_000 {
         accumulated.add_assign(&per_turn);
-        if ladder
-            .check(
-                accumulated.fallback_cost_usd(),
-                crate::runtime::context_fraction(&cost_config, &per_turn),
-                0.1,
-                "finish",
-            )
-            .is_some_and(|event| event.stage == BudgetStage::Warning)
-        {
-            warning_count += 1;
-        }
+        assert!(
+            ladder
+                .check(
+                    crate::runtime::context_fraction(&config, &per_turn),
+                    "finish"
+                )
+                .is_none()
+        );
     }
-    assert_eq!(
-        warning_count, 1,
-        "cost accumulates while context stays per turn"
-    );
-    assert!(
-        ResourceLadder::default()
-            .check(
-                0.0,
-                crate::runtime::context_fraction(
-                    &RunConfig {
-                        context_window: None,
-                        ..RunConfig::default()
-                    },
-                    &Usage {
-                        input_tokens: 1_000_000,
-                        ..Usage::default()
-                    }
-                ),
-                1.0,
-                "finish"
-            )
-            .is_none()
-    );
-    // Native has no SDK price accumulator: the fallback is unconditionally used.
-    assert_eq!(crate::divergence::DIVERGENCES.len(), 1);
+    assert_eq!(accumulated.input_tokens, 4_000_000);
+    assert!(!ladder.force_stopped);
+    assert!(ResourceLadder::default().check(None, "finish").is_none());
 }
 
 #[test]
@@ -703,9 +655,9 @@ fn stuck_detector_matches_four_live_patterns_and_user_boundary() {
 
 #[test]
 fn tail_precedence_and_non_responsive_composition_are_preserved() {
-    let state = |wall, cost, turns, stuck, text: &str| TailState {
+    let state = |wall, context, turns, stuck, text: &str| TailState {
         wall_clock_exceeded: wall,
-        cost_force_stopped: cost,
+        context_force_stopped: context,
         max_turns_exhausted: turns,
         stuck_or_paused: stuck,
         expects_emit_final: false,
@@ -721,10 +673,13 @@ fn tail_precedence_and_non_responsive_composition_are_preserved() {
             "wall_clock_exceeded: cogitate run exceeded its wall-clock deadline and was force-finished with a partial result preserved"
         )
     );
-    let cost = compose_tail(state(false, true, true, true, "partial"));
-    assert_eq!(cost.reason_code.as_deref(), Some("token_budget_exceeded"));
+    let context = compose_tail(state(false, true, true, true, "partial"));
     assert_eq!(
-        cost.error_text.as_deref(),
+        context.reason_code.as_deref(),
+        Some("token_budget_exceeded")
+    );
+    assert_eq!(
+        context.error_text.as_deref(),
         Some(
             "token_budget_exceeded: cogitate run reached its per-run resource budget and was force-finished with a partial result preserved"
         )
@@ -863,7 +818,7 @@ fn slot_reacquire_other_is_a_distinct_terminal_runtime_outcome() {
 fn expects_final_no_output_and_usage_shapes_are_normalized() {
     let empty = compose_tail(TailState {
         wall_clock_exceeded: false,
-        cost_force_stopped: false,
+        context_force_stopped: false,
         max_turns_exhausted: false,
         stuck_or_paused: false,
         expects_emit_final: true,
@@ -888,7 +843,7 @@ fn expects_final_no_output_and_usage_shapes_are_normalized() {
 #[test]
 fn events_include_tool_ladder_and_terminal() {
     let config = RunConfig {
-        cost_cap_usd: 0.0,
+        context_window: Some(1),
         ..RunConfig::default()
     };
     let mut provider = ScriptedProvider::new([Ok(turn(

@@ -1901,7 +1901,10 @@ mod resolution_tests {
     #[test]
     fn ac4_operated_run_passes_absolute_rclone_program() {
         let restic_dir = tempfile::tempdir().unwrap();
-        let rclone_dir = tempfile::tempdir().unwrap();
+        let rclone_dir = tempfile::Builder::new()
+            .prefix("backup-s3-")
+            .tempdir()
+            .unwrap();
         let decoy_dir = tempfile::tempdir().unwrap();
         write_ready_restic(restic_dir.path());
         let expected_rclone = write_ready_rclone(rclone_dir.path());

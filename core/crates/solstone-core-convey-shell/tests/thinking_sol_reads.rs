@@ -157,13 +157,23 @@ fn corpus_body(phase: &str, probe: &str) -> Value {
     let corpus: Value =
         serde_json::from_str(include_str!("../../../fixtures/convey_sol_corpus.json"))
             .expect("corpus json");
-    corpus["phases"][phase]["sol"]
+    let mut body = corpus["phases"][phase]["sol"]
         .as_array()
         .expect("sol probes")
         .iter()
         .find(|entry| entry["name"] == probe)
         .expect("probe")["response"]["body"]
-        .clone()
+        .clone();
+    // Dollar estimates are retired; preserve every other captured read field.
+    if let Some(row) = body.as_object_mut() {
+        row.remove("cost");
+    }
+    if let Some(uses) = body.get_mut("uses").and_then(Value::as_array_mut) {
+        for row in uses {
+            row.as_object_mut().unwrap().remove("cost");
+        }
+    }
+    body
 }
 
 fn normalize_capture_index(mut body: Value) -> Value {
@@ -332,7 +342,7 @@ async fn ac4_run_detail_completed_pending_and_malformed_oracle() {
         )
         .await;
         assert_eq!(status, StatusCode::OK, "{use_id}: {body}");
-        assert_eq!(body["cost"], Value::Null, "{use_id}: {body}");
+        assert!(body.get("cost").is_none(), "{use_id}: {body}");
     }
 }
 

@@ -448,7 +448,7 @@ These are guarantees of the boundary, each backed by a test.
    the owner's journal content, and the caller does not write the boundary's operational paths. An
    invariant enforced on one side is a coincidence.
 5. **Usage reaches the token log for every completion.** ⛔ The forbidden shortcut is suppressing
-   usage logging to simplify invariant 4; that silently empties the cost ledger for every future
+   usage logging to simplify invariant 4; that silently empties the usage ledger for every future
    caller, and the logger swallows its own exceptions, so nothing would ever error.
 6. **A refusal is never a partial success.** No response carries both a text and a reason.
 

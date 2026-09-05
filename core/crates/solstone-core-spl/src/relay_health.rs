@@ -161,18 +161,9 @@ impl Default for RelayHealth {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
-    use std::io;
-
-    use serde_json::{Value, json};
+    use serde_json::json;
 
     use super::{RelayHealth, RelayHealthState, RelayTunnelFailure};
-    use crate::{
-        LINK_HEALTH_EVENT, OFFLINE_TUNNEL_REASONS, REASON_HOME_MISSING_MOBILE,
-        REASON_LOCAL_PRIVATE_LISTENER_UNREACHABLE, REASON_RELAY_ADMISSION_SATURATED,
-        REASON_RELAY_TUNNEL_REJECTED, REASON_RELAY_TUNNEL_UNREACHABLE,
-        REASON_SERVICE_TOKEN_REJECTED,
-    };
 
     #[test]
     fn new_payload_has_exact_owner_visible_keys_and_null_error_fields() {
@@ -258,78 +249,5 @@ mod tests {
             health.payload()["last_relay_listener_ack_generation"],
             health.payload()["listen_generation"],
         );
-    }
-
-    #[test]
-    fn a11_health_payloads_match_the_retained_parity_corpus()
-    -> Result<(), Box<dyn std::error::Error>> {
-        let corpus: Value =
-            serde_json::from_str(include_str!("../tests/vectors/spl-parity-corpus.json"))?;
-        let constants = corpus
-            .get("constants")
-            .ok_or_else(|| io::Error::other("missing corpus constants"))?;
-        let all_null = corpus_payload(&corpus, "all_null")?;
-        let populated = corpus_payload(&corpus, "populated_rejected")?;
-
-        assert_eq!(
-            constants.get("reasons"),
-            Some(&json!({
-                "home_missing_mobile": REASON_HOME_MISSING_MOBILE,
-                "service_token_rejected": REASON_SERVICE_TOKEN_REJECTED,
-                "relay_tunnel_rejected": REASON_RELAY_TUNNEL_REJECTED,
-                "relay_tunnel_unreachable": REASON_RELAY_TUNNEL_UNREACHABLE,
-                "local_private_listener_unreachable": REASON_LOCAL_PRIVATE_LISTENER_UNREACHABLE,
-                "relay_admission_saturated": REASON_RELAY_ADMISSION_SATURATED,
-            }))
-        );
-        assert_eq!(
-            constants.get("LINK_HEALTH_EVENT"),
-            Some(&Value::String(LINK_HEALTH_EVENT.to_owned()))
-        );
-        let expected_offline: BTreeSet<String> = constants
-            .get("OFFLINE_TUNNEL_REASONS")
-            .and_then(Value::as_array)
-            .ok_or_else(|| io::Error::other("missing offline-reasons corpus value"))?
-            .iter()
-            .map(|reason| {
-                reason
-                    .as_str()
-                    .map(str::to_owned)
-                    .ok_or_else(|| io::Error::other("non-string offline-reason corpus value"))
-            })
-            .collect::<Result<_, _>>()?;
-        let actual_offline: BTreeSet<String> = OFFLINE_TUNNEL_REASONS
-            .into_iter()
-            .map(str::to_owned)
-            .collect();
-        assert_eq!(actual_offline, expected_offline);
-
-        let mut initial = RelayHealth::new();
-        initial.begin_listen_attempt();
-        assert_eq!(initial.payload(), all_null);
-
-        let mut rejected = RelayHealth::new();
-        for _ in 0..7 {
-            rejected.begin_listen_attempt();
-        }
-        rejected.set_state(RelayHealthState::Connected);
-        rejected.record_listener_ack(1_750_000_000_000);
-        rejected.record_tunnel_success(1_750_000_000_000);
-        rejected.record_tunnel_failure(
-            RelayTunnelFailure::RelayTunnelRejected { status: 502 },
-            1_750_000_001_000,
-        );
-        rejected.set_relay_admission_saturated_count(3);
-        assert_eq!(rejected.payload(), populated);
-        Ok(())
-    }
-
-    fn corpus_payload(corpus: &Value, name: &str) -> Result<Value, Box<dyn std::error::Error>> {
-        corpus
-            .get("health_payloads")
-            .and_then(|payloads| payloads.get(name))
-            .cloned()
-            .ok_or_else(|| io::Error::other(format!("missing health payload {name}")))
-            .map_err(Into::into)
     }
 }

@@ -1011,3 +1011,9 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
         AudioProcessingState::Succeeded
     );
 }
+
+#[cfg(feature = "native-remux-corpus")]
+#[test]
+fn native_remux_preserves_long_form_audio_packets_without_unbounded_buffers() {
+    solstone_core_import_host::audio::native_long_audio_remux_corpus::run();
+}

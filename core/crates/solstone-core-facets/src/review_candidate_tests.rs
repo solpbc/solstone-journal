@@ -14,7 +14,8 @@ use solstone_core_journal_io::{LockOptions, hold_lock};
 use crate::store_tests::{TempDir, create_test_facet, write_facet_relationship};
 use crate::{
     SpeculativeFacetCandidate, SpeculativeFacetSample, accept_candidate, dismiss_candidate,
-    facet_slug, list_scoped_facet_entities, load_candidates, record_facet_candidates,
+    facet_slug, humanize_facet_title, list_scoped_facet_entities, load_candidates,
+    record_facet_candidates,
 };
 
 fn resolved_entity_id(root: &std::path::Path) -> String {
@@ -144,6 +145,20 @@ fn facet_slug_matches_python_create_facet_normalization() {
     assert_eq!(facet_slug("  Work & Home!  "), "work-home");
     assert_eq!(facet_slug("123 start"), "123-start");
     assert_eq!(facet_slug("équipe"), "quipe");
+}
+
+#[test]
+fn humanize_facet_title_strips_slug_punctuation() {
+    assert_eq!(
+        humanize_facet_title("low_light_capture"),
+        "low light capture"
+    );
+    assert_eq!(
+        humanize_facet_title("low-light-capture"),
+        "low light capture"
+    );
+    assert_eq!(humanize_facet_title("Project Alpha"), "Project Alpha");
+    assert_eq!(humanize_facet_title("__weird__-name_"), "weird name");
 }
 
 fn candidate(name: &str, name_key: &str, count: usize) -> SpeculativeFacetCandidate {

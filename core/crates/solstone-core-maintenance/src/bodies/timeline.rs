@@ -281,6 +281,11 @@ fn rollup_day(journal: &Path, options: DayOptions, services: &TimelineServices<'
             .replace('-', "")
         }
     };
+    if let Err(error) =
+        solstone_core_timeline::ensure_timeline_conversion(journal, &day_subject_key(&day))
+    {
+        return failure(error.to_string());
+    }
     if !options.commit {
         let scan = match load_day_segments(journal, &day) {
             Ok(scan) => scan,
@@ -312,10 +317,9 @@ fn rollup_day(journal: &Path, options: DayOptions, services: &TimelineServices<'
         };
     }
 
-    let _locks = match acquire_timeline_locks(
+    let locks = match acquire_timeline_locks(
         journal,
         TimelineLockRequest {
-            days: vec![day.clone()],
             subjects: vec![TimelineLockSubject::Day(day.clone())],
             ..TimelineLockRequest::default()
         },
@@ -343,70 +347,100 @@ fn rollup_day(journal: &Path, options: DayOptions, services: &TimelineServices<'
     }
     let generated_at_ms = services.now.timestamp_millis();
     let attempt = day_attempt(&day, &source_digest, generated_at_ms);
-    if let Err(error) = record_attempt_started(journal, &day_subject_key(&day), attempt.clone()) {
+    if let Err(error) =
+        record_attempt_started(journal, &day_subject_key(&day), attempt.clone(), &locks)
+    {
         return failure(error.to_string());
     }
-    let by_hour = group_by_hour(&entries);
-    let jobs = by_hour
-        .iter()
-        .map(|(hour, rows)| EntryBatchInput {
-            key: hour.clone(),
-            candidates: rows.iter().map(|row| row.entry.clone()).collect(),
-        })
-        .collect::<Vec<_>>();
-    let hour_results = match pick_entry_batch(
-        services.picker,
-        jobs,
-        options.top,
-        "hour",
-        TimelineCurationStage::Day,
-        options.jobs,
-    ) {
-        Ok(results) => results,
-        Err(error) => return day_curation_failure(journal, &day, &attempt, &error),
-    };
-    let mut hours = BTreeMap::new();
-    for result in hour_results {
-        let picked = match result.result {
-            Ok(picked) => picked,
-            Err(error) => return day_curation_failure(journal, &day, &attempt, &error),
+    let (locks, generated) = match locks.without_population(|| {
+        let by_hour = group_by_hour(&entries);
+        let jobs = by_hour
+            .iter()
+            .map(|(hour, rows)| EntryBatchInput {
+                key: hour.clone(),
+                candidates: rows.iter().map(|row| row.entry.clone()).collect(),
+            })
+            .collect::<Vec<_>>();
+        let hour_results = match pick_entry_batch(
+            services.picker,
+            jobs,
+            options.top,
+            "hour",
+            TimelineCurationStage::Day,
+            options.jobs,
+        ) {
+            Ok(results) => results,
+            Err(error) => return Err(error),
         };
-        hours.insert(
-            result.key,
-            HourTimelineV1 {
-                source_digest: picked.input_digest.clone(),
-                segment_count: result.candidates.len(),
-                curation: curation_record(result.candidates.len(), picked),
-            },
-        );
+        let mut hours = BTreeMap::new();
+        for result in hour_results {
+            let picked = match result.result {
+                Ok(picked) => picked,
+                Err(error) => return Err(error),
+            };
+            hours.insert(
+                result.key,
+                HourTimelineV1 {
+                    source_digest: picked.input_digest.clone(),
+                    segment_count: result.candidates.len(),
+                    curation: curation_record(result.candidates.len(), picked),
+                },
+            );
+        }
+        let day_candidates = entries
+            .iter()
+            .map(|row| row.entry.clone())
+            .collect::<Vec<_>>();
+        let day_picked = match pick_entries(
+            services.picker,
+            &day_candidates,
+            options.top,
+            "day",
+            TimelineCurationStage::Day,
+        ) {
+            Ok(picked) => picked,
+            Err(error) => return Err(error),
+        };
+        let timeline = DayTimelineV1 {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            kind: TimelineKind::Day,
+            day: day.clone(),
+            source_digest,
+            generated_at_ms,
+            top_n: options.top,
+            segment_count: entries.len(),
+            hour_count: hours.len(),
+            hours,
+            day_curation: curation_record(day_candidates.len(), day_picked),
+        };
+        Ok(timeline)
+    }) {
+        Ok(value) => value,
+        Err(error) => return failure(error.to_string()),
+    };
+    let current_digest = load_day_segments(journal, &day)
+        .and_then(|scan| verified_day_entries(&day, scan))
+        .and_then(|rows| day_source_digest(&rows, options.top).map_err(|error| error.to_string()));
+    if current_digest.as_deref() != Ok(attempt.input_digest.as_str()) {
+        let mut attempt = attempt;
+        attempt.input_digest = current_digest.as_ref().cloned().unwrap_or_else(|_| {
+            solstone_core_timeline::artifact_sha256(&format!(
+                "unavailable-rollup-source:{}",
+                attempt.input_digest
+            ))
+        });
+        let error = TimelineError::InvalidSourceEvidence {
+            detail: current_digest
+                .err()
+                .unwrap_or_else(|| "timeline inputs changed during generation".to_owned()),
+        };
+        return day_curation_failure(journal, &day, &attempt, &error, &locks);
     }
-    let day_candidates = entries
-        .iter()
-        .map(|row| row.entry.clone())
-        .collect::<Vec<_>>();
-    let day_picked = match pick_entries(
-        services.picker,
-        &day_candidates,
-        options.top,
-        "day",
-        TimelineCurationStage::Day,
-    ) {
-        Ok(picked) => picked,
-        Err(error) => return day_curation_failure(journal, &day, &attempt, &error),
+    let timeline = match generated {
+        Ok(timeline) => timeline,
+        Err(error) => return day_curation_failure(journal, &day, &attempt, &error, &locks),
     };
-    let timeline = DayTimelineV1 {
-        schema_version: CURRENT_SCHEMA_VERSION,
-        kind: TimelineKind::Day,
-        day: day.clone(),
-        source_digest,
-        generated_at_ms,
-        top_n: options.top,
-        segment_count: entries.len(),
-        hour_count: hours.len(),
-        hours,
-        day_curation: curation_record(day_candidates.len(), day_picked),
-    };
-    if let Err(error) = publish_day_timeline_after_start(journal, &timeline, attempt) {
+    if let Err(error) = publish_day_timeline_after_start(journal, &timeline, attempt, &locks) {
         return failure(error.to_string());
     }
     success(format!(
@@ -528,6 +562,7 @@ fn day_curation_failure(
     day: &str,
     attempt: &AttemptStateV1,
     error: &TimelineError,
+    locks: &solstone_core_timeline::TimelineLockSet,
 ) -> CliRun {
     let detail = bounded_diagnostic_detail(&error.to_string());
     if let Err(state_error) = record_attempt_outcome(
@@ -537,6 +572,7 @@ fn day_curation_failure(
         AttemptOutcome::Failed,
         &detail,
         attempt.started_at_ms,
+        locks,
     ) {
         return failure(bounded_diagnostic_detail(&format!(
             "terminal timeline state write failed: {state_error}; primary failure: {detail}"
@@ -550,6 +586,11 @@ fn rollup_master(
     options: MasterOptions,
     services: &TimelineServices<'_>,
 ) -> CliRun {
+    if let Err(error) =
+        solstone_core_timeline::ensure_timeline_conversion(journal, master_subject_key())
+    {
+        return failure(error.to_string());
+    }
     if !options.commit {
         let scan = match load_day_rollups(journal) {
             Ok(scan) => scan,
@@ -566,7 +607,6 @@ fn rollup_master(
         Ok(value) => value,
         Err(error) => return failure(error),
     };
-    let _locks = locks;
     if days.is_empty() {
         return empty_master(journal);
     }
@@ -583,80 +623,110 @@ fn rollup_master(
     }
     let generated_at_ms = services.now.timestamp_millis();
     let attempt = master_attempt(&source_digest, generated_at_ms);
-    if let Err(error) = record_attempt_started(journal, master_subject_key(), attempt.clone()) {
+    if let Err(error) =
+        record_attempt_started(journal, master_subject_key(), attempt.clone(), &locks)
+    {
         return failure(error.to_string());
     }
-    let by_month = group_by_month(&days);
-    let jobs = by_month
-        .iter()
-        .map(|(month, day_keys)| EntryBatchInput {
-            key: month.clone(),
-            candidates: day_keys
-                .iter()
-                .flat_map(|day| days[day].day_curation.picks.iter().cloned())
-                .collect(),
-        })
-        .collect::<Vec<_>>();
-    let month_results = match pick_entry_batch(
-        services.picker,
-        jobs,
-        options.top,
-        "month",
-        TimelineCurationStage::Master,
-        options.jobs,
-    ) {
-        Ok(results) => results,
-        Err(error) => return master_curation_failure(journal, &attempt, &error),
-    };
-    let mut months = BTreeMap::new();
-    for result in month_results {
-        let picked = match result.result {
-            Ok(picked) => picked,
-            Err(error) => return master_curation_failure(journal, &attempt, &error),
-        };
-        let day_keys = &by_month[&result.key];
-        let month_days = day_keys
+    let (locks, generated) = match locks.without_population(|| {
+        let by_month = group_by_month(&days);
+        let jobs = by_month
             .iter()
-            .map(|day| (day.clone(), days[day].clone()))
+            .map(|(month, day_keys)| EntryBatchInput {
+                key: month.clone(),
+                candidates: day_keys
+                    .iter()
+                    .flat_map(|day| days[day].day_curation.picks.iter().cloned())
+                    .collect(),
+            })
+            .collect::<Vec<_>>();
+        let month_results = match pick_entry_batch(
+            services.picker,
+            jobs,
+            options.top,
+            "month",
+            TimelineCurationStage::Master,
+            options.jobs,
+        ) {
+            Ok(results) => results,
+            Err(error) => return Err(error),
+        };
+        let mut months = BTreeMap::new();
+        for result in month_results {
+            let picked = match result.result {
+                Ok(picked) => picked,
+                Err(error) => return Err(error),
+            };
+            let day_keys = &by_month[&result.key];
+            let month_days = day_keys
+                .iter()
+                .map(|day| (day.clone(), days[day].clone()))
+                .collect();
+            months.insert(
+                result.key,
+                MonthTimelineV1 {
+                    day_count: day_keys.len(),
+                    days: month_days,
+                    month_curation: curation_record(result.candidates.len(), picked),
+                },
+            );
+        }
+        let year_picked = match pick_entries(
+            services.picker,
+            &candidates,
+            options.top,
+            "year",
+            TimelineCurationStage::Master,
+        ) {
+            Ok(picked) => picked,
+            Err(error) => return Err(error),
+        };
+        let year_top = year_picked
+            .picks
+            .iter()
+            .map(|entry| MonthTimelineEntryV1 {
+                month: entry.binding.day[..6].to_owned(),
+                entry: entry.clone(),
+            })
             .collect();
-        months.insert(
-            result.key,
-            MonthTimelineV1 {
-                day_count: day_keys.len(),
-                days: month_days,
-                month_curation: curation_record(result.candidates.len(), picked),
-            },
-        );
+        let timeline = MasterTimelineV1 {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            kind: TimelineKind::Master,
+            source_digest,
+            generated_at_ms,
+            top_n: options.top,
+            months,
+            year_top,
+            year_curation: curation_record(candidates.len(), year_picked),
+        };
+        Ok(timeline)
+    }) {
+        Ok(value) => value,
+        Err(error) => return failure(error.to_string()),
+    };
+    let current_digest = load_day_rollups(journal)
+        .and_then(|scan| verified_master_days(scan, options.months.as_ref()))
+        .and_then(|days| master_digest(&days, options.top).map_err(|error| error.to_string()));
+    if current_digest.as_deref() != Ok(attempt.input_digest.as_str()) {
+        let mut attempt = attempt;
+        attempt.input_digest = current_digest.as_ref().cloned().unwrap_or_else(|_| {
+            solstone_core_timeline::artifact_sha256(&format!(
+                "unavailable-rollup-source:{}",
+                attempt.input_digest
+            ))
+        });
+        let error = TimelineError::InvalidSourceEvidence {
+            detail: current_digest
+                .err()
+                .unwrap_or_else(|| "timeline inputs changed during generation".to_owned()),
+        };
+        return master_curation_failure(journal, &attempt, &error, &locks);
     }
-    let year_picked = match pick_entries(
-        services.picker,
-        &candidates,
-        options.top,
-        "year",
-        TimelineCurationStage::Master,
-    ) {
-        Ok(picked) => picked,
-        Err(error) => return master_curation_failure(journal, &attempt, &error),
+    let timeline = match generated {
+        Ok(timeline) => timeline,
+        Err(error) => return master_curation_failure(journal, &attempt, &error, &locks),
     };
-    let year_top = year_picked
-        .picks
-        .iter()
-        .map(|entry| MonthTimelineEntryV1 {
-            month: entry.binding.day[..6].to_owned(),
-            entry: entry.clone(),
-        })
-        .collect();
-    let timeline = MasterTimelineV1 {
-        schema_version: CURRENT_SCHEMA_VERSION,
-        kind: TimelineKind::Master,
-        source_digest,
-        generated_at_ms,
-        top_n: options.top,
-        months,
-        year_top,
-        year_curation: curation_record(candidates.len(), year_picked),
-    };
-    if let Err(error) = publish_master_timeline_after_start(journal, &timeline, attempt) {
+    if let Err(error) = publish_master_timeline_after_start(journal, &timeline, attempt, &locks) {
         return failure(error.to_string());
     }
     success(format!(
@@ -714,26 +784,17 @@ fn lock_master_days(
     journal: &Path,
     months: Option<&BTreeSet<String>>,
 ) -> Result<(TimelineLockSet, BTreeMap<String, DayTimelineV1>), String> {
-    for _ in 0..3 {
-        let scan = load_day_rollups(journal)?;
-        let expected = verified_master_days(scan, months)?;
-        let locks = acquire_timeline_locks(
-            journal,
-            TimelineLockRequest {
-                days: expected.keys().cloned().collect(),
-                subjects: vec![TimelineLockSubject::Master],
-                ..TimelineLockRequest::default()
-            },
-        )
-        .map_err(|error| error.to_string())?;
-        let scan = load_day_rollups(journal)?;
-        let confirmed = verified_master_days(scan, months)?;
-        if expected.keys().eq(confirmed.keys()) {
-            return Ok((locks, confirmed));
-        }
-        drop(locks);
-    }
-    Err("timeline master input population changed while acquiring locks".to_owned())
+    let locks = acquire_timeline_locks(
+        journal,
+        TimelineLockRequest {
+            subjects: vec![TimelineLockSubject::Master],
+            ..TimelineLockRequest::default()
+        },
+    )
+    .map_err(|error| error.to_string())?;
+    let scan = load_day_rollups(journal)?;
+    let days = verified_master_days(scan, months)?;
+    Ok((locks, days))
 }
 
 fn verified_master_days(
@@ -839,6 +900,7 @@ fn master_curation_failure(
     journal: &Path,
     attempt: &AttemptStateV1,
     error: &TimelineError,
+    locks: &solstone_core_timeline::TimelineLockSet,
 ) -> CliRun {
     let detail = bounded_diagnostic_detail(&error.to_string());
     if let Err(state_error) = record_attempt_outcome(
@@ -848,6 +910,7 @@ fn master_curation_failure(
         AttemptOutcome::Failed,
         &detail,
         attempt.started_at_ms,
+        locks,
     ) {
         return failure(bounded_diagnostic_detail(&format!(
             "terminal timeline state write failed: {state_error}; primary failure: {detail}"
@@ -1613,9 +1676,10 @@ mod tests {
     use solstone_core_timeline::{
         AttemptOutcome, CURRENT_SCHEMA_VERSION, CurationRecordV1, DayTimelineV1, SegmentBindingV1,
         SegmentSummaryV1, SegmentTimelineV1, TimelineCurationFailureReason, TimelineEntryV1,
-        TimelineError, TimelineKind, curation_input_digest, curation_jobs_digest,
-        load_timeline_state, publish_day_timeline, publish_segment_timeline,
-        record_attempt_outcome, segment_subject_key,
+        TimelineError, TimelineKind, TimelineLockRequest, TimelineLockSubject,
+        acquire_timeline_locks, curation_input_digest, curation_jobs_digest, load_timeline_record,
+        publish_day_timeline, publish_segment_timeline, record_attempt_outcome,
+        segment_subject_key,
     };
     use std::collections::{BTreeMap, VecDeque};
     use std::path::{Path, PathBuf};
@@ -1708,6 +1772,192 @@ mod tests {
         }
     }
 
+    struct InterleavingPicker<F> {
+        action: Mutex<Option<F>>,
+        fail: bool,
+    }
+
+    impl<F: FnOnce() + Send> RollupPicker for InterleavingPicker<F> {
+        fn pick(&self, request: &GenerateRequest) -> Result<GeneratedResponse, RollupPickerError> {
+            if let Some(action) = self.action.lock().unwrap().take() {
+                action();
+            }
+            if self.fail {
+                return Err(RollupPickerError::Client(
+                    "fixture model failure".to_owned(),
+                ));
+            }
+            let mut response = generated_response(r#"{"picks":[0],"rationale":"fixture"}"#);
+            response.id.clone_from(&request.id);
+            Ok(response)
+        }
+    }
+
+    #[test]
+    fn generation_allows_unrelated_publish_and_refuses_changed_day_or_master_inputs() {
+        for master in [false, true] {
+            for mutation in [
+                "unrelated",
+                "added",
+                "changed",
+                "removed",
+                "corrupt",
+                "changed_model_error",
+            ] {
+                let journal = tempfile::tempdir().unwrap();
+                let root = journal.path();
+                for (day, segment) in if master {
+                    [("20260301", "080000_1"), ("20260302", "080100_1")]
+                } else {
+                    [("20260301", "080000_1"), ("20260301", "080100_1")]
+                } {
+                    if master {
+                        write_day_rollup(
+                            root,
+                            day,
+                            vec![day_entry(day, "Event", "detail", segment)],
+                        );
+                    } else {
+                        write_segment(
+                            root,
+                            day,
+                            "field.audio",
+                            segment,
+                            json!({"title":"Event", "description":"detail"}),
+                        );
+                    }
+                }
+                let routine = if master {
+                    "timeline:rollup-master"
+                } else {
+                    "timeline:rollup-day"
+                };
+                let mut args = vec!["--commit".to_owned(), "--top".to_owned(), "1".to_owned()];
+                if !master {
+                    args.extend(["--day".to_owned(), "20260301".to_owned()]);
+                }
+                let model = Model::new("fixture");
+                let initial = run(routine, &args, root, &services(&Picker::canned([]), &model));
+                assert_eq!(initial.exit_code, 0, "{}", initial.stderr);
+                let artifact = root.join(if master {
+                    "timeline.json"
+                } else {
+                    "chronicle/20260301/timeline.json"
+                });
+                let prior = std::fs::read(&artifact).unwrap();
+                let subject = if master { "master" } else { "day:20260301" };
+                let published = load_timeline_record(root, subject)
+                    .unwrap()
+                    .unwrap()
+                    .published;
+                let picker = InterleavingPicker {
+                    fail: mutation == "changed_model_error",
+                    action: Mutex::new(Some(|| {
+                        if mutation == "unrelated" && master {
+                            write_day_rollup(
+                                root,
+                                "20260301",
+                                vec![day_entry("20260301", "Event", "detail", "080000_1")],
+                            );
+                        } else if mutation == "unrelated" {
+                            write_segment(
+                                root,
+                                "20260401",
+                                "field.audio",
+                                "080000_1",
+                                json!({"title":"Unrelated", "description":"allowed during generation"}),
+                            );
+                        } else if master {
+                            match mutation {
+                                "added" => write_day_rollup(
+                                    root,
+                                    "20260303",
+                                    vec![day_entry("20260303", "Added", "detail", "080000_1")],
+                                ),
+                                "changed" | "changed_model_error" => write_day_rollup(
+                                    root,
+                                    "20260301",
+                                    vec![day_entry("20260301", "Changed", "detail", "080000_1")],
+                                ),
+                                "removed" => std::fs::remove_file(
+                                    root.join("chronicle/20260301/timeline.json"),
+                                )
+                                .unwrap(),
+                                "corrupt" => std::fs::write(
+                                    root.join("chronicle/20260301/timeline.json"),
+                                    b"broken",
+                                )
+                                .unwrap(),
+                                _ => unreachable!(),
+                            }
+                        } else {
+                            match mutation {
+                                "added" => write_segment(
+                                    root,
+                                    "20260301",
+                                    "field.audio",
+                                    "080200_1",
+                                    json!({"title":"Added", "description":"detail"}),
+                                ),
+                                "changed" | "changed_model_error" => write_segment(
+                                    root,
+                                    "20260301",
+                                    "field.audio",
+                                    "080000_1",
+                                    json!({"title":"Changed", "description":"detail"}),
+                                ),
+                                "removed" => std::fs::remove_file(root.join(
+                                    "chronicle/20260301/field.audio/080000_1/talents/activity.md",
+                                ))
+                                .unwrap(),
+                                "corrupt" => std::fs::write(
+                                    root.join(
+                                        "chronicle/20260301/field.audio/080000_1/timeline.json",
+                                    ),
+                                    b"broken",
+                                )
+                                .unwrap(),
+                                _ => unreachable!(),
+                            }
+                        }
+                    })),
+                };
+                args.push("--force".to_owned());
+                let result = run(routine, &args, root, &services(&picker, &model));
+                assert!(
+                    picker.action.lock().unwrap().is_none(),
+                    "picker was not called"
+                );
+                if mutation == "unrelated" {
+                    assert_eq!(result.exit_code, 0, "{}", result.stderr);
+                } else {
+                    assert_ne!(result.exit_code, 0, "{master} {mutation}");
+                    assert_eq!(std::fs::read(&artifact).unwrap(), prior);
+                    let record = load_timeline_record(root, subject).unwrap().unwrap();
+                    assert_eq!(record.published, published);
+                    let old = record.published.as_ref().unwrap();
+                    assert_eq!(
+                        solstone_core_timeline::evaluate_artifact_currentness(
+                            root,
+                            subject,
+                            &old.input_digest,
+                            serde_json::from_slice::<Value>(&prior).unwrap()["generated_at_ms"]
+                                .as_i64()
+                                .unwrap(),
+                            std::str::from_utf8(&prior).unwrap(),
+                        )
+                        .unwrap(),
+                        solstone_core_timeline::ArtifactCurrentness::Stale
+                    );
+                    assert_eq!(
+                        record.attempts.last().unwrap().outcome,
+                        AttemptOutcome::Failed
+                    );
+                }
+            }
+        }
+    }
+
     struct SwappingPicker {
         first_id: String,
         second_id: String,
@@ -1751,7 +2001,7 @@ mod tests {
         }
     }
 
-    fn services<'a>(picker: &'a Picker, _model: &'a Model) -> TimelineServices<'a> {
+    fn services<'a>(picker: &'a dyn RollupPicker, _model: &'a Model) -> TimelineServices<'a> {
         static HOST: Host = Host("UTC");
         TimelineServices {
             now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 30, 0).unwrap(),
@@ -2700,10 +2950,11 @@ mod tests {
                 .exists()
         );
         assert!(
-            load_timeline_state(journal.path())
+            load_timeline_record(journal.path(), "day:20260301")
+                .unwrap()
                 .unwrap()
                 .attempts
-                .values()
+                .iter()
                 .any(|attempt| attempt.outcome == AttemptOutcome::Failed)
         );
     }
@@ -2763,7 +3014,6 @@ mod tests {
         );
         for lock in [
             "health/timeline/locks/population.lock",
-            "health/timeline/locks/days/20260301.order.lock",
             "health/timeline/locks/subjects/day/20260301.attempt.lock",
         ] {
             assert!(journal.path().join(lock).exists(), "missing {lock}");
@@ -2816,6 +3066,14 @@ mod tests {
             outcome: AttemptOutcome::Running,
             detail: String::new(),
         };
+        let locks = acquire_timeline_locks(
+            journal.path(),
+            TimelineLockRequest {
+                subjects: vec![TimelineLockSubject::Segment(binding.clone())],
+                ..TimelineLockRequest::default()
+            },
+        )
+        .unwrap();
         record_attempt_outcome(
             journal.path(),
             &segment_subject_key(&binding),
@@ -2823,8 +3081,10 @@ mod tests {
             AttemptOutcome::Failed,
             "fixture failure",
             3,
+            &locks,
         )
         .unwrap();
+        drop(locks);
 
         let preview = run(
             "timeline:rollup-day",
@@ -3074,8 +3334,6 @@ mod tests {
         );
         for lock in [
             "health/timeline/locks/population.lock",
-            "health/timeline/locks/days/20260101.order.lock",
-            "health/timeline/locks/days/20260102.order.lock",
             "health/timeline/locks/subjects/master.attempt.lock",
         ] {
             assert!(journal.path().join(lock).exists(), "missing {lock}");
@@ -3111,8 +3369,7 @@ mod tests {
         assert_eq!(contradictory_modes.exit_code, 2);
 
         let artifact_before = std::fs::read(journal.path().join("timeline.json")).unwrap();
-        let state_before =
-            std::fs::read(journal.path().join("health/timeline/state.json")).unwrap();
+        let state_before = std::fs::read(journal.path().join("timeline.state.json")).unwrap();
         let calls_before = picker.call_count();
         for month_value in ["202601", "", ",,,"] {
             let filtered_commit = run(
@@ -3132,7 +3389,7 @@ mod tests {
                 artifact_before
             );
             assert_eq!(
-                std::fs::read(journal.path().join("health/timeline/state.json")).unwrap(),
+                std::fs::read(journal.path().join("timeline.state.json")).unwrap(),
                 state_before
             );
         }
@@ -3289,10 +3546,11 @@ mod tests {
         assert!(result.stderr.contains("duplicate"));
         assert!(!journal.path().join("timeline.json").exists());
         assert!(
-            load_timeline_state(journal.path())
+            load_timeline_record(journal.path(), "master")
+                .unwrap()
                 .unwrap()
                 .attempts
-                .values()
+                .iter()
                 .any(|attempt| attempt.outcome == AttemptOutcome::Failed)
         );
     }
@@ -3498,5 +3756,45 @@ mod tests {
 
     fn read_json(path: &Path) -> Value {
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    }
+    #[test]
+    fn conversion_gate_stops_preview_commit_and_force_before_generation() {
+        let journal = tempfile::tempdir().unwrap();
+        let picker = Picker::canned([]);
+        let model = Model::new("unused");
+        std::fs::create_dir_all(journal.path().join("health/timeline")).unwrap();
+        std::fs::write(
+            solstone_core_timeline::timeline_state_path(journal.path()),
+            b"legacy bytes are not read by the gate",
+        )
+        .unwrap();
+        for marked in [false, true] {
+            if marked {
+                std::fs::write(solstone_core_timeline::timeline_conversion_marker_path(journal.path()), br#"{"schema_version":1,"refused":{"day:20260101":"unplaceable fixture","master":"unplaceable fixture"}}"#).unwrap();
+            }
+            for mode in [
+                vec![],
+                vec!["--dry-run"],
+                vec!["--commit"],
+                vec!["--commit", "--force"],
+            ] {
+                for routine in ["timeline:rollup-day", "timeline:rollup-master"] {
+                    let mut args = mode.iter().map(|v| (*v).to_owned()).collect::<Vec<_>>();
+                    if routine.ends_with("day") {
+                        args.extend(["--day".to_owned(), "20260101".to_owned()]);
+                    }
+                    let result = run(routine, &args, journal.path(), &services(&picker, &model));
+                    assert_ne!(result.exit_code, 0, "{routine} {mode:?}");
+                    assert!(
+                        result.stderr.contains("timeline conversion required"),
+                        "{}",
+                        result.stderr
+                    );
+                }
+            }
+        }
+        assert_eq!(picker.call_count(), 0);
+        assert!(!journal.path().join("timeline.json").exists());
+        assert!(!journal.path().join("chronicle").exists());
     }
 }

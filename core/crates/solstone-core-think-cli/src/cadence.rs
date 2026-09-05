@@ -61,7 +61,7 @@ pub(crate) fn run(
                 // every closed cadence interval in the run sidecar.
                 log.log(
                     "talent.skip",
-                    context.now_ms,
+                    context.event_now_ms(),
                     cadence_skip_fields(
                         context,
                         &config.key,
@@ -79,7 +79,7 @@ pub(crate) fn run(
                 // the no-work skip instead of silently omitting the talent.
                 log.log(
                     "talent.skip",
-                    context.now_ms,
+                    context.event_now_ms(),
                     cadence_skip_fields(
                         context,
                         &config.key,
@@ -122,7 +122,7 @@ pub(crate) fn run(
                     fields.insert("day".to_owned(), Value::String(context.day.clone()));
                     fields.insert("name".to_owned(), Value::String(config.key.clone()));
                     fields.insert("use_id".to_owned(), Value::String(item.use_id.clone()));
-                    log.log("talent.dispatch", context.now_ms, fields);
+                    log.log("talent.dispatch", context.event_now_ms(), fields);
                     let one = drain(context, &runtime, vec![item]);
                     if one.success == 1 && one.failed == 0 {
                         state.set_timestamp(&config.key, now);
@@ -142,7 +142,7 @@ pub(crate) fn run(
                         ("use_id".to_owned(), Value::String(use_id)),
                         ("state".to_owned(), Value::String("request_lost".to_owned())),
                     ]);
-                    log.log("talent.fail", context.now_ms, fields);
+                    log.log("talent.fail", context.event_now_ms(), fields);
                 }
                 Err(DispatchFailure::Unavailable) => {
                     result.failed += 1;

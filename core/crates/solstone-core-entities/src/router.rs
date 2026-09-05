@@ -1888,12 +1888,13 @@ async fn accept_facet_candidate_route(
             format!("cannot accept candidate with status {status}"),
         );
     }
-    let title = candidate
+    let raw_name = candidate
         .get("name")
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_owned();
-    let facet_slug = solstone_core_facets::facet_slug(&title);
+    let facet_slug = solstone_core_facets::facet_slug(&raw_name);
+    let title = solstone_core_facets::humanize_facet_title(&raw_name);
     if !is_valid_facet_slug(&facet_slug) {
         return facet_candidate_error(
             &name_key,

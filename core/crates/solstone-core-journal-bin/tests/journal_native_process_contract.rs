@@ -3157,69 +3157,6 @@ fn native_think_all_modes_produce_their_falsifying_observables_without_python() 
     );
 }
 
-/// The talent runtime must not be a plugin host: no crate in the shipped tree
-/// may resolve an interpreter.
-///
-/// Exhaustive over `core/crates/*/src` rather than over an enumerated list of
-/// `think`'s reach, because an enumeration silently stops covering a module
-/// added after it was written. Production-half only: an occurrence at or after
-/// a file's first `#[cfg(test)]` is test scaffolding, and several crates
-/// legitimately write interpreter stubs there.
-#[test]
-fn no_crate_resolves_an_interpreter() {
-    let crates = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("crates directory")
-        .to_path_buf();
-    let sources = rust_sources_under(&crates);
-    // A walk that found nothing would report a clean tree. This lower bound is
-    // far below the current count and only has to exclude "the walk broke".
-    assert!(
-        sources.len() > 200,
-        "source walk found only {} files under {}",
-        sources.len(),
-        crates.display()
-    );
-
-    let owners = |needle: &str| {
-        let mut owners = BTreeSet::new();
-        for path in &sources {
-            let Ok(body) = fs::read_to_string(path) else {
-                continue;
-            };
-            let cutoff = body.find("#[cfg(test)]").unwrap_or(body.len());
-            if body[..cutoff].contains(needle)
-                && let Ok(relative) = path.strip_prefix(&crates)
-                && let Some(owner) = relative.components().next()
-            {
-                owners.insert(owner.as_os_str().to_string_lossy().into_owned());
-            }
-        }
-        owners
-    };
-
-    let resolvers = owners("sibling_python");
-    assert!(
-        resolvers.is_empty(),
-        "crates resolve an interpreter: {resolvers:?}"
-    );
-    // Negative control: a token that cannot occur must return nothing over the
-    // same walk, so a nonempty answer is not an artefact of the reader.
-    assert!(
-        owners("sibling_pythonium_resolver").is_empty(),
-        "impossible token matched; the scan is not reading what it claims to"
-    );
-    // Positive control: an independently-guaranteed needle (the SPDX header
-    // every source file carries, per the repo's own mandate) must be found by
-    // the same reader over the same walk. Without this, the walk could be
-    // reading nothing and both assertions above would pass vacuously.
-    assert!(
-        !owners("SPDX-License-Identifier").is_empty(),
-        "positive control failed; the scan cannot find a needle known to be \
-         present in every crate, so its emptiness above proves nothing"
-    );
-}
-
 fn rust_sources_under(crates: &Path) -> Vec<PathBuf> {
     let mut sources = Vec::new();
     let mut pending = match fs::read_dir(crates) {

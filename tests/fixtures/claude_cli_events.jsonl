@@ -1,6 +1,0 @@
-{"type":"system","subtype":"init","session_id":"test-session-abc123","model":"claude-sonnet-4-20250514","tools":[{"name":"Read","type":"computer"}],"permissionMode":"plan"}
-{"type":"assistant","message":{"id":"msg_01ABC","role":"assistant","content":[{"type":"text","text":"I'll read the file for you."}],"model":"claude-sonnet-4-20250514","stop_reason":null},"session_id":"test-session-abc123"}
-{"type":"assistant","message":{"id":"msg_01ABC","role":"assistant","content":[{"type":"tool_use","id":"toolu_01XYZ","name":"Read","input":{"file_path":"/tmp/test.txt"}}],"model":"claude-sonnet-4-20250514","stop_reason":null},"session_id":"test-session-abc123"}
-{"type":"user","message":{"role":"user","content":[{"tool_use_id":"toolu_01XYZ","type":"tool_result","content":"Hello, world!"}]}}
-{"type":"assistant","message":{"id":"msg_02DEF","role":"assistant","content":[{"type":"text","text":"The file contains: Hello, world!"}],"model":"claude-sonnet-4-20250514","stop_reason":"end_turn"},"session_id":"test-session-abc123"}
-{"type":"result","total_cost_usd":0.0042,"usage":{"input_tokens":150,"output_tokens":30},"session_id":"test-session-abc123","duration_ms":1234}

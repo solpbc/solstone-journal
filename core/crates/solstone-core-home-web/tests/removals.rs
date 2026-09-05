@@ -21,13 +21,19 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
-use chrono::{Days, Local, SecondsFormat, Utc};
+use chrono::{DateTime, Days, Local, SecondsFormat, TimeZone, Utc};
 use serde_json::{Value, json};
 use solstone_core_retention_client::{RemovalClass, policy_from_retention};
 use tempfile::TempDir;
 use tower::ServiceExt;
 
 static EXECUTOR_ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+fn fixed_removal_now() -> DateTime<Utc> {
+    Utc.with_ymd_and_hms(2026, 8, 30, 12, 0, 0)
+        .single()
+        .expect("fixed removal clock")
+}
 
 const STUB: &str = r#"#!/bin/sh
 id=''
@@ -77,7 +83,7 @@ impl Harness {
     fn router(&self) -> Router {
         solstone_core_home_web::routes(
             self.root.path().to_path_buf(),
-            solstone_core_home_web::Clock::system(),
+            solstone_core_home_web::Clock::fixed(fixed_removal_now()),
         )
     }
 
@@ -587,6 +593,22 @@ fn vitals_render_calm_neutral_without_attention_chip() {
     );
 }
 
+#[test]
+fn yesterday_processing_splits_failures_from_neutral_summary() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let output = Command::new("node")
+        .arg(manifest_dir.join("tests/yesterday_processing_render.js"))
+        .arg(manifest_dir)
+        .output()
+        .expect("yesterday-processing render harness");
+    assert!(
+        output.status.success(),
+        "yesterday-processing render harness: {}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 fn run_retention(binary: &Path, args: &[&str]) -> Value {
     let output = Command::new(binary)
         .args(args)
@@ -724,7 +746,8 @@ fn real_executor_refuses_when_the_current_policy_no_longer_releases_the_mark() {
     let _guard = EXECUTOR_ENV_LOCK.lock().expect("executor environment lock");
     let binary = support::retention_binary();
     let harness = Harness::new();
-    let today = Local::now().date_naive();
+    let now = fixed_removal_now();
+    let today = now.with_timezone(&Local).date_naive();
     let segment_day = today
         .checked_sub_days(Days::new(2))
         .expect("segment date")
@@ -734,7 +757,7 @@ fn real_executor_refuses_when_the_current_policy_no_longer_releases_the_mark() {
     let policy = r#"{"default_rule":{"anchor":"captured","period":1,"priority":0},"enabled":true}"#;
     let root = harness.root.path().display().to_string();
     let today = today.format("%Y-%m-%d").to_string();
-    let now = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
+    let now = now.to_rfc3339_opts(SecondsFormat::Secs, true);
     let marked = run_retention(
         &binary,
         &[
@@ -1058,6 +1081,7 @@ fn product_processed_journal_releases_empty_audio_while_ordinary_hits_the_floor(
     let approved = approve(&harness, &binary, &id);
     assert_eq!(approved.1["state"], "approve.deleted");
     assert_eq!(approved.1["removed_count"], 1);
+    assert_eq!(approved.1["not_removed_count"], 0);
     assert!(!segment.join("audio.flac").exists());
     assert!(segment.join("extra.flac").exists());
 }

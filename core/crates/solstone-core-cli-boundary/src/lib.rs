@@ -15,6 +15,11 @@ pub use mover_tombstones::{
     JOURNAL_EXPORT_TOMBSTONE, TRANSFER_EXPORT_TOMBSTONE, TRANSFER_IMPORT_TOMBSTONE,
 };
 
+/// The usage line native `journal describe` prints for an argument error.
+/// It belongs in the names-only boundary so the standalone media helper does
+/// not depend on the full command router just to render its owner-facing verb.
+pub const DESCRIBE_USAGE: &str = "usage: journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE\n";
+
 #[cfg(test)]
 mod tests {
     use super::*;

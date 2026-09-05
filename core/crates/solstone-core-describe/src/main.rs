@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use serde_json::Value;
-use solstone_core_cli::DESCRIBE_USAGE;
+use solstone_core_cli_boundary::DESCRIBE_USAGE;
 use solstone_core_describe::selection::{CategoryOverride, Importance};
 use solstone_core_describe::{WinnowConfig, pipeline, process_video_metadata};
 use solstone_core_journal_config::read_journal_config;

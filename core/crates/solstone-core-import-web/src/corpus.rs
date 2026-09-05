@@ -224,10 +224,14 @@ pub(crate) mod tests {
                         .ok()
                         .as_ref()
                         == Some(expected)
-                } else {
+                } else if let Some(recorded) = case.get("body_sha256").and_then(Value::as_str) {
                     actual_body.len() == case["body_bytes"].as_u64().expect("body bytes") as usize
-                        && format!("{:x}", Sha256::digest(&actual_body))
-                            == case["body_sha256"].as_str().expect("body hash")
+                        && format!("{:x}", Sha256::digest(&actual_body)) == recorded
+                } else {
+                    // No recorded digest: a served frontend asset, deliberately not
+                    // body-asserted. Status, content type and Location above still are.
+                    // See the fixture's corpus_maintenance note.
+                    true
                 };
                 let matches = status.as_u16() == case["status"].as_u64().expect("status") as u16
                     && content_type == case["content_type"].as_str().expect("content type")

@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::process::ExitCode;
-use std::sync::{Arc, mpsc};
+#[cfg(unix)]
+use std::sync::Arc;
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 use std::{
@@ -45,6 +47,7 @@ use solstone_core_cli::{
     TransferSendOptions, USAGE, evaluate_args, render_service_diagnostic, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
+#[cfg(unix)]
 mod brain_owner;
 mod check;
 mod config;
@@ -53,27 +56,33 @@ mod engage;
 mod facet_candidates;
 mod health;
 mod health_logs;
+#[cfg(unix)]
 mod heartbeat;
 mod identity;
 mod import_sources;
 mod install_models;
 mod install_provider;
+#[cfg(unix)]
 mod journal_route;
 mod navigate;
+#[cfg(unix)]
 mod service;
 #[cfg(unix)]
 mod service_capture;
 mod service_logs;
 mod settings;
+#[cfg(unix)]
 use solstone_core::supervisor;
 #[cfg(all(unix, feature = "journal-mcp-endpoint"))]
 use solstone_core::{OAuthStore, OAuthStoreError, TokenStore, TokenStoreError};
+#[cfg(unix)]
 use solstone_core_system::lifecycle::{
     ADMISSION_WAIT_TERMINAL_COPY, ADMISSION_WAIT_UNVERIFIABLE_COPY, CoordinatorBootstrap,
     DeclaredParent, HostedServiceKind, HostedServiceParentRuntime, ParentAdmissionFailure,
     ParentLossCoordinator, acknowledge_hosted_child_admission, admit_hosted_service_parent,
     arm_parent_loss_coordinator_termination_guard,
 };
+#[cfg(unix)]
 use solstone_core_system::process::ProcessInstance;
 mod thinking;
 use solstone_core_indexer_query::{
@@ -151,6 +160,7 @@ fn install_logger() {
         .try_init();
 }
 
+#[cfg(unix)]
 fn resolve_declared_parent(
     hosted_parent: bool,
 ) -> Result<Option<DeclaredParent>, ParentAdmissionFailure> {
@@ -164,6 +174,7 @@ fn resolve_declared_parent(
 /// Gate every supervisor-spawned service before it can bind or publish any
 /// readiness artifact. Unhosted commands receive `None` and retain their
 /// existing service behavior unchanged.
+#[cfg(unix)]
 fn run_hosted_service<F>(journal: &Path, kind: HostedServiceKind, run: F) -> ExitCode
 where
     F: FnOnce(Option<Arc<HostedServiceParentRuntime>>) -> ExitCode,
@@ -180,6 +191,7 @@ where
     }
 }
 
+#[cfg(unix)]
 const fn kind_name(kind: HostedServiceKind) -> &'static str {
     match kind {
         HostedServiceKind::Convey => "convey",
@@ -190,6 +202,7 @@ const fn kind_name(kind: HostedServiceKind) -> &'static str {
     }
 }
 
+#[cfg(unix)]
 fn run_supervisor(options: solstone_core_cli::SupervisorOptions) -> ExitCode {
     let parent = match resolve_declared_parent(options.hosted_parent) {
         Ok(parent) => parent,
@@ -230,6 +243,7 @@ fn run_supervisor(options: solstone_core_cli::SupervisorOptions) -> ExitCode {
     )
 }
 
+#[cfg(unix)]
 fn render_supervisor_host_outcome(outcome: supervisor::SupervisorHostOutcome) -> ExitCode {
     match outcome {
         supervisor::SupervisorHostOutcome::Refused {
@@ -285,6 +299,7 @@ fn render_supervisor_host_outcome(outcome: supervisor::SupervisorHostOutcome) ->
     }
 }
 
+#[cfg(unix)]
 fn exit_code_for_shutdown_cause(cause: supervisor::ShutdownCause) -> u8 {
     match cause {
         supervisor::ShutdownCause::Sync(supervisor::SyncFailureKind::Conflict) => 2,
@@ -296,6 +311,105 @@ fn exit_code_for_shutdown_cause(cause: supervisor::ShutdownCause) -> u8 {
         ) => EXIT_TEMPFAIL,
         supervisor::ShutdownCause::ParentLost(_) => EXIT_TEMPFAIL,
         supervisor::ShutdownCause::Signal(_) => 0,
+    }
+}
+
+#[cfg(not(unix))]
+fn unavailable() -> ExitCode {
+    ExitCode::from(EXIT_UNAVAILABLE)
+}
+
+#[cfg(not(unix))]
+fn run_supervisor(_options: solstone_core_cli::SupervisorOptions) -> ExitCode {
+    unavailable()
+}
+
+#[cfg(unix)]
+fn run_journal_route_inspect() -> ExitCode {
+    journal_route::inspect()
+}
+
+#[cfg(not(unix))]
+fn run_journal_route_inspect() -> ExitCode {
+    unavailable()
+}
+
+#[cfg(unix)]
+fn run_journal_route_repair(lock_owner: &str) -> ExitCode {
+    journal_route::repair(lock_owner)
+}
+
+#[cfg(not(unix))]
+fn run_journal_route_repair(_lock_owner: &str) -> ExitCode {
+    unavailable()
+}
+
+#[cfg(unix)]
+fn run_brain_owner(command: JournalBrainOwnerCommand) -> ExitCode {
+    brain_owner::run(command)
+}
+
+#[cfg(not(unix))]
+fn run_brain_owner(_command: JournalBrainOwnerCommand) -> ExitCode {
+    unavailable()
+}
+
+#[cfg(unix)]
+fn run_heartbeat(force: bool) -> ExitCode {
+    match resolve_process_journal_path() {
+        Ok(resolved) => heartbeat::run(&resolved.path, force),
+        Err(error) => print_journal_error(error),
+    }
+}
+
+#[cfg(not(unix))]
+fn run_heartbeat(_force: bool) -> ExitCode {
+    unavailable()
+}
+
+#[cfg(unix)]
+fn run_service(outcome: ServiceParseOutcome) -> ExitCode {
+    match outcome {
+        ServiceParseOutcome::Dispatch(ServiceAction::Logs { follow }) => {
+            service_logs::run(solstone_core_cli::ServiceLogsArgs { follow })
+        }
+        ServiceParseOutcome::Dispatch(action) => service::run(action),
+        ServiceParseOutcome::Exit {
+            code,
+            stdout,
+            stderr,
+        } => {
+            if let Some(stdout) = stdout {
+                print!("{stdout}");
+            }
+            if let Some(stderr) = stderr {
+                eprint!("{}", render_service_diagnostic(&stderr));
+            }
+            ExitCode::from(code)
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn run_service(outcome: ServiceParseOutcome) -> ExitCode {
+    match outcome {
+        ServiceParseOutcome::Dispatch(ServiceAction::Logs { follow }) => {
+            service_logs::run(solstone_core_cli::ServiceLogsArgs { follow })
+        }
+        ServiceParseOutcome::Dispatch(_) => unavailable(),
+        ServiceParseOutcome::Exit {
+            code,
+            stdout,
+            stderr,
+        } => {
+            if let Some(stdout) = stdout {
+                print!("{stdout}");
+            }
+            if let Some(stderr) = stderr {
+                eprint!("{}", render_service_diagnostic(&stderr));
+            }
+            ExitCode::from(code)
+        }
     }
 }
 
@@ -338,8 +452,8 @@ fn main() -> ExitCode {
             ExitCode::from(2)
         }
         Ok(Command::Setup(args)) => run_setup(args),
-        Ok(Command::JournalRouteInspect) => journal_route::inspect(),
-        Ok(Command::JournalRouteRepair { lock_owner }) => journal_route::repair(&lock_owner),
+        Ok(Command::JournalRouteInspect) => run_journal_route_inspect(),
+        Ok(Command::JournalRouteRepair { lock_owner }) => run_journal_route_repair(&lock_owner),
         Ok(Command::SetupHelp) => {
             print!("{}", solstone_core_setup::args::USAGE);
             ExitCode::SUCCESS
@@ -391,7 +505,7 @@ fn main() -> ExitCode {
             JournalBrainOwnerCommand::Usage => {
                 render_usage_error(solstone_core_cli::BRAIN_OWNER_USAGE, "journal brain")
             }
-            command => brain_owner::run(command),
+            command => run_brain_owner(command),
         },
         Ok(Command::Body(command)) => run_body(command),
         Ok(Command::Transfer(command)) => run_transfer(command),
@@ -573,10 +687,7 @@ fn main() -> ExitCode {
         Ok(Command::HealthLogs(args)) => health_logs::run(args),
         Ok(Command::HealthLogsUsage(args)) => health_logs::usage(args),
         Ok(Command::HealthLogsHelp(args)) => health_logs::help(args),
-        Ok(Command::Heartbeat { force }) => match resolve_process_journal_path() {
-            Ok(resolved) => heartbeat::run(&resolved.path, force),
-            Err(error) => print_journal_error(error),
-        },
+        Ok(Command::Heartbeat { force }) => run_heartbeat(force),
         Ok(Command::HeartbeatUsage) => render_usage_error(HEARTBEAT_USAGE, "journal heartbeat"),
         Ok(Command::HeartbeatHelp) => {
             print!("{HEARTBEAT_HELP}");
@@ -591,25 +702,7 @@ fn main() -> ExitCode {
             print!("{ENGAGE_HELP}");
             ExitCode::SUCCESS
         }
-        Ok(Command::Service(outcome)) => match outcome {
-            ServiceParseOutcome::Dispatch(ServiceAction::Logs { follow }) => {
-                service_logs::run(solstone_core_cli::ServiceLogsArgs { follow })
-            }
-            ServiceParseOutcome::Dispatch(action) => service::run(action),
-            ServiceParseOutcome::Exit {
-                code,
-                stdout,
-                stderr,
-            } => {
-                if let Some(stdout) = stdout {
-                    print!("{stdout}");
-                }
-                if let Some(stderr) = stderr {
-                    eprint!("{}", render_service_diagnostic(&stderr));
-                }
-                ExitCode::from(code)
-            }
-        },
+        Ok(Command::Service(outcome)) => run_service(outcome),
         Ok(Command::Navigate { path }) => navigate::run(path),
         Ok(Command::NavigateHelp) => {
             print!("{NAVIGATE_HELP}");
@@ -971,6 +1064,7 @@ fn run_maintenance(args: Vec<OsString>) -> ExitCode {
     })
 }
 
+#[cfg(unix)]
 fn run_talent_worker(args: Vec<OsString>) -> ExitCode {
     let arguments = match require_utf8_argv("talent worker", &args) {
         Ok(arguments) => arguments,
@@ -987,6 +1081,12 @@ fn run_talent_worker(args: Vec<OsString>) -> ExitCode {
     solstone_core_talent_runtime::run_worker(&arguments, &journal)
 }
 
+#[cfg(not(unix))]
+fn run_talent_worker(_args: Vec<OsString>) -> ExitCode {
+    unavailable()
+}
+
+#[cfg(unix)]
 fn run_parent_loss_coordinator(args: Vec<OsString>) -> ExitCode {
     if let Err(error) = arm_parent_loss_coordinator_termination_guard() {
         eprintln!("parent-loss coordinator: could not block group-termination signal: {error}");
@@ -1053,6 +1153,11 @@ fn run_parent_loss_coordinator(args: Vec<OsString>) -> ExitCode {
             ExitCode::from(EXIT_TEMPFAIL)
         }
     }
+}
+
+#[cfg(not(unix))]
+fn run_parent_loss_coordinator(_args: Vec<OsString>) -> ExitCode {
+    unavailable()
 }
 
 fn run_reprocess(args: Vec<OsString>) -> ExitCode {
@@ -1275,6 +1380,7 @@ fn print_peer_export_summary(report: &solstone_core_transfer::PeerExportReport) 
     }
 }
 
+#[cfg(unix)]
 fn run_convey(options: ConveyOptions) -> ExitCode {
     let journal = match resolve_journal_config_path(options.journal_override) {
         Ok(line) => line.path,
@@ -1297,6 +1403,11 @@ fn run_convey(options: ConveyOptions) -> ExitCode {
             }
         }
     })
+}
+
+#[cfg(not(unix))]
+fn run_convey(_options: ConveyOptions) -> ExitCode {
+    unavailable()
 }
 
 fn run_schedule(_options: ScheduleOptions) -> ExitCode {
@@ -2808,10 +2919,10 @@ fn generate_response_for_request(
                         ),
                     )
                 }
-                solstone_core_generate_wire::ConfidentialResult::AttestationFailed => {
+                solstone_core_generate_wire::ConfidentialResult::AttestationFailed(detail) => {
                     solstone_core_generate::GenerateResponse::Refused(
                         solstone_core_generate_wire::refusal_for(
-                            &solstone_core_generate_wire::LaneOutcome::AttestationFailed,
+                            &solstone_core_generate_wire::LaneOutcome::AttestationFailed(detail),
                             &provider,
                             request_id.clone(),
                         ),
@@ -2980,7 +3091,7 @@ fn generate_response_for_request(
         }
         solstone_core_generate_wire::LaneOutcome::NoEngine
         | solstone_core_generate_wire::LaneOutcome::AttestationNotVerified
-        | solstone_core_generate_wire::LaneOutcome::AttestationFailed
+        | solstone_core_generate_wire::LaneOutcome::AttestationFailed(_)
         | solstone_core_generate_wire::LaneOutcome::AttestationStale
         | solstone_core_generate_wire::LaneOutcome::UnimplementedLane => {
             solstone_core_generate::GenerateResponse::Refused(
@@ -5082,6 +5193,7 @@ const fn oauth_store_error_exit(error: &OAuthStoreError) -> u8 {
     }
 }
 
+#[cfg(unix)]
 fn run_spl_service(options: ServiceOptions) -> ExitCode {
     let journal = match resolve_process_journal_path() {
         Ok(journal) => journal,
@@ -5107,6 +5219,12 @@ fn run_spl_service(options: ServiceOptions) -> ExitCode {
     })
 }
 
+#[cfg(not(unix))]
+fn run_spl_service(_options: ServiceOptions) -> ExitCode {
+    unavailable()
+}
+
+#[cfg(unix)]
 fn run_sense_service(options: ServiceOptions) -> ExitCode {
     let journal = match resolve_process_journal_path() {
         Ok(journal) => journal,
@@ -5152,6 +5270,12 @@ fn run_sense_service(options: ServiceOptions) -> ExitCode {
     })
 }
 
+#[cfg(not(unix))]
+fn run_sense_service(_options: ServiceOptions) -> ExitCode {
+    unavailable()
+}
+
+#[cfg(unix)]
 fn run_cortex_service(options: ServiceOptions) -> ExitCode {
     let journal = match resolve_process_journal_path() {
         Ok(journal) => journal,
@@ -5184,6 +5308,11 @@ fn run_cortex_service(options: ServiceOptions) -> ExitCode {
             }
         }
     })
+}
+
+#[cfg(not(unix))]
+fn run_cortex_service(_options: ServiceOptions) -> ExitCode {
+    unavailable()
 }
 
 fn run_sense(options: SenseOptions) -> ExitCode {
@@ -6023,16 +6152,19 @@ mod tests {
         assert_eq!(EXIT_PROTOCOL, 76);
     }
 
+    #[cfg(unix)]
     #[test]
     fn resolve_declared_parent_skips_capture_when_hosting_is_disabled() {
         assert_eq!(resolve_declared_parent(false), Ok(None));
     }
 
+    #[cfg(unix)]
     #[test]
     fn resolve_declared_parent_captures_the_live_direct_parent_when_hosting_is_enabled() {
         assert!(matches!(resolve_declared_parent(true), Ok(Some(_))));
     }
 
+    #[cfg(unix)]
     #[test]
     fn parent_liveness_refusal_uses_the_existing_temporary_failure_renderer() {
         let outcome = supervisor::SupervisorHostOutcome::Refused {
@@ -6046,6 +6178,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn shutdown_cause_exit_codes_distinguish_conflict_from_operational_failure() {
         assert_eq!(

@@ -8,6 +8,7 @@
   "properties": {
     "narrative": {
       "type": "string",
+      "minLength": 1,
       "maxLength": 24000
     },
     "entities": {

@@ -1923,15 +1923,6 @@ fn every_flipped_catalog_unit_contacts_only_its_origin_for_each_failure_class() 
 }
 
 #[test]
-fn origin_contact_assertion_rejects_a_test_double_upstream_fallback() {
-    let contacted = BTreeSet::from(["127.0.0.1".to_owned(), "localhost".to_owned()]);
-    assert!(
-        !contacted_only_origin_host(&contacted, "127.0.0.1"),
-        "the host-set assertion must reject fallback"
-    );
-}
-
-#[test]
 fn download_artifact_refuses_userinfo_url_with_distinct_envelope_reason() {
     let artifact = fixture_artifact("https://github.com/upstream".to_owned(), "artifact", b"");
     let policy = archive::DownloadHostPolicy {

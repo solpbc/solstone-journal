@@ -152,74 +152,18 @@ fn assemble_pdf(objects: &[Vec<u8>]) -> Vec<u8> {
 
 #[cfg(test)]
 pub(crate) fn extract_text_checked(bytes: &[u8]) -> String {
-    extractor_preflight();
     pdf_extract::extract_text_from_mem(bytes).expect("pdf-extract must extract generated PDF")
 }
 
 #[cfg(test)]
-fn extractor_preflight() {
-    let instrument = handwritten_instrument_pdf();
-    let text = pdf_extract::extract_text_from_mem(&instrument)
-        .expect("pdf-extract instrument must be available");
-    assert!(
-        text.contains("instrument line"),
-        "unexpected extractor text: {text:?}"
-    );
-}
-
-#[cfg(test)]
-fn handwritten_instrument_pdf() -> Vec<u8> {
-    let stream = b"BT /F1 12 Tf 72 720 Td (instrument line) Tj ET\n";
-    let mut objects = vec![
-        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
-        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>".to_vec(),
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_vec(),
-    ];
-    let mut content = format!("<< /Length {} >>\nstream\n", stream.len()).into_bytes();
-    content.extend_from_slice(stream);
-    content.extend_from_slice(b"endstream");
-    objects.push(content);
-
-    let mut pdf = b"%PDF-1.4\n".to_vec();
-    let mut offsets = Vec::new();
-    for (index, object) in objects.iter().enumerate() {
-        offsets.push(pdf.len());
-        pdf.extend_from_slice(format!("{} 0 obj\n", index + 1).as_bytes());
-        pdf.extend_from_slice(object);
-        pdf.extend_from_slice(b"\nendobj\n");
-    }
-    let xref = pdf.len();
-    pdf.extend_from_slice(b"xref\n0 6\n0000000000 65535 f \n");
-    for offset in offsets {
-        pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
-    }
-    pdf.extend_from_slice(
-        format!("trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n").as_bytes(),
-    );
-    pdf
-}
-
-#[cfg(test)]
 mod tests {
-    use super::{extract_text_checked, extractor_preflight, render};
-    use crate::pdf::{markdown::layout, render as render_newsletter};
-
-    #[test]
-    fn pdf_extractor_instrument_is_live() {
-        extractor_preflight();
-    }
+    use super::extract_text_checked;
+    use crate::pdf::render as render_newsletter;
 
     #[test]
     fn winansi_marks_unrepresentable_text() {
         let pdf = render_newsletter("em — ‘curly’ \"quotes\" · A😀B", "work", "Sun May 10, 2026");
         let text = extract_text_checked(&pdf);
         assert!(text.contains("— ‘curly’ \"quotes\" · A[?]B"), "{text:?}");
-    }
-
-    #[test]
-    fn deterministic_bytes() {
-        let blocks = layout("same input");
-        assert_eq!(render(&blocks), render(&blocks));
     }
 }

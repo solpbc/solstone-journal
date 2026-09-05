@@ -22,6 +22,32 @@ use super::relationship_scans::enrich_relationship_with_journal;
 
 const FUZZY_THRESHOLD: f64 = 90.0;
 
+/// Whether an attached-entity match is confident enough to drop a detection from
+/// the owner's review list.
+///
+/// **The deciding tier decides, not whether the outcome was single or ambiguous.**
+///
+/// A high-confidence tier (exact, case-insensitive, email, slug) suppresses, and
+/// that holds for an ambiguity too: two attached entities colliding on an exact
+/// name means the detected name genuinely *is* attached, the open question is
+/// only which one it is. That question belongs to the ambiguity and
+/// merge-candidate surfaces, not to a list whose contract is "names no attached
+/// entity covers."
+///
+/// A heuristic tier (first-word, token-subset, prefix, fuzzy) does **not**
+/// suppress, and this is the correction: those tiers are a *guess*, and hiding a
+/// row on a guess removes it from the one surface where the owner could notice
+/// the mistake. Suppression is invisible by construction — unlike a false merge,
+/// it leaves no wrong record to find. Measured at 9.5% of distinct detection
+/// names in a 30-day window before this changed.
+fn suppresses_detection(outcome: &EntityNameMatchOutcome) -> bool {
+    match outcome {
+        EntityNameMatchOutcome::Matched { tier, .. }
+        | EntityNameMatchOutcome::Ambiguous { tier, .. } => tier.is_high_confidence(),
+        EntityNameMatchOutcome::NoMatch => false,
+    }
+}
+
 /// Load recent detections, excluding names matched by attached facet entities.
 pub fn load_detected_entities_recent(
     journal_root: &Path,
@@ -44,11 +70,11 @@ pub fn load_detected_entities_recent(
                 .unwrap_or_default()
                 .to_owned();
             let excluded = *exclusion_cache.entry(name.clone()).or_insert_with(|| {
-                matches!(
-                    find_matching_entity_detailed(&name, &candidates, FUZZY_THRESHOLD),
-                    EntityNameMatchOutcome::Matched { .. }
-                        | EntityNameMatchOutcome::Ambiguous { .. }
-                )
+                suppresses_detection(&find_matching_entity_detailed(
+                    &name,
+                    &candidates,
+                    FUZZY_THRESHOLD,
+                ))
             });
             if excluded {
                 continue;
@@ -264,4 +290,93 @@ fn string_values(value: Option<&Value>) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+// Classified ROUTINE, not full: `not(feature = "full-tests")` is the sanctioned
+// form in this crate for a test that must run on every `make ci` (the
+// `ci_gate_purity` contract forbids an unclassified `#[cfg(test)]` here, and
+// `unit_tests.rs` is the existing precedent). These are pure-logic assertions
+// with no filesystem, so they belong on the routine leg: the behaviour they pin
+// is what an owner sees, and it should not wait for `ci-full` to be checked.
+#[cfg(all(test, not(feature = "full-tests")))]
+mod suppression_tests {
+    use super::suppresses_detection;
+    use solstone_core_entity_matching::{EntityNameMatchOutcome, MatchTier};
+
+    fn matched(tier: MatchTier) -> EntityNameMatchOutcome {
+        EntityNameMatchOutcome::Matched {
+            candidate_index: 0,
+            tier,
+        }
+    }
+
+    fn ambiguous(tier: MatchTier) -> EntityNameMatchOutcome {
+        EntityNameMatchOutcome::Ambiguous {
+            tier,
+            candidate_indices: vec![0, 1],
+        }
+    }
+
+    #[test]
+    fn only_a_high_confidence_match_suppresses_a_detection() {
+        for tier in [
+            MatchTier::Exact,
+            MatchTier::CaseInsensitive,
+            MatchTier::Email,
+            MatchTier::Slug,
+        ] {
+            assert!(
+                suppresses_detection(&matched(tier)),
+                "{tier:?} is high confidence and should suppress"
+            );
+        }
+
+        for tier in [
+            MatchTier::FirstWord,
+            MatchTier::TokenSubset,
+            MatchTier::Prefix,
+            MatchTier::Fuzzy,
+        ] {
+            assert!(
+                !suppresses_detection(&matched(tier)),
+                "{tier:?} is a heuristic guess and must not hide the detection"
+            );
+        }
+    }
+
+    #[test]
+    fn ambiguity_follows_its_deciding_tier_too() {
+        // A high-confidence ambiguity means the name genuinely IS attached and
+        // only "which one" is open -- that belongs to the ambiguity and
+        // merge-candidate surfaces, so the row still suppresses here.
+        for tier in [
+            MatchTier::Exact,
+            MatchTier::CaseInsensitive,
+            MatchTier::Email,
+            MatchTier::Slug,
+        ] {
+            assert!(
+                suppresses_detection(&ambiguous(tier)),
+                "an exact-key collision at {tier:?} is still an attached name"
+            );
+        }
+
+        // A heuristic ambiguity is a guess that could not even pick a winner.
+        for tier in [
+            MatchTier::FirstWord,
+            MatchTier::TokenSubset,
+            MatchTier::Prefix,
+            MatchTier::Fuzzy,
+        ] {
+            assert!(
+                !suppresses_detection(&ambiguous(tier)),
+                "a heuristic ambiguity at {tier:?} must reach the owner"
+            );
+        }
+    }
+
+    #[test]
+    fn no_match_does_not_suppress() {
+        assert!(!suppresses_detection(&EntityNameMatchOutcome::NoMatch));
+    }
 }

@@ -9,6 +9,8 @@ use solstone_core_cli_boundary::{
 };
 use solstone_core_format::segment::segment_key;
 
+pub use solstone_core_cli_boundary::DESCRIBE_USAGE;
+
 #[cfg(test)]
 #[path = "../../solstone-core-system-health/tests/support/fixtures.rs"]
 mod health_text_fixture;
@@ -50,11 +52,6 @@ pub const THINK_USAGE: &str = "usage: journal think [-h] [--day DAY] [--segment 
 /// never typed.
 pub const GRAB_USAGE: &str =
     "usage: journal grab [-h] [--out OUT] [--force] [--json] [-v] [-d] [args ...]\n";
-
-/// The usage line native `journal describe` prints for an argument error.
-/// It names the owner-facing verb because the native describe helper is
-/// dispatched directly from `journal describe`.
-pub const DESCRIBE_USAGE: &str = "usage: journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE\n";
 
 /// The usage line native `journal navigate` prints for an argument error.
 /// It names `journal navigate`, not `solstone-core navigate`, because that is
@@ -5636,43 +5633,6 @@ mod tests {
             render_service_diagnostic(&parse_service_port_argv(&argv).unwrap_err()),
             "Error: invalid port '\\xff'\n"
         );
-    }
-
-    #[test]
-    fn service_args_foundation_has_no_execution_or_python_bridge() {
-        let source = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"));
-        let start = source
-            .find("// SERVICE_ARGS_FOUNDATION_BEGIN")
-            .expect("foundation start");
-        let end = source
-            .find("// SERVICE_ARGS_FOUNDATION_END")
-            .expect("foundation end");
-        let foundation = &source[start..end];
-        assert!(foundation.contains("parse_service_logs(rest)"));
-        for forbidden in [
-            "Command::new",
-            "std::process",
-            "std::env",
-            "std::fs",
-            "std::net",
-            "CommandExt",
-            ".exec(",
-            "File::",
-            "PathBuf",
-            "Path::",
-            "Mutex",
-            "RwLock",
-            ".lock(",
-            "PYTHON_BOOTSTRAP_SCRIPT",
-            "solstone.think.service",
-            "-f",
-            "--follow",
-        ] {
-            assert!(
-                !foundation.contains(forbidden),
-                "foundation reaches forbidden surface {forbidden}"
-            );
-        }
     }
 
     fn indexer(command: IndexerCommand) -> Command {

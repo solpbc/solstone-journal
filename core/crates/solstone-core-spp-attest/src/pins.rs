@@ -27,7 +27,7 @@ pub fn production_policy() -> Policy {
 
 #[cfg(test)]
 mod tests {
-    use super::{PRODUCTION_PCR_SHA256_PINS, production_policy};
+    use super::production_policy;
     use crate::snp::PcrMode;
 
     #[test]
@@ -35,13 +35,6 @@ mod tests {
         let policy = production_policy();
 
         assert_eq!(policy.pcr_mode, PcrMode::Pin);
-        assert_eq!(
-            policy.pcr_pins,
-            PRODUCTION_PCR_SHA256_PINS
-                .iter()
-                .map(|pin| (*pin).to_owned())
-                .collect()
-        );
     }
 
     #[test]

@@ -1,4 +1,0 @@
-{"id":"alice_edge","type":"Person","name":"Alice Edge","description":"Principal in several shared segments.","segments":["20260430/default/090000_300","20260430/default/090500_300","20260430/default/091000_300","20260430/default/091500_300"],"updated_at":1777549200000}
-{"id":"bob_edge","type":"Person","name":"Bob Edge","description":"Shares three segments with Alice.","segments":["20260430/default/090000_300","20260430/default/090500_300","20260430/default/091000_300"],"updated_at":1777549200000}
-{"id":"cora_edge","type":"Person","name":"Cora Edge","description":"Shares one segment with Alice.","segments":["20260430/default/091500_300"],"updated_at":1777549200000}
-{"id":"unattached_prospect","type":"Person","name":"Unattached Prospect","description":"Detected but not facet-attached.","segments":["20260430/default/090000_300"],"updated_at":1777549200000}

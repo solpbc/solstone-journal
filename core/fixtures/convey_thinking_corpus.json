@@ -3,6 +3,7 @@
     "machine": "x86_64",
     "platform": "linux"
   },
+  "corpus_maintenance": "Served frontend assets (status 200, raw-body, text/html|javascript|css) are NOT body-asserted. Their records carry body_assertion instead of body_sha256/body_bytes/body_text, and a record with no body_sha256 is not body-asserted by the replay. Pinning an asset's bytes is not a product assertion -- it reddens on every deliberate frontend edit and says nothing about what changed -- and with no recorder left the only repair was hand-patching a hash. Status, content type, content disposition and Location are still asserted for these routes, and API response bodies (normalized-json) are still fully asserted. Assert frontend CONTENT with a targeted check on the thing you care about, never a whole-file digest.",
   "coverage_limits": {
     "a_green_replay_does_not_prove": "mutation semantics. Write probes here are overwhelmingly REFUSALS: 280 cases use a mutating method but only 6 returned 2xx and therefore actually changed state. A route's refusal envelope being pinned says nothing about what a SUCCESSFUL call does, and nothing at all about what a successful SECOND call does.",
     "cases_that_actually_mutated": 6,
@@ -51,8 +52,7 @@
   "phases": {
     "bundled_local": [
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -72,8 +72,7 @@
         "why": "the bare app route keeps the current origin while adding the canonical slash"
       },
       {
-        "body_bytes": 26839,
-        "body_sha256": "3d4a022577e578f35ccf1673e8ff8659f843ca5b2881d39facd86b0a67115af6",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -82,8 +81,7 @@
         "why": "the app fragment bytes the shell injects"
       },
       {
-        "body_bytes": 92070,
-        "body_sha256": "633a264615c55190894228b2d69b9ccf99d98c6c4e11cce49c78aacd9796d5d3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/javascript; charset=utf-8",
         "method": "GET",
@@ -2290,8 +2288,7 @@
     ],
     "byo_cloud": [
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -2311,8 +2308,7 @@
         "why": "the bare app route keeps the current origin while adding the canonical slash"
       },
       {
-        "body_bytes": 26839,
-        "body_sha256": "3d4a022577e578f35ccf1673e8ff8659f843ca5b2881d39facd86b0a67115af6",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -2321,8 +2317,7 @@
         "why": "the app fragment bytes the shell injects"
       },
       {
-        "body_bytes": 92070,
-        "body_sha256": "633a264615c55190894228b2d69b9ccf99d98c6c4e11cce49c78aacd9796d5d3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/javascript; charset=utf-8",
         "method": "GET",
@@ -4527,8 +4522,7 @@
     ],
     "byo_endpoint": [
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -4548,8 +4542,7 @@
         "why": "the bare app route keeps the current origin while adding the canonical slash"
       },
       {
-        "body_bytes": 26839,
-        "body_sha256": "3d4a022577e578f35ccf1673e8ff8659f843ca5b2881d39facd86b0a67115af6",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -4558,8 +4551,7 @@
         "why": "the app fragment bytes the shell injects"
       },
       {
-        "body_bytes": 92070,
-        "body_sha256": "633a264615c55190894228b2d69b9ccf99d98c6c4e11cce49c78aacd9796d5d3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/javascript; charset=utf-8",
         "method": "GET",
@@ -6744,8 +6736,7 @@
     ],
     "confidential": [
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -6765,8 +6756,7 @@
         "why": "the bare app route keeps the current origin while adding the canonical slash"
       },
       {
-        "body_bytes": 26839,
-        "body_sha256": "3d4a022577e578f35ccf1673e8ff8659f843ca5b2881d39facd86b0a67115af6",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -6775,8 +6765,7 @@
         "why": "the app fragment bytes the shell injects"
       },
       {
-        "body_bytes": 92070,
-        "body_sha256": "633a264615c55190894228b2d69b9ccf99d98c6c4e11cce49c78aacd9796d5d3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/javascript; charset=utf-8",
         "method": "GET",
@@ -9145,8 +9134,7 @@
     ],
     "confidential_inactive": [
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -9166,8 +9154,7 @@
         "why": "the bare app route keeps the current origin while adding the canonical slash"
       },
       {
-        "body_bytes": 26839,
-        "body_sha256": "3d4a022577e578f35ccf1673e8ff8659f843ca5b2881d39facd86b0a67115af6",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -9176,8 +9163,7 @@
         "why": "the app fragment bytes the shell injects"
       },
       {
-        "body_bytes": 92070,
-        "body_sha256": "633a264615c55190894228b2d69b9ccf99d98c6c4e11cce49c78aacd9796d5d3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/javascript; charset=utf-8",
         "method": "GET",
@@ -12689,8 +12675,7 @@
     ],
     "none": [
       {
-        "body_bytes": 7783,
-        "body_sha256": "124593f6055153cc6ccd8b2900a4e5ac0bfa6c8f880123790248ec6f406052a3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -12710,8 +12695,7 @@
         "why": "the bare app route keeps the current origin while adding the canonical slash"
       },
       {
-        "body_bytes": 26839,
-        "body_sha256": "3d4a022577e578f35ccf1673e8ff8659f843ca5b2881d39facd86b0a67115af6",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -12720,8 +12704,7 @@
         "why": "the app fragment bytes the shell injects"
       },
       {
-        "body_bytes": 92070,
-        "body_sha256": "633a264615c55190894228b2d69b9ccf99d98c6c4e11cce49c78aacd9796d5d3",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/javascript; charset=utf-8",
         "method": "GET",

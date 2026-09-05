@@ -77,7 +77,6 @@ fn request() -> CogitateRequest {
         "output_path": null,
         "schedule": "daily",
         "max_turns": 4,
-        "cost_cap_usd": 1.5,
         "context_window": 4096,
         "timeout_ms": 250,
         "read_call_budget": 5,

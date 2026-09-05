@@ -13,11 +13,15 @@ use std::fs;
 use std::io;
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
+#[cfg(windows)]
+use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value, json};
 use solstone_core_journal_io::{JsonWriteOptions, LockError, LockOptions, hold_lock, write_json};
+#[cfg(windows)]
+use solstone_core_journal_io::{WindowsFileIdentity, windows_file_identity};
 use time::{OffsetDateTime, UtcOffset, format_description::well_known::Rfc3339};
 
 use crate::pairing_identity::{PairingIdentityFields, Platform};
@@ -435,7 +439,10 @@ impl Clients {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ReloadKey {
+    #[cfg(unix)]
     inode: u64,
+    #[cfg(windows)]
+    identity: WindowsFileIdentity,
     mtime_ns: i128,
     size: u64,
 }
@@ -1289,12 +1296,24 @@ fn invalid_activity_field(field: &str) -> Box<dyn Error + Send + Sync> {
     ))
 }
 
+#[cfg(unix)]
 fn reload_key(path: &Path) -> Option<ReloadKey> {
     let metadata = fs::metadata(path).ok()?;
     Some(ReloadKey {
         inode: metadata.ino(),
         mtime_ns: i128::from(metadata.mtime()) * 1_000_000_000 + i128::from(metadata.mtime_nsec()),
         size: metadata.len(),
+    })
+}
+
+#[cfg(windows)]
+fn reload_key(path: &Path) -> Option<ReloadKey> {
+    let file = fs::File::open(path).ok()?;
+    let metadata = file.metadata().ok()?;
+    Some(ReloadKey {
+        identity: windows_file_identity(&file).ok()?,
+        mtime_ns: i128::from(metadata.last_write_time()),
+        size: metadata.file_size(),
     })
 }
 

@@ -5,6 +5,7 @@ use crate::{
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
 
+#[cfg(unix)]
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     let dir = context.home_dir.join("Library/LaunchAgents");
     let mut foreign = Vec::new();
@@ -74,6 +75,17 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     ))
 }
 
+#[cfg(not(unix))]
+pub fn run(_context: &CheckContext, check: Check) -> RunnerResult {
+    Ok(make_result(
+        check,
+        Status::Skip,
+        "not supported on windows",
+        None::<String>,
+    ))
+}
+
+#[cfg(unix)]
 fn command_strings(data: &plist::Dictionary) -> Vec<&str> {
     let mut strings = data
         .get("Program")
@@ -89,6 +101,7 @@ fn command_strings(data: &plist::Dictionary) -> Vec<&str> {
     strings
 }
 
+#[cfg(unix)]
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }

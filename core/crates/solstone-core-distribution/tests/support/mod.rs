@@ -59,7 +59,10 @@ pub fn linux_produce_dir(root: &Path, version: &str) -> (PathBuf, String) {
     promote(&PromoteRequest {
         dest: dest.clone(),
         work,
-        tree: vec![("bin/solstone-core".into(), b"core".to_vec(), 0o755)],
+        tree: vec![
+            ("bin/solstone-core".into(), b"core".to_vec(), 0o755),
+            ("bin/journal".into(), b"#!/bin/sh\nexit 0\n".to_vec(), 0o755),
+        ],
         version: version.to_owned(),
         basename: basename.clone(),
         os: "linux".into(),

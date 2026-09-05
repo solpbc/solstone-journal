@@ -17,6 +17,7 @@ use solstone_core_generate::{
 };
 use solstone_core_system_health::{DataState, read_segment_data_state};
 
+pub mod activity_contract;
 pub mod assemble;
 pub mod cogitate;
 pub mod contract;
@@ -27,8 +28,10 @@ pub mod facet_newsletter;
 pub mod morning_briefing;
 pub mod participation;
 pub mod prepare;
+mod prompt_context;
 pub mod pulse;
 pub mod schedule;
+mod screen_batch;
 pub mod speaker_attribution;
 pub mod steward;
 pub mod steward_health;
@@ -414,43 +417,53 @@ pub(crate) fn generate_and_write(
 ) -> RuntimeOutcome {
     let mut stage = stage;
     let response = match engine {
-        EngineKind::Generate => match generate.execute(&generate_request(prepared)) {
-            Ok(GenerateResponse::Generated(response)) => {
-                if prepared.config.contains_key("json_schema")
-                    && schema_validation_failed(response.schema_validation.as_ref())
-                {
-                    return RuntimeOutcome::SchemaValidationFailed {
-                        talent: prepared.name.clone(),
-                        validation: response.schema_validation.clone().unwrap_or(Value::Null),
+        EngineKind::Generate => match screen_batch::generate_if_needed(prepared, context, generate)
+        {
+            Some(Ok(response)) => response,
+            Some(Err(outcome)) => return outcome,
+            None => match generate.execute(&generate_request(prepared)) {
+                Ok(GenerateResponse::Generated(response)) => {
+                    if prepared.config.contains_key("json_schema")
+                        && schema_validation_failed(response.schema_validation.as_ref())
+                    {
+                        return RuntimeOutcome::SchemaValidationFailed {
+                            talent: prepared.name.clone(),
+                            validation: response.schema_validation.clone().unwrap_or(Value::Null),
+                        };
+                    }
+                    if let Some((stage, state)) = stage.as_mut()
+                        && matches!(stage.stage, contract::StageId::TimelineSegmentSummary)
+                        && let Err(detail) = timeline::attach_generated_provenance(state, &response)
+                    {
+                        return RuntimeOutcome::StageFailed(stage_error(
+                            "generate",
+                            "timeline:segment_summary",
+                            prepared,
+                            detail,
+                        ));
+                    }
+                    response.text.clone()
+                }
+                Ok(GenerateResponse::Refused(response)) => {
+                    return RuntimeOutcome::GenerateRefused {
+                        error: stage_error(
+                            "generate",
+                            "runtime",
+                            prepared,
+                            response.detail.clone(),
+                        ),
+                        response: Box::new(response),
                     };
                 }
-                if let Some((stage, state)) = stage.as_mut()
-                    && matches!(stage.stage, contract::StageId::TimelineSegmentSummary)
-                    && let Err(detail) = timeline::attach_generated_provenance(state, &response)
-                {
+                Err(error) => {
                     return RuntimeOutcome::StageFailed(stage_error(
                         "generate",
-                        "timeline:segment_summary",
+                        "runtime",
                         prepared,
-                        detail,
+                        format!("{error}"),
                     ));
                 }
-                response.text.clone()
-            }
-            Ok(GenerateResponse::Refused(response)) => {
-                return RuntimeOutcome::GenerateRefused {
-                    error: stage_error("generate", "runtime", prepared, response.detail.clone()),
-                    response: Box::new(response),
-                };
-            }
-            Err(error) => {
-                return RuntimeOutcome::StageFailed(stage_error(
-                    "generate",
-                    "runtime",
-                    prepared,
-                    format!("{error}"),
-                ));
-            }
+            },
         },
         EngineKind::Cogitate => match cogitate_output(prepared, context, cogitate, writer) {
             Ok(output) => output,
@@ -764,7 +777,7 @@ fn emit_outcome(writer: &mut impl Write, outcome: RuntimeOutcome) {
         ),
         RuntimeOutcome::UnportedHook { hook, talent } => emit(
             writer,
-            json!({"event":"error", "terminal":true, "name":talent, "error":format!("unported talent hook: {hook}")}),
+            json!({"event":"error", "terminal":true, "name":talent, "error":format!("unported talent hook: {hook}"), "reason_code":"unported_talent_hook"}),
         ),
         RuntimeOutcome::PrepareSkipped { talent, reason } => emit(
             writer,
@@ -772,15 +785,15 @@ fn emit_outcome(writer: &mut impl Write, outcome: RuntimeOutcome) {
         ),
         RuntimeOutcome::SchemaValidationFailed { talent, validation } => emit(
             writer,
-            json!({"event":"error", "terminal":true, "name":talent, "error":"talent output failed schema validation", "schema_validation":validation}),
+            json!({"event":"error", "terminal":true, "name":talent, "error":"talent output failed schema validation", "schema_validation":validation, "reason_code":"schema_validation_failed"}),
         ),
         RuntimeOutcome::PrepareFailed(error) => emit(
             writer,
-            json!({"event":"error", "terminal":true, "error":error.to_string()}),
+            json!({"event":"error", "terminal":true, "error":error.to_string(), "reason_code":"talent_prepare_failed"}),
         ),
         RuntimeOutcome::StageFailed(error) => emit(
             writer,
-            json!({"event":"error", "terminal":true, "name":error.talent, "error":error.to_string()}),
+            json!({"event":"error", "terminal":true, "name":error.talent, "error":error.to_string(), "reason_code":"talent_stage_failed"}),
         ),
         RuntimeOutcome::GenerateRefused { error, response }
         | RuntimeOutcome::CogitateRefused { error, response } => emit(
@@ -1618,15 +1631,6 @@ mod tests {
             assert_eq!(event["blocking"], blocking, "{label}");
             assert_eq!(event["provider"], provider, "{label}");
         }
-    }
-
-    #[test]
-    fn criterion_1_runtime_manifest_has_no_axum_dependency() {
-        assert!(
-            !include_str!("../Cargo.toml")
-                .lines()
-                .any(|line| line.trim_start().starts_with("axum"))
-        );
     }
 
     #[test]

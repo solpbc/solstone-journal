@@ -237,12 +237,12 @@ mod tests {
         assert_eq!(master(root.path()).status.as_str(), "current");
 
         let mut state: Value = serde_json::from_str(
-            &fs::read_to_string(root.path().join("health/timeline/state.json")).expect("state"),
+            &fs::read_to_string(root.path().join("timeline.state.json")).expect("state"),
         )
         .expect("JSON");
-        state["artifacts"]["master"]["input_digest"] = json!("different-input");
+        state["published"]["input_digest"] = json!("different-input");
         write(
-            &root.path().join("health/timeline/state.json"),
+            &root.path().join("timeline.state.json"),
             &serde_json::to_string(&state).expect("state JSON"),
         );
         let stale = master(root.path());
@@ -265,10 +265,10 @@ mod tests {
             "current"
         );
 
-        let state_path = root.path().join("health/timeline/state.json");
+        let state_path = root.path().join("chronicle/20260510/timeline.state.json");
         let mut state: Value =
             serde_json::from_str(&fs::read_to_string(&state_path).expect("state")).expect("JSON");
-        state["artifacts"]["day:20260510"]["input_digest"] = json!("different-input");
+        state["published"]["input_digest"] = json!("different-input");
         write(
             &state_path,
             &serde_json::to_string(&state).expect("state JSON"),
@@ -304,12 +304,12 @@ mod tests {
     fn day_rollup_reads_its_own_current_artifact_when_master_is_stale() {
         let root = phase_root("populated");
         let mut state: Value = serde_json::from_str(
-            &fs::read_to_string(root.path().join("health/timeline/state.json")).expect("state"),
+            &fs::read_to_string(root.path().join("timeline.state.json")).expect("state"),
         )
         .expect("JSON");
-        state["artifacts"]["master"]["input_digest"] = json!("stale-master");
+        state["published"]["input_digest"] = json!("stale-master");
         write(
-            &root.path().join("health/timeline/state.json"),
+            &root.path().join("timeline.state.json"),
             &serde_json::to_string(&state).expect("state JSON"),
         );
 
