@@ -1222,16 +1222,10 @@ fn confidential_channel_failure_uses_attestation_failed_vector() {
     assert_eq!(output.stderr, b"");
     let response = stdout_json(&output);
     let expected = &fixture_vector("refused-attestation-failed")["response"];
-    for name in [
-        "reason",
-        "reason_code",
-        "retryable",
-        "blocking",
-        "detail",
-        "provider",
-    ] {
+    for name in ["reason", "reason_code", "retryable", "blocking", "provider"] {
         assert_eq!(response[name], expected[name], "{name}");
     }
+    assert_eq!(response["detail"], "gateway_unreachable");
     dropped.join().expect("join attestation stub");
     let _ = std::fs::remove_dir_all(journal);
 }

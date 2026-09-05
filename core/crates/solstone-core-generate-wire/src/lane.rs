@@ -18,7 +18,7 @@ pub enum LaneOutcome {
     NoEngine,
     BundledLocal,
     AttestationNotVerified,
-    AttestationFailed,
+    AttestationFailed(&'static str),
     AttestationStale,
     ByoEndpoint(ByoEndpoint),
     ConfidentialEndpoint(ByoEndpoint),

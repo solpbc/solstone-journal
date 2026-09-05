@@ -31,7 +31,7 @@ pub enum ConfidentialResult {
     Generated(EndpointGenerated),
     Failed(EndpointFailure),
     AttestationNotVerified,
-    AttestationFailed,
+    AttestationFailed(&'static str),
     AttestationStale,
 }
 
@@ -173,7 +173,7 @@ where
                 classify_channel_failure("tls_handshake_failed"),
                 "tls_handshake_failed",
             );
-            return ConfidentialResult::AttestationFailed;
+            return ConfidentialResult::AttestationFailed("tls_handshake_failed");
         }
     };
     let EstablishedChannel { verdict, stream } = match establish(&target.endpoint, &nvattest_dir) {
@@ -182,7 +182,7 @@ where
             runtime
                 .attestation_state()
                 .record_attestation_failed(classify_channel_failure(reason_code), reason_code);
-            return ConfidentialResult::AttestationFailed;
+            return ConfidentialResult::AttestationFailed(reason_code);
         }
     };
     runtime
@@ -1049,27 +1049,32 @@ mod tests {
 
     #[test]
     fn channel_failure_refuses_without_an_endpoint_request() {
-        let runtime = EndpointRuntime::default();
-        let attempts = AtomicUsize::new(0);
-        let path = journal("failed");
-        let result = confidential_generate_with(
-            ConfidentialCall {
-                request: &request(),
-                journal_path: &path,
-                endpoint: &endpoint(1),
-                config: &Map::new(),
-                runtime: &runtime,
-                now: UNIX_EPOCH,
-            },
-            |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _| {
-                attempts.fetch_add(1, Ordering::SeqCst);
-                Err("tls_handshake_failed")
-            },
-        );
-        assert!(matches!(result, ConfidentialResult::AttestationFailed));
-        assert_eq!(attempts.load(Ordering::SeqCst), 1);
-        let _ = std::fs::remove_dir_all(path);
+        for cause in ["tls_handshake_failed", "gpu_nonce_mismatch"] {
+            let runtime = EndpointRuntime::default();
+            let attempts = AtomicUsize::new(0);
+            let path = journal("failed");
+            let result = confidential_generate_with(
+                ConfidentialCall {
+                    request: &request(),
+                    journal_path: &path,
+                    endpoint: &endpoint(1),
+                    config: &Map::new(),
+                    runtime: &runtime,
+                    now: UNIX_EPOCH,
+                },
+                |_| NvattestEnsureStatus::AlreadyInstalled,
+                |_, _| {
+                    attempts.fetch_add(1, Ordering::SeqCst);
+                    Err(cause)
+                },
+            );
+            assert!(matches!(
+                result,
+                ConfidentialResult::AttestationFailed(detail) if detail == cause
+            ));
+            assert_eq!(attempts.load(Ordering::SeqCst), 1);
+            let _ = std::fs::remove_dir_all(path);
+        }
     }
 
     #[test]

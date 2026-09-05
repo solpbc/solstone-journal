@@ -32,11 +32,11 @@ pub fn refusal_for(
             Some("attestation_not_yet_verified".to_owned()),
             None,
         ),
-        LaneOutcome::AttestationFailed => (
+        LaneOutcome::AttestationFailed(detail) => (
             "refused-attestation-failed",
             RefusalReason::AttestationFailed,
             Some("attestation_failed".to_owned()),
-            None,
+            Some(*detail),
         ),
         LaneOutcome::AttestationStale => (
             "refused-attestation-stale",
@@ -253,7 +253,7 @@ mod tests {
                 true,
             ),
             (
-                LaneOutcome::AttestationFailed,
+                LaneOutcome::AttestationFailed("tls_handshake_failed"),
                 "local",
                 RefusalReason::AttestationFailed,
                 Some("attestation_failed"),
@@ -287,6 +287,25 @@ mod tests {
             assert_eq!(refusal.retryable, retryable);
             assert_eq!(refusal.blocking, blocking);
             assert_eq!(refusal.provider.as_deref(), Some(provider));
+        }
+    }
+
+    #[test]
+    fn attestation_failure_keeps_the_channel_cause_and_wire_classification() {
+        for cause in [
+            "tls_handshake_failed",
+            "certificate_invalid",
+            "gateway_unreachable",
+        ] {
+            let refusal = refusal_for(&LaneOutcome::AttestationFailed(cause), "local", None);
+            assert_eq!(refusal.detail, cause);
+            assert_eq!(refusal.reason, RefusalReason::AttestationFailed);
+            assert_eq!(
+                refusal.reason_code.as_ref().map(ReasonCodeValue::as_wire),
+                Some("attestation_failed")
+            );
+            assert!(refusal.retryable);
+            assert!(refusal.blocking);
         }
     }
 
