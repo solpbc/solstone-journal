@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-// Status pane toggle logic
+// Navigation status and inline Health details
 window.whenShellReady(() => {
   const statusIcon = document.querySelector('#status-instrument .status-icon');
-  const statusPane = document.querySelector('.status-pane');
+  const statusPane = document.getElementById('status-pane');
   const statusConsoleLink = document.getElementById('status-pane-console-link');
   const liveRegion = document.getElementById('status-live-region');
   let statusPaneOpen = false;
@@ -17,6 +17,10 @@ window.whenShellReady(() => {
     const label = window.appEvents?.statusLabel || 'connecting';
     statusIcon.setAttribute('aria-label', label);
     statusIcon.setAttribute('title', label);
+    const unread = window.AppServices?.quietNotifs?.unviewedCount?.() || 0;
+    statusIcon.href = lastCaptureStatusForPane === 'degraded'
+      ? '/app/health/#registeredClientsCard'
+      : unread ? '/app/health/#quiet-notifs-section' : '/app/health/#healthSystemDetails';
     const visibleLabel = document.querySelector('#status-instrument .status-label');
     if (visibleLabel) visibleLabel.textContent = label;
     if (liveRegion) liveRegion.textContent = label;
@@ -30,64 +34,36 @@ window.whenShellReady(() => {
     statusConsoleLink.setAttribute('aria-label', unread > 0 ? `${base}, ${unread} unread` : base);
   }
 
-  if (statusIcon && statusPane) {
-    statusIcon.addEventListener('click', (e) => {
-      e.stopPropagation();
-      statusPaneOpen = !statusPaneOpen;
-      statusIcon.setAttribute('aria-expanded', statusPaneOpen ? 'true' : 'false');
-      window.updateStatusLabel();
-
-      if (statusPaneOpen) {
-        window.AppServices?.notifications?._syncStatusPaneOffset?.();
-        statusPane.classList.add('visible');
-        statusPane.focus();
-        window.AppServices?.quietNotifs?.markViewed();
-        renderQuietNotifs();
-        updateStatusPane();
-        fetchSystemStatus();
-      } else {
-        statusPane.classList.remove('visible');
-        statusIcon.focus();
-      }
-    });
-
-    // Close status pane when clicking outside
-    document.addEventListener('click', (e) => {
-      if (statusPaneOpen && statusPane && statusIcon &&
-          !statusIcon.contains(e.target) && !statusPane.contains(e.target)) {
-        statusPaneOpen = false;
-        statusPane.classList.remove('visible');
-        statusIcon.setAttribute('aria-expanded', 'false');
-        window.updateStatusLabel();
-        statusIcon.focus();
-      }
-    });
-
-    // Escape to close status pane
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && statusPaneOpen) {
-        statusPaneOpen = false;
-        statusPane.classList.remove('visible');
-        statusIcon.setAttribute('aria-expanded', 'false');
-        window.updateStatusLabel();
-        statusIcon.focus();
-      }
-    });
-
-    if (statusConsoleLink) {
-      statusConsoleLink.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        window.convey?.diagnosticConsole?.open?.();
-        window.convey?.diagnosticConsole?.markAllRead?.();
-        updateDiagnosticConsoleLink();
-        statusPaneOpen = false;
-        statusPane.classList.remove('visible');
-        statusIcon.setAttribute('aria-expanded', 'false');
-        window.updateStatusLabel();
-      });
-    }
+  let initialDestinationPending = true;
+  function revealInitialDestination() {
+    if (!statusPaneOpen || !initialDestinationPending) return;
+    const id = window.location.hash.slice(1);
+    if (!['healthSystemDetails', 'quiet-notifs-section', 'registeredClientsCard'].includes(id)) return;
+    const target = document.getElementById(id);
+    if (!target || target.getClientRects().length === 0) return;
+    initialDestinationPending = false;
+    requestAnimationFrame(() => target.scrollIntoView({block: 'start'}));
   }
+  document.addEventListener('health:devices-loaded', revealInitialDestination);
+
+  document.addEventListener('workspace:mounted', () => {
+    const host = document.getElementById('healthSystemDetails');
+    statusPaneOpen = Boolean(host);
+    if (host && statusPane) {
+      host.appendChild(statusPane);
+      statusPane.hidden = false;
+      renderQuietNotifs();
+      updateStatusPane();
+      fetchSystemStatus();
+      revealInitialDestination();
+    }
+  });
+  statusConsoleLink?.addEventListener('click', (event) => {
+    event.preventDefault();
+    window.convey?.diagnosticConsole?.open?.();
+    window.convey?.diagnosticConsole?.markAllRead?.();
+    updateDiagnosticConsoleLink();
+  });
 
   // Update status pane metrics
   function updateStatusPane() {
@@ -161,6 +137,14 @@ window.whenShellReady(() => {
       }
     }
 
+    renderQuietNotifs();
+    const quietSection = document.getElementById('quiet-notifs-section');
+    const quietBounds = quietSection?.getBoundingClientRect();
+    if (document.visibilityState !== 'hidden' && quietBounds?.height > 0
+        && quietBounds.bottom > 0 && quietBounds.top < window.innerHeight
+        && window.AppServices?.quietNotifs?.unviewedCount() > 0) {
+      window.AppServices.quietNotifs.markViewed();
+    }
     // Update notification history
     updateNotificationHistory();
     updateBellState();

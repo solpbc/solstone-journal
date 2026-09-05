@@ -46,15 +46,15 @@
       return r.json();
     })
     .then(data => {
-      const cost = Number(data?.total?.cost);
-      if (Number.isFinite(cost)) {
-        state.todayCostUSD = cost;
+      const tokens = Number(data?.total?.tokens);
+      if (Number.isFinite(tokens)) {
+        state.todayTokens = tokens;
       }
       updateStatusSummary();
     })
     .catch(() => {
-      state.todayCostUSD = null;
-      elements.glanceCostValue.textContent = '—';
+      state.todayTokens = null;
+      elements.glanceTokensValue.textContent = '—';
       updateStatusSummary();
     });
 
@@ -63,6 +63,8 @@
   let recentEventTimestamps = [];
 
   const state = {
+    registeredClients: null,
+    registeredClientsFailed: false,
     services: new Map(),        // Running services
     connected: false,
     crashed: new Map(),         // Crashed services (separate from running)
@@ -84,7 +86,7 @@
     logTotalCount: 0,
     lastLogTs: null,
     lastAgentFinishTs: null,
-    todayCostUSD: null,
+    todayTokens: null,
     clients: new Map(),       // keyed by stream name
     recentErrors: [],
     agentErrorsOk: true,
@@ -102,7 +104,7 @@
   // DOM elements
   const elements = {
     healthGlanceSentence: document.getElementById('healthGlanceSentence'),
-    glanceCostValue: document.getElementById('glanceCostValue'),
+    glanceTokensValue: document.getElementById('glanceTokensValue'),
     glanceActivityValue: document.getElementById('glanceActivityValue'),
     glanceErrorsValue: document.getElementById('glanceErrorsValue'),
     glanceErrorsLabel: document.getElementById('glanceErrorsLabel'),
@@ -259,7 +261,7 @@
 
       const day = document.createElement('span');
       day.className = 'backlog-row-day';
-      day.textContent = row.day || '';
+      day.textContent = window.JournalFormat.day(row.day || '');
       main.appendChild(day);
 
       const badge = document.createElement('span');
@@ -554,8 +556,8 @@
     const selection = selectGlanceSentence(state, now);
     elements.healthGlanceSentence.textContent = formatGlanceSentence(selection);
 
-    elements.glanceCostValue.textContent = Number.isFinite(state.todayCostUSD)
-      ? '$' + state.todayCostUSD.toFixed(2)
+    elements.glanceTokensValue.textContent = Number.isFinite(state.todayTokens)
+      ? window.JournalFormat.compactTokens(state.todayTokens)
       : '—';
 
     const recentActivity = recentEventTimestamps.filter(ts => (now - ts) < 3600000).length;
@@ -1399,7 +1401,7 @@
   function updateObserveMode(displayedClient = null) {
     if (state.clients.size === 0) {
       elements.observeModeBadge.className = 'health-badge idle';
-      elements.observeModeLabel.textContent = 'idle';
+      elements.observeModeLabel.textContent = 'unavailable';
       return;
     }
 
@@ -1426,6 +1428,14 @@
   function updateObserve() {
     if (state.clients.size === 0) {
       elements.observeEmpty.classList.remove('hidden');
+      const heading = elements.observeEmpty.querySelector('.surface-state-heading');
+      heading.textContent = state.registeredClientsFailed && state.registeredClients === null
+        ? 'device activity is unavailable right now'
+        : state.registeredClients === null
+        ? 'checking device activity…'
+        : state.registeredClients.length === 0
+          ? 'no devices are linked to your journal yet.'
+          : "live activity isn't available yet. your devices are listed below.";
       elements.observeContent.classList.add('hidden');
       elements.observeSourceNote.classList.add('hidden');
       elements.observeSourceNote.textContent = '';
@@ -1732,8 +1742,18 @@
     }
 
     elements.registeredClientsCard.classList.remove('hidden');
+    const wasOpen = elements.registeredClientsStrip.querySelector('details')?.open || false;
     elements.registeredClientsStrip.innerHTML = '';
-    for (const client of clients) {
+    const unstarted = document.createElement('details');
+    unstarted.open = wasOpen;
+    const summary = document.createElement('summary');
+    const unused = clients.filter(client => client.capture_state === 'no_capture' && !client.failing);
+    summary.textContent = `devices with no material yet (${unused.length})`;
+    unstarted.appendChild(summary);
+    const activityRank = client => client.failing ? 0 : client.capture_state === 'active' ? 1 : 2;
+    const sorted = [...clients].sort((a, b) => activityRank(a) - activityRank(b)
+      || (Date.parse(b.last_accepted_ingest_at) || 0) - (Date.parse(a.last_accepted_ingest_at) || 0));
+    for (const client of sorted) {
       let stateClass = ['connected', 'stale', 'disconnected'].includes(client.state)
         ? client.state
         : 'disconnected';
@@ -1792,8 +1812,9 @@
       skewEl.textContent = 'clock skew';
 	      row.appendChild(skewEl);
 
-	      elements.registeredClientsStrip.appendChild(row);
+      (client.capture_state === 'no_capture' && !client.failing ? unstarted : elements.registeredClientsStrip).appendChild(row);
     }
+    if (unused.length) elements.registeredClientsStrip.appendChild(unstarted);
   }
 
   async function loadRegisteredClients() {
@@ -1801,8 +1822,15 @@
       const response = await fetch('/app/network/api/clients');
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const payload = await response.json();
-      renderRegisteredClients(payload?.clients || []);
+      if (!Array.isArray(payload.clients)) throw new Error('Invalid device list');
+      state.registeredClientsFailed = false;
+      state.registeredClients = payload.clients;
+      renderRegisteredClients(state.registeredClients);
+      updateObserve();
+      document.dispatchEvent(new CustomEvent('health:devices-loaded'));
     } catch (err) {
+      state.registeredClientsFailed = true;
+      updateObserve();
       console.warn('Failed to load registered clients:', err);
     }
   }

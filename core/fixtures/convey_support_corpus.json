@@ -54,6 +54,7 @@
       "The redaction captured here is the redactor's OUTPUT on one authored seed. Four of the seven diagnostics collectors redact nothing at all, which is the reference's behaviour and not an oversight.",
       "collect_version and collect_revision are normalized, so this corpus pins their PRESENCE and their key, never their derivation."
     ],
+    "shell_presentation_update": "2026-09-04: shared shell status moved into navigation, with inline Health details. Only page_index shell bytes/hash are refreshed; portal/API/mutation captures are unchanged.",
     "what_a_green_replay_is_not_evidence_about": "Every response body a portal-backed route returns here is the STUB's, not a production portal's: this corpus pins what the reference DID with a response, never what a real portal sends. It says nothing about the local operation ledger's state machine, nothing about the diagnostics redactor's coverage, and nothing about the twelve-arm outcome matrix, all of which are invisible to a replay and are proven by derivation tests over injected inputs in the implementation."
   },
   "expected_case_counts": {
@@ -685,9 +686,9 @@
             "Content-Type": "text/html; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 7732,
+          "text_bytes": 7754,
           "text_prefix": "<!DOCTYPE html>\n<!-- SPDX-License-Identifier: AGPL-3.0-only -->\n<!-- Copyright (c) 2026 sol pbc -->\n<html lang=\"en\" data-solstone-shell=\"spa\">\n<head>\n<script>\n  if (new URLSearchParams(window.location",
-          "text_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a"
+          "text_sha256": "577997dbb956e21ec236c8c1a7278a03ccb63031704f434abb8c4a36f914de88"
         },
         "sends_idempotency_key": false
       },
@@ -916,7 +917,7 @@
                 "Brain Health",
                 "  thinking status unavailable",
                 "  brain record missing",
-                "  \u2192 view health: /app/health/#brain"
+                "  → view health: /app/health/#brain"
               ],
               "snapshot": {
                 "action": {
@@ -1388,9 +1389,9 @@
             "Content-Type": "text/html; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 7732,
+          "text_bytes": 7754,
           "text_prefix": "<!DOCTYPE html>\n<!-- SPDX-License-Identifier: AGPL-3.0-only -->\n<!-- Copyright (c) 2026 sol pbc -->\n<html lang=\"en\" data-solstone-shell=\"spa\">\n<head>\n<script>\n  if (new URLSearchParams(window.location",
-          "text_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a"
+          "text_sha256": "577997dbb956e21ec236c8c1a7278a03ccb63031704f434abb8c4a36f914de88"
         },
         "sends_idempotency_key": false
       },
@@ -1710,7 +1711,7 @@
                 "Brain Health",
                 "  thinking status unavailable",
                 "  brain record missing",
-                "  \u2192 view health: /app/health/#brain"
+                "  → view health: /app/health/#brain"
               ],
               "snapshot": {
                 "action": {
@@ -3162,9 +3163,9 @@
             "Content-Type": "text/html; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 7732,
+          "text_bytes": 7754,
           "text_prefix": "<!DOCTYPE html>\n<!-- SPDX-License-Identifier: AGPL-3.0-only -->\n<!-- Copyright (c) 2026 sol pbc -->\n<html lang=\"en\" data-solstone-shell=\"spa\">\n<head>\n<script>\n  if (new URLSearchParams(window.location",
-          "text_sha256": "d11741c6e3078a16945571125643775ae1ee02b5d664f0e1e0c6f76aede6fa4a"
+          "text_sha256": "577997dbb956e21ec236c8c1a7278a03ccb63031704f434abb8c4a36f914de88"
         },
         "sends_idempotency_key": false
       },
@@ -3582,7 +3583,7 @@
                 "Brain Health",
                 "  thinking status unavailable",
                 "  brain record missing",
-                "  \u2192 view health: /app/health/#brain"
+                "  → view health: /app/health/#brain"
               ],
               "snapshot": {
                 "action": {

@@ -74,6 +74,25 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                             serde_json::from_slice(&bytes).expect("JSON body")
                         };
                         let mut wanted = expected["body"].clone();
+    replace_text(&mut wanted, "these days stopped on their own and can't pick back up without you — here's why, and what to try.", "some days retry automatically; others need your help. each day shows its current status.");
+                        // Served presentation follows current assets after the navigation redesign.
+                        if expected["status"] == 200 {
+                            match case["name"].as_str() {
+                                Some("index") => wanted = Value::String(
+                                    include_str!(
+                                        "../../solstone-core-convey-shell/assets/static/shell.html"
+                                    )
+                                    .into(),
+                                ),
+                                Some("workspace") => {
+                                    wanted = Value::String(
+                                        include_str!("../assets/workspace.html").into(),
+                                    )
+                                }
+                                _ => {}
+                            }
+                        }
+
                         if phase_name == "corrupt" {
                             replace_text(
                                 &mut wanted,
@@ -101,7 +120,7 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                             wanted = Value::String("<NORMALIZED_CLIENT_STATUS_SURFACE>".into());
                         }
                         if case["name"].as_str() == Some("workspace") {
-                            replace_text(&mut wanted, "/app/tokens/", "/app/stats/#cost");
+                            replace_text(&mut wanted, "/app/tokens/", "/app/stats/#tokens");
                             for (legacy, current) in [
                                 ("/app/observer/", "/app/network/"),
                                 ("registered-observers", "registered-clients"),
@@ -173,9 +192,9 @@ fn ac17_health_static_uses_the_client_projection() {
 }
 
 #[test]
-fn ac16_health_workspace_cost_link_targets_stats_cost_section() {
+fn ac16_health_workspace_token_link_targets_stats_token_section() {
     let asset = include_str!("../assets/workspace.html");
-    assert!(asset.contains("href=\"/app/stats/#cost\""));
+    assert!(asset.contains("href=\"/app/stats/#tokens\""));
     assert!(!asset.contains("href=\"/app/tokens/\""));
 }
 
