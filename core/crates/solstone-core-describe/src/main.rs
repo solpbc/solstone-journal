@@ -12,6 +12,10 @@ use serde_json::Value;
 use solstone_core_cli_boundary::DESCRIBE_USAGE;
 use solstone_core_describe::selection::{CategoryOverride, Importance};
 use solstone_core_describe::{WinnowConfig, pipeline, process_video_metadata};
+use solstone_core_journal::{
+    detect_checkout_root, discover_home, installed_site_packages_from_executable_dir,
+    read_config_journal, resolve_journal_path,
+};
 use solstone_core_journal_config::read_journal_config;
 
 const EXIT_DECODE_FAILURE: u8 = 2;
@@ -76,7 +80,8 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
             Ok(())
         }
         Command::FramesOnly(arguments) => {
-            let config = read_config(arguments.journal.as_deref())?;
+            let journal = effective_journal(arguments.journal.as_deref())?;
+            let config = read_config(&journal)?;
             let result = process_video_metadata(&arguments.video_path, config.winnow);
             if result.decode_failed {
                 return Err(CliError::Decode(format!(
@@ -114,17 +119,12 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
                 .map_err(|error| CliError::Decode(format!("failed to write output: {error}")))
         }
         Command::Describe(arguments) => {
-            let config = read_config(arguments.journal.as_deref())?;
-            let default_journal = env::var_os("SOLSTONE_JOURNAL").map(PathBuf::from);
-            let journal = arguments
-                .journal
-                .as_deref()
-                .or(default_journal.as_deref())
-                .unwrap_or_else(|| Path::new("."));
+            let journal = effective_journal(arguments.journal.as_deref())?;
+            let config = read_config(&journal)?;
             pipeline::run(pipeline::DescribeOptions {
                 video: &arguments.video_path,
-                journal,
-                explicit_journal: arguments.journal.as_deref(),
+                journal: &journal,
+                explicit_journal: Some(&journal),
                 jobs: arguments.jobs,
                 redo: arguments.redo,
                 config: config.winnow,
@@ -292,15 +292,36 @@ struct DescribeConfig {
     category_overrides: BTreeMap<String, CategoryOverride>,
 }
 
-fn read_config(journal_path: Option<&Path>) -> Result<DescribeConfig, CliError> {
-    let Some(journal_path) = journal_path else {
-        return Ok(DescribeConfig {
-            winnow: WinnowConfig::default(),
-            redact_rules: Vec::new(),
-            max_extractions: 20,
-            category_overrides: BTreeMap::new(),
-        });
-    };
+fn effective_journal(explicit: Option<&Path>) -> Result<PathBuf, CliError> {
+    if let Some(path) = explicit {
+        return Ok(path.to_path_buf());
+    }
+    let env_journal = env::var_os("SOLSTONE_JOURNAL");
+    if let Some(path) = env_journal.as_deref().filter(|value| !value.is_empty()) {
+        return Ok(path.into());
+    }
+    let home_env = env::var_os("HOME");
+    let fallback_home = env::home_dir();
+    let home = discover_home(home_env.as_deref(), fallback_home.as_deref()).map_err(|error| {
+        CliError::Config(format!("could not resolve home directory: {error:?}"))
+    })?;
+    let config_journal = read_config_journal(&home)
+        .map_err(|error| CliError::Config(format!("could not read journal path: {error:?}")))?;
+    let checkout_root = env::current_exe()
+        .ok()
+        .and_then(|executable| executable.parent().map(Path::to_path_buf))
+        .filter(|directory| installed_site_packages_from_executable_dir(directory).is_none())
+        .and_then(|directory| directory.ancestors().find_map(detect_checkout_root));
+    Ok(resolve_journal_path(
+        env_journal.as_deref(),
+        config_journal.as_deref(),
+        checkout_root.as_deref(),
+        &home,
+    )
+    .path)
+}
+
+fn read_config(journal_path: &Path) -> Result<DescribeConfig, CliError> {
     let config = read_journal_config(journal_path)
         .map_err(|error| CliError::Config(format!("failed to read journal config: {error}")))?
         .config;

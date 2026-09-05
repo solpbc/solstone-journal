@@ -3887,6 +3887,7 @@ dependencies = [
  "solstone-core-describe-categories",
  "solstone-core-format",
  "solstone-core-generate",
+ "solstone-core-journal",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-local",

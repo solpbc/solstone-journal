@@ -17,6 +17,7 @@ image.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 solstone-core-describe-categories.workspace = true
+solstone-core-journal.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-format.workspace = true
 solstone-core-generate.workspace = true

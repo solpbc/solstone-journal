@@ -30,6 +30,7 @@ fn main() {
     let journal_flag = session["journal"]["flag"].as_str().unwrap();
     let mut concurrency_seen = false;
     let mut journal_seen = false;
+    let mut journal_path = None;
     let pairs = &args[3..];
     assert_eq!(pairs.len() % 2, 0);
     for pair in pairs.chunks_exact(2) {
@@ -39,6 +40,7 @@ fn main() {
         } else if pair[0].as_os_str() == OsStr::new(journal_flag) {
             assert!(!journal_seen);
             journal_seen = true;
+            journal_path = Some(pair[1].to_string_lossy().into_owned());
         } else {
             panic!("unexpected generate session flag: {:?}", pair[0]);
         }
@@ -97,7 +99,7 @@ fn main() {
                     }
                 })
                 .collect::<Vec<_>>();
-            writeln!(file, "{}", json!({"id":request.id,"attempt_index":request.attempt_index,"context":request.context,"contents":contents,"json_output":request.json_output,"json_schema":request.json_schema,"temperature":request.temperature,"max_output_tokens":request.max_output_tokens,"thinking_budget":request.thinking_budget,"system_instruction":request.system_instruction})).unwrap();
+            writeln!(file, "{}", json!({"id":request.id,"attempt_index":request.attempt_index,"context":request.context,"contents":contents,"json_output":request.json_output,"json_schema":request.json_schema,"temperature":request.temperature,"max_output_tokens":request.max_output_tokens,"thinking_budget":request.thinking_budget,"system_instruction":request.system_instruction,"journal":journal_path})).unwrap();
         }
         if mode == "exit_after_all" && seen == 3 {
             return;

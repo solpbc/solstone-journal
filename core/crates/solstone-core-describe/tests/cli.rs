@@ -183,6 +183,117 @@ fn frames_only_matches_the_frozen_oracle() {
 }
 
 #[test]
+fn scheduled_describe_uses_effective_journal_configuration_from_a_different_cwd() {
+    for source in ["env", "config", "explicit"] {
+        let temporary = tempfile::tempdir().expect("temporary journal fixture");
+        let root = temporary.path().join("journal");
+        let cwd = temporary.path().join("elsewhere");
+        let home = temporary.path().join("home");
+        fs::create_dir_all(root.join("config")).unwrap();
+        fs::create_dir_all(cwd.join("config")).unwrap();
+        fs::create_dir_all(home.join(".config/solstone")).unwrap();
+        fs::write(
+            root.join("config/journal.json"),
+            r#"{"describe":{"redact":["Omit the private test phrase."],"max_extractions":1}}"#,
+        )
+        .unwrap();
+        fs::write(
+            cwd.join("config/journal.json"),
+            b"not journal configuration",
+        )
+        .unwrap();
+        fs::write(
+            home.join(".config/solstone/config.toml"),
+            format!("journal = {:?}\n", root.display().to_string()),
+        )
+        .unwrap();
+        let video = copied_video(&root, "mixed_vp8_screen.webm");
+        let requests = temporary.path().join("requests.jsonl");
+        let mut command = Command::new(BINARY);
+        command
+            .args(["--describe"])
+            .arg(&video)
+            .args(["-j", "2"])
+            .current_dir(&cwd)
+            .env("HOME", &home)
+            .env_remove("SOLSTONE_JOURNAL")
+            .env("SOLSTONE_DESCRIBE_GENERATE_WIRE", SESSION_STUB)
+            .env("SOLSTONE_DESCRIBE_SESSION_STUB_MODE", "generated")
+            .env("SOLSTONE_DESCRIBE_SESSION_STUB_REQUESTS_PATH", &requests);
+        match source {
+            "env" => {
+                command.env("SOLSTONE_JOURNAL", &root);
+            }
+            "explicit" => {
+                command
+                    .env("SOLSTONE_JOURNAL", &cwd)
+                    .arg("--journal")
+                    .arg(&root);
+            }
+            "config" => {
+                command.env("SOLSTONE_JOURNAL", "");
+            }
+            _ => unreachable!(),
+        }
+        let output = command.output().expect("run describe");
+        assert!(
+            output.status.success(),
+            "{source}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let requests = read_jsonl(&requests);
+        assert!(!requests.is_empty(), "{source}: classification must run");
+        assert!(
+            requests
+                .iter()
+                .any(|request| request["context"] == "observe.describe.frame")
+        );
+        assert!(requests.iter().any(|request| {
+            request["context"] == "observe.extract.selection"
+                && request["system_instruction"]
+                    .as_str()
+                    .unwrap()
+                    .contains("Aim to select around 1 frames total")
+        }));
+        for request in requests {
+            if request["context"] != "observe.extract.selection" {
+                assert!(
+                    request["system_instruction"]
+                        .as_str()
+                        .unwrap()
+                        .contains("Omit the private test phrase.")
+                );
+            }
+            assert_eq!(request["journal"], root.display().to_string());
+        }
+        assert!(video.with_extension("jsonl").is_file());
+        assert!(!cwd.join("health").exists());
+    }
+}
+
+#[test]
+fn env_selected_malformed_describe_configuration_refuses_before_generation() {
+    let temporary = tempfile::tempdir().unwrap();
+    fs::create_dir(temporary.path().join("config")).unwrap();
+    fs::write(
+        temporary.path().join("config/journal.json"),
+        r#"{"describe":{"redact":42}}"#,
+    )
+    .unwrap();
+    let output = Command::new(BINARY)
+        .arg("--describe")
+        .arg(corpus_path("mixed_vp8_screen.webm"))
+        .env("SOLSTONE_JOURNAL", temporary.path())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(78));
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("describe.redact must be an array of strings")
+    );
+}
+
+#[test]
 fn explicit_empty_journal_uses_defaults() {
     let journal =
         std::env::temp_dir().join(format!("solstone-describe-cli-{}", std::process::id()));
