@@ -1240,7 +1240,7 @@ fn record_completion(
             DailyCatchupOutcome {
                 success: exit_code == 0 && !timed_out,
                 timed_out,
-                timeout_seconds: timed_out.then(|| dispatch.submission.cap.as_secs_f64()),
+                timeout_seconds: timed_out.then_some(dispatch.submission.cap.as_secs_f64()),
                 ended_at: unix_seconds_f64(),
                 exit_code,
                 exit_status: status,
