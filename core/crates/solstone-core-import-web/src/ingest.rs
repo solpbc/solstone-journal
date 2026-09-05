@@ -244,7 +244,12 @@ async fn segments_with_attempts(
             if payload.len() != names.len() || names.iter().any(|n| !payload.contains_key(n)) {
                 return Err("Missing uploaded files".into());
             }
-            let stream_relative = format!("chronicle/{day}/{stream}");
+            // The transfer record spelling `_default` denotes direct layout.
+            let stream_relative = if stream == solstone_core_journal_io::DEFAULT_STREAM {
+                format!("chronicle/{day}")
+            } else {
+                format!("chronicle/{day}/{stream}")
+            };
             let stream_dir = contained(&app.root, &stream_relative)?;
             let mut target = contained(&app.root, &format!("{stream_relative}/{key}"))?;
             let original = key.to_owned();
@@ -1409,6 +1414,53 @@ mod tests {
             2,
             "deconfliction records both original and alternate keys"
         );
+    }
+
+    #[tokio::test]
+    async fn direct_segment_import_preserves_layout_and_conflict_behavior() {
+        let root = phase_root("empty");
+        let path = format!("/app/import/journal/{PREFIX}/ingest/segments");
+        let content_type = "multipart/form-data; boundary=segment-boundary";
+        let day = root.path().join("chronicle/20260801");
+        let direct = day.join("120000_60/entry.jsonl");
+        let named = day.join("_default/120000_60/entry.jsonl");
+        fs::create_dir_all(named.parent().unwrap()).unwrap();
+        fs::write(&named, b"unrelated named-layout data").unwrap();
+        for (bytes, field) in [
+            (b"one\n".as_slice(), "segments_received"),
+            (b"one\n".as_slice(), "segments_skipped"),
+            (b"two\n".as_slice(), "segments_deconflicted"),
+        ] {
+            let (status, result) = request(
+                root.path(),
+                &path,
+                segment_body_for("_default", "120000_60", bytes),
+                content_type,
+                true,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(result["errors"], json!([]));
+            assert_eq!(result[field], 1);
+            assert_eq!(fs::read(&direct).unwrap(), b"one\n");
+            assert_eq!(fs::read(&named).unwrap(), b"unrelated named-layout data");
+        }
+        let state: Value = serde_json::from_slice(
+            &fs::read(root.path().join("imports/corpusSo/segments/state.json")).unwrap(),
+        )
+        .unwrap();
+        let keys = state["20260801"].as_object().unwrap();
+        assert_eq!(keys.len(), 2);
+        let alternate = keys
+            .keys()
+            .find(|key| key.as_str() != "_default/120000_60")
+            .unwrap();
+        let segment = alternate.strip_prefix("_default/").unwrap();
+        assert_eq!(
+            fs::read(day.join(segment).join("entry.jsonl")).unwrap(),
+            b"two\n"
+        );
+        assert!(!day.join("_default").join(segment).exists());
     }
 
     #[tokio::test]
