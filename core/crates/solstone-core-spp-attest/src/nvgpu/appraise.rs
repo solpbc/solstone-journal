@@ -5,9 +5,9 @@
 
 use std::{
     fs::{self, File, OpenOptions},
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
+    process::{Child, Command, ExitStatus, Output, Stdio},
     sync::atomic::{AtomicU64, Ordering},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -131,22 +131,58 @@ fn run_nvattest(
         .spawn()
         .map_err(|_| GpuAppraisalReason::NvattestUnavailable)?;
     let deadline = Instant::now() + timeout;
+    let stdout = process.stdout.take().expect("nvattest stdout is piped");
+    let stderr = process.stderr.take().expect("nvattest stderr is piped");
 
+    thread::scope(|scope| {
+        let result = (|| {
+            let stdout = thread::Builder::new()
+                .name("nvattest-stdout".to_owned())
+                .spawn_scoped(scope, move || read_pipe(stdout))
+                .map_err(|_| GpuAppraisalReason::GpuAppraisalFailed)?;
+            let stderr = thread::Builder::new()
+                .name("nvattest-stderr".to_owned())
+                .spawn_scoped(scope, move || read_pipe(stderr))
+                .map_err(|_| GpuAppraisalReason::GpuAppraisalFailed)?;
+            let status = wait_nvattest(&mut process, deadline)?;
+            let stdout = stdout
+                .join()
+                .map_err(|_| GpuAppraisalReason::GpuAppraisalFailed)?
+                .map_err(|_| GpuAppraisalReason::GpuAppraisalFailed)?;
+            let stderr = stderr
+                .join()
+                .map_err(|_| GpuAppraisalReason::GpuAppraisalFailed)?
+                .map_err(|_| GpuAppraisalReason::GpuAppraisalFailed)?;
+            Ok(Output {
+                status,
+                stdout,
+                stderr,
+            })
+        })();
+        if result.is_err() {
+            // Stop the producer before the scope joins any remaining pipe reader.
+            let _ = process.kill();
+            let _ = process.wait();
+        }
+        result
+    })
+}
+
+fn read_pipe(mut pipe: impl Read) -> std::io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    pipe.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+fn wait_nvattest(process: &mut Child, deadline: Instant) -> Result<ExitStatus, GpuAppraisalReason> {
     loop {
-        if process
+        if let Some(status) = process
             .try_wait()
             .map_err(|_| GpuAppraisalReason::GpuAppraisalFailed)?
-            .is_some()
         {
-            return process
-                .wait_with_output()
-                .map_err(|_| GpuAppraisalReason::GpuAppraisalFailed);
+            return Ok(status);
         }
         if Instant::now() >= deadline {
-            let _ = process.kill();
-            process
-                .wait_with_output()
-                .map_err(|_| GpuAppraisalReason::GpuAppraisalFailed)?;
             return Err(GpuAppraisalReason::GpuAppraisalFailed);
         }
         thread::sleep(Duration::from_millis(10));
@@ -321,6 +357,43 @@ mod tests {
         install_script(
             root.path(),
             "#!/bin/sh\ncat \"$(dirname \"$0\")/../positive.stdout\"\n",
+        );
+
+        let appraisal = appraise(root.path(), Duration::from_secs(1)).expect("green appraisal");
+        assert_eq!(appraisal.hwmodel, "GH100 A01 GSP BROM");
+    }
+
+    #[test]
+    fn appraiser_drains_large_valid_stdout_before_waiting_for_exit() {
+        let root = TempDir::new();
+        let mut output = vec![b' '; 256 * 1024];
+        output.extend(fixture_bytes("nvattest/positive.stdout"));
+        fs::write(root.path().join("positive.stdout"), output).expect("write stdout");
+        install_script(
+            root.path(),
+            "#!/bin/sh\nexec cat \"$(dirname \"$0\")/../positive.stdout\"\n",
+        );
+
+        let appraisal = appraise(root.path(), Duration::from_secs(1)).expect("green appraisal");
+        assert_eq!(appraisal.hwmodel, "GH100 A01 GSP BROM");
+    }
+
+    #[test]
+    fn appraiser_drains_large_stderr_while_preserving_valid_stdout() {
+        let root = TempDir::new();
+        fs::write(
+            root.path().join("diagnostic.stderr"),
+            vec![b'x'; 256 * 1024],
+        )
+        .expect("write stderr");
+        fs::write(
+            root.path().join("positive.stdout"),
+            fixture_bytes("nvattest/positive.stdout"),
+        )
+        .expect("write stdout");
+        install_script(
+            root.path(),
+            "#!/bin/sh\nbase=$(dirname \"$0\")/..\ncat \"$base/diagnostic.stderr\" >&2\nexec cat \"$base/positive.stdout\"\n",
         );
 
         let appraisal = appraise(root.path(), Duration::from_secs(1)).expect("green appraisal");
