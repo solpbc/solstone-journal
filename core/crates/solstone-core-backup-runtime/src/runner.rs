@@ -498,7 +498,18 @@ pub fn child_env(
         for (key, value) in backend_env {
             if let Some(value) = value {
                 env.insert(key.into(), value.into());
-                if !value.is_empty() {
+                // These exact hosted transport constants are public settings. Treating
+                // them as secrets rejects paths containing "s3" and corrupts JSON booleans.
+                // Unknown keys and unexpected values remain protected by default.
+                let public_setting = matches!(
+                    (key.as_str(), value.as_str()),
+                    ("RCLONE_CONFIG_SPB_TYPE", "s3")
+                        | ("RCLONE_CONFIG_SPB_PROVIDER", "Cloudflare")
+                        | ("RCLONE_CONFIG_SPB_ENV_AUTH", "false")
+                        | ("RCLONE_CONFIG_SPB_REGION", "auto")
+                        | ("RCLONE_CONFIG_SPB_NO_CHECK_BUCKET", "true")
+                );
+                if !value.is_empty() && !public_setting {
                     secrets.push(value.clone());
                 }
             }
@@ -662,6 +673,63 @@ mod tests {
         assert!(environment.contains_key(&OsString::from("RESTIC_REPOSITORY")));
         assert!(!environment.contains_key(&OsString::from("AWS_SECRET_ACCESS_KEY")));
         assert!(select_summary(result.json.as_ref().unwrap()).is_some());
+    }
+
+    #[test]
+    fn hosted_public_settings_allow_paths_and_json_while_credentials_stay_guarded() {
+        let mut backend = BTreeMap::from([
+            ("RCLONE_CONFIG_SPB_TYPE".into(), Some("s3".into())),
+            (
+                "RCLONE_CONFIG_SPB_PROVIDER".into(),
+                Some("Cloudflare".into()),
+            ),
+            ("RCLONE_CONFIG_SPB_ENV_AUTH".into(), Some("false".into())),
+            ("RCLONE_CONFIG_SPB_REGION".into(), Some("auto".into())),
+            (
+                "RCLONE_CONFIG_SPB_NO_CHECK_BUCKET".into(),
+                Some("true".into()),
+            ),
+            (
+                "RCLONE_CONFIG_SPB_ACCESS_KEY_ID".into(),
+                Some("ACCESS".into()),
+            ),
+            (
+                "RCLONE_CONFIG_SPB_SECRET_ACCESS_KEY".into(),
+                Some("SECRET".into()),
+            ),
+            (
+                "RCLONE_CONFIG_SPB_SESSION_TOKEN".into(),
+                Some("TOKEN".into()),
+            ),
+            ("UNKNOWN_BACKEND_KEY".into(), Some("UNKNOWN_SECRET".into())),
+        ]);
+        let (_, secrets) = child_env("repository", "PASSWORD", Some(&backend));
+        guard_argv(
+            &["rclone.program=/tools/s3-auto-Cloudflare-true-false/rclone".into()],
+            &secrets,
+        )
+        .unwrap();
+        let output = r#"{"s3":true,"auto":false,"provider":"Cloudflare"}"#;
+        assert_eq!(scrub(output, &secrets), output);
+        for credential in ["PASSWORD", "ACCESS", "SECRET", "TOKEN", "UNKNOWN_SECRET"] {
+            assert!(matches!(
+                guard_argv(&[format!("path/{credential}/tool")], &secrets),
+                Err(RunnerError::SecretInArgv)
+            ));
+            assert!(!scrub(credential, &secrets).contains(credential));
+        }
+        backend.insert(
+            "RCLONE_CONFIG_SPB_TYPE".into(),
+            Some("unexpected-sensitive-value".into()),
+        );
+        backend.insert("RCLONE_CONFIG_SPB_SESSION_TOKEN".into(), Some("s3".into()));
+        let (_, secrets) = child_env("repository", "PASSWORD", Some(&backend));
+        for value in ["unexpected-sensitive-value", "s3"] {
+            assert!(matches!(
+                guard_argv(&[value.into()], &secrets),
+                Err(RunnerError::SecretInArgv)
+            ));
+        }
     }
     #[test]
     fn parses_jsonl_and_last_summary() {
