@@ -11,8 +11,12 @@ use chrono::{Duration as ChronoDuration, NaiveDate};
 use crate::TransferError;
 
 /// Segment control files that must never be included in a journal upload.
-pub(crate) const RESERVED_SEGMENT_FILENAMES: [&str; 3] =
-    ["stream.json", "ingest.json", "ingest.json.lock"];
+pub(crate) const RESERVED_SEGMENT_FILENAMES: [&str; 4] = [
+    "stream.json",
+    "ingest.json",
+    "ingest.json.lock",
+    "timeline.state.json",
+];
 
 /// Parse the paired-peer export day selector.
 pub(crate) fn parse_day_spec(

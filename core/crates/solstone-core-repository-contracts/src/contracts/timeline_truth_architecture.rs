@@ -11,6 +11,10 @@ use super::talent_config_reader_architecture::{mask_literals_and_comments, produ
 const TIMELINE_MOD: &str = include_str!("../../../solstone-core-timeline/src/lib.rs");
 const TIMELINE_SOURCES: &[(&str, &str)] = &[
     (
+        "conversion",
+        include_str!("../../../solstone-core-timeline/src/conversion.rs"),
+    ),
+    (
         "binding",
         include_str!("../../../solstone-core-timeline/src/binding.rs"),
     ),

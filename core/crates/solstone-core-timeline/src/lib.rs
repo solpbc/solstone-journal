@@ -4,6 +4,7 @@
 //! Versioned timeline artifacts and their durable publication primitives.
 
 mod binding;
+mod conversion;
 mod currentness;
 mod error;
 mod fingerprint;
@@ -16,6 +17,10 @@ pub use binding::{
     ActivitySourceSnapshot, activity_source_relative_paths, discover_day_segment_bindings,
     origin_for_binding, resolve_activity_source, resolve_eligible_activity_source,
     resolve_segment_binding, segment_directory,
+};
+pub use conversion::{
+    TimelineConversionReport, convert_timeline_state, ensure_timeline_conversion,
+    read_timeline_conversion_refusals, release_timeline_refusal, timeline_conversion_marker_path,
 };
 pub use currentness::{ArtifactCurrentness, artifact_sha256, evaluate_artifact_currentness};
 pub use error::{
@@ -38,10 +43,10 @@ pub use schema::{
     validate_segment_timeline,
 };
 pub use state::{
-    ArtifactStateV1, AttemptOutcome, AttemptStateV1, MAX_DIAGNOSTIC_DETAIL_BYTES,
-    PublishedArtifactV1, TimelineStateV1, bounded_diagnostic_detail, load_timeline_state,
-    new_attempt_id, record_artifact_published, record_attempt_outcome, record_attempt_started,
-    save_timeline_state, timeline_state_path, update_timeline_state,
+    AttemptOutcome, AttemptStateV1, MAX_DIAGNOSTIC_DETAIL_BYTES, PublishedArtifactV1,
+    TIMELINE_RECORD_NAME, TimelineRecordV1, bounded_diagnostic_detail, load_timeline_record,
+    new_attempt_id, read_timeline_record_at, record_artifact_published, record_attempt_outcome,
+    record_attempt_started, timeline_record_path, timeline_state_path,
 };
 pub use store::{
     day_subject_key, day_timeline_path, master_subject_key, master_timeline_path,

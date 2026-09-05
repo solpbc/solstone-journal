@@ -7,7 +7,7 @@ use std::path::Path;
 
 use solstone_core_brain::fingerprint_sha256;
 
-use crate::{AttemptOutcome, TimelineError, load_timeline_state};
+use crate::{AttemptOutcome, TimelineError, load_timeline_record};
 
 /// Durable currentness of a syntactically and schema-valid timeline artifact.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,8 +33,10 @@ pub fn evaluate_artifact_currentness(
     artifact_generated_at_ms: i64,
     artifact_text: &str,
 ) -> Result<ArtifactCurrentness, TimelineError> {
-    let state = load_timeline_state(journal)?;
-    let Some(record) = state.artifacts.get(subject) else {
+    let Some(state) = load_timeline_record(journal, subject)? else {
+        return Ok(ArtifactCurrentness::Missing);
+    };
+    let Some(record) = &state.published else {
         return Ok(ArtifactCurrentness::Missing);
     };
     if record.input_digest != artifact_input_digest
@@ -42,15 +44,12 @@ pub fn evaluate_artifact_currentness(
     {
         return Ok(ArtifactCurrentness::Stale);
     }
-    let has_newer_incomplete_attempt = state.attempts.iter().any(|(key, attempt)| {
+    let has_newer_incomplete_attempt = state.attempts.iter().any(|attempt| {
         matches!(
             attempt.outcome,
             AttemptOutcome::Running | AttemptOutcome::Failed | AttemptOutcome::DurabilityUncertain
-        ) && attempt_subject(key, &attempt.attempt_id).is_some_and(|attempt_subject| {
-            attempt_subject == subject
-                && attempt.started_at_ms >= artifact_generated_at_ms
-                && attempt.input_digest != artifact_input_digest
-        })
+        ) && attempt.started_at_ms >= artifact_generated_at_ms
+            && attempt.input_digest != artifact_input_digest
     });
     Ok(if has_newer_incomplete_attempt {
         ArtifactCurrentness::Stale
@@ -59,14 +58,10 @@ pub fn evaluate_artifact_currentness(
     })
 }
 
-fn attempt_subject<'a>(key: &'a str, attempt_id: &str) -> Option<&'a str> {
-    key.strip_suffix(&format!(":{attempt_id}"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ArtifactStateV1, AttemptStateV1, TimelineStateV1, save_timeline_state};
+    use crate::{AttemptStateV1, PublishedArtifactV1, TimelineRecordV1};
 
     const SUBJECT: &str = "segment:20260520/_default/090000_300";
     const OTHER: &str = "segment:20260520/audio/090000_300";
@@ -196,33 +191,42 @@ mod tests {
         }
         for case in cases {
             let root = tempfile::tempdir().expect("journal");
-            let mut state = TimelineStateV1::empty();
+            let mut records =
+                std::collections::BTreeMap::from([(SUBJECT, TimelineRecordV1::empty(SUBJECT))]);
             if case.published {
-                state.artifacts.insert(
-                    SUBJECT.to_owned(),
-                    ArtifactStateV1 {
-                        input_digest: INPUT.to_owned(),
-                        artifact_sha256: artifact_sha256(ARTIFACT),
-                        published_at_ms: 10,
-                        generation: 1,
-                    },
-                );
+                records.get_mut(SUBJECT).unwrap().published = Some(PublishedArtifactV1 {
+                    input_digest: INPUT.to_owned(),
+                    artifact_sha256: artifact_sha256(ARTIFACT),
+                    published_at_ms: 10,
+                });
             }
             for (index, (subject, input, started, outcome)) in case.attempts.iter().enumerate() {
-                let id = format!("attempt-{index}");
-                state.attempts.insert(
-                    format!("{subject}:{id}"),
-                    AttemptStateV1 {
-                        attempt_id: id,
+                records
+                    .entry(subject)
+                    .or_insert_with(|| TimelineRecordV1::empty(subject))
+                    .attempts
+                    .push(AttemptStateV1 {
+                        attempt_id: format!("attempt-{index}"),
                         input_digest: (*input).to_owned(),
                         started_at_ms: *started,
                         finished_at_ms: (*outcome != Running).then_some(*started + 1),
                         outcome: outcome.clone(),
                         detail: String::new(),
-                    },
-                );
+                    });
             }
-            save_timeline_state(root.path(), &state).expect("state");
+            for record in records.values() {
+                let path = crate::timeline_record_path(root.path(), &record.subject).unwrap();
+                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                crate::state::write_json_strict(&path, record).unwrap();
+            }
+            std::fs::create_dir_all(root.path().join("health/timeline")).unwrap();
+            // Poison the old path: the same verdicts must depend only on sidecar records.
+            crate::state::write_json_strict(
+                &crate::timeline_conversion_marker_path(root.path()),
+                &serde_json::json!({"schema_version": 1, "refused": {}}),
+            )
+            .unwrap();
+            std::fs::write(crate::timeline_state_path(root.path()), b"not JSON").unwrap();
             assert_eq!(
                 evaluate_artifact_currentness(root.path(), SUBJECT, case.input, 10, case.text)
                     .expect("currentness"),

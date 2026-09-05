@@ -219,10 +219,10 @@ mod tests {
     #[tokio::test]
     async fn day_api_uses_its_own_artifact_when_master_state_is_stale() {
         let root = phase_root("populated");
-        let state_path = root.path().join("health/timeline/state.json");
+        let state_path = root.path().join("timeline.state.json");
         let mut state: Value =
             serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).expect("state JSON");
-        state["artifacts"]["master"]["input_digest"] = json!("stale-master");
+        state["published"]["input_digest"] = json!("stale-master");
         write(
             &state_path,
             &serde_json::to_string(&state).expect("state JSON"),

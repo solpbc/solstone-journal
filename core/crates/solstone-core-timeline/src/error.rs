@@ -83,6 +83,10 @@ impl std::fmt::Display for InvalidSelectionReason {
 
 #[derive(Debug, Error)]
 pub enum TimelineError {
+    #[error("timeline state unavailable for {subject}: {detail}")]
+    StateUnavailable { subject: String, detail: String },
+    #[error("timeline conversion required for {subject}: {detail}")]
+    ConversionRequired { subject: String, detail: String },
     #[error("ambiguous segment {day}/{segment} across streams {streams:?}")]
     AmbiguousSegment {
         day: String,

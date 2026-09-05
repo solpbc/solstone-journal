@@ -1274,4 +1274,30 @@ mod tests {
             Err(TransferError::InvalidExportAreas)
         ));
     }
+    #[test]
+    fn segment_export_keeps_artifacts_but_excludes_local_publication_records() {
+        let root = tempfile::tempdir().unwrap();
+        for name in [
+            "screen.jsonl",
+            "timeline.json",
+            "timeline.state.json",
+            "stream.json",
+            "ingest.json",
+            "ingest.json.lock",
+        ] {
+            std::fs::write(root.path().join(name), b"fixture").unwrap();
+        }
+        let files = segment_files(root.path()).unwrap();
+        assert_eq!(
+            files,
+            [
+                root.path().join("screen.jsonl"),
+                root.path().join("timeline.json")
+            ]
+        );
+        assert_eq!(
+            std::fs::read(root.path().join("timeline.state.json")).unwrap(),
+            b"fixture"
+        );
+    }
 }

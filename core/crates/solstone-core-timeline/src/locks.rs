@@ -30,6 +30,26 @@ pub struct TimelineLockSet {
 }
 
 impl TimelineLockSet {
+    pub(crate) fn require_subject(
+        &self,
+        journal: &Path,
+        subject: &str,
+    ) -> Result<(), TimelineError> {
+        let root = journal.join("health/timeline/locks");
+        let expected = subject_lock_path(&root, &crate::state::parse_subject(subject)?);
+        if self.population.path() == root.join("population")
+            && self.subjects.iter().any(|lock| lock.path() == expected)
+        {
+            return Ok(());
+        }
+        Err(TimelineError::LockContention {
+            detail: format!(
+                "publication requires the held lock for {subject} in {}",
+                journal.display()
+            ),
+        })
+    }
+
     pub fn protected_paths(&self) -> Vec<&Path> {
         self.subjects
             .iter()
