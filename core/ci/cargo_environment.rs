@@ -5,8 +5,9 @@ use std::ffi::OsStr;
 use std::process::Command;
 
 // Cargo supplies package metadata to `run` and `test` processes. Reusing that
-// metadata as a nested Cargo invocation's input invalidates build scripts that
-// track it, including ring. Preserve caller-owned Cargo/build/runtime settings.
+// metadata or the parent package's build output directory as nested Cargo inputs
+// invalidates build scripts that track them, including ring. Preserve caller-owned
+// Cargo/build/runtime settings; Cargo supplies each child's own OUT_DIR.
 pub fn clear_package_environment(command: &mut Command) {
     let keys: Vec<_> = std::env::vars_os()
         .map(|(key, _)| key)
@@ -16,7 +17,10 @@ pub fn clear_package_environment(command: &mut Command) {
                 key.starts_with("CARGO_PKG_")
                     || matches!(
                         key,
-                        "CARGO_MANIFEST_DIR" | "CARGO_MANIFEST_PATH" | "CARGO_MANIFEST_LINKS"
+                        "CARGO_MANIFEST_DIR"
+                            | "CARGO_MANIFEST_PATH"
+                            | "CARGO_MANIFEST_LINKS"
+                            | "OUT_DIR"
                     )
             })
         })

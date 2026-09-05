@@ -58,6 +58,7 @@ fn spawned_ci_commands_drop_package_metadata_and_keep_build_configuration() {
         .env("CARGO_PKG_NAME", "runner-package")
         .env("CARGO_PKG_VERSION_MAJOR", "2")
         .env("CARGO_PKG_VERSION_PRE", "")
+        .env("OUT_DIR", "/runner/build/out")
         .env("CARGO_INCREMENTAL", "1")
         .env("CARGO_PROFILE_DEV_DEBUG", "2")
         .env("CARGO_TARGET_DIR", "/caller/target")
@@ -68,6 +69,7 @@ fn spawned_ci_commands_drop_package_metadata_and_keep_build_configuration() {
             "-c",
             "test -z \"${CARGO_MANIFEST_DIR+x}${CARGO_MANIFEST_PATH+x}${CARGO_MANIFEST_LINKS+x}\" && \
              test -z \"${CARGO_PKG_NAME+x}${CARGO_PKG_VERSION_MAJOR+x}${CARGO_PKG_VERSION_PRE+x}\" && \
+             test -z \"${OUT_DIR+x}\" && \
              test \"$CARGO_INCREMENTAL\" = 0 && \
              test \"$CARGO_PROFILE_DEV_DEBUG\" = 0 && \
              test \"$CARGO_TARGET_DIR\" = /caller/target && \
