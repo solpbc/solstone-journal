@@ -6,7 +6,7 @@ use solstone_core_sol_client::command::{CommandContext, CommandOutput};
 use solstone_core_sol_client::resident::ResidentHandler;
 use solstone_core_sol_client::seam::{
     BuildIdentityProvider, ClientItemIdProvider, Clock, FileProvider, HttpTransport,
-    LinkJoinPairingSeam, LinkServeRunner, NotificationSink,
+    LinkJoinPairingSeam, LinkServeRunner, LinkStatusProbe, NotificationSink,
 };
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
@@ -37,6 +37,7 @@ pub struct LinkDispatchSeams<'a> {
     pub files: Option<&'a dyn FileProvider>,
     pub link_pairing: Option<&'a dyn LinkJoinPairingSeam>,
     pub link_serve: Option<&'a dyn LinkServeRunner>,
+    pub link_status_probe: Option<&'a dyn LinkStatusProbe>,
 }
 
 pub enum LinkDispatch {
@@ -102,6 +103,7 @@ pub fn dispatch_sol_import_with_seams(
         notification_sink: None,
         link_pairing: None,
         link_serve: None,
+        link_status_probe: None,
     })
 }
 
@@ -130,6 +132,7 @@ pub fn dispatch_sol_status_with_seams(
         notification_sink: None,
         link_pairing: None,
         link_serve: None,
+        link_status_probe: None,
     })
 }
 
@@ -166,6 +169,7 @@ pub fn dispatch_sol_link_with_seams(
         notification_sink: None,
         link_pairing: seams.link_pairing,
         link_serve: seams.link_serve,
+        link_status_probe: seams.link_status_probe,
     }))
 }
 
@@ -237,6 +241,7 @@ pub fn dispatch_sol_call_with_seams(
         notification_sink: None,
         link_pairing: None,
         link_serve: None,
+        link_status_probe: None,
     })
 }
 
@@ -297,13 +302,7 @@ fn match_generated_surface_path(
     args: &[String],
 ) -> Option<(&'static aggregate::InventoryEntry, aggregate::Handler)> {
     let path = args.iter().map(String::as_str).collect::<Vec<_>>();
-    aggregate::handler_for(&path).and_then(|(entry, handler)| {
-        if entry.surface == surface {
-            Some((entry, handler))
-        } else {
-            None
-        }
-    })
+    aggregate::handler_for_surface(surface, &path)
 }
 
 fn match_generated_resident_surface_path(
@@ -311,13 +310,7 @@ fn match_generated_resident_surface_path(
     args: &[String],
 ) -> Option<(&'static aggregate::InventoryEntry, ResidentHandler)> {
     let path = args.iter().map(String::as_str).collect::<Vec<_>>();
-    aggregate::resident_handler_for(&path).and_then(|(entry, handler)| {
-        if entry.surface == surface {
-            Some((entry, handler))
-        } else {
-            None
-        }
-    })
+    aggregate::resident_handler_for_surface(surface, &path)
 }
 
 fn link_lookup_path(args: &[String]) -> Option<(Vec<String>, &[String])> {
@@ -395,6 +388,7 @@ mod tests {
             files: None,
             link_pairing: Some(&pairing),
             link_serve: Some(&serve),
+            link_status_probe: None,
         };
 
         let join_args = string_args(&["link", "join"]);
@@ -408,6 +402,15 @@ mod tests {
                 );
             }
             LinkDispatch::Resident { .. } => panic!("link join must stay buffered"),
+        }
+
+        let status_args = string_args(&["link", "status", "--help"]);
+        match dispatch_sol_link_with_seams(&status_args, &env, "", "20260726", seams()) {
+            LinkDispatch::Buffered(output) => {
+                assert_eq!(output.exit, 0);
+                assert!(output.stdout.contains("usage: solstone link status"));
+            }
+            LinkDispatch::Resident { .. } => panic!("link status must stay buffered"),
         }
 
         let full_serve_args = string_args(&["link", "serve", "--help"]);

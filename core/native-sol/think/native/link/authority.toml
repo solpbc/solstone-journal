@@ -35,3 +35,16 @@ params = [
   { name = "direct", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--direct"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
   { name = "relay_only", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--relay-only"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
 ]
+
+[[entries]]
+surface = "sol-link"
+path = ["link", "status"]
+kind = "top-level"
+help = "show link status and observed remote journal version"
+operation_id = "link.top_level_status"
+entry_type = "top-level-link"
+handler = "link_status"
+params = [
+  { name = "label", kind = "option", type = "text", required = false, nargs = 1, multiple = false, options = ["--label"], secondary = [], hidden = false, is_flag = false, count = false },
+]
+

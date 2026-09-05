@@ -16,14 +16,14 @@ use solstone_core_sol_client::command::{CommandContext, CommandOutput};
 use solstone_core_sol_client::resident::{ResidentHandler, ShutdownSignal};
 use solstone_core_sol_client::seam::{
     BuildIdentityProvider, ClientItemIdProvider, Clock, FileProvider, HttpTransport,
-    LinkJoinPairingSeam, LinkServeRunner, ProcessOutput, ProcessSpawner,
+    LinkJoinPairingSeam, LinkServeRunner, LinkStatusProbe, ProcessOutput, ProcessSpawner,
 };
 #[cfg(target_os = "ios")]
 use solstone_core_sol_client::seam::{
     LinkJoinDirectRequest, LinkJoinPairingError, LinkJoinPairingErrorKind, LinkJoinRelayRequest,
     LinkServeError, LinkServeErrorKind,
 };
-use solstone_core_sol_client::transport::UreqHttpTransport;
+use solstone_core_sol_client::transport::{UreqHttpTransport, UreqLinkStatusProbe};
 use solstone_core_sol_client_cli::{
     DispatchSeams, LinkDispatch, LinkDispatchSeams, Outcome, dispatch_sol_call_with_seams,
     dispatch_sol_import_with_seams, dispatch_sol_link_with_seams, dispatch_sol_status_with_seams,
@@ -307,6 +307,7 @@ fn run_top_level_link_with_runtime(
     };
     let clock = SystemClock::default();
     let files = RealFileProvider;
+    let link_probe = UreqLinkStatusProbe;
     let dispatch = dispatch_top_level_link_with_runtime_seams(
         &dispatch_args,
         TopLevelLinkRuntime {
@@ -318,6 +319,7 @@ fn run_top_level_link_with_runtime(
             files: &files,
             link_pairing,
             link_serve,
+            link_status_probe: Some(&link_probe),
         },
     );
     match dispatch {
@@ -339,6 +341,7 @@ fn run_top_level_link_with_runtime(
                 notification_sink: None,
                 link_pairing: Some(link_pairing),
                 link_serve: Some(link_serve),
+                link_status_probe: None,
             };
             run_resident_command(handler, context)
         }
@@ -354,6 +357,7 @@ struct TopLevelLinkRuntime<'a> {
     files: &'a dyn FileProvider,
     link_pairing: &'a dyn LinkJoinPairingSeam,
     link_serve: &'a dyn LinkServeRunner,
+    link_status_probe: Option<&'a dyn LinkStatusProbe>,
 }
 
 fn dispatch_top_level_link_with_runtime_seams(
@@ -371,6 +375,7 @@ fn dispatch_top_level_link_with_runtime_seams(
             files: Some(runtime.files),
             link_pairing: Some(runtime.link_pairing),
             link_serve: Some(runtime.link_serve),
+            link_status_probe: runtime.link_status_probe,
         },
     )
 }
@@ -1129,7 +1134,7 @@ mod tests {
             .expect("write home attestation");
         fs::write(
             bundle_dir.join("peer.json"),
-            r#"{"instance_id":"home-instance","home_label":"Home","local_endpoints":[]}"#,
+            r#"{"instance_id":"home-instance","home_label":"Home","paired_at":"2026-07-26T00:00:00Z","local_endpoints":[]}"#,
         )
         .expect("write peer metadata");
 
@@ -1140,6 +1145,7 @@ mod tests {
             home_attestation: "attestation.jwt".to_string(),
             instance_id: "home-instance".to_string(),
             home_label: "Home".to_string(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
             endpoints: vec![],
             local_endpoints: json!([]),
         }
@@ -1335,6 +1341,7 @@ mod tests {
                 policy: LinkServeCarrierPolicy::RelayPermitted,
                 relay_origin: Some("https://link.solstone.app".to_string()),
                 bundle,
+                bundle_dir: config.join("solstone-observer").join("spl").join("laptop"),
             },
             result: Ok(ExpectedLinkServeSession {
                 bound_port: 54321,
@@ -1431,6 +1438,7 @@ mod tests {
                 files: &files,
                 link_pairing: link_join_pairing_seam(),
                 link_serve: link_serve_runner(),
+                link_status_probe: None,
             },
         ) {
             LinkDispatch::Buffered(output) => {

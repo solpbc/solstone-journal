@@ -3,17 +3,19 @@
 
 use std::future::Future;
 use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value};
 use solstone_core_ingest_contract::CONNECTION_BODY_LIMIT;
 use solstone_core_sol_client::resident::ShutdownSignal;
 use solstone_core_sol_client::seam::{
-    LinkServeBundle, LinkServeCarrierPolicy, LinkServeError, LinkServeErrorKind, LinkServeFailure,
-    LinkServeRelayControlEndpoint, LinkServeRelayErrorKind, LinkServeRequest, LinkServeRunner,
-    LinkServeSession, LinkServeStatusSnapshot, LinkServeTransportErrorKind,
+    LinkJournalMetadata, LinkServeBundle, LinkServeCarrierPolicy, LinkServeError,
+    LinkServeErrorKind, LinkServeFailure, LinkServeRelayControlEndpoint, LinkServeRelayErrorKind,
+    LinkServeRequest, LinkServeRunner, LinkServeRuntimeRecord, LinkServeSession,
+    LinkServeStatusSnapshot, LinkServeTransportErrorKind,
 };
 use spl_core::bridge::{BridgeNames, RequestHeaderPolicy};
 use spl_transport::client::{DialedCarrier, TransportClient};
@@ -92,12 +94,23 @@ impl ServeStarter {
                 LinkServeError::new(LinkServeErrorKind::Transport(map_transport_error(error)))
             })?,
         );
-        let tracker = Arc::new(StatusTracker::new(self.clock.clone()));
+        let ca_prefix = ca_fp_prefix(&request.bundle)?;
+        let ca_fp_prefix_hex = ca_prefix
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
+        let tracker = Arc::new(StatusTracker::with_metadata(
+            self.clock.clone(),
+            request.bundle_dir.clone(),
+            request.bundle.instance_id.clone(),
+            ca_fp_prefix_hex,
+            request.bundle.paired_at.clone(),
+        ));
         let opener = Arc::new(SolstoneCarrierOpener {
             client,
             tracker: tracker.clone(),
         });
-        let policy = bridge_policy_for_port(request.port, tracker);
+        let policy = bridge_policy_for_port(request.port, tracker.clone());
         let endpoint_hosts = request
             .bundle
             .endpoints
@@ -113,10 +126,21 @@ impl ServeStarter {
         let handle = runtime
             .block_on(journal_bridge::start(config))
             .map_err(|error| map_bridge_start_error(error, request.port))?;
+        let port = handle.port();
+        tracker.set_bound_port(port);
+
+        let runtime_record = LinkServeRuntimeRecord { port };
+        if !request.bundle_dir.as_os_str().is_empty()
+            && let Ok(json_bytes) = serde_json::to_vec_pretty(&runtime_record)
+        {
+            atomic_write_file(&request.bundle_dir.join("serve_runtime.json"), &json_bytes);
+        }
+
         Ok(Box::new(SplLinkServeSession {
-            port: handle.port(),
+            port,
             runtime,
             handle: Some(handle),
+            bundle_dir: request.bundle_dir,
         }))
     }
 }
@@ -125,6 +149,7 @@ struct SplLinkServeSession {
     port: u16,
     runtime: tokio::runtime::Runtime,
     handle: Option<JournalBridgeHandle>,
+    bundle_dir: PathBuf,
 }
 
 impl LinkServeSession for SplLinkServeSession {
@@ -134,6 +159,9 @@ impl LinkServeSession for SplLinkServeSession {
 
     fn serve(mut self: Box<Self>, shutdown: &dyn ShutdownSignal) -> Result<(), LinkServeError> {
         shutdown.wait();
+        if !self.bundle_dir.as_os_str().is_empty() {
+            let _ = std::fs::remove_file(self.bundle_dir.join("serve_runtime.json"));
+        }
         if let Some(handle) = self.handle.take() {
             self.runtime.block_on(handle.shutdown_and_wait());
         }
@@ -294,10 +322,29 @@ fn status_body(snapshot: &LinkServeStatusSnapshot) -> Vec<u8> {
         Value::Number(snapshot.active_requests.into()),
     );
     root.insert(
+        "ca_fp_prefix".to_string(),
+        Value::String(snapshot.ca_fp_prefix.clone()),
+    );
+    root.insert(
         "connected_age_seconds".to_string(),
         option_f64(snapshot.connected_age_seconds),
     );
     root.insert("health".to_string(), Value::String(snapshot.health.clone()));
+    root.insert(
+        "instance_id".to_string(),
+        Value::String(snapshot.instance_id.clone()),
+    );
+    root.insert(
+        "journal_version".to_string(),
+        snapshot
+            .journal_version
+            .as_ref()
+            .map_or(Value::Null, |v| Value::String(v.clone())),
+    );
+    root.insert(
+        "journal_version_fresh".to_string(),
+        Value::Bool(snapshot.journal_version_fresh),
+    );
     root.insert(
         "last_connected_at".to_string(),
         option_f64(snapshot.last_connected_at),
@@ -339,6 +386,10 @@ fn number_or_null(value: f64) -> Value {
 pub struct StatusTracker {
     inner: Mutex<StatusTrackerState>,
     clock: Arc<dyn StatusClock>,
+    bundle_dir: PathBuf,
+    instance_id: String,
+    ca_fp_prefix_hex: String,
+    paired_at: String,
 }
 
 #[derive(Debug, Default)]
@@ -346,25 +397,121 @@ struct StatusTrackerState {
     last_connected_at: Option<f64>,
     last_failure: Option<LinkServeFailure>,
     reconnect_count: u64,
+    bound_port: Option<u16>,
+    generation: u64,
+    fetching_generation: Option<u64>,
+    pending_fetch_generation: Option<u64>,
+    cached_version: Option<String>,
+    version_fresh: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ApplyOutcome {
+    StaleGeneration,
+    FetchFailed,
+    UpdatedNoPersist,
+    PairingMismatch,
+    Persisted,
 }
 
 impl StatusTracker {
     pub fn new(clock: Arc<dyn StatusClock>) -> Self {
-        Self {
-            inner: Mutex::new(StatusTrackerState::default()),
+        Self::with_metadata(
             clock,
+            PathBuf::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+        )
+    }
+
+    pub fn with_metadata(
+        clock: Arc<dyn StatusClock>,
+        bundle_dir: PathBuf,
+        instance_id: String,
+        ca_fp_prefix_hex: String,
+        paired_at: String,
+    ) -> Self {
+        let cached_version = if bundle_dir.as_os_str().is_empty() {
+            None
+        } else {
+            let metadata_path = bundle_dir.join("journal_metadata.json");
+            std::fs::read_to_string(&metadata_path)
+                .ok()
+                .and_then(|content| serde_json::from_str::<LinkJournalMetadata>(&content).ok())
+                .filter(|meta| {
+                    meta.instance_id == instance_id
+                        && meta.ca_fp_prefix == ca_fp_prefix_hex
+                        && is_valid_journal_version(&meta.journal_version)
+                })
+                .map(|meta| meta.journal_version)
+        };
+        Self {
+            inner: Mutex::new(StatusTrackerState {
+                cached_version,
+                version_fresh: false,
+                ..StatusTrackerState::default()
+            }),
+            clock,
+            bundle_dir,
+            instance_id,
+            ca_fp_prefix_hex,
+            paired_at,
         }
     }
 
-    fn carrier_open_succeeded(&self) {
-        let mut state = self.inner.lock().expect("status tracker lock");
-        state.last_connected_at = Some(self.clock.now_unix_seconds());
+    pub fn set_bound_port(self: &Arc<Self>, port: u16) {
+        let dispatch_generation = {
+            let mut state = self.inner.lock().expect("status tracker lock");
+            state.bound_port = Some(port);
+            state
+                .pending_fetch_generation
+                .take()
+                .filter(|&pending| state.fetching_generation == Some(pending))
+        };
+        if let Some(target_gen) = dispatch_generation
+            && let Ok(handle) = tokio::runtime::Handle::try_current()
+        {
+            let tracker = Arc::clone(self);
+            handle.spawn_blocking(move || {
+                refresh_journal_version(tracker, port, target_gen);
+            });
+        }
+    }
+
+    fn carrier_open_succeeded(self: &Arc<Self>) {
+        let (port, new_generation, should_fetch) = {
+            let mut state = self.inner.lock().expect("status tracker lock");
+            state.last_connected_at = Some(self.clock.now_unix_seconds());
+            state.generation = state.generation.saturating_add(1);
+            state.version_fresh = false;
+            let current_generation = state.generation;
+            let should_fetch = if state.fetching_generation != Some(current_generation) {
+                state.fetching_generation = Some(current_generation);
+                true
+            } else {
+                false
+            };
+            if should_fetch && state.bound_port.is_none() {
+                state.pending_fetch_generation = Some(current_generation);
+            }
+            (state.bound_port, current_generation, should_fetch)
+        };
+        if should_fetch
+            && let (Some(port), Ok(handle)) = (port, tokio::runtime::Handle::try_current())
+        {
+            let tracker = Arc::clone(self);
+            handle.spawn_blocking(move || {
+                refresh_journal_version(tracker, port, new_generation);
+            });
+        }
     }
 
     fn carrier_open_failed(&self, error: &TransportError) {
         let mut state = self.inner.lock().expect("status tracker lock");
         state.reconnect_count = state.reconnect_count.saturating_add(1);
         state.last_failure = Some(failure_from_transport(error, self.clock.now_unix_seconds()));
+        state.version_fresh = false;
     }
 
     fn snapshot(&self, bridge: JournalBridgeStatus) -> LinkServeStatusSnapshot {
@@ -397,7 +544,134 @@ impl StatusTracker {
             next_retry_at: None,
             reconnect_count: state.reconnect_count,
             active_requests: bridge.active_requests,
+            journal_version: state.cached_version.clone(),
+            journal_version_fresh: state.version_fresh && bridge.carrier_live,
+            instance_id: self.instance_id.clone(),
+            ca_fp_prefix: self.ca_fp_prefix_hex.clone(),
         }
+    }
+
+    pub fn apply_fetch_result(
+        &self,
+        target_generation: u64,
+        parsed: Option<String>,
+        current_paired_at_on_disk: Option<String>,
+    ) -> ApplyOutcome {
+        let mut state = self.inner.lock().expect("status tracker lock");
+        if state.generation != target_generation {
+            return ApplyOutcome::StaleGeneration;
+        }
+        state.fetching_generation = None;
+        let Some(version) = parsed else {
+            return ApplyOutcome::FetchFailed;
+        };
+        state.cached_version = Some(version.clone());
+        state.version_fresh = true;
+
+        if self.bundle_dir.as_os_str().is_empty() {
+            return ApplyOutcome::UpdatedNoPersist;
+        }
+
+        if !self.paired_at.is_empty()
+            && current_paired_at_on_disk.as_deref() == Some(&self.paired_at)
+        {
+            let metadata = LinkJournalMetadata {
+                instance_id: self.instance_id.clone(),
+                ca_fp_prefix: self.ca_fp_prefix_hex.clone(),
+                journal_version: version,
+                observed_at: self.clock.now_unix_seconds(),
+            };
+            write_journal_metadata_atomic(&self.bundle_dir, &metadata);
+            ApplyOutcome::Persisted
+        } else {
+            ApplyOutcome::PairingMismatch
+        }
+    }
+}
+
+fn is_valid_journal_version(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 64
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+'))
+}
+
+#[cfg(feature = "host")]
+fn refresh_journal_version(tracker: Arc<StatusTracker>, port: u16, target_generation: u64) {
+    let config = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .max_redirects(0)
+        .proxy(None)
+        .timeout_global(Some(Duration::from_secs(5)))
+        .build();
+    let agent = ureq::Agent::new_with_config(config);
+    let response_result = agent
+        .get(&format!("http://127.0.0.1:{port}/api/system/status"))
+        .header("Cache-Control", "no-cache")
+        .header("Pragma", "no-cache")
+        .call();
+
+    let parsed_version = response_result
+        .ok()
+        .filter(|resp| (200..300).contains(&resp.status().as_u16()))
+        .and_then(|resp| {
+            use std::io::Read;
+            let reader = resp.into_body().into_reader();
+            let mut bytes = Vec::new();
+            if reader.take(8192).read_to_end(&mut bytes).is_ok() {
+                serde_json::from_slice::<Value>(&bytes)
+                    .ok()
+                    .as_ref()
+                    .and_then(|json| json.get("version"))
+                    .and_then(|v| v.get("current"))
+                    .and_then(|v| v.as_str())
+                    .filter(|v| is_valid_journal_version(v))
+                    .map(|v| v.to_string())
+            } else {
+                None
+            }
+        });
+
+    let current_paired_at_on_disk = if tracker.bundle_dir.as_os_str().is_empty() {
+        None
+    } else {
+        std::fs::read_to_string(tracker.bundle_dir.join("peer.json"))
+            .ok()
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+            .and_then(|v| {
+                v.get("paired_at")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+    };
+
+    tracker.apply_fetch_result(target_generation, parsed_version, current_paired_at_on_disk);
+}
+
+#[cfg(not(feature = "host"))]
+fn refresh_journal_version(_tracker: Arc<StatusTracker>, _port: u16, _target_generation: u64) {}
+
+fn atomic_write_file(path: &Path, bytes: &[u8]) {
+    #[cfg(feature = "host")]
+    {
+        let _ = solstone_core_journal_io::atomic_replace(
+            path,
+            bytes,
+            solstone_core_journal_io::AtomicWriteOptions { mode: Some(0o600) },
+        );
+    }
+    #[cfg(not(feature = "host"))]
+    {
+        let tmp = path.with_extension("tmp");
+        if std::fs::write(&tmp, bytes).is_ok() {
+            let _ = std::fs::rename(&tmp, path);
+        }
+    }
+}
+
+fn write_journal_metadata_atomic(bundle_dir: &Path, meta: &LinkJournalMetadata) {
+    if let Ok(json_bytes) = serde_json::to_vec_pretty(meta) {
+        atomic_write_file(&bundle_dir.join("journal_metadata.json"), &json_bytes);
     }
 }
 
@@ -659,12 +933,14 @@ mod tests {
                 home_attestation: "attestation.jwt".to_string(),
                 instance_id: "home-instance".to_string(),
                 home_label: "Home".to_string(),
+                paired_at: "2026-07-26T00:00:00Z".to_string(),
                 endpoints: vec![LinkServeEndpoint {
                     host: "192.168.1.10".to_string(),
                     port: 7657,
                 }],
                 local_endpoints: json!([{"ip": "192.168.1.10", "port": 7657}]),
             },
+            bundle_dir: PathBuf::new(),
         }
     }
 
@@ -775,10 +1051,11 @@ mod tests {
     #[test]
     fn status_tracker_uses_one_shared_update_point_for_times_and_failures() {
         let clock = Arc::new(FixedStatusClock::new(100.0));
-        let tracker = StatusTracker::new(clock.clone());
+        let tracker = Arc::new(StatusTracker::new(clock.clone()));
         tracker.carrier_open_failed(&TransportError::NoEndpoint);
         let failed = tracker.snapshot(bridge_status(true, false));
         assert_eq!(failed.reconnect_count, 1);
+        assert!(!failed.journal_version_fresh);
         assert_eq!(
             failed.last_failure.as_ref().map(|failure| failure.at),
             Some(100.0)
@@ -791,6 +1068,222 @@ mod tests {
         assert_eq!(connected.last_connected_at, Some(110.0));
         assert_eq!(connected.connected_age_seconds, Some(5.5));
         assert_eq!(connected.reconnect_count, 1);
+        assert!(!connected.journal_version_fresh);
+    }
+
+    struct TempDir(PathBuf);
+    impl TempDir {
+        fn new(name: &str) -> Self {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static NEXT: AtomicU64 = AtomicU64::new(0);
+            let path = PathBuf::from("/var/tmp").join(format!(
+                "solstone-link-test-{}-{}-{}",
+                name,
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).expect("create temp dir");
+            Self(path)
+        }
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn status_tracker_seeds_cached_version_from_matching_metadata() {
+        let temp_dir = TempDir::new("status-seeds-version");
+        let metadata = LinkJournalMetadata {
+            instance_id: "inst-123".to_string(),
+            ca_fp_prefix: "abcd".to_string(),
+            journal_version: "2026.07.26".to_string(),
+            observed_at: 1234.0,
+        };
+        let bytes = serde_json::to_vec(&metadata).expect("serialize");
+        std::fs::write(temp_dir.path().join("journal_metadata.json"), bytes).expect("write");
+
+        // Matching instance_id and ca_fp_prefix
+        let clock = Arc::new(FixedStatusClock::new(100.0));
+        let tracker = StatusTracker::with_metadata(
+            clock.clone(),
+            temp_dir.path().to_path_buf(),
+            "inst-123".to_string(),
+            "abcd".to_string(),
+            "2026-07-26T00:00:00Z".to_string(),
+        );
+        let snap = tracker.snapshot(bridge_status(true, false));
+        assert_eq!(snap.journal_version.as_deref(), Some("2026.07.26"));
+        assert!(!snap.journal_version_fresh);
+        assert_eq!(snap.instance_id, "inst-123");
+        assert_eq!(snap.ca_fp_prefix, "abcd");
+
+        // Mismatched instance_id
+        let tracker_mismatch_inst = StatusTracker::with_metadata(
+            clock.clone(),
+            temp_dir.path().to_path_buf(),
+            "other-inst".to_string(),
+            "abcd".to_string(),
+            "2026-07-26T00:00:00Z".to_string(),
+        );
+        let snap_mismatch_inst = tracker_mismatch_inst.snapshot(bridge_status(true, false));
+        assert_eq!(snap_mismatch_inst.journal_version, None);
+        assert!(!snap_mismatch_inst.journal_version_fresh);
+
+        // Mismatched ca_fp_prefix
+        let tracker_mismatch_ca = StatusTracker::with_metadata(
+            clock.clone(),
+            temp_dir.path().to_path_buf(),
+            "inst-123".to_string(),
+            "mismatch-ca".to_string(),
+            "2026-07-26T00:00:00Z".to_string(),
+        );
+        let snap_mismatch_ca = tracker_mismatch_ca.snapshot(bridge_status(true, false));
+        assert_eq!(snap_mismatch_ca.journal_version, None);
+        assert!(!snap_mismatch_ca.journal_version_fresh);
+
+        // Invalid journal_version in metadata file
+        let invalid_meta = LinkJournalMetadata {
+            instance_id: "inst-123".to_string(),
+            ca_fp_prefix: "abcd".to_string(),
+            journal_version: "invalid version\nwith\x1b[31m escape".to_string(),
+            observed_at: 1234.0,
+        };
+        std::fs::write(
+            temp_dir.path().join("journal_metadata.json"),
+            serde_json::to_vec(&invalid_meta).expect("serialize"),
+        )
+        .expect("write");
+        let tracker_invalid = StatusTracker::with_metadata(
+            clock,
+            temp_dir.path().to_path_buf(),
+            "inst-123".to_string(),
+            "abcd".to_string(),
+            "2026-07-26T00:00:00Z".to_string(),
+        );
+        let snap_invalid = tracker_invalid.snapshot(bridge_status(true, false));
+        assert_eq!(snap_invalid.journal_version, None);
+        assert!(!snap_invalid.journal_version_fresh);
+    }
+
+    #[test]
+    fn apply_fetch_result_discards_stale_generation() {
+        let clock = Arc::new(FixedStatusClock::new(100.0));
+        let tracker = StatusTracker::new(clock);
+        {
+            let mut state = tracker.inner.lock().expect("lock");
+            state.generation = 3;
+            state.cached_version = Some("2026.07.01".to_string());
+            state.version_fresh = false;
+        }
+
+        // Apply older generation result
+        let outcome = tracker.apply_fetch_result(
+            2,
+            Some("2026.07.26".to_string()),
+            Some("2026-07-26T00:00:00Z".to_string()),
+        );
+        assert_eq!(outcome, ApplyOutcome::StaleGeneration);
+
+        let snap = tracker.snapshot(bridge_status(true, true));
+        assert_eq!(snap.journal_version.as_deref(), Some("2026.07.01"));
+        assert!(!snap.journal_version_fresh);
+    }
+
+    #[test]
+    fn apply_fetch_result_pairing_revision_fence() {
+        let temp_dir = TempDir::new("status-pairing-fence");
+        let clock = Arc::new(FixedStatusClock::new(100.0));
+        let tracker = StatusTracker::with_metadata(
+            clock,
+            temp_dir.path().to_path_buf(),
+            "inst-123".to_string(),
+            "abcd".to_string(),
+            "2026-07-26T00:00:00Z".to_string(),
+        );
+        {
+            let mut state = tracker.inner.lock().expect("lock");
+            state.generation = 1;
+        }
+
+        // 1. When on-disk peer.json paired_at does not match tracker's paired_at: write is skipped
+        let outcome_mismatch = tracker.apply_fetch_result(
+            1,
+            Some("2026.07.26".to_string()),
+            Some("different-paired-at".to_string()),
+        );
+        assert_eq!(outcome_mismatch, ApplyOutcome::PairingMismatch);
+        assert!(!temp_dir.path().join("journal_metadata.json").exists());
+        // But memory state updated for running process
+        let snap_mismatch = tracker.snapshot(bridge_status(true, true));
+        assert_eq!(snap_mismatch.journal_version.as_deref(), Some("2026.07.26"));
+        assert!(snap_mismatch.journal_version_fresh);
+
+        // 2. When on-disk peer.json paired_at matches: write persists
+        let outcome_match = tracker.apply_fetch_result(
+            1,
+            Some("2026.07.26".to_string()),
+            Some("2026-07-26T00:00:00Z".to_string()),
+        );
+        assert_eq!(outcome_match, ApplyOutcome::Persisted);
+        assert!(temp_dir.path().join("journal_metadata.json").exists());
+        let meta: LinkJournalMetadata = serde_json::from_slice(
+            &std::fs::read(temp_dir.path().join("journal_metadata.json")).expect("read"),
+        )
+        .expect("deserialize");
+        assert_eq!(meta.journal_version, "2026.07.26");
+        assert_eq!(meta.instance_id, "inst-123");
+        assert_eq!(meta.ca_fp_prefix, "abcd");
+    }
+
+    #[test]
+    fn snapshot_journal_version_freshness_requires_carrier_live() {
+        let clock = Arc::new(FixedStatusClock::new(100.0));
+        let tracker = StatusTracker::new(clock);
+        {
+            let mut state = tracker.inner.lock().expect("lock");
+            state.cached_version = Some("2026.07.26".to_string());
+            state.version_fresh = true;
+        }
+
+        // When carrier_live is false: snapshot.journal_version_fresh must be false
+        let disconnected = tracker.snapshot(bridge_status(true, false));
+        assert_eq!(disconnected.journal_version.as_deref(), Some("2026.07.26"));
+        assert!(!disconnected.journal_version_fresh);
+
+        // When carrier_live is true: snapshot.journal_version_fresh is true
+        let connected = tracker.snapshot(bridge_status(true, true));
+        assert_eq!(connected.journal_version.as_deref(), Some("2026.07.26"));
+        assert!(connected.journal_version_fresh);
+    }
+
+    #[test]
+    fn bound_port_race_pending_fetch_dispatches_when_port_set() {
+        let clock = Arc::new(FixedStatusClock::new(100.0));
+        let tracker = Arc::new(StatusTracker::new(clock));
+
+        // carrier_open_succeeded called when bound_port is None
+        tracker.carrier_open_succeeded();
+        {
+            let state = tracker.inner.lock().expect("lock");
+            assert_eq!(state.generation, 1);
+            assert_eq!(state.fetching_generation, Some(1));
+            assert_eq!(state.pending_fetch_generation, Some(1));
+            assert_eq!(state.bound_port, None);
+        }
+
+        // Now set bound_port
+        tracker.set_bound_port(5015);
+        {
+            let state = tracker.inner.lock().expect("lock");
+            assert_eq!(state.bound_port, Some(5015));
+            assert_eq!(state.pending_fetch_generation, None);
+        }
     }
 
     #[test]
@@ -814,8 +1307,12 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![
                 "active_requests",
+                "ca_fp_prefix",
                 "connected_age_seconds",
                 "health",
+                "instance_id",
+                "journal_version",
+                "journal_version_fresh",
                 "last_connected_at",
                 "last_failure",
                 "manager_alive",

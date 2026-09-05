@@ -20,14 +20,17 @@ use crate::resident::ResidentCommand;
 use crate::seam::{
     LinkJoinCredential, LinkJoinDirectRequest, LinkJoinPairTarget, LinkJoinPairingError,
     LinkJoinPairingErrorKind, LinkJoinRelayControlEndpoint, LinkJoinRelayErrorKind,
-    LinkJoinRelayRequest, LinkServeBundle, LinkServeCarrierPolicy, LinkServeEndpoint,
-    LinkServeError, LinkServeErrorKind, LinkServeRequest, LinkServeTransportErrorKind,
+    LinkJoinRelayRequest, LinkJournalMetadata, LinkServeBundle, LinkServeCarrierPolicy,
+    LinkServeEndpoint, LinkServeError, LinkServeErrorKind, LinkServeRequest,
+    LinkServeRuntimeRecord, LinkServeStatusSnapshot, LinkServeTransportErrorKind,
 };
 
 const HELP: &str = "usage: solstone link join [-h] [--home HOME] --code CODE [--as AS_ROLE]\n                     [--label LABEL]\n\noptions:\n  -h, --help     show this help message and exit\n  --home HOME    Receiver base URL\n  --code CODE    pair-link URL\n  --as AS_ROLE   Optional tag to join as\n  --label LABEL  Local credentials label (defaults to this machine's hostname)\n";
 const USAGE: &str = "usage: solstone link join [-h] [--home HOME] --code CODE [--as AS_ROLE]\n                     [--label LABEL]\n";
 const SERVE_HELP: &str = "usage: solstone link serve [-h] [--label LABEL] [--port PORT]\n                      [--relay-url RELAY_URL] [--direct | --relay-only]\n\noptions:\n  -h, --help            show this help message and exit\n  --label LABEL         Link bundle label\n  --port PORT           Loopback port to serve on (default: 5015)\n  --relay-url RELAY_URL\n                        Override the relay URL\n  --direct              Direct only: reach the journal through a direct\n                        connection, never the relay. Use when the home is\n                        reachable directly (same network/VPN) to avoid relay\n                        dependency.\n  --relay-only          Relay only: reach the journal through the relay,\n                        never a direct connection. Use when direct connections\n                        must not be attempted, even if the home is reachable\n                        locally.\n";
 const SERVE_USAGE: &str = "usage: solstone link serve [-h] [--label LABEL] [--port PORT]\n                      [--relay-url RELAY_URL] [--direct | --relay-only]\n";
+const STATUS_HELP: &str = "usage: solstone link status [-h] [--label LABEL]\n\nShow link status and observed remote journal version.\n\noptions:\n  -h, --help     show this help message and exit\n  --label LABEL  Link bundle label (defaults to the only paired link)\n";
+const STATUS_USAGE: &str = "usage: solstone link status [-h] [--label LABEL]\n";
 const DEFAULT_CLIENT_LABEL: &str = "linked-system";
 const DEFAULT_SERVE_PORT: u16 = 5015;
 const DEFAULT_RELAY_URL: &str = "https://link.solstone.app";
@@ -183,6 +186,8 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
         };
         return CommandOutput::failure(format!("{message}\n"), 1);
     }
+    let _ = fs::remove_file(bundle_dir.join("journal_metadata.json"));
+    let _ = fs::remove_file(bundle_dir.join("serve_runtime.json"));
 
     CommandOutput::success(format!(
         "Linked {label}.\nCredentials: {}\n",
@@ -243,6 +248,7 @@ pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, Comman
         policy,
         relay_origin,
         bundle: selection.bundle,
+        bundle_dir: selection.bundle_dir,
     };
     let session = match runner.start(request) {
         Ok(session) => session,
@@ -279,6 +285,68 @@ pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, Comman
     ))
 }
 
+pub fn link_status(ctx: CommandContext<'_>) -> CommandOutput {
+    let parsed = match parse_status_args(ctx.args) {
+        Ok(parsed) => parsed,
+        Err(error) => return argparse_status_error(error),
+    };
+    if parsed.help {
+        return CommandOutput::success(STATUS_HELP);
+    }
+    if let Some(unknown) = parsed.unknown {
+        return argparse_status_error(format!("unrecognized arguments: {unknown}"));
+    }
+
+    let selection = match resolve_serve_bundle(parsed.label.as_deref(), ctx.env) {
+        Ok(selection) => selection,
+        Err(error) => {
+            return CommandOutput::failure(format!("solstone link status: error: {error}\n"), 1);
+        }
+    };
+
+    let mut live_status: Option<LinkServeStatusSnapshot> = None;
+    let runtime_path = selection.bundle_dir.join("serve_runtime.json");
+    let persisted_meta = fs::read_to_string(selection.bundle_dir.join("journal_metadata.json"))
+        .ok()
+        .and_then(|content| serde_json::from_str::<LinkJournalMetadata>(&content).ok());
+    if let (Ok(content), Some(probe)) = (fs::read_to_string(&runtime_path), ctx.link_status_probe) {
+        live_status = serde_json::from_str::<LinkServeRuntimeRecord>(&content)
+            .ok()
+            .and_then(|rec| probe.probe(rec.port).ok())
+            .filter(|resp| resp.status == 200)
+            .and_then(|resp| serde_json::from_slice::<LinkServeStatusSnapshot>(&resp.body).ok())
+            .filter(|snap| {
+                snap.instance_id == selection.bundle.instance_id
+                    && persisted_meta
+                        .as_ref()
+                        .is_none_or(|meta| snap.ca_fp_prefix == meta.ca_fp_prefix)
+            });
+    }
+
+    let (state_str, version_str) = if let Some(snap) = live_status {
+        let ver = if let Some(raw_ver) = snap.journal_version {
+            let clean_ver = sanitize_display_version(&raw_ver);
+            if snap.journal_version_fresh {
+                clean_ver
+            } else {
+                format!("{clean_ver} (last known)")
+            }
+        } else {
+            read_cached_version_fallback(&selection.bundle_dir, &selection.bundle.instance_id)
+        };
+        (snap.state, ver)
+    } else {
+        let ver =
+            read_cached_version_fallback(&selection.bundle_dir, &selection.bundle.instance_id);
+        ("stopped".to_string(), ver)
+    };
+
+    CommandOutput::success(format!(
+        "Label: {}\nStatus: {}\nJournal version: {}\n",
+        selection.label, state_str, version_str
+    ))
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct ParsedArgs {
     home: Option<String>,
@@ -303,6 +371,61 @@ struct ParsedServeArgs {
 struct ServeBundleSelection {
     label: String,
     bundle: LinkServeBundle,
+    bundle_dir: PathBuf,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct ParsedStatusArgs {
+    help: bool,
+    label: Option<String>,
+    unknown: Option<String>,
+}
+
+fn parse_status_args(args: &[String]) -> Result<ParsedStatusArgs, String> {
+    let mut parsed = ParsedStatusArgs::default();
+    let mut index = 0;
+    while index < args.len() {
+        let token = &args[index];
+        if token == "-h" || token == "--help" {
+            parsed.help = true;
+            return Ok(parsed);
+        } else if let Some(value) = token.strip_prefix("--label=") {
+            parsed.label = Some(value.to_string());
+        } else if token == "--label" {
+            index += 1;
+            parsed.label = Some(take_value(args, index, "--label")?.to_string());
+        } else if parsed.unknown.is_none() {
+            parsed.unknown = Some(token.clone());
+        }
+        index += 1;
+    }
+    Ok(parsed)
+}
+
+fn argparse_status_error(error: String) -> CommandOutput {
+    CommandOutput::failure(
+        format!("{STATUS_USAGE}solstone link status: error: {error}\n"),
+        2,
+    )
+}
+
+fn sanitize_display_version(raw: &str) -> String {
+    raw.chars()
+        .filter(|c| !c.is_control() && *c != '\x1b')
+        .collect()
+}
+
+fn read_cached_version_fallback(bundle_dir: &Path, expected_instance_id: &str) -> String {
+    let meta_path = bundle_dir.join("journal_metadata.json");
+    let cached = fs::read_to_string(&meta_path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<LinkJournalMetadata>(&content).ok())
+        .filter(|meta| meta.instance_id == expected_instance_id && !meta.journal_version.is_empty())
+        .map(|meta| {
+            let clean = sanitize_display_version(&meta.journal_version);
+            format!("{clean} (last known)")
+        });
+    cached.unwrap_or_else(|| "unknown".to_string())
 }
 
 fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
@@ -426,6 +549,7 @@ fn resolve_serve_bundle(
         return Ok(ServeBundleSelection {
             label: label.to_string(),
             bundle,
+            bundle_dir,
         });
     }
 
@@ -440,7 +564,7 @@ fn resolve_serve_bundle(
             }
             let label = entry.file_name().to_string_lossy().to_string();
             if let Ok(bundle) = load_serve_bundle(&path) {
-                bundles.insert(label, bundle);
+                bundles.insert(label, (bundle, path));
             }
         }
     }
@@ -456,8 +580,12 @@ fn resolve_serve_bundle(
             "multiple observer link bundles found: {labels}. Pass --label to choose one."
         ));
     }
-    let (label, bundle) = bundles.into_iter().next().expect("bundle count checked");
-    Ok(ServeBundleSelection { label, bundle })
+    let (label, (bundle, bundle_dir)) = bundles.into_iter().next().expect("bundle count checked");
+    Ok(ServeBundleSelection {
+        label,
+        bundle,
+        bundle_dir,
+    })
 }
 
 fn observer_spl_root(env: &BTreeMap<String, String>) -> Result<PathBuf, String> {
@@ -519,6 +647,11 @@ fn load_serve_bundle(bundle_dir: &Path) -> Result<LinkServeBundle, String> {
             .to_string(),
         home_label: peer
             .get("home_label")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        paired_at: peer
+            .get("paired_at")
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string(),
@@ -1366,6 +1499,7 @@ mod tests {
             notification_sink: None,
             link_pairing: Some(seam),
             link_serve: None,
+            link_status_probe: None,
         })
     }
 
@@ -1389,6 +1523,7 @@ mod tests {
             notification_sink: None,
             link_pairing: None,
             link_serve: Some(runner),
+            link_status_probe: None,
         })
     }
 
@@ -1436,6 +1571,7 @@ mod tests {
             json!({
                 "instance_id": "home-instance",
                 "home_label": "Home",
+                "paired_at": "2026-07-26T00:00:00Z",
                 "local_endpoints": local_endpoints.clone(),
             })
             .to_string(),
@@ -1448,12 +1584,14 @@ mod tests {
             home_attestation: "attestation.jwt".to_string(),
             instance_id: "home-instance".to_string(),
             home_label: "Home".to_string(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
             endpoints: serve_endpoints_from_value(&local_endpoints).expect("serve endpoints"),
             local_endpoints,
         }
     }
 
     fn expected_serve_request(
+        config: &Path,
         label: &str,
         port: u16,
         policy: LinkServeCarrierPolicy,
@@ -1466,6 +1604,7 @@ mod tests {
             policy,
             relay_origin: relay_origin.map(str::to_string),
             bundle,
+            bundle_dir: config.join("solstone-observer").join("spl").join(label),
         }
     }
 
@@ -1661,6 +1800,7 @@ mod tests {
 
         let explicit_runner = ScriptedLinkServeRunner::new(vec![ExpectedLinkServeCall {
             expected: expected_serve_request(
+                &config,
                 "beta",
                 5016,
                 LinkServeCarrierPolicy::RelayPermitted,
@@ -1694,6 +1834,7 @@ mod tests {
             .expect("remove beta");
         let default_runner = ScriptedLinkServeRunner::new(vec![ExpectedLinkServeCall {
             expected: expected_serve_request(
+                &config,
                 "alpha",
                 DEFAULT_SERVE_PORT,
                 LinkServeCarrierPolicy::RelayPermitted,
@@ -1728,6 +1869,7 @@ mod tests {
         );
         let runner = ScriptedLinkServeRunner::new(vec![ExpectedLinkServeCall {
             expected: expected_serve_request(
+                &config,
                 "alpha",
                 0,
                 LinkServeCarrierPolicy::RelayPermitted,
@@ -1766,6 +1908,7 @@ mod tests {
         );
         let runner = ScriptedLinkServeRunner::new(vec![ExpectedLinkServeCall {
             expected: expected_serve_request(
+                &config,
                 "direct",
                 6001,
                 LinkServeCarrierPolicy::Direct,
@@ -1816,6 +1959,7 @@ mod tests {
         assert!(!bundle.endpoints.is_empty());
         let runner = ScriptedLinkServeRunner::new(vec![ExpectedLinkServeCall {
             expected: expected_serve_request(
+                &config,
                 "relay-only",
                 6002,
                 LinkServeCarrierPolicy::RelayOnly,
@@ -1868,6 +2012,7 @@ mod tests {
         );
         let runner = ScriptedLinkServeRunner::new(vec![ExpectedLinkServeCall {
             expected: expected_serve_request(
+                &config,
                 "relay-only",
                 6003,
                 LinkServeCarrierPolicy::RelayOnly,
@@ -1920,6 +2065,7 @@ mod tests {
         );
         let bind_runner = ScriptedLinkServeRunner::new(vec![ExpectedLinkServeCall {
             expected: expected_serve_request(
+                &config,
                 "laptop",
                 DEFAULT_SERVE_PORT,
                 LinkServeCarrierPolicy::RelayPermitted,
@@ -1944,6 +2090,7 @@ mod tests {
 
         let enroll_runner = ScriptedLinkServeRunner::new(vec![ExpectedLinkServeCall {
             expected: expected_serve_request(
+                &config,
                 "laptop",
                 DEFAULT_SERVE_PORT,
                 LinkServeCarrierPolicy::RelayPermitted,
@@ -2461,5 +2608,499 @@ mod tests {
                 port: 7657,
             }
         );
+    }
+
+    fn run_status(
+        args: &[&str],
+        env: &BTreeMap<String, String>,
+        probe: Option<&dyn crate::seam::LinkStatusProbe>,
+    ) -> CommandOutput {
+        let argv = Box::leak(string_args(args).into_boxed_slice());
+        let transport = Box::leak(Box::new(ScriptedHttpTransport::new(vec![])));
+        link_status(CommandContext {
+            args: argv,
+            env,
+            stdin: "",
+            today: "20260726",
+            transport,
+            clock: None,
+            files: None,
+            build_identity: None,
+            client_item_ids: None,
+            notification_sink: None,
+            link_pairing: None,
+            link_serve: None,
+            link_status_probe: probe,
+        })
+    }
+
+    #[test]
+    fn status_help_and_usage_errors() {
+        let temp = temp_dir("status-help");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+
+        let help = run_status(&["--help"], &env, None);
+        assert_eq!(help.exit, 0);
+        assert_eq!(help.stdout, STATUS_HELP);
+
+        let help_short = run_status(&["-h"], &env, None);
+        assert_eq!(help_short.exit, 0);
+        assert_eq!(help_short.stdout, STATUS_HELP);
+
+        let unknown = run_status(&["--unknown"], &env, None);
+        assert_eq!(unknown.exit, 2);
+        assert_eq!(
+            unknown.stderr,
+            format!(
+                "{STATUS_USAGE}solstone link status: error: unrecognized arguments: --unknown\n"
+            )
+        );
+
+        let missing_label = run_status(&["--label"], &env, None);
+        assert_eq!(missing_label.exit, 2);
+        assert_eq!(
+            missing_label.stderr,
+            format!(
+                "{STATUS_USAGE}solstone link status: error: argument --label: expected one argument\n"
+            )
+        );
+    }
+
+    #[test]
+    fn status_no_bundles_fails_with_clean_error() {
+        let temp = temp_dir("status-no-bundles");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+
+        let output = run_status(&[], &env, None);
+        assert_eq!(output.exit, 1);
+        assert!(
+            output
+                .stderr
+                .starts_with("solstone link status: error: no observer link bundles found under ")
+        );
+    }
+
+    #[test]
+    fn status_multiple_bundles_without_label_fails() {
+        let temp = temp_dir("status-multi-bundles");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        serve_bundle(&config, "alpha", json!([]));
+        serve_bundle(&config, "beta", json!([]));
+
+        let output = run_status(&[], &env, None);
+        assert_eq!(output.exit, 1);
+        assert_eq!(
+            output.stderr,
+            "solstone link status: error: multiple observer link bundles found: alpha, beta. Pass --label to choose one.\n"
+        );
+    }
+
+    #[test]
+    fn status_stopped_no_metadata() {
+        let temp = temp_dir("status-stopped-no-meta");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        serve_bundle(&config, "alpha", json!([]));
+
+        let output = run_status(&[], &env, None);
+        assert_eq!(output.exit, 0);
+        assert_eq!(
+            output.stdout,
+            "Label: alpha\nStatus: stopped\nJournal version: unknown\n"
+        );
+    }
+
+    #[test]
+    fn status_stopped_with_cached_metadata() {
+        let temp = temp_dir("status-stopped-cached");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        serve_bundle(&config, "alpha", json!([]));
+
+        let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
+        let meta = LinkJournalMetadata {
+            instance_id: "home-instance".to_string(),
+            ca_fp_prefix: "abcd".to_string(),
+            journal_version: "2026.07.26".to_string(),
+            observed_at: 1234.0,
+        };
+        fs::write(
+            bundle_dir.join("journal_metadata.json"),
+            serde_json::to_vec(&meta).expect("serialize"),
+        )
+        .expect("write");
+
+        let output = run_status(&[], &env, None);
+        assert_eq!(output.exit, 0);
+        assert_eq!(
+            output.stdout,
+            "Label: alpha\nStatus: stopped\nJournal version: 2026.07.26 (last known)\n"
+        );
+    }
+
+    #[test]
+    fn status_stopped_with_mismatched_cached_metadata() {
+        let temp = temp_dir("status-stopped-mismatch");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        serve_bundle(&config, "alpha", json!([]));
+
+        let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
+        let meta = LinkJournalMetadata {
+            instance_id: "other-instance".to_string(),
+            ca_fp_prefix: "abcd".to_string(),
+            journal_version: "2026.07.26".to_string(),
+            observed_at: 1234.0,
+        };
+        fs::write(
+            bundle_dir.join("journal_metadata.json"),
+            serde_json::to_vec(&meta).expect("serialize"),
+        )
+        .expect("write");
+
+        let output = run_status(&[], &env, None);
+        assert_eq!(output.exit, 0);
+        assert_eq!(
+            output.stdout,
+            "Label: alpha\nStatus: stopped\nJournal version: unknown\n"
+        );
+    }
+
+    #[test]
+    fn status_running_fresh_version() {
+        let temp = temp_dir("status-running-fresh");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        serve_bundle(&config, "alpha", json!([]));
+
+        let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
+        let runtime = LinkServeRuntimeRecord { port: 5015 };
+        fs::write(
+            bundle_dir.join("serve_runtime.json"),
+            serde_json::to_vec(&runtime).expect("serialize"),
+        )
+        .expect("write");
+
+        let snapshot = LinkServeStatusSnapshot {
+            state: "connected".to_string(),
+            health: "ok".to_string(),
+            manager_alive: true,
+            active_requests: 0,
+            reconnect_count: 0,
+            last_connected_at: Some(100.0),
+            connected_age_seconds: Some(10.0),
+            last_failure: None,
+            next_retry_at: None,
+            journal_version: Some("2026.07.26".to_string()),
+            journal_version_fresh: true,
+            instance_id: "home-instance".to_string(),
+            ca_fp_prefix: "abcd".to_string(),
+        };
+        let response = crate::seam::HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: serde_json::to_vec(&snapshot).expect("serialize"),
+            policy: crate::seam::TimeoutPolicy::Api,
+        };
+        let probe = crate::seam::ScriptedLinkStatusProbe::new(vec![(5015, Ok(response))]);
+
+        let output = run_status(&[], &env, Some(&probe));
+        assert_eq!(output.exit, 0);
+        assert_eq!(
+            output.stdout,
+            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n"
+        );
+        assert_eq!(probe.recorded(), vec![5015]);
+    }
+
+    #[test]
+    fn status_running_stale_version_in_snapshot() {
+        let temp = temp_dir("status-running-stale");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        serve_bundle(&config, "alpha", json!([]));
+
+        let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
+        let runtime = LinkServeRuntimeRecord { port: 5015 };
+        fs::write(
+            bundle_dir.join("serve_runtime.json"),
+            serde_json::to_vec(&runtime).expect("serialize"),
+        )
+        .expect("write");
+
+        let snapshot = LinkServeStatusSnapshot {
+            state: "disconnected".to_string(),
+            health: "offline".to_string(),
+            manager_alive: true,
+            active_requests: 0,
+            reconnect_count: 1,
+            last_connected_at: None,
+            connected_age_seconds: None,
+            last_failure: None,
+            next_retry_at: None,
+            journal_version: Some("2026.07.26".to_string()),
+            journal_version_fresh: false,
+            instance_id: "home-instance".to_string(),
+            ca_fp_prefix: "abcd".to_string(),
+        };
+        let response = crate::seam::HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: serde_json::to_vec(&snapshot).expect("serialize"),
+            policy: crate::seam::TimeoutPolicy::Api,
+        };
+        let probe = crate::seam::ScriptedLinkStatusProbe::new(vec![(5015, Ok(response))]);
+
+        let output = run_status(&[], &env, Some(&probe));
+        assert_eq!(output.exit, 0);
+        assert_eq!(
+            output.stdout,
+            "Label: alpha\nStatus: disconnected\nJournal version: 2026.07.26 (last known)\n"
+        );
+        assert_eq!(probe.recorded(), vec![5015]);
+    }
+
+    #[test]
+    fn status_running_probe_failed_falls_back_to_metadata() {
+        let temp = temp_dir("status-probe-failed");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        serve_bundle(&config, "alpha", json!([]));
+
+        let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
+        let runtime = LinkServeRuntimeRecord { port: 5015 };
+        fs::write(
+            bundle_dir.join("serve_runtime.json"),
+            serde_json::to_vec(&runtime).expect("serialize"),
+        )
+        .expect("write");
+
+        let meta = LinkJournalMetadata {
+            instance_id: "home-instance".to_string(),
+            ca_fp_prefix: "abcd".to_string(),
+            journal_version: "2026.07.26".to_string(),
+            observed_at: 1234.0,
+        };
+        fs::write(
+            bundle_dir.join("journal_metadata.json"),
+            serde_json::to_vec(&meta).expect("serialize"),
+        )
+        .expect("write");
+
+        let probe = crate::seam::ScriptedLinkStatusProbe::new(vec![(
+            5015,
+            Err(crate::error::ClientError::unreachable(Some(
+                "connection refused".to_string(),
+            ))),
+        )]);
+
+        let output = run_status(&[], &env, Some(&probe));
+        assert_eq!(output.exit, 0);
+        assert_eq!(
+            output.stdout,
+            "Label: alpha\nStatus: stopped\nJournal version: 2026.07.26 (last known)\n"
+        );
+        assert_eq!(probe.recorded(), vec![5015]);
+    }
+
+    #[test]
+    fn status_running_cross_pairing_mismatch_falls_back() {
+        let temp = temp_dir("status-cross-pairing");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        serve_bundle(&config, "alpha", json!([]));
+
+        let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
+        let runtime = LinkServeRuntimeRecord { port: 5015 };
+        fs::write(
+            bundle_dir.join("serve_runtime.json"),
+            serde_json::to_vec(&runtime).expect("serialize"),
+        )
+        .expect("write");
+
+        let snapshot = LinkServeStatusSnapshot {
+            state: "connected".to_string(),
+            health: "ok".to_string(),
+            manager_alive: true,
+            active_requests: 0,
+            reconnect_count: 0,
+            last_connected_at: Some(100.0),
+            connected_age_seconds: Some(10.0),
+            last_failure: None,
+            next_retry_at: None,
+            journal_version: Some("2026.07.26".to_string()),
+            journal_version_fresh: true,
+            instance_id: "other-rogue-instance".to_string(),
+            ca_fp_prefix: "abcd".to_string(),
+        };
+        let response = crate::seam::HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: serde_json::to_vec(&snapshot).expect("serialize"),
+            policy: crate::seam::TimeoutPolicy::Api,
+        };
+        let probe = crate::seam::ScriptedLinkStatusProbe::new(vec![(5015, Ok(response))]);
+
+        let output = run_status(&[], &env, Some(&probe));
+        assert_eq!(output.exit, 0);
+        assert_eq!(
+            output.stdout,
+            "Label: alpha\nStatus: stopped\nJournal version: unknown\n"
+        );
+        assert_eq!(probe.recorded(), vec![5015]);
+    }
+
+    #[test]
+    fn status_running_cross_pairing_ca_fp_mismatch_falls_back() {
+        let temp = temp_dir("status-cross-pairing-ca-fp");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        serve_bundle(&config, "alpha", json!([]));
+
+        let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
+        let runtime = LinkServeRuntimeRecord { port: 5015 };
+        fs::write(
+            bundle_dir.join("serve_runtime.json"),
+            serde_json::to_vec(&runtime).expect("serialize"),
+        )
+        .expect("write");
+
+        let meta = LinkJournalMetadata {
+            instance_id: "home-instance".to_string(),
+            ca_fp_prefix: "expected-ca-fp".to_string(),
+            journal_version: "2026.07.26".to_string(),
+            observed_at: 1234.0,
+        };
+        fs::write(
+            bundle_dir.join("journal_metadata.json"),
+            serde_json::to_vec(&meta).expect("serialize"),
+        )
+        .expect("write");
+
+        // Live probe returns matching instance_id but different ca_fp_prefix
+        let snapshot = LinkServeStatusSnapshot {
+            state: "connected".to_string(),
+            health: "ok".to_string(),
+            manager_alive: true,
+            active_requests: 0,
+            reconnect_count: 0,
+            last_connected_at: Some(100.0),
+            connected_age_seconds: Some(10.0),
+            last_failure: None,
+            next_retry_at: None,
+            journal_version: Some("2026.07.26".to_string()),
+            journal_version_fresh: true,
+            instance_id: "home-instance".to_string(),
+            ca_fp_prefix: "different-ca-fp".to_string(),
+        };
+        let response = crate::seam::HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: serde_json::to_vec(&snapshot).expect("serialize"),
+            policy: crate::seam::TimeoutPolicy::Api,
+        };
+        let probe = crate::seam::ScriptedLinkStatusProbe::new(vec![(5015, Ok(response))]);
+
+        let output = run_status(&[], &env, Some(&probe));
+        assert_eq!(output.exit, 0);
+        // Rejected live snapshot, fell back to persisted metadata
+        assert_eq!(
+            output.stdout,
+            "Label: alpha\nStatus: stopped\nJournal version: 2026.07.26 (last known)\n"
+        );
+        assert_eq!(probe.recorded(), vec![5015]);
+    }
+
+    #[test]
+    fn status_live_probe_rendered_output_contains_no_raw_control_or_escape_bytes() {
+        let temp = temp_dir("status-live-sanitize");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        serve_bundle(&config, "alpha", json!([]));
+
+        let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
+        let runtime = LinkServeRuntimeRecord { port: 5015 };
+        fs::write(
+            bundle_dir.join("serve_runtime.json"),
+            serde_json::to_vec(&runtime).expect("serialize"),
+        )
+        .expect("write");
+
+        let snapshot = LinkServeStatusSnapshot {
+            state: "connected".to_string(),
+            health: "ok".to_string(),
+            manager_alive: true,
+            active_requests: 0,
+            reconnect_count: 0,
+            last_connected_at: Some(100.0),
+            connected_age_seconds: Some(10.0),
+            last_failure: None,
+            next_retry_at: None,
+            journal_version: Some("\x1b[31m2026.07.26\x1b[0m\x00\x07".to_string()),
+            journal_version_fresh: true,
+            instance_id: "home-instance".to_string(),
+            ca_fp_prefix: "abcd".to_string(),
+        };
+        let response = crate::seam::HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: serde_json::to_vec(&snapshot).expect("serialize"),
+            policy: crate::seam::TimeoutPolicy::Api,
+        };
+        let probe = crate::seam::ScriptedLinkStatusProbe::new(vec![(5015, Ok(response))]);
+
+        let output = run_status(&[], &env, Some(&probe));
+        assert_eq!(output.exit, 0);
+        assert_eq!(
+            output.stdout,
+            "Label: alpha\nStatus: connected\nJournal version: [31m2026.07.26[0m\n"
+        );
+        // Ensure no raw ESC or control characters exist anywhere in stdout except newline
+        for byte in output.stdout.bytes() {
+            assert!(
+                byte == b'\n' || (byte >= 0x20 && byte != 0x7F && byte != 0x1b),
+                "unexpected byte {:#x} in output stdout",
+                byte
+            );
+        }
+    }
+
+    #[test]
+    fn status_sanitizes_control_and_escape_chars() {
+        assert_eq!(
+            sanitize_display_version("\x1b[31m2026.07.26\x1b[0m\r\n"),
+            "[31m2026.07.26[0m"
+        );
+        assert_eq!(sanitize_display_version("2026.07.26\0\x07"), "2026.07.26");
+    }
+
+    #[test]
+    fn link_join_cleans_metadata_and_runtime() {
+        let temp = temp_dir("join-cleanup");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        let root = temp.join("journal");
+        let bundle_dir = config.join("solstone-observer").join("spl").join("laptop");
+
+        let seam = ScriptedLinkJoinPairingSeam::new(vec![ExpectedLinkJoinPairingCall::Direct {
+            expected: expected_direct_request("laptop"),
+            result: Ok(credential(Value::Array(Vec::new()))),
+        }]);
+        let clock = FakeClock::at_unix(0);
+
+        let output = run(
+            &["--code", &direct_pair_link(), "--label", "laptop"],
+            &env,
+            &root,
+            &seam,
+            &clock,
+        );
+        assert_eq!(output.exit, 0);
+        assert!(!bundle_dir.join("journal_metadata.json").exists());
+        assert!(!bundle_dir.join("serve_runtime.json").exists());
+        seam.assert_done();
     }
 }

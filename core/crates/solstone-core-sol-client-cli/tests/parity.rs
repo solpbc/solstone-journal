@@ -177,6 +177,7 @@ fn run_vector(vector: &Value) {
                 files: Some(&files),
                 link_pairing: Some(&link_pairing),
                 link_serve: Some(&link_serve),
+                link_status_probe: None,
             },
         );
         match dispatch {
@@ -195,6 +196,7 @@ fn run_vector(vector: &Value) {
                     notification_sink: None,
                     link_pairing: Some(&link_pairing),
                     link_serve: Some(&link_serve),
+                    link_status_probe: None,
                 });
                 match output {
                     Err(output) => output,

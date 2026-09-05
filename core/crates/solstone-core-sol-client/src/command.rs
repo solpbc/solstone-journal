@@ -3,7 +3,7 @@
 
 use crate::seam::{
     BuildIdentityProvider, ClientItemIdProvider, Clock, FileProvider, HttpTransport,
-    LinkJoinPairingSeam, LinkServeRunner, NotificationSink,
+    LinkJoinPairingSeam, LinkServeRunner, LinkStatusProbe, NotificationSink,
 };
 use std::collections::BTreeMap;
 
@@ -21,6 +21,7 @@ pub struct CommandContext<'a> {
     pub notification_sink: Option<&'a dyn NotificationSink>,
     pub link_pairing: Option<&'a dyn LinkJoinPairingSeam>,
     pub link_serve: Option<&'a dyn LinkServeRunner>,
+    pub link_status_probe: Option<&'a dyn LinkStatusProbe>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
