@@ -558,26 +558,123 @@ fn assemble_observer_context(journal: &Path, facet: &str, day: &str) -> Result<S
             lines.push("No current observations.".to_owned());
         }
         for (index, observation) in observations.iter().enumerate() {
-            if let Some(content) = observation
-                .get("content")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|content| !content.is_empty())
-            {
-                let source = observation
-                    .get("source_day")
-                    .and_then(Value::as_str)
-                    .unwrap_or("unknown");
-                lines.push(format!("{index}. {content} (source: {source})"));
+            if let Some(rendered) = observation_context(index, observation) {
+                lines.push(rendered);
             }
         }
     }
     Ok(lines.join("\n").chars().take(24_000).collect())
 }
 
+// Keep the identifying quote distinct from both the full content and provenance.
+// The writer still verifies it against the current observation at this index.
+fn observation_context(index: usize, observation: &Value) -> Option<String> {
+    let content = observation.get("content")?.as_str()?.trim();
+    if content.is_empty() {
+        return None;
+    }
+    let quote: String = content.chars().take(200).collect();
+    let source = observation
+        .get("source_day")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    Some(format!(
+        "{index}. target_quote: {}\n   source_day: {}\n   content: {}",
+        json!(quote),
+        json!(source),
+        json!(content)
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn context_quote_is_bounded_verbatim_and_separate_from_source() {
+        for content in [
+            "Short observation.".to_owned(),
+            "é😀\n\"quoted\" ".repeat(80),
+        ] {
+            let rendered =
+                observation_context(3, &json!({"content":content, "source_day":"20260712"}))
+                    .unwrap();
+            let mut lines = rendered.lines();
+            let quote: String = serde_json::from_str(
+                lines
+                    .next()
+                    .unwrap()
+                    .strip_prefix("3. target_quote: ")
+                    .unwrap(),
+            )
+            .unwrap();
+            assert!(!quote.is_empty());
+            assert!(quote.chars().count() <= 200);
+            assert!(content.starts_with(&quote));
+            assert_eq!(lines.next().unwrap(), "   source_day: \"20260712\"");
+            let full: String =
+                serde_json::from_str(lines.next().unwrap().strip_prefix("   content: ").unwrap())
+                    .unwrap();
+            assert_eq!(full, content.trim());
+            assert!(lines.next().is_none());
+        }
+        assert!(observation_context(0, &json!({"content":"  "})).is_none());
+    }
+
+    #[test]
+    fn rendered_quote_supports_guarded_keep_and_update_of_long_observation() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::attach_or_reactivate_entity(root.path(), "work", "Person", "Ada", "")
+            .unwrap();
+        let content = "Long observation with Unicode é😀. ".repeat(30);
+        let apply = |operation: Value| {
+            apply_result(
+                root.path(),
+                &json!({"entities":[{"entity_id":"ada","operations":[operation]}]}).to_string(),
+                "work",
+                "20260101",
+            )
+            .unwrap();
+        };
+        apply(json!({"op":"add","content":content}));
+        let original = solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
+        let rendered = observation_context(0, &original[0]).unwrap();
+        let quote: String = serde_json::from_str(
+            rendered
+                .lines()
+                .next()
+                .unwrap()
+                .strip_prefix("0. target_quote: ")
+                .unwrap(),
+        )
+        .unwrap();
+        apply(json!({"op":"keep","target_index":0,"target_quote":quote}));
+        let outcome: Value = serde_json::from_slice(
+            &fs::read(
+                root.path()
+                    .join("facets/work/entities/20260101_observer_outcome.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(outcome["keep"], 1);
+        assert_eq!(
+            solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap(),
+            original
+        );
+        apply(
+            json!({"op":"update","target_index":0,"target_quote":"does not match","content":"Wrong."}),
+        );
+        assert_eq!(
+            solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap(),
+            original
+        );
+        apply(
+            json!({"op":"update","target_index":0,"target_quote":quote,"content":"Updated fact."}),
+        );
+        let updated = solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
+        assert_eq!(updated[0]["content"], "Updated fact.");
+    }
 
     #[test]
     fn missing_scope_skips_the_stage() {

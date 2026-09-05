@@ -77,7 +77,7 @@ Rules:
 - Use the `entity_id` from context.
 - Include every field on each operation; set non-applicable fields (`target_index`, `content`, `target_quote`, `relation`) to `null`.
 - Prefer `update` or `drop` over adding a near-duplicate observation.
-- For `update` and `drop`, include a verbatim `target_quote` of at most 300 characters from the target observation. Use a short identifying excerpt; do not copy the whole observation when it exceeds that limit.
+- For `update`, `drop`, and `keep`, copy the numbered observation’s `target_quote` field exactly. It is a short verbatim excerpt supplied in context. Do not copy the full `content` or append `source_day`; the quote must be at most 300 characters.
 - At most one operation may target a given observation index for an entity.
 - Use `add` only for facts that pass the durability litmus.
 - One fact per observation — no compound sentences.
@@ -129,7 +129,7 @@ Respond with a JSON object in this exact format:
           "op": "keep",
           "target_index": 3,
           "content": null,
-          "target_quote": null,
+          "target_quote": "short exact quote from the old observation",
           "reasoning": null,
           "relation": null
         }
