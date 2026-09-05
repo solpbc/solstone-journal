@@ -6,8 +6,8 @@ use solstone_core_repository_contracts::advisory_audit::{
     AdvisoryAuditRequest, run_advisory_audit,
 };
 use solstone_core_repository_contracts::ci::{
-    Leg, PackageSuite, Registry, Suite, load_registry, scan_routine_boundaries, validate_boundary,
-    validate_registry,
+    Leg, PackageSuite, Registry, Suite, load_registry, pin_ci_cargo_environment,
+    scan_routine_boundaries, validate_boundary, validate_registry,
 };
 use solstone_core_repository_contracts::release_manifest::{ManifestSelection, run_manifest_check};
 use std::collections::{BTreeMap, BTreeSet};
@@ -820,13 +820,6 @@ fn run_item(
     }
 }
 
-const CI_CARGO_ENVIRONMENT: [(&str, &str); 2] =
-    [("CARGO_INCREMENTAL", "0"), ("CARGO_PROFILE_DEV_DEBUG", "0")];
-
-fn pin_ci_cargo_environment(command: &mut Command) {
-    command.envs(CI_CARGO_ENVIRONMENT);
-}
-
 fn default_log_root(repo: &Path, revision: &str, started_unix: u64) -> PathBuf {
     repo.join("target/ci-logs")
         .join(format!("{revision}-{started_unix}"))
@@ -1213,14 +1206,6 @@ mod tests {
                 default_full: true,
             }],
         }
-    }
-
-    #[test]
-    fn spawned_ci_commands_pin_disk_lean_cargo_settings() {
-        assert_eq!(
-            CI_CARGO_ENVIRONMENT,
-            [("CARGO_INCREMENTAL", "0"), ("CARGO_PROFILE_DEV_DEBUG", "0")]
-        );
     }
 
     #[test]

@@ -49,6 +49,25 @@ fn fixture_make_command(root: &Path, shims: &Path, target: &str) -> Command {
 }
 
 #[test]
+fn spawned_ci_commands_do_not_inherit_the_runner_package_directory() {
+    let mut command = Command::new("sh");
+    command
+        .env("CARGO_MANIFEST_DIR", "/runner/package")
+        .env("CARGO_INCREMENTAL", "1")
+        .env("CARGO_PROFILE_DEV_DEBUG", "2")
+        .env("CARGO_TARGET_DIR", "/caller/target")
+        .args([
+            "-c",
+            "test -z \"${CARGO_MANIFEST_DIR+x}\" && \
+             test \"$CARGO_INCREMENTAL\" = 0 && \
+             test \"$CARGO_PROFILE_DEV_DEBUG\" = 0 && \
+             test \"$CARGO_TARGET_DIR\" = /caller/target",
+        ]);
+    solstone_core_repository_contracts::ci::pin_ci_cargo_environment(&mut command);
+    assert!(command.status().expect("start environment probe").success());
+}
+
+#[test]
 fn make_ci_never_executes_forbidden_interpreters() {
     assert_gate_never_executes_forbidden_interpreters(
         "ci",
