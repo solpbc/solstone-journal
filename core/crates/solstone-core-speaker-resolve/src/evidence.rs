@@ -10,6 +10,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
 
+use crate::segment_path;
 use regex::Regex;
 use serde_json::{Value, json};
 use solstone_core_entity::{
@@ -17,7 +18,7 @@ use solstone_core_entity::{
     record_entity_resolution_from_name_evidence,
 };
 use solstone_core_journal_config::{ConfigLoadError, materialized_defaults, read_journal_config};
-use solstone_core_journal_io::{PathError, segment_path};
+use solstone_core_journal_io::PathError;
 
 use crate::admission::{
     admissible_person_pool, admissible_resolution_entities, saved_choice_excluded_by_admission,

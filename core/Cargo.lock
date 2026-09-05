@@ -5046,6 +5046,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-npy",
+ "solstone-core-segment",
  "solstone-core-speaker-id",
  "tempfile",
  "thiserror 2.0.20",

@@ -7,9 +7,10 @@ use std::error::Error;
 use std::fmt;
 use std::path::Path;
 
+use crate::segment_path;
 use serde::{Deserialize, Serialize};
 use solstone_core_entity::{EncoderIdentity, normalize_embedding};
-use solstone_core_journal_io::{PathError, segment_path};
+use solstone_core_journal_io::PathError;
 use solstone_core_speaker_id::calibration::OWNER_THRESHOLD;
 use solstone_core_speaker_id::embeddings::load_embeddings_file;
 

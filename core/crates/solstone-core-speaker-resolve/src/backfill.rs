@@ -230,7 +230,7 @@ pub fn run_backfill(request: &BackfillRunRequest) -> Result<BackfillRunResult, B
             day: key.day.clone(),
             stream: key.stream.clone(),
             segment_key: key.segment_key.clone(),
-            path: solstone_core_journal_io::segment_path(
+            path: crate::segment_path(
                 &request.journal_root,
                 &key.day,
                 &key.segment_key,

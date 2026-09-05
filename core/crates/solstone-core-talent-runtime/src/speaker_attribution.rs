@@ -57,7 +57,7 @@ fn segment_dir(
     stream: &str,
     create: bool,
 ) -> Result<PathBuf, String> {
-    solstone_core_journal_io::segment_path(journal, day, segment, stream, create)
+    solstone_core_speaker_resolve::segment_path(journal, day, segment, stream, create)
         .map_err(|error| error.to_string())
 }
 
@@ -520,6 +520,34 @@ mod tests {
         assert!(!read_only.exists());
         let created = segment_dir(root.path(), "20260101", "090000_300", "main", true).unwrap();
         assert!(created.is_dir());
+    }
+
+    #[test]
+    fn direct_record_creation_does_not_create_a_named_default_tree() {
+        let root = tempfile::tempdir().unwrap();
+        let expected = root.path().join("chronicle/20260101/090000_300");
+        assert_eq!(
+            segment_dir(root.path(), "20260101", "090000_300", "_default", false).unwrap(),
+            expected
+        );
+        assert!(!expected.exists());
+        let mut prepared = PreparedTalent {
+            name: "speaker_attribution".to_owned(),
+            config: Map::from_iter([
+                ("day".to_owned(), Value::String("20260101".to_owned())),
+                ("segment".to_owned(), Value::String("090000_300".to_owned())),
+            ]),
+        };
+        let _ = build(
+            &mut prepared,
+            &ExecutionContext {
+                journal: root.path().to_owned(),
+            },
+        );
+        assert!(expected.is_dir());
+        assert!(!root.path().join("chronicle/20260101/_default").exists());
+        assert!(segment_dir(root.path(), "20260101", "../outside", "_default", true).is_err());
+        assert!(!root.path().join("chronicle/outside").exists());
     }
 
     #[test]

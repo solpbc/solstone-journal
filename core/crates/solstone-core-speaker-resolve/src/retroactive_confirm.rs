@@ -6,12 +6,12 @@
 use std::collections::HashSet;
 use std::path::Path;
 
+use crate::segment_path;
 use serde_json::Value;
 use solstone_core_entity::{
     EncoderIdentity, VoiceprintItem, is_admissible_person, load_all_journal_entities,
     load_entity_voiceprints_file, save_voiceprints_batch,
 };
-use solstone_core_journal_io::segment_path;
 use solstone_core_speaker_id::calibration::{
     NOISY_FLYWHEEL_OVERLAP_MAX, VP_OUTLIER_MIN_SAMPLES, VP_OUTLIER_MIN_SIMILARITY,
 };

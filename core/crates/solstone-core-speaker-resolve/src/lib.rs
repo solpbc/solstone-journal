@@ -40,3 +40,35 @@ pub mod voiceprint_centroid;
 pub mod voiceprint_metadata;
 
 pub use owner_admission::{OWNER_IDENTITY_INVALID_REASON, OWNER_TARGET_MISMATCH_REASON};
+
+/// Resolve a speaker record's segment, where `_default` denotes direct layout.
+pub fn segment_path(
+    journal: &std::path::Path,
+    day: &str,
+    segment: &str,
+    stream: &str,
+    create: bool,
+) -> Result<std::path::PathBuf, solstone_core_journal_io::PathError> {
+    use solstone_core_journal_io::PathError;
+    use solstone_core_segment::{SegmentDir, SegmentError};
+    let directory =
+        SegmentDir::resolve(journal, day, segment, stream).map_err(|error| match error {
+            SegmentError::Path(error) => error,
+            SegmentError::StreamInput(message) => PathError::InvalidRelativePath {
+                rel: format!("{day}/{stream}/{segment}"),
+                message,
+            },
+            other => PathError::Io {
+                path: journal.to_path_buf(),
+                source: std::io::Error::other(other),
+            },
+        })?;
+    let path = directory.path().to_path_buf();
+    if create {
+        std::fs::create_dir_all(&path).map_err(|source| PathError::Io {
+            path: path.clone(),
+            source,
+        })?;
+    }
+    Ok(path)
+}

@@ -6,13 +6,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+use crate::segment_path;
 use serde_json::{Value, json};
 use solstone_core_entity::{
     EncoderIdentity, VoiceprintItem, VoiceprintRemoval, VoiceprintRemovalReport,
     load_entity_voiceprints_file, load_existing_voiceprint_keys, normalize_embedding,
     remove_voiceprints_by_key, save_voiceprints_batch,
 };
-use solstone_core_journal_io::segment_path;
 use solstone_core_speaker_id::embeddings::load_embeddings_file;
 use thiserror::Error;
 

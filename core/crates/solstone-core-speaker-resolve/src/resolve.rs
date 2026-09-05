@@ -130,8 +130,7 @@ pub fn resolve(
     read_only: bool,
     now_ms: i64,
 ) -> Result<ResolveOutcome, ResolveError> {
-    let segment_dir =
-        solstone_core_journal_io::segment_path(journal_root, day, segment_key, stream, false)?;
+    let segment_dir = crate::segment_path(journal_root, day, segment_key, stream, false)?;
     if read_only && !segment_dir.is_dir() {
         return Ok(ResolveOutcome::SegmentMissing);
     }
