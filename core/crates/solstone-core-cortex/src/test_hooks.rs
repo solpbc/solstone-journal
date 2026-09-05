@@ -26,3 +26,31 @@ pub fn new_state(store: CortexStore) -> CortexState {
     let (outbound_tx, _) = mpsc::channel();
     CortexState::new(store, spawn_tx, cancel_tx, outbound_tx)
 }
+
+/// Retain the queued work receiver so component tests can drive lifecycle transitions.
+pub fn queued_state(store: CortexStore) -> (CortexState, mpsc::Receiver<Work>) {
+    let (spawn_tx, spawn_rx) = mpsc::channel();
+    let (cancel_tx, _) = mpsc::channel();
+    let (outbound_tx, _) = mpsc::channel();
+    (
+        CortexState::new(store, spawn_tx, cancel_tx, outbound_tx),
+        spawn_rx,
+    )
+}
+
+pub fn cancel_use(state: &CortexState, use_id: &str, reason: &str) -> Option<RunningUse> {
+    state.cancel_running(use_id, reason)
+}
+
+pub fn append_event(
+    state: &CortexState,
+    use_id: &str,
+    active: &std::path::Path,
+    event: serde_json::Map<String, serde_json::Value>,
+) {
+    state.append_and_relay(use_id, active, event);
+}
+
+pub fn recover_store(store: &CortexStore) {
+    store.recover().expect("recover component fixture");
+}

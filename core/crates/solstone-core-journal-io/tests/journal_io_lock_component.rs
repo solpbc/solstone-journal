@@ -37,6 +37,7 @@ use nix::sys::signal::{Signal, kill};
 use nix::sys::stat::{Mode, umask};
 #[cfg(unix)]
 use nix::unistd::Pid;
+use solstone_core_journal_io::cortex_use::allocate_cortex_use_id;
 #[cfg(unix)]
 use solstone_core_journal_io::cortex_use::{
     CortexNamespaceAuthority, CortexNamespaceLock, CortexNamespaceLockError,
@@ -1672,4 +1673,49 @@ fn bound_flat_directory_survives_parent_path_replacement() {
     );
     assert!(!journal.join("moved/flat/entry").exists());
     assert_eq!(fs::read(parent.join("flat/entry")).unwrap(), b"replacement");
+}
+
+#[test]
+fn independent_processes_reserve_different_ids_at_the_same_clock() {
+    let root = tempfile::tempdir().unwrap();
+    let children = (0..8)
+        .map(|index| {
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "allocation_process_child"])
+                .env("CORTEX_ALLOCATION_TEST_ROOT", root.path())
+                .env(
+                    "CORTEX_ALLOCATION_TEST_RESULT",
+                    root.path().join(format!("result-{index}")),
+                )
+                .stdout(std::process::Stdio::null())
+                .spawn()
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    for mut child in children {
+        assert!(child.wait().unwrap().success());
+    }
+    let mut ids = (0..8)
+        .map(|index| {
+            fs::read_to_string(root.path().join(format!("result-{index}")))
+                .unwrap()
+                .parse::<i64>()
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    ids.sort_unstable();
+    assert_eq!(ids, (1000..1008).collect::<Vec<_>>());
+}
+
+#[test]
+fn allocation_process_child() {
+    let Some(root) = std::env::var_os("CORTEX_ALLOCATION_TEST_ROOT") else {
+        return;
+    };
+    let id = allocate_cortex_use_id(Path::new(&root), 1000).unwrap();
+    fs::write(
+        std::env::var_os("CORTEX_ALLOCATION_TEST_RESULT").unwrap(),
+        id.to_string(),
+    )
+    .unwrap();
 }

@@ -547,3 +547,101 @@ fn immediate_stop_returns_running_uses_without_signaling() {
     assert_eq!(running.len(), 1);
     assert_eq!(state.running().len(), 1);
 }
+
+#[cfg(unix)]
+#[test]
+fn reserved_ids_isolate_cancellation_finalization_and_recovery() {
+    use solstone_core_journal_io::cortex_use::allocate_cortex_use_id;
+    use solstone_core_system::process::{self, Disposition, LaunchError};
+    use std::time::Duration;
+    let directory = tempdir().unwrap();
+    let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+    let (state, spawn_rx) = solstone_core_cortex::test_hooks::queued_state(store);
+    let mut work = Vec::new();
+    for name in ["cancelled", "finished", "recovered"] {
+        let id = allocate_cortex_use_id(directory.path(), 1_700_000_000_000)
+            .unwrap()
+            .to_string();
+        state.request(
+            serde_json::from_value(serde_json::json!({
+                "event":"request", "use_id":id, "name":name, "prompt":name,
+            }))
+            .unwrap(),
+        );
+        work.push(spawn_rx.recv().unwrap());
+    }
+    for item in &work[..2] {
+        let mut authority = process::launch(
+            Disposition::IndependentBoundedHelper {
+                timeout: Duration::from_secs(2),
+            },
+            || std::process::Command::new("/bin/true").spawn(),
+            Box::new(|child, _| child.kill().map_err(LaunchError::Terminate)),
+        )
+        .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while authority.poll().unwrap().is_none() {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        // Model the interval after child exit, before Cortex handles completion.
+        state.spawn_begin(&item.use_id);
+        state.spawn_started(
+            item,
+            Arc::new(Mutex::new(authority)),
+            Arc::new(Mutex::new(Vec::new())),
+        );
+        state.spawn_finished();
+    }
+    assert!(
+        solstone_core_cortex::test_hooks::cancel_use(&state, &work[0].use_id, "test_cancel")
+            .is_some()
+    );
+    assert_eq!(state.running().len(), 1);
+    assert!(work[1].active.exists());
+    assert!(work[2].active.exists());
+    solstone_core_cortex::test_hooks::append_event(&state, &work[1].use_id, &work[1].active,
+        serde_json::from_value(serde_json::json!({"event":"finish", "use_id":work[1].use_id, "result":"second result"})).unwrap());
+    state.finish(&work[1].use_id, 0);
+    state.finish(&work[0].use_id, 0); // A late completion cannot finalize twice.
+    drop(state);
+    let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+    solstone_core_cortex::test_hooks::recover_store(&store);
+    for (index, expected) in [(0, "test_cancel"), (1, "second result"), (2, "error")] {
+        let log = fs::read_to_string(
+            directory
+                .path()
+                .join("talents")
+                .join(&work[index].talent_name)
+                .join(format!("{}.jsonl", work[index].use_id)),
+        )
+        .unwrap();
+        assert!(log.contains(expected), "{log}");
+        assert!(!work[index].active.exists());
+    }
+    let day = chrono::DateTime::from_timestamp_millis(work[0].use_id.parse().unwrap())
+        .unwrap()
+        .with_timezone(&chrono::Local)
+        .format("%Y%m%d")
+        .to_string();
+    let rows = fs::read_to_string(
+        directory
+            .path()
+            .join("talents")
+            .join(format!("{day}.jsonl")),
+    )
+    .unwrap();
+    let rows = rows
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(rows.len(), 3);
+    for item in work {
+        assert_eq!(
+            rows.iter()
+                .filter(|row| row["use_id"] == item.use_id)
+                .count(),
+            1
+        );
+    }
+}
