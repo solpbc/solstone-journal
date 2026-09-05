@@ -178,6 +178,12 @@ pub fn discovery_candidates(root: &std::path::Path) -> Result<DiscoveryCandidate
                 if attributed.contains(&sentence_id) {
                     continue;
                 }
+                // Stored model outputs are raw vectors. Normalize at the caller,
+                // then retain the kernel's finite/unit admission checks below.
+                let Some(embedding) = solstone_core_entity::normalize_embedding(&embedding) else {
+                    dropped += 1;
+                    continue;
+                };
                 let norm = embedding
                     .iter()
                     .map(|value| value * value)

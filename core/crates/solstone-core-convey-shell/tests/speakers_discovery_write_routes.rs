@@ -642,7 +642,14 @@ async fn scan_publishes_viable_clusters_and_keeps_null_label_rows_eligible() {
     journal.candidate_segment(
         1,
         json!({"labels":[{"sentence_id":1,"speaker":null}]}),
-        &[unit(0.0, 1.0), threshold_boundary(), unit(0.5, 0.0)],
+        &[
+            unit(0.0, 3.0),
+            threshold_boundary(),
+            unit(0.0, 0.0),
+            unit(f32::INFINITY, 0.0),
+            unit(f32::NAN, 0.0),
+            unit(0.5, 0.0),
+        ],
     );
     for index in 2..=5 {
         journal.candidate_segment(index, json!({"labels":[]}), &[unit(0.0, 1.0)]);
@@ -657,7 +664,7 @@ async fn scan_publishes_viable_clusters_and_keeps_null_label_rows_eligible() {
         body["issues"][0]["reason_code"],
         "speaker_discovery_invalid_embeddings"
     );
-    assert_eq!(body["issues"][0]["count"], 1);
+    assert_eq!(body["issues"][0]["count"], 3);
     assert_eq!(body["clusters"][0]["cluster_id"], 0);
     assert_eq!(body["clusters"][0]["size"], 5);
 
@@ -674,7 +681,7 @@ async fn scan_publishes_viable_clusters_and_keeps_null_label_rows_eligible() {
     assert!(
         !members
             .iter()
-            .any(|member| { member["segment_key"] == "120000_1" && member["sentence_id"] == 2 })
+            .any(|member| { member["segment_key"] == "120000_1" && member["sentence_id"] != 1 })
     );
     assert!(
         fs::read_dir(journal.0.join("awareness"))
