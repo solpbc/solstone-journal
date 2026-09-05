@@ -283,16 +283,20 @@ fn consent_identity_and_nonce(
     (instance, nonce)
 }
 
-async fn wait_for_operation_phase(app: axum::Router, phase: &str) {
-    for _ in 0..20 {
-        tokio::task::yield_now().await;
+async fn wait_for_operation_phase(app: axum::Router, phase: &str) -> Value {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
         let response = request(app.clone(), "GET", "/app/thinking/api/providers").await;
         let body: Value = serde_json::from_slice(&response.3).expect("providers JSON");
         if body["active_lane"]["confidential_operation"]["phase"] == phase {
-            return;
+            return body;
         }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "operation settles to {phase}: {body}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
     }
-    panic!("operation settles to {phase}")
 }
 
 fn established(extra: Value) -> Value {
@@ -1558,19 +1562,7 @@ async fn confidential_worker_panic_is_supervised_and_allows_a_later_enable() {
     );
     let first = request(app.clone(), "POST", "/app/thinking/api/confidential/enable").await;
     assert_eq!(first.0, StatusCode::ACCEPTED);
-    let mut body = Value::Null;
-    for _ in 0..20 {
-        tokio::task::yield_now().await;
-        let response = request(app.clone(), "GET", "/app/thinking/api/providers").await;
-        body = serde_json::from_slice(&response.3).expect("providers JSON");
-        if body["active_lane"]["confidential_operation"]["phase"] == "repair_needed" {
-            break;
-        }
-    }
-    assert_eq!(
-        body["active_lane"]["confidential_operation"]["phase"],
-        "repair_needed"
-    );
+    let body = wait_for_operation_phase(app.clone(), "repair_needed").await;
     assert_eq!(
         body["active_lane"]["confidential_operation"]["retryable"],
         true
