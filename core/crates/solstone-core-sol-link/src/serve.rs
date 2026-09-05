@@ -369,6 +369,10 @@ fn status_body(snapshot: &LinkServeStatusSnapshot) -> Vec<u8> {
     );
     root.insert("next_retry_at".to_string(), Value::Null);
     root.insert(
+        "paired_at".to_string(),
+        Value::String(snapshot.paired_at.clone()),
+    );
+    root.insert(
         "reconnect_count".to_string(),
         Value::Number(snapshot.reconnect_count.into()),
     );
@@ -446,6 +450,7 @@ impl StatusTracker {
                 .filter(|meta| {
                     meta.instance_id == instance_id
                         && meta.ca_fp_prefix == ca_fp_prefix_hex
+                        && meta.paired_at == paired_at
                         && is_valid_journal_version(&meta.journal_version)
                 })
                 .map(|meta| meta.journal_version)
@@ -469,10 +474,28 @@ impl StatusTracker {
         let dispatch_generation = {
             let mut state = self.inner.lock().expect("status tracker lock");
             state.bound_port = Some(port);
-            state
+            let pending = state
                 .pending_fetch_generation
                 .take()
-                .filter(|&pending| state.fetching_generation == Some(pending))
+                .filter(|&pending| state.fetching_generation == Some(pending));
+            // Cold start and saved-pair reconnect never call
+            // `carrier_open_succeeded`: `journal_bridge` dials the carrier
+            // lazily on the first ordinary request. Without this kick, a
+            // freshly bound but otherwise idle serve process would leave
+            // `link status` reporting "unknown"/"last known" indefinitely,
+            // until some unrelated request happened to pass through the
+            // bridge. Fire one bounded self-request instead, coalesced by
+            // the same generation so a real dial racing this kick still
+            // wins (see `carrier_open_succeeded`).
+            pending.or_else(|| {
+                if state.fetching_generation.is_none() {
+                    let generation = state.generation;
+                    state.fetching_generation = Some(generation);
+                    Some(generation)
+                } else {
+                    None
+                }
+            })
         };
         if let Some(target_gen) = dispatch_generation
             && let Some(handle) = self.runtime_handle.as_ref()
@@ -552,6 +575,7 @@ impl StatusTracker {
             journal_version_fresh: state.version_fresh && bridge.carrier_live,
             instance_id: self.instance_id.clone(),
             ca_fp_prefix: self.ca_fp_prefix_hex.clone(),
+            paired_at: self.paired_at.clone(),
         }
     }
 
@@ -592,6 +616,7 @@ impl StatusTracker {
             let metadata = LinkJournalMetadata {
                 instance_id: self.instance_id.clone(),
                 ca_fp_prefix: self.ca_fp_prefix_hex.clone(),
+                paired_at: self.paired_at.clone(),
                 journal_version: version,
                 observed_at: self.clock.now_unix_seconds(),
             };
@@ -1103,6 +1128,7 @@ mod tests {
         let metadata = LinkJournalMetadata {
             instance_id: "inst-123".to_string(),
             ca_fp_prefix: "abcd".to_string(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
             journal_version: "2026.07.26".to_string(),
             observed_at: 1234.0,
         };
@@ -1151,10 +1177,27 @@ mod tests {
         assert_eq!(snap_mismatch_ca.journal_version, None);
         assert!(!snap_mismatch_ca.journal_version_fresh);
 
+        // Mismatched paired_at: same instance_id and CA (a same-identity
+        // re-pair does not necessarily rotate the CA), but the cache
+        // predates the re-pair and must not be trusted.
+        let tracker_mismatch_paired_at = StatusTracker::with_metadata(
+            clock.clone(),
+            temp_dir.path().to_path_buf(),
+            "inst-123".to_string(),
+            "abcd".to_string(),
+            "2026-08-01T00:00:00Z".to_string(),
+            None,
+        );
+        let snap_mismatch_paired_at =
+            tracker_mismatch_paired_at.snapshot(bridge_status(true, false));
+        assert_eq!(snap_mismatch_paired_at.journal_version, None);
+        assert!(!snap_mismatch_paired_at.journal_version_fresh);
+
         // Invalid journal_version in metadata file
         let invalid_meta = LinkJournalMetadata {
             instance_id: "inst-123".to_string(),
             ca_fp_prefix: "abcd".to_string(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
             journal_version: "invalid version\nwith\x1b[31m escape".to_string(),
             observed_at: 1234.0,
         };
@@ -1243,6 +1286,7 @@ mod tests {
         assert_eq!(meta.journal_version, "2026.07.26");
         assert_eq!(meta.instance_id, "inst-123");
         assert_eq!(meta.ca_fp_prefix, "abcd");
+        assert_eq!(meta.paired_at, "2026-07-26T00:00:00Z");
         let snap_match = tracker.snapshot(bridge_status(true, true));
         assert_eq!(snap_match.journal_version.as_deref(), Some("2026.07.26"));
         assert!(snap_match.journal_version_fresh);
@@ -1290,6 +1334,75 @@ mod tests {
             let state = tracker.inner.lock().expect("lock");
             assert_eq!(state.bound_port, Some(5015));
             assert_eq!(state.pending_fetch_generation, None);
+        }
+    }
+
+    #[test]
+    fn set_bound_port_kicks_a_startup_fetch_with_no_prior_carrier_event() {
+        // Cold start / saved-pair reconnect: journal_bridge dials lazily on
+        // the first ordinary request, so nothing calls
+        // `carrier_open_succeeded` before the listener binds its port. This
+        // must not leave the tracker idle indefinitely.
+        let clock = Arc::new(FixedStatusClock::new(100.0));
+        let tracker = Arc::new(StatusTracker::new(clock));
+        {
+            let state = tracker.inner.lock().expect("lock");
+            assert_eq!(state.generation, 0);
+            assert_eq!(state.fetching_generation, None);
+        }
+
+        tracker.set_bound_port(5015);
+        {
+            let state = tracker.inner.lock().expect("lock");
+            assert_eq!(state.bound_port, Some(5015));
+            assert_eq!(
+                state.fetching_generation,
+                Some(0),
+                "set_bound_port must claim a fetch at the current generation \
+                 even without a prior carrier_open_succeeded"
+            );
+            assert_eq!(state.pending_fetch_generation, None);
+        }
+
+        // A second call while the first fetch is still (notionally) in
+        // flight must not claim another generation.
+        tracker.set_bound_port(5015);
+        {
+            let state = tracker.inner.lock().expect("lock");
+            assert_eq!(state.fetching_generation, Some(0));
+        }
+    }
+
+    #[tokio::test]
+    async fn set_bound_port_dispatches_startup_fetch_with_no_prior_carrier_event() {
+        let clock = Arc::new(FixedStatusClock::new(100.0));
+        let handle = tokio::runtime::Handle::current();
+        let tracker = Arc::new(StatusTracker::with_metadata(
+            clock,
+            PathBuf::new(),
+            "inst-123".to_string(),
+            "abcd".to_string(),
+            "2026-07-26T00:00:00Z".to_string(),
+            Some(handle),
+        ));
+
+        // No carrier_open_succeeded call at all before the port is bound.
+        tracker.set_bound_port(5015);
+        {
+            let state = tracker.inner.lock().expect("lock");
+            assert_eq!(state.fetching_generation, Some(0));
+        }
+
+        let start = std::time::Instant::now();
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            let state = tracker.inner.lock().expect("lock");
+            if state.fetching_generation.is_none() {
+                break;
+            }
+            if start.elapsed() > std::time::Duration::from_secs(3) {
+                panic!("timed out waiting for dispatched startup fetch to finish");
+            }
         }
     }
 
@@ -1395,6 +1508,7 @@ mod tests {
                 "last_failure",
                 "manager_alive",
                 "next_retry_at",
+                "paired_at",
                 "reconnect_count",
                 "state",
             ]

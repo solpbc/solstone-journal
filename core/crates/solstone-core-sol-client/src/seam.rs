@@ -220,12 +220,14 @@ pub struct LinkServeStatusSnapshot {
     pub journal_version_fresh: bool,
     pub instance_id: String,
     pub ca_fp_prefix: String,
+    pub paired_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LinkJournalMetadata {
     pub instance_id: String,
     pub ca_fp_prefix: String,
+    pub paired_at: String,
     pub journal_version: String,
     pub observed_at: f64,
 }

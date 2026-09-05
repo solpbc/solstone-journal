@@ -4958,6 +4958,7 @@ dependencies = [
 name = "solstone-core-sol-client"
 version = "2.0.0"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "nix",
  "rustix",

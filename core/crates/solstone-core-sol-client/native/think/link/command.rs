@@ -304,11 +304,14 @@ pub fn link_status(ctx: CommandContext<'_>) -> CommandOutput {
         }
     };
 
+    // Derived from the selected bundle's own certificate chain, never from a
+    // cache: a cache can predate a deleted-and-recreated bundle (including a
+    // same-identity re-pair that keeps the same CA), so it must never be the
+    // source of truth for what identity is expected here.
+    let expected_ca_fp_prefix = ca_fp_prefix_hex(&selection.bundle.ca_chain_pem);
+
     let mut live_status: Option<LinkServeStatusSnapshot> = None;
     let runtime_path = selection.bundle_dir.join("serve_runtime.json");
-    let persisted_meta = fs::read_to_string(selection.bundle_dir.join("journal_metadata.json"))
-        .ok()
-        .and_then(|content| serde_json::from_str::<LinkJournalMetadata>(&content).ok());
     if let (Ok(content), Some(probe)) = (fs::read_to_string(&runtime_path), ctx.link_status_probe) {
         live_status = serde_json::from_str::<LinkServeRuntimeRecord>(&content)
             .ok()
@@ -317,9 +320,8 @@ pub fn link_status(ctx: CommandContext<'_>) -> CommandOutput {
             .and_then(|resp| serde_json::from_slice::<LinkServeStatusSnapshot>(&resp.body).ok())
             .filter(|snap| {
                 snap.instance_id == selection.bundle.instance_id
-                    && persisted_meta
-                        .as_ref()
-                        .is_none_or(|meta| snap.ca_fp_prefix == meta.ca_fp_prefix)
+                    && snap.paired_at == selection.bundle.paired_at
+                    && expected_ca_fp_prefix.as_deref() == Some(snap.ca_fp_prefix.as_str())
             });
     }
 
@@ -332,12 +334,11 @@ pub fn link_status(ctx: CommandContext<'_>) -> CommandOutput {
                 format!("{clean_ver} (last known)")
             }
         } else {
-            read_cached_version_fallback(&selection.bundle_dir, &selection.bundle.instance_id)
+            read_cached_version_fallback(&selection, expected_ca_fp_prefix.as_deref())
         };
         (snap.state, ver)
     } else {
-        let ver =
-            read_cached_version_fallback(&selection.bundle_dir, &selection.bundle.instance_id);
+        let ver = read_cached_version_fallback(&selection, expected_ca_fp_prefix.as_deref());
         ("stopped".to_string(), ver)
     };
 
@@ -415,17 +416,48 @@ fn sanitize_display_version(raw: &str) -> String {
         .collect()
 }
 
-fn read_cached_version_fallback(bundle_dir: &Path, expected_instance_id: &str) -> String {
-    let meta_path = bundle_dir.join("journal_metadata.json");
+fn read_cached_version_fallback(
+    selection: &ServeBundleSelection,
+    expected_ca_fp_prefix: Option<&str>,
+) -> String {
+    let meta_path = selection.bundle_dir.join("journal_metadata.json");
     let cached = fs::read_to_string(&meta_path)
         .ok()
         .and_then(|content| serde_json::from_str::<LinkJournalMetadata>(&content).ok())
-        .filter(|meta| meta.instance_id == expected_instance_id && !meta.journal_version.is_empty())
+        .filter(|meta| {
+            meta.instance_id == selection.bundle.instance_id
+                && meta.paired_at == selection.bundle.paired_at
+                && expected_ca_fp_prefix.is_some_and(|ca| meta.ca_fp_prefix == ca)
+                && !meta.journal_version.is_empty()
+        })
         .map(|meta| {
             let clean = sanitize_display_version(&meta.journal_version);
             format!("{clean} (last known)")
         });
     cached.unwrap_or_else(|| "unknown".to_string())
+}
+
+/// Computes the same CA-fingerprint prefix pinned at pairing time (see
+/// `solstone-core-sol-link`'s `ca_fp_prefix`: SHA-256 of the first
+/// certificate's DER, hex-encoded, truncated to the pinned 16-byte prefix),
+/// applied here to the selected bundle's own chain rather than to any cached
+/// or peer-reported value.
+fn ca_fp_prefix_hex(ca_chain_pem: &[String]) -> Option<String> {
+    let der = pem_cert_der(ca_chain_pem.first()?)?;
+    Some(spl_core::ca::sha256_hex(&der)[..32].to_string())
+}
+
+fn pem_cert_der(pem: &str) -> Option<Vec<u8>> {
+    use base64::Engine as _;
+    const BEGIN: &str = "-----BEGIN CERTIFICATE-----";
+    const END: &str = "-----END CERTIFICATE-----";
+    let start = pem.find(BEGIN)? + BEGIN.len();
+    let end = start + pem[start..].find(END)?;
+    let body: String = pem[start..end]
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    base64::engine::general_purpose::STANDARD.decode(body).ok()
 }
 
 fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
@@ -1407,6 +1439,8 @@ mod tests {
         include_str!("../../../../../fixtures/native-sol/link-join/peer_non_ascii_peer.json");
     const NESTED_ENDPOINTS_JSON: &str =
         include_str!("../../../../../fixtures/native-sol/link-join/nested_endpoints_peer.json");
+    const SERVE_BUNDLE_CERT: &str =
+        "-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----\n";
 
     static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
     #[cfg(unix)]
@@ -1559,7 +1593,7 @@ mod tests {
     }
 
     fn serve_bundle(config: &Path, label: &str, local_endpoints: Value) -> LinkServeBundle {
-        const CERT: &str = "-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----\n";
+        const CERT: &str = SERVE_BUNDLE_CERT;
         let bundle_dir = config.join("solstone-observer").join("spl").join(label);
         fs::create_dir_all(&bundle_dir).expect("serve bundle dir");
         fs::write(bundle_dir.join("private.pem"), "PRIVATE\n").expect("private key");
@@ -1588,6 +1622,10 @@ mod tests {
             endpoints: serve_endpoints_from_value(&local_endpoints).expect("serve endpoints"),
             local_endpoints,
         }
+    }
+
+    fn serve_bundle_ca_fp_prefix() -> String {
+        ca_fp_prefix_hex(&[SERVE_BUNDLE_CERT.to_string()]).expect("test cert ca fp prefix")
     }
 
     fn expected_serve_request(
@@ -2723,7 +2761,8 @@ mod tests {
         let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
         let meta = LinkJournalMetadata {
             instance_id: "home-instance".to_string(),
-            ca_fp_prefix: "abcd".to_string(),
+            ca_fp_prefix: serve_bundle_ca_fp_prefix(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
             journal_version: "2026.07.26".to_string(),
             observed_at: 1234.0,
         };
@@ -2751,7 +2790,8 @@ mod tests {
         let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
         let meta = LinkJournalMetadata {
             instance_id: "other-instance".to_string(),
-            ca_fp_prefix: "abcd".to_string(),
+            ca_fp_prefix: serve_bundle_ca_fp_prefix(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
             journal_version: "2026.07.26".to_string(),
             observed_at: 1234.0,
         };
@@ -2797,7 +2837,8 @@ mod tests {
             journal_version: Some("2026.07.26".to_string()),
             journal_version_fresh: true,
             instance_id: "home-instance".to_string(),
-            ca_fp_prefix: "abcd".to_string(),
+            ca_fp_prefix: serve_bundle_ca_fp_prefix(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
         };
         let response = crate::seam::HttpResponse {
             status: 200,
@@ -2844,7 +2885,8 @@ mod tests {
             journal_version: Some("2026.07.26".to_string()),
             journal_version_fresh: false,
             instance_id: "home-instance".to_string(),
-            ca_fp_prefix: "abcd".to_string(),
+            ca_fp_prefix: serve_bundle_ca_fp_prefix(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
         };
         let response = crate::seam::HttpResponse {
             status: 200,
@@ -2880,7 +2922,8 @@ mod tests {
 
         let meta = LinkJournalMetadata {
             instance_id: "home-instance".to_string(),
-            ca_fp_prefix: "abcd".to_string(),
+            ca_fp_prefix: serve_bundle_ca_fp_prefix(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
             journal_version: "2026.07.26".to_string(),
             observed_at: 1234.0,
         };
@@ -2934,7 +2977,8 @@ mod tests {
             journal_version: Some("2026.07.26".to_string()),
             journal_version_fresh: true,
             instance_id: "other-rogue-instance".to_string(),
-            ca_fp_prefix: "abcd".to_string(),
+            ca_fp_prefix: serve_bundle_ca_fp_prefix(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
         };
         let response = crate::seam::HttpResponse {
             status: 200,
@@ -2970,7 +3014,8 @@ mod tests {
 
         let meta = LinkJournalMetadata {
             instance_id: "home-instance".to_string(),
-            ca_fp_prefix: "expected-ca-fp".to_string(),
+            ca_fp_prefix: serve_bundle_ca_fp_prefix(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
             journal_version: "2026.07.26".to_string(),
             observed_at: 1234.0,
         };
@@ -2980,7 +3025,10 @@ mod tests {
         )
         .expect("write");
 
-        // Live probe returns matching instance_id but different ca_fp_prefix
+        // Live probe returns matching instance_id and paired_at but a
+        // ca_fp_prefix that does not match the bundle's actual chain — must
+        // be rejected even though a persisted cache exists with the correct
+        // value.
         let snapshot = LinkServeStatusSnapshot {
             state: "connected".to_string(),
             health: "ok".to_string(),
@@ -2995,6 +3043,7 @@ mod tests {
             journal_version_fresh: true,
             instance_id: "home-instance".to_string(),
             ca_fp_prefix: "different-ca-fp".to_string(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
         };
         let response = crate::seam::HttpResponse {
             status: 200,
@@ -3010,6 +3059,127 @@ mod tests {
         assert_eq!(
             output.stdout,
             "Label: alpha\nStatus: stopped\nJournal version: 2026.07.26 (last known)\n"
+        );
+        assert_eq!(probe.recorded(), vec![5015]);
+    }
+
+    #[test]
+    fn status_running_ca_fp_mismatch_with_no_cached_metadata_is_rejected() {
+        // No journal_metadata.json exists at all here. The identity check
+        // must still be enforced against the bundle's own certificate chain
+        // rather than being skipped for lack of anything cached to compare
+        // against.
+        let temp = temp_dir("status-ca-mismatch-no-cache");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        serve_bundle(&config, "alpha", json!([]));
+
+        let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
+        let runtime = LinkServeRuntimeRecord { port: 5015 };
+        fs::write(
+            bundle_dir.join("serve_runtime.json"),
+            serde_json::to_vec(&runtime).expect("serialize"),
+        )
+        .expect("write");
+
+        let snapshot = LinkServeStatusSnapshot {
+            state: "connected".to_string(),
+            health: "ok".to_string(),
+            manager_alive: true,
+            active_requests: 0,
+            reconnect_count: 0,
+            last_connected_at: Some(100.0),
+            connected_age_seconds: Some(10.0),
+            last_failure: None,
+            next_retry_at: None,
+            journal_version: Some("2026.07.26".to_string()),
+            journal_version_fresh: true,
+            instance_id: "home-instance".to_string(),
+            ca_fp_prefix: "rogue-ca-fp".to_string(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
+        };
+        let response = crate::seam::HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: serde_json::to_vec(&snapshot).expect("serialize"),
+            policy: crate::seam::TimeoutPolicy::Api,
+        };
+        let probe = crate::seam::ScriptedLinkStatusProbe::new(vec![(5015, Ok(response))]);
+
+        let output = run_status(&[], &env, Some(&probe));
+        assert_eq!(output.exit, 0);
+        assert_eq!(
+            output.stdout,
+            "Label: alpha\nStatus: stopped\nJournal version: unknown\n"
+        );
+        assert_eq!(probe.recorded(), vec![5015]);
+    }
+
+    #[test]
+    fn status_running_stale_paired_at_after_repair_is_rejected() {
+        // Same instance_id and same CA (a same-identity re-pair does not
+        // necessarily rotate the CA) but a paired_at from before the bundle
+        // was replaced. An orphaned serve process for the old pairing must
+        // not be trusted just because instance_id and ca_fp_prefix survived
+        // the re-pair unchanged.
+        let temp = temp_dir("status-stale-paired-at");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        serve_bundle(&config, "alpha", json!([]));
+
+        let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
+        let runtime = LinkServeRuntimeRecord { port: 5015 };
+        fs::write(
+            bundle_dir.join("serve_runtime.json"),
+            serde_json::to_vec(&runtime).expect("serialize"),
+        )
+        .expect("write");
+
+        let meta = LinkJournalMetadata {
+            instance_id: "home-instance".to_string(),
+            ca_fp_prefix: serve_bundle_ca_fp_prefix(),
+            paired_at: "stale-paired-at-before-repair".to_string(),
+            journal_version: "2026.06.01".to_string(),
+            observed_at: 1000.0,
+        };
+        fs::write(
+            bundle_dir.join("journal_metadata.json"),
+            serde_json::to_vec(&meta).expect("serialize"),
+        )
+        .expect("write");
+
+        let snapshot = LinkServeStatusSnapshot {
+            state: "connected".to_string(),
+            health: "ok".to_string(),
+            manager_alive: true,
+            active_requests: 0,
+            reconnect_count: 0,
+            last_connected_at: Some(100.0),
+            connected_age_seconds: Some(10.0),
+            last_failure: None,
+            next_retry_at: None,
+            journal_version: Some("2026.06.01".to_string()),
+            journal_version_fresh: true,
+            instance_id: "home-instance".to_string(),
+            ca_fp_prefix: serve_bundle_ca_fp_prefix(),
+            paired_at: "stale-paired-at-before-repair".to_string(),
+        };
+        let response = crate::seam::HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: serde_json::to_vec(&snapshot).expect("serialize"),
+            policy: crate::seam::TimeoutPolicy::Api,
+        };
+        let probe = crate::seam::ScriptedLinkStatusProbe::new(vec![(5015, Ok(response))]);
+
+        let output = run_status(&[], &env, Some(&probe));
+        assert_eq!(output.exit, 0);
+        // Both the live snapshot and the cache predate the re-pair recorded
+        // in the bundle's own peer.json (paired_at "2026-07-26T00:00:00Z"),
+        // so neither is trusted.
+        assert_eq!(
+            output.stdout,
+            "Label: alpha\nStatus: stopped\nJournal version: unknown\n"
         );
         assert_eq!(probe.recorded(), vec![5015]);
     }
@@ -3042,7 +3212,8 @@ mod tests {
             journal_version: Some("\x1b[31m2026.07.26\x1b[0m\x00\x07".to_string()),
             journal_version_fresh: true,
             instance_id: "home-instance".to_string(),
-            ca_fp_prefix: "abcd".to_string(),
+            ca_fp_prefix: serve_bundle_ca_fp_prefix(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
         };
         let response = crate::seam::HttpResponse {
             status: 200,
