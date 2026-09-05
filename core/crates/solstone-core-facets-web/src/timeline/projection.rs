@@ -38,6 +38,7 @@ pub(super) enum ArtifactOutcome {
     StateMissing,
     StateUnavailable,
     DigestMismatch,
+    SourceUnavailable,
 }
 
 impl ArtifactOutcome {
@@ -51,6 +52,7 @@ impl ArtifactOutcome {
             Self::StateMissing => "state_missing",
             Self::StateUnavailable => "state_unavailable",
             Self::DigestMismatch => "digest_mismatch",
+            Self::SourceUnavailable => "source_unavailable",
         }
     }
 }
@@ -78,7 +80,7 @@ pub(super) fn master(root: &Path) -> ArtifactProjection<MasterTimelineV1> {
 }
 
 pub(super) fn day(root: &Path, day: &str) -> ArtifactProjection<DayTimelineV1> {
-    read_artifact(
+    let mut projection = read_artifact(
         &day_timeline_path(root, day),
         &day_subject_key(day),
         |value: &DayTimelineV1| &value.source_digest,
@@ -89,7 +91,29 @@ pub(super) fn day(root: &Path, day: &str) -> ArtifactProjection<DayTimelineV1> {
             Ok(value)
         },
         root,
-    )
+    );
+    if projection.status == TimelineStatus::Current
+        && let Some(value) = projection.value.as_ref()
+    {
+        let outcome = if value.day != day {
+            ArtifactOutcome::Invalid
+        } else {
+            match solstone_core_maintenance::bodies::timeline::current_day_source_digest(
+                root,
+                day,
+                value.top_n,
+            ) {
+                Ok(digest) if digest == value.source_digest => ArtifactOutcome::Current,
+                Ok(_) => ArtifactOutcome::DigestMismatch,
+                Err(_) => ArtifactOutcome::SourceUnavailable,
+            }
+        };
+        if outcome != ArtifactOutcome::Current {
+            projection.status = TimelineStatus::Stale;
+            projection.outcome = outcome;
+        }
+    }
+    projection
 }
 
 pub(super) fn segment(

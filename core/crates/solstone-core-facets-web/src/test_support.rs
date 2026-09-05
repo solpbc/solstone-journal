@@ -175,7 +175,7 @@ fn write_timeline_artifacts(root: &Path, day_path: &Path) {
         "workstation.browser",
         "140000_300",
     );
-    let day = serde_json::json!({
+    let mut day = serde_json::json!({
         "schema_version": 1,
         "kind": "day",
         "day": "20260510",
@@ -303,6 +303,19 @@ fn write_timeline_artifacts(root: &Path, day_path: &Path) {
             &serde_json::json!({"schema_version":1,"subject":subject,"published":published,"attempts":[]}),
         );
     }
+    // Keep the presentation fixture's seeded picks/provenance, but bind its day
+    // publication to the real segment inputs instead of the old placeholder.
+    let digest =
+        solstone_core_maintenance::bodies::timeline::current_day_source_digest(root, "20260510", 4)
+            .expect("verified corpus day inputs");
+    day["source_digest"] = serde_json::json!(digest);
+    let day_text = write_json(&day_path.join("timeline.json"), &day);
+    let mut published = artifact(&digest, &day_text);
+    published.as_object_mut().unwrap().remove("generation");
+    write_json(
+        &solstone_core_timeline::timeline_record_path(root, "day:20260510").unwrap(),
+        &serde_json::json!({"schema_version":1,"subject":"day:20260510","published":published,"attempts":[]}),
+    );
 }
 
 fn entry(title: &str, description: &str, stream: &str, segment: &str) -> serde_json::Value {
