@@ -73,6 +73,16 @@ mod tests {
     const ARTIFACT: &str = "{\"timeline\":\"fixture\"}\n";
     const INPUT: &str = "known-input";
 
+    #[test]
+    fn absent_state_document_is_missing() {
+        let root = tempfile::tempdir().expect("journal");
+        assert_eq!(
+            evaluate_artifact_currentness(root.path(), SUBJECT, INPUT, 10, ARTIFACT)
+                .expect("currentness"),
+            ArtifactCurrentness::Missing,
+        );
+    }
+
     // These verdicts are recorded against the original shared-document implementation.
     // Change only fixture persistence when moving state; the verdicts are the contract.
     #[test]
@@ -90,7 +100,7 @@ mod tests {
         }
         let mut cases = vec![
             Case {
-                name: "no state",
+                name: "empty state document",
                 published: false,
                 input: INPUT,
                 text: ARTIFACT,
