@@ -27,13 +27,13 @@
 //! `unreadable`, so the one thing it cannot do is overwrite prose with something worse.
 //!
 //! The re-bind goes through [`publish_segment_timeline`], the product's own write path, which
-//! validates the artifact, takes the day and segment locks, re-verifies the source binding it
+//! validates the artifact, takes subject and population locks, re-verifies the source binding it
 //! was just handed, writes atomically, and records the durable publication state the fifth
 //! gate reads. Reconstructing that record by hand is exactly the shortcut this module exists
 //! to avoid.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::Deserialize;
 use solstone_core_timeline::{
@@ -154,7 +154,7 @@ pub fn classify(
 
 /// One candidate artifact found by the chronicle walk.
 struct Candidate {
-    directory: PathBuf,
+    binding: Result<SegmentBindingV1, String>,
     shape: ArtifactShape,
     source_mtime: Option<u64>,
     artifact_mtime: u64,
@@ -164,55 +164,57 @@ struct Candidate {
 ///
 /// `plan` and `commit` share this so the set `commit` acts on is by construction the set
 /// `plan` counted -- a second, drifting walk is the obvious way for the two to disagree.
-fn walk(journal: &Path) -> Vec<Candidate> {
-    let mut found = Vec::new();
+fn walk(journal: &Path) -> Result<Vec<Candidate>, String> {
+    use solstone_core_journal_io::{PathOrDay, day_dirs, iter_segments};
+
     let chronicle = journal.join("chronicle");
-    let Ok(days) = fs::read_dir(&chronicle) else {
-        return found;
-    };
-    for day in days.flatten() {
-        if !day.file_type().is_ok_and(|kind| kind.is_dir()) {
-            continue;
-        }
-        let Ok(streams) = fs::read_dir(day.path()) else {
-            continue;
-        };
-        for stream in streams.flatten() {
-            if !stream.file_type().is_ok_and(|kind| kind.is_dir()) {
-                continue;
-            }
-            let Ok(segments) = fs::read_dir(stream.path()) else {
-                continue;
+    match fs::metadata(&chronicle) {
+        Ok(metadata) if metadata.is_dir() => {}
+        Ok(_) => return Err(format!("{} is not a directory", chronicle.display())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(format!("{}: {error}", chronicle.display())),
+    }
+    let mut found = Vec::new();
+    for (day, day_dir) in day_dirs(journal).map_err(|error| error.to_string())? {
+        let segments = iter_segments(journal, PathOrDay::Directory(&day_dir))
+            .map_err(|error| error.to_string())?;
+        for segment in segments {
+            let artifact = segment.path().join("timeline.json");
+            let metadata = match fs::metadata(&artifact) {
+                Ok(metadata) => metadata,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(format!("{}: {error}", artifact.display())),
             };
-            for segment in segments.flatten() {
-                let directory = segment.path();
-                let artifact = directory.join("timeline.json");
-                let Ok(metadata) = fs::metadata(&artifact) else {
-                    continue;
-                };
-                let artifact_mtime = seconds(metadata.modified().ok());
-                let shape = fs::read(&artifact)
-                    .map_or(ArtifactShape::Unreadable, |bytes| read_shape(&bytes));
-                let source_mtime = fs::metadata(directory.join("talents").join("activity.md"))
-                    .ok()
-                    .and_then(|metadata| metadata.modified().ok())
-                    .map(|time| seconds(Some(time)));
-                found.push(Candidate {
-                    directory,
-                    shape,
-                    source_mtime,
-                    artifact_mtime,
-                });
-            }
+            let binding = segment
+                .record_identity()
+                .map(|identity| SegmentBindingV1 {
+                    day: day.clone(),
+                    stream: identity.stream.to_owned(),
+                    segment: identity.name.to_owned(),
+                })
+                .map_err(|error| error.to_string());
+            let artifact_mtime = seconds(metadata.modified().ok());
+            let shape =
+                fs::read(&artifact).map_or(ArtifactShape::Unreadable, |bytes| read_shape(&bytes));
+            let source_mtime = fs::metadata(segment.path().join("talents/activity.md"))
+                .ok()
+                .and_then(|metadata| metadata.modified().ok())
+                .map(|time| seconds(Some(time)));
+            found.push(Candidate {
+                binding,
+                shape,
+                source_mtime,
+                artifact_mtime,
+            });
         }
     }
-    found
+    Ok(found)
 }
 
 /// Classify every segment timeline artifact. Read-only.
-pub fn plan(journal: &Path) -> MigrationPlan {
+pub fn plan(journal: &Path) -> Result<MigrationPlan, String> {
     let mut plan = MigrationPlan::default();
-    for entry in walk(journal) {
+    for entry in walk(journal)? {
         match classify(&entry.shape, entry.source_mtime, entry.artifact_mtime) {
             "current" => plan.current += 1,
             "rebind" => plan.rebind += 1,
@@ -221,7 +223,7 @@ pub fn plan(journal: &Path) -> MigrationPlan {
             _ => plan.unreadable += 1,
         }
     }
-    plan
+    Ok(plan)
 }
 
 /// What a migration actually did.
@@ -280,22 +282,6 @@ impl MigrationOutcome {
     }
 }
 
-/// Recover a binding from the artifact's own location.
-///
-/// The legacy body carries an `origin` string, but the path is the authority: a body copied
-/// between segments would otherwise re-bind that summary onto the wrong segment.
-pub fn binding_from_directory(directory: &Path) -> Option<SegmentBindingV1> {
-    let segment = directory.file_name()?.to_str()?.to_owned();
-    let stream_dir = directory.parent()?;
-    let stream = stream_dir.file_name()?.to_str()?.to_owned();
-    let day = stream_dir.parent()?.file_name()?.to_str()?.to_owned();
-    Some(SegmentBindingV1 {
-        day,
-        stream,
-        segment,
-    })
-}
-
 fn now_ms() -> i64 {
     i64::try_from(
         std::time::SystemTime::now()
@@ -321,13 +307,11 @@ fn migration_attempt(subject: &str) -> AttemptStateV1 {
 /// Republish one legacy artifact as V1 through the product write path.
 fn rebind_one(
     journal: &Path,
-    directory: &Path,
+    binding: &SegmentBindingV1,
     legacy: &LegacySegmentTimeline,
     artifact_mtime: u64,
 ) -> Result<(), String> {
-    let binding = binding_from_directory(directory)
-        .ok_or_else(|| format!("{}: unreadable segment path", directory.display()))?;
-    let subject = segment_subject_key(&binding);
+    let subject = segment_subject_key(binding);
     // Legacy artifacts stamp `generated_at` in whole seconds. Keeping the original instant
     // matters: currentness is ordered against it, so stamping "now" would assert that a
     // five-year-old summary was produced during the migration.
@@ -351,14 +335,14 @@ fn rebind_one(
         }
         return publish_continuation_summary(
             journal,
-            binding,
+            binding.clone(),
             predecessor.to_owned(),
             generated_at_ms,
             migration_attempt(&subject),
         )
         .map_err(|error| format!("{subject}: {error}"));
     }
-    let snapshot = resolve_activity_source(journal, &binding)
+    let snapshot = resolve_activity_source(journal, binding)
         .map_err(|error| format!("{subject}: {error}"))?
         .ok_or_else(|| format!("{subject}: activity source disappeared"))?;
     let source = SegmentSourceV1::GeneratedActivity {
@@ -367,11 +351,11 @@ fn rebind_one(
         sha256: snapshot.sha256,
     };
     let input_digest =
-        segment_input_digest(&binding, &source).map_err(|error| format!("{subject}: {error}"))?;
+        segment_input_digest(binding, &source).map_err(|error| format!("{subject}: {error}"))?;
     let summary = SegmentSummaryV1 {
         title: legacy.title.clone(),
         description: legacy.description.clone(),
-        origin: origin_for_binding(&binding).map_err(|error| format!("{subject}: {error}"))?,
+        origin: origin_for_binding(binding).map_err(|error| format!("{subject}: {error}"))?,
         continuation_of: legacy.continuation_of.clone(),
     };
     let timeline = SegmentTimelineV1 {
@@ -400,10 +384,10 @@ fn rebind_one(
 /// `limit` bounds how many artifacts are ATTEMPTED in one invocation, so a first run can be
 /// made small and inspected before the whole corpus is committed to. Bounding successes
 /// instead would let a run that refuses hundreds still walk the entire corpus.
-pub fn commit(journal: &Path, limit: Option<u64>) -> MigrationOutcome {
+pub fn commit(journal: &Path, limit: Option<u64>) -> Result<MigrationOutcome, String> {
     let mut outcome = MigrationOutcome::default();
     let mut attempted = 0u64;
-    for entry in walk(journal) {
+    for entry in walk(journal)? {
         match classify(&entry.shape, entry.source_mtime, entry.artifact_mtime) {
             "current" => outcome.untouched += 1,
             "regenerate" => outcome.left_for_regeneration += 1,
@@ -415,7 +399,12 @@ pub fn commit(journal: &Path, limit: Option<u64>) -> MigrationOutcome {
                 let ArtifactShape::Legacy(legacy) = &entry.shape else {
                     continue;
                 };
-                match rebind_one(journal, &entry.directory, legacy, entry.artifact_mtime) {
+                match entry
+                    .binding
+                    .as_ref()
+                    .map_err(Clone::clone)
+                    .and_then(|binding| rebind_one(journal, binding, legacy, entry.artifact_mtime))
+                {
                     Ok(()) => outcome.rebound += 1,
                     Err(detail) => {
                         outcome.failed += 1;
@@ -428,7 +417,7 @@ pub fn commit(journal: &Path, limit: Option<u64>) -> MigrationOutcome {
             _ => {}
         }
     }
-    outcome
+    Ok(outcome)
 }
 
 fn seconds(time: Option<std::time::SystemTime>) -> u64 {
@@ -537,9 +526,89 @@ mod tests {
     }
 
     #[test]
+    fn direct_layout_migration_preserves_prose_and_refuses_changed_sources() {
+        for rebindable in [true, false] {
+            let root = legacy_journal(rebindable);
+            let day = root.path().join("chronicle/20260101");
+            let direct = day.join("120000_300");
+            fs::rename(day.join("device/120000_300"), &direct).unwrap();
+            let artifact = direct.join("timeline.json");
+            let before = fs::read(&artifact).unwrap();
+            let source = fs::read(direct.join("talents/activity.md")).unwrap();
+            let planned = plan(root.path()).unwrap();
+            assert_eq!(planned.total(), 1);
+            assert_eq!(planned.rebind, u64::from(rebindable));
+            let result = commit(root.path(), None).unwrap();
+            assert_eq!(result.failed, 0);
+            assert_eq!(result.rebound, u64::from(rebindable));
+            assert_eq!(
+                fs::read(direct.join("talents/activity.md")).unwrap(),
+                source
+            );
+            assert!(!day.join("_default").exists());
+            if rebindable {
+                let typed: SegmentTimelineV1 =
+                    serde_json::from_slice(&fs::read(&artifact).unwrap()).unwrap();
+                assert_eq!(
+                    typed.binding.stream,
+                    solstone_core_journal_io::DEFAULT_STREAM
+                );
+                assert_eq!(typed.binding.day, "20260101");
+                assert_eq!(typed.binding.segment, "120000_300");
+                assert_eq!(typed.summary.title, "T");
+                assert_eq!(typed.summary.description, "D");
+                assert_eq!(typed.generated_at_ms, 1700000000000);
+                assert!(direct.join("timeline.state.json").is_file());
+                assert_eq!(commit(root.path(), None).unwrap().rebound, 0);
+            } else {
+                assert_eq!(fs::read(&artifact).unwrap(), before);
+                assert_eq!(result.left_for_regeneration, 1);
+            }
+        }
+    }
+
+    #[test]
+    fn named_default_is_refused_without_overwriting_its_direct_twin() {
+        let root = legacy_journal(true);
+        let day = root.path().join("chronicle/20260101");
+        let direct = day.join("120000_300");
+        fs::rename(day.join("device/120000_300"), &direct).unwrap();
+        let decoy = day.join("_default/120000_300");
+        fs::create_dir_all(decoy.join("talents")).unwrap();
+        fs::write(decoy.join("talents/activity.md"), "decoy source").unwrap();
+        let artifact = decoy.join("timeline.json");
+        fs::write(
+            &artifact,
+            br#"{"title":"Decoy","description":"must not reach direct"}"#,
+        )
+        .unwrap();
+        set_mtime(&decoy.join("talents/activity.md"), 7200);
+        set_mtime(&artifact, 3600);
+        let before = fs::read(&artifact).unwrap();
+        let result = commit(root.path(), None).unwrap();
+        assert_eq!(result.rebound, 1);
+        assert_eq!(result.failed, 1);
+        assert!(result.failures[0].contains("_default"));
+        assert_eq!(fs::read(artifact).unwrap(), before);
+        let typed: SegmentTimelineV1 =
+            serde_json::from_slice(&fs::read(direct.join("timeline.json")).unwrap()).unwrap();
+        assert_eq!(typed.summary.title, "T");
+        assert!(!decoy.join("timeline.state.json").exists());
+    }
+
+    #[test]
+    fn discovery_failure_is_not_an_empty_success() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("chronicle"), b"not a directory").unwrap();
+        assert!(plan(root.path()).is_err());
+        assert!(commit(root.path(), None).is_err());
+    }
+
+    #[test]
     fn a_binding_comes_from_the_path_not_the_body() {
-        let binding =
-            binding_from_directory(Path::new("/j/chronicle/20260101/device/120000_300")).unwrap();
+        let root = legacy_journal(true);
+        let candidates = walk(root.path()).unwrap();
+        let binding = candidates[0].binding.as_ref().unwrap();
         assert_eq!(binding.day, "20260101");
         assert_eq!(binding.stream, "device");
         assert_eq!(binding.segment, "120000_300");
@@ -552,7 +621,7 @@ mod tests {
     fn committing_rebinds_a_legacy_artifact_into_accepted_v1() {
         let root = legacy_journal(true);
         let journal = root.path();
-        let outcome = commit(journal, None);
+        let outcome = commit(journal, None).unwrap();
         assert_eq!(outcome.rebound, 1, "{:?}", outcome.failures);
         assert_eq!(outcome.failed, 0, "{:?}", outcome.failures);
 
@@ -574,7 +643,7 @@ mod tests {
         assert!(migrated.provenance.is_none(), "no invented provenance");
 
         // Idempotent: a second pass sees V1 and does nothing.
-        let again = commit(journal, None);
+        let again = commit(journal, None).unwrap();
         assert_eq!(again.rebound, 0);
         assert_eq!(again.untouched, 1);
     }
@@ -590,7 +659,7 @@ mod tests {
             .join("timeline.json");
         let before = fs::read_to_string(&artifact).unwrap();
 
-        let outcome = commit(journal, None);
+        let outcome = commit(journal, None).unwrap();
         assert_eq!(outcome.rebound, 0);
         assert_eq!(outcome.left_for_regeneration, 1);
         assert_eq!(fs::read_to_string(&artifact).unwrap(), before);
@@ -630,7 +699,7 @@ mod tests {
     fn a_legacy_continuation_migrates_through_the_continuation_path() {
         let root = legacy_continuation_journal(CONTINUATION_TITLE);
         let journal = root.path();
-        let outcome = commit(journal, None);
+        let outcome = commit(journal, None).unwrap();
         assert_eq!(outcome.rebound, 1, "{:?}", outcome.failures);
         assert_eq!(outcome.failed, 0, "{:?}", outcome.failures);
 
@@ -661,7 +730,7 @@ mod tests {
             .join("timeline.json");
         let before = fs::read_to_string(&artifact).unwrap();
 
-        let outcome = commit(journal, None);
+        let outcome = commit(journal, None).unwrap();
         assert_eq!(outcome.rebound, 0);
         assert_eq!(outcome.failed, 1);
         assert!(
@@ -676,9 +745,9 @@ mod tests {
     fn a_zero_limit_is_not_expressible_and_a_limit_bounds_the_rewrite() {
         let root = legacy_journal(true);
         let journal = root.path();
-        let outcome = commit(journal, Some(0));
+        let outcome = commit(journal, Some(0)).unwrap();
         assert_eq!(outcome.rebound, 0, "a zero limit rewrites nothing");
-        let outcome = commit(journal, Some(5));
+        let outcome = commit(journal, Some(5)).unwrap();
         assert_eq!(outcome.rebound, 1);
     }
 

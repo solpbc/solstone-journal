@@ -156,14 +156,32 @@ fn migrate_timeline(args: &[String], journal: &Path) -> CliRun {
         }
     }
     if commit {
-        return success(crate::bodies::migrate::commit(journal, limit).render());
+        return match crate::bodies::migrate::commit(journal, limit) {
+            Ok(outcome) => CliRun {
+                stdout: outcome.render(),
+                stderr: String::new(),
+                exit_code: i32::from(outcome.failed != 0),
+            },
+            Err(error) => CliRun {
+                stdout: String::new(),
+                stderr: format!("{error}\n"),
+                exit_code: 1,
+            },
+        };
     }
     // `--limit` without `--commit` would read as though it bounded the survey, which it does
     // not: the plan always counts the whole corpus.
     if limit.is_some() {
         return usage_error(MIGRATE_USAGE, "--limit only applies with --commit");
     }
-    success(crate::bodies::migrate::plan(journal).render())
+    match crate::bodies::migrate::plan(journal) {
+        Ok(plan) => success(plan.render()),
+        Err(error) => CliRun {
+            stdout: String::new(),
+            stderr: format!("{error}\n"),
+            exit_code: 1,
+        },
+    }
 }
 
 fn list(journal: &Path, services: &MaintenanceServices<'_>) -> CliRun {
@@ -286,6 +304,40 @@ fn usage_error(usage: &str, arguments: &str) -> CliRun {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn migration_cli_reports_scan_errors_and_publication_refusals_as_failures() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(super::migrate_timeline(&[], root.path()).exit_code, 0);
+        std::fs::write(root.path().join("chronicle"), b"not a directory").unwrap();
+        for args in [vec![], vec!["--commit".to_owned()]] {
+            let result = super::migrate_timeline(&args, root.path());
+            assert_ne!(result.exit_code, 0);
+            assert!(result.stderr.contains("not a directory"));
+        }
+
+        let refused = tempfile::tempdir().unwrap();
+        let segment = refused
+            .path()
+            .join("chronicle/20260101/_default/120000_300");
+        std::fs::create_dir_all(segment.join("talents")).unwrap();
+        std::fs::write(segment.join("talents/activity.md"), "source").unwrap();
+        let original = br#"{"title":"Preserve this"}"#;
+        std::fs::write(segment.join("timeline.json"), original).unwrap();
+        let result = super::migrate_timeline(&["--commit".to_owned()], refused.path());
+        assert_ne!(result.exit_code, 0);
+        assert!(result.stdout.contains("_default"));
+        assert_eq!(
+            std::fs::read(segment.join("timeline.json")).unwrap(),
+            original
+        );
+        assert!(
+            !refused
+                .path()
+                .join("chronicle/20260101/120000_300")
+                .exists()
+        );
+    }
+
     use super::run;
     use crate::MaintenanceServices;
     use crate::registry::routines;
