@@ -3598,7 +3598,9 @@
 
 <style>
 .spk-overview {
-  width: min(1120px, calc(100vw - 32px));
+  width: min(1120px, 100%);
+  min-width: 0;
+  box-sizing: border-box;
   margin: 0 auto;
   padding: 32px 0 56px;
   color: #111827;
@@ -3726,6 +3728,11 @@
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 12px;
 }
+
+/* Unlabeled voices stay discoverable without crowding named suggestions. */
+.spk-discovery-clusters > details { grid-column: 1 / -1; }
+.spk-discovery-clusters > details > summary { cursor: pointer; padding: 12px 0; }
+.spk-discovery-clusters > details > .spk-discovery-card { margin-top: 12px; }
 
 .spk-owner-sample,
 .spk-known-card,
@@ -4141,14 +4148,12 @@
     }
     sortSelect.hidden = false;
     knownContainer.innerHTML = `<div class="spk-known-grid">${speakers.map((speaker) => {
-      const streams = speaker.streams || [];
       const href = `/app/speakers/${TODAY}?speaker=${encodeURIComponent(speaker.entity_id)}`;
       return `
         <a class="spk-known-card" href="${href}">
-          <h3 class="spk-card-title">${escapeHtml(speaker.name || speaker.entity_id)}</h3>
+          <h3 class="spk-card-title">${escapeHtml(speaker.name || 'unlabeled voice')}</h3>
           <p class="spk-card-line">${escapeHtml(String(speaker.embedding_count || 0))} ${escapeHtml(COPY.SPK_OVERVIEW_CARD_SAMPLES_LABEL)} · ${escapeHtml(String(speaker.segment_count || 0))} ${escapeHtml(COPY.SPK_OVERVIEW_CARD_SEGMENTS_LABEL)}</p>
           <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_CARD_LAST_HEARD_PREFIX)}: ${relativeTime(speaker.last_seen_ts)}</p>
-          <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_CARD_STREAMS_PREFIX)}: ${escapeHtml(streams.length ? streams.join(' · ') : '—')}</p>
           ${cohesion(speaker.intra_cosine_p25)}
         </a>
       `;
@@ -4353,15 +4358,20 @@
       return;
     }
     discoverySection.hidden = false;
-    discoveryContainer.innerHTML = clusters.map((cluster) => `
+    const renderCluster = (cluster) => `
       <div class="spk-discovery-card" data-cluster-id="${escapeHtml(cluster.cluster_id)}">
-        <h3 class="spk-card-title">${escapeHtml(cluster.suggested_name || cluster.cluster_id)}</h3>
+        <h3 class="spk-card-title">${escapeHtml(cluster.suggested_name || 'unlabeled voice')}</h3>
         <p class="spk-card-line">${escapeHtml(String(cluster.size || cluster.count || 0))} ${escapeHtml(COPY.SPK_OVERVIEW_CARD_SAMPLES_LABEL)}</p>
         <div class="spk-discovery-actions">
           <button type="button" class="spk-overview-btn spk-who-trigger" aria-haspopup="dialog" aria-expanded="false">${escapeHtml(COPY.SPK_ACTION_WHO_IS_THIS || '')}</button>
         </div>
       </div>
-    `).join('');
+    `;
+    const named = clusters.filter(cluster => String(cluster.suggested_name || '').trim());
+    const unnamed = clusters.filter(cluster => !String(cluster.suggested_name || '').trim());
+    const wasOpen = discoveryContainer.querySelector('details')?.open || false;
+    discoveryContainer.innerHTML = named.map(renderCluster).join('') + (unnamed.length
+      ? `<details ${wasOpen ? 'open' : ''}><summary>unlabeled voices (${unnamed.length})</summary>${unnamed.map(renderCluster).join('')}</details>` : '');
     discoveryContainer.querySelectorAll('.spk-discovery-card').forEach((card) => {
       const trigger = card.querySelector('.spk-who-trigger');
       const cluster = discoveryClustersById.get(card.dataset.clusterId);
