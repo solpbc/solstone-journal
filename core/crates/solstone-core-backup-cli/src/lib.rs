@@ -3002,8 +3002,12 @@ mod resolution_tests {
             &UnusedHttp,
             dirs(restic_dir.path(), None),
         );
+        assert_eq!(
+            byo_output.exit_code, 0,
+            "BYO fixture stderr: {}",
+            byo_output.stderr
+        );
         assert_eq!(byo_output.stdout, "Backup complete (snapshot snap).\n");
-        assert_eq!(byo_output.exit_code, 0);
         assert!(
             byo_runner
                 .programs
@@ -3026,8 +3030,12 @@ mod resolution_tests {
             &broker,
             dirs(restic_dir.path(), Some(rclone_dir.path())),
         );
+        assert_eq!(
+            operated_output.exit_code, 0,
+            "operated fixture stderr: {}",
+            operated_output.stderr
+        );
         assert_eq!(operated_output.stdout, "Backup complete (snapshot snap).\n");
-        assert_eq!(operated_output.exit_code, 0);
         assert_eq!(
             rclone_program(&operated_runner.argvs.borrow()).as_deref(),
             Some(expected_rclone.to_string_lossy().as_ref())
