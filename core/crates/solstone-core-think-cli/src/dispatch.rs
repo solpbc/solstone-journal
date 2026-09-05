@@ -461,6 +461,19 @@ pub(crate) fn drain_with_deadline_observed(
     deadline: Option<Duration>,
     observer: &mut dyn FnMut(&PendingUse, DrainOutcome),
 ) -> ModeResult {
+    drain_with_failure_policy(context, runtime, pending, deadline, observer, &|_| true)
+}
+
+/// Keep every terminal observation while letting the caller identify enrichment
+/// failures that do not block its completion contract.
+pub(crate) fn drain_with_failure_policy(
+    context: &ThinkContext,
+    runtime: &tokio::runtime::Runtime,
+    pending: Vec<PendingUse>,
+    deadline: Option<Duration>,
+    observer: &mut dyn FnMut(&PendingUse, DrainOutcome),
+    failure_blocks: &dyn Fn(&PendingUse) -> bool,
+) -> ModeResult {
     let mut result = ModeResult::default();
     if pending.is_empty() {
         return result;
@@ -478,11 +491,13 @@ pub(crate) fn drain_with_deadline_observed(
                     .iter()
                     .find(|timeout| timeout.use_id() == item.use_id)
                 {
-                    result.failed += 1;
-                    result.timed_out = true;
                     let cause =
                         failure_cause(&context.journal, &item.use_id, timeout_cause(timeout));
-                    result.failed_names.push(named_failure(&label, &cause));
+                    if failure_blocks(&item) {
+                        result.failed += 1;
+                        result.timed_out = true;
+                        result.failed_names.push(named_failure(&label, &cause));
+                    }
                     observer(&item, DrainOutcome::fail(timeout_cause(timeout), cause));
                     continue;
                 }
@@ -496,22 +511,26 @@ pub(crate) fn drain_with_deadline_observed(
                         observer(&item, DrainOutcome::Finish);
                     }
                     Some(completion) => {
-                        result.failed += 1;
                         let cause = failure_cause(
                             &context.journal,
                             &item.use_id,
                             completion.end_state.as_str(),
                         );
-                        result.failed_names.push(named_failure(&label, &cause));
+                        if failure_blocks(&item) {
+                            result.failed += 1;
+                            result.failed_names.push(named_failure(&label, &cause));
+                        }
                         observer(
                             &item,
                             DrainOutcome::fail(completion.end_state.as_str(), cause),
                         );
                     }
                     None => {
-                        result.failed += 1;
                         let cause = failure_cause(&context.journal, &item.use_id, "unknown");
-                        result.failed_names.push(named_failure(&label, &cause));
+                        if failure_blocks(&item) {
+                            result.failed += 1;
+                            result.failed_names.push(named_failure(&label, &cause));
+                        }
                         observer(&item, DrainOutcome::fail("missing_completion", cause));
                     }
                 }
@@ -541,9 +560,11 @@ pub(crate) fn drain_with_deadline_observed(
                     observer(&item, DrainOutcome::Finish);
                     continue;
                 }
-                result.failed += 1;
                 let cause = failure_cause(&context.journal, &item.use_id, &wait_error);
-                result.failed_names.push(named_failure(&label, &cause));
+                if failure_blocks(&item) {
+                    result.failed += 1;
+                    result.failed_names.push(named_failure(&label, &cause));
+                }
                 observer(&item, DrainOutcome::fail("wait_failed", cause));
             }
         }

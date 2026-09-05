@@ -12,8 +12,9 @@ use solstone_core_facets::{AppendOutcome, append_activity_record};
 use solstone_core_journal_io::{AtomicWriteOptions, DEFAULT_STREAM, atomic_replace};
 use solstone_core_system::activity_state::ActivityStateMachine;
 use solstone_core_system_health::{
-    DataState, FilesystemHealthLogSource, SEGMENT_FLOOR_TALENTS, detect_segment_change,
-    find_segment_dir, is_floor_talent_capped, read_segment_data_state, resolve_predecessor,
+    DataState, FilesystemHealthLogSource, SEGMENT_FLOOR_TALENTS, SEGMENT_NONGATING_TALENTS,
+    detect_segment_change, find_segment_dir, is_floor_talent_capped, read_segment_data_state,
+    resolve_predecessor,
 };
 use solstone_core_talent_config::{
     TalentConfig, TalentFilter, get_output_path, load_talent_configs,
@@ -27,7 +28,7 @@ use solstone_core_timeline::{
 use crate::context::{DispatchFailure, ThinkContext};
 use crate::dispatch::{
     DrainOutcome, ModeResult, PendingUse, dispatch_direct, drain_with_deadline_observed,
-    merge_mode_result, runtime,
+    drain_with_failure_policy, merge_mode_result, runtime,
 };
 use crate::helpers;
 use crate::run_log::RunLogWriter;
@@ -370,17 +371,21 @@ pub(crate) fn run(
             }
             Err(DispatchFailure::Unavailable) => {
                 log_skip(log, context, &config.key, segment, "send_failed", stream);
-                total.failed += 1;
-                total.failed_names.push(format!("{} (send)", config.key));
+                if !SEGMENT_NONGATING_TALENTS.contains(&config.key.as_str()) {
+                    total.failed += 1;
+                    total.failed_names.push(format!("{} (send)", config.key));
+                }
             }
             Err(DispatchFailure::NotClaimed { use_id }) => {
                 // Source-derived, not measured: thinking.py:1951-1960 treats
                 // a selected talent's unclaimed request separately from send failure.
                 log_request_lost(log, context, &config.key, segment, stream, &use_id);
-                total.failed += 1;
-                total
-                    .failed_names
-                    .push(format!("{} (request_lost)", config.key));
+                if !SEGMENT_NONGATING_TALENTS.contains(&config.key.as_str()) {
+                    total.failed += 1;
+                    total
+                        .failed_names
+                        .push(format!("{} (request_lost)", config.key));
+                }
             }
         }
         if max_concurrency != 0 && pending.len() as i64 >= max_concurrency {
@@ -543,7 +548,14 @@ fn drain_selected(
     }
     merge(
         total,
-        drain_with_deadline_observed(context, runtime, std::mem::take(pending), timeout, observer),
+        drain_with_failure_policy(
+            context,
+            runtime,
+            std::mem::take(pending),
+            timeout,
+            observer,
+            &|item| !SEGMENT_NONGATING_TALENTS.contains(&item.name.as_str()),
+        ),
     );
 }
 

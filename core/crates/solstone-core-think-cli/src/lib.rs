@@ -3678,6 +3678,152 @@ mod tests {
     }
 
     #[test]
+    fn selected_nongating_failures_remain_visible_without_failing_segment_repair() {
+        struct FailingTalent {
+            recorder: Arc<Recorder>,
+            name: &'static str,
+            failure: &'static str,
+            selected_use: Mutex<Option<String>>,
+        }
+        impl context::CortexBoundary for FailingTalent {
+            fn dispatch(
+                &self,
+                runtime: &tokio::runtime::Runtime,
+                request: &solstone_core_cortex_client::CortexRequest,
+            ) -> Result<String, context::DispatchFailure> {
+                let id = context::CortexBoundary::dispatch(&*self.recorder, runtime, request)?;
+                if request.name == self.name {
+                    *self.selected_use.lock().unwrap() = Some(id.clone());
+                    match self.failure {
+                        "terminal" => {
+                            self.recorder.end_states.lock().unwrap().insert(
+                                id.clone(),
+                                solstone_core_cortex_client::UseEndState::Error,
+                            );
+                        }
+                        "timeout" => self.recorder.timed_out.lock().unwrap().push(
+                            solstone_core_cortex_client::TimedOutUse::GenuineTimeout {
+                                use_id: id.clone(),
+                            },
+                        ),
+                        "lost" => self.recorder.timed_out.lock().unwrap().push(
+                            solstone_core_cortex_client::TimedOutUse::LostAtDeadline {
+                                use_id: id.clone(),
+                            },
+                        ),
+                        "missing" => {
+                            self.recorder.omit_ids.lock().unwrap().insert(id.clone());
+                        }
+                        _ => {}
+                    }
+                }
+                Ok(id)
+            }
+            fn wait(
+                &self,
+                runtime: &tokio::runtime::Runtime,
+                ids: &[String],
+                deadline: Option<std::time::Duration>,
+            ) -> Result<solstone_core_cortex_client::WaitForUsesReport, String> {
+                if self.failure == "wait_error"
+                    && self
+                        .selected_use
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .is_some_and(|id| ids.contains(id))
+                {
+                    return Err("injected wait failure".to_owned());
+                }
+                context::CortexBoundary::wait(&*self.recorder, runtime, ids, deadline)
+            }
+        }
+        for name in ["entities:detection", "documents"] {
+            for failure in [
+                "terminal",
+                "timeout",
+                "lost",
+                "missing",
+                "wait_error",
+                "send",
+                "unclaimed",
+            ] {
+                let journal = tempdir().unwrap();
+                let roots = tempdir().unwrap();
+                let metadata = "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"json\"\n}";
+                let (talent_root, apps_root) = talent_roots(
+                    roots.path(),
+                    &[
+                        ("sense", metadata),
+                        ("documents", metadata),
+                        ("timeline:segment_summary", metadata),
+                        ("entities:detection", metadata),
+                    ],
+                );
+                let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+                if failure == "send" {
+                    recorder
+                        .dispatch_failures
+                        .lock()
+                        .unwrap()
+                        .insert(name.to_owned(), context::DispatchFailure::Unavailable);
+                } else if failure == "unclaimed" {
+                    recorder.dispatch_failures.lock().unwrap().insert(
+                        name.to_owned(),
+                        context::DispatchFailure::NotClaimed {
+                            use_id: "unclaimed-selected".to_owned(),
+                        },
+                    );
+                }
+                let context = context
+                    .with_talent_roots(talent_root, apps_root)
+                    .with_boundary(Arc::new(FailingTalent {
+                        recorder,
+                        name,
+                        failure,
+                        selected_use: Mutex::new(None),
+                    }));
+                segment_dir(journal.path(), "20260813", "090000_300");
+                write_sense_output(
+                    &context,
+                    "090000_300",
+                    serde_json::json!({"density":"active","content_type":"work","recommend":{}}),
+                );
+                let result = run_segment_with(
+                    &context,
+                    journal.path(),
+                    "090000_300",
+                    false,
+                    false,
+                    1,
+                    Some(std::time::Duration::from_secs(610)),
+                    &[],
+                );
+                let blocking = name == "documents";
+                assert_eq!(
+                    result.failed,
+                    usize::from(blocking),
+                    "{name}/{failure}: {result:?}"
+                );
+                assert_eq!(
+                    result.timed_out,
+                    blocking && matches!(failure, "timeout" | "lost"),
+                    "{name}/{failure}"
+                );
+                assert_eq!(result.failed_names.is_empty(), !blocking);
+                assert!(!result.success_names.iter().any(|label| label == name));
+                let records = oplog_records(journal.path(), &context.day, "segment");
+                assert!(
+                    records.iter().any(|row| row["name"] == name
+                        && (row["event"] == "talent.fail"
+                            || (row["event"] == "talent.skip" && row["reason"] == "send_failed"))),
+                    "failure telemetry missing for {name}/{failure}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn segment_selected_dispatch_outcomes_and_batches_are_distinct() {
         // Source-derived, not measured: thinking.py:1931-2016 keeps skipped,
         // unavailable, and unclaimed selection outcomes separate while draining batches.
