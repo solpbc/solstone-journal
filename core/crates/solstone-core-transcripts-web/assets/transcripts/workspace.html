@@ -3267,16 +3267,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     });
   }
 
-  // Format cost in cents with exact USD in title
   // Returns {text: "3c", title: "$0.0312"} or {text: "", title: ""} if null/zero
-  function formatCost(costUSD) {
-    if (costUSD === null || costUSD === undefined) {
-      return { text: '', title: '' };
-    }
-    const cents = Math.round(costUSD * 100);
-    const exactUSD = '$' + costUSD.toFixed(4);
-    return { text: cents + 'c', title: exactUSD };
-  }
 
   // Format bytes as human-readable size (KB, MB, GB)
   function formatSize(bytes) {
@@ -3291,19 +3282,15 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   // "iphone.mobile") — never show it verbatim in owner-facing text.
   function humanizeStreamName(stream) {
     if (!stream) return '';
-    return stream.replace(/[._-]+/g, ' ').trim();
+    return window.JournalFormat.stream(stream);
   }
 
-  // Build range text with cost and total media size
+  // Build range text with total media size
   function updateRangeText() {
     if (!selectedSegment || !segmentData) return;
     const seg = selectedSegment;
     let parts = [`${seg.start} - ${seg.end}`];
 
-    const costInfo = formatCost(segmentData.cost);
-    if (costInfo.text) {
-      parts.push(`<span title="${costInfo.title}">${costInfo.text}</span>`);
-    }
 
     const sizes = segmentData.media_sizes;
     if (sizes) {

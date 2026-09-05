@@ -236,8 +236,9 @@ function fixture(document) {
   add(banner, 'span', { 'data-operation-phase': '' });
   add(banner, 'span', { 'data-operation-error': '' });
 
+  add(root, 'p', { 'data-backup-loading': '', role: 'status' });
   const panels = add(root, 'div', { class: 'backup-panels' });
-  add(panels, 'article', { 'data-backup-panel': 'intro' });
+  add(panels, 'article', { 'data-backup-panel': 'intro', hidden: '' });
   add(panels, 'article', { 'data-backup-panel': 'management', hidden: '' });
   const destination = add(panels, 'article', { 'data-backup-panel': 'destination', hidden: '' });
   const destinationByo = add(destination, 'button', { class: 'backup-mode is-selected', 'data-mode': 'byo', role: 'radio', 'aria-checked': 'true' });
@@ -455,6 +456,32 @@ testCase('operated restore copy stays on its governed keys', () => {
     "that recovery key didn't unlock the backup. check the key, then try signing in again.",
     "the sign-in window didn't open. try again, and check whether your browser blocked it.",
   ]) assert.ok(source.includes(JSON.stringify(literal)));
+});
+
+asyncCase('initial settings stay hidden until status is known', async () => {
+  let release;
+  const harness = createHarness({ respond(call) {
+    if (call.url === '/app/backup/status') return new Promise((resolve) => { release = resolve; });
+  } });
+  await settle();
+  const panels = harness.root.querySelectorAll('[data-backup-panel]');
+  assert.ok(panels.every((panel) => panel.hidden));
+  assert.ok(!harness.root.querySelector('[data-backup-loading]').hidden);
+  release(response(status()));
+  await settle();
+  assert.ok(harness.root.querySelector('[data-backup-loading]').hidden);
+  assert.ok(!harness.root.querySelector('[data-backup-panel="intro"]').hidden);
+});
+
+asyncCase('an initial status failure never reveals assumed settings', async () => {
+  const harness = createHarness({ respond(call) {
+    if (call.url === '/app/backup/status') return Promise.reject(new Error('status unavailable'));
+  } });
+  await settle();
+  assert.ok(harness.root.querySelectorAll('[data-backup-panel]').every((panel) => panel.hidden));
+  const loading = harness.root.querySelector('[data-backup-loading]');
+  assert.ok(!loading.hidden);
+  assert.ok(loading.textContent.includes("couldn't load backup settings"));
 });
 
 asyncCase('restore lanes start unselected, stay isolated, and use roving tabindex', async () => {
@@ -724,7 +751,7 @@ asyncCase('hosted recovery-key ARIA separates local validation from C3 failures'
   assert.strictEqual(harness.key.getAttribute('aria-invalid'), null);
   assert.strictEqual(harness.key.getAttribute('aria-errormessage'), null);
   assert.strictEqual(harness.key.getAttribute('aria-describedby'), harness.heading.id);
-  assert.strictEqual(harness.root.querySelectorAll('[role="status"]').length, 1);
+  assert.strictEqual(harness.root.querySelectorAll('[role="status"]').filter((element) => !element.hidden).length, 1);
 });
 
 asyncCase('server invalid_key marks the hosted recovery key invalid', async () => {

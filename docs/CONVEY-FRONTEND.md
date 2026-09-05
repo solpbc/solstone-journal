@@ -35,7 +35,10 @@ server.
    `#status-instrument` slots. The launcher is a direct body child.
 2. `GET /api/shell` returns the app registry and shell state. `shell_boot.js`
    calls `renderAppRail`, `renderAppDock`, `renderAppLauncher`,
-   `renderStatusInstrument`, and `installLauncherInteractions`.
+   `renderStatusInstrument`, and `installLauncherInteractions`. Status sits in
+   the desktop rail or mobile dock, with a tooltip and a link to Health details.
+   The same status node survives navigation rebuilds. Health mounts the shared
+   status details section after its workspace loads.
 3. The workspace fragment for the current app is fetched and mounted.
 4. The fragment's script(s) run; each app makes **at most one initial-state
    fetch** before first meaningful paint (see below), then subscribes to its

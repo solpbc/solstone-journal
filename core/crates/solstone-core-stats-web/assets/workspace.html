@@ -645,7 +645,7 @@ h1 {
   font-weight: 500;
 }
 
-/* Token-cost detail merged into the stats information architecture. */
+/* Selected-day token detail in stats. */
 .token-card {
   scroll-margin-top: 1rem;
 }
@@ -861,8 +861,8 @@ h1 {
     <div id="progressSection" class="progress-section"></div>
     <div id="repairSection"></div>
 
-    <section class="chart-section token-card" id="cost" data-token-card-state="loading" aria-labelledby="tokenCostHeading">
-      <h2 id="tokenCostHeading">token activity (last 30 days)</h2>
+    <section class="chart-section token-card" id="tokens" data-token-card-state="loading" aria-labelledby="tokenActivityHeading">
+      <h2 id="tokenActivityHeading">token activity (last 30 days)</h2>
       <p class="token-source-note">the chart shows the daily summary. selected-day totals include the latest entries, so they may briefly differ from the chart.</p>
       <div id="statsDateNav" aria-label="selected token day"></div>
       <p id="tokenCardStatus" class="token-card-status" role="status">loading token activity…</p>
@@ -870,22 +870,20 @@ h1 {
       <section class="token-detail" aria-labelledby="tokenDayHeading">
         <h3 id="tokenDayHeading" tabindex="-1" aria-live="polite">selected day</h3>
         <p id="tokenSummary"></p>
-        <p id="tokenUnknownModels" class="token-unknown-note" hidden></p>
         <div class="token-comparison" id="tokenTypeComparison" aria-label="generate and cogitate comparison"></div>
 
         <h4>providers</h4>
         <div class="token-table-scroll" tabindex="0" aria-label="provider token activity table">
           <table id="tokenProviderTable">
-            <thead><tr><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="provider">provider</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="requests">requests</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="tokens">tokens</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="cached_tokens">cached</button></th><th scope="col" aria-sort="descending"><button class="token-sort" type="button" data-token-table="providers" data-token-key="cost">cost</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="percent">share</button></th></tr></thead>
+            <thead><tr><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="provider">provider</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="requests">requests</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="tokens">tokens</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="cached_tokens">cached</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="percent">token share</button></th></tr></thead>
             <tbody id="tokenProviders"></tbody>
           </table>
         </div>
 
         <h4>models</h4>
-        <p class="token-table-note">cached tokens stay in provider totals. they appear by model only when that provider has one model for the day.</p>
         <div class="token-table-scroll" tabindex="0" aria-label="model token activity table">
           <table id="tokenModelTable">
-            <thead><tr><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="model">model</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="provider">provider</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="requests">requests</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="tokens">tokens</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="cached_tokens">cached</button></th><th scope="col" aria-sort="descending"><button class="token-sort" type="button" data-token-table="models" data-token-key="cost">cost</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="percent">share</button></th></tr></thead>
+            <thead><tr><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="model">model</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="provider">provider</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="requests">requests</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="tokens">tokens</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="cached_tokens">cached</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="percent">token share</button></th></tr></thead>
             <tbody id="tokenModels"></tbody>
           </table>
         </div>
@@ -931,7 +929,7 @@ h1 {
     VERDICT_MIXED_PENDING_SINGULAR: "1 more day is still catching up",
     VERDICT_CANT_TELL: "still checking where your journal stands.",
     BUCKET_HEADING: "days that need a hand",
-    BUCKET_DESCRIPTION: "these days stopped on their own and can't pick back up without you — here's why, and what to try.",
+    BUCKET_DESCRIPTION: "some days retry automatically; others need your help. each day shows its current status.",
     DAY_BADGE: "stuck",
     REASON_CORRUPT_RAW: "original raw media is missing or damaged — re-import it",
     REASON_FAILING_STEP: "a processing step keeps failing — try again",
@@ -949,7 +947,7 @@ h1 {
   };
 </script>
 <script src="/app/stats/static/dashboard.js"></script>
-<script src="/app/stats/static/cost-card.js"></script>
+<script src="/app/stats/static/token-card.js"></script>
 <script>
   // Load dashboard data when page loads
   Dashboard.load('/app/stats/api/stats');

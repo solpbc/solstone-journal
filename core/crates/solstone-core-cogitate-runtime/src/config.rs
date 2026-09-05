@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 const DEFAULT_MAX_TURNS: usize = 60;
-const DEFAULT_RUN_COST_CAP_USD: f64 = 1.0;
 const DEFAULT_READ_CALL_BUDGET: i64 = 200;
 
 /// Effective configuration for one bounded cogitate run.
@@ -20,7 +19,6 @@ pub struct RunConfig {
     pub outbound_approval: Option<String>,
     pub expects_emit_final: bool,
     pub max_turns: usize,
-    pub cost_cap_usd: f64,
     pub context_window: Option<u64>,
     pub timeout: Duration,
     /// Used by the caller when constructing its `ToolExecutor` (for example,
@@ -37,7 +35,6 @@ impl Default for RunConfig {
             outbound_approval: None,
             expects_emit_final: false,
             max_turns: DEFAULT_MAX_TURNS,
-            cost_cap_usd: DEFAULT_RUN_COST_CAP_USD,
             context_window: None,
             timeout: Duration::from_secs(600),
             read_call_budget: DEFAULT_READ_CALL_BUDGET,

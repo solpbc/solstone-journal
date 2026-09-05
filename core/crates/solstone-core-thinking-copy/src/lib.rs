@@ -473,9 +473,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ),
             (
                 "tier_blurb_top",
-                CopyValue::String(
-                    "the most capable — for the heaviest thinking, at the highest cost on your key.",
-                ),
+                CopyValue::String("the most capable, for the heaviest thinking."),
             ),
             (
                 "tier_blurb_mid",
@@ -484,7 +482,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             (
                 "tier_blurb_lite",
                 CopyValue::String(
-                    "light and quick. tuned for small models, so this one does the job well. it's also the least expensive on your key.",
+                    "light and quick. tuned for small models, so this one does the job well.",
                 ),
             ),
             ("tier_tag_suggested", CopyValue::String("suggested")),
@@ -506,12 +504,6 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             (
                 "custom_not_found",
                 CopyValue::String("{provider} doesn't offer \"{model}\" to this key."),
-            ),
-            (
-                "custom_cost_note",
-                CopyValue::String(
-                    "a model we don't recognize still works. the cost per use may not show yet.",
-                ),
             ),
             ("model_save", CopyValue::String("use {label}")),
             ("model_save_restore", CopyValue::String("remember {label}")),

@@ -40,9 +40,9 @@ pub fn run_cogitate(
     };
     // Conversation compaction is intentionally outside this runtime. Messages
     // are never summarized or dropped, so this history accumulates for the full
-    // run; only MAX_TURNS (default 60) and the cost/context ladder's stage-3
+    // run; only MAX_TURNS (default 60) and the context ladder's stage-3
     // force-stop bound it. This is a deliberate scope cut, to revisit when
-    // or later if long runs make that accumulation a practical cost/context
+    // or later if long runs make that accumulation a practical context
     // problem.
     let mut messages = vec![ConverseMessage::User {
         text: input.initial_prompt.clone(),
@@ -138,9 +138,7 @@ pub fn run_cogitate(
                 );
             }
             if let Some(event) = resources.check(
-                usage.fallback_cost_usd(),
                 context_fraction(&config, &turn_usage),
-                config.cost_cap_usd,
                 finish_tool(config.expects_emit_final),
             ) {
                 send_ladder_event(
@@ -321,7 +319,7 @@ fn tail(
 ) -> RunOutcome {
     compose_tail(TailState {
         wall_clock_exceeded,
-        cost_force_stopped: resources.force_stopped,
+        context_force_stopped: resources.force_stopped,
         max_turns_exhausted: turns.force_stopped,
         stuck_or_paused,
         expects_emit_final: config.expects_emit_final,

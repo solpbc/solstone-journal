@@ -218,7 +218,7 @@ fn prepare_segment(
         md_files.remove("screen");
     }
     Ok(
-        json!({"chunks":chunks,"audio_file":media.audio_file,"duration":duration,"video_files":media.video_files,"image_files":media.image_files,"md_files":md_files,"segment_key":key,"cost":read_cost(root, day, key),"media_sizes":media.media_sizes,"media_purged":{"audio":media.purged("audio"),"screen":media.purged("screen")},"data_state":data_state,"signals":signals(&dir),"transcripts_copy":copy_payload(),"speaker_labels":speakers.state,"warnings":warnings.len(),"warning_details":warnings}),
+        json!({"chunks":chunks,"audio_file":media.audio_file,"duration":duration,"video_files":media.video_files,"image_files":media.image_files,"md_files":md_files,"segment_key":key,"media_sizes":media.media_sizes,"media_purged":{"audio":media.purged("audio"),"screen":media.purged("screen")},"data_state":data_state,"signals":signals(&dir),"transcripts_copy":copy_payload(),"speaker_labels":speakers.state,"warnings":warnings.len(),"warning_details":warnings}),
     )
 }
 
@@ -523,39 +523,7 @@ fn audio_duration(entries: &[Map<String, Value>], key: &str) -> f64 {
         .and_then(|(_, length)| length.parse::<f64>().ok())
         .unwrap_or(0.0)
 }
-fn read_cost(root: &Path, day: &str, key: &str) -> f64 {
-    fs::read_to_string(root.join("tokens").join(format!("{day}.jsonl")))
-        .ok()
-        .into_iter()
-        .flat_map(|text| {
-            text.lines()
-                .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-                .collect::<Vec<_>>()
-        })
-        .filter(|row| {
-            row.get("segment").and_then(Value::as_str) == Some(key)
-                && provider(row.get("model").and_then(Value::as_str).unwrap_or_default())
-                    != "unknown"
-        })
-        .count() as f64
-        * 0.0
-}
-fn provider(model: &str) -> &'static str {
-    if model == "qwen3.5:9b"
-        || model == "gemma-4-26b-a4b-it-mlx-4bit"
-        || model.starts_with("local/")
-    {
-        "local"
-    } else if model.starts_with("gpt") {
-        "openai"
-    } else if model.starts_with("gemini") {
-        "google"
-    } else if model.starts_with("claude") {
-        "anthropic"
-    } else {
-        "unknown"
-    }
-}
+
 fn copy_payload() -> Value {
     json!({"TR_SPEAKER_CHANGE_LABEL":"change speaker","TR_SPEAKER_ASSIGN_LABEL":"add speaker","TR_SPEAKER_PICKER_TITLE":"choose speaker","TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER":"find a person","TR_SPEAKER_PICKER_OWNER":"this is me","TR_SPEAKER_PICKER_EMPTY":"no known voices yet","TR_SPEAKER_SOMEONE_ELSE":"someone else…","TR_SPEAKER_PICKER_NO_RESULTS":"no matching people","TR_SPEAKER_UNKNOWN_CHIP":"unknown voice","TR_SPEAKER_HEDGE_PROBABLE":"probably {name}","TR_SPEAKER_HEDGE_MAYBE":"maybe {name}?","TR_SPEAKER_CONFIDENCE_HIGH":"high confidence","TR_SPEAKER_CONFIDENCE_UNKNOWN":"confidence unavailable","TR_SPEAKER_MARGIN_OWNER":"close owner match","TR_SPEAKER_MARGIN_ACOUSTIC":"close voice match","TR_SPEAKER_ACTION_UNAVAILABLE":"speaker change unavailable","TR_SPEAKER_NO_EMBEDDING":"voice sample unavailable","TR_SPEAKER_CORRECT_RETRY":"retry speaker change","TR_SPEAKER_CORRECT_BUSY":"speaker files are busy","TR_SPEAKER_OWNER_TOO_CLOSE":"that voice is too close to yours to save there","TR_SPEAKER_OWNER_IDENTITY_REQUIRED":"set your identity before tagging yourself","TR_SPEAKER_ALREADY_CORRECT":"already set","TR_SPEAKER_PROPAGATION_OFFER":"{count} more statements may need this change","TR_SPEAKER_PROPAGATION_APPLY":"apply changes","TR_SPEAKER_PROPAGATION_DISMISS":"dismiss","TR_SPEAKER_PROPAGATION_APPLIED":"changes applied"})
 }

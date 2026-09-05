@@ -9,11 +9,6 @@ pub struct RuntimeDivergence {
     pub native: &'static str,
 }
 
-/// Generate-wire deliberately exposes normalized token counts rather than an
-/// SDK price accumulator. Therefore native always uses the reference fallback
-/// formula; it has no provider price-table path.
-pub const DIVERGENCES: &[RuntimeDivergence] = &[RuntimeDivergence {
-    case: "cost_pricing",
-    reference: "use accumulated SDK cost when positive, otherwise token fallback",
-    native: "always use token fallback because no SDK price accumulator exists",
-}];
+/// Dollar estimation and limits are retired. Raw token usage and context/turn
+/// limits remain; no pricing fallback is applied.
+pub const DIVERGENCES: &[RuntimeDivergence] = &[];

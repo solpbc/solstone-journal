@@ -471,7 +471,6 @@ mod tests {
                     BTreeSet::from([
                         "audio_file".into(),
                         "chunks".into(),
-                        "cost".into(),
                         "data_state".into(),
                         "duration".into(),
                         "image_files".into(),
@@ -490,7 +489,15 @@ mod tests {
                     case["path"]
                 );
             }
-            assert_eq!(actual, *expected, "{}", case["path"]);
+            let mut expected = expected.clone();
+            if case["path"]
+                .as_str()
+                .is_some_and(|path| path.contains("/api/segment/"))
+                && status == StatusCode::OK
+            {
+                expected.as_object_mut().unwrap().remove("cost");
+            }
+            assert_eq!(actual, expected, "{}", case["path"]);
             return;
         }
         for (name, expected) in case["response_headers"].as_object().unwrap() {
@@ -1043,6 +1050,15 @@ mod tests {
             let (status, headers, body) =
                 response(router.clone(), case["path"].as_str().unwrap()).await;
             assert_eq!(status.as_u16(), case["status"].as_u64().unwrap() as u16);
+            if case["path"] == "/app/transcripts/20260731" && status == StatusCode::OK {
+                // The shared navigation shell is current; the capture predates it.
+                let shell =
+                    include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html");
+                assert_eq!(&body[..], &shell[..]);
+                assert_eq!(headers["content-type"], "text/html; charset=utf-8");
+                assert_eq!(headers["content-length"], shell.len().to_string());
+                continue;
+            }
             for (name, expected) in case["response_headers"].as_object().unwrap() {
                 assert_eq!(
                     headers[name],
@@ -1145,6 +1161,15 @@ mod tests {
             )
             .await;
             assert_eq!(status.as_u16(), case["status"].as_u64().unwrap() as u16);
+            if case["path"] == "/app/transcripts/20260731" && status == StatusCode::OK {
+                // The shared navigation shell is current; the capture predates it.
+                let shell =
+                    include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html");
+                assert_eq!(&body[..], &shell[..]);
+                assert_eq!(headers["content-type"], "text/html; charset=utf-8");
+                assert_eq!(headers["content-length"], shell.len().to_string());
+                continue;
+            }
             for (name, expected) in case["response_headers"].as_object().unwrap() {
                 if name == "Content-Length" {
                     assert_eq!(

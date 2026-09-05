@@ -1,0 +1,176 @@
+{
+  "source": "Two records in health-web/src/test_support.rs::tokens. Replaces only the retired monetary response from convey_stats_tokens_corpus; raw output excludes separately recorded reasoning.",
+  "populated": {
+    "by_context": [
+      {
+        "context": "talent.system.daily_digest",
+        "models_used": [
+          "gpt-5.5"
+        ],
+        "percent": 50,
+        "requests": 1,
+        "tokens": 1200,
+        "input_tokens": 1000,
+        "output_tokens": 200,
+        "cached_tokens": 300,
+        "reasoning_tokens": 0
+      },
+      {
+        "context": "talent.system.review",
+        "models_used": [
+          "claude-sonnet-4-6"
+        ],
+        "percent": 50,
+        "requests": 1,
+        "tokens": 1200,
+        "input_tokens": 800,
+        "output_tokens": 400,
+        "cached_tokens": 0,
+        "reasoning_tokens": 100
+      }
+    ],
+    "by_model": [
+      {
+        "model": "claude-sonnet-4-6",
+        "percent": 50,
+        "provider": "anthropic",
+        "requests": 1,
+        "tokens": 1200,
+        "input_tokens": 800,
+        "output_tokens": 400,
+        "cached_tokens": 0,
+        "reasoning_tokens": 100,
+        "models_used": [
+          "claude-sonnet-4-6"
+        ]
+      },
+      {
+        "model": "gpt-5.5",
+        "percent": 50,
+        "provider": "openai",
+        "requests": 1,
+        "tokens": 1200,
+        "input_tokens": 1000,
+        "output_tokens": 200,
+        "cached_tokens": 300,
+        "reasoning_tokens": 0,
+        "models_used": [
+          "gpt-5.5"
+        ]
+      }
+    ],
+    "by_provider": [
+      {
+        "cached_tokens": 0,
+        "input_tokens": 800,
+        "models_used": [
+          "claude-sonnet-4-6"
+        ],
+        "output_tokens": 400,
+        "percent": 50,
+        "provider": "anthropic",
+        "reasoning_tokens": 100,
+        "requests": 1,
+        "tokens": 1200
+      },
+      {
+        "cached_tokens": 300,
+        "input_tokens": 1000,
+        "models_used": [
+          "gpt-5.5"
+        ],
+        "output_tokens": 200,
+        "percent": 50,
+        "provider": "openai",
+        "reasoning_tokens": 0,
+        "requests": 1,
+        "tokens": 1200
+      }
+    ],
+    "by_segment": [
+      {
+        "models_used": [
+          "gpt-5.5"
+        ],
+        "percent": 50,
+        "requests": 1,
+        "segment": "090000_60",
+        "tokens": 1200,
+        "input_tokens": 1000,
+        "output_tokens": 200,
+        "cached_tokens": 300,
+        "reasoning_tokens": 0
+      },
+      {
+        "models_used": [
+          "claude-sonnet-4-6"
+        ],
+        "percent": 50,
+        "requests": 1,
+        "segment": "100000_120",
+        "tokens": 1200,
+        "input_tokens": 800,
+        "output_tokens": 400,
+        "cached_tokens": 0,
+        "reasoning_tokens": 100
+      }
+    ],
+    "by_token_type": {
+      "cached": {
+        "tokens": 300
+      },
+      "input": {
+        "tokens": 1800
+      },
+      "output": {
+        "tokens": 600
+      },
+      "reasoning": {
+        "tokens": 100
+      }
+    },
+    "by_type": {
+      "cogitate": {
+        "requests": 1,
+        "tokens": 1200
+      },
+      "generate": {
+        "requests": 1,
+        "tokens": 1200
+      }
+    },
+    "day": "20260403",
+    "total": {
+      "requests": 2,
+      "segment_count": 2,
+      "tokens": 2400
+    }
+  },
+  "empty": {
+    "by_context": [],
+    "by_model": [],
+    "by_provider": [],
+    "by_segment": [],
+    "by_token_type": {
+      "cached": {
+        "tokens": 0
+      },
+      "input": {
+        "tokens": 0
+      },
+      "output": {
+        "tokens": 0
+      },
+      "reasoning": {
+        "tokens": 0
+      }
+    },
+    "by_type": {},
+    "day": "20260403",
+    "total": {
+      "requests": 0,
+      "tokens": 0,
+      "segment_count": 0
+    }
+  }
+}

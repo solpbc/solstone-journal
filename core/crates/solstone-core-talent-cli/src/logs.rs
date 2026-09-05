@@ -287,26 +287,6 @@ fn format_bytes(bytes: u64) -> String {
     }
 }
 
-fn format_cost(cost_usd: Option<f64>) -> String {
-    let Some(cost_usd) = cost_usd else {
-        return "-".to_owned();
-    };
-    let cents = (cost_usd * 100.0).round_ties_even() as i64;
-    if cents == 0 && cost_usd > 0.0 {
-        return "<1¢".to_owned();
-    }
-    format!("{cents}¢")
-}
-
-// genai-prices ships its price table as ~494 KB of generated Python source that a
-// shipped Rust artifact cannot read or execute. A bundled snapshot would silently
-// drift. The reference renders "-" when pricing is unavailable, so returning None
-// preserves the output shape.
-fn agent_cost_usd(model: Option<&str>, usage: Option<&Value>) -> Option<f64> {
-    let _ = (model, usage);
-    None
-}
-
 fn format_runtime(seconds: f64) -> String {
     if seconds < 60.0 {
         format!("{seconds:.1}s")
@@ -360,11 +340,6 @@ fn render_table(
             .unwrap_or_default();
         let run_file = runs::find_run_file(talents_dir, use_id);
         let stats = run_file.as_deref().map(parse_run_stats).unwrap_or_default();
-        let model = stats
-            .model
-            .as_deref()
-            .or_else(|| record.get("model").and_then(Value::as_str));
-        let cost = agent_cost_usd(model, stats.usage.as_ref());
         let output_size = stats
             .request
             .as_ref()
@@ -390,11 +365,6 @@ fn render_table(
             .get("facet")
             .and_then(Value::as_str)
             .unwrap_or_default();
-        let cost = if run_file.is_some() {
-            format_cost(cost)
-        } else {
-            "-".to_owned()
-        };
         let events = if run_file.is_some() {
             stats.event_count.to_string()
         } else {
@@ -412,7 +382,7 @@ fn render_table(
             format!("  {facet}")
         };
         let mut line = format!(
-            "{use_id:<15}{:>12}  {name:<name_width$}  {status_symbol}  {:>7}  {cost:>4}  {events:>3}  {tools:>3}  {output_size:>5}  {model}{facet_part}",
+            "{use_id:<15}{:>12}  {name:<name_width$}  {status_symbol}  {:>7}  {events:>3}  {tools:>3}  {output_size:>5}  {model}{facet_part}",
             time_column(record, now),
             format_runtime(runtime),
         );
@@ -694,14 +664,6 @@ mod tests {
     }
 
     #[test]
-    fn cost_narrowing_and_formatter_are_deliberate() {
-        assert_eq!(agent_cost_usd(Some("m"), Some(&json!({}))), None);
-        assert_eq!(format_cost(None), "-");
-        assert_eq!(format_cost(Some(0.001)), "<1¢");
-        assert_eq!(format_cost(Some(0.005)), "<1¢");
-    }
-
-    #[test]
     fn output_paths_cover_all_forms_and_override() {
         let root = Path::new("journal");
         let request = |fields: Value| {
@@ -900,7 +862,7 @@ mod tests {
         );
         assert_eq!(
             output.stdout,
-            "9002           Aug 06 01:06  demo        ✗   1m 35s     -    2    0      -  m-2  work\n9001           Aug 06 01:06  demo        ✓    12.5s     -    9    1      -  m-1\n"
+            "9002           Aug 06 01:06  demo        ✗   1m 35s    2    0      -  m-2  work\n9001           Aug 06 01:06  demo        ✓    12.5s    9    1      -  m-1\n"
         );
     }
 

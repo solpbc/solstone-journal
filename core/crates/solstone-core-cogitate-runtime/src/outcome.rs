@@ -81,7 +81,7 @@ pub(crate) fn non_responsive_payload(output: &str) -> Option<Value> {
 
 pub(crate) struct TailState {
     pub wall_clock_exceeded: bool,
-    pub cost_force_stopped: bool,
+    pub context_force_stopped: bool,
     pub max_turns_exhausted: bool,
     pub stuck_or_paused: bool,
     pub expects_emit_final: bool,
@@ -112,8 +112,8 @@ pub(crate) fn compose_tail(state: TailState) -> RunOutcome {
                 "wall_clock_exceeded: cogitate run exceeded its wall-clock deadline and was force-finished before emitting a final result"
             },
         )
-    } else if state.cost_force_stopped || state.max_turns_exhausted {
-        if state.cost_force_stopped {
+    } else if state.context_force_stopped || state.max_turns_exhausted {
+        if state.context_force_stopped {
             (
                 "token_budget_exceeded",
                 if non_responsive {

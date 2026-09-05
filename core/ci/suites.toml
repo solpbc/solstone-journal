@@ -1057,17 +1057,6 @@ default_full = true
 runtime = "none"
 
 [[package_suites]]
-id = "package::solstone-core-model-pricing"
-package = "solstone-core-model-pricing"
-set = "component"
-areas = ["core"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-runtime = "none"
-
-[[package_suites]]
 id = "package::solstone-core-npy"
 package = "solstone-core-npy"
 set = "component"

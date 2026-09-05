@@ -13,7 +13,6 @@
   const heading = document.querySelector('#tokenDayHeading');
   const summary = document.querySelector('#tokenSummary');
   const status = document.querySelector('#tokenCardStatus');
-  const unknown = document.querySelector('#tokenUnknownModels');
   const comparison = document.querySelector('#tokenTypeComparison');
   const dateNavHost = document.querySelector('#statsDateNav');
   const tableBodies = {
@@ -22,8 +21,8 @@
   };
   const tableData = { providers: [], models: [] };
   const sorts = {
-    providers: { key: 'cost', direction: 'descending' },
-    models: { key: 'cost', direction: 'descending' }
+    providers: { key: 'tokens', direction: 'descending' },
+    models: { key: 'tokens', direction: 'descending' }
   };
   let coverageFailed = false;
   let selected = initialDay();
@@ -40,7 +39,7 @@
   }
 
   function initialDay() {
-    const query = new URLSearchParams(location.search).get('cost');
+    const query = new URLSearchParams(location.search).get('tokens');
     return validDay(query) ? query : today();
   }
 
@@ -54,17 +53,13 @@
     return Number(value || 0).toLocaleString();
   }
 
-  function money(value) {
-    return `$${Number(value || 0).toFixed(2)}`;
-  }
-
   function requestCount(value) {
     const count = Number(value || 0);
     return `${number(count)} ${count === 1 ? 'request' : 'requests'}`;
   }
 
   function dayLabel(day) {
-    return `${day.slice(0, 4)}-${day.slice(4, 6)}-${day.slice(6, 8)}`;
+    return window.JournalFormat.day(day);
   }
 
   function cell(value) {
@@ -82,18 +77,6 @@
     return direction === 'ascending' ? result : -result;
   }
 
-  function cachedByModel(models, providers) {
-    const counts = models.reduce((values, model) => {
-      values[model.provider] = (values[model.provider] || 0) + 1;
-      return values;
-    }, {});
-    const totals = Object.fromEntries(providers.map(provider => [provider.provider, provider.cached_tokens]));
-    return models.map(model => ({
-      ...model,
-      cached_tokens: counts[model.provider] === 1 ? Number(totals[model.provider] || 0) : null
-    }));
-  }
-
   function renderTable(name) {
     const body = tableBodies[name];
     const { key, direction } = sorts[name];
@@ -101,8 +84,8 @@
     [...tableData[name]].sort((left, right) => compareRows(left, right, key, direction)).forEach(item => {
       const row = document.createElement('tr');
       const values = name === 'providers'
-        ? [item.provider, item.requests, number(item.tokens), number(item.cached_tokens), money(item.cost), `${Number(item.percent || 0).toFixed(1)}%`]
-        : [item.model, item.provider, item.requests, number(item.tokens), item.cached_tokens === null ? '—' : number(item.cached_tokens), money(item.cost), `${Number(item.percent || 0).toFixed(1)}%`];
+        ? [item.provider, item.requests, number(item.tokens), number(item.cached_tokens), `${Number(item.percent || 0).toFixed(1)}%`]
+        : [item.model, item.provider, item.requests, number(item.tokens), item.cached_tokens === null ? '—' : number(item.cached_tokens), `${Number(item.percent || 0).toFixed(1)}%`];
       row.append(...values.map(cell));
       body.append(row);
     });
@@ -117,29 +100,23 @@
       const title = document.createElement('h4');
       title.textContent = kind;
       const detail = document.createElement('p');
-      detail.textContent = `${requestCount(data.requests)} · ${number(data.tokens)} tokens · ${money(data.cost)}`;
+      detail.textContent = `${requestCount(data.requests)} · ${number(data.tokens)} tokens`;
       section.append(title, detail);
       comparison.append(section);
     });
   }
 
   function renderUsage(data) {
-    heading.textContent = dayLabel(data.day);
-    summary.textContent = `${money(data.total.cost)} · ${requestCount(data.total.requests)} · ${number(data.total.tokens)} tokens`;
-    const skipped = Number(data.total.skipped_unknown || 0);
-    unknown.hidden = skipped === 0;
-    unknown.textContent = skipped === 1
-      ? "1 record used an unrecognized model, so its requests, tokens, and estimated cost aren't included."
-      : `${skipped} records used unrecognized models, so their requests, tokens, and estimated cost aren't included.`;
+    heading.textContent = window.JournalFormat.day(data.day);
+    summary.textContent = `${requestCount(data.total.requests)} · ${number(data.total.tokens)} tokens`;
     tableData.providers = data.by_provider || [];
-    tableData.models = cachedByModel(data.by_model || [], tableData.providers);
+    tableData.models = data.by_model || [];
     renderTable('providers');
     renderTable('models');
     renderComparison(data.by_type || {});
     if (coverageFailed) {
-      state('index-error', "30-day history isn't available. The selected day is still available.");
-    } else if (skipped > 0) {
-      state('partial', "some token activity couldn't be matched to a model.");
+      state('index-error', "30-day history isn't available. the selected day is still available.");
+
     } else if (Number(data.total.requests || 0) === 0) {
       state('empty', 'no token activity was recorded for this day.');
     } else {
@@ -152,7 +129,7 @@
     const sequence = ++usageSequence;
     selected = day;
     if (options.syncNav !== false) scopedDateNav?.setDay(day);
-    if (options.push) history.pushState({}, '', `?cost=${day}#cost`);
+    if (options.push) history.pushState({}, '', `?tokens=${day}#tokens`);
     return fetch(`/app/stats/api/usage?day=${day}`)
       .then(response => {
         if (!response.ok) throw new Error('usage');
@@ -162,8 +139,8 @@
         if (sequence !== usageSequence) return;
         renderUsage(data);
         if (options.focus) heading.focus();
-        document.querySelectorAll('[data-cost-day]').forEach(button => {
-          button.setAttribute('aria-pressed', String(button.dataset.costDay === day));
+        document.querySelectorAll('[data-tokens-day]').forEach(button => {
+          button.setAttribute('aria-pressed', String(button.dataset.tokensDay === day));
         });
       })
       .catch(() => {
@@ -188,7 +165,7 @@
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'token-rollup__bar';
-      button.dataset.costDay = day;
+      button.dataset.tokensDay = day;
       button.setAttribute('aria-label', `${dayLabel(day)}: ${number(totals[day])} tokens`);
       button.setAttribute('aria-pressed', String(day === selected));
       button.style.height = `${Math.max(2, totals[day] / max * 100)}%`;
@@ -232,7 +209,7 @@
     .then(() => select(selected));
 
   addEventListener('popstate', () => {
-    const day = new URLSearchParams(location.search).get('cost');
+    const day = new URLSearchParams(location.search).get('tokens');
     select(validDay(day) ? day : today(), { focus: true });
   });
 }());

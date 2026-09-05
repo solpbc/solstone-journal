@@ -233,8 +233,17 @@ class Element {
   }
 
   appendChild(child) {
+    if (child.parentElement) child.parentElement.removeChild(child);
     child.parentElement = this;
     this.children.push(child);
+    return child;
+  }
+
+  insertBefore(child, before) {
+    if (!before) return this.appendChild(child);
+    if (child.parentElement) child.parentElement.removeChild(child);
+    child.parentElement = this;
+    this.children.splice(this.children.indexOf(before), 0, child);
     return child;
   }
 
@@ -454,6 +463,7 @@ function createHarness(options = {}) {
     MutationObserver: MutationObserverShim,
     setTimeout,
     clearTimeout,
+    matchMedia() { return { matches: Boolean(options.mobile), addEventListener() {} }; },
     requestAnimationFrame(callback) { callback(); },
     getComputedStyle(element) {
       return {
@@ -593,12 +603,13 @@ testCase('rail composition', () => {
   const harness = createHarness();
   renderChrome(harness, 'home');
   const rail = harness.document.querySelector('#app-rail');
-  assert.strictEqual(rail.children.length, 10);
+  assert.strictEqual(rail.children.length, 11);
   assert.ok(rail.children[0].hasAttribute('data-app-launcher-toggle'));
   assert.deepStrictEqual(appNames(rail.children.slice(1, 6)), ['home', 'timeline', 'search', 'entities', 'thinking']);
   assert.ok(rail.children[6].classList.contains('app-rail-spacer'));
-  assert.ok(rail.children[7].classList.contains('app-rail-divider'));
-  assert.deepStrictEqual(appNames(rail.children.slice(8)), ['import', 'settings']);
+  assert.strictEqual(rail.children[7].id, 'status-instrument');
+  assert.ok(rail.children[8].classList.contains('app-rail-divider'));
+  assert.deepStrictEqual(appNames(rail.children.slice(9)), ['import', 'settings']);
 });
 
 testCase('launcher completeness and order', () => {
@@ -615,10 +626,11 @@ testCase('launcher completeness and order', () => {
 });
 
 testCase('dock composition', () => {
-  const harness = createHarness();
+  const harness = createHarness({mobile: true});
   renderChrome(harness, 'home');
   const dock = harness.document.querySelector('#app-dock');
-  assert.strictEqual(dock.children.length, 4);
+  assert.strictEqual(dock.children.length, 5);
+  assert.strictEqual(dock.children[4].id, 'status-instrument');
   assert.deepStrictEqual(appNames(dock.children.slice(0, 3)), ['home', 'timeline', 'search']);
   assert.ok(dock.children[3].hasAttribute('data-app-launcher-toggle'));
 });
@@ -696,7 +708,9 @@ testCase('status instrument target', () => {
   renderChrome(harness, 'home');
   const icon = harness.document.querySelector('#status-instrument .status-icon');
   assert.ok(icon);
-  assert.strictEqual(icon.getAttribute('aria-controls'), 'status-pane');
+  assert.strictEqual(icon.tagName, 'A');
+  assert.strictEqual(icon.getAttribute('href'), '/app/health/#healthSystemDetails');
+  assert.ok(!icon.hasAttribute('aria-controls'));
 });
 
 

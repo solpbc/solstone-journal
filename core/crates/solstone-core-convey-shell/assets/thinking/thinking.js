@@ -1217,13 +1217,12 @@
 
   function thinkingRunFacts(run) {
     return [
-      ['time', run.start],
+      ['time', window.JournalFormat.timestamp(run.start)],
       ['model', run.model],
       ['provider', run.provider],
-      ['runtime', run.runtime_seconds],
+      ['runtime', window.JournalFormat.duration(run.runtime_seconds)],
       ['thinking events', run.thinking_count],
       ['tool calls', run.tool_count],
-      ['cost', run.cost],
       ['facet', run.facet],
     ].filter(([, value]) => value !== null && value !== undefined && value !== '');
   }
@@ -1248,7 +1247,6 @@
       runtime_seconds: run.runtime_seconds,
       thinking_count: run.thinking_count,
       tool_count: run.tool_count,
-      cost: run.cost,
       facet: run.facet,
       output_file: run.output_file,
     })).filter((run) => run.id && run.name) : [];
@@ -1262,15 +1260,9 @@
     total.textContent = `${runs.length} run${runs.length !== 1 ? 's' : ''}`;
     summary.appendChild(total);
     const failed = runs.filter((run) => run.failed).length;
-    const cost = runs.reduce((total, run) => total + (typeof run.cost === 'number' ? run.cost : 0), 0);
     if (failed) {
       const item = document.createElement('span');
       item.textContent = `${failed} failed`;
-      summary.appendChild(item);
-    }
-    if (cost) {
-      const item = document.createElement('span');
-      item.textContent = cost > 0 && cost < 0.01 ? '<$0.01' : `$${cost.toFixed(2)}`;
       summary.appendChild(item);
     }
   }
@@ -1289,7 +1281,7 @@
     table.className = 'thinking-runs-table';
     const head = document.createElement('thead');
     const headRow = document.createElement('tr');
-    for (const label of ['time', 'model', 'provider', 'runtime', 'thinking events', 'tool calls', 'cost', 'facet', 'output', 'prompt']) {
+    for (const label of ['time', 'model', 'provider', 'runtime', 'thinking events', 'tool calls', 'facet', 'output', 'prompt']) {
       const cell = document.createElement('th');
       cell.scope = 'col';
       cell.textContent = label;
@@ -1300,7 +1292,7 @@
     const body = document.createElement('tbody');
     runs.forEach((run) => {
       const row = document.createElement('tr');
-      for (const value of [run.start, run.model, run.provider, run.runtime_seconds, run.thinking_count, run.tool_count, run.cost, run.facet]) {
+      for (const value of [window.JournalFormat.timestamp(run.start), run.model, run.provider, window.JournalFormat.duration(run.runtime_seconds), run.thinking_count, run.tool_count, run.facet]) {
         const cell = document.createElement('td');
         if (value !== null && value !== undefined && value !== '') cell.textContent = value;
         row.appendChild(cell);
@@ -1412,7 +1404,7 @@
     (Array.isArray(days) ? days : []).forEach((day) => {
       const link = document.createElement('a');
       link.href = thinkingRunsHash(currentThinkingRunsRoute({kind: 'runs', day, talent: '', useId: ''}));
-      link.textContent = day;
+      link.textContent = window.JournalFormat.day(day);
       host.appendChild(link);
     });
   }
@@ -1814,6 +1806,7 @@
 
   function renderGlance() {
     const brain = state.providers.brain || {};
+    setText('thinkingIntro', brain.state === 'ready' ? 'your processing engine is ready. you can change it in setup.' : 'choose or check your processing engine in setup.');
     const glance = $('brainGlance');
     const glanceLabel = $('thinkingActiveLane');
     const identity = brain.identity || {};
@@ -2195,7 +2188,6 @@
     setHidden('byoCustomRow', !state.byoCustomOpen);
     setText('byoCustomLabel', byoText.custom_label || '');
     setButtonText('byoCustomCheck', byoText.custom_check || '');
-    setText('byoCustomCostNote', byoText.custom_cost_note || '');
     setButtonText('byoDifferentKey', byoText.use_different_key || '');
 
     const customInput = $('byoCustomModel');
