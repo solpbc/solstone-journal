@@ -8,8 +8,8 @@ use std::path::Path;
 use serde::Serialize;
 use solstone_core_entity::{
     EncoderIdentity, EntityMergeOptions, EntityStoreError, commit_entity_merge,
-    is_admissible_person, load_all_journal_entities, load_entity_voiceprints_file,
-    normalize_embedding,
+    is_admissible_person, load_all_journal_entities, normalize_embedding, read_identity_map,
+    try_load_entity_voiceprints_in_dir,
 };
 use solstone_core_entity_matching::is_name_variant_match;
 
@@ -84,7 +84,11 @@ pub fn detect_name_variant_candidates(
     journal_root: &Path,
 ) -> Result<NameVariantScan, EntityStoreError> {
     let mut centroids = Vec::new();
-    for entity in load_all_journal_entities(journal_root)? {
+    let entities = load_all_journal_entities(journal_root)?;
+    // Reuse the owning store's identity resolution for the whole scan. Resolving
+    // each person's voiceprints separately rereads every identity each time.
+    let directories = read_identity_map(journal_root)?.resolved;
+    for entity in entities {
         if !is_admissible_person(&entity) || entity.is_principal() {
             continue;
         }
@@ -96,8 +100,20 @@ pub fn detect_name_variant_candidates(
         if name.is_empty() {
             continue;
         }
-        let Some(archive) = load_entity_voiceprints_file(journal_root, &entity.id) else {
+        let Some(directory) = directories.get(&entity.id) else {
             continue;
+        };
+        let archive = match try_load_entity_voiceprints_in_dir(journal_root, directory) {
+            Ok(Some(archive)) => archive,
+            Ok(None) => continue,
+            Err(error) => {
+                log::warn!(
+                    "failed to load voiceprints for entity {}: {}",
+                    entity.id,
+                    error
+                );
+                continue;
+            }
         };
         if archive.rows == 0 {
             continue;

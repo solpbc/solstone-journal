@@ -1076,6 +1076,33 @@ fn ac1_valid_entity_is_included_in_name_variant_pairs() {
 }
 
 #[test]
+fn name_variant_scan_uses_resolved_directories_after_entity_directory_moves() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "alias", "Alex", "Person", false);
+    entity(temporary.path(), "canonical", "Alex Smith", "Person", false);
+    for id in ["alias", "canonical"] {
+        write_voiceprints(temporary.path(), id, vec![vector(0.0, 1.0)]);
+    }
+    let expected = detect_name_variant_candidates(temporary.path()).unwrap();
+    fs::rename(
+        temporary.path().join("entities/alias"),
+        temporary.path().join("entities/moved-a"),
+    )
+    .unwrap();
+    fs::rename(
+        temporary.path().join("entities/canonical"),
+        temporary.path().join("entities/moved-b"),
+    )
+    .unwrap();
+    assert_eq!(
+        detect_name_variant_candidates(temporary.path()).unwrap(),
+        expected
+    );
+    assert!(!temporary.path().join("entities/alias").exists());
+    assert!(!temporary.path().join("entities/canonical").exists());
+}
+
+#[test]
 fn ac2_principal_twin_is_excluded_but_nonprincipal_twin_is_candidate() {
     let temporary = Temp::new();
     entity(
