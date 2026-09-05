@@ -115,8 +115,19 @@ pub fn inspect_brain_state(
     config: &Map<String, Value>,
     now: DateTime<Utc>,
 ) -> BrainInspection {
-    let (record, raw, status, record_reason, error) = match fs::read(brain_state_path(journal_path))
-    {
+    inspect_brain_state_with_clock(journal_path, config, || now)
+}
+
+pub fn inspect_brain_state_with_clock(
+    journal_path: &Path,
+    config: &Map<String, Value>,
+    clock: impl FnOnce() -> DateTime<Utc>,
+) -> BrainInspection {
+    // Sample after the read: a concurrent renewal may be newer than the time
+    // at which a caller started its health-check battery.
+    let bytes = fs::read(brain_state_path(journal_path));
+    let now = clock();
+    let (record, raw, status, record_reason, error) = match bytes {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => (
             None,
             None,

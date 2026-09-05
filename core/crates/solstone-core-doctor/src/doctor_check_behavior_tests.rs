@@ -129,7 +129,11 @@ fn status(name: &str, context: &CheckContext) -> Status {
     result(name, context).status
 }
 fn result(name: &str, context: &CheckContext) -> CheckResult {
-    (registry::lookup(Battery::Journal, name).unwrap().runner)(context).unwrap()
+    let entry = registry::lookup(Battery::Journal, name).unwrap();
+    if name == "brain" {
+        return crate::checks::brain::run_with_clock(context, entry.check, || context.now).unwrap();
+    }
+    (entry.runner)(context).unwrap()
 }
 fn write_client_fixture(context: &CheckContext, name: &str, value: serde_json::Value) {
     if value.get("enabled").and_then(serde_json::Value::as_bool) == Some(false)
@@ -1294,6 +1298,59 @@ fn brain_ready_and_checking_records_are_healthy() {
         row.detail,
         "checking how processing runs; state=checking; reason=brain check in progress; component=none; evidence_age=unknown"
     );
+}
+
+#[test]
+fn brain_refresh_after_battery_start_is_not_a_future_record() {
+    let mut context = fixture();
+    context.now = chrono::Utc::now();
+    let _permit = stage_brain_checking(&context);
+    context.now -= chrono::Duration::seconds(30);
+    let entry = registry::lookup(Battery::Journal, "brain").unwrap();
+    let row = (entry.runner)(&context).unwrap();
+    assert_eq!(row.status, Status::Ok, "{}", row.detail);
+    assert!(row.detail.contains("state=checking"), "{}", row.detail);
+}
+
+#[test]
+fn brain_clock_is_sampled_after_reading_the_record() {
+    let mut context = fixture();
+    context.now = chrono::Utc::now();
+    let _permit = stage_brain_checking(&context);
+    let path = context.journal_path.join("health/brain.json");
+    let before = fs::read(&path).unwrap();
+    let entry = registry::lookup(Battery::Journal, "brain").unwrap();
+    let row = crate::checks::brain::run_with_clock(&context, entry.check, || {
+        // Replacing the file here must not change the already-read snapshot.
+        fs::write(&path, "{").unwrap();
+        context.now + chrono::Duration::seconds(1)
+    })
+    .unwrap();
+    assert_eq!(row.status, Status::Ok, "{}", row.detail);
+    fs::write(path, before).unwrap();
+}
+
+#[test]
+fn brain_fresh_clock_preserves_future_and_expiry_warnings() {
+    let mut future = fixture();
+    future.now = chrono::Utc::now() + chrono::Duration::hours(1);
+    let _permit = stage_brain_checking(&future);
+    let entry = registry::lookup(Battery::Journal, "brain").unwrap();
+    let row = (entry.runner)(&future).unwrap();
+    assert_eq!(row.status, Status::Warn, "{}", row.detail);
+    assert!(
+        row.detail.contains("brain record invalid"),
+        "{}",
+        row.detail
+    );
+
+    let expired = fixture();
+    stage_brain_ready(&expired);
+    let row = crate::checks::brain::run_with_clock(&expired, entry.check, || {
+        expired.now + chrono::Duration::days(2)
+    })
+    .unwrap();
+    assert_eq!(row.status, Status::Warn, "{}", row.detail);
 }
 
 #[test]
