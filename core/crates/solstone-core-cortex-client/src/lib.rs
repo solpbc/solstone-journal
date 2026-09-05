@@ -549,9 +549,23 @@ fn recover_completed_from_disk(
     pending: &mut HashSet<String>,
     completed: &mut BTreeMap<String, UseCompletion>,
 ) -> Result<(), CortexClientError> {
+    recover_completed_from_disk_with(journal, pending, completed, get_use_end_state)
+}
+
+fn recover_completed_from_disk_with(
+    journal: &Path,
+    pending: &mut HashSet<String>,
+    completed: &mut BTreeMap<String, UseCompletion>,
+    mut read_end_state: impl FnMut(&Path, &str) -> io::Result<UseEndState>,
+) -> Result<(), CortexClientError> {
     for use_id in pending.clone() {
-        let end_state =
-            get_use_end_state(journal, &use_id).map_err(CortexClientError::ReadUseLog)?;
+        let end_state = match read_end_state(journal, &use_id) {
+            Ok(state) => state,
+            // Cortex can rename the active log after resolution but before open.
+            // Keep waiting for a terminal event; absence is never completion.
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(CortexClientError::ReadUseLog(error)),
+        };
         if end_state.is_terminal() {
             let fields = if end_state == UseEndState::Finish {
                 // `get_use_end_state` just resolved and read this very log to learn the
@@ -682,6 +696,55 @@ mod tests {
             ids,
             (42..42 + i64::try_from(WORKERS).unwrap()).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn log_rename_during_completion_read_leaves_use_pending_until_durable_finish() {
+        let journal = tempfile::tempdir().unwrap();
+        active_use(
+            journal.path(),
+            "moving",
+            "{\"use_id\":\"moving\"}\n{\"event\":\"finish\"}\n",
+        );
+        let mut pending = HashSet::from(["moving".to_owned()]);
+        let mut completed = BTreeMap::new();
+        recover_completed_from_disk_with(
+            journal.path(),
+            &mut pending,
+            &mut completed,
+            |root, id| {
+                let (_, path) = find_use_file(&root.join("talents"), id)?;
+                let path = path.unwrap();
+                fs::rename(&path, path.with_file_name(format!("{id}.jsonl")))?;
+                read_events_at(&path)?;
+                unreachable!("the resolved active path was renamed before opening")
+            },
+        )
+        .unwrap();
+        assert!(pending.contains("moving"));
+        assert!(completed.is_empty());
+        recover_completed_from_disk(journal.path(), &mut pending, &mut completed).unwrap();
+        assert!(pending.is_empty());
+        assert_eq!(completed["moving"].end_state, UseEndState::Finish);
+    }
+
+    #[test]
+    fn completion_read_errors_other_than_not_found_still_fail() {
+        let journal = tempfile::tempdir().unwrap();
+        for kind in [io::ErrorKind::PermissionDenied, io::ErrorKind::InvalidData] {
+            let mut pending = HashSet::from(["unreadable".to_owned()]);
+            let mut completed = BTreeMap::new();
+            let error = recover_completed_from_disk_with(
+                journal.path(),
+                &mut pending,
+                &mut completed,
+                |_, _| Err(io::Error::new(kind, "read refused")),
+            )
+            .unwrap_err();
+            assert!(matches!(error, CortexClientError::ReadUseLog(e) if e.kind() == kind));
+            assert!(pending.contains("unreadable"));
+            assert!(completed.is_empty());
+        }
     }
 
     #[test]
