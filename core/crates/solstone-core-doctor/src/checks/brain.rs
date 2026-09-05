@@ -5,6 +5,14 @@ use crate::{
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
+    run_with_clock(context, check, chrono::Utc::now)
+}
+
+pub(crate) fn run_with_clock(
+    context: &CheckContext,
+    check: Check,
+    clock: impl FnOnce() -> chrono::DateTime<chrono::Utc>,
+) -> RunnerResult {
     let config = solstone_core_journal_config::read_journal_config(&context.journal_path)
         .map_err(|error| crate::vocabulary::ExecutionError {
             kind: "ConfigLoadError".into(),
@@ -12,8 +20,12 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         })?
         .config
         .unwrap_or_default();
+    let mut now = context.now;
     let inspection =
-        solstone_core_brain::inspect_brain_state(&context.journal_path, &config, context.now);
+        solstone_core_brain::inspect_brain_state_with_clock(&context.journal_path, &config, || {
+            now = clock();
+            now
+        });
     if !matches!(inspection.status, solstone_core_brain::InspectionStatus::Ok) {
         return Ok(make_result(
             check,
@@ -29,7 +41,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             None::<String>,
         ));
     }
-    let view = solstone_core_brain::present_brain_inspection(&inspection, context.now);
+    let view = solstone_core_brain::present_brain_inspection(&inspection, now);
     let detail = format!(
         "{}; state={}; reason={}; component={}; evidence_age={}",
         view.headline,

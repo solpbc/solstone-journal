@@ -23,8 +23,8 @@ pub use fingerprint::{
 pub use inspect::{
     BrainInspection, BrainProjection, BundledRuntimePrerequisiteAssessment, InspectionStatus,
     assess_bundled_runtime_prerequisite, brain_fingerprint_key_path, brain_refresh_lease_path,
-    brain_state_path, inspect_brain_state, load_existing_fingerprint_key, probe_file_lease_held,
-    project_brain_state,
+    brain_state_path, inspect_brain_state, inspect_brain_state_with_clock,
+    load_existing_fingerprint_key, probe_file_lease_held, project_brain_state,
 };
 pub use presentation::{BrainEvidencePresentation, BrainPresentation, present_brain_inspection};
 pub use record::{
