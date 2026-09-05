@@ -3,7 +3,7 @@
 </style>
 <section class="search-app" id="journal-search">
 <h1>search your journal</h1>
-<p>find words and phrases in your journal, then open the source.</p>
+<p>find words and phrases in your journal, then read the matched entry.</p>
 <form action="/app/search/" method="get" role="search">
 <label for="journal-search-query">words or phrase</label>
 <div class="search-query-row"><input id="journal-search-query" name="q" type="search" required placeholder="what would you like to find?" autocomplete="off"><button type="submit">search</button></div>
@@ -46,16 +46,16 @@
   card.append(meta);const text=node('p','search-excerpt');text.append(excerpt(hit.text));card.append(text);
   const actions=node('div','search-actions');const destination=sourceLink(hit);
   if(destination){const a=node('a','search-link',String(hit.path).startsWith('entity_search:')?'open entity':'open transcript');a.href=destination;actions.append(a);}
-  const path=String(hit.path||'').replace(/:\d+$/,'');
-  if(path&&!path.startsWith('entity_search:')){
-   const button=node('button','','read source');button.type='button';button.setAttribute('aria-expanded','false');const content=node('pre','search-source');content.hidden=true;
+  const path=String(hit.path||'');
+  if(path&&!path.startsWith('entity_search:')&&hit.entry_id){
+   const button=node('button','','read matched entry');button.type='button';button.setAttribute('aria-expanded','false');const content=node('pre','search-source');content.hidden=true;
    button.addEventListener('click',async()=>{
-    if(!content.hidden){content.hidden=true;button.setAttribute('aria-expanded','false');button.textContent='read source';return;}
-    content.hidden=false;button.setAttribute('aria-expanded','true');button.textContent='close source';
+    if(!content.hidden){content.hidden=true;button.setAttribute('aria-expanded','false');button.textContent='read matched entry';return;}
+    content.hidden=false;button.setAttribute('aria-expanded','true');button.textContent='close entry';
     if(content.dataset.loaded)return;
-    content.textContent='loading source…';
-    try{const data=await window.apiJson('/app/search/api/read?'+new URLSearchParams({path}));if(!root.isConnected)return;content.textContent=data.content;content.dataset.loaded='true';}
-    catch(error){if(!root.isConnected)return;content.textContent='couldn’t open this source. '+String(error.serverMessage||error.message||'try again.');if(error.rawDetail)content.textContent+=' '+String(error.rawDetail);}
+    content.textContent='loading entry…';
+    try{const data=await window.apiJson('/app/search/api/entry?'+new URLSearchParams({path,idx:String(hit.idx),entry_id:String(hit.entry_id)}));if(!root.isConnected)return;content.replaceChildren(node('span','search-meta','as last indexed'),document.createTextNode(data.content));content.dataset.loaded='true';}
+    catch(error){if(!root.isConnected)return;content.textContent='couldn’t open this entry. '+String(error.serverMessage||error.message||'try again.');if(error.rawDetail)content.textContent+=' '+String(error.rawDetail);}
    });actions.append(button);card.append(actions,content);
   }else card.append(actions);
   return card;

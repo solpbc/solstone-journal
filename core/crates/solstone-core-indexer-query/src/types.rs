@@ -93,6 +93,8 @@ impl SearchRequest {
 /// One FTS row, shaped like the Python journal search result.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct SearchHit {
+    #[serde(skip)]
+    pub row_id: i64,
     pub id: String,
     pub text: String,
     pub metadata: SearchMetadata,

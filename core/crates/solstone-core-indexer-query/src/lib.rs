@@ -23,7 +23,10 @@ pub use edges::{
     OverviewEntity, OverviewTotals, is_safe_entity_id_component, load_edge_evidence,
     load_entity_network, load_network_overview, open_edges_reader,
 };
-pub use execute::{agents, coverage, hit_at, indexed_entity_ids, search, search_counts};
+pub use execute::{
+    IndexedEntry, agents, coverage, hit_at, indexed_entity_ids, read_indexed_entry, search,
+    search_counts,
+};
 pub use predicate::{EffectiveDateConstraint, PredicateInput, QueryPredicate};
 pub use temporal::{TemporalExtraction, extract_temporal_references};
 pub use types::{

@@ -1021,3 +1021,60 @@ fn search_purges_authored_chat_rows_without_rescanning() {
 
     fs::remove_dir_all(root).expect("cleanup purge authored chat");
 }
+
+#[test]
+fn indexed_entry_is_bounded_and_does_not_prune_or_open_source_files() {
+    use crate::{IndexedEntry, read_indexed_entry};
+    let (root, connection) = seeded_root("entry-read");
+    let path = "chronicle/20260107/talents/review.jsonl";
+    let content = "é".repeat(8192);
+    insert(&connection, &content, path, "20260107", "", "review", "", 7);
+    let id = connection.last_insert_rowid();
+    let chat_path = "chronicle/20260107/chat/owner/chat.jsonl";
+    insert(
+        &connection,
+        "authored",
+        chat_path,
+        "20260107",
+        "",
+        "",
+        "",
+        0,
+    );
+    let chat_id = connection.last_insert_rowid();
+    drop(connection);
+    let before = fs::read(db_path(&root)).unwrap();
+    assert_eq!(
+        read_indexed_entry(&root, path, 7, id, 16384).unwrap(),
+        IndexedEntry::Found(content)
+    );
+    assert_eq!(
+        read_indexed_entry(&root, path, 7, id, 16383).unwrap(),
+        IndexedEntry::TooLarge
+    );
+    assert_eq!(
+        read_indexed_entry(&root, path, 8, id, 16384).unwrap(),
+        IndexedEntry::NotFound
+    );
+    assert_eq!(
+        read_indexed_entry(&root, "different", 7, id, 16384).unwrap(),
+        IndexedEntry::NotFound
+    );
+    assert_eq!(
+        read_indexed_entry(&root, path, 7, chat_id + 1, 16384).unwrap(),
+        IndexedEntry::NotFound
+    );
+    assert_eq!(
+        read_indexed_entry(&root, chat_path, 0, chat_id, 16384).unwrap(),
+        IndexedEntry::NotFound
+    );
+    assert_eq!(fs::read(db_path(&root)).unwrap(), before);
+    assert!(!root.join(path).exists());
+    let absent = temp_root("entry-absent");
+    assert!(matches!(
+        read_indexed_entry(&absent, path, 7, id, 16384),
+        Err(IndexAccessError::Absent { .. })
+    ));
+    assert!(!absent.exists());
+    fs::remove_dir_all(root).unwrap();
+}
