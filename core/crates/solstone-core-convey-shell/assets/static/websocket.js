@@ -338,6 +338,11 @@
 	    eventSource = new EventSource('/sse/events');
 
     eventSource.onopen = () => {
+      updateStatusIcon('connecting');
+    };
+
+    function connected() {
+      if (connectionState === 'connected') return;
       connectedAt = Date.now();
       updateStatusIcon('connected');
 
@@ -359,7 +364,7 @@
           app: 'system',
           icon: 'check',
           title: 'reconnected',
-          message: 'all features restored',
+          message: 'live updates connected',
           dismissible: true
         });
         if (reconnectedId != null) {
@@ -369,10 +374,28 @@
       }
 
       console.debug('[SSE] Connected to /sse/events');
-    };
+    }
+
+    eventSource.addEventListener('continuity', event => {
+      let continuity;
+      try {
+        continuity = JSON.parse(event.data);
+      } catch (err) {
+        notifyParseError(err, event.data);
+        return;
+      }
+      if (continuity.state === 'connected') {
+        connected();
+      } else {
+        connectedAt = null;
+        lastMessageAt = null;
+        updateStatusIcon(continuity.state === 'connecting' ? 'connecting' : 'disconnected');
+      }
+    });
 
 	    eventSource.onerror = err => {
 	      connectedAt = null;
+          lastMessageAt = null;
 	      updateStatusIcon('disconnected');
 	      if (firstDisconnectAt === null) {
 	        firstDisconnectAt = Date.now();
@@ -409,7 +432,6 @@
 	    };
 
     eventSource.onmessage = event => {
-      lastMessageAt = Date.now();
 
       let msg;
       try {
@@ -420,6 +442,10 @@
         return;
       }
 
+      // A fresh envelope also resumes delivery after a recoverable bus gap.
+      // It does not restore any app's discarded status snapshot.
+      connected();
+      lastMessageAt = Date.now();
       const tract = msg.tract;
       if (tract) {
         dispatchToRecords(tract, msg);
@@ -533,9 +559,8 @@
   }, {}));
 
   addListenerRecord('navigate', createListenerRecord(function(msg) {
-    if (msg.path) {
-      window.location.href = msg.path;
-    }
+    const path = window.AppServices?.sameOriginPath(msg.path);
+    if (path) window.location.href = path;
   }, {}));
 
   if (document.readyState === 'loading') {

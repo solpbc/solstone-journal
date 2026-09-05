@@ -652,7 +652,13 @@ fn router_with_hosted_parent(
                 move || system::status(journal_root.clone())
             }),
         )
-        .route("/sse/events", get(sse::events));
+        .route(
+            "/sse/events",
+            get({
+                let journal_root = journal_root.clone();
+                move || sse::events(journal_root.clone())
+            }),
+        );
     for prefix in network::NETWORK_ROUTE_PREFIXES {
         routes = routes
             .merge(network::direct_routes(prefix, pair_windows.clone()))

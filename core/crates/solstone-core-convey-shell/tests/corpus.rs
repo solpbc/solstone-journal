@@ -884,3 +884,120 @@ async fn an_unconverted_app_refusal_is_never_a_success_status() {
         }
     }
 }
+
+#[cfg(unix)]
+mod live_sse {
+    use super::*;
+    use futures_util::StreamExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{UnixListener, UnixStream};
+    use tokio::time::{Duration, timeout};
+
+    async fn frame(body: &mut axum::body::BodyDataStream) -> String {
+        let bytes = timeout(Duration::from_secs(3), body.next())
+            .await
+            .expect("SSE must make progress")
+            .expect("SSE remains open")
+            .unwrap();
+        String::from_utf8(bytes.to_vec()).unwrap()
+    }
+
+    async fn until(body: &mut axum::body::BodyDataStream, needle: &str) -> String {
+        timeout(Duration::from_secs(4), async {
+            loop {
+                let frame = frame(body).await;
+                if frame.contains(needle) {
+                    return frame;
+                }
+            }
+        })
+        .await
+        .expect("expected SSE frame")
+    }
+
+    async fn open() -> (
+        TempDir,
+        UnixListener,
+        UnixStream,
+        axum::body::BodyDataStream,
+    ) {
+        let journal = journal_for_phase("established");
+        std::fs::create_dir_all(journal.0.join("health")).unwrap();
+        let listener = UnixListener::bind(journal.0.join("health/callosum.sock")).unwrap();
+        let response = router(journal.0.clone())
+            .oneshot(Request::get("/sse/events").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let mut body = response.into_body().into_data_stream();
+        let (socket, _) = timeout(Duration::from_secs(3), listener.accept())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            until(&mut body, "\"connected\"")
+                .await
+                .starts_with("event: continuity\n")
+        );
+        (journal, listener, socket, body)
+    }
+
+    #[tokio::test]
+    async fn envelopes_reach_the_browser_and_body_drop_closes_the_socket() {
+        let (_journal, _listener, mut socket, mut body) = open().await;
+        let envelope = serde_json::json!({"tract":"supervisor", "event":"status", "ts":123,
+            "services":[{"name":"sense"}], "extension":{"line":"one\ntwo"}});
+        socket
+            .write_all(format!("{envelope}\n").as_bytes())
+            .await
+            .unwrap();
+        let data = until(&mut body, "\"supervisor\"").await;
+        assert!(!data.contains("event: continuity"));
+        let payload = data.strip_prefix("data: ").unwrap().trim();
+        assert_eq!(serde_json::from_str::<Value>(payload).unwrap(), envelope);
+        drop(body);
+        let mut byte = [0];
+        assert_eq!(
+            timeout(Duration::from_secs(3), socket.read(&mut byte))
+                .await
+                .unwrap()
+                .unwrap(),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn broker_disconnect_is_visible_before_fresh_reconnected_data() {
+        let (_journal, listener, socket, mut body) = open().await;
+        drop(socket);
+        let gap = until(&mut body, "\"gapped\"").await;
+        assert!(gap.starts_with("event: continuity\n"));
+        let (mut replacement, _) = timeout(Duration::from_secs(3), listener.accept())
+            .await
+            .unwrap()
+            .unwrap();
+        until(&mut body, "\"connected\"").await;
+        replacement
+            .write_all(b"{\"tract\":\"cortex\",\"event\":\"status\",\"running_uses\":1}\n")
+            .await
+            .unwrap();
+        assert!(
+            until(&mut body, "\"cortex\"")
+                .await
+                .contains("\"running_uses\":1")
+        );
+    }
+
+    #[tokio::test]
+    async fn malformed_frame_reports_gap_and_never_becomes_browser_data() {
+        let (_journal, _listener, mut socket, mut body) = open().await;
+        socket.write_all(b"this is not json\n").await.unwrap();
+        until(&mut body, "\"gapped\"").await;
+        until(&mut body, "\"connected\"").await;
+        socket
+            .write_all(b"{\"tract\":\"observe\",\"event\":\"status\"}\n")
+            .await
+            .unwrap();
+        assert!(until(&mut body, "\"observe\"").await.starts_with("data: "));
+    }
+}

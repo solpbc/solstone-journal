@@ -407,8 +407,9 @@ window.whenShellReady(() => {
     container.innerHTML = history.map(n => {
       const relativeAge = window.AppServices.notifications._getRelativeTime(n.timestamp);
 
-      if (n.action) {
-        return `<a href="${escape(n.action)}" class="status-pane-history-item" style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin: 0 -8px; border-radius: 4px; text-decoration: none; color: inherit;">
+      const action = window.AppServices.sameOriginPath(n.action);
+      if (action) {
+        return `<a href="${escape(action)}" class="status-pane-history-item" style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin: 0 -8px; border-radius: 4px; text-decoration: none; color: inherit;">
           <span class="icon-slot" style="font-size: 16px; flex-shrink: 0;" aria-hidden="true">${resolveIcon(n.icon)}</span>
           <span style="font-weight: 500; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escape(n.title)}</span>
           <span style="color: #9ca3af; font-size: 11px; flex-shrink: 0;">${relativeAge}</span>

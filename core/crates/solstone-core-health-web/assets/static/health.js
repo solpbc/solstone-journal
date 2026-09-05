@@ -64,6 +64,8 @@
 
   const state = {
     supervisorSeen: false,
+    supervisorStatusAt: null,
+    cortexStatusAt: null,
     cortexSeen: false,
     registeredClients: null,
     registeredClientsFailed: false,
@@ -643,7 +645,8 @@
   }
 
   function updateAllQuiet() {
-    const allHidden = elements.cortexSection.classList.contains('hidden') &&
+    const allHidden = state.supervisorSeen && state.cortexSeen && state.tasks.length === 0 &&
+      elements.cortexSection.classList.contains('hidden') &&
       elements.importerSection.classList.contains('hidden') &&
       elements.thinkCard.classList.contains('hidden');
     if (allHidden) updateAllQuietContent();
@@ -1168,18 +1171,6 @@
 
   // Update vitals bar
   function updateVitals() {
-    if (connectError && !state.connected) {
-      elements.vitalsStatus.textContent = '';
-      const indicator = document.createElement('span');
-      indicator.className = 'status-indicator crashed';
-      elements.vitalsStatus.appendChild(indicator);
-      const errText = document.createElement('span');
-      errText.textContent = ' Connection error';
-      elements.vitalsStatus.appendChild(errText);
-      updateStatusSummary();
-      return;
-    }
-
     // Combine running and crashed services
     const allServices = [];
 
@@ -1195,6 +1186,7 @@
 
     if (allServices.length > 0) {
       const container = elements.serviceDots;
+      if (!container.children.length) container.textContent = '';
       const existingByKey = new Map();
       for (const child of Array.from(container.children)) {
         const key = child.getAttribute('data-service');
@@ -1232,6 +1224,12 @@
         dot.children[1].setAttribute('title', name);
         dot.children[1].textContent = serviceName(name) + restartInfo;
       }
+    }
+
+    if (!state.supervisorSeen) {
+      elements.serviceDots.textContent = 'unavailable';
+      elements.healthValue.textContent = 'unavailable';
+      updateVitalsStatus('unavailable');
     }
 
     // Agents count
@@ -1398,6 +1396,12 @@
       text.textContent = 'services need attention';
       severity.textContent = 'error';
       el.classList.add('error');
+    } else {
+      indicator.className = 'status-indicator';
+      indicator.setAttribute('aria-label', 'system status: unavailable');
+      text.textContent = 'unavailable';
+      severity.textContent = '';
+      el.classList.add('unavailable');
     }
   }
 
@@ -2322,8 +2326,13 @@
 
   // Event handlers by tract
   function handleSupervisorEvent(msg) {
+    if (msg.event === 'status-error') {
+      invalidateRealtime();
+      return;
+    }
     if (msg.event === 'status') {
       state.supervisorSeen = true;
+      state.supervisorStatusAt = Date.now();
       if (!state.connected) {
         state.connected = true;
         connectError = false;
@@ -2368,6 +2377,7 @@
     if (msg.event === 'status') {
       // Update agent count for vitals
       state.cortexSeen = true;
+      state.cortexStatusAt = Date.now();
       state.agentCount = msg.running_uses || 0;
 
       // Status event contains array of uses
@@ -2544,6 +2554,7 @@
     else if (tract === 'importer') handleImporterEvent(msg);
     else if (tract === 'think') handleThinkEvent(msg);
     else if (tract === 'logs') handleLogsEvent(msg);
+    updateConnectionHealth();
     updateStatusSummary();
   }
 
@@ -2736,10 +2747,39 @@
   const registeredClientsReady = loadRegisteredClients();
 	  let healthInitialized = false;
 
+  function invalidateRealtime() {
+    state.connected = false;
+    state.supervisorSeen = false;
+    state.cortexSeen = false;
+    state.supervisorStatusAt = null;
+    state.cortexStatusAt = null;
+    state.lastEventTs = null;
+    state.services.clear();
+    state.crashed.clear();
+    state.tasks = [];
+    state.health = null;
+    state.queues = {};
+    state.schedules = [];
+    state.agents.clear();
+    state.imports.clear();
+    state.clients.clear();
+    state.think = null;
+    state.thinkActive = false;
+    updateVitals();
+    updateCortexGrid();
+    updateImporterGrid();
+    updateThinkCard();
+    updateObserve();
+    updateConnectionHealth();
+  }
+
 	  function initHealthRealtime() {
 	    wireBacklogReprocessActions();
 	    if (window.appEvents) {
 	      window.appEvents.listen('*', handleEvent);
+          window.appEvents.onConnectionState?.(({ connected }) => {
+            if (!connected) invalidateRealtime();
+          });
     }
 
 	    armSkeletonTimeout();
@@ -2792,18 +2832,31 @@
   }
 
   function updateConnectionHealth() {
+    // A busy event bus cannot keep an old supervisor or cortex snapshot fresh.
+    const now = Date.now();
+    if (state.supervisorStatusAt && now - state.supervisorStatusAt >= 30000) {
+      invalidateRealtime();
+      return;
+    }
+    if (state.cortexStatusAt && now - state.cortexStatusAt >= 30000) {
+      state.cortexStatusAt = null;
+      state.cortexSeen = false;
+      state.agents.clear();
+      updateVitals();
+      updateCortexGrid();
+    }
     const el = elements.connectionIndicator;
     if (!state.lastEventTs) {
-      el.textContent = '';
+      el.textContent = 'waiting for live updates';
       el.className = 'connection-indicator';
-      elements.logsConnectionNote.textContent = '';
-      elements.logsConnectionNote.classList.add('hidden');
+      elements.logsConnectionNote.textContent = 'log updates may be delayed';
+      elements.logsConnectionNote.classList.remove('hidden');
       return;
     }
     const ago = Math.floor((Date.now() - state.lastEventTs) / 1000);
     const agoText = relativeTime(ago * 1000);
     if (ago >= 60) {
-      el.textContent = `⚠ Disconnected (${agoText})`;
+      el.textContent = `no recent updates (${agoText})`;
       el.className = 'connection-indicator disconnected';
       elements.logsConnectionNote.textContent = 'log updates may be delayed';
       elements.logsConnectionNote.classList.remove('hidden');

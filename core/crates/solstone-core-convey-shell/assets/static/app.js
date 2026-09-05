@@ -543,6 +543,9 @@ window.AppServices = {
      * @returns {number} Notification ID
      */
     show(options) {
+      const action = window.AppServices.sameOriginPath(options.action);
+      const autoDismiss = Number.isFinite(options.autoDismiss) && options.autoDismiss > 0
+        ? options.autoDismiss : null;
       const key = options.key ? String(options.key) : null;
       const workKey = options.work_key ? String(options.work_key) : null;
       const buttons = this._normalizeButtons(options.buttons);
@@ -560,10 +563,10 @@ window.AppServices = {
           if (hasIcon) existing.icon = normalizedIcon;
           existing.title = options.title || existing.title;
           existing.message = options.message || '';
-          existing.action = options.action || null;
+          existing.action = action;
           existing.dismissible = options.dismissible !== false;
           existing.badge = options.badge || this._countBadge(existing.count);
-          existing.autoDismiss = options.autoDismiss || null;
+          existing.autoDismiss = autoDismiss;
           existing.buttons = buttons;
           this._render();
           return existing.id;
@@ -577,12 +580,12 @@ window.AppServices = {
         icon: normalizedIcon,
         title: options.title || 'Notification',
         message: options.message || '',
-        action: options.action || null,
+        action,
         dismissible: options.dismissible !== false,
         badge: options.badge || null,
         timestamp,
         lastSeen: timestamp,
-        autoDismiss: options.autoDismiss || null,
+        autoDismiss,
         buttons
       };
 
@@ -723,6 +726,8 @@ window.AppServices = {
       if (!notif) return;
 
       Object.assign(notif, options);
+      notif.action = window.AppServices.sameOriginPath(notif.action);
+      if (!Number.isFinite(notif.autoDismiss) || notif.autoDismiss <= 0) notif.autoDismiss = null;
       this._render();
     },
 
@@ -1009,6 +1014,7 @@ window.AppServices = {
         this._attachClickHandler(card, n);
       } else {
         card.style.cursor = 'default';
+        card.removeAttribute('href');
         card.onclick = null;
       }
     },
@@ -1109,6 +1115,17 @@ window.AppServices = {
       return await Notification.requestPermission();
     }
     return Notification.permission;
+  },
+
+  sameOriginPath(value) {
+    if (typeof value !== 'string' || !value.startsWith('/')) return null;
+    try {
+      const url = new URL(value, window.location.origin);
+      return url.origin === window.location.origin && !url.pathname.startsWith('//')
+        ? url.pathname + url.search + url.hash : null;
+    } catch (_) {
+      return null;
+    }
   },
 
   /**
