@@ -16,6 +16,8 @@ mod map;
 pub(crate) mod merge;
 pub(crate) mod merge_payload;
 mod merge_rollback;
+#[cfg(all(test, unix))]
+pub(crate) use merge_rollback::with_source_sync_failure;
 mod paths;
 mod reconcile;
 mod repair;

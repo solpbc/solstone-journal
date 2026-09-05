@@ -150,6 +150,17 @@ pub fn sync_dir(root: &Path, dir_rel: &str) -> Result<(), PathError> {
         .map_err(|source| PathError::Io { path, source })
 }
 
+/// Flush the journal root's entries, including newly created domain directories.
+#[cfg(unix)]
+pub fn sync_root(root: &Path) -> Result<(), PathError> {
+    fs::File::open(root)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|source| PathError::Io {
+            path: root.to_owned(),
+            source,
+        })
+}
+
 /// Flush an already-bound directory's own entries to disk.
 ///
 /// Returns its error. This never opens a directory via `AT_FDCWD`.

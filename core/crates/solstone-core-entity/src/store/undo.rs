@@ -140,6 +140,8 @@ pub(crate) fn undo_entity_merge_with_injector(
             EntityUndoError::Refused("merge payload missing source entity id".to_owned())
         })?
         .to_owned();
+    let mut rollback = MergeRollback::default();
+    preflight_file_restoration(journal, &target_dir, &payload, &mut rollback)?;
     let source_snapshots = preflight_source_restoration(
         journal,
         &target_id,
@@ -151,7 +153,7 @@ pub(crate) fn undo_entity_merge_with_injector(
         source_id: source_id.clone(),
         target_id: target_id.clone(),
     };
-    let mut rollback = MergeRollback::begin(journal)?;
+    rollback.start(journal)?;
     let mut phase = "snapshot";
     let result: Result<(), EntityUndoError> = (|| {
         let mut paths = HashSet::from([format!("entities/{target_dir}")]);
@@ -1018,6 +1020,57 @@ fn find_payload_holder(journal: &Path, merge_id: &str) -> Result<String, EntityU
     Err(EntityUndoError::Refused(format!(
         "private merge payload not found: {merge_id}"
     )))
+}
+
+fn preflight_file_restoration(
+    journal: &Path,
+    target_dir: &str,
+    payload: &Value,
+    rollback: &mut MergeRollback,
+) -> Result<(), EntityUndoError> {
+    let mut paths =
+        std::collections::BTreeSet::from([format!("entities/{target_dir}/voiceprints.npz")]);
+    for section in ["segments", "activities", "observation_relations"] {
+        for entry in manifest_entries(payload, section)? {
+            paths.insert(entry_path(entry, section)?.to_owned());
+        }
+    }
+    // Segment writers use per-file locks rather than entity-trust. Acquire
+    // their complete set before reading any proof and keep them through undo.
+    for path in &paths {
+        if path.starts_with("chronicle/") {
+            let destination = contained_path(journal, path)
+                .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
+            rollback.lock_file(&destination)?;
+        }
+    }
+    for path in paths {
+        let current = solstone_core_journal_io::capture_snapshot(journal, &path)?;
+        if payload["manifest"]["undo_expected"][&path].is_null()
+            && path == format!("entities/{target_dir}/voiceprints.npz")
+        {
+            let before =
+                snapshot_from_payload(&payload["manifest"]["voiceprints"]["target_before"])?;
+            // Older payloads can prove this one restoration is a no-op without
+            // inventing an after-state for positional or merged-facet edits.
+            if snapshot_path(&before) == path && current == before {
+                continue;
+            }
+        }
+        let expected = payload["manifest"]["undo_expected"][&path]
+            .as_str()
+            .ok_or_else(|| {
+                EntityUndoError::Refused(format!(
+                    "cannot safely undo merge: recorded target state is missing at {path}"
+                ))
+            })?;
+        if super::merge_rollback::fingerprint(&current) != expected {
+            return Err(EntityUndoError::Refused(format!(
+                "cannot undo merge: target artifact changed at {path}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn preflight_source_restoration(

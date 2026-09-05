@@ -343,7 +343,7 @@ pub(crate) fn commit_entity_merge_with_injector(
                     payload["manifest"]["facets"]["entries"] = Value::Array(result.entries);
                 }),
             "history" => (|| {
-                capture_facet_undo_expected(journal, &mut payload)?;
+                capture_undo_expected(journal, &target_dir, &mut payload)?;
                 let saved = save_entity_identity(journal, target_id, &plan.target_after, Some(&EntityOperationContext {
                     kind: EntityOperationKind::Merge, caller: Value::Null, actor: Value::Null,
                     metadata: json!({"merge_id":merge_id,"source_id":source_id,"target_id":target_id}),
@@ -492,8 +492,9 @@ pub(crate) fn commit_entity_merge_with_injector(
         .map_err(|error| EntityMergeError::Refused(error.to_string()))
 }
 
-fn capture_facet_undo_expected(
+fn capture_undo_expected(
     journal: &Path,
+    target_dir: &str,
     payload: &mut Value,
 ) -> Result<(), EntityMergeError> {
     // Undo may replace these two artifacts only while they still match
@@ -516,6 +517,27 @@ fn capture_facet_undo_expected(
             }
         }
     }
+    let mut paths =
+        std::collections::BTreeSet::from([format!("entities/{target_dir}/voiceprints.npz")]);
+    for section in ["segments", "activities", "observation_relations"] {
+        for entry in payload["manifest"][section]["entries"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            paths.insert(entry["path"].as_str().expect("merge entry path").to_owned());
+        }
+    }
+    let mut expected = serde_json::Map::new();
+    for path in paths {
+        expected.insert(
+            path.clone(),
+            json!(super::merge_rollback::fingerprint(&capture_snapshot(
+                journal, &path
+            )?)),
+        );
+    }
+    payload["manifest"]["undo_expected"] = Value::Object(expected);
     Ok(())
 }
 
@@ -567,14 +589,10 @@ pub(crate) fn merge_observation_relations(
             }
             let mut rows: Vec<Value> = read_jsonl(&path, Vec::new(), MalformedPolicy::Raise)
                 .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-            let relative_path = path
-                .strip_prefix(journal)
-                .map_err(|error| EntityMergeError::Refused(error.to_string()))?
-                .to_str()
-                .ok_or_else(|| {
-                    EntityMergeError::Refused(format!("path is not UTF-8: {}", path.display()))
-                })?
-                .to_owned();
+            let relative_path = super::merge_rollback::journal_relative(
+                path.strip_prefix(journal)
+                    .map_err(|error| EntityMergeError::Refused(error.to_string()))?,
+            )?;
             let mut changed = false;
             for (row_index, row) in rows.iter_mut().enumerate() {
                 if let Some(relation) = row.get_mut("relation").and_then(Value::as_object_mut)
@@ -643,15 +661,11 @@ pub(crate) fn merge_activities(
             let mut rows: Vec<Value> =
                 read_jsonl(&file.path, Vec::new(), MalformedPolicy::Raise)
                     .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-            let relative_path = file
-                .path
-                .strip_prefix(journal)
-                .map_err(|error| EntityMergeError::Refused(error.to_string()))?
-                .to_str()
-                .ok_or_else(|| {
-                    EntityMergeError::Refused(format!("path is not UTF-8: {}", file.path.display()))
-                })?
-                .to_owned();
+            let relative_path = super::merge_rollback::journal_relative(
+                file.path
+                    .strip_prefix(journal)
+                    .map_err(|error| EntityMergeError::Refused(error.to_string()))?,
+            )?;
             let mut file_changed = false;
             for (row_index, row) in rows.iter_mut().enumerate() {
                 let mut changed = false;
@@ -777,14 +791,10 @@ pub(crate) fn merge_segment_labels(
                 }
                 let mut value: Value = read_json(&path, Value::Null, MalformedPolicy::Raise)
                     .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-                let relative_path = path
-                    .strip_prefix(journal)
-                    .map_err(|error| EntityMergeError::Refused(error.to_string()))?
-                    .to_str()
-                    .ok_or_else(|| {
-                        EntityMergeError::Refused(format!("path is not UTF-8: {}", path.display()))
-                    })?
-                    .to_owned();
+                let relative_path = super::merge_rollback::journal_relative(
+                    path.strip_prefix(journal)
+                        .map_err(|error| EntityMergeError::Refused(error.to_string()))?,
+                )?;
                 let mut changed = false;
                 if let Some(labels) = value.get_mut("labels").and_then(Value::as_array_mut) {
                     for (row_index, label) in labels.iter_mut().enumerate() {
@@ -839,14 +849,10 @@ pub(crate) fn merge_segment_labels(
             }
             let mut value: Value = read_json(&path, Value::Null, MalformedPolicy::Raise)
                 .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-            let relative_path = path
-                .strip_prefix(journal)
-                .map_err(|error| EntityMergeError::Refused(error.to_string()))?
-                .to_str()
-                .ok_or_else(|| {
-                    EntityMergeError::Refused(format!("path is not UTF-8: {}", path.display()))
-                })?
-                .to_owned();
+            let relative_path = super::merge_rollback::journal_relative(
+                path.strip_prefix(journal)
+                    .map_err(|error| EntityMergeError::Refused(error.to_string()))?,
+            )?;
             let mut changed = false;
             if let Some(corrections) = value.get_mut("corrections").and_then(Value::as_array_mut) {
                 for (row_index, correction) in corrections.iter_mut().enumerate() {
@@ -897,14 +903,11 @@ fn capture_rollback_file(
     let Some(rollback) = rollback.as_deref_mut() else {
         return Ok(());
     };
-    let relative = path
-        .strip_prefix(journal)
-        .map_err(|error| EntityMergeError::Refused(error.to_string()))?
-        .to_str()
-        .ok_or_else(|| {
-            EntityMergeError::Refused(format!("path is not UTF-8: {}", path.display()))
-        })?;
-    rollback.capture(journal, relative)?;
+    let relative = super::merge_rollback::journal_relative(
+        path.strip_prefix(journal)
+            .map_err(|error| EntityMergeError::Refused(error.to_string()))?,
+    )?;
+    rollback.capture(journal, &relative)?;
     Ok(())
 }
 

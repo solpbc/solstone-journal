@@ -5,6 +5,8 @@
 //! Recovery never overwrites an artifact changed since its last checkpoint.
 
 use std::collections::BTreeMap;
+#[cfg(unix)]
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
@@ -28,6 +30,12 @@ pub(crate) struct MergeRollback {
 
 impl MergeRollback {
     pub(super) fn begin(journal: &Path) -> Result<Self, SnapshotError> {
+        let rollback = Self::default();
+        rollback.start(journal)?;
+        Ok(rollback)
+    }
+
+    pub(super) fn start(&self, journal: &Path) -> Result<(), SnapshotError> {
         let root = recovery_root(journal)?;
         create_directory_with_mode(&root, 0o700).map_err(SnapshotError::Path)?;
         write_record(
@@ -36,8 +44,11 @@ impl MergeRollback {
             &json!({"source_committed":false,"snapshot_count":0}),
         )?;
         #[cfg(unix)]
-        solstone_core_journal_io::sync_dir(journal, "health").map_err(SnapshotError::Path)?;
-        Ok(Self::default())
+        {
+            solstone_core_journal_io::sync_dir(journal, "health").map_err(SnapshotError::Path)?;
+            solstone_core_journal_io::sync_root(journal).map_err(SnapshotError::Path)?;
+        }
+        Ok(())
     }
 
     /// Keep the existing artifact owner's lock until commit or rollback.
@@ -86,6 +97,7 @@ impl MergeRollback {
         operation: &str,
         report: &Value,
     ) -> Result<(), SnapshotError> {
+        self.sync_sources(journal)?;
         write_record(
             journal,
             "state.json",
@@ -101,8 +113,95 @@ impl MergeRollback {
         for snapshot in self.snapshots.iter().rev() {
             restore_snapshot(journal, snapshot)?;
         }
+        self.sync_sources(journal)?;
         finish(journal)
     }
+
+    fn sync_sources(&self, journal: &Path) -> Result<(), SnapshotError> {
+        // Source writers sync file contents. Their ordinary atomic helpers do
+        // not propagate parent sync failures, and removals do not sync parents.
+        // Persist every affected namespace before discarding its before-image.
+        #[cfg(unix)]
+        {
+            let mut directories = BTreeSet::new();
+            for snapshot in &self.snapshots {
+                let current = capture_snapshot(journal, snapshot_path(snapshot))?;
+                collect_directories(&current, &mut directories);
+                let mut ancestor = Path::new(snapshot_path(snapshot)).parent();
+                while let Some(path) = ancestor {
+                    let relative = journal_relative(path)?;
+                    let relative = if relative.is_empty() { "." } else { &relative };
+                    if relative == "." {
+                        directories.insert(relative.to_owned());
+                        break;
+                    }
+                    let full = contained_path(journal, relative).map_err(SnapshotError::Path)?;
+                    if path_lexists(&full).map_err(SnapshotError::Path)? {
+                        directories.insert(relative.to_owned());
+                    }
+                    ancestor = path.parent();
+                }
+            }
+            let mut directories: Vec<_> = directories.into_iter().collect();
+            directories.sort_by_key(|path| {
+                std::cmp::Reverse(if path == "." {
+                    0
+                } else {
+                    Path::new(path).components().count()
+                })
+            });
+            for relative in directories {
+                sync_source_directory(journal, &relative)?;
+            }
+        }
+        #[cfg(not(unix))]
+        let _ = journal;
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
+fn collect_directories(snapshot: &JournalSnapshot, directories: &mut BTreeSet<String>) {
+    if let JournalSnapshot::Directory(directory) = snapshot {
+        directories.insert(directory.path.clone());
+        for child in &directory.entries {
+            collect_directories(child, directories);
+        }
+    }
+}
+
+#[cfg(unix)]
+fn sync_source_directory(journal: &Path, relative: &str) -> Result<(), SnapshotError> {
+    #[cfg(test)]
+    if FORCED_SOURCE_SYNC_FAILURE.with(|failure| failure.borrow().as_deref() == Some(relative)) {
+        return Err(failure(
+            Path::new(relative),
+            "injected source directory sync failure",
+        ));
+    }
+    if relative == "." {
+        solstone_core_journal_io::sync_root(journal).map_err(SnapshotError::Path)
+    } else {
+        solstone_core_journal_io::sync_dir(journal, relative).map_err(SnapshotError::Path)
+    }
+}
+
+#[cfg(all(test, unix))]
+thread_local! {
+    static FORCED_SOURCE_SYNC_FAILURE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(all(test, unix))]
+pub(crate) fn with_source_sync_failure<T>(relative: &str, run: impl FnOnce() -> T) -> T {
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            FORCED_SOURCE_SYNC_FAILURE.with(|failure| *failure.borrow_mut() = None);
+        }
+    }
+    FORCED_SOURCE_SYNC_FAILURE.with(|failure| *failure.borrow_mut() = Some(relative.to_owned()));
+    let _reset = Reset;
+    run()
 }
 
 /// Called by the real merge and undo entries, while entity-trust is held.
@@ -403,10 +502,9 @@ fn read_record<T: serde::de::DeserializeOwned>(
     let root = realpath_non_strict(journal).map_err(SnapshotError::Path)?;
     let relative = path
         .strip_prefix(&root)
-        .ok()
-        .and_then(|path| path.to_str())
-        .ok_or_else(|| failure(path, "invalid entity recovery record path"))?;
-    match capture_snapshot(journal, relative)? {
+        .map_err(|_| failure(path, "invalid entity recovery record path"))?;
+    let relative = journal_relative(relative)?;
+    match capture_snapshot(journal, &relative)? {
         JournalSnapshot::Missing { .. } => Ok(absent),
         JournalSnapshot::File(file) => {
             serde_json::from_slice(&file.bytes).map_err(|error| failure(path, error))
@@ -418,9 +516,49 @@ fn read_record<T: serde::de::DeserializeOwned>(
     }
 }
 
+pub(super) fn journal_relative(path: &Path) -> Result<String, SnapshotError> {
+    path.components()
+        .map(|component| {
+            component
+                .as_os_str()
+                .to_str()
+                .ok_or_else(|| failure(path, "non-UTF-8 recovery path"))
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(|components| components.join("/"))
+}
+
 fn failure(path: &Path, error: impl std::fmt::Display) -> SnapshotError {
     SnapshotError::Io {
         path: path.to_owned(),
         source: std::io::Error::other(error.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::disallowed_methods)]
+
+    use super::*;
+
+    #[test]
+    fn recovery_records_roundtrip_through_native_paths() {
+        let journal = std::env::temp_dir().join(format!(
+            "entity-recovery-native-path-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&journal).unwrap();
+        let journal = std::fs::canonicalize(journal).unwrap();
+        let rollback = MergeRollback::begin(&journal).unwrap();
+        let path = journal
+            .join("health")
+            .join("entity-merge-recovery")
+            .join("state.json");
+        let state: Value = read_record(&journal, &path, Value::Null).unwrap();
+        assert_eq!(state["source_committed"], false);
+        assert_eq!(state["snapshot_count"], 0);
+        rollback.finish(&journal).unwrap();
+        assert!(!journal.join(RECOVERY).exists());
+        std::fs::remove_dir_all(journal).unwrap();
     }
 }

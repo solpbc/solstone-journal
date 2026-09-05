@@ -86,6 +86,80 @@ fn voiceprint_journal() -> PathBuf {
     fs::create_dir_all(&path).unwrap();
     fs::canonicalize(path).unwrap()
 }
+
+#[cfg(unix)]
+#[test]
+fn source_namespace_sync_failure_keeps_uncommitted_recovery_and_retry_succeeds() {
+    for relative in [".", "entities", "entities/target/history/private", "logs"] {
+        let journal = voiceprint_journal();
+        for id in ["source", "target"] {
+            save_entity_identity(&journal, id, &json!({"id":id,"name":id}), None).unwrap();
+        }
+        let error = super::store::with_source_sync_failure(relative, || {
+            commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
+        })
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("source directory sync failure"),
+            "{relative}: {error}"
+        );
+        let state: serde_json::Value = serde_json::from_slice(
+            &fs::read(journal.join("health/entity-merge-recovery/state.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(state["source_committed"], false);
+        assert_ne!(state["finished"], true);
+        assert!(
+            journal
+                .join("health/entity-merge-recovery/00000000.json")
+                .is_file()
+        );
+        assert!(!journal.join("entities/source").exists());
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+        assert!(!journal.join("health/entity-merge-recovery").exists());
+        fs::remove_dir_all(journal).unwrap();
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn restored_sources_keep_before_images_when_namespace_sync_fails() {
+    let journal = voiceprint_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(&journal, id, &json!({"id":id,"name":id}), None).unwrap();
+    }
+    let before = solstone_core_journal_io::capture_snapshot(&journal, "entities/source").unwrap();
+    let error = super::store::with_source_sync_failure("entities/source", || {
+        commit_entity_merge_with_injector(
+            &journal,
+            "source",
+            "target",
+            EntityMergeOptions::default(),
+            Some(&|phase, _| phase == "cleanup"),
+        )
+    })
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("source directory sync failure"),
+        "{error}"
+    );
+    assert_eq!(
+        solstone_core_journal_io::capture_snapshot(&journal, "entities/source").unwrap(),
+        before
+    );
+    let state: serde_json::Value = serde_json::from_slice(
+        &fs::read(journal.join("health/entity-merge-recovery/state.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(state["source_committed"], false);
+    assert_ne!(state["finished"], true);
+    assert!(
+        journal
+            .join("health/entity-merge-recovery/00000000.json")
+            .is_file()
+    );
+    fs::remove_dir_all(journal).unwrap();
+}
 fn row(value: f32) -> Vec<f32> {
     vec![value; 256]
 }

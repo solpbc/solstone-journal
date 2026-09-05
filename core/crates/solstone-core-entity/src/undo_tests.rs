@@ -1286,3 +1286,195 @@ fn merged_facet_undo_without_recorded_after_state_refuses_before_source_mutation
     );
     fs::remove_dir_all(journal).unwrap();
 }
+
+#[test]
+fn undo_refuses_later_positional_edits_before_any_source_restoration() {
+    for kind in [
+        "labels",
+        "corrections",
+        "activities",
+        "relations",
+        "voiceprints",
+    ] {
+        let journal = undo_journal();
+        for id in ["source", "target"] {
+            save_entity_identity(&journal, id, &json!({"id":id,"name":id}), None).unwrap();
+        }
+        let (relative, before, later) = match kind {
+            "labels" => (
+                "chronicle/20260102/080000_300/talents/speaker_labels.json",
+                json!({"labels":[{"speaker":"source"}]}),
+                json!({"labels":[{"speaker":"later-owner-choice"}]}),
+            ),
+            "corrections" => (
+                "chronicle/20260102/080000_300/talents/speaker_corrections.json",
+                json!({"corrections":[{"original_speaker":"source","corrected_speaker":"source"}]}),
+                json!({"corrections":[{"original_speaker":"target","corrected_speaker":"later-owner-choice"}]}),
+            ),
+            "activities" => (
+                "facets/work/activities/20260102.jsonl",
+                json!({"id":"activity","active_entities":["source"]}),
+                json!({"id":"activity","active_entities":["later-owner-choice"]}),
+            ),
+            "relations" => (
+                "facets/work/entities/other/observations.jsonl",
+                json!({"content":"note","relation":{"target_entity_id":"source"}}),
+                json!({"content":"note","relation":{"target_entity_id":"later-owner-choice"}}),
+            ),
+            "voiceprints" => ("entities/target/voiceprints.npz", Value::Null, Value::Null),
+            _ => unreachable!(),
+        };
+        if relative.ends_with(".jsonl") {
+            write_jsonl(
+                journal.join(relative),
+                vec![before],
+                AtomicWriteOptions::default(),
+            )
+            .unwrap();
+        } else if kind != "voiceprints" {
+            write_json(journal.join(relative), &before, JsonWriteOptions::default()).unwrap();
+        }
+        let merged =
+            commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
+                .unwrap();
+        if kind == "voiceprints" {
+            let bytes = write_voiceprints_npz(&vec![1.0; 256], &[json!({"day":"20260102","segment_key":"080000_300","source":"owner","sentence_id":1}).to_string()]).unwrap();
+            solstone_core_journal_io::atomic_replace(
+                journal.join(relative),
+                &bytes,
+                AtomicWriteOptions::default(),
+            )
+            .unwrap();
+        } else if relative.ends_with(".jsonl") {
+            write_jsonl(
+                journal.join(relative),
+                vec![later],
+                AtomicWriteOptions::default(),
+            )
+            .unwrap();
+        } else {
+            write_json(journal.join(relative), &later, JsonWriteOptions::default()).unwrap();
+        }
+        let before_undo = journal_tree(&journal);
+        let error = undo_entity_merge(&journal, &merged.merge_id, Value::Null).unwrap_err();
+        assert!(
+            error.to_string().contains("target artifact changed"),
+            "{kind}: {error}"
+        );
+        assert_eq!(journal_tree(&journal), before_undo, "{kind}");
+        assert!(!journal.join("entities/source").exists());
+        fs::remove_dir_all(journal).unwrap();
+    }
+}
+
+#[test]
+fn undo_refuses_missing_positional_or_voiceprint_proof_before_any_source_restoration() {
+    for relative in [
+        "chronicle/20260102/080000_300/talents/speaker_labels.json",
+        "entities/target/voiceprints.npz",
+    ] {
+        let journal = undo_journal();
+        for id in ["source", "target"] {
+            save_entity_identity(&journal, id, &json!({"id":id,"name":id}), None).unwrap();
+        }
+        if relative.starts_with("chronicle/") {
+            write_json(
+                journal.join(relative),
+                &json!({"labels":[{"speaker":"source"}]}),
+                JsonWriteOptions::default(),
+            )
+            .unwrap();
+        }
+        let merged =
+            commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
+                .unwrap();
+        if relative.ends_with("voiceprints.npz") {
+            let bytes = write_voiceprints_npz(
+                &vec![1.0; 256],
+                &[json!({"day":"20260102","segment_key":"080000_300","source":"owner","sentence_id":1}).to_string()],
+            ).unwrap();
+            solstone_core_journal_io::atomic_replace(
+                journal.join(relative),
+                &bytes,
+                AtomicWriteOptions::default(),
+            )
+            .unwrap();
+        }
+        let mut payload = super::store::merge_payload::load_entity_merge_payload(
+            &journal,
+            "target",
+            &merged.merge_id,
+        )
+        .unwrap();
+        payload["manifest"]["undo_expected"]
+            .as_object_mut()
+            .unwrap()
+            .remove(relative);
+        super::store::merge_payload::record_entity_merge_payload(
+            &journal,
+            "target",
+            &merged.merge_id,
+            &payload,
+        )
+        .unwrap();
+        let before_undo = journal_tree(&journal);
+        let error = undo_entity_merge(&journal, &merged.merge_id, Value::Null).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("recorded target state is missing"),
+            "{error}"
+        );
+        assert_eq!(journal_tree(&journal), before_undo);
+        fs::remove_dir_all(journal).unwrap();
+    }
+}
+
+#[test]
+fn older_payload_allows_voiceprint_restoration_only_when_it_is_a_noop() {
+    for existing in [false, true] {
+        let journal = undo_journal();
+        for id in ["source", "target"] {
+            save_entity_identity(&journal, id, &json!({"id":id,"name":id}), None).unwrap();
+        }
+        if existing {
+            let bytes = write_voiceprints_npz(
+                &vec![1.0; 256],
+                &[json!({"day":"20260102","segment_key":"080000_300","source":"owner","sentence_id":1}).to_string()],
+            ).unwrap();
+            solstone_core_journal_io::atomic_replace(
+                journal.join("entities/target/voiceprints.npz"),
+                &bytes,
+                AtomicWriteOptions::default(),
+            )
+            .unwrap();
+        }
+        let merged =
+            commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
+                .unwrap();
+        let mut payload = super::store::merge_payload::load_entity_merge_payload(
+            &journal,
+            "target",
+            &merged.merge_id,
+        )
+        .unwrap();
+        payload["manifest"]
+            .as_object_mut()
+            .unwrap()
+            .remove("undo_expected");
+        super::store::merge_payload::record_entity_merge_payload(
+            &journal,
+            "target",
+            &merged.merge_id,
+            &payload,
+        )
+        .unwrap();
+        undo_entity_merge(&journal, &merged.merge_id, Value::Null).unwrap();
+        assert!(journal.join("entities/source/entity.json").is_file());
+        assert_eq!(
+            journal.join("entities/target/voiceprints.npz").is_file(),
+            existing
+        );
+        fs::remove_dir_all(journal).unwrap();
+    }
+}

@@ -118,6 +118,8 @@ pub use claim_remove::{
 pub use deconflict::{
     SegmentDeconflictError, find_available_segment, find_available_segment_with_occupied,
 };
+#[cfg(unix)]
+pub use entry::sync_root;
 pub use entry::{Removed, remove_file, rename_within, sync_dir};
 pub use errors::{
     AppendError, AtomicWriteError, ClaimDurability, ClaimRemovalError, ClaimRemovalOutcome,
