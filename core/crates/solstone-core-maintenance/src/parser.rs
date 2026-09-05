@@ -238,6 +238,9 @@ fn run_routine(
             },
         };
     }
+    if id == "speakers:name-variants" {
+        return crate::bodies::speakers::name_variants(forwarded, journal);
+    }
     if id == "speakers:consolidate-pool" {
         return crate::bodies::speakers::consolidate(forwarded, journal);
     }

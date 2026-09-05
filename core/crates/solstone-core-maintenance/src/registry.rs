@@ -30,7 +30,14 @@ pub struct RoutineDescriptor {
     pub args: &'static [&'static str],
 }
 
-const ROUTINES: [RoutineDescriptor; 10] = [
+const ROUTINES: [RoutineDescriptor; 11] = [
+    RoutineDescriptor {
+        id: "speakers:name-variants",
+        description: "Find speaker name variants for Suggestions.",
+        cadence: Cadence::Daily,
+        max_runtime: Some("10m"),
+        args: &[],
+    },
     RoutineDescriptor {
         id: "speakers:consolidate-pool",
         description: "Consolidate dense speaker candidates.",
@@ -115,7 +122,8 @@ pub fn routine(id: &str) -> Option<&'static RoutineDescriptor> {
 
 #[cfg(test)]
 fn validate_census(routines: &[RoutineDescriptor]) -> Result<(), String> {
-    const EXPECTED: [(&str, Cadence, Option<&str>, &[&str]); 10] = [
+    const EXPECTED: [(&str, Cadence, Option<&str>, &[&str]); 11] = [
+        ("speakers:name-variants", Cadence::Daily, Some("10m"), &[]),
         (
             "speakers:consolidate-pool",
             Cadence::Daily,
@@ -172,9 +180,9 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
-    fn census_has_ten_unique_well_formed_ids() {
+    fn census_has_eleven_unique_well_formed_ids() {
         let all = routines();
-        assert_eq!(all.len(), 10);
+        assert_eq!(all.len(), 11);
         let ids = all
             .iter()
             .map(|descriptor| descriptor.id)
