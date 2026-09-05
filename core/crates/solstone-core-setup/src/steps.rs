@@ -346,6 +346,11 @@ pub struct StepResult {
     pub finished_at: String,
     pub error: Option<StepErrorPayload>,
     pub reason: Option<String>,
+    /// Owner-facing lines the step's own subprocess already decided to disclose
+    /// (e.g. a model-download notice) that a success result would otherwise drop.
+    /// Empty for steps with nothing to say; omitted from the manifest when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
 }
 
 impl StepResult {
@@ -361,6 +366,7 @@ impl StepResult {
             finished_at: now,
             error: None,
             reason: None,
+            notes: Vec::new(),
         }
     }
 
@@ -955,6 +961,10 @@ fn narrate_step_result(context: &SetupContext<'_>, index: usize, result: &StepRe
             context,
             &format!("journal setup: {} failed: {message}", result.name.as_str()),
         );
+    } else {
+        for note in &result.notes {
+            narrate(context, note);
+        }
     }
 }
 
@@ -1416,12 +1426,15 @@ fn step_install_models(context: &mut SetupContext<'_>) -> Result<StepResult, Ste
             context.args.step_timeout_seconds,
         ));
     }
-    Ok(StepResult::new(
-        StepName::InstallModels,
-        StepStatus::Ok,
-        paths,
-        now,
-    ))
+    let mut result = StepResult::new(StepName::InstallModels, StepStatus::Ok, paths, now);
+    result.notes = output
+        .stdout
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_owned)
+        .collect();
+    Ok(result)
 }
 
 fn step_skills_user(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutionError> {
@@ -2801,6 +2814,67 @@ mod tests {
         );
         // ...and must still report the failure rather than claiming success.
         assert_eq!(outcome.exit_code, 9);
+    }
+
+    /// The success path used to drop the subprocess's captured stdout
+    /// entirely, so an owner-facing disclosure the verb printed (a model
+    /// download notice) never reached the owner on the first-run path.
+    #[test]
+    fn install_models_success_surfaces_captured_stdout_as_notes() {
+        let (args, resolved, root, home) = fixture("models-notes", &[]);
+        let mut runner = FakeRunner::new(vec![Ok(CommandOutput {
+            exit_code: 0,
+            stdout: "  fetching acoustic model from example.origin  \n\nbundled asset included\n"
+                .into(),
+            stderr: String::new(),
+            timed_out: false,
+        })]);
+        let mut prompt = Prompt(false);
+        let result = step_install_models(&mut context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        ))
+        .expect("install_models step runs");
+        assert_eq!(result.status, StepStatus::Ok);
+        assert_eq!(
+            result.notes,
+            vec![
+                "fetching acoustic model from example.origin".to_owned(),
+                "bundled asset included".to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn install_models_failure_still_uses_subprocess_failure_details() {
+        let (args, resolved, root, home) = fixture("models-notes-failure", &[]);
+        let mut runner = FakeRunner::new(vec![Ok(CommandOutput {
+            exit_code: 9,
+            stdout: "fetching acoustic model from example.origin".into(),
+            stderr: "CED assets are unavailable".into(),
+            timed_out: false,
+        })]);
+        let mut prompt = Prompt(false);
+        let result = step_install_models(&mut context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        ))
+        .expect("install_models step runs");
+        assert_eq!(result.status, StepStatus::Failed);
+        assert!(
+            result.notes.is_empty(),
+            "a failed step reports through its error, not notes"
+        );
     }
 
     #[test]
