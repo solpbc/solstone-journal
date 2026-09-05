@@ -1231,7 +1231,7 @@ mod tests {
         let os = std::env::consts::OS;
         let arch = std::env::consts::ARCH;
         // env::consts is a compile-time constant, so the macOS assertion is
-        // structurally unreachable on this linux lode; only the linux branch
+        // structurally unreachable on a linux host; only the linux branch
         // runs here.
         match (os, arch) {
             ("linux", "x86_64" | "aarch64") | ("macos", "aarch64") => {
