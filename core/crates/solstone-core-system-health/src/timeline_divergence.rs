@@ -87,7 +87,7 @@ pub fn diagnose_timeline_divergence(
         unreadable_days,
     } = read_segment_artifacts(journal, &day_directories)?;
 
-    if is_empty_inventory(&master, &days, &segments, &state) {
+    if unreadable_days.is_empty() && is_empty_inventory(&master, &days, &segments, &state) {
         return Ok(TimelineDivergenceDiagnosis::NoData);
     }
 
@@ -365,46 +365,6 @@ fn read_segment_artifacts(
     let mut eligible_paths = BTreeSet::new();
     let mut unreadable_days = Vec::new();
     for directory in directories {
-        let entries =
-            fs::read_dir(&directory.path).map_err(|source| TimelineHealthError::Directory {
-                path: directory.path.clone(),
-                source,
-            })?;
-        for entry in entries {
-            let entry = entry.map_err(|source| TimelineHealthError::Directory {
-                path: directory.path.clone(),
-                source,
-            })?;
-            let path = entry.path();
-            if !path.is_dir() {
-                continue;
-            }
-            let direct = path.join("timeline.json");
-            if direct.is_file() {
-                paths.insert(direct);
-                continue;
-            }
-            let nested = fs::read_dir(&path).map_err(|source| TimelineHealthError::Directory {
-                path: path.clone(),
-                source,
-            })?;
-            for nested_entry in nested {
-                let nested_entry =
-                    nested_entry.map_err(|source| TimelineHealthError::Directory {
-                        path: path.clone(),
-                        source,
-                    })?;
-                let nested_path = nested_entry.path();
-                if nested_path.is_dir() {
-                    let candidate = nested_path.join("timeline.json");
-                    if candidate.is_file() {
-                        paths.insert(candidate);
-                    }
-                }
-            }
-        }
-    }
-    for directory in directories {
         let bindings = match discover_day_segment_bindings(journal, &directory.day) {
             Ok(bindings) => bindings,
             Err(error) => {
@@ -413,24 +373,27 @@ fn read_segment_artifacts(
             }
         };
         for binding in bindings {
+            let path = match segment_timeline_path(journal, &binding) {
+                Ok(path) => path,
+                Err(error) => {
+                    unreadable_days.push(format!("{}: {error}", directory.day));
+                    continue;
+                }
+            };
+            // Only native segment directories own segment timelines. Day outputs
+            // such as insights/timeline.json may use the same basename.
+            // Existing segment artifacts still need validation without activity.
+            if path.is_file() {
+                paths.insert(path.clone());
+            }
             match resolve_eligible_activity_source(journal, &binding) {
-                Ok(Some(_)) => match segment_timeline_path(journal, &binding) {
-                    Ok(path) => {
-                        eligible_paths.insert(path.clone());
-                        paths.insert(path);
-                    }
-                    Err(error) => {
-                        unreadable_days.push(format!("{}: {error}", directory.day));
-                    }
-                },
-                Err(_) => match segment_timeline_path(journal, &binding) {
-                    Ok(path) => {
-                        paths.insert(path);
-                    }
-                    Err(error) => {
-                        unreadable_days.push(format!("{}: {error}", directory.day));
-                    }
-                },
+                Ok(Some(_)) => {
+                    eligible_paths.insert(path.clone());
+                    paths.insert(path);
+                }
+                Err(_) => {
+                    paths.insert(path);
+                }
                 Ok(None) => {}
             }
         }
@@ -986,6 +949,66 @@ mod tests {
             }
             other => panic!("expected Uncertain naming the unreadable day, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn unrelated_day_output_timelines_are_not_segment_artifacts() {
+        let root = tempfile::tempdir().unwrap();
+        write_clean(root.path());
+        for directory in ["insights", "topics", "talents", "suze"] {
+            write_json(
+                &root
+                    .path()
+                    .join("chronicle")
+                    .join(DAY)
+                    .join(directory)
+                    .join("timeline.json"),
+                &serde_json::json!({"day": DAY, "occurrences": []}),
+            );
+        }
+        assert_eq!(diagnose(root.path()), TimelineDivergenceDiagnosis::Clean);
+    }
+
+    #[test]
+    fn invalid_real_segment_without_activity_is_still_reported() {
+        let root = tempfile::tempdir().unwrap();
+        write_clean(root.path());
+        write_json(
+            &root
+                .path()
+                .join("chronicle")
+                .join(DAY)
+                .join("suze/timeline.json"),
+            &serde_json::json!({"day": DAY, "occurrences": []}),
+        );
+        write_json(
+            &root
+                .path()
+                .join("chronicle")
+                .join(DAY)
+                .join("suze/100000_300/timeline.json"),
+            &serde_json::json!({"invalid": "segment"}),
+        );
+        assert!(
+            matches!(diagnose(root.path()), TimelineDivergenceDiagnosis::Stale { detail }
+            if detail.contains("suze/100000_300/timeline.json") && !detail.contains("suze/timeline.json"))
+        );
+    }
+
+    #[test]
+    fn unreadable_segment_identity_cannot_be_reported_as_no_data() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(
+            root.path()
+                .join("chronicle")
+                .join(DAY)
+                .join("_default/100000_300"),
+        )
+        .unwrap();
+        assert!(
+            matches!(diagnose(root.path()), TimelineDivergenceDiagnosis::Uncertain { detail }
+            if detail.contains("_default"))
+        );
     }
 
     #[test]
