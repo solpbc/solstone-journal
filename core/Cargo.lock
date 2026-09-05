@@ -5037,6 +5037,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "log",
+ "percent-encoding",
  "rapidfuzz",
  "regex",
  "serde",

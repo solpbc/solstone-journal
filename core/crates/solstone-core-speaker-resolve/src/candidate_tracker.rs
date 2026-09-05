@@ -195,7 +195,7 @@ impl CandidateTracker {
         &mut self,
     ) -> Result<Vec<CandidateProfile>, CandidateTrackerError> {
         let _lock = hold_lock(&self.store_path, LockOptions::default())?;
-        self.load_tolerant();
+        self.load_strict()?;
         Ok(self.candidates())
     }
     /// Process the embedding-derived clusters for one source segment.
@@ -326,15 +326,16 @@ impl CandidateTracker {
         }
         best
     }
-    /// Consolidate dense pending candidates under the existing pool lock.
-    pub fn consolidate_dense_candidates(&mut self) -> Result<Value, CandidateTrackerError> {
-        let _lock = hold_lock(&self.store_path, LockOptions::default())?;
+    fn load_strict(&mut self) -> Result<bool, CandidateTrackerError> {
         // A scheduled writer must not reuse the constructor's snapshot after a
         // failed reload or silently drop malformed candidates before writing.
         let bytes = match fs::read(&self.store_path) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(json!({"status":"ok","merged":0,"merges":[]}));
+                self.candidates.clear();
+                self.next_id = 1;
+                self.consolidation_summary = json!({"merge_count_total":0,"last_merge":null});
+                return Ok(false);
             }
             Err(error) => return Err(error.into()),
         };
@@ -380,13 +381,24 @@ impl CandidateTracker {
             .get("consolidation_summary")
             .cloned()
             .unwrap_or_else(|| json!({"merge_count_total":0,"last_merge":null}));
-        let merge_count = summary
+        summary
             .get("merge_count_total")
             .and_then(Value::as_u64)
             .ok_or_else(invalid)?;
         self.candidates = candidates;
         self.next_id = next_id;
         self.consolidation_summary = summary;
+        Ok(true)
+    }
+    /// Consolidate dense pending candidates under the existing pool lock.
+    pub fn consolidate_dense_candidates(&mut self) -> Result<Value, CandidateTrackerError> {
+        let _lock = hold_lock(&self.store_path, LockOptions::default())?;
+        if !self.load_strict()? {
+            return Ok(json!({"status":"ok","merged":0,"merges":[]}));
+        }
+        let merge_count = self.consolidation_summary["merge_count_total"]
+            .as_u64()
+            .expect("strict pool reader validated count");
         let mut merges = Vec::new();
         while let Some((survivor_id, absorbed_id, score)) = self.best_consolidation_pair() {
             let event = self.merge_candidate_profile(survivor_id, absorbed_id, score);
@@ -401,7 +413,12 @@ impl CandidateTracker {
         if let Some(last_merge) = merges.last() {
             let total = merge_count
                 .checked_add(merges.len() as u64)
-                .ok_or_else(invalid)?;
+                .ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "speaker merge count overflow",
+                    )
+                })?;
             self.consolidation_summary = json!({"merge_count_total":total,"last_merge":last_merge});
             self.write()?;
         }
@@ -658,7 +675,7 @@ pub fn retroactive_voiceprint_metadata(
 fn source_key(value: &Value) -> String {
     serde_json::to_string(value).unwrap_or_default()
 }
-fn source_segment_anchor(value: &Value) -> Option<String> {
+pub(crate) fn source_segment_anchor(value: &Value) -> Option<String> {
     let object = value.as_object()?;
     let day = object.get("day")?.as_str()?;
     let segment_key = object.get("segment_key")?.as_str()?;

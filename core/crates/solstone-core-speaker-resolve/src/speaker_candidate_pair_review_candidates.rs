@@ -3,6 +3,7 @@
 
 //! Durable speaker candidate-pair review candidates.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -27,6 +28,88 @@ pub enum SpeakerCandidatePairReviewCandidateError {
     Lock(#[from] LockError),
     #[error("speaker candidate-pair review candidates write failed: {0}")]
     Write(#[from] AtomicWriteError),
+    #[error("invalid speaker candidate-pair review record: {0}")]
+    InvalidRow(&'static str),
+}
+
+/// One detected pair, addressed by stable source anchors rather than pool IDs.
+pub struct CandidatePairSuggestion {
+    pub source_anchors: BTreeSet<String>,
+    pub target_anchors: BTreeSet<String>,
+    pub similarity: f32,
+    pub source_intervals: usize,
+    pub target_intervals: usize,
+    pub source_samples: Vec<Value>,
+    pub target_samples: Vec<Value>,
+}
+
+/// Record a pair while preserving prior decisions, including after pool merges.
+pub fn record_candidate_pair(
+    journal_root: &Path,
+    suggestion: &CandidatePairSuggestion,
+) -> Result<(Option<Value>, bool, bool), SpeakerCandidatePairReviewCandidateError> {
+    let source = suggestion.source_anchors.first().ok_or(
+        SpeakerCandidatePairReviewCandidateError::InvalidRow("source has no anchors"),
+    )?;
+    let target = suggestion.target_anchors.first().ok_or(
+        SpeakerCandidatePairReviewCandidateError::InvalidRow("target has no anchors"),
+    )?;
+    let path = review_candidates_path(journal_root);
+    create_parent(&path)?;
+    let _lock = hold_lock(&path, LockOptions::default())?;
+    let mut rows: Vec<Value> = read_jsonl(&path, Vec::new(), MalformedPolicy::Raise)?;
+    if rows.iter().any(|row| !row.is_object()) {
+        return Err(SpeakerCandidatePairReviewCandidateError::InvalidRow(
+            "expected JSON objects",
+        ));
+    }
+    for row in &rows {
+        if row.get("status").and_then(Value::as_str) != Some("dismissed") {
+            continue;
+        }
+        if let (Some(a), Some(b)) = (
+            row.get("dismissed_anchor_a").and_then(Value::as_str),
+            row.get("dismissed_anchor_b").and_then(Value::as_str),
+        ) && ((suggestion.source_anchors.contains(a) && suggestion.target_anchors.contains(b))
+            || (suggestion.source_anchors.contains(b) && suggestion.target_anchors.contains(a)))
+        {
+            return Ok((None, false, true));
+        }
+    }
+    let key = candidate_key(source, target);
+    let (anchor_a, anchor_b) = sorted_anchors(source, target);
+    let now = now_iso();
+    let existing = find_candidate(&mut rows, source, target);
+    let created = existing.is_none();
+    let mut row = existing.cloned().unwrap_or_else(|| {
+        json!({
+            "status":"open", "first_surfaced":now, "created_at":now,
+        })
+    });
+    row.as_object_mut().expect("validated object").extend(
+        json!({
+            "key":key, "anchor_a":anchor_a, "anchor_b":anchor_b,
+            "similarity":suggestion.similarity,
+            "evidence":{
+                "basis":"speaker-candidate-pair", "similarity":suggestion.similarity,
+                "source_intervals":suggestion.source_intervals,
+                "target_intervals":suggestion.target_intervals,
+                "source_samples":suggestion.source_samples,
+                "target_samples":suggestion.target_samples,
+            },
+            "last_surfaced":now, "updated_at":now,
+        })
+        .as_object()
+        .expect("object literal")
+        .clone(),
+    );
+    if let Some(existing) = find_candidate(&mut rows, source, target) {
+        *existing = row.clone();
+    } else {
+        rows.push(row.clone());
+    }
+    write_jsonl(&path, rows, AtomicWriteOptions::default())?;
+    Ok((Some(row), created, false))
 }
 
 /// Load candidate-pair review candidates, skipping malformed JSONL rows.
@@ -205,5 +288,40 @@ mod tests {
                 .is_none()
         );
         assert_eq!(load_candidates(journal.path()).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn concurrent_pair_recorders_preserve_each_others_rows() {
+        let journal = temporary_journal("concurrent");
+        std::thread::scope(|scope| {
+            let mut handles = Vec::new();
+            for worker in 0..4 {
+                let root = journal.path();
+                handles.push(scope.spawn(move || {
+                    for pair in 0..6 {
+                        let suggestion = CandidatePairSuggestion {
+                            source_anchors: BTreeSet::from([format!("source-{worker}-{pair}")]),
+                            target_anchors: BTreeSet::from(["target".to_owned()]),
+                            similarity: 0.5,
+                            source_intervals: 30,
+                            target_intervals: 30,
+                            source_samples: Vec::new(),
+                            target_samples: Vec::new(),
+                        };
+                        record_candidate_pair(root, &suggestion).unwrap();
+                    }
+                }));
+            }
+            for handle in handles {
+                handle.join().unwrap();
+            }
+        });
+        let rows = load_candidates(journal.path()).unwrap();
+        assert_eq!(rows.len(), 24);
+        let keys = rows
+            .iter()
+            .map(|row| row["key"].as_str().unwrap())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(keys.len(), 24);
     }
 }

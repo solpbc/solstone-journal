@@ -7,9 +7,11 @@
 
 pub mod admission;
 pub mod artifact_wipe;
+pub mod audio_sample;
 pub mod backfill;
 pub mod backfill_operations;
 pub mod bootstrap;
+pub mod candidate_pair_suggestions;
 pub mod candidate_tracker;
 pub mod direct_voiceprints;
 pub mod discovery_cache;

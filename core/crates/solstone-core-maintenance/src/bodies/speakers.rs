@@ -72,8 +72,46 @@ pub(crate) fn name_variants(args: &[String], journal: &Path) -> CliRun {
     }
 }
 
+pub(crate) fn candidate_pairs(args: &[String], journal: &Path) -> CliRun {
+    if !args.is_empty() {
+        return CliRun {
+            stdout: String::new(),
+            stderr: "usage: journal maintenance run speakers:candidate-pair-suggestions\n"
+                .to_owned(),
+            exit_code: 2,
+        };
+    }
+    match solstone_core_speaker_resolve::candidate_pair_suggestions::refresh_candidate_pair_suggestions(journal) {
+        Ok(report) => CliRun { stdout:format!("{report}\n"), stderr:String::new(), exit_code:0 },
+        Err(error) => CliRun { stdout:String::new(), stderr:format!("speaker candidate-pair refresh failed: {error}\n"), exit_code:1 },
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn registered_candidate_pairs_run_and_reject_arguments() {
+        let root = tempfile::tempdir().unwrap();
+        let mut args = vec![
+            "run".to_owned(),
+            "speakers:candidate-pair-suggestions".to_owned(),
+        ];
+        let result = crate::run_cli(&args, root.path());
+        assert_eq!(result.exit_code, 0, "{}", result.stderr);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&result.stdout).unwrap()["found"],
+            0
+        );
+        assert!(
+            !root
+                .path()
+                .join("speakers/candidate-pair-review-candidates.jsonl")
+                .exists()
+        );
+        args.push("--commit".to_owned());
+        assert_eq!(crate::run_cli(&args, root.path()).exit_code, 2);
+    }
+
     #[test]
     fn registered_name_variants_run_without_creating_empty_suggestions() {
         let root = tempfile::tempdir().unwrap();
