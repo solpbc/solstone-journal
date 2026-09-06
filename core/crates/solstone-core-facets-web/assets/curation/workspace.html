@@ -78,6 +78,22 @@
   line-height: 1.4;
 }
 
+.curation-group-lede {
+  margin: 0 0 0.6em;
+  color: var(--ink);
+  line-height: 1.45;
+}
+
+.curation-group-progress {
+  margin: 0 0 0.85em;
+  color: var(--ink-faint);
+  font-size: 0.9em;
+}
+
+.curation-group-progress:empty {
+  display: none;
+}
+
 .curation-select {
   display: flex;
   align-items: center;
@@ -309,7 +325,7 @@
   }
 }
 .curation-group{border:1px solid #dfd6c9;border-radius:12px;background:#fff}.curation-group>summary{padding:18px;cursor:pointer;font-weight:600;min-height:48px}.curation-group-items{padding:0 18px 18px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.curation-group-items>.curation-item{min-width:0;overflow-wrap:anywhere}.curation-group-items>.curation-item{content-visibility:auto;contain-intrinsic-block-size:auto 240px}.curation-group:focus-within{outline-color:#b06a1a}.curation-group>summary:focus-visible{outline:2px solid #b06a1a;outline-offset:2px}
-.curation-source-dates{display:flex;flex-wrap:wrap;gap:8px 16px}.curation-source-dates a{display:inline-flex;align-items:center;min-height:46px}.curation-origin-details summary{cursor:pointer;padding:12px 0}.curation-origin-details li{overflow-wrap:anywhere}
+.curation-source-dates{display:flex;flex-wrap:wrap;gap:8px 16px}.curation-source-dates a{display:inline-flex;align-items:center;min-height:46px;color:var(--orange-text-aa,#a15f17)}.curation-origin-details summary{cursor:pointer;padding:12px 0}.curation-origin-details li{overflow-wrap:anywhere}
 </style>
 
 <section class="curation-shell" data-curation-root>
@@ -323,6 +339,17 @@ window.CUR_COPY = CUR_COPY;
 (function() {
   const root = document.querySelector('[data-curation-root]');
   if (!root) return;
+
+  // G2-35: server-resolved slug -> declared-title map (the same source
+  // thinking's runs facet filter reads), refreshed on every state load.
+  let curationFacetTitles = {};
+
+  // A facet the owner already named and can see in its real form elsewhere
+  // (thinking, stats) — resolve through the declared title, falling back to
+  // the raw slug only when nothing was ever declared for it.
+  function facetDisplayName(slug) {
+    return curationFacetTitles[slug] || slug;
+  }
 
   function renderLoading() {
     root.innerHTML = window.SurfaceState
@@ -464,7 +491,7 @@ window.CUR_COPY = CUR_COPY;
   }
 
   function formatFacetList(facets) {
-    const names = facets.map(humanizeFacetName);
+    const names = facets.map(facetDisplayName);
     if (names.length <= 1) return names.join('');
     if (names.length === 2) return `${names[0]} and ${names[1]}`;
     return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
@@ -581,9 +608,55 @@ window.CUR_COPY = CUR_COPY;
     if (!items.length) return '';
     return `<details class="curation-group" data-review-group="${key}" ${openReviewGroups.has(key) ? 'open' : ''}><summary>${label} <span data-group-count>(${items.length})</span></summary><div class="curation-group-items">${toolbar}${items.map(renderItem).join('')}</div></details>`;
   }
+
+  // G2-40: the duplicate-entity group is the one that shows up with
+  // hundreds of undifferentiated pairs and no way to tell it's ordered or
+  // to stop. `entityGroups` already arrives sorted highest-confidence-first
+  // (the server sorts entity_items by composite/detection_count before the
+  // client groups them by pair), so the first CURATION_ENTITY_BATCH_SIZE
+  // pairs are the ones most worth the owner's attention. Everything past
+  // that renders into the DOM (so counts and "left" stay accurate) but
+  // stays hidden behind an explicit "show the rest" action.
+  const CURATION_ENTITY_BATCH_SIZE = 10;
+  function entityMergeGroupHtml(entityGroups) {
+    if (!entityGroups.length) return '';
+    const total = entityGroups.length;
+    const visible = entityGroups.slice(0, CURATION_ENTITY_BATCH_SIZE);
+    const rest = entityGroups.slice(CURATION_ENTITY_BATCH_SIZE);
+    const lede = rest.length
+      ? `<p class="curation-group-lede">${escapeHtml(copyFormat(CUR_COPY.CUR_ENTITY_GROUP_LEDE, {count: visible.length}))}</p>`
+      : '';
+    const showRest = rest.length
+      ? `<div class="curation-group-more" data-group-more hidden>${rest.map(entityItemHtml).join('')}</div>
+         <button class="curation-button curation-button-link" type="button" data-action="curation-show-rest">${escapeHtml(copyFormat(CUR_COPY.CUR_ENTITY_SHOW_REST_ACTION, {count: rest.length}))}</button>`
+      : '';
+    return `<details class="curation-group" data-review-group="merge" data-group-total="${total}" ${openReviewGroups.has('merge') ? 'open' : ''}>
+      <summary>possible duplicate entities <span data-group-count>(${total})</span></summary>
+      <div class="curation-group-items">
+        ${lede}
+        <p class="curation-group-progress" data-group-progress></p>
+        ${entityBatchHtml()}
+        ${visible.map(entityItemHtml).join('')}
+        ${showRest}
+        <div class="curation-actions">
+          <button class="curation-button" type="button" data-action="curation-group-done">${escapeHtml(CUR_COPY.CUR_ENTITY_DONE_FOR_NOW_ACTION)}</button>
+        </div>
+      </div>
+    </details>`;
+  }
+
   function refreshGroupCounts() {
     root.querySelectorAll('[data-review-group]').forEach(group => {
-      group.querySelector('[data-group-count]').textContent = `(${group.querySelectorAll('[data-curation-item]').length})`;
+      const remaining = group.querySelectorAll('[data-curation-item]').length;
+      group.querySelector('[data-group-count]').textContent = `(${remaining})`;
+      const progress = group.querySelector('[data-group-progress]');
+      if (progress) {
+        const groupTotal = Number(group.dataset.groupTotal || remaining);
+        const reviewed = Math.max(0, groupTotal - remaining);
+        progress.textContent = remaining
+          ? copyFormat(CUR_COPY.CUR_ENTITY_PROGRESS_LABEL, {reviewed, left: remaining})
+          : '';
+      }
     });
     const count = root.querySelector('[data-review-total]');
     const total = root.querySelectorAll('[data-curation-item]').length;
@@ -595,6 +668,7 @@ window.CUR_COPY = CUR_COPY;
       : [];
     CUR_COPY = payload.copy || {};
     window.CUR_COPY = CUR_COPY;
+    curationFacetTitles = payload.facet_titles || {};
     const facetItems = payload.facet_items || [];
     const entityItems = payload.entity_items || [];
     const entityGroups = groupEntityItems(entityItems);
@@ -610,7 +684,7 @@ window.CUR_COPY = CUR_COPY;
         <div class="curation-outcomes" data-curation-outcomes></div>
         <div class="curation-list" data-curation-list>
           ${reviewGroup('facet', 'facet suggestions', facetItems, facetItemHtml)}
-          ${reviewGroup('merge', 'possible duplicate entities', entityGroups, entityItemHtml, entityBatchHtml())}
+          ${entityMergeGroupHtml(entityGroups)}
           ${reviewGroup('ambiguity', 'names to clarify', ambiguityItems, ambiguityItemHtml)}
           ${reviewGroup('speaker', 'possible duplicate speaker names', speakerItems, speakerItemHtml)}
           ${reviewGroup('pair', 'possible duplicate voices', speakerCandidatePairItems, speakerCandidatePairItemHtml)}
@@ -740,12 +814,23 @@ window.CUR_COPY = CUR_COPY;
     };
   }
 
+  // G2-40: "select all" / batch merge must mean "all the owner can see",
+  // not "all, including the 825 still behind 'show the rest'". An item
+  // inside a not-yet-revealed `[data-group-more]` container is excluded
+  // from selection and from the batch toolbar's count until it's shown.
+  function isCurationItemRevealed(item) {
+    const moreContainer = item.closest('[data-group-more]');
+    return !moreContainer || !moreContainer.hidden;
+  }
+
   function entityCheckboxes() {
-    return Array.from(root.querySelectorAll('[data-curation-item][data-kind="entity_merge"] input[data-action="entity-select"]'));
+    return Array.from(root.querySelectorAll('[data-curation-item][data-kind="entity_merge"] input[data-action="entity-select"]'))
+      .filter((checkbox) => isCurationItemRevealed(checkbox));
   }
 
   function entityArticles() {
-    return Array.from(root.querySelectorAll('[data-curation-item][data-kind="entity_merge"]'));
+    return Array.from(root.querySelectorAll('[data-curation-item][data-kind="entity_merge"]'))
+      .filter(isCurationItemRevealed);
   }
 
   function selectedEntityItems() {
@@ -905,6 +990,23 @@ window.CUR_COPY = CUR_COPY;
     if (!button) return;
     const item = itemFor(button);
     const action = button.dataset.action;
+
+    // G2-40: reveal the rest of a batched group in place, no re-fetch.
+    if (action === 'curation-show-rest') {
+      const more = button.previousElementSibling;
+      if (more && more.hasAttribute('data-group-more')) more.hidden = false;
+      button.remove();
+      return;
+    }
+
+    // G2-40: an explicit, labelled way to stop reviewing a group for now
+    // rather than the owner having to notice the summary bar also collapses
+    // it. No data changes; the group reopens with everything still there.
+    if (action === 'curation-group-done') {
+      const group = button.closest('[data-review-group]');
+      if (group) group.open = false;
+      return;
+    }
 
     if (action === 'merge-undo') {
       const outcome = button.closest('.curation-outcome');
