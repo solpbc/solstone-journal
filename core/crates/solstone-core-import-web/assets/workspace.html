@@ -1164,7 +1164,7 @@ function renderImportRow(imp) {
   html += `<td class="file-size nowrap">${formatFileSize(imp.file_size)}</td>`;
   html += '<td class="nowrap">';
   if (imp.target_day) {
-    html += `<a href="/app/timeline/${encodeURIComponent(imp.target_day)}" class="timestamp-link" onclick="event.stopPropagation();">${targetDayDisplay}</a>`;
+    html += `<a href="/app/timeline/${encodeURIComponent(imp.target_day)}" class="timestamp-link" onclick="event.stopPropagation();">${escapeHtml(targetDayDisplay)}</a>`;
   } else {
     html += '-';
   }
