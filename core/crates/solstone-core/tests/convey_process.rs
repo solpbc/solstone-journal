@@ -252,12 +252,19 @@ fn convey_process_serves_shell_on_both_loopbacks_and_writes_its_port_file() {
         .expect("IPv4 shell responds");
     assert_eq!(shell_v4.status, 200);
     assert_eq!(shell_v4.content_type, "application/json");
+    let shell = serde_json::from_slice::<Value>(&shell_v4.body).expect("shell JSON");
+    let app_names: Vec<_> = shell["apps"]
+        .as_array()
+        .expect("apps array")
+        .iter()
+        .map(|app| app["name"].as_str().expect("app name"))
+        .collect();
     assert_eq!(
-        serde_json::from_slice::<Value>(&shell_v4.body).expect("shell JSON")["apps"]
-            .as_array()
-            .expect("apps array")
-            .len(),
-        18
+        app_names,
+        solstone_core_convey_shell::registry::APP_REGISTRY
+            .iter()
+            .map(|app| app.name)
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         request(
