@@ -26,7 +26,7 @@
   display: flex;
   flex-direction: column;
   background: #f9fafb;
-  color: #374151;
+  color: var(--ink);
   border-radius: 12px;
   padding: 0.75em 1em;
   box-shadow: 0 2px 8px rgba(0,0,0,0.08);
@@ -41,7 +41,7 @@
   background: #f9fafb;
   border-radius: 12px;
   padding: 0.85em 1.1em;
-  color: #374151;
+  color: var(--ink);
 }
 
 .glance-sentence {
@@ -108,6 +108,13 @@
   padding: 0 4px;
 }
 
+/* X-07: an anchor with no class of its own (the token-usage link inside the
+   processing card) fell through to the browser default #0000EE. Warm tokens
+   only, and never a cool blue on the trust page. */
+.health-dashboard a:not([class]) {
+  color: var(--orange-text-aa);
+}
+
 .glance-metrics {
   display: flex;
   align-items: stretch;
@@ -122,7 +129,7 @@
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   background: #fff;
-  color: #374151;
+  color: var(--ink);
   text-align: right;
   text-decoration: none;
 }
@@ -153,7 +160,7 @@
 }
 
 .glance-metric-tokens .glance-metric-value {
-  color: #374151;
+  color: var(--ink);
 }
 
 .vitals-header {
@@ -194,7 +201,7 @@
 
 .connection-indicator {
   font-size: 0.8em;
-  color: #374151;
+  color: var(--ink);
   margin-left: 0.5em;
 }
 
@@ -463,7 +470,7 @@
 }
 
 .backlog-row-reason {
-  color: #374151;
+  color: var(--ink);
 }
 
 .backlog-depth {
@@ -482,7 +489,7 @@
   background: #fff;
   border: 1px solid #d1d5db;
   border-radius: 4px;
-  color: #374151;
+  color: var(--ink);
   cursor: pointer;
   font-size: 0.75em;
   padding: 0.25em 0.55em;
@@ -685,7 +692,7 @@ h2.card-title {
 }
 
 .client-stream-mode {
-  color: #374151;
+  color: var(--ink);
 }
 
 .stale-badge {
@@ -715,6 +722,14 @@ h2.card-title {
 .registered-client-recovery { color: #6b7280; font-size: 0.78em; margin-left: 0.5em; }
 
 .registered-client-meta { color: #6b7280; font-size: 0.78em; margin-left: auto; }
+.registered-clients-manage {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 4px;
+  color: var(--orange-text-aa);
+  font-size: 0.85em;
+}
 .registered-client-skew { background: #fef3c7; color: #b45309; }
 .registered-client-skew.hidden { display: none; }
 /* Activity Grids Container */
@@ -827,7 +842,7 @@ h2.card-title {
 
 .activity-card-state {
   font-size: 0.85em;
-  color: #374151;
+  color: var(--ink);
   display: flex;
   align-items: center;
   gap: 0.3em;
@@ -1168,7 +1183,7 @@ h2.card-title {
 
 .think-progress-label {
   font-size: 0.85em;
-  color: #374151;
+  color: var(--ink);
   margin-bottom: 0.3em;
 }
 
@@ -1195,7 +1210,7 @@ h2.card-title {
 /* Stale heartbeats list */
 .stale-list {
   font-size: 0.85em;
-  color: #374151;
+  color: var(--ink);
 }
 
 .vitals-chips {
@@ -1210,7 +1225,7 @@ h2.card-title {
   align-items: center;
   gap: 0.25em;
   background: #e5e7eb;
-  color: #374151;
+  color: var(--ink);
   padding: 0.15em 0.5em;
   border-radius: 10px;
   font-size: 0.8em;
@@ -1452,17 +1467,17 @@ h2.card-title {
     </div>
   </div>
 
-  <section class="dashboard-card brain-health-card" id="brain">
-    <div class="section-header">
-      <h2 class="card-title">brain health</h2>
-      <button id="brainCheckBtn" hidden>check again</button>
-    </div>
-    <div id="brainHealthStatus" role="status" aria-live="polite"></div>
-  </section>
-
   <section class="backlog-verdict-card" id="backlogVerdict">
     <p class="backlog-verdict-line">checking journal backlog…</p>
     <div class="backlog-state-error" data-health-state-error hidden></div>
+  </section>
+
+  <section class="dashboard-card brain-health-card" id="brain">
+    <div class="section-header">
+      <h2 class="card-title">processing</h2>
+      <button id="brainCheckBtn" hidden>check again</button>
+    </div>
+    <div id="brainHealthStatus" role="status" aria-live="polite"></div>
   </section>
 
   <!-- Vitals Bar -->
@@ -1486,16 +1501,16 @@ h2.card-title {
           </div>
         </div>
       </div>
-      <div class="vitals-section" role="group" aria-label="Talents: unavailable">
+      <div class="vitals-section" role="group" aria-label="Talents: loading">
         <div class="vitals-label" aria-hidden="true">talents</div>
         <div class="vitals-value" id="agentsValue" aria-hidden="true">
-          <span>unavailable</span>
+          <span class="skeleton" style="width: 80px; height: 0.9em;">&nbsp;</span>
         </div>
       </div>
-      <div class="vitals-section" role="group" aria-label="Tasks: unavailable">
+      <div class="vitals-section" role="group" aria-label="Tasks: loading">
         <div class="vitals-label" aria-hidden="true">tasks</div>
         <div class="vitals-value" id="tasksValue" aria-hidden="true">
-          <span>unavailable</span>
+          <span class="skeleton" style="width: 80px; height: 0.9em;">&nbsp;</span>
         </div>
       </div>
       <div class="vitals-section" role="group" aria-label="Health: loading">
@@ -1504,13 +1519,13 @@ h2.card-title {
           <span class="skeleton" style="width: 100px; height: 0.9em;">&nbsp;</span>
         </div>
       </div>
-      <div class="vitals-section" id="queuesSection" role="group" aria-label="Queues: unavailable">
+      <div class="vitals-section" id="queuesSection" role="group" aria-label="Queues: loading">
         <div class="vitals-label" aria-hidden="true">queues</div>
-        <div class="vitals-value" id="queuesValue" aria-hidden="true">unavailable</div>
+        <div class="vitals-value" id="queuesValue" aria-hidden="true"><span class="skeleton" style="width: 60px; height: 0.9em;">&nbsp;</span></div>
       </div>
-      <div class="vitals-section" id="schedulesSection" role="group" aria-label="Schedules: unavailable">
+      <div class="vitals-section" id="schedulesSection" role="group" aria-label="Schedules: loading">
         <div class="vitals-label" aria-hidden="true">schedules</div>
-        <div class="vitals-value" id="schedulesValue">unavailable</div>
+        <div class="vitals-value" id="schedulesValue"><span class="skeleton" style="width: 90px; height: 0.9em;">&nbsp;</span></div>
       </div>
     </div>
   </div>
