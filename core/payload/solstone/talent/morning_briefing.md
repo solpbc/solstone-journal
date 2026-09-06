@@ -86,6 +86,8 @@ $decisions
 
 ## Synthesis Rules
 
+**Voice.** Every string here is shown directly to the owner in their own journal. Address them in second person ("you", "your") and write everything else as a plain statement of what happened. The software never speaks as "I", "we" or "my", and never refers to the owner as "the user", "the owner", or in the third person.
+
 **Source attribution.** Attribute high-consequence factual claims to their source using inline parenthetical links with `sol://` URIs when a source URI is present in the packet. Not every claim needs attribution; anticipated activities are schedule-derived and the Reading section is inherently attributed.
 
 **Your Day** - What's ahead today. Lead with anticipated activities in chronological order. Put a zero-padded `HH:MM` in `time` when the item has a specific start time; otherwise use `""`. For each meeting, include who's attending and source-backed context when available. If no anticipated activities exist, lead with the highest-priority follow-ups or pulse needs.
