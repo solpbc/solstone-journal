@@ -63,6 +63,7 @@
             "strong",
             "settled"
           ],
+          "SPK_OVERVIEW_COHESION_UNMEASURED": "not measured yet",
           "SPK_OVERVIEW_KNOWN_VOICES_EMPTY": "no one else's voice has been learned yet. once the same voice shows up across a few segments, that person will appear here. you can also tag voices manually in any segment.",
           "SPK_OVERVIEW_KNOWN_VOICES_HEADER": "known voices",
           "SPK_OVERVIEW_KNOWN_VOICES_SORTS": [
@@ -80,6 +81,7 @@
           "SPK_OVERVIEW_OWNER_PROGRESS_UNKNOWN": "learning progress unavailable",
           "SPK_OVERVIEW_OWNER_REFRESHED_PREFIX": "refreshed",
           "SPK_OVERVIEW_OWNER_SAMPLES_LABEL": "voice samples",
+          "SPK_OVERVIEW_OWNER_SAMPLES_CAP_SUFFIX": "(the most it keeps)",
           "SPK_OVERVIEW_OWNER_STATUS_ERROR": "couldn't load voice status",
           "SPK_OVERVIEW_OWNER_STREAMS_LABEL": "where heard",
           "SPK_OVERVIEW_QUALITY_ERROR_HEADING": "couldn't load voice quality",
@@ -89,7 +91,7 @@
           "SPK_OVERVIEW_QUALITY_MEDIUM_LABEL": "needs a look",
           "SPK_OVERVIEW_QUALITY_MISSING_LABEL": "segments not processed",
           "SPK_OVERVIEW_QUALITY_PREBOOTSTRAP": "your voice is still learning",
-          "SPK_OVERVIEW_QUALITY_READY": "recent speaker labels",
+          "SPK_OVERVIEW_QUALITY_READY_TEMPLATE": "speaker labels, last {days} days",
           "SPK_OVERVIEW_QUALITY_SKIPPED_LABEL": "set aside for now",
           "SPK_OVERVIEW_QUALITY_TEACHING_LABEL": "teaching changes",
           "SPK_OVERVIEW_QUALITY_TEACHING_ZERO": "no recent teaching changes",

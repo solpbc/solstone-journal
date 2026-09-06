@@ -246,7 +246,7 @@
 }
 
 .tr-seg:focus-visible {
-  outline: 2px solid var(--accent, #4a9eff);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
@@ -275,7 +275,7 @@
 
 .tr-seg-browser {
   background: rgba(147, 197, 253, 0.55);
-  border: 1px solid #2563eb;
+  border: 1px solid var(--warn-ink);
 }
 
 .tr-seg-markdown {
@@ -314,7 +314,7 @@
 }
 
 .tr-body-event:focus-visible {
-  outline: 2px solid var(--accent, #4a9eff);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
@@ -385,7 +385,7 @@
 
 .tr-seg-screen.tr-seg-analyzing {
   background: rgba(96, 165, 250, 0.58);
-  border-color: #2563eb;
+  border-color: var(--warn-ink);
 }
 
 @keyframes tr-analyzing-pulse {
@@ -482,7 +482,7 @@
 }
 
 .tr-tab:focus-visible {
-  outline: 2px solid var(--accent, #4a9eff);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
@@ -497,7 +497,7 @@
 }
 
 .tr-tab-pane:focus-visible {
-  outline: 2px solid var(--accent, #4a9eff);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -620,7 +620,7 @@
 .tr-body-context-button:focus-visible,
 .tr-body-panel-close:focus-visible,
 .tr-body-link:focus-visible {
-  outline: 2px solid var(--accent, #4a9eff);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
@@ -706,7 +706,7 @@
 }
 
 .tr-body-hour:focus-visible {
-  outline: 2px solid var(--accent, #4a9eff);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
@@ -1139,7 +1139,7 @@
 }
 
 .tr-zoom-pill:focus-visible {
-  outline: 2px solid var(--accent, #4a9eff);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
@@ -1165,7 +1165,7 @@
 
 .tr-zoom-pill-browser {
   background: linear-gradient(135deg, rgba(96, 165, 250, 0.78), rgba(191, 219, 254, 0.68));
-  border: 1px solid #2563eb;
+  border: 1px solid var(--warn-ink);
 }
 
 .tr-zoom-pill-both {
@@ -1244,7 +1244,7 @@
 
 .tr-zoom-pill-screen.tr-zoom-pill-analyzing {
   background: rgba(96, 165, 250, 0.6);
-  border-color: #2563eb;
+  border-color: var(--warn-ink);
 }
 
 .tr-zoom-pill-both.tr-zoom-pill-analyzing {
@@ -1597,7 +1597,7 @@
 }
 
 .tr-entry-audio:focus-visible {
-  outline: 2px solid var(--accent, #4a9eff);
+  outline: 2px solid var(--focus);
   outline-offset: -1px;
 }
 
@@ -1697,6 +1697,7 @@
 
 .tr-entry-desc {
   flex: 1;
+  min-width: 0;
   font-size: 13px;
   color: #374151;
   line-height: 1.5;
@@ -1739,7 +1740,7 @@
 }
 
 .tr-speaker-label a:focus-visible {
-  outline: 2px solid var(--accent, #4a9eff);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-radius: 2px;
 }
@@ -1819,7 +1820,7 @@
 .tr-speaker-propagation-action:focus-visible,
 .tr-speaker-propagation-dismiss:focus-visible,
 .tr-speaker-status-retry:focus-visible {
-  outline: 2px solid var(--accent, #4a9eff);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -2036,7 +2037,31 @@
   padding: 8px 12px;
   margin: 8px 0;
   overflow-x: auto;
+  overflow-y: auto;
+  max-height: 16rem;
   font-size: 12px;
+}
+
+.tr-entry-desc pre.tr-pre-expanded {
+  max-height: none;
+}
+
+.tr-pre-toggle {
+  display: inline-block;
+  margin: -4px 0 8px;
+  padding: 3px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  border: 1px solid var(--hairline, #e5e7eb);
+  border-radius: 6px;
+  background: var(--cream, #fff);
+  color: var(--ink-soft, #374151);
+  cursor: pointer;
+}
+
+.tr-pre-toggle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .tr-entry-desc code {
@@ -2071,7 +2096,7 @@
 }
 
 .tr-group-header:focus-visible {
-  outline: 2px solid var(--accent, #4a9eff);
+  outline: 2px solid var(--focus);
   outline-offset: -1px;
 }
 
@@ -2130,7 +2155,7 @@
 }
 
 .tr-group-item:focus-visible {
-  outline: 2px solid var(--accent, #4a9eff);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
@@ -3425,6 +3450,16 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       range = { start, end: start + DEFAULT_LEN };
       renderTimeline();
       updateZoom();
+      // Picking a stretch on the DAY column narrows the DETAIL rail but
+      // does not itself select a block — acknowledge step one is done so
+      // the instructions don't read as if the click had no effect.
+      if (!selectedSegment) {
+        panel.innerHTML = window.SurfaceState.empty({
+          icon: window.ConveyIcons.svg('clock'),
+          heading: 'your day at a glance',
+          desc: 'now pick a block in detail to read it'
+        });
+      }
     };
     el.addEventListener('click', e => {
       e.stopPropagation();
@@ -5073,6 +5108,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     targetEl.innerHTML = html;
     attachBodyWindowButtons(targetEl);
     attachSpeakerPickerHandlers(targetEl);
+    collapseLongPreBlocks(targetEl);
 
     // Get audio element reference
     const paneAudioEl = targetEl.querySelector('audio[data-role="segment-audio"]');
@@ -5408,6 +5444,28 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
     html += '</div></div>';
     return html;
+  }
+
+  const TR_PRE_COLLAPSE_MAX_HEIGHT = 256; // 16rem at the default 16px root size
+
+  function collapseLongPreBlocks(root) {
+    root.querySelectorAll('.tr-entry-desc pre').forEach(pre => {
+      if (pre.dataset.trPreChecked) return;
+      pre.dataset.trPreChecked = '1';
+      if (pre.scrollHeight <= TR_PRE_COLLAPSE_MAX_HEIGHT + 2) return;
+
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'tr-pre-toggle';
+      toggle.textContent = 'show full output';
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.addEventListener('click', () => {
+        const expanded = pre.classList.toggle('tr-pre-expanded');
+        toggle.textContent = expanded ? 'show less' : 'show full output';
+        toggle.setAttribute('aria-expanded', String(expanded));
+      });
+      pre.insertAdjacentElement('afterend', toggle);
+    });
   }
 
   function openImageModal(frameIndex) {

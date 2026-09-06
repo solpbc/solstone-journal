@@ -180,6 +180,10 @@ fn confirmed_status(root: &Path, principal_id: &str, manual_stats: &ManualOwnerT
         "status": "confirmed",
         "centroid_metadata": {
             "cluster_size": centroid.as_ref().map_or(0, |centroid| centroid.cluster_size),
+            "cluster_size_capped": centroid.as_ref().is_some_and(|centroid| {
+                centroid.cluster_size
+                    >= crate::speakers_owner_write::CANDIDATE_EXPANSION_MAX_EMBEDDINGS as i32
+            }),
             "streams": streams,
             "created_at": centroid.as_ref().and_then(|centroid| centroid.created_at.clone()),
             "last_refreshed_at": centroid.as_ref().map_or("", |centroid| &centroid.last_refreshed_at),
