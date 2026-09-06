@@ -77,6 +77,14 @@ const LEADING_SUBJECTS: [&str; 6] = [
     "I",
 ];
 
+/// Auxiliary verbs the activity talent leaves between the subject and the verb.
+///
+/// The talent writes the present progressive often enough that stripping the
+/// subject alone leaves "is performing technical maintenance…" — a fragment,
+/// not a statement. Two-word forms are listed first so a one-word entry never
+/// shadows them.
+const LEADING_AUXILIARIES: [&str; 6] = ["has been", "have been", "is", "are", "was", "were"];
+
 /// Remove a leading subject phrase from a talent-written activity description.
 ///
 /// `sense.md` asks for a plain statement of what was done with no subject
@@ -86,16 +94,19 @@ const LEADING_SUBJECTS: [&str; 6] = [
 /// so this is the deterministic guard at the one boundary where talent output
 /// becomes an activity record.
 ///
-/// It strips a leading subject and capitalises the verb behind it. Everything
+/// It strips a leading subject, drops an auxiliary verb ("is", "are", "was",
+/// "were", "has been", "have been") left stranded in front of the real verb,
+/// and capitalises what remains. Everything
 /// else is returned exactly as written: a description that does not open with a
 /// bare subject phrase is never rewritten, a contraction ("I'm still waiting")
 /// is not a subject phrase, and stored records are never revisited — only the
 /// records written after this point are normalised.
 pub fn normalize_activity_description(description: &str) -> String {
     for subject in LEADING_SUBJECTS {
-        let Some(rest) = strip_subject_phrase(description, subject) else {
+        let Some(rest) = strip_leading_phrase(description, subject) else {
             continue;
         };
+        let rest = strip_leading_auxiliary(rest).unwrap_or(rest);
         let mut characters = rest.chars();
         let Some(first) = characters.next() else {
             continue;
@@ -108,17 +119,28 @@ pub fn normalize_activity_description(description: &str) -> String {
     description.to_owned()
 }
 
-/// Return the text after a leading `subject` word, or `None` when `text` does
-/// not open with that subject followed by whitespace.
-fn strip_subject_phrase<'a>(text: &'a str, subject: &str) -> Option<&'a str> {
-    if !text.get(..subject.len())?.eq_ignore_ascii_case(subject) {
+/// Return the text after a leading `phrase`, or `None` when `text` does not
+/// open with that phrase followed by whitespace.
+fn strip_leading_phrase<'a>(text: &'a str, phrase: &str) -> Option<&'a str> {
+    if !text.get(..phrase.len())?.eq_ignore_ascii_case(phrase) {
         return None;
     }
-    let rest = text.get(subject.len()..)?;
+    let rest = text.get(phrase.len()..)?;
     if !rest.starts_with(char::is_whitespace) {
         return None;
     }
     Some(rest.trim_start())
+}
+
+/// Return the text after a leading auxiliary verb, or `None` when the text
+/// does not open with one that leaves a word behind it. "The user island" is
+/// not an auxiliary, and dropping one that leaves nothing readable would turn
+/// a description into an empty string.
+fn strip_leading_auxiliary(text: &str) -> Option<&str> {
+    LEADING_AUXILIARIES
+        .iter()
+        .find_map(|auxiliary| strip_leading_phrase(text, auxiliary))
+        .filter(|rest| rest.starts_with(char::is_alphabetic))
 }
 
 pub fn level_value(level: &str) -> f64 {
@@ -639,6 +661,36 @@ mod tests {
                 "Wrote the release notes.",
             ),
             ("the user  typed a status report.", "Typed a status report."),
+            // X-21, verbatim from the same capture: the talent writes the
+            // present progressive, so the subject strip alone left a fragment.
+            (
+                "The user is performing technical maintenance and data synchronization within the Solstone system.",
+                "Performing technical maintenance and data synchronization within the Solstone system.",
+            ),
+            (
+                "The user is actively debugging a build submission pipeline.",
+                "Actively debugging a build submission pipeline.",
+            ),
+            (
+                "You are reviewing the launch checklist.",
+                "Reviewing the launch checklist.",
+            ),
+            (
+                "The owner was drafting the release notes.",
+                "Drafting the release notes.",
+            ),
+            (
+                "You were reading the incident report.",
+                "Reading the incident report.",
+            ),
+            (
+                "The person has been waiting on the build.",
+                "Waiting on the build.",
+            ),
+            (
+                "You have been pairing on the migration.",
+                "Pairing on the migration.",
+            ),
         ] {
             assert_eq!(normalize_activity_description(written), shown, "{written}");
         }
@@ -656,6 +708,8 @@ mod tests {
             "You're on the launch call at two.",
             "The user",
             "The user, who had opened the checklist, switched panes.",
+            "Is the build green?",
+            "Was on the launch call at two.",
             "",
         ] {
             assert_eq!(
