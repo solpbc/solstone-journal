@@ -423,6 +423,28 @@
       padding: 1.25rem;
       min-height: 44px;
     }
+    .support-btn {
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+  }
+
+  /* ── Responsive: Phone, above the ≤375 stacked-tab breakpoint (376–480px) ──
+     three tabs no longer fit on one row here, but this width is too wide for
+     the full column stack below; scroll the row instead of letting the last
+     tab wrap onto its own line (G3-18). */
+  @media (min-width: 376px) and (max-width: 480px) {
+    .support-nav {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .support-nav button {
+      flex: 0 0 auto;
+      white-space: nowrap;
+    }
   }
 
   /* ── Responsive: Mobile (≤375px) ── */
@@ -655,9 +677,8 @@
           <div class="support-field-error" id="create-description-error">please write something</div>
           <label for="create-severity">severity</label>
           <select id="create-severity">
-            <option value=""></option>
             <option value="low">low</option>
-            <option value="medium">medium</option>
+            <option value="medium" selected>medium</option>
             <option value="high">high</option>
           </select>
           <label for="create-category">area</label>
