@@ -148,6 +148,20 @@
     }));
     assert('refresh preserves "showing last known state" tail', document.getElementById('refresh-last-known').nextElementSibling.textContent.includes('showing last known state'));
 
+    // X-19 replaced the introducing em-dash with a period or a comma depending
+    // on the surface. Every separator the sweep can leave must still strip.
+    ['.', ',', ':', '-'].forEach((separator) => {
+      const id = 'first-paint-last-known-' + separator.charCodeAt(0);
+      const host = document.createElement('div');
+      host.id = id;
+      document.body.appendChild(host);
+      window.SurfaceState.replaceLoading(id, window.SurfaceState.error({
+        heading: "Couldn't refresh foo" + separator + " showing last known state.",
+        desc: 'reload to try again.'
+      }));
+      assert('first-paint strips the tail after "' + separator + '"', !document.getElementById(id).textContent.includes('showing last known state'));
+    });
+
     assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
   }
 

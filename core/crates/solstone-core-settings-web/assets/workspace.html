@@ -2181,7 +2181,7 @@ button:focus:not(:focus-visible) {
         <span class="sapp-open">open ›</span>
       </a>
 
-      <p class="settings-section-desc" style="margin-top: 1.5rem;">not a setting to open — just where those errors show up.</p>
+      <p class="settings-section-desc" style="margin-top: 1.5rem;">not a setting to open, just where those errors show up.</p>
 
       <a class="sapp" href="/app/health/#quiet-notifs-section">
         <span class="sapp-ic">◔</span>
@@ -2638,7 +2638,7 @@ button:focus:not(:focus-visible) {
           </label>
           <label for="field-support-proactive" class="toggle-label" style="cursor: pointer;">proactive detection</label>
         </div>
-        <small>detect repeated errors and suggest filing a support ticket. no data is sent — only a local notification.</small>
+        <small>detect repeated errors and suggest filing a support ticket. no data is sent, only a local notification.</small>
       </div>
 
       <div class="settings-field">
@@ -2691,7 +2691,7 @@ button:focus:not(:focus-visible) {
       <div class="settings-field">
         <label for="facetTitleInput">name</label>
         <div class="editable-field" id="facetTitleField">
-          <span class="field-display" id="facetTitleDisplay">loading...</span>
+          <span class="field-display" id="facetTitleDisplay">loading…</span>
           <input type="text" class="field-input" id="facetTitleInput" style="display:none">
         </div>
         <small id="facetTitleField-hint">double-click or press Enter to edit</small>
@@ -2752,7 +2752,7 @@ button:focus:not(:focus-visible) {
           <span class="activities-title">add activity</span>
         </div>
         <div class="activities-add-panel">
-          <div class="activities-defaults" id="defaultActivitiesList">loading...</div>
+          <div class="activities-defaults" id="defaultActivitiesList">loading…</div>
           <div class="activities-custom">
             <button class="activities-add-custom-btn" id="addCustomActivityBtn">+ add custom activity</button>
           </div>
@@ -2766,7 +2766,7 @@ button:focus:not(:focus-visible) {
       <div class="log-panel">
         <div class="log-header">action log</div>
         <div class="log-entries" id="logEntries">
-          <div class="log-empty">loading...</div>
+          <div class="log-empty">loading…</div>
         </div>
         <div class="log-more" id="logMore" style="display:none">
           <button class="log-more-btn" id="logMoreBtn">load older</button>
@@ -3096,7 +3096,7 @@ function renderFacetsList(facets) {
     const heading = document.createElement('h3');
     heading.textContent = 'no facets yet.';
     const body = document.createElement('p');
-    body.textContent = 'facets keep parts of your life separate inside one journal — work and home, say — without needing two journals.';
+    body.textContent = 'facets keep parts of your life separate inside one journal, work and home, say, without needing two journals.';
     empty.append(heading, body, facetCreateAction('add a facet'));
     container.appendChild(empty);
     return;
@@ -3454,7 +3454,7 @@ async function revalidateAllKeys() {
   const status = document.getElementById('revalidateStatus');
   if (!btn || !status) return;
   btn.disabled = true;
-  status.textContent = 'validating...';
+  status.textContent = 'validating…';
   status.className = 'key-status-validating';
   try {
     const response = await fetch('api/validate-keys', { method: 'POST' });
@@ -3964,7 +3964,7 @@ function setupIconPicker() {
 
   async function fetchIcons(query) {
     const requestId = ++searchRequestId;
-    showIconMessage('loading icons...');
+    showIconMessage('loading icons…');
     try {
       const response = await fetch(`/app/settings/api/icons?q=${encodeURIComponent(query)}`);
       const data = await response.json();
@@ -5484,7 +5484,7 @@ async function loadStorage() {
   } catch (err) {
     setStorageControlsDisabled(true);
     setLoadState('storageLoadState', storageLoadedOnce
-      ? renderRefreshLoadState("couldn't refresh storage settings — showing last known state.", err?.serverMessage)
+      ? renderRefreshLoadState("couldn't refresh storage settings. showing last known state.", err?.serverMessage)
       : window.SurfaceState.error({
         heading: "couldn't load storage settings",
         desc: window.CONVEY_COPY.RELOAD_HINT,
@@ -5836,7 +5836,7 @@ async function runCleanupMark() {
   const previewDiv = document.getElementById('cleanupPreview');
   const previewText = document.getElementById('cleanupPreviewText');
 
-  previewText.textContent = 'building the list...';
+  previewText.textContent = 'building the list…';
   previewDiv.style.display = '';
 
   try {
@@ -5934,7 +5934,7 @@ function renderLogCleanupStats(stats, includeSkipped) {
 
 function renderLogCleanupResult(result, phase) {
   if (result.enabled === false) {
-    return '<p>log retention is off — operational logs are kept indefinitely.</p>';
+    return '<p>log retention is off. operational logs are kept indefinitely.</p>';
   }
 
   const totalWork = logCleanupHasWork(result);
@@ -5988,7 +5988,7 @@ async function runLogCleanupPreview() {
 
   const previewDiv = document.getElementById('cleanupLogsPreview');
   const previewText = document.getElementById('cleanupLogsPreviewText');
-  previewText.textContent = 'checking...';
+  previewText.textContent = 'checking…';
   previewDiv.style.display = '';
 
   try {
@@ -6019,7 +6019,7 @@ async function runLogCleanupExecute() {
   const previewDiv = document.getElementById('cleanupLogsPreview');
   const previewText = document.getElementById('cleanupLogsPreviewText');
   btn.disabled = true;
-  btn.textContent = 'deleting...';
+  btn.textContent = 'deleting…';
   previewDiv.style.display = '';
 
   try {
@@ -6086,7 +6086,7 @@ function showSettingsLoading() {
   if (settingsIndexView) settingsIndexView.hidden = true;
   if (!settingsStateGate || !window.SurfaceState) return;
   settingsStateGate.hidden = false;
-  settingsStateGate.innerHTML = window.SurfaceState.loading({ text: 'loading settings...' });
+  settingsStateGate.innerHTML = window.SurfaceState.loading({ text: 'loading settings…' });
 }
 
 function revealSettingsIndex() {

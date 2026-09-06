@@ -625,7 +625,7 @@
 
     if (attendanceItems.length) {
       html += '<div class="pulse-connections-shelf">'
-        + '<div class="pulse-connections-shelf-label">often around — events only</div>'
+        + '<div class="pulse-connections-shelf-label">often around, events only</div>'
         + '<div class="pulse-connections-cluster">' + attendanceItems.join(' · ') + '</div>'
         + '</div>';
     }
@@ -706,7 +706,7 @@
         + '<a class="pulse-briefing-status-link" href="/app/thinking/#runs/' + esc(pulseContext?.today || '') + '/morning_briefing">check status</a>'
         + '</div>';
     }
-    return '<div class="pulse-briefing-placeholder">your morning briefing is being prepared...</div>';
+    return '<div class="pulse-briefing-placeholder">your morning briefing is being prepared…</div>';
   }
 
   function renderBriefingCardHtml(data, pulseContext) {
@@ -806,7 +806,7 @@
       })
       .catch(function (error) {
         logError(error, 'home: refreshVitals failed');
-        renderRefreshError('pulse-vitals', error, "Couldn't refresh vitals — showing last known state.");
+        renderRefreshError('pulse-vitals', error, "Couldn't refresh vitals, showing last known state.");
       });
   }
 
@@ -822,7 +822,7 @@
       })
       .catch(function (error) {
         logError(error, 'home: refreshNarrative failed');
-        renderRefreshError('pulse-narrative', error, "Couldn't refresh narrative — showing last known state.");
+        renderRefreshError('pulse-narrative', error, "Couldn't refresh narrative, showing last known state.");
       });
   }
 

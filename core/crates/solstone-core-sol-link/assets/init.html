@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>create your journal — solstone</title>
+  <title>create your journal. solstone</title>
   <link rel="icon" href="/favicon.ico">
   <link rel="stylesheet" href="/static/tokens.css">
   <style>
@@ -227,7 +227,7 @@
 
     <section class="init-section" id="section-journal-mark">
       <h3>this is your journal</h3>
-      <p class="section-hint">every journal has its own mark — two symbols and two words, unique to yours. you'll recognize it whenever you connect a device.</p>
+      <p class="section-hint">every journal has its own mark: two symbols and two words, unique to yours. you'll recognize it whenever you connect a device.</p>
       <div id="journal-mark-display" class="mark-display" aria-live="polite"></div>
       <div id="journal-mark-error" class="error-message" hidden></div>
       <button type="button" id="journal-mark-retry" class="settings-preset-btn" hidden>try again</button>
@@ -235,7 +235,7 @@
         <button type="button" id="journal-mark-regenerate" class="settings-preset-btn">try another</button>
         <button type="button" id="journal-mark-lock" class="cta-button">lock it in</button>
       </div>
-      <p class="section-hint mark-permanence">lock it in and this mark is your journal's, for good — it can't be changed later. try as many as you like first.</p>
+      <p class="section-hint mark-permanence">lock it in and this mark is your journal's, for good. it can't be changed later. try as many as you like first.</p>
       <p id="journal-mark-locked" class="mark-locked" hidden><svg viewBox="0 0 24 24" fill="none" stroke="#166534" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>locked in · this is your journal's mark, for good.</p>
     </section>
 
@@ -259,7 +259,7 @@
       <h3>choose how thinking works</h3>
       <p class="section-hint">choose how processing runs for the agents working from your journal. you can change this anytime in <b>thinking</b>.</p>
       <div class="lanes" id="provider-lanes" aria-live="polite"></div>
-      <div class="routenote">when you finish, <b>thinking</b> opens to the lane you picked. the fork lives in thinking from here on — switch anytime.</div>
+      <div class="routenote">when you finish, <b>thinking</b> opens to the lane you picked. the fork lives in thinking from here on. switch anytime.</div>
       <p class="deferlink"><a href="#" id="provider-skip">set up thinking later</a>. your journal keeps what you add from day one. choose a thinking option whenever you're ready.</p>
     </section>
 
@@ -296,7 +296,7 @@
     </form>
     <div id="finalize-error" class="error-message" hidden></div>
 
-    <p class="footer-note">your journal stays on this computer — nothing leaves unless you send it.</p>
+    <p class="footer-note">your journal stays on this computer. nothing leaves unless you send it.</p>
     <p class="footer-note">questions or feedback? <a href="https://bsky.app/profile/solstone.app" target="_blank" rel="noopener noreferrer">@solstone.app on bluesky</a> &middot; <a href="https://github.com/solpbc/solstone/issues" target="_blank" rel="noopener noreferrer">github issues</a> &middot; <a href="https://support.solstone.app" target="_blank" rel="noopener noreferrer">support.solstone.app</a></p>
     </div>
   </main>
@@ -344,7 +344,7 @@
       const verdict = document.createElement('div');
       verdict.className = 'laneverdict';
       if (state === 'capable') {
-        verdict.textContent = detail ? `this computer can run it — ${detail}` : 'this computer can run it.';
+        verdict.textContent = detail ? `this computer can run it: ${detail}` : 'this computer can run it.';
       } else if (state === 'incapable') {
         verdict.textContent = detail;
         const link = document.createElement('a');
@@ -557,7 +557,7 @@
       if (mode === 'days') {
         const n = parseInt(daysValue, 10);
         if (Number.isFinite(n) && n >= 1) return { mode, days: n, statusText: `currently: list originals for removal after ${n} days.` };
-        return { mode, days: null, statusText: 'currently: keep — set a positive number of days.' };
+        return { mode, days: null, statusText: 'currently: keep. set a positive number of days.' };
       }
       return { mode: 'keep', days: null, statusText: 'currently: keep everything.' };
     }
@@ -652,7 +652,7 @@
       const validIcons = icons.length === 2 && icons.every(icon => icon && icon.svg && icon.color && icon.color.hex);
 
       if (!display || !validIcons || words.length !== 2) {
-        showMarkError("couldn't draw your mark — try again.");
+        showMarkError("couldn't draw your mark. try again.");
         return;
       }
 
@@ -693,7 +693,7 @@
           const data = await window.apiJson('/init/mark');
           renderMark(data.mark, data.locked);
         } catch (err) {
-          showMarkError((err && err.serverMessage) || "couldn't load your mark — try again.");
+          showMarkError((err && err.serverMessage) || "couldn't load your mark. try again.");
           if (retryButton) retryButton.hidden = false;
           if (finishButton) finishButton.disabled = true;
         } finally {
@@ -714,7 +714,7 @@
             const data = await window.apiJson('/init/mark/regenerate', {method: 'POST'});
             renderMark(data.mark, false);
           } catch (err) {
-            showMarkError((err && err.serverMessage) || "couldn't regenerate — try again.");
+            showMarkError((err && err.serverMessage) || "couldn't regenerate. try again.");
           } finally {
             regenerateButton.textContent = originalLabel;
             regenerateButton.disabled = false;
@@ -730,7 +730,7 @@
             const data = await window.apiJson('/init/mark/lock', {method: 'POST'});
             renderMark(data.mark, true);
           } catch (err) {
-            showMarkError((err && err.serverMessage) || "couldn't lock it in — try again.");
+            showMarkError((err && err.serverMessage) || "couldn't lock it in. try again.");
             applyLockState(false);
           } finally {
             if (!lockButton.hidden) {
@@ -796,7 +796,7 @@
         if (data && data.error) {
           showFinalizeError(errorEl, data.error);
         } else {
-          showFinalizeError(errorEl, 'unexpected response from server — check the browser console.');
+          showFinalizeError(errorEl, 'unexpected response from server. check the browser console.');
         }
       } catch (err) {
         let message = err && err.serverMessage;

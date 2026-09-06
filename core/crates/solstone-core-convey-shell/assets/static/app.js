@@ -55,7 +55,10 @@ function captureReportContext({ heading, apiError, customDetail }) {
 window.SurfaceState = (() => {
   const HEADING_LEVELS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
   const ERROR_ICON = window.ConveyIcons.svg('triangle-alert');
-  const STRIP_LAST_KNOWN = /\s*[—-]\s*showing last known state\.?\s*$/i;
+  // X-19 turned the em-dash that used to introduce this tail into a period or
+  // a comma, per surface. The class accepts every separator the copy sweep can
+  // leave behind, so a first-paint error never leaks refresh-only language.
+  const STRIP_LAST_KNOWN = /\s*[—.,:-]\s*showing last known state\.?\s*$/i;
 
   function escapeHtml(value) {
     return String(value ?? '')

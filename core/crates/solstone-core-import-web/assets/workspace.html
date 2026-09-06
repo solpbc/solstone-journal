@@ -689,7 +689,7 @@
     <div id="importListContent">
       <div class="surface-state surface-state--loading" role="status" aria-busy="true">
         <div class="surface-state-spinner" aria-hidden="true"></div>
-        <span class="surface-state-text" data-role="loading-status">loading imports...</span>
+        <span class="surface-state-text" data-role="loading-status">loading imports…</span>
       </div>
     </div>
   </div>
@@ -725,21 +725,21 @@ const settingInput = document.getElementById('settingInput');
 const startBtn = document.getElementById('startBtn');
 
 const STAGE_NAMES = {
-  initialization: 'Preparing...',
-  importing: 'Reading your data...',
-  detection: 'Detecting content type...',
-  audio_segmenting: 'Splitting audio...',
-  transcription: 'Transcribing audio...',
-  processing: 'Processing entries...',
-  writing: 'Writing to journal...',
-  indexing: 'Building search index...',
-  cleanup: 'Finishing up...',
-  segmenting: 'Preparing segments...',
-  transcribing: 'Transcribing audio...',
-  segments: 'Merging segments...',
-  entities: 'Merging entities...',
-  facets: 'Merging facets...',
-  imports: 'Copying prior imports...',
+  initialization: 'Preparing…',
+  importing: 'Reading your data…',
+  detection: 'Detecting content type…',
+  audio_segmenting: 'Splitting audio…',
+  transcription: 'Transcribing audio…',
+  processing: 'Processing entries…',
+  writing: 'Writing to journal…',
+  indexing: 'Building search index…',
+  cleanup: 'Finishing up…',
+  segmenting: 'Preparing segments…',
+  transcribing: 'Transcribing audio…',
+  segments: 'Merging segments…',
+  entities: 'Merging entities…',
+  facets: 'Merging facets…',
+  imports: 'Copying prior imports…',
 };
 const IMPORT_STALL_TIMEOUT_MS = 10 * 60 * 1000; // longest observed real import; stalled rows surface amber after this without a terminal event
 const IMPORT_ROW_EVENTS = new Set(['started', 'status', 'completed', 'error']);
@@ -978,9 +978,9 @@ function capitalizeStage(stage) {
 }
 
 function humanStageName(stage, sourceDisplay = '') {
-  const fallback = STAGE_NAMES[stage] || `${capitalizeStage(stage)}...`;
+  const fallback = STAGE_NAMES[stage] || `${capitalizeStage(stage)}…`;
   if (stage === 'importing' && sourceDisplay) {
-    return `Reading ${sourceDisplay}...`;
+    return `Reading ${sourceDisplay}…`;
   }
   return fallback;
 }
@@ -994,7 +994,7 @@ function retryImport(event) {
   const statusCell = button.closest('.status-cell');
   const result = statusCell?.querySelector('.import-retry-result');
   button.disabled = true;
-  button.textContent = 'retrying...';
+  button.textContent = 'retrying…';
   if (result) result.textContent = '';
   const payload = { import_id: importId };
   if (stage) payload.stage = stage;
@@ -1374,7 +1374,7 @@ function markRowStalled(importId) {
 	    const statusCell = row.querySelector('.status-cell');
 	    if (statusCell) {
 	      const stage = importEvents[importId]?.stage || 'importing';
-	      statusCell.innerHTML = `<span class="import-status stalled">stalled</span><button type="button" class="import-retry-btn" data-import-retry="true" data-import-id="${escapeHtml(importId)}" data-stage="${escapeHtml(stage)}">retry from ${escapeHtml(humanStageName(stage))}</button><div class="progress-detail import-stalled-meta">stalled — no updates in 10 minutes. import ID: ${escapeHtml(importId)}. ${window.CONVEY_COPY.RELOAD_HINT}</div><div class="import-retry-result"></div>`;
+	      statusCell.innerHTML = `<span class="import-status stalled">stalled</span><button type="button" class="import-retry-btn" data-import-retry="true" data-import-id="${escapeHtml(importId)}" data-stage="${escapeHtml(stage)}">retry from ${escapeHtml(humanStageName(stage))}</button><div class="progress-detail import-stalled-meta">stalled: no updates in 10 minutes. import ID: ${escapeHtml(importId)}. ${window.CONVEY_COPY.RELOAD_HINT}</div><div class="import-retry-result"></div>`;
 	    }
 	  }
 
@@ -1601,7 +1601,7 @@ function renderQuickImportFlow() {
         </div></li>
         <li><div class="import-step">
           <div class="import-step-number">step 2</div>
-          <textarea id="pasteText" class="import-paste-text" placeholder="paste text here..."></textarea>
+          <textarea id="pasteText" class="import-paste-text" placeholder="paste text here…"></textarea>
           <div class="import-inline-fields">
             <div class="confirm-field">
               <label for="quickSettingInput">context <span class="import-field-optional">(optional)</span></label>
@@ -1968,7 +1968,7 @@ function showProgressView(importId, eventData = null) {
 
   const displayName = currentEvent?.source_display || importInfo?.source_display || source?.display_name || 'Import';
   const stageLabel = currentEvent?.stalled
-    ? 'Stalled — no updates in 10 minutes'
+    ? 'Stalled: no updates in 10 minutes'
     : currentEvent?.event === 'completed'
       ? 'Import complete'
       : currentEvent?.event === 'error'
@@ -2006,7 +2006,7 @@ function showProgressView(importId, eventData = null) {
     completionHtml = `
       <div class="import-completion-summary stalled">
         <div><strong>Import ID:</strong> ${escapeHtml(importId)}</div>
-        <div>Stalled — no updates in 10 minutes. ${window.CONVEY_COPY.RELOAD_HINT}</div>
+        <div>Stalled: no updates in 10 minutes. ${window.CONVEY_COPY.RELOAD_HINT}</div>
         <div class="import-action-row">
           <a href="#" class="import-secondary-btn" onclick="showGrid(); return false;">import another source</a>
         </div>
@@ -2250,7 +2250,7 @@ if (document.readyState === 'loading') {
   <div class="import-header">
     <h1 id="importDetailHeading"></h1>
     <div class="import-meta" id="importMeta">
-      <span>loading...</span>
+      <span>loading…</span>
     </div>
   </div>
 
@@ -2260,7 +2260,7 @@ if (document.readyState === 'loading') {
   </div>
 
   <div class="tab-content active" id="overview">
-    <div id="overviewContent">loading...</div>
+    <div id="overviewContent">loading…</div>
   </div>
 
   <div class="tab-content" id="content">
@@ -2268,7 +2268,7 @@ if (document.readyState === 'loading') {
     <div id="contentContainer" style="display:none;">
       <div class="import-content-summary" id="contentSummary"></div>
       <div class="import-content-controls">
-        <input type="text" id="contentSearch" class="import-content-search" placeholder="search items..." />
+        <input type="text" id="contentSearch" class="import-content-search" placeholder="search items…" />
         <select id="contentMonth" class="import-content-month">
           <option value="">all months</option>
         </select>
@@ -2317,7 +2317,7 @@ tabs.forEach(tab => {
 function loadContent(page = 1) {
   const container = document.getElementById('contentContainer');
   const loading = document.getElementById('contentLoading');
-  loading.textContent = 'loading content...';
+  loading.textContent = 'loading content…';
   loading.style.display = 'block';
 
   const params = new URLSearchParams({page, per_page: 50});
@@ -2351,7 +2351,7 @@ function renderContentSummary(data) {
   const iconSvg = data.source_icon_svg || '';
   const display = data.source_display || '';
   const iconHtml = iconSvg ? `<span class="import-content-summary-icon" aria-hidden="true">${iconSvg}</span>` : '';
-  el.innerHTML = `${iconHtml}<strong>${escapeHtml(display)}</strong> — ${data.total} items`;
+  el.innerHTML = `${iconHtml}<strong>${escapeHtml(display)}</strong>, ${data.total} items`;
 }
 
 function renderContentMonths(months) {
@@ -2385,7 +2385,7 @@ function renderContentItems(items) {
       const monthIdx = parseInt(itemMonth.slice(4, 6), 10) - 1;
       const monthLabel = monthNames[monthIdx] || '';
       const monthCount = items.filter(i => (i.date || '').startsWith(itemMonth)).length;
-      html += `<div class="import-content-month-header">${monthLabel} ${year} — ${monthCount} items</div>`;
+      html += `<div class="import-content-month-header">${monthLabel} ${year}, ${monthCount} items</div>`;
     }
     const typeLabel = {
       conversation: 'Chat',
@@ -2411,7 +2411,7 @@ function renderContentItems(items) {
           ${item.meta?.tags?.length ? `· ${item.meta.tags.map(t => escapeContentHtml(t)).join(', ')}` : ''}
         </div>
         ${item.preview ? `<div class="import-content-item-preview">${escapeContentHtml(stripMarkdown(item.preview))}</div>` : ''}
-        <div class="import-content-item-body"><div class="no-data">Loading...</div></div>
+        <div class="import-content-item-body"><div class="no-data">loading…</div></div>
       </div>`;
   });
   el.innerHTML = html;

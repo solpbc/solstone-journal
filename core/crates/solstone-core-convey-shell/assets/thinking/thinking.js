@@ -2214,8 +2214,8 @@
     setText(
       'forkHint',
       brain.kind === 'none'
-        ? 'pick one — use local when it is ready, or bring your own.'
-        : 'one at a time — the one with the dot is active right now.',
+        ? 'pick one: use local when it is ready, or bring your own.'
+        : 'one at a time. the one with the dot is active right now.',
     );
 
     const local = localReadiness();
@@ -2243,7 +2243,7 @@
       setPill('localLanePill', 'unavailable', 'bad');
       const desc = $('localLaneDescription');
       if (desc) {
-        desc.textContent = "this computer can't run a local model yet — it needs a supported GPU. ";
+        desc.textContent = "this computer can't run a local model yet. it needs a supported GPU. ";
         const link = document.createElement('a');
         link.className = 'textlink';
         link.href = 'https://support.solstone.app/kb/solstone-memory-and-local-models';
@@ -2588,7 +2588,7 @@
         title: 'local',
         sub: "you're pointed at your own URL",
         message: '',
-        notice: "you're pointed at your own URL — clear it to run the bundled model",
+        notice: "you're pointed at your own URL. clear it to run the bundled model",
         activate: false,
         bootstrap: false,
         tone: '',
@@ -2775,7 +2775,7 @@
       'localOverrideNoticeText',
       state.providers?.active_lane?.lane === 'confidential'
         ? 'Turn off confidential thinking first, then switch to the bundled local model.'
-        : "you're pointed at your own URL — clear it to run the bundled model",
+        : "you're pointed at your own URL. clear it to run the bundled model",
     );
     setHidden('localOverrideNotice', !local.endpointOverride);
     setButtonState('localBootstrap', local.bootstrap, !local.bootstrap);

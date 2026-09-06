@@ -1089,7 +1089,7 @@ const Dashboard = (function() {
           document.getElementById('loading').style.display = 'none';
           document.getElementById('notice').appendChild(
             el('div', {className: 'alert alert-error'}, [
-              'Couldn\'t load dashboard data — the stats file may be corrupt or unreadable. ',
+              'Couldn\'t load dashboard data. the stats file may be corrupt or unreadable. ',
               'Try regenerating with think-journal-stats.'
             ])
           );

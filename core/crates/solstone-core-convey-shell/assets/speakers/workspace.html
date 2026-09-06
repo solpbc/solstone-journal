@@ -1297,7 +1297,7 @@
       <div id="spkFilterIndicator" class="spk-filter-indicator"></div>
       <div id="spkSegmentsStatus" class="spk-segments-status" aria-live="polite"></div>
       <ul class="spk-segments-list" id="spkSegmentList" role="listbox">
-        <li class="spk-empty">loading...</li>
+        <li class="spk-empty">loading…</li>
       </ul>
       <div class="spk-load-more" id="spkLoadMore" style="display: none;">
         <button class="spk-load-more-btn" id="spkLoadMoreBtn">load more segments</button>
@@ -1585,7 +1585,7 @@
     const context = window.SPEAKERS_CONTEXT || {};
     if (!context.isDay) return;
     document.getElementById('speakersDayView').hidden = false;
-    segmentList.innerHTML = '<li class="spk-empty">loading...</li>';
+    segmentList.innerHTML = '<li class="spk-empty">loading…</li>';
     try {
       const payload = await window.SPEAKERS_STATE_PROMISE;
       applySpeakersDayState(payload);
@@ -1756,7 +1756,7 @@
             })
             .catch((err) => {
               ownerDetectionInFlight = false;
-              renderOwnerBanner(`Couldn't analyze voice patterns — ${err.serverMessage}`);
+              renderOwnerBanner(`Couldn't analyze voice patterns: ${err.serverMessage}`);
               window.logError(err, { context: 'speakers: owner detect failed' });
             });
         }
@@ -1788,7 +1788,7 @@
       if (stale()) return;
       ownerDetectionInFlight = false;
       hideDiscovery();
-      renderOwnerBanner(`Couldn't load owner status — ${err.serverMessage}`);
+      renderOwnerBanner(`Couldn't load owner status: ${err.serverMessage}`);
       window.logError(err, { context: 'speakers: checkOwnerStatus failed' });
     }
   }
@@ -2073,7 +2073,7 @@
             <div class="spk-owner-diagnostics-line">source: ${escapeHtml(data.source || 'auto')}</div>
             ${data.low_quality_reason ? `
               <div class="spk-owner-diagnostics-line">
-                gate: ${escapeHtml(data.low_quality_reason)} — observed ${escapeHtml(formatOwnerMetric(data.observed_value))}, threshold ${escapeHtml(formatOwnerMetric(data.threshold_value))}
+                gate: ${escapeHtml(data.low_quality_reason)}. observed ${escapeHtml(formatOwnerMetric(data.observed_value))}, threshold ${escapeHtml(formatOwnerMetric(data.threshold_value))}
               </div>
             ` : ''}
             <div class="spk-owner-diagnostics-line">Manual tags: ${escapeHtml(String(ownerTeachMomentumCount(data)))}</div>
@@ -2131,7 +2131,7 @@
         })
         .catch((err) => {
           btn.disabled = false;
-          renderOwnerBanner(`Couldn't build from manual tags — ${err.serverMessage}`);
+          renderOwnerBanner(`Couldn't build from manual tags: ${err.serverMessage}`);
           window.logError(err, { context: 'speakers: owner build from tags failed' });
         });
     });
@@ -2877,7 +2877,7 @@
       ${summaryParts.length ? `<div class="spk-detail-summary">${summaryParts.join('')}</div>` : ''}
     `;
 
-    html += '<div class="spk-speakers" id="spkSpeakers"><div class="spk-empty">Loading speakers...</div></div>';
+    html += '<div class="spk-speakers" id="spkSpeakers"><div class="spk-empty">loading speakers…</div></div>';
 
     if (seg.sources.length > 1) {
       html += `
@@ -2898,7 +2898,7 @@
     }
 
     html += '<div id="spkReviewStatus" class="spk-review-status" aria-live="polite"></div>';
-    html += '<div class="spk-sentences" id="spkSentences"><div class="spk-empty">loading...</div></div>';
+    html += '<div class="spk-sentences" id="spkSentences"><div class="spk-empty">loading…</div></div>';
     detailPanel.innerHTML = html;
 
     if (!detailExpanded) {
@@ -3014,10 +3014,10 @@
     const isFirstPaint = Boolean(
       container
       && container.querySelector('.spk-sentence') === null
-      && container.textContent.trim() === 'Loading...'
+      && container.textContent.trim() === 'loading…'
     );
     if (container && isFirstPaint) {
-      container.innerHTML = '<div class="spk-empty">Loading...</div>';
+      container.innerHTML = '<div class="spk-empty">loading…</div>';
     }
 
     setReviewStatus();
@@ -3059,7 +3059,7 @@
               detail: err,
             });
           } else {
-            setReviewStatus("Couldn't reload review — showing last known state.", err.serverMessage);
+            setReviewStatus("Couldn't reload review. showing last known state.", err.serverMessage);
           }
         }
         if (throwOnError) throw err;
@@ -3221,7 +3221,7 @@
     if (sentence.speaker_entity_id) {
       const correctSelect = `
         <select class="spk-select-small spk-correct-select" aria-label="correct attribution" data-sentence-id="${sentence.id}">
-          <option value="">correct...</option>
+          <option value="">correct…</option>
           ${options}
         </select>
         <button class="spk-btn spk-btn-primary spk-apply-btn" data-sentence-id="${sentence.id}" data-action="correct" style="display:none" aria-label="apply correction">&#10003;</button>
@@ -3239,7 +3239,7 @@
 
     return `
       <select class="spk-select-small spk-assign-select" aria-label="assign speaker" data-sentence-id="${sentence.id}">
-        <option value="">assign...</option>
+        <option value="">assign…</option>
         ${options}
       </select>
       <button class="spk-btn spk-btn-primary spk-apply-btn" data-sentence-id="${sentence.id}" data-action="assign" style="display:none" aria-label="apply assignment">&#10003;</button>
@@ -3339,7 +3339,7 @@
     } catch (err) {
       showStatusBySentence(
         sentenceId,
-        err.serverMessage || 'something went wrong — try again',
+        err.serverMessage || 'something went wrong. try again',
         'error'
       );
     }
@@ -3367,7 +3367,7 @@
     } catch (err) {
       showStatusBySentence(
         sentenceId,
-        err.serverMessage || 'something went wrong — try again',
+        err.serverMessage || 'something went wrong. try again',
         'error'
       );
     }
@@ -3388,7 +3388,7 @@
     } catch (err) {
       showStatusBySentence(
         sentenceId,
-        err.serverMessage || 'something went wrong — try again',
+        err.serverMessage || 'something went wrong. try again',
         'error'
       );
     }
@@ -3415,7 +3415,7 @@
     } catch (err) {
       showStatusBySentence(
         sentenceId,
-        err.serverMessage || 'something went wrong — try again',
+        err.serverMessage || 'something went wrong. try again',
         'error'
       );
     }
@@ -3519,7 +3519,7 @@
     audioPlayer.addEventListener('error', () => {
       const container = document.getElementById('spkAudioContainer');
       if (container) {
-        container.innerHTML = '<div class="spk-status spk-status-error" role="alert">couldn\'t load audio — the file may be missing or in an unsupported format<button class="spk-status-dismiss" aria-label="dismiss">&times;</button></div>';
+        container.innerHTML = '<div class="spk-status spk-status-error" role="alert">couldn\'t load audio. the file may be missing or in an unsupported format<button class="spk-status-dismiss" aria-label="dismiss">&times;</button></div>';
         container.querySelector('.spk-status-dismiss')?.addEventListener('click', (e) => {
           e.target.closest('.spk-status-error').remove();
         });
@@ -4646,11 +4646,11 @@
     const context = window.SPEAKERS_CONTEXT || {};
     if (context.isDay) return;
     document.getElementById('speakersOverviewView').hidden = false;
-    ownerPanel.innerHTML = window.SurfaceState.loading({ text: 'loading speakers...' });
+    ownerPanel.innerHTML = window.SurfaceState.loading({ text: 'loading speakers…' });
     // These two panels otherwise sit blank (not a labeled loading state) for
     // as long as their own reads take, which can be well over ten seconds.
-    qualityPanel.innerHTML = window.SurfaceState.loading({ text: 'loading voice quality...' });
-    knownContainer.innerHTML = window.SurfaceState.loading({ text: 'loading known voices...' });
+    qualityPanel.innerHTML = window.SurfaceState.loading({ text: 'loading voice quality…' });
+    knownContainer.innerHTML = window.SurfaceState.loading({ text: 'loading known voices…' });
     sortSelect.hidden = true;
     try {
       const payload = await window.SPEAKERS_STATE_PROMISE;

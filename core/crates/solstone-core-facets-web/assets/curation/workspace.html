@@ -353,8 +353,8 @@ window.CUR_COPY = CUR_COPY;
 
   function renderLoading() {
     root.innerHTML = window.SurfaceState
-      ? window.SurfaceState.loading({text: 'loading suggestions...'})
-      : '<p>loading suggestions...</p>';
+      ? window.SurfaceState.loading({text: 'loading suggestions…'})
+      : '<p>loading suggestions…</p>';
   }
 
   function renderError(err, retry) {
@@ -1168,7 +1168,7 @@ window.CUR_COPY = CUR_COPY;
             const facets = JSON.parse(selectedItem.dataset.facets || '[]');
             const pairText = `"${selectedItem.dataset.source}" and "${selectedItem.dataset.target}"`;
             const facetsText = facets.length > 1
-              ? ` — ${copyFormat(CUR_COPY.CUR_ENTITY_FACETS_LABEL, {facets: formatFacetList(facets)})}`
+              ? `, ${copyFormat(CUR_COPY.CUR_ENTITY_FACETS_LABEL, {facets: formatFacetList(facets)})}`
               : '';
             return `<li>${escapeHtml(pairText + facetsText)}</li>`;
           }).join('')}

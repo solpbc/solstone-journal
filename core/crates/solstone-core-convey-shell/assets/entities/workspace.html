@@ -1975,7 +1975,7 @@ body.presentation-mode .entity-desc { color: #4b5563; }
     <div class="entities-section">
       <h3>
         <span>your entities</span>
-        <input type="text" id="journal-entity-card-search" class="entity-search-input" placeholder="search entities..." aria-label="search entity cards">
+        <input type="text" id="journal-entity-card-search" class="entity-search-input" placeholder="search entities…" aria-label="search entity cards">
         <span id="journal-card-search-count" class="entity-card-search-count" style="display: none;"></span>
       </h3>
       <p class="entities-subtitle">people, places, and things across your journal</p>
@@ -2079,7 +2079,7 @@ body.presentation-mode .entity-desc { color: #4b5563; }
     <div class="entities-section">
       <h3 id="facet-entities-heading">
         <span>entities</span>
-        <input type="text" id="entity-card-search" class="entity-search-input" placeholder="search entities..." aria-label="search entity cards">
+        <input type="text" id="entity-card-search" class="entity-search-input" placeholder="search entities…" aria-label="search entity cards">
         <span id="facet-card-search-count" class="entity-card-search-count" style="display: none;"></span>
       </h3>
       <p class="entities-subtitle" id="facet-entities-subtitle">people, places, and things you're tending</p>
@@ -2095,9 +2095,9 @@ body.presentation-mode .entity-desc { color: #4b5563; }
       <div class="entities-container">
         <h3 id="all-entities-title">
           <span>detected entities</span>
-          <input type="text" id="entity-search" class="entity-search-input" placeholder="search entities..." aria-label="search detected entities">
+          <input type="text" id="entity-search" class="entity-search-input" placeholder="search entities…" aria-label="search detected entities">
         </h3>
-        <p class="entities-subtitle">found by AI in the last 30 days — star to add to your journal</p>
+        <p class="entities-subtitle">found by AI in the last 30 days. star to add to your journal</p>
         <div id="detected-action-error" class="error-message" style="display: none;"></div>
         <table class="entities-table">
           <thead>
@@ -2175,7 +2175,7 @@ body.presentation-mode .entity-desc { color: #4b5563; }
         description <span class="required">*</span>
         <small style="font-weight: normal; color: #6c757d;">(how does this entity relate to this facet?)</small>
       </label>
-      <textarea id="attach-description" placeholder="e.g., lead engineer on the project, primary contact for sales..."></textarea>
+      <textarea id="attach-description" placeholder="e.g., lead engineer on the project, primary contact for sales…"></textarea>
       <button class="btn-attach" id="attach-entity-btn" disabled>attach to facet</button>
       <div id="attach-error" style="color: #dc3545; margin-top: 0.5em; display: none;"></div>
     </div>
@@ -2903,7 +2903,7 @@ function isCurrentConnectionEntity(entityId) {
 async function renderConnectionsSection(entityId, containerId, isPrincipal) {
   const container = document.getElementById(containerId);
   if (!container || !entityId) return;
-  container.innerHTML = '<span class="observations-empty">loading...</span>';
+  container.innerHTML = '<span class="observations-empty">loading…</span>';
 
   try {
     const network = await loadEntityNetwork(entityId);
@@ -3181,7 +3181,7 @@ async function toggleConnectionEvidence(entityId, peerId, pane, referenceDay, bu
 }
 
 async function loadInitialConnectionEvidence(entityId, peerId, pane, referenceDay) {
-  pane.innerHTML = '<span class="observations-empty">loading...</span>';
+  pane.innerHTML = '<span class="observations-empty">loading…</span>';
   try {
     const history = await loadConnectionHistory(entityId, peerId, 0);
     if (!isCurrentConnectionEntity(entityId)) return;
@@ -3611,15 +3611,15 @@ function showFacetDetailView(entityId) {
   const openToken = beginDetailObservationOpen();
   // Show loading state
   currentDetailEntity = null;
-  document.getElementById('detail-name').textContent = 'loading...';
-  document.getElementById('detail-allfacets-name').textContent = 'loading...';
+  document.getElementById('detail-name').textContent = 'loading…';
+  document.getElementById('detail-allfacets-name').textContent = 'loading…';
   document.getElementById('detail-type').textContent = '';
   document.getElementById('detail-aka').textContent = '';
   document.getElementById('detail-indicators').innerHTML = '';
-  document.getElementById('detail-description-container').innerHTML = '<span class="entity-desc-display empty">loading...</span>';
-  document.getElementById('detail-connections').innerHTML = '<span class="observations-empty">loading...</span>';
+  document.getElementById('detail-description-container').innerHTML = '<span class="entity-desc-display empty">loading…</span>';
+  document.getElementById('detail-connections').innerHTML = '<span class="observations-empty">loading…</span>';
   document.getElementById('detail-observations-heading').textContent = ENT_COPY.ENT_OBS_HEADING || '';
-  document.getElementById('detail-observations').innerHTML = '<span class="observations-empty">loading...</span>';
+  document.getElementById('detail-observations').innerHTML = '<span class="observations-empty">loading…</span>';
   loadObservationDayGrid(currentFacet, entityId, openToken);
 
   // Fetch entity details
@@ -3666,12 +3666,12 @@ function showFacetDetailView(entityId) {
 function showJournalDetailView(entityId) {
   // Show loading state
   currentDetailEntity = null;
-  document.getElementById('journal-detail-name').textContent = 'loading...';
+  document.getElementById('journal-detail-name').textContent = 'loading…';
   document.getElementById('journal-detail-type').textContent = '';
   document.getElementById('journal-detail-aka').textContent = '';
   document.getElementById('journal-detail-indicators').innerHTML = '';
-  document.getElementById('journal-detail-facets').innerHTML = '<span class="observations-empty">loading...</span>';
-  document.getElementById('journal-detail-connections').innerHTML = '<span class="observations-empty">loading...</span>';
+  document.getElementById('journal-detail-facets').innerHTML = '<span class="observations-empty">loading…</span>';
+  document.getElementById('journal-detail-connections').innerHTML = '<span class="observations-empty">loading…</span>';
   resetJournalTrustSurface();
 
   // Fetch journal entity details
@@ -3966,8 +3966,8 @@ function resetJournalTrustSurface() {
   document.getElementById('journal-detail-merge-preview').innerHTML = '';
   document.getElementById('journal-detail-undo-panel').hidden = true;
   document.getElementById('journal-detail-undo-panel').innerHTML = '';
-  document.getElementById('journal-detail-suggestions').innerHTML = '<span class="observations-empty">loading...</span>';
-  document.getElementById('journal-detail-history').innerHTML = '<span class="observations-empty">loading...</span>';
+  document.getElementById('journal-detail-suggestions').innerHTML = '<span class="observations-empty">loading…</span>';
+  document.getElementById('journal-detail-history').innerHTML = '<span class="observations-empty">loading…</span>';
   hideInlineError('journal-detail-trust-error');
 }
 
@@ -4379,7 +4379,7 @@ document.getElementById('journal-detail-edit-form').addEventListener('submit', f
   }
 
   saveBtn.disabled = true;
-  saveBtn.textContent = 'saving...';
+  saveBtn.textContent = 'saving…';
 
   fetch(`api/journal/entity/${encodeURIComponent(entityId)}`, {
     method: 'PUT',
@@ -4434,7 +4434,7 @@ function blockJournalEntity() {
 
   const btn = document.getElementById('journal-detail-block-btn');
   btn.disabled = true;
-  btn.textContent = 'blocking...';
+  btn.textContent = 'blocking…';
 
   fetch(`api/journal/entity/${encodeURIComponent(entityId)}/block`, {
     method: 'POST'
@@ -4463,7 +4463,7 @@ function unblockJournalEntity() {
 
   const btn = document.getElementById('journal-detail-block-btn');
   btn.disabled = true;
-  btn.textContent = 'unblocking...';
+  btn.textContent = 'unblocking…';
 
   fetch(`api/journal/entity/${encodeURIComponent(entityId)}/unblock`, {
     method: 'POST'
@@ -4518,7 +4518,7 @@ function confirmDeleteJournalEntity() {
 
   const btn = document.getElementById('confirmDeleteJournalEntityBtn');
   btn.disabled = true;
-  btn.textContent = 'deleting...';
+  btn.textContent = 'deleting…';
 
   fetch(`api/journal/entity/${encodeURIComponent(entityId)}`, {
     method: 'DELETE'
@@ -4591,7 +4591,7 @@ async function cancelJournalEntityDelete(pendingId, notificationId) {
       window.AppServices.notifications.show({
         app: 'entities',
         icon: 'timer',
-        title: 'Too late — already deleted',
+        title: 'Too late: already deleted',
         autoDismiss: 3000
       });
       return;
@@ -4744,7 +4744,7 @@ function renderDescriptionSection(entity) {
 
   const descSpan = document.createElement('span');
   descSpan.className = entity.description ? 'entity-desc-display' : 'entity-desc-display empty';
-  descSpan.textContent = entity.description || 'no description. click to add...';
+  descSpan.textContent = entity.description || 'no description. click to add…';
   descSpan.style.cursor = 'pointer';
   descSpan.onclick = () => startDescriptionEdit(entity);
 
@@ -4761,7 +4761,7 @@ function startDescriptionEdit(entity) {
   const textarea = document.createElement('textarea');
   textarea.className = 'entity-desc-input';
   textarea.value = entity.description || '';
-  textarea.placeholder = 'enter description...';
+  textarea.placeholder = 'enter description…';
 
   const btnContainer = document.createElement('div');
   btnContainer.style.display = 'flex';
@@ -4991,7 +4991,7 @@ function attachEntityToFacet(entity, description) {
   const attachError = document.getElementById('attach-error');
 
   attachBtn.disabled = true;
-  attachBtn.textContent = 'attaching...';
+  attachBtn.textContent = 'attaching…';
   attachError.style.display = 'none';
 
   fetch(`api/${encodeURIComponent(currentFacet)}`, {
@@ -5710,7 +5710,7 @@ function createEntityCard(entity) {
     const badge = document.createElement('div');
     badge.className = 'entity-card-mention-badge';
     badge.textContent = entity.observation_count;
-    badge.title = `${entity.observation_count} mention${entity.observation_count > 1 ? 's' : ''} — observations about this entity`;
+    badge.title = `${entity.observation_count} mention${entity.observation_count > 1 ? 's' : ''}: observations about this entity`;
     card.appendChild(badge);
   }
 
@@ -5757,7 +5757,7 @@ function createPendingCard(name, agentId) {
   const card = document.createElement('div');
   card.className = 'entity-card entity-card-pending';
   card.dataset.agentId = agentId;
-  card.title = 'Processing...';
+  card.title = 'Processing…';
 
   const nameEl = document.createElement('div');
   nameEl.className = 'entity-card-name';
@@ -5766,7 +5766,7 @@ function createPendingCard(name, agentId) {
 
   const meta = document.createElement('div');
   meta.className = 'entity-card-meta';
-  meta.textContent = 'adding...';
+  meta.textContent = 'adding…';
   card.appendChild(meta);
 
   return card;
@@ -5875,7 +5875,7 @@ function createDetectedRow(entity) {
     const badge = document.createElement('span');
     badge.className = 'mention-count-badge';
     badge.textContent = entity.count;
-    badge.title = `${entity.count} mention${entity.count !== 1 ? 's' : ''} — days detected in the last 30 days`;
+    badge.title = `${entity.count} mention${entity.count !== 1 ? 's' : ''}: days detected in the last 30 days`;
     nameCell.appendChild(badge);
   }
   row.appendChild(nameCell);
@@ -6047,13 +6047,13 @@ function listenForAgentCompletion(agentId, callback) {
 
 function handleEntitiesTimeout(useId) {
   if (pendingEntities.has(useId)) {
-    failPendingEntity(useId, `Entity assist timed out — ${window.CONVEY_COPY.RELOAD_HINT}`);
+    failPendingEntity(useId, `Entity assist timed out. ${window.CONVEY_COPY.RELOAD_HINT}`);
   }
 
   if (pendingAgentCallbacks.has(useId)) {
     const callback = pendingAgentCallbacks.get(useId);
     pendingAgentCallbacks.delete(useId);
-    callback({ success: false, error: `Generation timed out — ${window.CONVEY_COPY.RELOAD_HINT}` });
+    callback({ success: false, error: `Generation timed out. ${window.CONVEY_COPY.RELOAD_HINT}` });
   }
 }
 

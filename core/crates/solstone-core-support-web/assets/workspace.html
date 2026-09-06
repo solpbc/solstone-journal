@@ -833,7 +833,7 @@
     list.style.display = 'none';
     hideCreateForm();
     detail.classList.add('active');
-    detail.innerHTML = '<p>Loading...</p>';
+    detail.innerHTML = '<p>loading…</p>';
 
     try {
       const t = await window.apiJson('/app/support/api/tickets/' + encodeURIComponent(id));
@@ -878,7 +878,7 @@
         html += `<div class="support-reply-form">
           <form id="reply-form" novalidate>
             <label for="reply-text">your reply</label>
-            <textarea id="reply-text" placeholder="write a reply..." required></textarea>
+            <textarea id="reply-text" placeholder="write a reply…" required></textarea>
             <div class="support-field-error" id="reply-error">please write something</div>
             <div class="support-drop-zone" id="attach-zone" role="button" tabindex="0" aria-label="attach files. drop files here or click to browse">
               <input type="file" id="attach-input" multiple accept=".png,.jpg,.jpeg,.gif,.webp,.svg,.pdf,.txt,.csv,.html,.md,.xml,.json">
