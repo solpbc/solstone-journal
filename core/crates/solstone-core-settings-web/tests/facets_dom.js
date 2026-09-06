@@ -571,6 +571,35 @@ async function testCase(name, fn) {
     );
   });
 
+  await testCase('G3-19 notifications guide row opens health, facets moves out of help', async () => {
+    const harness = createHarness();
+    const notifRow = harness.document
+      .querySelectorAll('.sapp')
+      .find((row) => row.querySelector('.sapp-title')?.textContent === 'notifications');
+    assert.ok(notifRow, 'notifications guide row exists');
+    assert.strictEqual(notifRow.tagName, 'A', 'row is a link like its sibling guide rows');
+    assert.strictEqual(notifRow.getAttribute('href'), '/app/health/#quiet-notifs-section');
+    assert.ok(notifRow.querySelector('.sapp-open'), 'row carries the same "open ›" affordance as its siblings');
+    assert.strictEqual(
+      harness.document.querySelectorAll('.sapp-muted, .sapp-tag').length,
+      0,
+      'the dead "built in" tag/muted row is gone'
+    );
+
+    const facetsLabel = harness.document
+      .getElementById('tab-facets')
+      .closest('.settings-nav-group')
+      .querySelector('.settings-nav-label');
+    assert.strictEqual(facetsLabel.textContent, 'data', 'desktop nav files facets under data, not help');
+
+    const facetsOption = harness.document.querySelector('option[value="facets"]');
+    assert.strictEqual(
+      facetsOption.parentElement.getAttribute('label'),
+      'data',
+      'mobile nav select files facets under data, not help'
+    );
+  });
+
   process.stdout.write('DOM CASES: ' + cases + ' passed\n', () => process.exit(0));
 })().catch((error) => {
   console.error(error.stack || error);

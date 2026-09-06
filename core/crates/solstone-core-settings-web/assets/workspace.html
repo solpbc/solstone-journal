@@ -2107,10 +2107,10 @@ button:focus:not(:focus-visible) {
       <optgroup label="data">
         <option value="sync">sync</option>
         <option value="storage">storage</option>
+        <option value="facets">facets</option>
       </optgroup>
       <optgroup label="help">
         <option value="support">support</option>
-        <option value="facets">facets</option>
       </optgroup>
     </select>
   </div>
@@ -2139,11 +2139,11 @@ button:focus:not(:focus-visible) {
       <div class="settings-nav-label">data</div>
       <button class="settings-nav-item" data-section="sync" id="tab-sync" role="tab" aria-selected="false" aria-controls="section-sync" tabindex="-1">sync</button>
       <button class="settings-nav-item" data-section="storage" id="tab-storage" role="tab" aria-selected="false" aria-controls="section-storage" tabindex="-1">storage</button>
+      <button class="settings-nav-item" data-section="facets" id="tab-facets" role="tab" aria-selected="false" aria-controls="section-facets" tabindex="-1">facets</button>
     </div>
     <div class="settings-nav-group">
       <div class="settings-nav-label">help</div>
       <button class="settings-nav-item" data-section="support" id="tab-support" role="tab" aria-selected="false" aria-controls="section-support" tabindex="-1">support</button>
-      <button class="settings-nav-item" data-section="facets" id="tab-facets" role="tab" aria-selected="false" aria-controls="section-facets" tabindex="-1">facets</button>
     </div>
   </nav>
 
@@ -2181,14 +2181,14 @@ button:focus:not(:focus-visible) {
         <span class="sapp-open">open ›</span>
       </a>
 
-      <div class="sapp sapp-muted">
+      <a class="sapp" href="/app/health/#quiet-notifs-section">
         <span class="sapp-ic">◔</span>
         <span class="sapp-b">
           <span class="sapp-title">notifications</span>
           <span class="sapp-desc">how and when notifications reach you on any device</span>
         </span>
-        <span class="sapp-tag">built in</span>
-      </div>
+        <span class="sapp-open">open ›</span>
+      </a>
     </section>
 
     <!-- Profile Section -->
