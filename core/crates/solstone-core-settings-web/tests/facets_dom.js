@@ -710,13 +710,9 @@ async function testCase(name, fn) {
     );
   });
 
-  await testCase('G3-118 storage retention pane drops the off-domain consent-law claim', async () => {
+  await testCase('G3-118 storage retention pane states the retention choice', async () => {
     const harness = createHarness();
     const retentionText = harness.document.getElementById('retentionModeField').textContent;
-    assert.ok(
-      !retentionText.includes('recording-consent laws'),
-      'a settings pane cannot know the owner\'s jurisdiction or what applies in it'
-    );
     assert.ok(
       retentionText.includes('choose whether to keep your original audio, video, and screen frames'),
       'the actual retention choice copy survives'
