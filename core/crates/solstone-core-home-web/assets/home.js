@@ -284,7 +284,7 @@
     }
     return '<div class="pulse-empty-state" data-home-surface="narrative">'
       + '<h2 class="pulse-section-header">today\'s flow</h2>'
-      + '<div class="pulse-empty-message">no narrative yet. one will appear after some audio goes into your journal. <a href="/app/health">check system health →</a></div>'
+      + '<div class="pulse-empty-message">no narrative yet. one will appear after some audio goes into your journal.</div>'
       + '</div>';
   }
 
@@ -625,8 +625,8 @@
     const lateness = pulseContext?.briefing_lateness || {};
     if (lateness.late) {
       return '<div class="pulse-briefing-placeholder">'
-        + "I usually finish your briefing by ~10 am. It's " + esc(lateness.late_hours || 0) + 'h late.'
-        + '<a class="pulse-briefing-status-link" href="/app/thinking/#runs/' + esc(pulseContext?.today || '') + '/morning_briefing">Check status</a>'
+        + "your briefing is usually ready by 10 am; it's " + esc(lateness.late_hours || 0) + 'h late.'
+        + '<a class="pulse-briefing-status-link" href="/app/thinking/#runs/' + esc(pulseContext?.today || '') + '/morning_briefing">check status</a>'
         + '</div>';
     }
     return '<div class="pulse-briefing-placeholder">your morning briefing is being prepared...</div>';

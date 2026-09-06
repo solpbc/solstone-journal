@@ -594,6 +594,22 @@ fn vitals_render_calm_neutral_without_attention_chip() {
 }
 
 #[test]
+fn narrative_and_briefing_placeholder_states_stay_honest() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let output = Command::new("node")
+        .arg(manifest_dir.join("tests/narrative_briefing_render.js"))
+        .arg(manifest_dir)
+        .output()
+        .expect("narrative and briefing render harness");
+    assert!(
+        output.status.success(),
+        "narrative and briefing render harness: {}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn yesterday_processing_splits_failures_from_neutral_summary() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let output = Command::new("node")

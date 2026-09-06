@@ -430,7 +430,7 @@ fn summarize_yesterday_processing(context: &HomeContext, journal_age_days: i64) 
     };
     if mode == "sparse" {
         return Some(
-            json!({"title":"Yesterday's processing","mode":"sparse","default_collapsed":false,"first_week_framing":null,"summary_line":format!("i took in {} yesterday and kept it in your journal.", format_duration(transcript_seconds / 60.0)),"details":null,"gap_links":[],"sparse_lines":["I didn't produce any facet newsletters.","There wasn't much else to process."],"status_reasons":reasons}),
+            json!({"title":"Yesterday's processing","mode":"sparse","default_collapsed":false,"first_week_framing":null,"summary_line":format!("{} of audio went into your journal yesterday.", format_duration(transcript_seconds / 60.0)),"details":null,"gap_links":[],"sparse_lines":["no facet newsletters written.","there wasn't much else to process."],"status_reasons":reasons}),
         );
     }
     let mut details = vec![Value::String(format_newsletter_summary(
@@ -439,8 +439,8 @@ fn summarize_yesterday_processing(context: &HomeContext, journal_age_days: i64) 
     if briefing_valid {
         details.push(Value::String(
             match briefing.get("generated_label").and_then(Value::as_str) {
-                Some(label) => format!("I prepared your morning briefing at {label}."),
-                None => "I prepared your morning briefing.".to_owned(),
+                Some(label) => format!("your morning briefing was prepared at {label}."),
+                None => "your morning briefing was prepared.".to_owned(),
             },
         ));
     }
@@ -874,8 +874,8 @@ mod tests {
         assert_eq!(
             processing["sparse_lines"],
             json!([
-                "I didn't produce any facet newsletters.",
-                "There wasn't much else to process."
+                "no facet newsletters written.",
+                "there wasn't much else to process."
             ])
         );
     }

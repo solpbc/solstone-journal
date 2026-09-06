@@ -40,11 +40,11 @@ const degraded = renderYesterdayProcessingHtml({
   yesterday_processing: {
     mode: 'degraded',
     gap_links: [
-      { text: "The conversation run didn't finish.", href: '/app/thinking/#runs/x' },
+      { text: "the conversation run didn't finish.", href: '/app/thinking/#runs/x' },
       { text: '2 document runs didn\'t finish.', href: '/app/thinking/#runs/y' },
     ],
     details: [
-      "I didn't produce any facet newsletters.",
+      'no facet newsletters written.',
       'your busiest stretches were 9-10am · 2-3pm · 5-6pm.',
     ],
     failed_run_count: 19,
@@ -60,8 +60,8 @@ assert(gapListStart > -1 && detailsListStart > -1 && gapListStart < detailsListS
 const singular = renderYesterdayProcessingHtml({
   yesterday_processing: {
     mode: 'degraded',
-    gap_links: [{ text: "The conversation run didn't finish.", href: '/app/thinking/#runs/x' }],
-    details: ["I didn't produce any facet newsletters."],
+    gap_links: [{ text: "the conversation run didn't finish.", href: '/app/thinking/#runs/x' }],
+    details: ['no facet newsletters written.'],
     failed_run_count: 1,
   },
 });
@@ -74,11 +74,13 @@ const healthy = renderYesterdayProcessingHtml({
   yesterday_processing: {
     mode: 'healthy',
     gap_links: [],
-    details: ["I wrote 2 newsletters and prepared your morning briefing."],
+    details: ['2 newsletters written and your morning briefing was prepared.'],
     failed_run_count: 0,
   },
 });
 assert.strictEqual(healthy.includes('pulse-yesterday-shelf-label'), false, healthy);
-assert(healthy.includes('I wrote 2 newsletters'), healthy);
+assert(healthy.includes('2 newsletters written'), healthy);
+// The rendered card never speaks as "I".
+assert.strictEqual(/(^|[\s>"])I(\s|&#39;)/.test(degraded + singular + healthy), false, degraded + singular + healthy);
 
 console.log('yesterday-processing render contract passed');
