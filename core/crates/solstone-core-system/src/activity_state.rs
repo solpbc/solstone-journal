@@ -64,6 +64,63 @@ pub fn make_activity_id(activity_type: &str, since_segment: &str) -> String {
     format!("{activity_type}_{since_segment}")
 }
 
+/// Subject phrases the activity talent may still prefix a description with.
+///
+/// Longest first; none is a prefix of another, so the order is documentation
+/// rather than a correctness requirement.
+const LEADING_SUBJECTS: [&str; 6] = [
+    "This person",
+    "The person",
+    "The owner",
+    "The user",
+    "You",
+    "I",
+];
+
+/// Remove a leading subject phrase from a talent-written activity description.
+///
+/// `sense.md` asks for a plain statement of what was done with no subject
+/// ("Debugged the retry handling"), because the string is rendered verbatim in
+/// the owner's recent activity list. A small local model slips back into "The
+/// user navigated between…" often enough that the prompt alone does not hold,
+/// so this is the deterministic guard at the one boundary where talent output
+/// becomes an activity record.
+///
+/// It strips a leading subject and capitalises the verb behind it. Everything
+/// else is returned exactly as written: a description that does not open with a
+/// bare subject phrase is never rewritten, a contraction ("I'm still waiting")
+/// is not a subject phrase, and stored records are never revisited — only the
+/// records written after this point are normalised.
+pub fn normalize_activity_description(description: &str) -> String {
+    for subject in LEADING_SUBJECTS {
+        let Some(rest) = strip_subject_phrase(description, subject) else {
+            continue;
+        };
+        let mut characters = rest.chars();
+        let Some(first) = characters.next() else {
+            continue;
+        };
+        if !first.is_alphabetic() {
+            continue;
+        }
+        return first.to_uppercase().collect::<String>() + characters.as_str();
+    }
+    description.to_owned()
+}
+
+/// Return the text after a leading `subject` word, or `None` when `text` does
+/// not open with that subject followed by whitespace.
+fn strip_subject_phrase<'a>(text: &'a str, subject: &str) -> Option<&'a str> {
+    if !text.get(..subject.len())?.eq_ignore_ascii_case(subject) {
+        return None;
+    }
+    let rest = text.get(subject.len()..)?;
+    if !rest.starts_with(char::is_whitespace) {
+        return None;
+    }
+    Some(rest.trim_start())
+}
+
 pub fn level_value(level: &str) -> f64 {
     match level {
         "high" => 1.0,
@@ -261,10 +318,11 @@ impl ActivityStateMachine {
                 }
                 _ => "medium",
             };
-            let description = data
-                .get("activity")
-                .and_then(Value::as_str)
-                .unwrap_or(summary);
+            let description = normalize_activity_description(
+                data.get("activity")
+                    .and_then(Value::as_str)
+                    .unwrap_or(summary),
+            );
             if let Some(prior) = self.state.get_mut(&facet) {
                 prior.insert("_pending_facet_misses".to_owned(), json!(0));
                 if prior.get("activity").and_then(Value::as_str) != Some(content) {
@@ -282,7 +340,8 @@ impl ActivityStateMachine {
                         let old = self.state.remove(&facet).expect("entry remains");
                         changes.push(ended(&old, &facet, segment, "ended_type_change"));
                         self.completed.push(completed(&old, created_at));
-                        let entry = active(content, segment, description, level, &entities, &facet);
+                        let entry =
+                            active(content, segment, &description, level, &entities, &facet);
                         self.state.insert(facet, entry.clone());
                         changes.push(Value::Object(entry));
                     } else {
@@ -305,7 +364,7 @@ impl ActivityStateMachine {
                     changes.push(Value::Object(prior.clone()));
                 }
             } else {
-                let entry = active(content, segment, description, level, &entities, &facet);
+                let entry = active(content, segment, &description, level, &entities, &facet);
                 self.state.insert(facet, entry.clone());
                 changes.push(Value::Object(entry));
             }
@@ -428,7 +487,7 @@ mod tests {
 
     use super::{
         ActivityStateMachine, END_HYSTERESIS_SEGMENTS, GAP_THRESHOLD_SECONDS, active_facets,
-        level_value, make_activity_id,
+        level_value, make_activity_id, normalize_activity_description,
     };
 
     fn active(facet: &str) -> serde_json::Value {
@@ -551,6 +610,98 @@ mod tests {
             !machine.should_reset("235959_60", "20260101", Some("235000_7200")),
             "the reference clamps an overrun to 23:59:59"
         );
+    }
+
+    #[test]
+    fn a_leading_subject_phrase_is_stripped_and_the_verb_capitalised() {
+        for (written, shown) in [
+            (
+                "The user navigated between the hub and a project workspace.",
+                "Navigated between the hub and a project workspace.",
+            ),
+            ("I sent the invoice to Sam.", "Sent the invoice to Sam."),
+            (
+                "You reviewed personal project tasks.",
+                "Reviewed personal project tasks.",
+            ),
+            (
+                "The owner debugged the retry handling.",
+                "Debugged the retry handling.",
+            ),
+            (
+                "The person opened the launch checklist.",
+                "Opened the launch checklist.",
+            ),
+            (
+                "This person wrote the release notes.",
+                "Wrote the release notes.",
+            ),
+            ("the user  typed a status report.", "Typed a status report."),
+        ] {
+            assert_eq!(normalize_activity_description(written), shown, "{written}");
+        }
+    }
+
+    #[test]
+    fn every_other_description_is_returned_untouched() {
+        for description in [
+            "Debugged the retry handling in the ingest worker.",
+            "Investigated the request timeout.",
+            "The users of the beta build reported a crash.",
+            "The owner's manual was open on the second monitor.",
+            "I'm still waiting on the build.",
+            "You're on the launch call at two.",
+            "The user",
+            "The user, who had opened the checklist, switched panes.",
+            "",
+        ] {
+            assert_eq!(
+                normalize_activity_description(description),
+                description,
+                "{description}"
+            );
+        }
+    }
+
+    #[test]
+    fn update_writes_a_subjectless_description_onto_new_and_continuing_records() {
+        let mut machine = ActivityStateMachine::default();
+        let opened = machine.update(
+            &json!({"density":"active","content_type":"terminal","activity_summary":"The user typed a status report.","facets":[{"facet":"work","level":"high","activity":"The user navigated between the hub and a project workspace."}]}),
+            "100558_300",
+            "20260906",
+            None,
+            1,
+        );
+        assert_eq!(opened.len(), 1);
+        assert_eq!(opened[0]["_change"], "new");
+        assert_eq!(
+            opened[0]["description"],
+            "Navigated between the hub and a project workspace."
+        );
+
+        let continued = machine.update(
+            &json!({"density":"active","content_type":"terminal","activity_summary":"The user typed a status report.","facets":[{"facet":"work","level":"high","activity":"I refined the sense prompt."}]}),
+            "101058_300",
+            "20260906",
+            None,
+            1,
+        );
+        assert_eq!(continued[0]["_change"], "continuing");
+        assert_eq!(continued[0]["description"], "Refined the sense prompt.");
+
+        let fallback = machine.update(
+            &json!({"density":"active","content_type":"terminal","activity_summary":"The user typed a status report.","facets":[{"facet":"personal","level":"high"}]}),
+            "101558_304",
+            "20260906",
+            None,
+            1,
+        );
+        let opened_personal = fallback
+            .iter()
+            .find(|change| change["facet"] == "personal")
+            .expect("the personal facet opened an activity");
+        assert_eq!(opened_personal["description"], "Typed a status report.");
     }
 
     #[test]
