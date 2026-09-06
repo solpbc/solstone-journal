@@ -20,7 +20,7 @@ pub fn error(status: StatusCode, message: &str, reason_code: &str, detail: &str)
 pub fn invalid_config(detail: &str) -> Response {
     error(
         StatusCode::BAD_REQUEST,
-        "I couldn't save that setting because one value was invalid.",
+        "that setting couldn't be saved because one value was invalid.",
         "invalid_config_value",
         detail,
     )
@@ -29,7 +29,7 @@ pub fn invalid_config(detail: &str) -> Response {
 pub fn missing(detail: &str) -> Response {
     error(
         StatusCode::BAD_REQUEST,
-        "I couldn't find a required field.",
+        "a required field is missing.",
         "missing_required_field",
         detail,
     )

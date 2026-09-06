@@ -2347,11 +2347,11 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "347ceb79b02b6096dc1e850d39894432967b9cdd745ab4c7f3116fc1e50f2a8f",
+          "body_sha256": "413aaeae764ac103ad1154fdc4698f2e0813fbb628e85529db99e436e01a8126",
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "Day not found",
-            "error": "I couldn't use that day.",
+            "error": "that day couldn't be used.",
             "reason_code": "invalid_day"
           },
           "method": "GET",
@@ -2360,7 +2360,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "90",
+            "Content-Length": "92",
             "Content-Type": "application/json"
           },
           "status": 404,
@@ -3196,11 +3196,11 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "a2494435265cc2912e4c87e2d91c7157b10eba5e8c5cb2b258044ad2b23efb1b",
+          "body_sha256": "66828619056137f5941b376ade3f65eb29fd69931de479b9e2b5951f473e72e4",
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "Segment directories not found: not-a-key",
-            "error": "I couldn't use that segment or stream.",
+            "error": "that segment or stream couldn't be used.",
             "reason_code": "invalid_segment_or_stream"
           },
           "method": "GET",
@@ -3209,7 +3209,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "145",
+            "Content-Length": "147",
             "Content-Type": "application/json"
           },
           "status": 400,
@@ -3329,11 +3329,11 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "3fec3deb54c91b5b4fb1a42bba6341e610f95fec2f74bf1aa4a5e7da8110c236",
+          "body_sha256": "33968bcafa47dc0844febeb6e17ded66c83bc8c19fecfd47b7e3bd5bdd186861",
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "Invalid month format",
-            "error": "I couldn't use that month.",
+            "error": "that month couldn't be used.",
             "reason_code": "invalid_month"
           },
           "method": "GET",
@@ -3342,7 +3342,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "101",
+            "Content-Length": "103",
             "Content-Type": "application/json"
           },
           "status": 400,
@@ -3392,11 +3392,11 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "4cf5c0493e22bf44c8029afdf2b70edf3866856d8d8945327a031f4235c8a904",
+          "body_sha256": "64355f23190fa6d37ff90a8aa67b1f9a8006cb9b7282fc77d27a36ca39b91a77",
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "",
-            "error": "I couldn't complete that request.",
+            "error": "that request didn't finish.",
             "reason_code": "http_error"
           },
           "method": "GET",
@@ -3407,7 +3407,7 @@
             "Range": "bytes=999-1000"
           },
           "response_headers": {
-            "Content-Length": "85",
+            "Content-Length": "79",
             "Content-Type": "application/json"
           },
           "status": 416,
@@ -3434,11 +3434,11 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "ce5302c4b0e58534508365fafced5a34d44a623659adebe83396b32ddf2af52c",
+          "body_sha256": "33820f75f7b707128610faecf0880ee5d764e111d6966c0994410f9cff23a92c",
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "",
-            "error": "I couldn't complete that request.",
+            "error": "that request didn't finish.",
             "reason_code": "internal_error"
           },
           "method": "GET",
@@ -3447,7 +3447,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "89",
+            "Content-Length": "83",
             "Content-Type": "application/json"
           },
           "status": 500,
@@ -3455,11 +3455,11 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "471866e9be8fd5bf5629d5b8de11e412188f95b5eb1f7c18dbffeb35cdd9961f",
+          "body_sha256": "658eccf6d9f8ea987ae22fb09c6b360b92cc56495d845a490f898a0f68aaf151",
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "File not found",
-            "error": "I couldn't find that file.",
+            "error": "that file isn't available.",
             "reason_code": "file_not_found"
           },
           "method": "GET",
@@ -3476,11 +3476,11 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "94710673df348e9bcc4340e8b1f0cf6b7a20a41da82ed5255cbab45577fb7266",
+          "body_sha256": "065c854a0bd60c50a847cd63737f6008bba4d19a87cd916319a811050e4ea45e",
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "",
-            "error": "I couldn't use that path.",
+            "error": "that path couldn't be used.",
             "reason_code": "invalid_path"
           },
           "method": "GET",
@@ -3489,7 +3489,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "79",
+            "Content-Length": "81",
             "Content-Type": "application/json"
           },
           "status": 403,
@@ -5248,11 +5248,11 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "441d8ef60eafbee5c3e8351bab1048948695799a46de10df34aa0fe0b64b5d82",
+          "body_sha256": "d6af43d7afe6a9a559a2c227d72c066db93790ecbbc8f9c2fbc642d7f62bbabb",
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "Segment modality is already analyzed",
-            "error": "I couldn't take that action in the current state.",
+            "error": "that action isn't available in the current state.",
             "reason_code": "invalid_operation_for_state"
           },
           "method": "POST",
@@ -5269,11 +5269,11 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "10c9d36114b9ec2313586dfc0c3e228646479034f9bd8109a9721db1c12c368a",
+          "body_sha256": "603f4ad393343cf4d18b27da795ee20d6be1c8606559115debaec2568299abcb",
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "Raw media is no longer available",
-            "error": "I couldn't run analysis because the raw media is no longer available.",
+            "error": "analysis couldn't run because the raw media is no longer available.",
             "reason_code": "raw_media_not_available"
           },
           "method": "POST",
@@ -5282,7 +5282,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "166",
+            "Content-Length": "164",
             "Content-Type": "application/json"
           },
           "status": 400,
@@ -5290,11 +5290,11 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "13c6f4c7d94336da86e02478a014eb179302b0c4b1743c397bc8e4d3be7e8d7a",
+          "body_sha256": "9f2a1fbf5c31bb66fc74a55211fb212cb83eaacb5abb964ebc553eae1c3d10d8",
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "modality must be audio or screen",
-            "error": "I couldn't use one of those values.",
+            "error": "one of those values couldn't be used.",
             "reason_code": "invalid_request_value"
           },
           "method": "POST",
@@ -5303,7 +5303,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "130",
+            "Content-Length": "132",
             "Content-Type": "application/json"
           },
           "status": 400,
@@ -5311,11 +5311,11 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "5b642c77869d2f388c3113a1c62be03cf792565ed5a707457c60e205c5355537",
+          "body_sha256": "8949c42c08f0f142858533d0bf33916fb3c5d085f96028ec2e159d8abb047efa",
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "Invalid day format",
-            "error": "I couldn't use that day.",
+            "error": "that day couldn't be used.",
             "reason_code": "invalid_day"
           },
           "method": "POST",
@@ -5324,7 +5324,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "95",
+            "Content-Length": "97",
             "Content-Type": "application/json"
           },
           "status": 400,
@@ -5332,11 +5332,11 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "141ad978e21bf2988353e67d8bbed3ea323eb6b261943cbd02a0313ce434d328",
+          "body_sha256": "c60627bbf831294c17fd8465a8ddbca70e08084c709b740cdb2853ccbd881535",
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "Invalid segment key format",
-            "error": "I couldn't use that segment or stream.",
+            "error": "that segment or stream couldn't be used.",
             "reason_code": "invalid_segment_or_stream"
           },
           "method": "POST",
@@ -5345,7 +5345,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "131",
+            "Content-Length": "133",
             "Content-Type": "application/json"
           },
           "status": 400,
@@ -5353,11 +5353,11 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "e6a90011ddbd64ed530a9fc3678017a9885ad74430633323adecb412ea029210",
+          "body_sha256": "d83ccfaf9824db60f0d5096f2ed7d8291d2eb7d46e87389d9c6fa2617484e3c4",
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "Invalid stream format",
-            "error": "I couldn't use that segment or stream.",
+            "error": "that segment or stream couldn't be used.",
             "reason_code": "invalid_segment_or_stream"
           },
           "method": "POST",
@@ -5366,7 +5366,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "126",
+            "Content-Length": "128",
             "Content-Type": "application/json"
           },
           "status": 400,
@@ -5374,11 +5374,11 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "5b642c77869d2f388c3113a1c62be03cf792565ed5a707457c60e205c5355537",
+          "body_sha256": "8949c42c08f0f142858533d0bf33916fb3c5d085f96028ec2e159d8abb047efa",
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "Invalid day format",
-            "error": "I couldn't use that day.",
+            "error": "that day couldn't be used.",
             "reason_code": "invalid_day"
           },
           "method": "DELETE",
@@ -5387,7 +5387,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "95",
+            "Content-Length": "97",
             "Content-Type": "application/json"
           },
           "status": 400,
@@ -5395,11 +5395,11 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "141ad978e21bf2988353e67d8bbed3ea323eb6b261943cbd02a0313ce434d328",
+          "body_sha256": "c60627bbf831294c17fd8465a8ddbca70e08084c709b740cdb2853ccbd881535",
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "Invalid segment key format",
-            "error": "I couldn't use that segment or stream.",
+            "error": "that segment or stream couldn't be used.",
             "reason_code": "invalid_segment_or_stream"
           },
           "method": "DELETE",
@@ -5408,7 +5408,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "131",
+            "Content-Length": "133",
             "Content-Type": "application/json"
           },
           "status": 400,
@@ -5416,11 +5416,11 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "e6a90011ddbd64ed530a9fc3678017a9885ad74430633323adecb412ea029210",
+          "body_sha256": "d83ccfaf9824db60f0d5096f2ed7d8291d2eb7d46e87389d9c6fa2617484e3c4",
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "Invalid stream format",
-            "error": "I couldn't use that segment or stream.",
+            "error": "that segment or stream couldn't be used.",
             "reason_code": "invalid_segment_or_stream"
           },
           "method": "DELETE",
@@ -5429,7 +5429,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "126",
+            "Content-Length": "128",
             "Content-Type": "application/json"
           },
           "status": 400,
@@ -5437,11 +5437,11 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "a31c5a5a06f9f0a26dd8eb0b4846dd8034fbf03df5ebf6098a77548050b392a4",
+          "body_sha256": "d41d4f7709f3b1f81acad14b9360ec5f68f2a69c47b8c68e54afe6717326cd5d",
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "Segment not found",
-            "error": "I couldn't use that segment or stream.",
+            "error": "that segment or stream couldn't be used.",
             "reason_code": "invalid_segment_or_stream"
           },
           "method": "DELETE",
@@ -5450,7 +5450,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "122",
+            "Content-Length": "124",
             "Content-Type": "application/json"
           },
           "status": 404,
@@ -5458,11 +5458,11 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "c6674797b1ebac70ca4ebdd4e8cd48dace816f3b44694d6df97b70f7e482d261",
+          "body_sha256": "f4eca980465444b326544affbcea25a7b22473c077ca7f1f01c305c645c88e10",
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "already committed or unknown",
-            "error": "I couldn't finish because that action is no longer available.",
+            "error": "that didn't finish because the action is no longer available.",
             "reason_code": "operation_no_longer_available"
           },
           "method": "POST",
@@ -5479,11 +5479,11 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "c6674797b1ebac70ca4ebdd4e8cd48dace816f3b44694d6df97b70f7e482d261",
+          "body_sha256": "f4eca980465444b326544affbcea25a7b22473c077ca7f1f01c305c645c88e10",
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "already committed or unknown",
-            "error": "I couldn't finish because that action is no longer available.",
+            "error": "that didn't finish because the action is no longer available.",
             "reason_code": "operation_no_longer_available"
           },
           "method": "POST",

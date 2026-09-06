@@ -2984,7 +2984,7 @@ fn assert_handoff_refused(status: u16, body: &Value) {
     assert_eq!(body["reason_code"], "invalid_operation_for_state");
     assert_eq!(
         body["error"],
-        "I couldn't take that action in the current state."
+        "that action isn't available in the current state."
     );
     assert_eq!(body["detail"], "");
 }

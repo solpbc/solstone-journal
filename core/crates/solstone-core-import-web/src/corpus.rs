@@ -760,7 +760,7 @@ pub(crate) mod tests {
             (code, missing),
             (
                 StatusCode::NOT_FOUND,
-                json!({"detail":"No guide available for 'nope'","error":"I couldn't find that file.","reason_code":"file_not_found"})
+                json!({"detail":"No guide available for 'nope'","error":"that file isn't available.","reason_code":"file_not_found"})
             )
         );
         for path in ["..", "%2e%2e%2f", "ICS"] {
@@ -770,7 +770,7 @@ pub(crate) mod tests {
                 (code, body),
                 (
                     StatusCode::BAD_REQUEST,
-                    json!({"detail":"Invalid source name","error":"I couldn't use one of those values.","reason_code":"invalid_request_value"})
+                    json!({"detail":"Invalid source name","error":"one of those values couldn't be used.","reason_code":"invalid_request_value"})
                 )
             );
         }

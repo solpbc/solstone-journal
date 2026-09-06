@@ -463,7 +463,7 @@
       },
       "examples": [
         {
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field",
           "detail": "Missing segments array"
         }

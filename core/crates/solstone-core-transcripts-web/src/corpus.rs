@@ -1385,7 +1385,7 @@ mod tests {
         assert_eq!(status, StatusCode::NOT_FOUND);
         assert_eq!(
             serde_json::from_slice::<Value>(&body).unwrap(),
-            json!({"error":"I couldn't use that day.","reason_code":"invalid_day","detail":"Day not found"})
+            json!({"error":"that day couldn't be used.","reason_code":"invalid_day","detail":"Day not found"})
         );
         let full = solstone_core_convey_shell::router(root.path().to_path_buf());
         for path in [

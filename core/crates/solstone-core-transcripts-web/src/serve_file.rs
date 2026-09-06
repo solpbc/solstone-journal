@@ -23,7 +23,7 @@ pub(crate) async fn serve_file(
     if !valid_day(&day) {
         return error(
             "invalid_day",
-            "I couldn't use that day.",
+            "that day couldn't be used.",
             "Day not found",
             StatusCode::NOT_FOUND,
         );
@@ -34,7 +34,7 @@ pub(crate) async fn serve_file(
         Err(_) => {
             return error(
                 "invalid_path",
-                "I couldn't use that path.",
+                "that path couldn't be used.",
                 "",
                 StatusCode::FORBIDDEN,
             );
@@ -43,7 +43,7 @@ pub(crate) async fn serve_file(
     if !path.is_file() {
         return error(
             "file_not_found",
-            "I couldn't find that file.",
+            "that file isn't available.",
             "File not found",
             StatusCode::NOT_FOUND,
         );
@@ -51,7 +51,7 @@ pub(crate) async fn serve_file(
     let Some(mime) = mime_type(&path) else {
         return error(
             "invalid_request_value",
-            "I couldn't use one of those values.",
+            "one of those values couldn't be used.",
             "Unregistered media extension",
             StatusCode::BAD_REQUEST,
         );
@@ -61,7 +61,7 @@ pub(crate) async fn serve_file(
         Err(_) => {
             return error(
                 "file_not_found",
-                "I couldn't find that file.",
+                "that file isn't available.",
                 "File not found",
                 StatusCode::NOT_FOUND,
             );
@@ -73,7 +73,7 @@ pub(crate) async fn serve_file(
     let Ok(total) = usize::try_from(total) else {
         return error(
             "file_not_found",
-            "I couldn't find that file.",
+            "that file isn't available.",
             "File not found",
             StatusCode::NOT_FOUND,
         );
@@ -94,7 +94,7 @@ pub(crate) async fn serve_file(
                 ),
                 Err(_) => error(
                     "file_not_found",
-                    "I couldn't find that file.",
+                    "that file isn't available.",
                     "File not found",
                     StatusCode::NOT_FOUND,
                 ),
@@ -102,7 +102,7 @@ pub(crate) async fn serve_file(
         }
         Some(ParsedRange::Unsatisfiable) => error(
             "http_error",
-            "I couldn't complete that request.",
+            "that request didn't finish.",
             "",
             StatusCode::RANGE_NOT_SATISFIABLE,
         ),
@@ -110,7 +110,7 @@ pub(crate) async fn serve_file(
             Ok(bytes) => media(StatusCode::OK, mime, &path, bytes, None),
             Err(_) => error(
                 "file_not_found",
-                "I couldn't find that file.",
+                "that file isn't available.",
                 "File not found",
                 StatusCode::NOT_FOUND,
             ),

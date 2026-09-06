@@ -310,7 +310,7 @@ fn metadata_failed(detail: impl Into<String>) -> Response {
     failure(
         StatusCode::INTERNAL_SERVER_ERROR,
         "import_metadata_failed",
-        "I couldn't update that import metadata.",
+        "that import metadata couldn't be updated.",
         detail,
     )
 }
@@ -319,7 +319,7 @@ fn missing(detail: impl Into<String>) -> Response {
     failure(
         StatusCode::BAD_REQUEST,
         "missing_required_field",
-        "I couldn't find a required field.",
+        "a required field is missing.",
         detail,
     )
 }
@@ -328,7 +328,7 @@ fn invalid_state(detail: impl Into<String>) -> Response {
     failure(
         StatusCode::BAD_REQUEST,
         "invalid_operation_for_state",
-        "I couldn't take that action in the current state.",
+        "that action isn't available in the current state.",
         detail,
     )
 }
@@ -469,7 +469,7 @@ fn payload_too_large(detail: impl Into<String>) -> Response {
     failure(
         StatusCode::PAYLOAD_TOO_LARGE,
         "multipart_part_too_large",
-        "I couldn't bring in that file because it's too large.",
+        "that file is too large to bring in.",
         detail,
     )
 }
@@ -485,7 +485,7 @@ fn stream_error_response(error: save_stream::SaveStreamError) -> Response {
         save_stream::SaveStreamError::Read => failure(
             StatusCode::BAD_REQUEST,
             "ingest_no_files",
-            "I couldn't find any files to bring in.",
+            "there are no files to bring in.",
             "cannot read multipart part",
         ),
         save_stream::SaveStreamError::Io(error) => {
@@ -591,7 +591,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
                 return failure(
                     StatusCode::BAD_REQUEST,
                     "ingest_no_files",
-                    "I couldn't find any files to bring in.",
+                    "there are no files to bring in.",
                     "invalid multipart body",
                 );
             }
@@ -600,7 +600,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             return failure(
                 StatusCode::BAD_REQUEST,
                 "ingest_no_files",
-                "I couldn't find any files to bring in.",
+                "there are no files to bring in.",
                 "too many multipart parts",
             );
         }
@@ -609,7 +609,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             return failure(
                 StatusCode::BAD_REQUEST,
                 "ingest_no_files",
-                "I couldn't find any files to bring in.",
+                "there are no files to bring in.",
                 "too many multipart headers",
             );
         }
@@ -621,7 +621,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             return failure(
                 StatusCode::BAD_REQUEST,
                 "ingest_no_files",
-                "I couldn't find any files to bring in.",
+                "there are no files to bring in.",
                 "multipart filename is too long",
             );
         }
@@ -654,7 +654,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
                     return failure(
                         StatusCode::BAD_REQUEST,
                         "ingest_no_files",
-                        "I couldn't find any files to bring in.",
+                        "there are no files to bring in.",
                         detail,
                     );
                 }
@@ -694,7 +694,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
                 return failure(
                     StatusCode::BAD_REQUEST,
                     "ingest_no_files",
-                    "I couldn't find any files to bring in.",
+                    "there are no files to bring in.",
                     "No input",
                 );
             };
@@ -731,7 +731,7 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             return failure(
                 StatusCode::BAD_REQUEST,
                 "ingest_no_files",
-                "I couldn't find any files to bring in.",
+                "there are no files to bring in.",
                 "No input",
             );
         }
@@ -853,7 +853,7 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
         return failure(
             StatusCode::NOT_FOUND,
             "file_not_found",
-            "I couldn't find that file.",
+            "that file isn't available.",
             format!("Path not found: {local_path}"),
         );
     }
@@ -964,7 +964,7 @@ fn relocation_error(error: ImportError, old_timestamp: &str, timestamp: &str) ->
         ImportError::DestinationExists { .. } => failure(
             StatusCode::CONFLICT,
             "import_conflict",
-            "I couldn't start that import because it already exists.",
+            "that import couldn't be started because it already exists.",
             format!("Import already exists for timestamp {timestamp}"),
         ),
         error => metadata_failed(format!("Failed to rename import directory: {error}")),
@@ -983,7 +983,7 @@ fn queue_error() -> Response {
 fn metadata_error_with_task(task_id: &str, detail: String) -> Response {
     json_response(
         StatusCode::INTERNAL_SERVER_ERROR,
-        json!({"task_id":task_id,"error":"I couldn't update that import metadata.","reason_code":"import_metadata_failed","detail":detail}),
+        json!({"task_id":task_id,"error":"that import metadata couldn't be updated.","reason_code":"import_metadata_failed","detail":detail}),
     )
 }
 

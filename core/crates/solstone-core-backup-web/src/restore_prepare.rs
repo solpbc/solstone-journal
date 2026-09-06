@@ -76,7 +76,7 @@ pub(crate) fn prepare(
     let capability = operation::mint_capability().map_err(|_| {
         response::error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "I couldn't prepare the hosted restore handoff.",
+            "the hosted restore handoff couldn't be prepared.",
             "failed",
             "",
         )
@@ -303,7 +303,7 @@ fn wrong_stage_response() -> Response {
 fn refusal(reason_code: &str, detail: &str) -> Response {
     response::error(
         StatusCode::CONFLICT,
-        "I couldn't complete the hosted restore handoff.",
+        "the hosted restore handoff didn't finish.",
         reason_code,
         detail,
     )

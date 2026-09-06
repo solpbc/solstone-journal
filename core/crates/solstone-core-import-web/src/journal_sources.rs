@@ -259,7 +259,7 @@ fn authorize_transport(
 fn problem_missing(name: &str) -> Response {
     error(
         StatusCode::NOT_FOUND,
-        "I couldn't use that journal source.",
+        "that journal source couldn't be used.",
         "journal_source_problem",
         format!("Journal source '{name}' not found"),
     )
@@ -494,7 +494,7 @@ pub(crate) async fn create(State(state): State<AppState>, Json(data): Json<Value
     if name.is_empty() {
         return error(
             StatusCode::BAD_REQUEST,
-            "I couldn't find a required field.",
+            "a required field is missing.",
             "missing_required_field",
             "Name is required".to_owned(),
         );
@@ -502,7 +502,7 @@ pub(crate) async fn create(State(state): State<AppState>, Json(data): Json<Value
     if !valid_name(name) {
         return error(
             StatusCode::BAD_REQUEST,
-            "I couldn't use that journal source.",
+            "that journal source couldn't be used.",
             "journal_source_problem",
             "Invalid journal source name".to_owned(),
         );
@@ -510,7 +510,7 @@ pub(crate) async fn create(State(state): State<AppState>, Json(data): Json<Value
     if source(&state.root, name).is_some() {
         return error(
             StatusCode::CONFLICT,
-            "I couldn't use that journal source.",
+            "that journal source couldn't be used.",
             "journal_source_problem",
             format!("Journal source '{name}' already exists"),
         );
@@ -518,7 +518,7 @@ pub(crate) async fn create(State(state): State<AppState>, Json(data): Json<Value
     let Ok(key) = generated_key() else {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "I couldn't use that journal source.",
+            "that journal source couldn't be used.",
             "journal_source_problem",
             "Failed to save journal source".to_owned(),
         );
@@ -541,7 +541,7 @@ pub(crate) async fn create(State(state): State<AppState>, Json(data): Json<Value
         Err(CreateSourceError::Exists) => {
             return error(
                 StatusCode::CONFLICT,
-                "I couldn't use that journal source.",
+                "that journal source couldn't be used.",
                 "journal_source_problem",
                 format!("Journal source '{name}' already exists"),
             );
@@ -549,7 +549,7 @@ pub(crate) async fn create(State(state): State<AppState>, Json(data): Json<Value
         Err(CreateSourceError::Persist) => {
             return error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "I couldn't use that journal source.",
+                "that journal source couldn't be used.",
                 "journal_source_problem",
                 "Failed to save journal source".to_owned(),
             );
@@ -565,7 +565,7 @@ pub(crate) async fn create(State(state): State<AppState>, Json(data): Json<Value
     {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "I couldn't use that journal source.",
+            "that journal source couldn't be used.",
             "journal_source_problem",
             "Failed to save journal source".to_owned(),
         );
@@ -586,7 +586,7 @@ pub(crate) async fn revoke(
         Err(RevokeSourceError::AlreadyRevoked) => {
             return error(
                 StatusCode::CONFLICT,
-                "I couldn't use that journal source.",
+                "that journal source couldn't be used.",
                 "journal_source_problem",
                 format!("Journal source '{name}' is already revoked"),
             );
@@ -594,7 +594,7 @@ pub(crate) async fn revoke(
         Err(RevokeSourceError::Persist) => {
             return error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "I couldn't use that journal source.",
+                "that journal source couldn't be used.",
                 "journal_source_problem",
                 "Failed to save journal source".to_owned(),
             );
@@ -609,7 +609,7 @@ pub(crate) async fn revoke(
     {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "I couldn't use that journal source.",
+            "that journal source couldn't be used.",
             "journal_source_problem",
             "Failed to save journal source".to_owned(),
         );
@@ -629,7 +629,7 @@ pub(crate) async fn manifest(
     if !STATE_AREAS.contains(&area.as_str()) {
         return error(
             StatusCode::NOT_FOUND,
-            "I couldn't use one of those values.",
+            "one of those values couldn't be used.",
             "invalid_request_value",
             "Unknown manifest area".to_owned(),
         );
@@ -697,7 +697,7 @@ pub(crate) async fn staged(
     if area.is_some_and(|area| !matches!(area, "entities" | "facets" | "config")) {
         return error(
             StatusCode::BAD_REQUEST,
-            "I couldn't use one of those values.",
+            "one of those values couldn't be used.",
             "invalid_request_value",
             "Area must be one of: entities, facets, config".to_owned(),
         );

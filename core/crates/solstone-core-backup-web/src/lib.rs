@@ -312,7 +312,7 @@ async fn generate_keys(deps: BackupWebDeps) -> axum::response::Response {
 fn internal_error() -> axum::response::Response {
     response::error(
         axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-        "I couldn't complete that request.",
+        "that request didn't finish.",
         "internal_error",
         "",
     )
@@ -328,7 +328,7 @@ async fn reveal_key(deps: BackupWebDeps) -> axum::response::Response {
         },
         Ok(None) => response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "I couldn't take that action in the current state.",
+            "that action isn't available in the current state.",
             "invalid_operation_for_state",
             "no recovery key yet",
         ),
@@ -350,7 +350,7 @@ async fn confirm_key(deps: BackupWebDeps, body: Bytes) -> axum::response::Respon
         Ok(None) => {
             return response::error(
                 axum::http::StatusCode::BAD_REQUEST,
-                "I couldn't take that action in the current state.",
+                "that action isn't available in the current state.",
                 "invalid_operation_for_state",
                 "no recovery key yet",
             );
@@ -360,7 +360,7 @@ async fn confirm_key(deps: BackupWebDeps, body: Bytes) -> axum::response::Respon
     if keys::parse(&entered).ok().as_deref() != Some(&recovery) {
         return response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "I couldn't confirm that — it didn't match your recovery key.",
+            "that didn't match your recovery key.",
             "recovery_key_mismatch",
             "",
         );
@@ -436,7 +436,7 @@ async fn offload_enable(deps: BackupWebDeps) -> axum::response::Response {
     if backup.get("enabled") != Some(&Value::Bool(true)) {
         return response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "I couldn't take that action in the current state.",
+            "that action isn't available in the current state.",
             "invalid_operation_for_state",
             "backup is disabled",
         );
@@ -444,7 +444,7 @@ async fn offload_enable(deps: BackupWebDeps) -> axum::response::Response {
     if backup.get("confirmed_recovery_key") != Some(&Value::Bool(true)) {
         return response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "I couldn't turn on backup until you confirm your recovery key.",
+            "backup can't be turned on until you confirm your recovery key.",
             "backup_not_confirmed",
             "",
         );
@@ -452,7 +452,7 @@ async fn offload_enable(deps: BackupWebDeps) -> axum::response::Response {
     if !matches!(keys::keys(&backup), Ok(Some(_))) {
         return response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "I couldn't take that action in the current state.",
+            "that action isn't available in the current state.",
             "invalid_operation_for_state",
             "backup keys are missing",
         );
@@ -476,7 +476,7 @@ async fn backup_now(deps: BackupWebDeps) -> axum::response::Response {
     if !callosum::request(&deps.journal_root, "backup:run") {
         return response::error(
             axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            "I couldn't start a backup because your journal's background service isn't running. Start it, then try again.",
+            "a backup can't start because your journal's background service isn't running. start it, then try again.",
             "backup_unavailable",
             "",
         );
@@ -493,7 +493,7 @@ fn enable_preconditions(root: &Path) -> Result<(), axum::response::Response> {
     {
         return Err(response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "I couldn't take that action in the current state.",
+            "that action isn't available in the current state.",
             "invalid_operation_for_state",
             "configure a destination first",
         ));
@@ -501,7 +501,7 @@ fn enable_preconditions(root: &Path) -> Result<(), axum::response::Response> {
     if backup.get("confirmed_recovery_key") != Some(&Value::Bool(true)) {
         return Err(response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "I couldn't turn on backup until you confirm your recovery key.",
+            "backup can't be turned on until you confirm your recovery key.",
             "backup_not_confirmed",
             "",
         ));
@@ -509,7 +509,7 @@ fn enable_preconditions(root: &Path) -> Result<(), axum::response::Response> {
     if !matches!(keys::keys(&backup), Ok(Some(_))) {
         return Err(response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "I couldn't take that action in the current state.",
+            "that action isn't available in the current state.",
             "invalid_operation_for_state",
             "no recovery key yet",
         ));
@@ -522,7 +522,7 @@ fn hosted_preconditions(root: &Path) -> Result<(), axum::response::Response> {
     if backup.get("confirmed_recovery_key") != Some(&Value::Bool(true)) {
         return Err(response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "I couldn't turn on backup until you confirm your recovery key.",
+            "backup can't be turned on until you confirm your recovery key.",
             "backup_not_confirmed",
             "",
         ));
@@ -530,7 +530,7 @@ fn hosted_preconditions(root: &Path) -> Result<(), axum::response::Response> {
     if !matches!(keys::keys(&backup), Ok(Some(_))) {
         return Err(response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "I couldn't take that action in the current state.",
+            "that action isn't available in the current state.",
             "invalid_operation_for_state",
             "no recovery key yet",
         ));
@@ -1125,7 +1125,7 @@ async fn handoff_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Resp
                 }
                 return response::error(
                     axum::http::StatusCode::BAD_REQUEST,
-                    "I couldn't take that action in the current state.",
+                    "that action isn't available in the current state.",
                     "expired",
                     "",
                 );
@@ -1133,7 +1133,7 @@ async fn handoff_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Resp
             Err(operation::HandoffError::Invalid) => {
                 return response::error(
                     axum::http::StatusCode::BAD_REQUEST,
-                    "I couldn't take that action in the current state.",
+                    "that action isn't available in the current state.",
                     "invalid_operation_for_state",
                     "",
                 );
@@ -1166,7 +1166,7 @@ async fn handoff_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Resp
             }
             return response::error(
                 axum::http::StatusCode::BAD_REQUEST,
-                "I couldn't take that action in the current state.",
+                "that action isn't available in the current state.",
                 "expired",
                 "",
             );
@@ -1174,7 +1174,7 @@ async fn handoff_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Resp
         Err(operation::HandoffError::Invalid) => {
             return response::error(
                 axum::http::StatusCode::BAD_REQUEST,
-                "I couldn't take that action in the current state.",
+                "that action isn't available in the current state.",
                 "invalid_operation_for_state",
                 "",
             );
@@ -1250,7 +1250,7 @@ fn handoff_field_response(error: validation::HandoffFieldError) -> axum::respons
         validation::HandoffFieldError::Missing(key) => response::missing(&format!("missing {key}")),
         validation::HandoffFieldError::InvalidValue => response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "I couldn't use one of those values.",
+            "one of those values couldn't be used.",
             "invalid_request_value",
             "",
         ),

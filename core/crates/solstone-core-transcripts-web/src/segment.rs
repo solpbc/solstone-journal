@@ -62,7 +62,7 @@ fn prepare_segment(
     if !valid_day(day) {
         return Err(legacy_error_response(
             "invalid_day",
-            "I couldn't use that day.",
+            "that day couldn't be used.",
             "Invalid day format",
             StatusCode::NOT_FOUND,
         ));
@@ -97,7 +97,7 @@ fn prepare_segment(
         .map_err(|error| {
             legacy_error_response(
                 "invalid_segment_or_stream",
-                "I couldn't use that segment or stream.",
+                "that segment or stream couldn't be used.",
                 error.to_string(),
                 StatusCode::NOT_FOUND,
             )
@@ -634,7 +634,7 @@ fn valid_key(value: &str) -> bool {
 fn invalid(detail: &str) -> Response {
     legacy_error_response(
         "invalid_segment_or_stream",
-        "I couldn't use that segment or stream.",
+        "that segment or stream couldn't be used.",
         detail,
         StatusCode::NOT_FOUND,
     )

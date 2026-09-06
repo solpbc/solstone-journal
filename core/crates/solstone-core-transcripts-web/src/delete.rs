@@ -48,7 +48,7 @@ pub(crate) async fn delete_segment(
         Err(error) => {
             return legacy_error_response(
                 "file_read_failed",
-                "I couldn't read that file.",
+                "that file couldn't be read.",
                 format!("Failed to delete segment: {error}"),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
@@ -246,7 +246,7 @@ fn valid_pending_id(value: &str) -> bool {
 fn invalid_day() -> Response {
     legacy_error_response(
         "invalid_day",
-        "I couldn't use that day.",
+        "that day couldn't be used.",
         "Invalid day format",
         StatusCode::BAD_REQUEST,
     )
@@ -255,7 +255,7 @@ fn invalid_day() -> Response {
 fn invalid_segment(detail: &str, status: StatusCode) -> Response {
     legacy_error_response(
         "invalid_segment_or_stream",
-        "I couldn't use that segment or stream.",
+        "that segment or stream couldn't be used.",
         detail,
         status,
     )
@@ -264,7 +264,7 @@ fn invalid_segment(detail: &str, status: StatusCode) -> Response {
 fn operation_unavailable() -> Response {
     legacy_error_response(
         "operation_no_longer_available",
-        "I couldn't finish because that action is no longer available.",
+        "that didn't finish because the action is no longer available.",
         "already committed or unknown",
         StatusCode::GONE,
     )

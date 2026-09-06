@@ -95,7 +95,7 @@ pub(crate) async fn entity(
     let Some(state) = source_state(&app.root, &name) else {
         return error(
             StatusCode::NOT_FOUND,
-            "I couldn't use that journal source.",
+            "that journal source couldn't be used.",
             "journal_source_problem",
             format!("Journal source '{name}' not found"),
         );
@@ -107,7 +107,7 @@ pub(crate) async fn entity(
     else {
         return error(
             StatusCode::BAD_REQUEST,
-            "I couldn't use one of those values.",
+            "one of those values couldn't be used.",
             "invalid_request_value",
             "source_id is required".into(),
         );
@@ -117,7 +117,7 @@ pub(crate) async fn entity(
         Err(_) => {
             return error(
                 StatusCode::BAD_REQUEST,
-                "I couldn't use one of those values.",
+                "one of those values couldn't be used.",
                 "invalid_request_value",
                 "Invalid staged entity path".into(),
             );
@@ -127,7 +127,7 @@ pub(crate) async fn entity(
     if !staged.exists() {
         return error(
             StatusCode::NOT_FOUND,
-            "I couldn't find that import.",
+            "that import isn't in your journal.",
             "import_not_found",
             format!("Staged entity '{source_id}' not found."),
         );
@@ -136,7 +136,7 @@ pub(crate) async fn entity(
     if !matches!(action, "merge" | "create" | "skip") {
         return error(
             StatusCode::BAD_REQUEST,
-            "I couldn't use one of those values.",
+            "one of those values couldn't be used.",
             "invalid_request_value",
             "Action must be 'merge', 'create', or 'skip'.".into(),
         );
@@ -151,7 +151,7 @@ pub(crate) async fn entity(
         Err(_) => {
             return error(
                 StatusCode::BAD_REQUEST,
-                "I couldn't use one of those values.",
+                "one of those values couldn't be used.",
                 "invalid_request_value",
                 "Staged entity is missing source_entity.".into(),
             );
@@ -167,7 +167,7 @@ pub(crate) async fn entity(
             else {
                 return error(
                     StatusCode::BAD_REQUEST,
-                    "I couldn't use one of those values.",
+                    "one of those values couldn't be used.",
                     "invalid_request_value",
                     "--target is required for merge.".into(),
                 );
@@ -178,7 +178,7 @@ pub(crate) async fn entity(
                     Err(_) => {
                         return error(
                             StatusCode::BAD_REQUEST,
-                            "I couldn't use one of those values.",
+                            "one of those values couldn't be used.",
                             "invalid_request_value",
                             "Invalid target entity path".into(),
                         );
@@ -187,7 +187,7 @@ pub(crate) async fn entity(
             if !target_path.exists() {
                 return error(
                     StatusCode::NOT_FOUND,
-                    "I couldn't find that import.",
+                    "that import isn't in your journal.",
                     "import_not_found",
                     format!("Target entity '{target_id}' not found."),
                 );
@@ -197,7 +197,7 @@ pub(crate) async fn entity(
             if let Err(detail) = write(&target_path, &Value::Object(merged)) {
                 return error(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    "I couldn't save that import.",
+                    "that import couldn't be saved.",
                     "import_metadata_failed",
                     detail,
                 );
@@ -210,7 +210,7 @@ pub(crate) async fn entity(
                 Some(Value::String(_)) | Some(_) => {
                     return error(
                         StatusCode::BAD_REQUEST,
-                        "I couldn't use one of those values.",
+                        "one of those values couldn't be used.",
                         "invalid_request_value",
                         "Staged entity has an invalid id.".into(),
                     );
@@ -226,7 +226,7 @@ pub(crate) async fn entity(
                 let Some(id) = allocate_entity_id(&app.root, &base) else {
                     return error(
                         StatusCode::BAD_REQUEST,
-                        "I couldn't use one of those values.",
+                        "one of those values couldn't be used.",
                         "invalid_request_value",
                         format!("Unable to allocate a slug for '{name}'."),
                     );
@@ -245,7 +245,7 @@ pub(crate) async fn entity(
                 Err(_) => {
                     return error(
                         StatusCode::BAD_REQUEST,
-                        "I couldn't use one of those values.",
+                        "one of those values couldn't be used.",
                         "invalid_request_value",
                         "Invalid target entity path".into(),
                     );
@@ -254,7 +254,7 @@ pub(crate) async fn entity(
             if let Err(detail) = write(&target, &Value::Object(created)) {
                 return error(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    "I couldn't save that import.",
+                    "that import couldn't be saved.",
                     "import_metadata_failed",
                     detail,
                 );
@@ -269,7 +269,7 @@ pub(crate) async fn entity(
             Err(_) => {
                 return error(
                     StatusCode::BAD_REQUEST,
-                    "I couldn't use one of those values.",
+                    "one of those values couldn't be used.",
                     "invalid_request_value",
                     "Invalid entity state path".into(),
                 );
@@ -287,7 +287,7 @@ pub(crate) async fn entity(
         if let Err(detail) = write(&state_path, &entity_state) {
             return error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "I couldn't save that import.",
+                "that import couldn't be saved.",
                 "import_metadata_failed",
                 detail,
             );
@@ -296,7 +296,7 @@ pub(crate) async fn entity(
     if let Err(detail) = remove_derived(&staged) {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "I couldn't save that import.",
+            "that import couldn't be saved.",
             "import_metadata_failed",
             detail,
         );
@@ -308,7 +308,7 @@ pub(crate) async fn entity(
     ) {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "I couldn't save that import.",
+            "that import couldn't be saved.",
             "import_metadata_failed",
             detail,
         );
@@ -392,7 +392,7 @@ pub(crate) async fn facet(
     let Some(state) = source_state(&app.root, &name) else {
         return error(
             StatusCode::NOT_FOUND,
-            "I couldn't use that journal source.",
+            "that journal source couldn't be used.",
             "journal_source_problem",
             format!("Journal source '{name}' not found"),
         );
@@ -404,7 +404,7 @@ pub(crate) async fn facet(
     else {
         return error(
             StatusCode::BAD_REQUEST,
-            "I couldn't use one of those values.",
+            "one of those values couldn't be used.",
             "invalid_request_value",
             "Invalid staged file".into(),
         );
@@ -414,7 +414,7 @@ pub(crate) async fn facet(
         Err(_) => {
             return error(
                 StatusCode::BAD_REQUEST,
-                "I couldn't use one of those values.",
+                "one of those values couldn't be used.",
                 "invalid_request_value",
                 "Invalid staged file".into(),
             );
@@ -423,7 +423,7 @@ pub(crate) async fn facet(
     if !staged.exists() {
         return error(
             StatusCode::NOT_FOUND,
-            "I couldn't find that import.",
+            "that import isn't in your journal.",
             "import_not_found",
             "Staged facet file not found.".into(),
         );
@@ -433,7 +433,7 @@ pub(crate) async fn facet(
     if parts.len() < 3 {
         return error(
             StatusCode::BAD_REQUEST,
-            "I couldn't use one of those values.",
+            "one of those values couldn't be used.",
             "invalid_request_value",
             format!("Staged facet file '{file}' has an invalid path."),
         );
@@ -445,7 +445,7 @@ pub(crate) async fn facet(
     if !matches!(mode, "apply" | "skip") {
         return error(
             StatusCode::BAD_REQUEST,
-            "I couldn't use one of those values.",
+            "one of those values couldn't be used.",
             "invalid_request_value",
             "Mode must be 'apply' or 'skip'.".into(),
         );
@@ -470,7 +470,7 @@ pub(crate) async fn facet(
             Err(_) => {
                 return error(
                     StatusCode::BAD_REQUEST,
-                    "I couldn't use one of those values.",
+                    "one of those values couldn't be used.",
                     "invalid_request_value",
                     "Invalid entity state path".into(),
                 );
@@ -479,7 +479,7 @@ pub(crate) async fn facet(
         let Some(id_map) = entities_state.get("id_map").and_then(Value::as_object) else {
             return error(
                 StatusCode::BAD_REQUEST,
-                "I couldn't use one of those values.",
+                "one of those values couldn't be used.",
                 "invalid_request_value",
                 "Entity has no mapping yet. Run entity review first.".into(),
             );
@@ -491,7 +491,7 @@ pub(crate) async fn facet(
         let Some(target_entity_id) = id_map.get(source_entity_id).and_then(Value::as_str) else {
             return error(
                 StatusCode::BAD_REQUEST,
-                "I couldn't use one of those values.",
+                "one of those values couldn't be used.",
                 "invalid_request_value",
                 format!("Entity {source_entity_id} has no mapping yet. Run entity review first."),
             );
@@ -503,7 +503,7 @@ pub(crate) async fn facet(
         if !safe_relative(source_path) {
             return error(
                 StatusCode::BAD_REQUEST,
-                "I couldn't use one of those values.",
+                "one of those values couldn't be used.",
                 "invalid_request_value",
                 "Staged facet source path is invalid".into(),
             );
@@ -514,7 +514,7 @@ pub(crate) async fn facet(
             Err(_) => {
                 return error(
                     StatusCode::BAD_REQUEST,
-                    "I couldn't use one of those values.",
+                    "one of those values couldn't be used.",
                     "invalid_request_value",
                     "Invalid facet target path".into(),
                 );
@@ -531,7 +531,7 @@ pub(crate) async fn facet(
                     Err(parse_error) => {
                         return error(
                             StatusCode::BAD_REQUEST,
-                            "I couldn't use one of those values.",
+                            "one of those values couldn't be used.",
                             "invalid_request_value",
                             parse_error.to_string(),
                         );
@@ -544,7 +544,7 @@ pub(crate) async fn facet(
                 if let Err(detail) = write(&target, &Value::Object(source)) {
                     return error(
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        "I couldn't save that import.",
+                        "that import couldn't be saved.",
                         "import_metadata_failed",
                         detail,
                     );
@@ -554,7 +554,7 @@ pub(crate) async fn facet(
                 let source = parse_jsonl(source_data).map_err(|detail| {
                     error(
                         StatusCode::BAD_REQUEST,
-                        "I couldn't use one of those values.",
+                        "one of those values couldn't be used.",
                         "invalid_request_value",
                         detail,
                     )
@@ -582,7 +582,7 @@ pub(crate) async fn facet(
                 if let Err(detail) = write_jsonl(&target, &owner) {
                     return error(
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        "I couldn't save that import.",
+                        "that import couldn't be saved.",
                         "import_metadata_failed",
                         detail,
                     );
@@ -591,7 +591,7 @@ pub(crate) async fn facet(
             _ => {
                 return error(
                     StatusCode::BAD_REQUEST,
-                    "I couldn't use one of those values.",
+                    "one of those values couldn't be used.",
                     "invalid_request_value",
                     format!("Unsupported staged facet file type '{file_type}'."),
                 );
@@ -605,7 +605,7 @@ pub(crate) async fn facet(
             Err(_) => {
                 return error(
                     StatusCode::BAD_REQUEST,
-                    "I couldn't use one of those values.",
+                    "one of those values couldn't be used.",
                     "invalid_request_value",
                     "Invalid facet target path".into(),
                 );
@@ -617,7 +617,7 @@ pub(crate) async fn facet(
         ) {
             return error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "I couldn't save that import.",
+                "that import couldn't be saved.",
                 "import_metadata_failed",
                 detail,
             );
@@ -627,7 +627,7 @@ pub(crate) async fn facet(
     } else {
         return error(
             StatusCode::BAD_REQUEST,
-            "I couldn't use one of those values.",
+            "one of those values couldn't be used.",
             "invalid_request_value",
             format!("Unsupported staged facet reason '{reason}'."),
         );
@@ -635,7 +635,7 @@ pub(crate) async fn facet(
     if let Err(detail) = remove_derived(&staged) {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "I couldn't save that import.",
+            "that import couldn't be saved.",
             "import_metadata_failed",
             detail,
         );
@@ -649,7 +649,7 @@ pub(crate) async fn facet(
     if let Err(detail) = append_resolution_log(&state, "facets", entry) {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "I couldn't save that import.",
+            "that import couldn't be saved.",
             "import_metadata_failed",
             detail,
         );
@@ -710,7 +710,7 @@ pub(crate) async fn config_all(
     let Some(state) = source_state(&app.root, &name) else {
         return error(
             StatusCode::NOT_FOUND,
-            "I couldn't use that journal source.",
+            "that journal source couldn't be used.",
             "journal_source_problem",
             format!("Journal source '{name}' not found"),
         );
@@ -719,7 +719,7 @@ pub(crate) async fn config_all(
     if !matches!(category, "transferable" | "preference") {
         return error(
             StatusCode::BAD_REQUEST,
-            "I couldn't use one of those values.",
+            "one of those values couldn't be used.",
             "invalid_request_value",
             "Category must be 'transferable' or 'preference'.".into(),
         );
@@ -729,7 +729,7 @@ pub(crate) async fn config_all(
         Err(_) => {
             return error(
                 StatusCode::BAD_REQUEST,
-                "I couldn't use one of those values.",
+                "one of those values couldn't be used.",
                 "invalid_request_value",
                 "Invalid config diff path".into(),
             );
@@ -766,7 +766,7 @@ async fn apply_config_field(
     let Some(state) = state else {
         return error(
             StatusCode::NOT_FOUND,
-            "I couldn't use that journal source.",
+            "that journal source couldn't be used.",
             "journal_source_problem",
             "Journal source not found".into(),
         );
@@ -778,7 +778,7 @@ async fn apply_config_field(
         Err(_) => {
             return error(
                 StatusCode::BAD_REQUEST,
-                "I couldn't use one of those values.",
+                "one of those values couldn't be used.",
                 "invalid_request_value",
                 "Invalid config diff path".into(),
             );
@@ -787,7 +787,7 @@ async fn apply_config_field(
     if !path.exists() {
         return error(
             StatusCode::NOT_FOUND,
-            "I couldn't find that import.",
+            "that import isn't in your journal.",
             "import_not_found",
             "No staged config diff found.".into(),
         );
@@ -796,7 +796,7 @@ async fn apply_config_field(
     let Some(entry) = diff.get(field).cloned() else {
         return error(
             StatusCode::NOT_FOUND,
-            "I couldn't find that import.",
+            "that import isn't in your journal.",
             "import_not_found",
             format!("Config field '{field}' is not staged."),
         );
@@ -804,7 +804,7 @@ async fn apply_config_field(
     if !valid_config_field(field) {
         return error(
             StatusCode::BAD_REQUEST,
-            "I couldn't use one of those values.",
+            "one of those values couldn't be used.",
             "invalid_request_value",
             format!("Config field '{field}' is invalid."),
         );
@@ -812,7 +812,7 @@ async fn apply_config_field(
     if !matches!(action, "apply" | "keep") {
         return error(
             StatusCode::BAD_REQUEST,
-            "I couldn't use one of those values.",
+            "one of those values couldn't be used.",
             "invalid_request_value",
             "Action must be 'apply' or 'keep'.".into(),
         );
@@ -822,7 +822,7 @@ async fn apply_config_field(
         if contained(root, "config/journal.json").is_err() {
             return error(
                 StatusCode::BAD_REQUEST,
-                "I couldn't use one of those values.",
+                "one of those values couldn't be used.",
                 "invalid_request_value",
                 "Invalid journal config path".into(),
             );
@@ -837,7 +837,7 @@ async fn apply_config_field(
         if let Err(config_error) = result {
             return error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "I couldn't save that import.",
+                "that import couldn't be saved.",
                 "import_metadata_failed",
                 config_error.to_string(),
             );
@@ -848,7 +848,7 @@ async fn apply_config_field(
         if let Err(detail) = remove_derived(&path) {
             return error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "I couldn't save that import.",
+                "that import couldn't be saved.",
                 "import_metadata_failed",
                 detail,
             );
@@ -858,7 +858,7 @@ async fn apply_config_field(
             Err(_) => {
                 return error(
                     StatusCode::BAD_REQUEST,
-                    "I couldn't use one of those values.",
+                    "one of those values couldn't be used.",
                     "invalid_request_value",
                     "Invalid staged config path".into(),
                 );
@@ -867,7 +867,7 @@ async fn apply_config_field(
         if let Err(detail) = remove_derived(&source_path) {
             return error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "I couldn't save that import.",
+                "that import couldn't be saved.",
                 "import_metadata_failed",
                 detail,
             );
@@ -876,7 +876,7 @@ async fn apply_config_field(
         if let Err(detail) = write(&path, &diff) {
             return error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "I couldn't save that import.",
+                "that import couldn't be saved.",
                 "import_metadata_failed",
                 detail,
             );
@@ -897,7 +897,7 @@ async fn apply_config_field(
     ) {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "I couldn't save that import.",
+            "that import couldn't be saved.",
             "import_metadata_failed",
             detail,
         );

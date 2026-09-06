@@ -36,7 +36,7 @@ pub(crate) async fn api_read(
     if !valid_day(&day) {
         return legacy_error_response(
             "invalid_day",
-            "I couldn't use that day.",
+            "that day couldn't be used.",
             "Day not found",
             StatusCode::NOT_FOUND,
         );
@@ -90,7 +90,7 @@ pub(crate) async fn api_read(
 fn invalid(detail: &str) -> Response {
     legacy_error_response(
         "invalid_segment_or_stream",
-        "I couldn't use that segment or stream.",
+        "that segment or stream couldn't be used.",
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -98,7 +98,7 @@ fn invalid(detail: &str) -> Response {
 fn error_response(error: impl std::fmt::Display) -> Response {
     legacy_error_response(
         "internal_error",
-        "I couldn't complete that request.",
+        "that request didn't finish.",
         error.to_string(),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
