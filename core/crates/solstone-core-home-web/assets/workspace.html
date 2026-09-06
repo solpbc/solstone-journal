@@ -116,6 +116,7 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  min-height: var(--touch-min, 44px);
   transition: background 0.15s ease;
 }
 .pulse-section-toggle::before {
@@ -276,6 +277,36 @@
   font-size: 0.75rem;
   color: var(--ink-faint);
   margin-bottom: 0.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.pulse-facet-dist + .pulse-activities-label,
+.pulse-activities + .pulse-activities-label {
+  margin-top: 0.75rem;
+}
+
+.pulse-activities-more {
+  font: inherit;
+  color: var(--orange-text-aa);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  min-height: var(--touch-min, 44px);
+}
+
+.pulse-activities-more:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.pulse-connections-more {
+  margin-left: 0.5rem;
+  white-space: nowrap;
 }
 
 .pulse-activities {
@@ -296,6 +327,7 @@
   min-width: 40px;
   font-variant-numeric: tabular-nums;
   color: var(--ink-faint);
+  white-space: nowrap;
 }
 
 .pulse-facet-dist {
@@ -504,7 +536,7 @@
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
-.pulse-briefing-header:hover {
+.pulse-briefing-header[role="button"]:hover {
   background: var(--cream-bright);
   border-radius: 6px;
 }
@@ -512,7 +544,7 @@
   background: var(--cream-bright);
   border-radius: 6px;
 }
-.pulse-briefing-header:active {
+.pulse-briefing-header[role="button"]:active {
   background: var(--hairline);
 }
 .pulse-yesterday-header:active {
@@ -551,8 +583,12 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  cursor: pointer;
   transition: background 0.15s ease;
+}
+
+.pulse-briefing-header[role="button"] {
+  cursor: pointer;
+  min-height: var(--touch-min, 44px);
 }
 .pulse-briefing-meta {
   font-size: 0.75rem;
@@ -597,6 +633,7 @@
   align-items: center;
   gap: 0.75rem;
   cursor: pointer;
+  min-height: var(--touch-min, 44px);
   transition: background 0.15s ease;
 }
 .pulse-yesterday-summary {
@@ -861,6 +898,7 @@
   .pulse-connections-name,
   .pulse-connections-cluster a,
   .pulse-connections-footer a,
+  .pulse-connections-more,
   .pulse-vitals-health-link,
   .pulse-vitals-cta,
   .pulse-tell-more,
@@ -942,7 +980,7 @@
   }
 }
 
-[data-removals-card]{margin-top:24px}.removals-card{padding:24px 32px;background:var(--paper);border:1px solid var(--hairline);border-radius:12px;color:var(--ink)}.removals-card h2{font-size:1.1rem;margin:0 0 12px}.removals-card p{line-height:1.5}.removals-card summary{padding:12px 0;cursor:pointer;font-weight:600}.removals-card button{font:inherit;min-height:44px;padding:9px 14px;border:1px solid #d5c8b5;border-radius:8px;background:var(--paper);color:inherit;cursor:pointer;margin:4px}.removals-card button:disabled{opacity:.5;cursor:default}.removals-card button[data-removal-action=confirm]{background:#a93c26;color:white}.removals-card :focus-visible{outline:2px solid var(--focus);outline-offset:3px}.removals-card-toolbar,.removals-card-pages{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.removals-card-row{padding:16px 0;border-top:1px solid var(--hairline)}.removals-card-identity{font-weight:600}.removals-card-origin,.removals-card-kept,.removals-card-scope{font-size:.875rem;color:var(--ink-soft)}.removals-select{display:flex;align-items:center;gap:10px;min-height:44px}.removals-select input{width:24px;height:24px}.removals-card-confirm,.removals-card-outcome{padding:18px;border:1px solid #dcb58f;border-radius:10px;margin-top:16px;background:#fff8ed}.removals-card-failed-badge{color:#963d20;font-weight:600}@media(max-width:600px){.removals-card{padding:20px 16px}.removals-card button{min-height:46px}}
+[data-removals-card]{margin-top:24px}.removals-card{padding:24px 32px;background:var(--paper);border:1px solid var(--hairline);border-radius:12px;color:var(--ink)}.removals-card h2{margin:0 0 12px}.removals-card p{line-height:1.5}.removals-card summary{padding:12px 0;cursor:pointer;font-weight:600}.removals-card button{font:inherit;min-height:44px;padding:9px 14px;border:1px solid #d5c8b5;border-radius:8px;background:var(--paper);color:inherit;cursor:pointer;margin:4px}.removals-card button:disabled{opacity:.5;cursor:default}.removals-card button[data-removal-action=confirm]{background:#a93c26;color:white}.removals-card :focus-visible{outline:2px solid var(--focus);outline-offset:3px}.removals-card-toolbar,.removals-card-pages{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.removals-card-row{padding:16px 0;border-top:1px solid var(--hairline)}.removals-card-identity{font-weight:600}.removals-card-origin,.removals-card-kept,.removals-card-scope{font-size:.875rem;color:var(--ink-soft)}.removals-select{display:flex;align-items:center;gap:10px;min-height:44px}.removals-select input{width:24px;height:24px}.removals-card-confirm,.removals-card-outcome{padding:18px;border:1px solid #dcb58f;border-radius:10px;margin-top:16px;background:#fff8ed}.removals-card-failed-badge{color:#963d20;font-weight:600}@media(max-width:600px){.removals-card{padding:20px 16px}.removals-card button{min-height:46px}}
 .pulse-connections-shelf summary{min-height:44px;display:flex;align-items:center;cursor:pointer}.pulse-connections-evidence{flex-basis:100%;font-size:.85rem;color:var(--text-secondary,var(--ink-faint));overflow-wrap:anywhere}
 </style>
 

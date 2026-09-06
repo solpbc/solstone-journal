@@ -137,11 +137,19 @@
   }
 
   // The list is a deletion decision, so every row carries an anchored date
-  // rather than the relative label the rest of the app uses.
+  // rather than the relative label the rest of the app uses, and the time of
+  // the material it covers so two rows from one day and one stream are told
+  // apart before anything is deleted. G1-30.
+  function identityLabel(row) {
+    const date = window.JournalFormat.dayFull(row.day);
+    const time = window.JournalFormat.segmentTime(row.dir);
+    return time === 'time unavailable' ? date : date + ' ' + time;
+  }
+
   function identityText(row) {
     const stream = streamLabel(row.stream);
-    if (stream === null) return escapeHtml(window.JournalFormat.dayFull(row.day));
-    return copy("row.identity", { date: window.JournalFormat.dayFull(row.day), stream: stream });
+    if (stream === null) return escapeHtml(identityLabel(row));
+    return copy("row.identity", { date: identityLabel(row), stream: stream });
   }
 
   function identity(text) {
@@ -285,7 +293,7 @@
       const count = rowCount(row);
       const stream = streamLabel(row.stream);
       const bodyKey = 'confirm.body_' + origin(row) + '_' + cardinality(count);
-      const values = { n: count, date: window.JournalFormat.dayFull(row.day), stream: stream };
+      const values = { n: count, date: identityLabel(row), stream: stream };
       const body = stream === null ? copyWithoutDefaultStream(bodyKey, values) : copy(bodyKey, values);
       return '<section class="removals-card-confirm" role="dialog">'
         + '<h3>' + copyForCount('confirm.heading', count) + '</h3>'
@@ -308,7 +316,7 @@
   function render() {
     if (!card) return;
     pageIndex = Math.min(pageIndex, Math.max(0, Math.ceil(rows.length / PAGE_SIZE) - 1));
-    const heading = '<h2>' + copy("card.heading") + '</h2><p>' + copy("card.subhead") + '</p>';
+    const heading = '<h2 class="pulse-section-header">' + copy("card.heading") + '</h2><p>' + copy("card.subhead") + '</p>';
     if (listState === 'list.empty') {
       card.innerHTML = '<section class="removals-card">' + heading
         + '<p>' + copy("card.empty") + '</p>' + outcomeHtml + '</section>';
