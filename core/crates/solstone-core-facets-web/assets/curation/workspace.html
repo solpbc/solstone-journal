@@ -251,6 +251,37 @@
   margin-top: 0.35em;
 }
 
+.curation-speaker-pair-samples li.curation-pair-sample {
+  margin-bottom: 0.65em;
+}
+
+.curation-pair-sample-readable {
+  margin: 0;
+  color: var(--ink);
+}
+
+.curation-pair-sample-details,
+.curation-pair-technical {
+  margin-top: 0.35em;
+}
+
+.curation-pair-sample-details summary,
+.curation-pair-technical summary {
+  cursor: pointer;
+  color: var(--ink-faint);
+  padding: 0.3em 0;
+}
+
+.curation-pair-sample-details ul {
+  margin: 0;
+  padding-left: 1.2em;
+  color: var(--ink-soft);
+}
+
+.curation-pair-technical .curation-speaker-pair-summary {
+  margin: 0.35em 0 0;
+}
+
 @media (max-width: 640px) {
   .curation-shell {
     padding: 1em;
@@ -330,15 +361,30 @@ window.CUR_COPY = CUR_COPY;
     return `<audio controls preload="metadata" src="${escapeHtml(sample.audio_url)}"></audio>`;
   }
 
+  // G2-25: lead with a readable date/source/time; the raw stream, segment
+  // key, source file and cluster id are technical evidence, not the
+  // description — they move into a per-sample disclosure.
   function speakerCandidatePairSampleHtml(sample) {
+    const day = sample?.day ? String(sample.day) : '';
+    const stream = sample?.stream ? String(sample.stream) : '';
+    const segment = sample?.segment_key ? String(sample.segment_key) : '';
+    const readable = [
+      day && window.JournalFormat.day(day),
+      stream && window.JournalFormat.stream(stream),
+      segment && window.JournalFormat.segmentTime(segment)
+    ].filter(Boolean).join(' · ');
+    const rawRows = [
+      day && `<li>day: ${escapeHtml(day)}</li>`,
+      stream && `<li>stream: ${escapeHtml(stream)}</li>`,
+      segment && `<li>segment: ${escapeHtml(segment)}</li>`,
+      sample?.source && `<li>source: ${escapeHtml(sample.source)}</li>`,
+      (sample?.cluster_label !== undefined && sample.cluster_label >= 0) && `<li>cluster: ${escapeHtml(sample.cluster_label)}</li>`
+    ].filter(Boolean).join('');
     return `
-      <li>
-        <span>${escapeHtml(sample.day)}</span>
-        ${sample.stream ? `<span> · ${escapeHtml(sample.stream)}</span>` : ''}
-        ${sample.segment_key ? `<span> · ${escapeHtml(sample.segment_key)}</span>` : ''}
-        ${sample.source ? `<span> · ${escapeHtml(sample.source)}</span>` : ''}
-        ${sample.cluster_label !== undefined && sample.cluster_label >= 0 ? `<span> · cluster ${escapeHtml(sample.cluster_label)}</span>` : ''}
+      <li class="curation-pair-sample">
+        ${readable ? `<p class="curation-pair-sample-readable">${escapeHtml(readable)}</p>` : ''}
         ${sampleAudioHtml(sample)}
+        ${rawRows ? `<details class="curation-pair-sample-details"><summary>technical details</summary><ul>${rawRows}</ul></details>` : ''}
       </li>
     `;
   }
@@ -349,11 +395,6 @@ window.CUR_COPY = CUR_COPY;
     const targetSamples = evidence.target_samples || [];
     return `
       <div class="curation-pair-evidence">
-        <p class="curation-speaker-pair-summary">
-          ${escapeHtml(CUR_COPY.CUR_SPEAKER_CANDIDATE_PAIR_SIMILARITY_LABEL)}: ${escapeHtml(formatSimilarity(evidence.similarity))}
-          · ${escapeHtml(CUR_COPY.CUR_SPEAKER_CANDIDATE_PAIR_SOURCE_LABEL)} ${escapeHtml(CUR_COPY.CUR_SPEAKER_CANDIDATE_PAIR_INTERVALS_LABEL)}: ${escapeHtml(evidence.source_intervals || 0)}
-          · ${escapeHtml(CUR_COPY.CUR_SPEAKER_CANDIDATE_PAIR_TARGET_LABEL)} ${escapeHtml(CUR_COPY.CUR_SPEAKER_CANDIDATE_PAIR_INTERVALS_LABEL)}: ${escapeHtml(evidence.target_intervals || 0)}
-        </p>
         <div class="curation-speaker-pair-samples">
           <section>
             <h3>${escapeHtml(CUR_COPY.CUR_SPEAKER_CANDIDATE_PAIR_SOURCE_LABEL)}</h3>
@@ -364,6 +405,14 @@ window.CUR_COPY = CUR_COPY;
             <ul>${targetSamples.map(speakerCandidatePairSampleHtml).join('')}</ul>
           </section>
         </div>
+        <details class="curation-pair-technical">
+          <summary>technical details</summary>
+          <p class="curation-speaker-pair-summary">
+            ${escapeHtml(CUR_COPY.CUR_SPEAKER_CANDIDATE_PAIR_SIMILARITY_LABEL)}: ${escapeHtml(formatSimilarity(evidence.similarity))}
+            · ${escapeHtml(CUR_COPY.CUR_SPEAKER_CANDIDATE_PAIR_SOURCE_LABEL)} ${escapeHtml(CUR_COPY.CUR_SPEAKER_CANDIDATE_PAIR_INTERVALS_LABEL)}: ${escapeHtml(evidence.source_intervals || 0)}
+            · ${escapeHtml(CUR_COPY.CUR_SPEAKER_CANDIDATE_PAIR_TARGET_LABEL)} ${escapeHtml(CUR_COPY.CUR_SPEAKER_CANDIDATE_PAIR_INTERVALS_LABEL)}: ${escapeHtml(evidence.target_intervals || 0)}
+          </p>
+        </details>
       </div>
     `;
   }
