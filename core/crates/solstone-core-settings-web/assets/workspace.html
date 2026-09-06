@@ -2181,11 +2181,13 @@ button:focus:not(:focus-visible) {
         <span class="sapp-open">open ›</span>
       </a>
 
+      <p class="settings-section-desc" style="margin-top: 1.5rem;">not a setting to open — just where those errors show up.</p>
+
       <a class="sapp" href="/app/health/#quiet-notifs-section">
         <span class="sapp-ic">◔</span>
         <span class="sapp-b">
           <span class="sapp-title">notifications</span>
-          <span class="sapp-desc">how and when notifications reach you on any device</span>
+          <span class="sapp-desc">errors from background services that weren't shown as notifications · see them in health ›</span>
         </span>
         <span class="sapp-open">open ›</span>
       </a>
@@ -2300,7 +2302,11 @@ button:focus:not(:focus-visible) {
             <span>&#128065;</span>
           </button>
         </div>
-        <small>import audio from Plaud recorder. 1) sign in to Plaud's web portal. 2) open your browser's console. 3) copy the token shown there into the field above.</small>
+        <small>import audio from Plaud recorder. paste the token from your Plaud web session.</small>
+        <details class="settings-field-note">
+          <summary>how to find it</summary>
+          <small>1) sign in to Plaud's web portal. 2) open your browser's console. 3) copy the token shown there into the field above.</small>
+        </details>
       </div>
       </form>
     </section>
@@ -2558,7 +2564,7 @@ button:focus:not(:focus-visible) {
 
       <div class="settings-field" id="retentionModeField">
         <label>original media</label>
-        <small>choose whether to keep your original audio, video, and screen frames, or list them for removal after processing. <a href="https://solpbc.org/privacy#recording-laws" target="_blank" rel="noopener">recording-consent laws</a> may apply in your jurisdiction.</small>
+        <small>choose whether to keep your original audio, video, and screen frames, or list them for removal after processing.</small>
         <div id="retentionDaysField" class="retention-days-row" style="margin-top: 0.5em;">
           <button type="button" class="settings-preset-btn" data-days="7">7</button>
           <button type="button" class="settings-preset-btn" data-days="30">30</button>
@@ -2659,7 +2665,7 @@ button:focus:not(:focus-visible) {
       <h2>facets</h2>
       <p class="settings-section-desc">facets keep parts of your life separate inside one journal.</p>
       <div id="facetsList" class="facets-list" aria-live="polite">
-        <p class="text-muted">loading…</p>
+        <p class="text-muted">loading your facets…</p>
       </div>
     </section>
   </div>

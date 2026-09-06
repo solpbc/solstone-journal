@@ -961,25 +961,6 @@ function closeDetectModal() {
   previousDetectFocus = null;
 }
 
-function formatFileSize(bytes) {
-  if (bytes === null || bytes === undefined) return '-';
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
-
-function formatDuration(minutes) {
-  if (!minutes) return '-';
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  if (hours > 0) {
-    return `${hours}h ${mins}m`;
-  }
-  return `${mins}m`;
-}
-
 function formatElapsed(ms) {
   if (!ms) return '0s';
   const totalSeconds = Math.floor(ms / 1000);
@@ -1104,7 +1085,7 @@ function getImportById(importId) {
   return importsCache.find(item => item.timestamp === importId) || null;
 }
 
-function buildHistoryHeader(total, totalEntriesWritten, totalEntitiesSeeded) {
+function buildHistoryHeader(total, totalEntriesWritten) {
   const sourceOptions = [
     '<option value="">all sources</option>',
     ...cachedSources.map(source => {
@@ -1113,9 +1094,13 @@ function buildHistoryHeader(total, totalEntriesWritten, totalEntitiesSeeded) {
     }),
   ].join('');
 
+  const importsLabel = total === 1 ? 'import' : 'imports';
+  const entriesLabel = totalEntriesWritten === 1 ? 'entry' : 'entries';
+  const summaryText = `${total.toLocaleString()} ${importsLabel}, ${totalEntriesWritten.toLocaleString()} ${entriesLabel}.`;
+
   return `
     <div class="import-history-header">
-      <div class="import-history-summary">${total} imports total, ${totalEntriesWritten} entries imported, ${totalEntitiesSeeded} entities found</div>
+      <div class="import-history-summary">${escapeHtml(summaryText)}</div>
       <div class="import-history-filters">
         <label for="importSourceFilter">source</label>
         <select id="importSourceFilter">
@@ -1152,16 +1137,19 @@ function renderImportRow(imp) {
     statusText = 'pending';
   }
 
-  const sourceCell = imp.source_type
-    ? renderSourceDisplay(imp.source_type, imp.source_display || sourceMetadataByName[imp.source_type]?.display_name || imp.original_filename || '-')
-    : renderSourceDisplay('', imp.original_filename || '-', imp.original_filename || '-');
+  const fileDisplay = imp.original_filename || imp.source_display || '-';
+  const sourceDisplayText = imp.source_type
+    ? imp.source_display || sourceMetadataByName[imp.source_type]?.display_name || imp.original_filename || '-'
+    : imp.original_filename || '-';
+  const sourceCell = sourceDisplayText === fileDisplay
+    ? '-'
+    : renderSourceDisplay(imp.source_type || '', sourceDisplayText, sourceDisplayText);
   const statsText = formatImportStats(imp.entries_written, imp.entities_seeded);
 
   let html = `<tr data-import-id="${imp.timestamp}" data-source-type="${imp.source_type || ''}" tabindex="0" role="link" onclick="window.location.href='/app/import/${imp.timestamp}'" onkeydown="if(event.key==='Enter')window.location.href='/app/import/${imp.timestamp}'">`;
   html += `<td class="nowrap">${importedAt}</td>`;
-  html += `<td>${escapeHtml(imp.original_filename || imp.source_display || '-')}</td>`;
+  html += `<td>${escapeHtml(fileDisplay)}</td>`;
   html += `<td class="source-cell">${sourceCell}</td>`;
-  html += `<td class="file-size nowrap">${formatFileSize(imp.file_size)}</td>`;
   html += '<td class="nowrap">';
   if (imp.target_day) {
     html += `<a href="/app/transcripts/${encodeURIComponent(imp.target_day)}" class="timestamp-link" onclick="event.stopPropagation();">${escapeHtml(targetDayDisplay)}</a>`;
@@ -1170,9 +1158,7 @@ function renderImportRow(imp) {
   }
   html += '</td>';
   html += `<td class="status-cell"><span class="import-status ${statusClass}">${statusText}</span>${statusDetail}</td>`;
-  html += `<td class="files-cell">${imp.total_files_created || 0}</td>`;
   html += `<td class="stats-cell import-stats-cell">${statsText}</td>`;
-  html += `<td class="duration-cell">${formatDuration(imp.duration_minutes)}</td>`;
   html += '</tr>';
   return html;
 }
@@ -1210,18 +1196,15 @@ async function loadImports() {
       return;
     }
 
-    let html = buildHistoryHeader(data.total, data.total_entries_written || 0, data.total_entities_seeded || 0);
+    let html = buildHistoryHeader(data.total, data.total_entries_written || 0);
     html += '<table class="import-table">';
     html += '<thead><tr>';
     html += '<th>imported at</th>';
     html += '<th>file</th>';
     html += '<th>source</th>';
-    html += '<th>size</th>';
     html += '<th>imported to</th>';
     html += '<th>status</th>';
-    html += '<th>files created</th>';
     html += '<th>stats</th>';
-    html += '<th>duration</th>';
     html += '</tr></thead><tbody>';
 
     imports.forEach(imp => {
