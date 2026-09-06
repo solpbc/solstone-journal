@@ -163,7 +163,7 @@ pub fn destination(value: &Map<String, Value>) -> Result<(), Response> {
     if backend != "s3" && backend != "b2" {
         return Err(response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "I couldn't use one of those values.",
+            "one of those values couldn't be used.",
             "invalid_request_value",
             "unsupported backend",
         ));
@@ -226,7 +226,7 @@ pub fn restore_day(value: &Map<String, Value>) -> Result<(), Response> {
         return if value.contains_key("day") {
             Err(response::error(
                 axum::http::StatusCode::BAD_REQUEST,
-                "I couldn't use one of those values.",
+                "one of those values couldn't be used.",
                 "invalid_request_value",
                 "",
             ))
@@ -237,7 +237,7 @@ pub fn restore_day(value: &Map<String, Value>) -> Result<(), Response> {
     let Some(day) = value.get("day").and_then(Value::as_str) else {
         return Err(response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "I couldn't use that day.",
+            "that day couldn't be used.",
             "invalid_day",
             "",
         ));
@@ -248,7 +248,7 @@ pub fn restore_day(value: &Map<String, Value>) -> Result<(), Response> {
     valid.then_some(()).ok_or_else(|| {
         response::error(
             axum::http::StatusCode::BAD_REQUEST,
-            "I couldn't use that day.",
+            "that day couldn't be used.",
             "invalid_day",
             "",
         )

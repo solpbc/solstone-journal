@@ -240,12 +240,12 @@
         "why": "media-offload status view"
       },
       {
-        "body_sha256": "b6efbf43d6febdd68e8000696d5579e43d4a8bbb754e23b305135d28eace4462",
+        "body_sha256": "d01ceb3dd662930842fca458977cb3b0310d4862814b06487cb6673e82ca6759",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "missing request body",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -254,12 +254,12 @@
         "why": "mutation with no body: the missing-body refusal"
       },
       {
-        "body_sha256": "0d59ab42d957069e35a612eda67bf4fc56e469094b346024e5a0e07869c26c69",
+        "body_sha256": "e03cbf2f071d0642f3ae6504c2e3c9ffd64a85428ac4401818eb6a406eeceef1",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -271,12 +271,12 @@
         "why": "mutation with an uncoercible value: the invalid-value refusal"
       },
       {
-        "body_sha256": "0f89f27fbcc5aa417cddd8b5841f8f4e00e808057eb2b3734e57f8184f3a65c5",
+        "body_sha256": "2d4cf424ed196519cc520e85f8784ef978c29f70ca6cd94a745d7027c25e449d",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "",
-          "error": "I couldn't confirm that — it didn't match your recovery key.",
+          "error": "that didn't match your recovery key.",
           "reason_code": "recovery_key_mismatch"
         },
         "method": "POST",
@@ -288,12 +288,12 @@
         "why": "recovery-key mismatch: the refusal an owner can actually trigger"
       },
       {
-        "body_sha256": "1ee5c28359c7079116cbba3d03e1144f35337f65015fc73b96e0a53637af17ee",
+        "body_sha256": "592754cc9264054748fbc4d36be075ad2f65943de8d2bea28e34998ae9d80fe5",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "missing request body",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -302,12 +302,12 @@
         "why": "restore with no body: refuses before reaching the restore engine"
       },
       {
-        "body_sha256": "1885fe4d95daf31e7ee06874170d8a68f24bfaeebadd292d7a24fc4c59f83082",
+        "body_sha256": "17ceb643ae1a3b52de008f61c9fb69962ca1e725108cbe08534590df4718b863",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "missing recovery_key",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -319,12 +319,12 @@
         "why": "restore with a blank key: whitespace refuses before reaching the restore engine"
       },
       {
-        "body_sha256": "0d59ab42d957069e35a612eda67bf4fc56e469094b346024e5a0e07869c26c69",
+        "body_sha256": "e03cbf2f071d0642f3ae6504c2e3c9ffd64a85428ac4401818eb6a406eeceef1",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -725,12 +725,12 @@
         "why": "media-offload status view"
       },
       {
-        "body_sha256": "b6efbf43d6febdd68e8000696d5579e43d4a8bbb754e23b305135d28eace4462",
+        "body_sha256": "d01ceb3dd662930842fca458977cb3b0310d4862814b06487cb6673e82ca6759",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "missing request body",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -739,12 +739,12 @@
         "why": "mutation with no body: the missing-body refusal"
       },
       {
-        "body_sha256": "0d59ab42d957069e35a612eda67bf4fc56e469094b346024e5a0e07869c26c69",
+        "body_sha256": "e03cbf2f071d0642f3ae6504c2e3c9ffd64a85428ac4401818eb6a406eeceef1",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -756,12 +756,12 @@
         "why": "mutation with an uncoercible value: the invalid-value refusal"
       },
       {
-        "body_sha256": "0f89f27fbcc5aa417cddd8b5841f8f4e00e808057eb2b3734e57f8184f3a65c5",
+        "body_sha256": "2d4cf424ed196519cc520e85f8784ef978c29f70ca6cd94a745d7027c25e449d",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "",
-          "error": "I couldn't confirm that — it didn't match your recovery key.",
+          "error": "that didn't match your recovery key.",
           "reason_code": "recovery_key_mismatch"
         },
         "method": "POST",
@@ -773,12 +773,12 @@
         "why": "recovery-key mismatch: the refusal an owner can actually trigger"
       },
       {
-        "body_sha256": "1ee5c28359c7079116cbba3d03e1144f35337f65015fc73b96e0a53637af17ee",
+        "body_sha256": "592754cc9264054748fbc4d36be075ad2f65943de8d2bea28e34998ae9d80fe5",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "missing request body",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -787,12 +787,12 @@
         "why": "restore with no body: refuses before reaching the restore engine"
       },
       {
-        "body_sha256": "1885fe4d95daf31e7ee06874170d8a68f24bfaeebadd292d7a24fc4c59f83082",
+        "body_sha256": "17ceb643ae1a3b52de008f61c9fb69962ca1e725108cbe08534590df4718b863",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "missing recovery_key",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -804,12 +804,12 @@
         "why": "restore with a blank key: whitespace refuses before reaching the restore engine"
       },
       {
-        "body_sha256": "0d59ab42d957069e35a612eda67bf4fc56e469094b346024e5a0e07869c26c69",
+        "body_sha256": "e03cbf2f071d0642f3ae6504c2e3c9ffd64a85428ac4401818eb6a406eeceef1",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -1027,12 +1027,12 @@
         "why": "media-offload status view"
       },
       {
-        "body_sha256": "b6efbf43d6febdd68e8000696d5579e43d4a8bbb754e23b305135d28eace4462",
+        "body_sha256": "d01ceb3dd662930842fca458977cb3b0310d4862814b06487cb6673e82ca6759",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "missing request body",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -1041,12 +1041,12 @@
         "why": "mutation with no body: the missing-body refusal"
       },
       {
-        "body_sha256": "0d59ab42d957069e35a612eda67bf4fc56e469094b346024e5a0e07869c26c69",
+        "body_sha256": "e03cbf2f071d0642f3ae6504c2e3c9ffd64a85428ac4401818eb6a406eeceef1",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -1058,12 +1058,12 @@
         "why": "mutation with an uncoercible value: the invalid-value refusal"
       },
       {
-        "body_sha256": "847e17f6b7e126a0edc79ac9c843cc87d87843e4b176555ec3e9db2f73bf3a59",
+        "body_sha256": "812f3b94fb7dcd13ca0f6f845a6b99e50dcaecdaa5037e2c4ca571a3eb4da088",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "no recovery key yet",
-          "error": "I couldn't take that action in the current state.",
+          "error": "that action isn't available in the current state.",
           "reason_code": "invalid_operation_for_state"
         },
         "method": "POST",
@@ -1075,12 +1075,12 @@
         "why": "recovery-key mismatch: the refusal an owner can actually trigger"
       },
       {
-        "body_sha256": "1ee5c28359c7079116cbba3d03e1144f35337f65015fc73b96e0a53637af17ee",
+        "body_sha256": "592754cc9264054748fbc4d36be075ad2f65943de8d2bea28e34998ae9d80fe5",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "missing request body",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -1089,12 +1089,12 @@
         "why": "restore with no body: refuses before reaching the restore engine"
       },
       {
-        "body_sha256": "1885fe4d95daf31e7ee06874170d8a68f24bfaeebadd292d7a24fc4c59f83082",
+        "body_sha256": "17ceb643ae1a3b52de008f61c9fb69962ca1e725108cbe08534590df4718b863",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "missing recovery_key",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -1106,12 +1106,12 @@
         "why": "restore with a blank key: whitespace refuses before reaching the restore engine"
       },
       {
-        "body_sha256": "0d59ab42d957069e35a612eda67bf4fc56e469094b346024e5a0e07869c26c69",
+        "body_sha256": "e03cbf2f071d0642f3ae6504c2e3c9ffd64a85428ac4401818eb6a406eeceef1",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -1329,12 +1329,12 @@
         "why": "media-offload status view"
       },
       {
-        "body_sha256": "b6efbf43d6febdd68e8000696d5579e43d4a8bbb754e23b305135d28eace4462",
+        "body_sha256": "d01ceb3dd662930842fca458977cb3b0310d4862814b06487cb6673e82ca6759",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "missing request body",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -1343,12 +1343,12 @@
         "why": "mutation with no body: the missing-body refusal"
       },
       {
-        "body_sha256": "0d59ab42d957069e35a612eda67bf4fc56e469094b346024e5a0e07869c26c69",
+        "body_sha256": "e03cbf2f071d0642f3ae6504c2e3c9ffd64a85428ac4401818eb6a406eeceef1",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -1360,12 +1360,12 @@
         "why": "mutation with an uncoercible value: the invalid-value refusal"
       },
       {
-        "body_sha256": "0f89f27fbcc5aa417cddd8b5841f8f4e00e808057eb2b3734e57f8184f3a65c5",
+        "body_sha256": "2d4cf424ed196519cc520e85f8784ef978c29f70ca6cd94a745d7027c25e449d",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "",
-          "error": "I couldn't confirm that — it didn't match your recovery key.",
+          "error": "that didn't match your recovery key.",
           "reason_code": "recovery_key_mismatch"
         },
         "method": "POST",
@@ -1377,12 +1377,12 @@
         "why": "recovery-key mismatch: the refusal an owner can actually trigger"
       },
       {
-        "body_sha256": "1ee5c28359c7079116cbba3d03e1144f35337f65015fc73b96e0a53637af17ee",
+        "body_sha256": "592754cc9264054748fbc4d36be075ad2f65943de8d2bea28e34998ae9d80fe5",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "missing request body",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -1391,12 +1391,12 @@
         "why": "restore with no body: refuses before reaching the restore engine"
       },
       {
-        "body_sha256": "1885fe4d95daf31e7ee06874170d8a68f24bfaeebadd292d7a24fc4c59f83082",
+        "body_sha256": "17ceb643ae1a3b52de008f61c9fb69962ca1e725108cbe08534590df4718b863",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "missing recovery_key",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -1408,12 +1408,12 @@
         "why": "restore with a blank key: whitespace refuses before reaching the restore engine"
       },
       {
-        "body_sha256": "0d59ab42d957069e35a612eda67bf4fc56e469094b346024e5a0e07869c26c69",
+        "body_sha256": "e03cbf2f071d0642f3ae6504c2e3c9ffd64a85428ac4401818eb6a406eeceef1",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
