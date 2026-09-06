@@ -51,7 +51,7 @@
         "auth_failed": "the destination rejected the key or credentials. check the recovery key and destination details.",
         "locked": "the destination is busy. try again shortly.",
         "timeout": "the destination took too long to respond. try again shortly.",
-        "unreachable": "the destination couldn't be reached. check the repository path and try again."
+        "unreachable": "the destination couldn't be reached. check the backup location and try again."
       },
       "modes": {
         "byo": {
@@ -236,7 +236,7 @@
       "backup_busy": "another backup task is already running. try again in a moment.",
       "backup_not_confirmed": "confirm your recovery key before turning on backup.",
       "backup_operation_failed": "that backup action couldn't be finished. check the recovery key and destination, then try again.",
-      "backup_unavailable": "the background service couldn't be asked to start a backup. start it, then try again.",
+      "backup_unavailable": "the backup service couldn't be reached. start it, then try again.",
       "invalid_key": "that recovery key didn't unlock the backup. re-enter the key from your saved copy.",
       "invalid_config_value": "use non-negative whole numbers, then save again.",
       "invalid_operation_for_state": "finish the current backup setup step, then try again.",

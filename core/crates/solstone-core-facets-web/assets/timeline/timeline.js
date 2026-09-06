@@ -741,7 +741,7 @@ async function dispatchBootView() {
     // Only on a cold day — a live refresh already has the day cached, and
     // flashing a skeleton over it would throw away the reader's place.
     if (!dayCache.has(day)) {
-      timeline.innerHTML = renderLoadingState(`loading ${window.JournalFormat.day(day)} …`);
+      timeline.innerHTML = renderLoadingState(`loading ${window.JournalFormat.day(day).replace(/^(Today|Yesterday|Tomorrow)$/, (word) => word.toLowerCase())} …`);
     }
     await loadMonth(day.slice(0, 6));
     await loadDay(day);

@@ -78,7 +78,7 @@ const amber = renderVitalsHtml({
     verdict: 'attention',
     severity: 'amber',
     headline: '1 thing needs your attention',
-    issues: [{ text: 'the solstone app on one of your devices has not added anything to your journal recently.', severity: 'amber', href: '/app/health' }],
+    issues: [{ text: "the solstone app on one of your devices hasn't added anything to your journal recently.", severity: 'amber', href: '/app/health' }],
   },
 });
 assert(amber.includes('pulse-vitals-dot amber'), amber);

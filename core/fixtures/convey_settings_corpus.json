@@ -11833,7 +11833,7 @@
             {
               "description": "On-device speech recognition via Parakeet TDT; macOS uses a FluidAudio/CoreML helper, Linux uses the supervised parakeet.cpp server. Requires `make install`.",
               "env_key": null,
-              "label": "Parakeet - Local processing (Apple Silicon CoreML or Linux parakeet.cpp)",
+              "label": "Parakeet - local processing (Apple Silicon CoreML or Linux parakeet.cpp)",
               "name": "parakeet",
               "settings": [
                 "model_version",
@@ -11844,7 +11844,7 @@
             {
               "description": "On-device speech recognition via a supervised parakeet.cpp server (mudler/parakeet.cpp). Linux only; install with `journal install-provider parakeet`.",
               "env_key": null,
-              "label": "Parakeet.cpp - Local processing (Linux)",
+              "label": "Parakeet.cpp - local processing (Linux)",
               "name": "parakeet-cpp",
               "settings": [
                 "device"
@@ -13054,7 +13054,7 @@
             {
               "description": "On-device speech recognition via Parakeet TDT; macOS uses a FluidAudio/CoreML helper, Linux uses the supervised parakeet.cpp server. Requires `make install`.",
               "env_key": null,
-              "label": "Parakeet - Local processing (Apple Silicon CoreML or Linux parakeet.cpp)",
+              "label": "Parakeet - local processing (Apple Silicon CoreML or Linux parakeet.cpp)",
               "name": "parakeet",
               "settings": [
                 "model_version",
@@ -13065,7 +13065,7 @@
             {
               "description": "On-device speech recognition via a supervised parakeet.cpp server (mudler/parakeet.cpp). Linux only; install with `journal install-provider parakeet`.",
               "env_key": null,
-              "label": "Parakeet.cpp - Local processing (Linux)",
+              "label": "Parakeet.cpp - local processing (Linux)",
               "name": "parakeet-cpp",
               "settings": [
                 "device"
@@ -16107,7 +16107,7 @@
             {
               "description": "On-device speech recognition via Parakeet TDT; macOS uses a FluidAudio/CoreML helper, Linux uses the supervised parakeet.cpp server. Requires `make install`.",
               "env_key": null,
-              "label": "Parakeet - Local processing (Apple Silicon CoreML or Linux parakeet.cpp)",
+              "label": "Parakeet - local processing (Apple Silicon CoreML or Linux parakeet.cpp)",
               "name": "parakeet",
               "settings": [
                 "model_version",
@@ -16118,7 +16118,7 @@
             {
               "description": "On-device speech recognition via a supervised parakeet.cpp server (mudler/parakeet.cpp). Linux only; install with `journal install-provider parakeet`.",
               "env_key": null,
-              "label": "Parakeet.cpp - Local processing (Linux)",
+              "label": "Parakeet.cpp - local processing (Linux)",
               "name": "parakeet-cpp",
               "settings": [
                 "device"
@@ -17421,7 +17421,7 @@
             {
               "description": "On-device speech recognition via Parakeet TDT; macOS uses a FluidAudio/CoreML helper, Linux uses the supervised parakeet.cpp server. Requires `make install`.",
               "env_key": null,
-              "label": "Parakeet - Local processing (Apple Silicon CoreML or Linux parakeet.cpp)",
+              "label": "Parakeet - local processing (Apple Silicon CoreML or Linux parakeet.cpp)",
               "name": "parakeet",
               "settings": [
                 "model_version",
@@ -17432,7 +17432,7 @@
             {
               "description": "On-device speech recognition via a supervised parakeet.cpp server (mudler/parakeet.cpp). Linux only; install with `journal install-provider parakeet`.",
               "env_key": null,
-              "label": "Parakeet.cpp - Local processing (Linux)",
+              "label": "Parakeet.cpp - local processing (Linux)",
               "name": "parakeet-cpp",
               "settings": [
                 "device"
@@ -18655,7 +18655,7 @@
             {
               "description": "On-device speech recognition via Parakeet TDT; macOS uses a FluidAudio/CoreML helper, Linux uses the supervised parakeet.cpp server. Requires `make install`.",
               "env_key": null,
-              "label": "Parakeet - Local processing (Apple Silicon CoreML or Linux parakeet.cpp)",
+              "label": "Parakeet - local processing (Apple Silicon CoreML or Linux parakeet.cpp)",
               "name": "parakeet",
               "settings": [
                 "model_version",
@@ -18666,7 +18666,7 @@
             {
               "description": "On-device speech recognition via a supervised parakeet.cpp server (mudler/parakeet.cpp). Linux only; install with `journal install-provider parakeet`.",
               "env_key": null,
-              "label": "Parakeet.cpp - Local processing (Linux)",
+              "label": "Parakeet.cpp - local processing (Linux)",
               "name": "parakeet-cpp",
               "settings": [
                 "device"

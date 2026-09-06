@@ -227,9 +227,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     ("verifying", CopyValue::String("checking the hardware…")),
                     (
                         "verified",
-                        CopyValue::String(
-                            "confidential processing is ready · hardware verified {checked}",
-                        ),
+                        CopyValue::String("confidential processing is ready · reachable {checked}"),
                     ),
                     (
                         "failed",
@@ -340,9 +338,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     ("value", CopyValue::String("confidential processing")),
                     (
                         "detail",
-                        CopyValue::String(
-                            "confidential processing is ready · hardware verified {checked}",
-                        ),
+                        CopyValue::String("confidential processing is ready · reachable {checked}"),
                     ),
                 ]),
             ),

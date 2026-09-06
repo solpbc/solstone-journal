@@ -365,7 +365,7 @@
   // is what the owner is asking about; the heartbeat is a secondary line.
   const DELIVERY_GROUP_ORDER = ['failing', 'adding', 'recent', 'quiet', 'never', 'unknown'];
   const DELIVERY_GROUP_LABELS = {
-    failing: 'not being added right now',
+    failing: 'not adding right now',
     adding: 'adding to your journal now',
     recent: 'added recently',
     quiet: 'quiet for a while',

@@ -63,7 +63,7 @@
     REPORT_FALLBACK_BODY: "here's your report. paste it in an email.",
     REPORT_FAILURE_HTTP_PREFIX: "HTTP",
     REPORT_FAILURE_REFERENCE_PREFIX: "reference",
-    REPORT_MAILTO_BODY_PREFIX: "this couldn't be sent through convey, so here's the report.\n\n",
+    REPORT_MAILTO_BODY_PREFIX: "this couldn't be sent from here, so here's the report.\n\n",
     REPORT_MAILTO_TRUNCATION_SUFFIX: "\n\n[full report is in your clipboard]\n",
     REPORT_BUTTON_LABEL: "report this",
   });

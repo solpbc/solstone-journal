@@ -166,7 +166,7 @@
                 "off": "",
                 "stale": "your journal needs to re-check the service before sending.",
                 "unreachable": "can't reach confidential processing right now. nothing is being sent.",
-                "verified": "confidential processing is ready \u00b7 hardware verified {checked}",
+                "verified": "confidential processing is ready \u00b7 reachable {checked}",
                 "verifying": "checking the hardware\u2026"
               },
               "audio": {
@@ -229,7 +229,7 @@
                 "value": "confidential processing"
               },
               "confidential_verified": {
-                "detail": "confidential processing is ready \u00b7 hardware verified {checked}",
+                "detail": "confidential processing is ready \u00b7 reachable {checked}",
                 "label": "processing with",
                 "value": "confidential processing"
               },
@@ -2402,7 +2402,7 @@
                 "off": "",
                 "stale": "your journal needs to re-check the service before sending.",
                 "unreachable": "can't reach confidential processing right now. nothing is being sent.",
-                "verified": "confidential processing is ready \u00b7 hardware verified {checked}",
+                "verified": "confidential processing is ready \u00b7 reachable {checked}",
                 "verifying": "checking the hardware\u2026"
               },
               "audio": {
@@ -2465,7 +2465,7 @@
                 "value": "confidential processing"
               },
               "confidential_verified": {
-                "detail": "confidential processing is ready \u00b7 hardware verified {checked}",
+                "detail": "confidential processing is ready \u00b7 reachable {checked}",
                 "label": "processing with",
                 "value": "confidential processing"
               },
@@ -4636,7 +4636,7 @@
                 "off": "",
                 "stale": "your journal needs to re-check the service before sending.",
                 "unreachable": "can't reach confidential processing right now. nothing is being sent.",
-                "verified": "confidential processing is ready \u00b7 hardware verified {checked}",
+                "verified": "confidential processing is ready \u00b7 reachable {checked}",
                 "verifying": "checking the hardware\u2026"
               },
               "audio": {
@@ -4699,7 +4699,7 @@
                 "value": "confidential processing"
               },
               "confidential_verified": {
-                "detail": "confidential processing is ready \u00b7 hardware verified {checked}",
+                "detail": "confidential processing is ready \u00b7 reachable {checked}",
                 "label": "processing with",
                 "value": "confidential processing"
               },
@@ -6850,7 +6850,7 @@
                 "off": "",
                 "stale": "your journal needs to re-check the service before sending.",
                 "unreachable": "can't reach confidential processing right now. nothing is being sent.",
-                "verified": "confidential processing is ready \u00b7 hardware verified {checked}",
+                "verified": "confidential processing is ready \u00b7 reachable {checked}",
                 "verifying": "checking the hardware\u2026"
               },
               "audio": {
@@ -6913,7 +6913,7 @@
                 "value": "confidential processing"
               },
               "confidential_verified": {
-                "detail": "confidential processing is ready \u00b7 hardware verified {checked}",
+                "detail": "confidential processing is ready \u00b7 reachable {checked}",
                 "label": "processing with",
                 "value": "confidential processing"
               },
@@ -9248,7 +9248,7 @@
                 "off": "",
                 "stale": "your journal needs to re-check the service before sending.",
                 "unreachable": "can't reach confidential processing right now. nothing is being sent.",
-                "verified": "confidential processing is ready \u00b7 hardware verified {checked}",
+                "verified": "confidential processing is ready \u00b7 reachable {checked}",
                 "verifying": "checking the hardware\u2026"
               },
               "audio": {
@@ -9311,7 +9311,7 @@
                 "value": "confidential processing"
               },
               "confidential_verified": {
-                "detail": "confidential processing is ready \u00b7 hardware verified {checked}",
+                "detail": "confidential processing is ready \u00b7 reachable {checked}",
                 "label": "processing with",
                 "value": "confidential processing"
               },
@@ -12789,7 +12789,7 @@
                 "off": "",
                 "stale": "your journal needs to re-check the service before sending.",
                 "unreachable": "can't reach confidential processing right now. nothing is being sent.",
-                "verified": "confidential processing is ready \u00b7 hardware verified {checked}",
+                "verified": "confidential processing is ready \u00b7 reachable {checked}",
                 "verifying": "checking the hardware\u2026"
               },
               "audio": {
@@ -12852,7 +12852,7 @@
                 "value": "confidential processing"
               },
               "confidential_verified": {
-                "detail": "confidential processing is ready \u00b7 hardware verified {checked}",
+                "detail": "confidential processing is ready \u00b7 reachable {checked}",
                 "label": "processing with",
                 "value": "confidential processing"
               },

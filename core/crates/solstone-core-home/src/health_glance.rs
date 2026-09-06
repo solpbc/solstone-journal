@@ -12,7 +12,7 @@ use crate::needs_you::format_degraded_capture_line;
 
 pub const BACKLOG_FRESHNESS_MAX_AGE_HOURS: i64 = 36;
 
-const UNAVAILABLE_HEADLINE: &str = "your devices' status isn't known right now.";
+const UNAVAILABLE_HEADLINE: &str = "your devices' status is unclear right now.";
 const EMPTY_REGISTRY_HEADLINE: &str =
     "no devices are running the solstone app yet. set one up to start your journal.";
 const AWAITING_FIRST_HEADLINE: &str =
@@ -25,13 +25,13 @@ const RUNNING_REACH_SENTENCE: &str =
 const RUNNING_REACH_SENTENCE_PLURAL: &str =
     "the app is still running on them, but it isn't adding to your journal.";
 const ASLEEP_REACH_SENTENCE: &str =
-    "the device hasn't been reachable — it could be asleep, off, or having trouble connecting.";
+    "the device hasn't been reachable. it could be asleep, off, or having trouble connecting.";
 const ASLEEP_REACH_SENTENCE_PLURAL: &str =
-    "they haven't been reachable — they could be asleep, off, or having trouble connecting.";
+    "they haven't been reachable. they could be asleep, off, or having trouble connecting.";
 const STALE_ISSUE: &str =
-    "the solstone app on one of your devices has not added anything to your journal recently.";
+    "the solstone app on one of your devices hasn't added anything to your journal recently.";
 const STALE_ISSUE_PLURAL: &str =
-    "the solstone app on those devices has not added anything to your journal recently.";
+    "the solstone app on those devices hasn't added anything to your journal recently.";
 const OFFLINE_ISSUE: &str = "the solstone app hasn't added anything to your journal recently.";
 
 #[derive(Clone, Copy)]
@@ -250,7 +250,7 @@ fn backlog_issues(source: &BacklogSource, now: DateTime<Utc>) -> Vec<Value> {
     if backlog.get("degraded").and_then(Value::as_bool) == Some(true) {
         issues.push(unknown_backlog());
     }
-    match source.generated_at.as_deref().and_then(parse_time) { Some(generated) if now - generated <= Duration::hours(BACKLOG_FRESHNESS_MAX_AGE_HOURS) => {}, Some(generated) => issues.push(json!({"text":format!("whether your journal is caught up isn't known; the last update was {} ago.", age(now - generated)),"severity":"amber","href":"/app/health"})), None => issues.push(json!({"text":"whether your journal is caught up isn't known; the last update age is unknown.","severity":"amber","href":"/app/health"})), };
+    match source.generated_at.as_deref().and_then(parse_time) { Some(generated) if now - generated <= Duration::hours(BACKLOG_FRESHNESS_MAX_AGE_HOURS) => {}, Some(generated) => issues.push(json!({"text":format!("it's unclear whether your journal is caught up; the last update was {} ago.", age(now - generated)),"severity":"amber","href":"/app/health"})), None => issues.push(json!({"text":"it's unclear whether your journal is caught up; the last update age is unknown.","severity":"amber","href":"/app/health"})), };
     if backlog
         .get("stuck_days")
         .and_then(Value::as_i64)
@@ -271,7 +271,7 @@ fn backlog_issues(source: &BacklogSource, now: DateTime<Utc>) -> Vec<Value> {
     issues
 }
 fn unknown_backlog() -> Value {
-    json!({"text":"whether your journal is caught up isn't known right now.","severity":"amber","href":"/app/health"})
+    json!({"text":"it's unclear whether your journal is caught up right now.","severity":"amber","href":"/app/health"})
 }
 fn capture_issue(capture: &Value) -> Option<Value> {
     let status = capture.get("status").and_then(Value::as_str);
@@ -592,7 +592,7 @@ mod tests {
             invalid_g["headline"]
                 .as_str()
                 .unwrap()
-                .contains("status isn't known")
+                .contains("status is unclear")
         );
         assert_eq!(glance(&invalid_offline)["verdict"], invalid_g["verdict"]);
         assert_eq!(glance(&invalid_offline)["severity"], invalid_g["severity"]);
@@ -625,7 +625,7 @@ mod tests {
         });
         assert_eq!(
             glance(&two_offline)["issues"][0]["text"],
-            "iPhone's iPhone and suze: the solstone app hasn't added anything to your journal recently. they haven't been reachable — they could be asleep, off, or having trouble connecting."
+            "iPhone's iPhone and suze: the solstone app hasn't added anything to your journal recently. they haven't been reachable. they could be asleep, off, or having trouble connecting."
         );
         let three_stale_running = json!({
             "status": "stale",
@@ -639,7 +639,7 @@ mod tests {
         });
         assert_eq!(
             glance(&three_stale_running)["issues"][0]["text"],
-            "desk, laptop, and suze: the solstone app on those devices has not added anything to your journal recently. the app is still running on them, but it isn't adding to your journal."
+            "desk, laptop, and suze: the solstone app on those devices hasn't added anything to your journal recently. the app is still running on them, but it isn't adding to your journal."
         );
         // One device keeps the singular sentence it already had.
         let one_offline = json!({
@@ -650,7 +650,7 @@ mod tests {
         });
         assert_eq!(
             glance(&one_offline)["issues"][0]["text"],
-            "suze: the solstone app hasn't added anything to your journal recently. the device hasn't been reachable — it could be asleep, off, or having trouble connecting."
+            "suze: the solstone app hasn't added anything to your journal recently. the device hasn't been reachable. it could be asleep, off, or having trouble connecting."
         );
 
         let stale_with_invalid = json!({
@@ -668,7 +668,7 @@ mod tests {
             stale_g["issues"][0]["text"]
                 .as_str()
                 .unwrap()
-                .contains("has not added anything to your journal recently")
+                .contains("hasn't added anything to your journal recently")
         );
 
         let offline_partial = json!({
@@ -724,7 +724,7 @@ mod tests {
                 .any(|issue| issue["text"]
                     .as_str()
                     .unwrap()
-                    .contains("whether your journal is caught up isn't known"))
+                    .contains("it's unclear whether your journal is caught up"))
         );
 
         let active_awaiting = json!({

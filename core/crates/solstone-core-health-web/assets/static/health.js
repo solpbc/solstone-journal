@@ -263,7 +263,7 @@
     link.href = `/app/timeline/${encodeURIComponent(day)}`;
     if (pending === 1 && stuckCount === 0) {
       line.textContent = '';
-      link.textContent = `${label} is still catching up →`;
+      link.textContent = `${label.replace(/^(Today|Yesterday|Tomorrow)$/, (word) => word.toLowerCase())} is still catching up →`;
       line.appendChild(link);
       return;
     }
@@ -1691,7 +1691,7 @@
           const willSave = primary.audio.will_save ? ' · saving' : '';
           return {
             status: hits > 0
-              ? `${hits} sound${hits === 1 ? '' : 's'} noticed${willSave}`
+              ? `${hits} sound${hits === 1 ? '' : 's'} detected${willSave}`
               : 'quiet',
           };
         },

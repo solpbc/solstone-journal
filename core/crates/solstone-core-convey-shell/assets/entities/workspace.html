@@ -1959,7 +1959,7 @@ body.presentation-mode .entity-desc { color: #4b5563; }
   <div id="entities-loading" class="entities-loading">
     <div class="surface-state surface-state--loading" role="status" aria-busy="true">
       <div class="surface-state-spinner spinner" aria-hidden="true"></div>
-      <span class="surface-state-text" data-role="loading-status">loading entities...</span>
+      <span class="surface-state-text" data-role="loading-status">loading entities…</span>
     </div>
   </div>
   <div id="entities-scope-anchor" class="entities-scope-anchor"></div>
@@ -5028,7 +5028,7 @@ function attachEntityToFacet(entity, description) {
 function resetEntitiesLoading() {
   const loading = document.getElementById('entities-loading');
   if (!loading) return;
-  loading.innerHTML = window.SurfaceState.loading({ text: 'loading entities...' });
+  loading.innerHTML = window.SurfaceState.loading({ text: 'loading entities…' });
   loading.style.display = 'flex';
 }
 
@@ -5287,7 +5287,7 @@ async function loadJournalEntities({refresh = false, silent = false} = {}) {
   const countEl = document.getElementById('journal-card-search-count');
   if (silent && container) {
     container.setAttribute('aria-busy', 'true');
-    if (countEl) { countEl.style.display = ''; countEl.textContent = 'loading entities...'; }
+    if (countEl) { countEl.style.display = ''; countEl.textContent = 'loading entities…'; }
   }
   const request = ++journalSummaryRequest;
   try {

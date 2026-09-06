@@ -26,7 +26,7 @@
     "facet_data": {},
     "flow_content": null,
     "flow_updated_at": null,
-    "health_glance": {"cta": null, "headline": "2 things need your attention", "issues": [{"href": "/app/health", "severity": "amber", "text": "whether your journal is caught up isn't known right now."}, {"href": "/app/health/#brain", "severity": "amber", "text": "thinking status unavailable"}], "last_observation": null, "severity": "amber", "verdict": "attention"},
+    "health_glance": {"cta": null, "headline": "2 things need your attention", "issues": [{"href": "/app/health", "severity": "amber", "text": "it's unclear whether your journal is caught up right now."}, {"href": "/app/health/#brain", "severity": "amber", "text": "thinking status unavailable"}], "last_observation": null, "severity": "amber", "verdict": "attention"},
     "capture_health": {"status": "no_clients", "clients": [], "unassessed": [], "registry": "registry_empty"},
     "home_state": "welcome",
     "journal_age_days": 0,

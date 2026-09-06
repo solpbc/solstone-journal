@@ -141,6 +141,8 @@ body.has-managed-dialog .workspace {
 }
 
 #status-instrument .status-icon {
+  color: inherit;
+  text-decoration: none;
   font-size: 20px;
   width: var(--status-instrument-size);
   height: var(--status-instrument-size);

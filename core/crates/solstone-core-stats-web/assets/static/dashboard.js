@@ -618,7 +618,7 @@ const Dashboard = (function() {
   // text above. Falls back to whyLabel when the reason_code is missing or
   // unrecognized (G2-14).
   const UNIT_REASON_COPY = {
-    context_window_exceeded: "a summary step hit the model's context limit",
+    context_window_exceeded: "a summary was too long for the model to read at once",
   };
 
   function unitReasonLabel(unit, C) {

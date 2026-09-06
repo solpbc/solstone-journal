@@ -1495,7 +1495,7 @@ a.body-day-cell:focus-visible {
   }
 
   async function loadBodyStatus() {
-    setLoading("loading body data...");
+    setLoading("loading body data…");
     try {
       const status = await window.apiJson("/app/body/api/status");
       reveal(renderOverview(status));

@@ -195,6 +195,7 @@
             "PRESENTATION_PHONE_LABEL": "phone",
             "PRESENTATION_SELECTOR_LABEL": "pairing display",
             "PRIVATE_LINK_DISABLE_CTA": "turn off your private network",
+            "PRIVATE_LINK_DISABLE_CONFIRM": "turn off your private network? your devices will only reach your journal over your own network, on the same wifi or your own VPN, until you turn it back on.",
             "PRIVATE_LINK_DISABLE_FAILED": "couldn't turn off your private network \u2014 it's still on. try again.",
             "PRIVATE_LINK_DISABLE_SUCCESS": "your private network is off. devices connect directly again.",
             "PRIVATE_LINK_NEEDS_REPAIR": "your private network needs setting up again.",

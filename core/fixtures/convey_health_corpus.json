@@ -275,7 +275,9 @@
                   "queued_feedback": "queued, working on it now"
                 },
                 "stuck_rows": [],
-                "verdict": "still checking \u2014 give me a moment to see where your journal stands."
+                "verdict": "still checking where your journal stands.",
+                "pending_days": 0.0,
+                "oldest_pending_day": null
               }
             },
             "headers": {
@@ -529,7 +531,9 @@
                   "queued_feedback": "queued, working on it now"
                 },
                 "stuck_rows": [],
-                "verdict": "your journal's all caught up."
+                "verdict": "your journal's all caught up.",
+                "pending_days": 0.0,
+                "oldest_pending_day": null
               }
             },
             "headers": {
@@ -761,7 +765,9 @@
                   "queued_feedback": "queued, working on it now"
                 },
                 "stuck_rows": [],
-                "verdict": "your journal's all caught up."
+                "verdict": "your journal's all caught up.",
+                "pending_days": 0.0,
+                "oldest_pending_day": null
               }
             },
             "headers": {
@@ -980,7 +986,9 @@
                   "queued_feedback": "queued, working on it now"
                 },
                 "stuck_rows": [],
-                "verdict": "still checking \u2014 give me a moment to see where your journal stands."
+                "verdict": "still checking where your journal stands.",
+                "pending_days": 0.0,
+                "oldest_pending_day": null
               }
             },
             "headers": {
@@ -1199,7 +1207,9 @@
                   "queued_feedback": "queued, working on it now"
                 },
                 "stuck_rows": [],
-                "verdict": "still checking \u2014 give me a moment to see where your journal stands."
+                "verdict": "still checking where your journal stands.",
+                "pending_days": 0.0,
+                "oldest_pending_day": null
               }
             },
             "headers": {

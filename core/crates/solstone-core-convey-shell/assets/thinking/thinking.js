@@ -329,7 +329,7 @@
     const stateName = attestation?.state || '';
     const blocked = stateName === 'failed' || stateName === 'stale' || stateName === 'unreachable';
     if (!blocked || !lastCheckedLabel) return '';
-    return `hardware last verified ${lastCheckedLabel}`;
+    return `last confirmed ${lastCheckedLabel}`;
   }
 
   function confidentialNoticeLine(operation, text) {
@@ -2182,8 +2182,8 @@
       setPill('localLanePill', 'endpoint');
       const managed = state.providers.active_lane?.lane === 'confidential';
       setText('localLaneDescription', managed
-        ? 'not in use — the bundled model runs only when no endpoint is set, and confidential processing sets one.'
-        : 'not in use — the bundled model runs only when no endpoint is set, and your own endpoint is set.');
+        ? 'not in use while confidential processing is on.'
+        : 'not in use while your own endpoint is set.');
       setText('localLaneStatus', 'set up the bundled model →');
     } else if (gpuBlocked) {
       setPill('localLanePill', 'unavailable', 'bad');
