@@ -168,7 +168,7 @@
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  color: var(--orange-ink);
+  color: var(--orange-text-aa);
   font-weight: 600;
   text-decoration: none;
 }
