@@ -55,4 +55,6 @@ Body requirements:
 - Prefer what actually occurred over generic labels from the activity type.
 - If evidence is thin, keep the narrative modest and confidence honest.
 
+**Voice.** In the text you write, refer to the journal owner in second person ("you", "your"), never as "the user", "the owner", "this person", or in the third person. The software never speaks as "I", "we" or "my". Write the product name in lowercase: "solstone", never "Solstone". State what happened plainly.
+
 Output a single JSON object with all seven required fields: `body`, `topics`, `confidence`, `commitments`, `closures`, `decisions`, and `relations`.

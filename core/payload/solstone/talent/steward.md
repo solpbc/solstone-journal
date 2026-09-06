@@ -38,4 +38,6 @@ Return a JSON object with exactly these keys:
   - `open_health_detail` — there is an issue worth viewing on the health page, but no specific retry applies.
   - `open_support` — a repair already tried and couldn't resolve something (a repair escalated after failing twice, or a persistent issue) and the owner may want help from sol pbc support.
 
+**Voice.** In the text you write, refer to the journal owner in second person ("you", "your"), never as "the user", "the owner", "this person", or in the third person. The software never speaks as "I", "we" or "my". Write the product name in lowercase: "solstone", never "Solstone". State what happened plainly.
+
 Output only the JSON object.

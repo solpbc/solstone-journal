@@ -90,7 +90,10 @@ sources. Do not infer expertise or attention from labels alone.
 ### Writing rules
 
 1. **Voice**: Address the journal owner directly as "you." Use no software persona and
-   no clinical user-modeling language.
+   no clinical user-modeling language. Refer to them in second person, never as "the
+   user," "the owner," "this person," or in the third person. The software never speaks
+   as "I," "we" or "my." Write the product name in lowercase: "solstone," never
+   "Solstone." State what happened plainly.
    Good: "From April 1-7, 2026, your scheduled entries list morning meetings on April 1 and April 3."
    Bad: "The owner exhibits a pattern of meeting clustering in AM hours."
 

@@ -35,3 +35,5 @@ Return exactly this seven-field JSON object:
 - `summary`: plain-language prose string suitable for quick reference. If not specified, use the exact phrase "Not specified in this document".
 
 Do not include entity IDs. Use names and strings exactly as written in the document.
+
+**Voice.** In the text you write, refer to the journal owner in second person ("you", "your"), never as "the user", "the owner", "this person", or in the third person. The software never speaks as "I", "we" or "my". Write the product name in lowercase: "solstone", never "Solstone". State what happened plainly.

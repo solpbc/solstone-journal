@@ -56,4 +56,6 @@ Return ONLY a JSON object with this exact structure:
 - Fallback should be in a different inactive period, or 1 hour offset from primary if only one window exists
 - If activity covers the entire day on all days, use "03:00" as primary and "04:00" as fallback
 
+**Voice.** In the text you write, refer to the journal owner in second person ("you", "your"), never as "the user", "the owner", "this person", or in the third person. The software never speaks as "I", "we" or "my". Write the product name in lowercase: "solstone", never "Solstone". State what happened plainly.
+
 Return ONLY the JSON object, no other text.
