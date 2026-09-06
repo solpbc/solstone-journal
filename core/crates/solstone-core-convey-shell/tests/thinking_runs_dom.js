@@ -205,6 +205,9 @@ async function main() {
   make('thinkingRunsContent');
   make('thinkingRunsDetail');
   make('thinkingRunsDetailHeading');
+  const detailIds = make('thinkingRunsDetailIds');
+  detailIds.hidden = true;
+  make('thinkingRunsDetailIdsText');
   make('thinkingRunsDetailFacts');
   const noOutput = make('thinkingRunsNoOutput');
   noOutput.hidden = true;
@@ -320,8 +323,21 @@ async function main() {
   }
 
   window.location.hash = '';
+  document.activeElement = null;
+  nodes.get('thinkingHeading').focused = false;
   thinking.routeThinkingHash('reload');
-  assert.strictEqual(window.location.hash, '#main', 'absent hash canonicalizes to main');
+  assert.strictEqual(window.location.hash, '', 'a plain hashless load leaves the address hash-free');
+  assert.strictEqual(nodes.get('thinkingHeading').focused, false, 'a plain load does not focus the panel heading');
+  assert.strictEqual(document.activeElement, null, 'a plain load moves focus nowhere');
+
+  nodes.get('thinkingRunsHeading').focused = false;
+  window.location.hash = '#runs/20260815';
+  thinking.routeThinkingHash('reload');
+  assert.strictEqual(nodes.get('thinkingRunsHeading').focused, false, 'a plain load of a runs route does not focus the runs heading');
+
+  window.location.hash = '#main';
+  thinking.routeThinkingHash('reload');
+  assert.strictEqual(window.location.hash, '#main', 'an inbound #main link stays on the setup route token');
 
   window.location.hash = '#runs';
   thinking.routeThinkingHash('history');
@@ -695,6 +711,91 @@ async function main() {
   assert.strictEqual(thinking.state.runsCache.output.has('output:20260107:first.txt'), false, 'stale output response is not cached');
   assert.strictEqual(thinking.state.runsCache.output.get('output:20260108:second.txt').content, 'current output', 'current output response is cached');
   assert.strictEqual(nodes.get('thinkingRunsOutputPanel').textContent, 'current output', 'stale output response does not replace the current render');
+  // --- night repairs: grouped + paged runs, readable labels, honest day and log ---
+  thinking.state.runsFacet = '';
+  thinking.state.runsFacetExplicit = false;
+  thinking.state.runsFailuresOnly = false;
+  const bulkRuns = [];
+  for (let index = 0; index < 120; index += 1) {
+    bulkRuns.push({
+      id: `bulk-${index}`, name: 'entities:detection', start: 1788662697014,
+      status: 'completed', failed: index === 3,
+    });
+  }
+  bulkRuns.push({id: 'solo', name: 'speaker_attribution', start: 1788662697014, status: 'completed'});
+  dayResponses.push(Promise.resolve({uses: bulkRuns, facets: []}));
+  window.location.hash = '#runs/20260204';
+  thinking.routeThinkingHash('history');
+  await settle();
+  await settle();
+  const groupSections = nodes.get('thinkingRunsContent').children.slice(1);
+  assert.strictEqual(groupSections.length, 2, 'a busy day renders one group per talent');
+  assert.strictEqual(groupSections[0].children[0].textContent, 'entity detection', 'a raw talent id renders as a readable label');
+  assert.strictEqual(groupSections[1].children[0].textContent, 'speaker attribution', 'an unmapped talent id humanizes');
+  const busyGroup = groupSections[0].children[1];
+  assert.strictEqual(busyGroup.children[0].textContent, '120 runs \u00b7 1 failed', 'the group summary carries its counts');
+  assert.strictEqual(busyGroup.open, false, 'a busy day collapses each talent group');
+  assert.strictEqual(busyGroup.children[1].textContent, 'exact id: entities:detection', 'the exact talent id stays in the disclosure');
+  assert.strictEqual(busyGroup.children[2].children[0].children[0].children[0].textContent, 'ran', 'the run time column says when the run executed');
+  assert.strictEqual(busyGroup.children[2].children[1].children.length, 50, 'a group pages its runs 50 at a time');
+  const showMore = busyGroup.children[busyGroup.children.length - 1];
+  assert.strictEqual(showMore.textContent, 'show 50 more runs \u00b7 70 left', 'the group offers the next page');
+  showMore.emit('click');
+  const pagedGroup = nodes.get('thinkingRunsContent').children[1].children[1];
+  assert.strictEqual(pagedGroup.children[2].children[1].children.length, 100, 'showing more extends the same group');
+  assert.strictEqual(pagedGroup.open, true, 'showing more keeps the group open');
+  assert.strictEqual(nodes.get('thinkingRunsContent').children[2].children[1].children[2].children[1].children.length, 1, 'a small group still renders in full');
+
+  const now = new Date();
+  const todayDay = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  dayResponses.push(Promise.resolve({uses: [], facets: []}));
+  window.location.hash = `#runs/${todayDay}`;
+  thinking.routeThinkingHash('history');
+  await settle();
+  await settle();
+  assert.strictEqual(nodes.get('thinkingRunsNext').disabled, true, "next day is disabled once the day is today");
+  assert.strictEqual(nodes.get('thinkingRunsDate').max, nodes.get('thinkingRunsDate').value, 'the day picker stops at today');
+  thinking.navigateThinkingRunsDay(1);
+  assert.strictEqual(window.location.hash, `#runs/${todayDay}`, 'next day never walks past today');
+  thinking.navigateThinkingRunsDay(-1);
+  assert.strictEqual(nodes.get('thinkingRunsNext').disabled, false, 'next day is available again on an earlier day');
+
+  runResponses.push(Promise.resolve({
+    id: 'quiet-run', day: '20260204', name: 'timeline:segment_summary', status: 'completed',
+    failed: false, provider: 'local', model: 'local/qwen3.5-4b',
+    events: [{event: 'tool_start'}, {event: 'thinking'}],
+  }));
+  window.location.hash = '#runs/20260204/timeline%3Asegment_summary/quiet-run';
+  thinking.routeThinkingHash('history');
+  await settle();
+  await settle();
+  assert.strictEqual(
+    nodes.get('thinkingRunsLogPanel').children[0].children[0].textContent,
+    'no detail was recorded for this step',
+    "a completed run's empty step is not reported as a failure",
+  );
+  assert.strictEqual(nodes.get('thinkingRunsDetailHeading').textContent, 'timeline segment summary', 'the run detail heading reads a label');
+  assert.strictEqual(
+    nodes.get('thinkingRunsDetailIdsText').textContent,
+    'timeline:segment_summary \u00b7 local \u00b7 local/qwen3.5-4b',
+    'the exact run ids stay in the disclosure',
+  );
+  assert.strictEqual(detailIds.hidden, false, 'the exact-ids disclosure is present for a selected run');
+
+  runResponses.push(Promise.resolve({
+    id: 'broken-run', day: '20260204', name: 'talent', status: 'failed', failed: true,
+    events: [{event: 'tool_start'}],
+  }));
+  window.location.hash = '#runs/20260204/talent/broken-run';
+  thinking.routeThinkingHash('history');
+  await settle();
+  await settle();
+  assert.strictEqual(
+    nodes.get('thinkingRunsLogPanel').children[0].children[0].textContent,
+    'tool call did not complete',
+    'a failed run keeps the incomplete-step wording',
+  );
+
   console.log(`DOM CASES: ${passedCases}/${executedCases} passed`);
 }
 

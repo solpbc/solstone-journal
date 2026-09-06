@@ -32,6 +32,9 @@
       output: new Map(),
     },
     runsFailuresOnly: false,
+    runsGroupKey: '',
+    runsGroupOpen: new Map(),
+    runsGroupShown: new Map(),
     runsFacet: '',
     runsFacetExplicit: false,
     runsSelectedUseId: '',
@@ -48,6 +51,15 @@
   const pollIntervalMs = 1500;
   const confidentialPollMaxMs = 15 * 60 * 1000;
   const views = new Set(['main', 'byo-setup', 'confidential-setup', 'local-setup', 'lane-switch']);
+  // A day of ordinary processing is well over a thousand runs. Group them by
+  // talent and page each group; a light day still renders in full.
+  const thinkingRunsPageSize = 50;
+  const thinkingRunsExpandAllBelow = 50;
+  // Readable names for the talent ids that do not humanize cleanly. Anything
+  // else falls back to the humanized id; the exact id stays in the disclosure.
+  const talentLabels = {
+    'entities:detection': 'entity detection',
+  };
   const providerEnv = {
     anthropic: 'ANTHROPIC_API_KEY',
     google: 'GOOGLE_API_KEY',
@@ -317,7 +329,7 @@
     const stateName = attestation?.state || '';
     const blocked = stateName === 'failed' || stateName === 'stale' || stateName === 'unreachable';
     if (!blocked || !lastCheckedLabel) return '';
-    return `last checked ${lastCheckedLabel}`;
+    return `hardware last verified ${lastCheckedLabel}`;
   }
 
   function confidentialNoticeLine(operation, text) {
@@ -865,7 +877,10 @@
       section.hidden = section.dataset.view !== target;
     });
     const nextHash = `#${target}`;
-    if (window.location.hash !== nextHash) {
+    // A hashless load already is the setup route: leave the address alone rather
+    // than writing a route token the owner never asked for.
+    const keepHashless = options.keepHashless && target === 'main' && !window.location.hash;
+    if (!keepHashless && window.location.hash !== nextHash) {
       if (options.replace) {
         window.history.replaceState(null, '', nextHash);
       } else {
@@ -1086,7 +1101,9 @@
       tab.focus();
       return;
     }
-    if ((origin === 'reload' || origin === 'history') && !tablist?.contains(document.activeElement)) {
+    // Only an owner-initiated section change moves focus. A plain load ('reload')
+    // must not draw a focus ring on a heading nobody asked for.
+    if (origin === 'history' && !tablist?.contains(document.activeElement)) {
       (headingId ? $(headingId) : thinkingPanelHeading(tabId))?.focus({preventScroll: true});
     }
   }
@@ -1123,14 +1140,13 @@
     document.querySelectorAll('[data-thinking-section]').forEach((panel) => {
       panel.hidden = true;
     });
-    showView(viewFromHash(), {replace: true});
+    showView(viewFromHash(), {replace: true, keepHashless: true});
     activateThinkingSectionTab('thinkingSetupTab', origin);
   }
 
   function routeThinkingHash(origin = 'history') {
     const hash = window.location.hash;
     if (!hash) {
-      replaceThinkingHash('#main');
       showThinkingSetup(origin);
       return;
     }
@@ -1218,7 +1234,7 @@
 
   function thinkingRunFacts(run) {
     return [
-      ['time', window.JournalFormat.timestamp(run.start)],
+      ['ran', window.JournalFormat.timestamp(run.start)],
       ['model', run.model],
       ['provider', run.provider],
       ['runtime', window.JournalFormat.duration(run.runtime_seconds)],
@@ -1283,7 +1299,7 @@
     table.className = 'thinking-runs-table';
     const head = document.createElement('thead');
     const headRow = document.createElement('tr');
-    for (const label of ['time', 'status', 'model', 'provider', 'runtime', 'thinking events', 'tool calls', 'facet', 'output', 'prompt']) {
+    for (const label of ['ran', 'status', 'model', 'provider', 'runtime', 'thinking events', 'tool calls', 'facet', 'output', 'prompt']) {
       const cell = document.createElement('th');
       cell.scope = 'col';
       cell.textContent = label;
@@ -1316,7 +1332,7 @@
       const card = document.createElement('article');
       card.className = 'thinking-runs-card';
       const heading = document.createElement('h4');
-      heading.textContent = run.name;
+      heading.textContent = talentLabel(run.name);
       card.appendChild(heading);
       appendThinkingRunFacts(card, run);
       card.appendChild(thinkingRunControl(run));
@@ -1328,8 +1344,7 @@
   function renderThinkingRunsDay(payload, route) {
     const matchingRuns = normalizedThinkingRuns(payload).filter(run => !route.talent || run.name === route.talent);
     const runs = state.runsFailuresOnly ? matchingRuns.filter(run => run.failed) : matchingRuns;
-    const date = $('thinkingRunsDate');
-    if (date) date.value = runsDayInputValue(route.day);
+    updateThinkingRunsDayControls(route);
     const facet = $('thinkingRunsFacet');
     if (facet) {
       facet.replaceChildren();
@@ -1362,7 +1377,7 @@
     controls.className = 'thinking-runs-filters';
     if (route.talent) {
       const context = document.createElement('span');
-      context.textContent = route.talent.replaceAll('_', ' ');
+      context.textContent = talentLabel(route.talent);
       const all = document.createElement('a');
       all.href = thinkingRunsHash(thinkingRunsRoute({...route, talent: '', useId: ''}));
       all.textContent = 'all talents for this day';
@@ -1384,12 +1399,44 @@
     }
     const groups = new Map();
     runs.forEach((run) => groups.set(run.name, [...(groups.get(run.name) || []), run]));
+    const expandEveryGroup = Boolean(route.talent) || runs.length <= thinkingRunsExpandAllBelow;
     groups.forEach((group, name) => {
       const section = document.createElement('section');
+      section.className = 'thinking-runs-group';
       const heading = document.createElement('h3');
-      heading.textContent = name;
+      heading.textContent = talentLabel(name);
       section.appendChild(heading);
-      renderThinkingRunList(section, group);
+      const details = document.createElement('details');
+      details.className = 'thinking-runs-group-detail';
+      details.open = state.runsGroupOpen.has(name) ? state.runsGroupOpen.get(name) : expandEveryGroup;
+      const summary = document.createElement('summary');
+      const failedInGroup = group.filter((run) => run.failed).length;
+      summary.textContent = failedInGroup
+        ? `${group.length} run${group.length !== 1 ? 's' : ''} · ${failedInGroup} failed`
+        : `${group.length} run${group.length !== 1 ? 's' : ''}`;
+      details.appendChild(summary);
+      details.addEventListener('toggle', () => state.runsGroupOpen.set(name, details.open));
+      const exact = document.createElement('p');
+      exact.className = 'thinking-runs-group-id';
+      exact.textContent = `exact id: ${name}`;
+      details.appendChild(exact);
+      const shown = state.runsGroupShown.get(name) || thinkingRunsPageSize;
+      renderThinkingRunList(details, group.slice(0, shown));
+      if (group.length > shown) {
+        const remaining = group.length - shown;
+        const next = Math.min(thinkingRunsPageSize, remaining);
+        const more = document.createElement('button');
+        more.type = 'button';
+        more.className = 'thinking-runs-control';
+        more.textContent = `show ${next} more run${next !== 1 ? 's' : ''} · ${remaining} left`;
+        more.addEventListener('click', () => {
+          state.runsGroupShown.set(name, shown + thinkingRunsPageSize);
+          state.runsGroupOpen.set(name, true);
+          renderThinkingRunsDay(payload, route);
+        });
+        details.appendChild(more);
+      }
+      section.appendChild(details);
       host.appendChild(section);
     });
   }
@@ -1445,9 +1492,30 @@
     return state.runsFacetExplicit ? `${path}?facet=${encodeURIComponent(state.runsFacet)}` : path;
   }
 
+  function updateThinkingRunsDayControls(route) {
+    const today = todayThinkingDay();
+    const date = $('thinkingRunsDate');
+    if (date) {
+      date.value = runsDayInputValue(route.day);
+      date.max = runsDayInputValue(today);
+    }
+    // Tomorrow has not happened; an empty future day reads as missing processing.
+    const next = $('thinkingRunsNext');
+    if (next) next.disabled = route.day >= today;
+  }
+
+  function resetThinkingRunGroups(key) {
+    if (state.runsGroupKey === key) return;
+    state.runsGroupKey = key;
+    state.runsGroupOpen.clear();
+    state.runsGroupShown.clear();
+  }
+
   function loadThinkingRuns(route, force = false) {
     if (!route || route.kind !== 'runs') return;
     const key = thinkingCacheKey('day', {day: route.day, facet: state.runsFacet});
+    updateThinkingRunsDayControls(route);
+    resetThinkingRunGroups(key);
     const cached = readThinkingCache('day', key);
     if (cached && !force) {
       renderThinkingRunsDay(cached, route);
@@ -1491,6 +1559,9 @@
       panel.append(progress, check);
       return;
     }
+    // The run-level outcome is run.status; a step with no recorded detail only
+    // means "nothing was written for this step", never that the run failed.
+    const runFinished = run.failed !== true && run.status === 'completed';
     (Array.isArray(run.events) ? run.events : []).forEach((event) => {
       const item = document.createElement('div');
       const fields = [['thinking', event.thinking], ['tools', event.tools], ['args', event.args], ['result', event.result], ['error', event.error]];
@@ -1501,9 +1572,13 @@
         item.appendChild(fact);
       });
       if (!item.children.length) {
-        const incomplete = document.createElement('p');
-        incomplete.textContent = event.event === 'tool_start' ? 'tool call did not complete' : 'did not complete';
-        item.appendChild(incomplete);
+        const note = document.createElement('p');
+        if (runFinished) {
+          note.textContent = 'no detail was recorded for this step';
+        } else {
+          note.textContent = event.event === 'tool_start' ? 'tool call did not complete' : 'did not complete';
+        }
+        item.appendChild(note);
       }
       panel.appendChild(item);
     });
@@ -1513,7 +1588,10 @@
     state.runsDetail = run;
     const detail = $('thinkingRunsDetail');
     if (detail) detail.hidden = false;
-    setText('thinkingRunsDetailHeading', run.name || route.talent || '');
+    setText('thinkingRunsDetailHeading', talentLabel(run.name || route.talent));
+    const exact = [run.name || route.talent, run.provider, run.model].filter(Boolean).join(' · ');
+    setText('thinkingRunsDetailIdsText', exact);
+    setHidden('thinkingRunsDetailIds', !exact);
     const facts = $('thinkingRunsDetailFacts');
     if (facts) {
       facts.replaceChildren();
@@ -1529,6 +1607,7 @@
   function clearThinkingRunRenderState() {
     state.runsDetail = null;
     $('thinkingRunsDetail').hidden = true;
+    setHidden('thinkingRunsDetailIds', true);
     $('thinkingRunsDetailFacts')?.replaceChildren();
     $('thinkingRunsOutputTab').hidden = true;
     $('thinkingRunsNoOutput').hidden = true;
@@ -1547,7 +1626,8 @@
   function renderThinkingRunPending(route) {
     const detail = $('thinkingRunsDetail');
     if (detail) detail.hidden = false;
-    setText('thinkingRunsDetailHeading', route.talent || '');
+    setText('thinkingRunsDetailHeading', talentLabel(route.talent));
+    setHidden('thinkingRunsDetailIds', true);
     $('thinkingRunsDetailFacts')?.replaceChildren();
     $('thinkingRunsOutputTab').hidden = true;
     $('thinkingRunsNoOutput').hidden = true;
@@ -1576,7 +1656,8 @@
     }
     const detail = $('thinkingRunsDetail');
     if (detail) detail.hidden = false;
-    setText('thinkingRunsDetailHeading', route.talent || '');
+    setText('thinkingRunsDetailHeading', talentLabel(route.talent));
+    setHidden('thinkingRunsDetailIds', true);
     const panel = $('thinkingRunsLogPanel');
     if (panel) panel.textContent = 'loading run details…';
     loadThinkingRequest(
@@ -1691,7 +1772,9 @@
 
   function navigateThinkingRunsDay(amount, requestedDay = '') {
     const route = parseThinkingHash();
-    const day = requestedDay || shiftThinkingDay(route?.day || todayThinkingDay(), amount);
+    const today = todayThinkingDay();
+    const requested = requestedDay || shiftThinkingDay(route?.day || today, amount);
+    const day = requested > today ? today : requested;
     const next = currentThinkingRunsRoute({kind: 'runs', day, talent: '', useId: ''});
     window.history.pushState(null, '', thinkingRunsHash(next));
     routeThinkingHash('pointer');
@@ -1699,6 +1782,12 @@
 
   function providerLabel(provider) {
     return providerLabels[provider] || provider || 'provider';
+  }
+
+  function talentLabel(name) {
+    const id = String(name || '');
+    if (!id) return '';
+    return talentLabels[id] || id.replace(/[_:]+/g, ' ');
   }
 
   function configuredProviders() {
@@ -1845,8 +1934,10 @@
     setText('thinkingActiveValue', brain.headline || '');
     if (identity.lane && identity.provider && identity.model) {
       if (brain.state === 'ready') {
-        const checked = evidence.age_text ? `, checked ${evidence.age_text} ago` : '';
-        setText('thinkingActiveDetail', `${window.JournalFormat.processingLane(identity.lane)}${checked}`);
+        // The brain evidence is the last time generate + cogitate answered, a
+        // different measurement from the lane card's attestation check. Name it.
+        const confirmed = evidence.age_text ? ` · last confirmed ${evidence.age_text} ago` : '';
+        setText('thinkingActiveDetail', `${window.JournalFormat.processingLane(identity.lane)}${confirmed}`);
       } else {
         setText('thinkingActiveDetail', `${window.JournalFormat.processingLane(identity.lane)}: ${brain.reason_text || ''}${component}`);
       }
@@ -2091,9 +2182,9 @@
       setPill('localLanePill', 'endpoint');
       const managed = state.providers.active_lane?.lane === 'confidential';
       setText('localLaneDescription', managed
-        ? 'confidential processing is selected. clear its endpoint to set up the bundled model.'
-        : 'a custom endpoint is configured. clear it to set up the bundled model.');
-      setText('localLaneStatus', 'clear endpoint →');
+        ? 'not in use — the bundled model runs only when no endpoint is set, and confidential processing sets one.'
+        : 'not in use — the bundled model runs only when no endpoint is set, and your own endpoint is set.');
+      setText('localLaneStatus', 'set up the bundled model →');
     } else if (gpuBlocked) {
       setPill('localLanePill', 'unavailable', 'bad');
       const desc = $('localLaneDescription');
