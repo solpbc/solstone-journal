@@ -181,7 +181,8 @@ pub use paths::{
     SegmentLocatorIdentity, StreamLocation, check_record_identities, check_unique_record_keys,
     contained_path, create_directory_with_mode, day_dirs, day_path, ensure_directory, is_day_key,
     iter_segments, list_dir_entries, list_dir_entries_bounded, path_lexists, realpath_non_strict,
-    resolve_configured_journal, resolve_journal_path, segment_path, utf8_identities,
+    resolve_configured_journal, resolve_journal_path, segment_origin, segment_path,
+    utf8_identities,
 };
 #[cfg(unix)]
 pub use readers::read_bytes_bound;

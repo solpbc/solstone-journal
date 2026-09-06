@@ -15,10 +15,7 @@ use solstone_core_home::{
     HomeContext,
     readers::{collect_anticipated_activities, read_latest},
 };
-use solstone_core_timeline::{
-    SegmentSelectorV1, SegmentTimelineV1, resolve_segment_binding, segment_timeline_path,
-    validate_segment_timeline,
-};
+use solstone_core_system_health::find_segment_dir;
 
 use crate::contract::{CommitPlan, GateDecision, ParsedOutput, PrePostState};
 use crate::writers::WriteIntent;
@@ -290,7 +287,7 @@ fn completed_since(
     let mut activities = Vec::new();
     for (_, kind, unit) in units.into_iter().take(MAX_UNITS) {
         if kind == "segment" {
-            if let Some(value) = read_segment_timeline(day, &unit, context, gaps) {
+            if let Some(value) = read_segment_activity(day, &unit, context, gaps) {
                 segments.push(value);
             }
         } else if let Some(value) = read_activity(day, &unit, context, gaps) {
@@ -322,7 +319,7 @@ fn unit_timestamp(unit: &Map<String, Value>) -> i64 {
         .unwrap_or(0)
 }
 
-fn read_segment_timeline(
+fn read_segment_activity(
     day: &str,
     unit: &Map<String, Value>,
     context: &ExecutionContext,
@@ -337,53 +334,20 @@ fn read_segment_timeline(
         .get("stream")
         .map(|value| string_or(Some(value), ""))
         .filter(|value| !value.is_empty());
-    let binding = match resolve_segment_binding(
-        &context.journal,
-        &SegmentSelectorV1 {
-            day: day.to_owned(),
-            segment: segment.clone(),
-            stream: stream.clone(),
-        },
-    ) {
-        Ok(binding) => binding,
-        Err(error) => {
-            gaps.push(format!(
-                "could not resolve timeline for segment {segment}: {error}"
-            ));
-            return None;
-        }
-    };
-    let path = match segment_timeline_path(&context.journal, &binding) {
-        Ok(path) => path,
-        Err(error) => {
-            gaps.push(format!(
-                "could not resolve timeline for segment {segment}: {error}"
-            ));
-            return None;
-        }
-    };
-    let timeline = match fs::read(&path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<SegmentTimelineV1>(&bytes).ok())
-    {
-        Some(timeline) if validate_segment_timeline(&timeline).is_ok() => timeline,
-        Some(_) => {
-            gaps.push(format!(
-                "timeline for segment {segment} was not a valid V1 artifact"
-            ));
-            return None;
-        }
-        None => {
-            gaps.push(format!("could not read timeline for segment {segment}"));
-            return None;
-        }
-    };
-    if timeline.binding != binding {
-        gaps.push(format!("timeline binding did not match segment {segment}"));
+    let Some(segment_dir) = find_segment_dir(&context.journal, day, &segment, stream.as_deref())
+    else {
+        gaps.push(format!("could not find completed segment {segment}"));
         return None;
-    }
+    };
+    let activity = match fs::read_to_string(segment_dir.join("talents/activity.md")) {
+        Ok(text) if !text.trim().is_empty() => text.trim().to_owned(),
+        _ => {
+            gaps.push(format!("no activity summary for segment {segment}"));
+            return None;
+        }
+    };
     Some(
-        json!({"segment": segment, "stream": stream, "ts": unit.get("ts").cloned().unwrap_or(Value::Null), "title": if timeline.summary.title.is_empty() { "Untitled segment" } else { &timeline.summary.title }, "description": timeline.summary.description}),
+        json!({"segment": segment, "stream": stream, "ts": unit.get("ts").cloned().unwrap_or(Value::Null), "activity": activity}),
     )
 }
 

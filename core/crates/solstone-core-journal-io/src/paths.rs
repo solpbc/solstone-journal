@@ -511,6 +511,32 @@ pub fn day_dirs(journal: &Path) -> Result<HashMap<String, PathBuf>, PathError> {
     Ok(days)
 }
 
+/// Chronicle-relative origin of a segment directory: `day/segment` for the
+/// direct layout, `day/stream/segment` for a named stream. A path that does not
+/// pass through `chronicle/` falls back to its basename.
+#[must_use]
+pub fn segment_origin(segment_dir: &Path) -> String {
+    let mut after_chronicle = false;
+    let mut parts = Vec::new();
+    for component in segment_dir.components() {
+        let part = component.as_os_str().to_string_lossy();
+        if after_chronicle {
+            parts.push(part.into_owned());
+        } else if part == "chronicle" {
+            after_chronicle = true;
+        }
+    }
+    if after_chronicle {
+        parts.join("/")
+    } else {
+        segment_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .to_owned()
+    }
+}
+
 /// Return the segment directory for `segment`, optionally creating it.
 pub fn segment_path(
     journal: &Path,
@@ -696,6 +722,19 @@ mod tests {
 
     use super::*;
     use crate::test_support::TempDir;
+
+    #[test]
+    fn segment_origin_is_chronicle_relative_for_both_layouts() {
+        assert_eq!(
+            segment_origin(Path::new("/j/chronicle/20260401/080000_300")),
+            "20260401/080000_300"
+        );
+        assert_eq!(
+            segment_origin(Path::new("/j/chronicle/20260401/audio/080000_300")),
+            "20260401/audio/080000_300"
+        );
+        assert_eq!(segment_origin(Path::new("/tmp/080000_300")), "080000_300");
+    }
 
     fn invalid_kind(journal: &Path, rel: &str) -> &'static str {
         match resolve_journal_path(journal, rel) {

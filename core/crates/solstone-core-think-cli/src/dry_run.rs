@@ -170,25 +170,18 @@ fn print_segment_orchestrator(
         .iter()
         .map(|config| (config.key.as_str(), config))
         .collect::<std::collections::BTreeMap<_, _>>();
-    // The reference's timeline key is retained even if a native config is
-    // absent; unknown optional orchestrator steps simply do not render.
+    // Unknown optional orchestrator steps simply do not render.
     let aliases = [
         ("sense", "sense"),
         ("entities", "entities"),
-        ("timeline:segment_summary", "timeline:segment_summary"),
         ("screen", "screen"),
         ("speaker_attribution", "speaker_attribution"),
     ];
     let mut step = 1;
     for (name, _label) in aliases {
-        let config = by_name.remove(name).or_else(|| {
-            if name == "timeline:segment_summary" {
-                by_name.remove("timeline")
-            } else {
-                None
-            }
-        });
-        let Some(config) = config else { continue };
+        let Some(config) = by_name.remove(name) else {
+            continue;
+        };
         let is_gen = is_generate(config);
         let format = config
             .metadata
@@ -206,7 +199,6 @@ fn print_segment_orchestrator(
         let label = match name {
             "sense" => "mandatory",
             "entities" => "always for non-idle",
-            "timeline:segment_summary" => "always when activity exists",
             "screen" => "if recommend.screen_record",
             _ => "if recommend.speaker_attribution + audio embeddings",
         };
@@ -218,7 +210,7 @@ fn print_segment_orchestrator(
         .expect("write string");
         step += 1;
     }
-    out.push_str("\n  idle segments: write stubs + timeline only (unless --refresh)\n  activity state machine: updates per segment\n");
+    out.push_str("\n  idle segments: write stubs only (unless --refresh)\n  activity state machine: updates per segment\n");
     Ok(())
 }
 

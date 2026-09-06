@@ -879,14 +879,14 @@ mod tests {
 
     fn seed_oracle_case(journal: &Path, line: usize, now_ms: i64) {
         match line {
-            103 | 128 | 140 => {
+            101 | 126 | 138 => {
                 for facet in ["personal", "work"] {
                     let declaration = journal.join("facets").join(facet).join("facet.json");
                     fs::create_dir_all(declaration.parent().unwrap()).unwrap();
                     fs::write(declaration, "{}\n").unwrap();
                 }
             }
-            196 => {
+            193 => {
                 for (key, body) in [
                     ("093000_600", "browser_first.jsonl"),
                     ("141500_900", "browser_second.jsonl"),
@@ -896,7 +896,7 @@ mod tests {
                     fs::write(segment.join(body), "browser content\n").unwrap();
                 }
             }
-            225 => {
+            221 => {
                 let cadence = journal.join("health/cadence.json");
                 fs::create_dir_all(cadence.parent().unwrap()).unwrap();
                 fs::write(
@@ -3005,9 +3005,9 @@ mod tests {
     }
 
     #[test]
-    fn segment_idle_and_redundant_branches_write_their_distinct_artifacts() {
-        // Idle segments without a configured timeline talent still terminalize;
-        // redundant active segments publish a source-bound continuation.
+    fn segment_idle_and_redundant_branches_terminalize_after_sense() {
+        // Idle segments terminalize on their Sense projection alone; redundant
+        // active segments record the change and dispatch nothing further.
         let journal = tempdir().unwrap();
         let roots = tempdir().unwrap();
         let (context, _) = segment_context(
@@ -3035,7 +3035,6 @@ mod tests {
                 .unwrap()["classification"],
             "idle"
         );
-        assert!(!idle.join("timeline.json").exists());
 
         let previous = segment_dir(journal.path(), "20260813", "090500_300");
         let current = segment_dir(journal.path(), "20260813", "091000_300");
@@ -3071,19 +3070,16 @@ mod tests {
             )
             .contains(&("talent.complete", Some("use-2"), Some("finish")))
         );
-        let continuation = serde_json::from_slice::<solstone_core_timeline::SegmentTimelineV1>(
-            &fs::read(current.join("timeline.json")).unwrap(),
+        let change = serde_json::from_slice::<Value>(
+            &fs::read(current.join("talents/change.json")).unwrap(),
         )
         .unwrap();
-        solstone_core_timeline::validate_segment_timeline(&continuation).unwrap();
-        assert_eq!(
-            continuation.summary.continuation_of.as_deref(),
-            Some("090500_300")
-        );
+        assert_eq!(change["change_class"], "redundant");
+        assert_eq!(change["predecessor"]["segment"], "090500_300");
     }
 
     #[test]
-    fn idle_segment_dispatches_only_the_timeline_summary() {
+    fn idle_segment_dispatches_only_sense() {
         let journal = tempdir().unwrap();
         let roots = tempdir().unwrap();
         let (talent_root, apps_root) = talent_roots(
@@ -3092,10 +3088,6 @@ mod tests {
                 (
                     "sense",
                     "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
-                ),
-                (
-                    "timeline:segment_summary",
-                    "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 2, \"output\": \"json\"\n}\n",
                 ),
                 (
                     "entities:detection",
@@ -3125,8 +3117,8 @@ mod tests {
             .map(|request| request.name.clone())
             .collect::<Vec<_>>();
 
-        assert_eq!((result.success, result.failed), (2, 0));
-        assert_eq!(names, ["sense", "timeline:segment_summary"]);
+        assert_eq!((result.success, result.failed), (1, 0));
+        assert_eq!(names, ["sense"]);
     }
 
     #[test]
@@ -3526,11 +3518,7 @@ mod tests {
                 ),
                 (
                     "documents",
-                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"json\",\"accumulate\":true\n}",
-                ),
-                (
-                    "timeline:segment_summary",
-                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\",\"provider\":\"test-provider\",\"model\":\"test-model\"\n}",
+                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"json\",\"accumulate\":true,\"provider\":\"test-provider\",\"model\":\"test-model\"\n}",
                 ),
                 (
                     "entities:detection",
@@ -3548,7 +3536,7 @@ mod tests {
         );
 
         let result = run_segment(&context, journal.path(), "090000_300", false, false);
-        assert_eq!((result.success, result.failed), (4, 0));
+        assert_eq!((result.success, result.failed), (3, 0));
         let requests = recorder.requests.lock().unwrap();
         let documents = requests
             .iter()
@@ -3557,12 +3545,8 @@ mod tests {
         // Source-derived, not measured: thinking.py:1435-1468 gives segment
         // requests direct persistence, never `apply_output_persistence`.
         assert_eq!(documents.config["output"], "json");
-        let summary = requests
-            .iter()
-            .find(|request| request.name == "timeline:segment_summary")
-            .unwrap();
-        assert_eq!(summary.config["provider"], "test-provider");
-        assert_eq!(summary.config["model"], "test-model");
+        assert_eq!(documents.config["provider"], "test-provider");
+        assert_eq!(documents.config["model"], "test-model");
         assert!(
             oplog_records(journal.path(), &context.day, "segment")
                 .iter()
@@ -3756,7 +3740,6 @@ mod tests {
                     &[
                         ("sense", metadata),
                         ("documents", metadata),
-                        ("timeline:segment_summary", metadata),
                         ("entities:detection", metadata),
                     ],
                 );
@@ -3841,10 +3824,6 @@ mod tests {
                     "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
                 ),
                 (
-                    "timeline:segment_summary",
-                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
-                ),
-                (
                     "entities:detection",
                     "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
                 ),
@@ -3867,7 +3846,7 @@ mod tests {
             context::DispatchFailure::Unavailable,
         );
         recorder.dispatch_failures.lock().unwrap().insert(
-            "timeline:segment_summary".to_owned(),
+            "screen".to_owned(),
             context::DispatchFailure::NotClaimed {
                 use_id: "lost-selected".to_owned(),
             },
@@ -3883,12 +3862,12 @@ mod tests {
             Some(std::time::Duration::from_secs(610)),
             &skipped,
         );
-        assert_eq!((result.success, result.failed), (2, 2));
+        assert_eq!((result.success, result.failed), (1, 2));
         assert_eq!(
             result.failed_names,
             vec![
                 "documents (send)".to_owned(),
-                "timeline:segment_summary (request_lost)".to_owned(),
+                "screen (request_lost)".to_owned(),
             ]
         );
         assert_eq!(
@@ -3899,7 +3878,7 @@ mod tests {
                 .iter()
                 .map(Vec::len)
                 .collect::<Vec<_>>(),
-            vec![1, 1]
+            vec![1]
         );
         let log = oplog_records(journal.path(), &context.day, "segment");
         assert!(log.iter().any(|record| record["state"] == "request_lost"));
@@ -3991,7 +3970,7 @@ mod tests {
         let blocks = oracle_blocks();
         assert_eq!(
             blocks.iter().map(|(line, _, _)| *line).collect::<Vec<_>>(),
-            vec![20, 42, 55, 68, 72, 84, 91, 97, 103, 128, 140, 196, 225]
+            vec![20, 42, 54, 66, 70, 82, 89, 95, 101, 126, 138, 193, 221]
         );
         assert_eq!(blocks.len(), 13);
         assert!(oracle_dry_run_argv(&["--dry-run"]).is_err());

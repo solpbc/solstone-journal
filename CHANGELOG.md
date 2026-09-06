@@ -14,6 +14,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - solstone is a personal memory platform. to ask questions of your journal, use your own agent, or the command line.
 - filing support through the chat bar is gone. compose, review, and send now happen on the support page. the review card shows every field and every diagnostic value before anything leaves your machine.
 - chat requests to your phone are paused, not gone.
+- the timeline view is gone. your journal no longer picks a headline event out of every five-minute slice, or picks the few events it judged most important to stand for a day, a month, or a year. the timeline entries it already wrote stay on your disk, untouched, and nothing reads them. a link that used to open a day in the timeline opens it in the transcripts view now.
 
 ## [1.0.22] - 2026-08-01
 

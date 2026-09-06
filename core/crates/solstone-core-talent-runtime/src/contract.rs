@@ -20,7 +20,6 @@ pub enum StageId {
     EntityDetection,
     EntitiesReview,
     EntityObserver,
-    TimelineSegmentSummary,
     SpeakerAttribution,
 }
 
@@ -59,7 +58,6 @@ pub enum PrePostState {
     EntityDetection(crate::entities::detection::DetectionState),
     EntitiesReview(crate::entities::review::ReviewState),
     EntityObserver(crate::entities::observer::ObserverState),
-    Timeline(crate::timeline::TimelinePreState),
     SpeakerAttribution(crate::speaker_attribution::SpeakerAttributionState),
 }
 
@@ -99,7 +97,7 @@ pub struct StageSpec {
     pub output_override: Option<OutputOverrideFn>,
 }
 
-pub const HOOK_TABLE: [HookBinding; 15] = [
+pub const HOOK_TABLE: [HookBinding; 14] = [
     HookBinding {
         hook: "documents",
         stage: StageId::Documents,
@@ -151,10 +149,6 @@ pub const HOOK_TABLE: [HookBinding; 15] = [
     HookBinding {
         hook: "entities:entity_observer",
         stage: StageId::EntityObserver,
-    },
-    HookBinding {
-        hook: "timeline:segment_summary",
-        stage: StageId::TimelineSegmentSummary,
     },
     HookBinding {
         hook: "speaker_attribution",
@@ -309,18 +303,6 @@ pub static ENTITY_OBSERVER: StageSpec = StageSpec {
     writes_as_intent: Some(crate::writers::apply),
     output_override: None,
 };
-pub static TIMELINE_SEGMENT_SUMMARY: StageSpec = StageSpec {
-    stage: StageId::TimelineSegmentSummary,
-    gate: Some(crate::timeline::gate),
-    build: Some(crate::timeline::build),
-    prompt_override: Some(crate::timeline::apply_prompt_override),
-    commit: Some(CommitSpec {
-        parse: crate::timeline::parse,
-        commit: crate::timeline::commit,
-    }),
-    writes_as_intent: Some(crate::writers::apply),
-    output_override: None,
-};
 pub static SPEAKER_ATTRIBUTION: StageSpec = StageSpec {
     stage: StageId::SpeakerAttribution,
     gate: None,
@@ -350,7 +332,6 @@ pub fn resolve_hook(hook: &str) -> Option<&'static StageSpec> {
         StageId::EntityDetection => &ENTITY_DETECTION,
         StageId::EntitiesReview => &ENTITIES_REVIEW,
         StageId::EntityObserver => &ENTITY_OBSERVER,
-        StageId::TimelineSegmentSummary => &TIMELINE_SEGMENT_SUMMARY,
         StageId::SpeakerAttribution => &SPEAKER_ATTRIBUTION,
     })
 }

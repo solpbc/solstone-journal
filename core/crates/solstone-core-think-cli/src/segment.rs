@@ -5,11 +5,20 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use crate::context::{DispatchFailure, ThinkContext};
+use crate::dispatch::{
+    DrainOutcome, ModeResult, PendingUse, dispatch_direct, drain_with_deadline_observed,
+    drain_with_failure_policy, merge_mode_result, runtime,
+};
+use crate::helpers;
+use crate::run_log::RunLogWriter;
 use chrono::{TimeZone, Utc};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use solstone_core_facets::{AppendOutcome, append_activity_record};
-use solstone_core_journal_io::{AtomicWriteOptions, DEFAULT_STREAM, atomic_replace};
+use solstone_core_journal_io::{
+    AtomicWriteOptions, DEFAULT_STREAM, PathOrDay, atomic_replace, iter_segments,
+};
 use solstone_core_system::activity_state::ActivityStateMachine;
 use solstone_core_system_health::{
     DataState, FilesystemHealthLogSource, SEGMENT_FLOOR_TALENTS, SEGMENT_NONGATING_TALENTS,
@@ -19,19 +28,6 @@ use solstone_core_system_health::{
 use solstone_core_talent_config::{
     TalentConfig, TalentFilter, get_output_path, load_talent_configs,
 };
-use solstone_core_timeline::{
-    AttemptOutcome, AttemptStateV1, SegmentSelectorV1, TimelineError, TimelineLockRequest,
-    TimelineLockSubject, acquire_timeline_locks, publish_continuation_summary,
-    resolve_segment_binding, segment_directory,
-};
-
-use crate::context::{DispatchFailure, ThinkContext};
-use crate::dispatch::{
-    DrainOutcome, ModeResult, PendingUse, dispatch_direct, drain_with_deadline_observed,
-    drain_with_failure_policy, merge_mode_result, runtime,
-};
-use crate::helpers;
-use crate::run_log::RunLogWriter;
 
 /// Port of `thinking.py:1382-2052`, with activity-state replay performed by
 /// [`replay_activity_state`] after the segment's Sense projection is durable.
@@ -75,31 +71,15 @@ pub(crate) fn run(
             ..ModeResult::default()
         });
     };
-    let binding = match resolve_segment_binding(
-        &context.journal,
-        &SegmentSelectorV1 {
-            day: context.day.clone(),
-            segment: segment.to_owned(),
-            stream: stream.map(ToOwned::to_owned),
-        },
-    ) {
-        Ok(binding) => binding,
-        Err(TimelineError::SegmentNotFound { .. }) => {
-            return Ok(ModeResult {
-                failed: 1,
-                failed_names: vec!["sense (missing_segment)".to_owned()],
-                ..ModeResult::default()
-            });
-        }
-        Err(error) => return Err(error.to_string()),
+    let Some(segment_dir) = resolve_segment_dir(&context.journal, &context.day, segment, stream)?
+    else {
+        return Ok(ModeResult {
+            failed: 1,
+            failed_names: vec!["sense (missing_segment)".to_owned()],
+            ..ModeResult::default()
+        });
     };
-    let segment_dir =
-        segment_directory(&context.journal, &binding).map_err(|error| error.to_string())?;
-    let stream = match (stream, binding.stream.as_str()) {
-        (Some(_), resolved) => Some(resolved),
-        (None, DEFAULT_STREAM) => None,
-        (None, resolved) => Some(resolved),
-    };
+    let stream = stream.or_else(|| named_stream(&segment_dir, &context.day));
     let state =
         read_segment_data_state(&context.journal, &context.day, segment, stream, Utc::now());
     let in_flight = state.0.values().any(|value| {
@@ -146,7 +126,7 @@ pub(crate) fn run(
         // Source-derived, not measured: thinking.py:1536-1584 writes a
         // schema-valid idle artifact and change record before terminalizing.
         let sense_json = empty_input_sense_output();
-        let change = write_sense_and_change(context, &binding, &segment_dir, &sense_json)?;
+        let change = write_sense_and_change(context, segment, stream, &segment_dir, &sense_json)?;
         log_sense(log, context, segment, "idle", stream);
         log_change(
             log,
@@ -282,7 +262,7 @@ pub(crate) fn run(
     let Some(density) = sense_object.get("density").and_then(Value::as_str) else {
         return Ok(failed("sense (output_invalid)"));
     };
-    let change = write_sense_and_change(context, &binding, &segment_dir, sense_object)?;
+    let change = write_sense_and_change(context, segment, stream, &segment_dir, sense_object)?;
     log_sense(log, context, segment, density, stream);
     let change_class = change
         .get("change_class")
@@ -290,58 +270,28 @@ pub(crate) fn run(
         .unwrap_or_default();
     log_change(log, context, segment, change_class, stream);
     if change_class == "redundant" && !refresh {
-        if let Some(previous) = change
-            .pointer("/predecessor/segment")
-            .and_then(Value::as_str)
-        {
-            let attempt = AttemptStateV1 {
-                attempt_id: format!(
-                    "continuation-{}-{}-{segment}",
-                    std::process::id(),
-                    context.now_ms
-                ),
-                input_digest: String::new(),
-                started_at_ms: context.now_ms,
-                finished_at_ms: None,
-                outcome: AttemptOutcome::Running,
-                detail: String::new(),
-            };
-            publish_continuation_summary(
-                &context.journal,
-                binding.clone(),
-                previous.to_owned(),
-                context.now_ms,
-                attempt,
-            )
-            .map_err(|error| error.to_string())?;
-        }
         log_skip(log, context, "*", segment, "change_redundant", stream);
         complete(log, context, segment, stream, result.clone());
         return Ok(result);
     }
-    let timeline_only = density == "idle" && !refresh;
-    if timeline_only {
-        log_skip(
-            log,
-            context,
-            "non_timeline_talents",
-            segment,
-            "density_idle",
-            stream,
-        );
-    }
     let mut total = result;
-    let mut agents = select_agents(
-        context,
-        log,
-        &by_name,
-        sense_object,
-        &segment_dir,
-        segment,
-        stream,
-        refresh,
-        timeline_only,
-    )?;
+    let mut agents = if density == "idle" && !refresh {
+        // An idle segment keeps its Sense projection and activity-state update
+        // but dispatches no further talents.
+        log_skip(log, context, "*", segment, "density_idle", stream);
+        Vec::new()
+    } else {
+        select_agents(
+            context,
+            log,
+            &by_name,
+            sense_object,
+            &segment_dir,
+            segment,
+            stream,
+            refresh,
+        )?
+    };
     context.status.update(segment_status(
         context,
         segment,
@@ -434,24 +384,8 @@ fn select_agents<'a>(
     segment: &str,
     stream: Option<&str>,
     refresh: bool,
-    timeline_only: bool,
 ) -> Result<Vec<&'a TalentConfig>, String> {
     let mut selected = Vec::new();
-    if timeline_only {
-        if let Some(config) = by_name.get("timeline:segment_summary") {
-            selected.push(config);
-        } else {
-            log_skip(
-                log,
-                context,
-                "timeline:segment_summary",
-                segment,
-                "no_config",
-                stream,
-            );
-        }
-        return Ok(selected);
-    }
     let source = FilesystemHealthLogSource::new(&context.journal);
     for name in SEGMENT_FLOOR_TALENTS {
         let Some(config) = by_name.get(*name) else {
@@ -470,12 +404,17 @@ fn select_agents<'a>(
         }
         selected.push(config);
     }
-    for name in ["timeline:segment_summary", "entities:detection"] {
-        if let Some(config) = by_name.get(name) {
-            selected.push(config);
-        } else {
-            log_skip(log, context, name, segment, "no_config", stream);
-        }
+    if let Some(config) = by_name.get("entities:detection") {
+        selected.push(config);
+    } else {
+        log_skip(
+            log,
+            context,
+            "entities:detection",
+            segment,
+            "no_config",
+            stream,
+        );
     }
     let recommend = sense
         .get("recommend")
@@ -1340,20 +1279,13 @@ fn empty_input_sense_output() -> Map<String, Value> {
 
 fn write_sense_and_change(
     context: &ThinkContext,
-    binding: &solstone_core_timeline::SegmentBindingV1,
+    segment_name: &str,
+    stream: Option<&str>,
     segment: &std::path::Path,
     sense: &Map<String, Value>,
 ) -> Result<Value, String> {
     // Source-derived, not measured: sense_splitter.py:13-68 writes these
     // durable projections after both actual and no-input Sense completion.
-    let _locks = acquire_timeline_locks(
-        &context.journal,
-        TimelineLockRequest {
-            subjects: vec![TimelineLockSubject::Segment(binding.clone())],
-            ..TimelineLockRequest::default()
-        },
-    )
-    .map_err(|error| error.to_string())?;
     let talents = segment.join("talents");
     std::fs::create_dir_all(&talents).map_err(|error| error.to_string())?;
     replace_text(
@@ -1428,19 +1360,54 @@ fn write_sense_and_change(
                 .unwrap_or(Value::Array(Vec::new())),
         )?;
     }
-    let stream = Some(binding.stream.as_str());
-    let predecessor = resolve_predecessor(&context.journal, &binding.day, stream, &binding.segment);
+    let stream = Some(stream.unwrap_or(DEFAULT_STREAM));
+    let predecessor = resolve_predecessor(&context.journal, &context.day, stream, segment_name);
     let change = detect_segment_change(
         &context.journal,
-        &binding.day,
+        &context.day,
         stream,
-        &binding.segment,
+        segment_name,
         segment,
         predecessor,
         &Utc::now().to_rfc3339(),
     );
     replace_json(&segment.join("talents/change.json"), &change)?;
     Ok(change)
+}
+
+/// Locate the requested segment. With a stream the lookup is exact; without one
+/// the request must name exactly one segment, because two streams sharing a
+/// basename is a refusal, not a guess.
+fn resolve_segment_dir(
+    journal: &std::path::Path,
+    day: &str,
+    segment: &str,
+    stream: Option<&str>,
+) -> Result<Option<std::path::PathBuf>, String> {
+    if stream.is_some() {
+        return Ok(find_segment_dir(journal, day, segment, stream));
+    }
+    let matches = iter_segments(journal, PathOrDay::Day(day))
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .filter(|entry| entry.name().to_str() == Some(segment))
+        .map(|entry| entry.path().to_path_buf())
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [] => Ok(None),
+        [only] => Ok(Some(only.clone())),
+        _ => Err(format!(
+            "ambiguous segment {day}/{segment}: {} streams share this name",
+            matches.len()
+        )),
+    }
+}
+
+/// The named stream a discovered segment directory sits under, or `None` for
+/// the direct-under-day layout.
+fn named_stream<'a>(segment_dir: &'a std::path::Path, day: &str) -> Option<&'a str> {
+    let parent = segment_dir.parent()?.file_name()?.to_str()?;
+    (parent != day).then_some(parent)
 }
 
 fn replace_text(path: &std::path::Path, text: &str) -> Result<(), String> {

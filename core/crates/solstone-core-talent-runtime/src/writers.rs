@@ -65,13 +65,6 @@ pub enum WriteIntent {
         facet: String,
         day: String,
     },
-    TimelineSegmentSummary {
-        result: Value,
-        binding: solstone_core_timeline::SegmentBindingV1,
-        source: Box<solstone_core_timeline::SegmentSourceV1>,
-        input_digest: String,
-        provenance: Box<solstone_core_timeline::GenerationProvenanceV1>,
-    },
     SpeakerAttribution {
         output: String,
         day: String,
@@ -229,29 +222,6 @@ pub fn apply(
                     talent: "entities:entity_observer".to_owned(),
                     detail,
                 })?;
-            Ok(CommitDisposition::CommittedNoOutput)
-        }
-        CommitPlan::Write(WriteIntent::TimelineSegmentSummary {
-            result,
-            binding,
-            source,
-            input_digest,
-            provenance,
-        }) => {
-            crate::timeline::apply_result(
-                &context.journal,
-                &result,
-                binding,
-                *source,
-                input_digest,
-                *provenance,
-            )
-            .map_err(|detail| StageError {
-                phase: "write-intent",
-                stage: "timeline:segment_summary",
-                talent: "timeline:segment_summary".to_owned(),
-                detail,
-            })?;
             Ok(CommitDisposition::CommittedNoOutput)
         }
         CommitPlan::Write(WriteIntent::SpeakerAttribution {

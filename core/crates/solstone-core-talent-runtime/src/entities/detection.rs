@@ -393,7 +393,7 @@ fn apply_detections(
 ) -> (DetectionCounts, Option<String>) {
     let mut counts = DetectionCounts::default();
     let mut error = None;
-    let origin = solstone_core_maintenance::bodies::timeline::origin_for_segment(path);
+    let origin = solstone_core_journal_io::segment_origin(path);
     let sense = read_sense(path).unwrap_or(Value::Null);
     let facets = sense
         .get("facets")

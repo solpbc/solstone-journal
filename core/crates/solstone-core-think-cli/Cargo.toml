@@ -42,7 +42,6 @@ solstone-core-system.workspace = true
 solstone-core-system-health.workspace = true
 solstone-core-talent-config.workspace = true
 solstone-core-talent-runtime.workspace = true
-solstone-core-timeline.workspace = true
 tokio = { workspace = true, features = ["net", "rt", "time"] }
 
 [dev-dependencies]
