@@ -22,7 +22,10 @@
   overflow-x: auto;
   overflow-y: visible;
   padding: var(--space-5) 0 var(--space-2);
-  scrollbar-gutter: stable;
+  /* No scrollbar-gutter here. Where the platform draws an overlay scrollbar it
+     reserves a strip that is never used, and the browser then clamps scrolling
+     to the border box while showing the narrower client box, leaving the last
+     column of the year permanently out of reach (X-13). */
 }
 
 .daygrid-body {
@@ -325,6 +328,37 @@ button.daygrid-cell {
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
+}
+
+/* A 53-week year is about 795px wide and does not fit a phone. The scroller
+   above carries that overflow; these two cues say so, so the columns are not
+   just clipped at the edges. Both are driven from day-grid.js. */
+.daygrid--scrolled .daygrid-gutter {
+  box-shadow: 6px 0 8px -6px color-mix(in srgb, var(--ink) 30%, transparent);
+}
+
+.daygrid::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 28px;
+  background: linear-gradient(to left, var(--paper), transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.daygrid--more-right::after {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .daygrid::after {
+    transition: none;
+  }
 }
 
 @media (max-width: 768px) {
