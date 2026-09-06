@@ -1257,7 +1257,7 @@ a.body-day-cell:focus-visible {
     return html([
       '<section class="body-card body-section" aria-labelledby="body-history-title">',
       '<h2 id="body-history-title" class="body-section-title">explore all history</h2>',
-      '<div class="body-days" role="group" aria-label="Entries per day across the archive">',
+      '<div class="body-days" role="group" aria-label="Entries per day across your body\'s record">',
       blocks.map((block) => html([
         '<div class="body-days-year">',
         `<span class="body-days-year-label body-num" aria-hidden="true">${escapeHtml(block.year)}</span>`,
@@ -2038,7 +2038,7 @@ a.body-day-cell:focus-visible {
         '<div class="body-curve-wrap">',
         `<div class="body-curve-y body-num" aria-hidden="true"><span>${escapeHtml(formatValue(signal, dom.hi))}</span><span>${escapeHtml(formatValue(signal, dom.lo))}</span></div>`,
         '<div class="body-trends-plot">',
-        `<svg class="body-curve" viewBox="0 0 ${SVG_W} ${CANVAS_H}" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(signal.label)} weekly medians across the archive">`,
+        `<svg class="body-curve" viewBox="0 0 ${SVG_W} ${CANVAS_H}" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(signal.label)} weekly medians over time">`,
         curveMarkup(inWindow, bounds.w0, bounds.w1, dom, CANVAS_H, "", "", 4),
         '</svg>',
         state.flags ? flagMarkup(bounds.w0, bounds.w1) : "",
