@@ -73,9 +73,18 @@
 
 .curation-select {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.6em;
   cursor: pointer;
+}
+
+.curation-tap-target {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
 }
 
 .curation-actions {
@@ -87,7 +96,7 @@
 }
 
 .curation-button {
-  min-height: 2.25em;
+  min-height: 44px;
   border: 1px solid #d1d5db;
   border-radius: 6px;
   background: #fff;
@@ -379,7 +388,7 @@ window.CUR_COPY = CUR_COPY;
     return `
       <article class="curation-item" data-curation-item data-kind="entity_merge" data-facet="${escapeHtml(item.facet)}" data-source-slug="${escapeHtml(item.source_slug)}" data-target-slug="${escapeHtml(item.target_slug)}" data-source="${escapeHtml(item.source)}" data-target="${escapeHtml(item.target)}">
         <label class="curation-select">
-          <input type="checkbox" data-action="entity-select">
+          <span class="curation-tap-target"><input type="checkbox" data-action="entity-select"></span>
           <span class="curation-body">${escapeHtml(copyFormat(CUR_COPY.CUR_ENTITY_BODY, {a: item.source, b: item.target}))}</span>
         </label>
         <div class="curation-actions">
@@ -423,7 +432,7 @@ window.CUR_COPY = CUR_COPY;
       <div class="curation-batch" data-curation-batch>
         <div class="curation-toolbar" data-curation-toolbar>
           <label class="curation-toolbar-select">
-            <input type="checkbox" data-action="entity-select-all">
+            <span class="curation-tap-target"><input type="checkbox" data-action="entity-select-all"></span>
             <span>${escapeHtml(CUR_COPY.CUR_ENTITY_SELECT_ALL_ACTION)}</span>
           </label>
           <button class="curation-button curation-button-primary" type="button" data-action="entity-batch-merge" disabled>${escapeHtml(CUR_COPY.CUR_ENTITY_BATCH_MERGE_ACTION)}</button>
