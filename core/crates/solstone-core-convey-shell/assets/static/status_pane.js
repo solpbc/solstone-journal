@@ -186,7 +186,7 @@ window.whenShellReady(() => {
     section.style.display = '';
 	    const status = capture?.status;
 		    if (status === 'active') {
-		      text.style.color = '#10b981';
+		      text.style.color = 'var(--success-ink)';
 		    } else if (status === 'degraded') {
 		      text.textContent = '';
 		      text.style.color = '';
@@ -202,13 +202,13 @@ window.whenShellReady(() => {
 		        const link = document.createElement('a');
 		        link.href = '/app/health';
 		        link.textContent = 'view device health →';
-		        link.style.cssText = 'display: inline-block; margin-top: 4px; color: #b91c1c; font-size: 12px;';
+		        link.style.cssText = 'display: inline-block; margin-top: 4px; color: var(--danger); font-size: 12px;';
 		        text.appendChild(link);
 		      };
 
 		      if (!degraded.length) {
-		        appendLine('a device needs attention', 'color: #b91c1c; font-weight: 600;');
-		        appendLine("a device isn't reaching your journal.", 'color: #b91c1c; font-size: 12px;');
+		        appendLine('a device needs attention', 'color: var(--danger); font-weight: 600;');
+		        appendLine("a device isn't reaching your journal.", 'color: var(--danger); font-size: 12px;');
 		        appendHealthLink();
 		        return;
 		      }
@@ -219,7 +219,7 @@ window.whenShellReady(() => {
 		      const title = name ? name + ' needs attention' : 'a device needs attention';
 		      const hasFirstTs = typeof rej.first_ts === 'number' && isFinite(rej.first_ts);
 		      const hasActiveCount = typeof rej.active_count === 'number' && isFinite(rej.active_count);
-		      appendLine(title, 'color: #b91c1c; font-weight: 600;');
+		      appendLine(title, 'color: var(--danger); font-weight: 600;');
 
 		      let consequence;
 		      if (hasFirstTs && hasActiveCount) {
@@ -231,12 +231,12 @@ window.whenShellReady(() => {
 		      } else {
 			        consequence = "what it senses isn't reaching your journal.";
 		      }
-		      appendLine(consequence, 'color: #b91c1c; font-size: 12px;');
+		      appendLine(consequence, 'color: var(--danger); font-size: 12px;');
 
 		      const recovery = rej.version
 		        ? (name || 'this device') + ' is running the solstone app v' + rej.version + '. update or restart the solstone app on that device, then the next time it adds to your journal, this clears.'
 		        : 'update or restart it on that device, then a valid upload clears this.';
-		      appendLine(recovery, 'color: #6b7280; font-size: 12px;');
+		      appendLine(recovery, 'color: var(--ink-soft); font-size: 12px;');
 
 		      const parts = [];
 		      if (rej.reason_code) parts.push('reason: ' + rej.reason_code);
@@ -246,20 +246,20 @@ window.whenShellReady(() => {
 		        parts.push('last rejected ' + relativeTime(Date.now() - rej.latest_ts) + ' ago');
 		      }
 		      if (parts.length) {
-		        appendLine(parts.join(' · '), 'color: #6b7280; font-size: 11px;');
+		        appendLine(parts.join(' · '), 'color: var(--ink-soft); font-size: 11px;');
 		      }
 
 		      appendHealthLink();
 		      if (degraded.length > 1) {
-		        appendLine('and ' + (degraded.length - 1) + ' more need attention', 'color: #6b7280; font-size: 12px; margin-top: 2px;');
+		        appendLine('and ' + (degraded.length - 1) + ' more need attention', 'color: var(--ink-soft); font-size: 12px; margin-top: 2px;');
 		      }
 		      return;
 	    } else if (status === 'offline') {
-      text.style.color = '#ef4444';
+      text.style.color = 'var(--danger)';
     } else if (status === 'stale') {
       text.style.color = 'var(--warn-ink)';
     } else {
-      text.style.color = '#9ca3af';
+      text.style.color = 'var(--ink-faint)';
     }
     if (status === 'no_clients') {
       text.textContent = 'no devices are running the solstone app yet. set one up to start your journal.';
@@ -315,13 +315,13 @@ window.whenShellReady(() => {
       text.textContent = '';
       text.appendChild(document.createTextNode('v' + (version.current || '?') + ' · '));
       const span = document.createElement('span');
-      span.style.color = '#f59e0b';
+      span.style.color = 'var(--warn-ink)';
       span.textContent = 'update available (v' + (version.latest || '?') + ')';
       text.appendChild(span);
       text.style.color = '';
     } else {
       text.textContent = 'v' + (version?.current || 'unknown');
-      text.style.color = '#9ca3af';
+      text.style.color = 'var(--ink-faint)';
     }
   }
 
@@ -379,7 +379,7 @@ window.whenShellReady(() => {
         panel.id = panelId;
         panel.hidden = true;
         panel.setAttribute('data-quiet-notif-panel', 'true');
-        panel.style.cssText = 'padding: 4px 0 2px; color: #fca5a5; font-size: 13px; white-space: pre-wrap; word-break: break-word;';
+        panel.style.cssText = 'padding: 4px 0 2px; color: var(--danger); font-size: 13px; white-space: pre-wrap; word-break: break-word;';
         row.appendChild(panel);
       } else {
         btn = row.querySelector('[data-action="toggle-quiet-notif"]');
@@ -389,7 +389,7 @@ window.whenShellReady(() => {
       const relativeAge = window.AppServices.notifications._getRelativeTime(n.ts);
       btn.textContent = '';
       const ageSpan = document.createElement('span');
-      ageSpan.style.cssText = 'color: #9ca3af; font-size: 11px; flex-shrink: 0;';
+      ageSpan.style.cssText = 'color: var(--ink-faint); font-size: 11px; flex-shrink: 0;';
       ageSpan.textContent = relativeAge;
       btn.appendChild(ageSpan);
 
@@ -399,13 +399,13 @@ window.whenShellReady(() => {
       btn.appendChild(srcCode);
 
       const snippet = document.createElement('span');
-      snippet.style.cssText = 'color: #fca5a5; font-size: 13px; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+      snippet.style.cssText = 'color: var(--danger); font-size: 13px; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
       snippet.textContent = n.message || '';
       btn.appendChild(snippet);
 
       const hint = document.createElement('span');
       hint.setAttribute('data-quiet-notif-hint', 'true');
-      hint.style.cssText = 'flex-shrink: 0; color: #9ca3af; font-size: 11px;';
+      hint.style.cssText = 'flex-shrink: 0; color: var(--ink-faint); font-size: 11px;';
       hint.textContent = btn.getAttribute('aria-expanded') === 'true' ? 'hide details' : 'show details';
       btn.appendChild(hint);
 
@@ -452,13 +452,13 @@ window.whenShellReady(() => {
         return `<a href="${escape(action)}" class="status-pane-history-item" style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin: 0 -8px; border-radius: 4px; text-decoration: none; color: inherit;">
           <span class="icon-slot" style="font-size: 16px; flex-shrink: 0;" aria-hidden="true">${resolveIcon(n.icon)}</span>
           <span style="font-weight: 500; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escape(n.title)}</span>
-          <span style="color: #9ca3af; font-size: 11px; flex-shrink: 0;">${relativeAge}</span>
+          <span style="color: var(--ink-faint); font-size: 11px; flex-shrink: 0;">${relativeAge}</span>
         </a>`;
       } else {
         return `<div style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin: 0 -8px;">
           <span class="icon-slot" style="font-size: 16px; flex-shrink: 0;" aria-hidden="true">${resolveIcon(n.icon)}</span>
           <span style="font-weight: 500; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escape(n.title)}</span>
-          <span style="color: #9ca3af; font-size: 11px; flex-shrink: 0;">${relativeAge}</span>
+          <span style="color: var(--ink-faint); font-size: 11px; flex-shrink: 0;">${relativeAge}</span>
         </div>`;
       }
     }).join('');

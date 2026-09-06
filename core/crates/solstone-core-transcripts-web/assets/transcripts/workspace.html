@@ -476,8 +476,8 @@
 }
 
 .tr-tab.active {
-  background: #3b82f6;
-  border-color: #3b82f6;
+  background: var(--orange-ink);
+  border-color: var(--orange-ink);
   color: #fff;
 }
 
@@ -642,7 +642,7 @@
 .tr-body-context-card p,
 .tr-body-panel p {
   margin: 0;
-  color: #4b5563;
+  color: var(--ink-soft);
 }
 
 .tr-body-context-facts {
@@ -699,7 +699,7 @@
 .tr-body-hour-level-1 { background: #eff6ff; border-color: #bfdbfe; }
 .tr-body-hour-level-2 { background: #dbeafe; border-color: #93c5fd; }
 .tr-body-hour-level-3 { background: #bfdbfe; border-color: #60a5fa; }
-.tr-body-hour-level-4 { background: #93c5fd; border-color: #3b82f6; }
+.tr-body-hour-level-4 { background: #93c5fd; border-color: var(--orange-ink); }
 
 .tr-body-hour:hover:not(.tr-body-hour-empty) {
   filter: brightness(0.96);
@@ -943,7 +943,7 @@
 
 .tr-signal-raw summary {
   cursor: pointer;
-  color: #4b5563;
+  color: var(--ink-soft);
   font-size: 13px;
 }
 
@@ -1160,7 +1160,7 @@
 
 .tr-zoom-pill-markdown {
   background: linear-gradient(135deg, rgba(147, 197, 253, 0.8), rgba(147, 197, 253, 0.6));
-  border: 1px solid #3b82f6;
+  border: 1px solid var(--orange-ink);
 }
 
 .tr-zoom-pill-browser {
@@ -1458,7 +1458,7 @@
 }
 
 #trDeleteSegmentModal .close:hover {
-  color: #4b5563;
+  color: var(--ink-soft);
 }
 
 #trDeleteSegmentModal .close:active {
@@ -1607,7 +1607,7 @@
 
 .tr-entry.tr-entry-active {
   background: #f0f9ff;
-  border-left-color: #3b82f6;
+  border-left-color: var(--orange-ink);
 }
 
 .tr-entry-screen {
@@ -2220,10 +2220,10 @@ body.presentation-mode .tr-seg-browser { background: rgba(96, 165, 250, 0.85); b
 body.presentation-mode .tr-zoom-pill { font-weight: 700; }
 body.presentation-mode .tr-content { padding: 8px 28px 28px; gap: 20px; }
 body.presentation-mode .tr-title { font-size: 28px; color: #0b1220; }
-body.presentation-mode .tr-range-text { font-size: 16px; color: #4b5563; }
+body.presentation-mode .tr-range-text { font-size: 16px; color: var(--ink-soft); }
 body.presentation-mode .tr-tabs { padding: 12px 0; border-bottom-width: 2px; }
 body.presentation-mode .tr-tab { font-size: 16px; font-weight: 600; padding: 10px 16px; border-width: 2px; }
-body.presentation-mode .tr-tab.active { background: #2563eb; border-color: #2563eb; }
+body.presentation-mode .tr-tab.active { background: var(--orange-ink); border-color: var(--orange-ink); }
 body.presentation-mode .tr-md-content {
   font-size: 19px;
   line-height: 1.65;
@@ -2516,7 +2516,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 	        const item = document.createElement('li');
 	        const type = detail.type || 'warning';
 	        const file = detail.file || 'unknown file';
-	        item.textContent = `${type} — ${file} (${warningTimestampLabel(detail.ts)})`;
+	        item.textContent = `${type}: ${file} (${warningTimestampLabel(detail.ts)})`;
 	        warningDetails.appendChild(item);
 	      }
 	    }
@@ -3854,14 +3854,14 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       const statusEl = targetEl.querySelector('[data-role="loading-status"]');
       if (!statusEl) return;
       if (!totalFrames) {
-        statusEl.textContent = 'loading screen entries...';
+        statusEl.textContent = 'loading screen entries…';
         return;
       }
       const decoded = Array.from(perVideoProgress.values()).reduce((sum, count) => sum + count, 0);
       const pct = Math.min(100, Math.round((decoded / totalFrames) * 100));
       statusEl.textContent = done
-        ? 'Rendering screen entries...'
-        : `Decoding key frames ${decoded}/${totalFrames} (${pct}%)...`;
+        ? 'Rendering screen entries…'
+        : `Decoding key frames ${decoded}/${totalFrames} (${pct}%)…`;
     };
 
     const makeProgressHandler = (videoUrl) => (count) => {
@@ -3986,7 +3986,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         renderSegmentTimeline(segmentData, true, false, pane, false);
       } else if (tabId === 'screen') {
         const segmentToken = selectedSegment?.key;
-        pane.innerHTML = window.SurfaceState.loading({ text: 'Loading screen entries...' });
+        pane.innerHTML = window.SurfaceState.loading({ text: 'loading screen entries…' });
         prepareScreenFrames(
           segmentData,
           pane,
@@ -6104,7 +6104,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         window.AppServices.notifications.show({
           app: 'transcripts',
           icon: 'timer',
-          title: 'Too late — already deleted',
+          title: 'Too late: already deleted',
           autoDismiss: 3000
         });
         return;
