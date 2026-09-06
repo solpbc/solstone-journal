@@ -336,6 +336,7 @@
           "path": "/app/stats/api/stats",
           "response": {
             "body": {
+              "facet_titles": {},
               "generators": {
                 "conversation": {
                   "activities": [
@@ -1063,6 +1064,7 @@
           "path": "/app/stats/api/stats",
           "response": {
             "body": {
+              "facet_titles": {},
               "file_mtime": 1700000000.0,
               "generators": {
                 "conversation": {
@@ -1909,6 +1911,7 @@
           "path": "/app/stats/api/stats",
           "response": {
             "body": {
+              "facet_titles": {},
               "file_mtime": 1700000000.0,
               "generators": {
                 "conversation": {
@@ -2756,6 +2759,7 @@
           "path": "/app/stats/api/stats",
           "response": {
             "body": {
+              "facet_titles": {},
               "generators": {
                 "conversation": {
                   "activities": [

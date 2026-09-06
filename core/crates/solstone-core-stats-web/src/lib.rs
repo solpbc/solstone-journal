@@ -7,7 +7,7 @@ use axum::{Json, Router, extract::Query, http::StatusCode, response::IntoRespons
 use chrono::Datelike;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 mod assets;
 mod clock;
@@ -170,6 +170,10 @@ async fn stats_data(root: PathBuf) -> impl IntoResponse {
         }
         response["stats"] = stats;
     }
+    // The owner named these facets; the raw storage slug is not their name.
+    // Same source the thinking app's talent-runs facet filter already reads
+    // from, so the two surfaces agree on one facet's display name (G2-35).
+    response["facet_titles"] = facet_titles(&root);
     let Some(package_root) = std::env::current_exe().ok().and_then(|executable| {
         executable
             .parent()
@@ -213,6 +217,21 @@ async fn stats_data(root: PathBuf) -> impl IntoResponse {
         .collect::<Map<_, _>>();
     response["generators"] = Value::Object(generators);
     (StatusCode::OK, Json(response)).into_response()
+}
+/// Facet display names, keyed by the same slug the stats corpus counts by.
+/// A missing or unreadable declaration is skipped, not fabricated — the
+/// client falls back to the raw slug when a title isn't in this map.
+fn facet_titles(root: &Path) -> Value {
+    let names = solstone_core_facets::list_declared_facet_names(root).unwrap_or_default();
+    let mut titles = Map::new();
+    for name in names {
+        if let Ok(Some(facet)) = solstone_core_facets::read_facet_declaration(root, &name)
+            && !facet.title.is_empty()
+        {
+            titles.insert(name, json!(facet.title));
+        }
+    }
+    Value::Object(titles)
 }
 fn digits(value: &str, len: usize) -> bool {
     value.len() == len && value.bytes().all(|byte| byte.is_ascii_digit())

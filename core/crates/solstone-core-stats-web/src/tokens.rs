@@ -39,16 +39,17 @@ pub(super) fn aggregate_entries(day: &str, entries: Vec<Value>) -> Value {
             .filter(|v| !v.is_empty())
             .unwrap_or("[unattributed]");
         // Model-name recognition is a label only; it must never discard measured usage.
-        let provider = provider(model);
+        // Group by the canonical id so a model that self-reports two different
+        // raw identifiers (e.g. a local server's own wire name vs our install
+        // id) still lands as one row with one provider (G2-31).
+        let canonical = canonical_model(model);
+        let provider = provider(&canonical);
         total.add(&usage, model);
         providers
             .entry(provider.to_owned())
             .or_default()
             .add(&usage, model);
-        models
-            .entry(model.to_owned())
-            .or_default()
-            .add(&usage, model);
+        models.entry(canonical).or_default().add(&usage, model);
         contexts
             .entry(normalize_legacy_context(context).to_owned())
             .or_default()
@@ -205,6 +206,21 @@ impl Bucket {
     }
 }
 
+/// A local model occasionally self-reports a raw wire id that differs from
+/// the canonical `local/<slug>` id we install and label it under (G2-31:
+/// `unsloth/Qwen3.5-4B-GGUF`'s runtime reports the base model's HF repo id,
+/// `Qwen/Qwen3.5-4B`, on some completions and our own `local/qwen3.5-4b` on
+/// others). Both name the same physical model; fold the known raw form to
+/// the canonical id before grouping so the dashboard doesn't split one
+/// model's usage across two rows under two different providers. Unknown
+/// models pass through unchanged — this never invents an id.
+pub(super) fn canonical_model(model: &str) -> String {
+    match model.to_ascii_lowercase().as_str() {
+        "qwen/qwen3.5-4b" => "local/qwen3.5-4b".to_owned(),
+        _ => model.to_owned(),
+    }
+}
+
 pub(super) fn provider(model: &str) -> &'static str {
     let model = model.to_ascii_lowercase();
     if model == "local"
@@ -235,6 +251,49 @@ mod tests {
             normalize_legacy_context("talent.system.work"),
             "talent.system.work"
         );
+    }
+
+    #[test]
+    fn raw_and_canonical_local_model_ids_merge_into_one_row_under_one_provider() {
+        // G2-31: the same physical local model self-reports under two ids on
+        // different completions. Both must collapse to one `by_model` row,
+        // with combined usage, a `local` provider (not `unknown`), and both
+        // raw ids preserved for a disclosure.
+        let data = aggregate_entries(
+            "20260904",
+            vec![
+                json!({"model":"Qwen/Qwen3.5-4B","usage":{"total_tokens":195,"input_tokens":190,"output_tokens":5}}),
+                json!({"model":"local/qwen3.5-4b","usage":{"total_tokens":4,"input_tokens":3,"output_tokens":1}}),
+            ],
+        );
+        assert_eq!(data["by_model"].as_array().expect("by_model").len(), 1);
+        let row = &data["by_model"][0];
+        assert_eq!(row["model"], "local/qwen3.5-4b");
+        assert_eq!(row["provider"], "local");
+        assert_eq!(row["requests"], 2);
+        assert_eq!(row["tokens"], 199);
+        let models_used = row["models_used"]
+            .as_array()
+            .expect("models_used")
+            .iter()
+            .map(|v| v.as_str().expect("model id"))
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            models_used,
+            BTreeSet::from(["Qwen/Qwen3.5-4B", "local/qwen3.5-4b"])
+        );
+        assert_eq!(
+            data["by_provider"].as_array().expect("by_provider").len(),
+            1
+        );
+        assert_eq!(data["by_provider"][0]["provider"], "local");
+        assert_eq!(data["by_provider"][0]["tokens"], 199);
+    }
+
+    #[test]
+    fn canonical_model_passes_through_unrecognized_ids() {
+        assert_eq!(canonical_model("gpt-5.6-sol"), "gpt-5.6-sol");
+        assert_eq!(canonical_model("my-engine"), "my-engine");
     }
 
     #[test]

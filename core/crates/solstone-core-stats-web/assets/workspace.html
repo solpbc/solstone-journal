@@ -212,6 +212,17 @@ h1 {
   margin: 0;
 }
 
+/* A caught-up verdict paired with a named all-time backlog underneath it,
+   so the two figures read as one honest sentence instead of a
+   contradiction the owner has to resolve on their own (X-11/G2-36). */
+.backlog-hero-secondary {
+  color: var(--ink-soft, #5B5246);
+  font-size: 0.95em;
+  font-weight: 500;
+  line-height: 1.4;
+  margin: 0.4em 0 0;
+}
+
 .backlog-needs-hand {
   background: #fffaf0;
   border: 1px solid #f4d08a;
@@ -562,13 +573,17 @@ h1 {
   border-color: transparent;
 }
 
-.alert-repair .stat-value {
-  color: #dc2626;
-}
+/* No default color override here (X-11): a repair tile's color is set
+   per-render, neutral (--facet-color, matching the rest of the page) when
+   the 30-day verdict is caught up, --danger only when it isn't. */
 
 .alert-repair .stats-grid {
+  /* G2-36 dropped one of the two repair tiles, so this section usually
+     renders a single tile now; auto-fit avoids leaving it stranded in a
+     half-empty 2-column grid while still adapting if a second tile
+     returns. */
   margin-bottom: 0;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 /* Model selector */
@@ -905,10 +920,38 @@ h1 {
 }
 .token-rollup__bar{padding:0!important;flex-shrink:0}.token-rollup{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .backlog-list > summary {cursor:pointer;min-height:46px;padding:10px 0}
+
+/* Names the decomposition shared by the facets/activities pair so they
+   don't read as a duplicate of each other (G2-37). */
+.chart-pair-lede {
+  color: var(--ink-soft, #5B5246);
+  margin: 0 0 -0.5em;
+}
+
+/* Right-edge fade for a horizontally scrollable rollup/table that has more
+   content off-screen; removed once scrolled to the end (G2-34). Toggled by
+   token-card.js, which knows the scroll position; this rule only draws it. */
+.token-rollup.has-scroll-fade,
+.token-table-scroll.has-scroll-fade {
+  mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
+}
+
+/* Selected-day model row: a readable name up front, exact raw id(s) tucked
+   behind a disclosure rather than shown on the surface (G2-31). */
+.token-model-cell summary {
+  cursor: pointer;
+}
+
+.token-model-ids {
+  color: var(--ink-faint, #6E6453);
+  font-size: 0.85em;
+  margin: 0.25em 0 0;
+}
 </style>
 
 <div class="dashboard" data-stats-url="/app/stats/api/stats">
-  <h1>journal dashboard</h1>
+  <h1>stats</h1>
 
   <p id="statsFreshness" class="stats-freshness"></p>
 
@@ -962,6 +1005,8 @@ h1 {
       <h2>activity heatmap</h2>
       <div id="heatmap"></div>
     </div>
+
+    <p class="chart-pair-lede">the same days, split two ways: by facet below, then by activity.</p>
 
     <div class="chart-section">
       <h2>facets (last 30 days)</h2>
