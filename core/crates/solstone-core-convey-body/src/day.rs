@@ -74,7 +74,7 @@ pub(crate) async fn day_route(
         Err(DayError::Store(error)) => unavailable_response(StoreError::Read(error)),
         Err(DayError::Chronicle(error)) => error_envelope(
             "internal_error",
-            "that request couldn't be completed.",
+            "that request didn't finish.",
             error,
             StatusCode::INTERNAL_SERVER_ERROR,
         )

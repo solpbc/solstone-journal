@@ -854,7 +854,7 @@ fn assign_fields(value: &Value) -> Result<Fields, Response> {
     let Some(source) = source.as_str() else {
         return Err(err(
             "internal_error",
-            "that request couldn't be completed.",
+            "that request didn't finish.",
             "source was not a string",
             StatusCode::INTERNAL_SERVER_ERROR,
         ));
@@ -915,7 +915,7 @@ fn common_fields(value: &Value, correction: bool) -> Result<Fields, Response> {
     ) else {
         return Err(err(
             "internal_error",
-            "that request couldn't be completed.",
+            "that request didn't finish.",
             "regex input was not a string",
             StatusCode::INTERNAL_SERVER_ERROR,
         ));
@@ -1005,7 +1005,7 @@ fn classify_indeterminate(
         "probe_not_found" | "probe_zero_norm" => Ok(OWNER_DAMAGED),
         _ => Err(err(
             "internal_error",
-            "that request couldn't be completed.",
+            "that request didn't finish.",
             &format!("unknown owner-contamination reason: {reason}"),
             StatusCode::INTERNAL_SERVER_ERROR,
         )),

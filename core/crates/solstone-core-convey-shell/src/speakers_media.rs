@@ -99,7 +99,7 @@ pub async fn serve_audio(
     if !path.is_file() {
         return media_error(
             "file_not_found",
-            "that file couldn't be found.",
+            "that file isn't available.",
             "File not found",
             StatusCode::NOT_FOUND,
         )
@@ -121,7 +121,7 @@ pub async fn serve_audio(
         Err(_) => {
             return media_error(
                 "file_not_found",
-                "that file couldn't be found.",
+                "that file isn't available.",
                 "File not found",
                 StatusCode::NOT_FOUND,
             )
@@ -148,7 +148,7 @@ pub async fn serve_audio(
         }
         Some(ParsedRange::Unsatisfiable) => media_error(
             "http_error",
-            "that request couldn't be completed.",
+            "that request didn't finish.",
             "",
             StatusCode::RANGE_NOT_SATISFIABLE,
         )

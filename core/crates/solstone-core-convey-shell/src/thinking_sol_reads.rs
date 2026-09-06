@@ -827,7 +827,7 @@ fn invalid_path() -> Response {
 fn file_not_found() -> Response {
     error(
         "file_not_found",
-        "that file couldn't be found.",
+        "that file isn't available.",
         "File not found",
         StatusCode::NOT_FOUND,
     )

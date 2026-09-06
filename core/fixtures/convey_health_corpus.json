@@ -295,7 +295,7 @@
           "response": {
             "body": {
               "detail": "Log file not found",
-              "error": "that file couldn't be found.",
+              "error": "that file isn't available.",
               "reason_code": "file_not_found"
             },
             "headers": {
@@ -349,7 +349,7 @@
           "response": {
             "body": {
               "detail": "Log file not found",
-              "error": "that file couldn't be found.",
+              "error": "that file isn't available.",
               "reason_code": "file_not_found"
             },
             "headers": {
@@ -551,7 +551,7 @@
           "response": {
             "body": {
               "detail": "Log file not found",
-              "error": "that file couldn't be found.",
+              "error": "that file isn't available.",
               "reason_code": "file_not_found"
             },
             "headers": {
@@ -605,7 +605,7 @@
           "response": {
             "body": {
               "detail": "Log file not found",
-              "error": "that file couldn't be found.",
+              "error": "that file isn't available.",
               "reason_code": "file_not_found"
             },
             "headers": {
@@ -785,7 +785,7 @@
           "response": {
             "body": {
               "detail": "Log file not found",
-              "error": "that file couldn't be found.",
+              "error": "that file isn't available.",
               "reason_code": "file_not_found"
             },
             "headers": {
@@ -839,7 +839,7 @@
           "response": {
             "body": {
               "detail": "Log file not found",
-              "error": "that file couldn't be found.",
+              "error": "that file isn't available.",
               "reason_code": "file_not_found"
             },
             "headers": {
@@ -1006,7 +1006,7 @@
           "response": {
             "body": {
               "detail": "Log file not found",
-              "error": "that file couldn't be found.",
+              "error": "that file isn't available.",
               "reason_code": "file_not_found"
             },
             "headers": {
@@ -1060,7 +1060,7 @@
           "response": {
             "body": {
               "detail": "Log file not found",
-              "error": "that file couldn't be found.",
+              "error": "that file isn't available.",
               "reason_code": "file_not_found"
             },
             "headers": {
@@ -1227,7 +1227,7 @@
           "response": {
             "body": {
               "detail": "Log file not found",
-              "error": "that file couldn't be found.",
+              "error": "that file isn't available.",
               "reason_code": "file_not_found"
             },
             "headers": {
@@ -1281,7 +1281,7 @@
           "response": {
             "body": {
               "detail": "Log file not found",
-              "error": "that file couldn't be found.",
+              "error": "that file isn't available.",
               "reason_code": "file_not_found"
             },
             "headers": {

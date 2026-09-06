@@ -347,7 +347,7 @@ async fn detail(root: PathBuf, facet: String, day: String) -> Response {
     if !store::valid_facet(&facet) || !is_day(&day) {
         return http::error(
             "file_not_found",
-            "that file couldn't be found.",
+            "that file isn't available.",
             "Newsletter not found".to_owned(),
             StatusCode::NOT_FOUND,
         );

@@ -118,7 +118,7 @@ pub async fn presence(
     if cluster_id.is_empty() || !cluster_id.bytes().all(|byte| byte.is_ascii_digit()) {
         return error_envelope(
             "http_error",
-            "that request couldn't be completed.",
+            "that request didn't finish.",
             "",
             StatusCode::NOT_FOUND,
         )
@@ -180,7 +180,7 @@ pub async fn resolve_statement(
     if !missing.is_empty() {
         return error_envelope(
             "missing_required_field",
-            "that request couldn't be completed.",
+            "that request didn't finish.",
             format!("Missing required fields: {}", missing.join(", ")),
             StatusCode::BAD_REQUEST,
         )

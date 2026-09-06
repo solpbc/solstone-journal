@@ -257,7 +257,7 @@ fn busy() -> Response {
 fn internal(detail: String) -> Response {
     http::error(
         "internal_error",
-        "that request couldn't be completed.",
+        "that request didn't finish.",
         detail,
         StatusCode::INTERNAL_SERVER_ERROR,
     )

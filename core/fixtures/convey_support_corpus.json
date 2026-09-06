@@ -362,7 +362,7 @@
         "response": {
           "body": {
             "detail": "",
-            "error": "that request couldn't be completed.",
+            "error": "that request didn't finish.",
             "reason_code": "http_error"
           },
           "headers": {
@@ -1029,7 +1029,7 @@
         "response": {
           "body": {
             "detail": "",
-            "error": "that request couldn't be completed.",
+            "error": "that request didn't finish.",
             "reason_code": "http_error"
           },
           "headers": {
@@ -1821,7 +1821,7 @@
         "response": {
           "body": {
             "detail": "",
-            "error": "that request couldn't be completed.",
+            "error": "that request didn't finish.",
             "reason_code": "http_error"
           },
           "headers": {
@@ -2862,7 +2862,7 @@
         "response": {
           "body": {
             "detail": "",
-            "error": "that request couldn't be completed.",
+            "error": "that request didn't finish.",
             "reason_code": "http_error"
           },
           "headers": {
@@ -3693,7 +3693,7 @@
         "response": {
           "body": {
             "detail": "",
-            "error": "that request couldn't be completed.",
+            "error": "that request didn't finish.",
             "reason_code": "http_error"
           },
           "headers": {

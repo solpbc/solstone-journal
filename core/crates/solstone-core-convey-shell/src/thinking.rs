@@ -1338,7 +1338,7 @@ fn invalid_request(detail: impl Into<String>) -> Response {
 fn invalid_state(detail: impl Into<String>) -> Response {
     envelope(
         "invalid_operation_for_state",
-        "that action couldn't be taken in the current state.",
+        "that action isn't available in the current state.",
         detail,
         StatusCode::BAD_REQUEST,
     )

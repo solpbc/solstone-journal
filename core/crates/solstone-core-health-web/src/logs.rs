@@ -35,7 +35,7 @@ pub async fn get(
     let Ok(file) = file.canonicalize() else {
         return error_envelope(
             "file_not_found",
-            "that file couldn't be found.",
+            "that file isn't available.",
             "Log file not found",
             StatusCode::NOT_FOUND,
         )

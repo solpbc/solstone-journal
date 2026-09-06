@@ -11,7 +11,7 @@ pub fn internal_error() -> axum::response::Response {
     // while BTreeMap sorts detail, error, reason_code into the same byte order.
     let (status, Json(envelope)) = error_envelope(
         "internal_error",
-        "that request couldn't be completed.",
+        "that request didn't finish.",
         "",
         StatusCode::INTERNAL_SERVER_ERROR,
     );

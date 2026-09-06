@@ -560,7 +560,7 @@ fn invalid_path(detail: &str) -> Response {
 fn file_not_found(detail: &str) -> Response {
     error_envelope(
         "file_not_found",
-        "that file couldn't be found.",
+        "that file isn't available.",
         detail,
         StatusCode::NOT_FOUND,
     )

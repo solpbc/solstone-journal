@@ -393,7 +393,7 @@ fn portal_failed(detail: &str) -> Response {
 fn http_not_found() -> Response {
     error_envelope(
         "http_error",
-        "that request couldn't be completed.",
+        "that request didn't finish.",
         "",
         StatusCode::NOT_FOUND,
     )
