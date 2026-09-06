@@ -62,7 +62,7 @@ async fn state(root: PathBuf) -> Json<serde_json::Value> {
     let (items, ok) = talent_failures::today(&root);
     let count = items.len();
     Json(
-        json!({"backlog":{"verdict":backlog::verdict(backlog.as_ref()),"stuck_rows":backlog::stuck_rows(backlog.as_ref()),"copy":backlog::copy()},"agent_errors":{"items":items,"ok":ok,"count":count,"label":errors_today_label(count,ok)}}),
+        json!({"backlog":{"verdict":backlog::verdict(backlog.as_ref()),"pending_days":backlog::pending_days(backlog.as_ref()),"oldest_pending_day":backlog::oldest_pending_day(backlog.as_ref()),"stuck_rows":backlog::stuck_rows(backlog.as_ref()),"copy":backlog::copy()},"agent_errors":{"items":items,"ok":ok,"count":count,"label":errors_today_label(count,ok)}}),
     )
 }
 

@@ -49,8 +49,8 @@
     if (tabs) tabs.setAttribute('aria-label', consoleHeading);
 
     const actions = {
-      clear: copyText('CONSOLE_ACTION_CLEAR', 'Clear'),
-      'send-all': copyText('CONSOLE_ACTION_SEND_ALL', 'Send all')
+      clear: copyText('CONSOLE_ACTION_CLEAR', 'clear'),
+      'send-all': copyText('CONSOLE_ACTION_SEND_ALL', 'send to support')
     };
     for (const [action, label] of Object.entries(actions)) {
       const button = document.querySelector(`[data-diagnostic-action="${action}"]`);
@@ -58,14 +58,14 @@
     }
     const close = document.querySelector('[data-diagnostic-action="close"]');
     if (close) {
-      close.setAttribute('aria-label', copyText('CONSOLE_ACTION_CLOSE', 'Close'));
+      close.setAttribute('aria-label', copyText('CONSOLE_ACTION_CLOSE', 'close'));
     }
 
     const reportingOff = document.querySelector('[data-diagnostic-reporting-off]');
     if (reportingOff) {
       reportingOff.textContent = copyText(
         'CONSOLE_REPORTING_OFF',
-        'I can show these messages, but sending reports is off.'
+        'sending reports is off.'
       );
     }
 
@@ -88,7 +88,7 @@
     if (empty) {
       empty.textContent = copyText(
         'CONSOLE_EMPTY',
-        "I haven't seen any system messages this session."
+        'no system messages this session.'
       );
     }
   }

@@ -256,17 +256,54 @@ window.whenShellReady(() => {
 		      return;
 	    } else if (status === 'offline') {
       text.style.color = '#ef4444';
+    } else if (status === 'stale') {
+      text.style.color = 'var(--warn-ink)';
     } else {
       text.style.color = '#9ca3af';
     }
-	    if (status === 'no_clients') {
-	      text.textContent = 'no devices are running the solstone app yet. set one up to start your journal.';
-	    } else if (status === 'active' || status === 'offline') {
-	      text.textContent = status === 'offline' ? 'a device hasn’t added to your journal recently' : 'devices are adding to your journal';
-	    } else {
-	      text.textContent = "i don't know the status of your devices right now.";
-	    }
-	  }
+    if (status === 'no_clients') {
+      text.textContent = 'no devices are running the solstone app yet. set one up to start your journal.';
+    } else if (status === 'offline' || status === 'stale') {
+      text.textContent = silentDeviceSentence(capture);
+    } else if (status === 'active') {
+      text.textContent = 'devices are adding to your journal';
+    } else {
+      text.textContent = 'device status is unavailable right now.';
+    }
+  }
+
+  // Name the device and how long it has been quiet. "a device" gave the owner
+  // nothing to act on, and the health glance now carries the same rollup.
+  function silentDeviceSentence(capture) {
+    const named = (capture && capture.clients ? capture.clients : [])
+      .filter(client => client.status === 'offline' || client.status === 'stale')
+      .map(client => ({
+        name: String(client.name || '').trim(),
+        ageMs: captureAgeMs(client.last_accepted_ingest_at)
+      }))
+      .filter(client => client.name)
+      .sort((a, b) => (b.ageMs === null ? -1 : b.ageMs) - (a.ageMs === null ? -1 : a.ageMs));
+    if (named.length === 0) {
+      return "a device hasn't added to your journal recently.";
+    }
+    if (named.length === 1) {
+      const only = named[0];
+      return only.ageMs === null
+        ? only.name + " hasn't added to your journal recently."
+        : only.name + " hasn't added to your journal in " + relativeTime(only.ageMs) + '.';
+    }
+    const parts = named.map(
+      client => client.name + (client.ageMs === null ? '' : ' (' + relativeTime(client.ageMs) + ')')
+    );
+    return named.length + " devices haven't added to your journal recently: " + parts.join(', ') + '.';
+  }
+
+  function captureAgeMs(timestamp) {
+    const parsed = timestamp ? Date.parse(timestamp) : NaN;
+    if (!Number.isFinite(parsed)) return null;
+    const age = Date.now() - parsed;
+    return age < 0 ? null : age;
+  }
 
   function renderVersionSection(version) {
     const section = document.getElementById('version-section');

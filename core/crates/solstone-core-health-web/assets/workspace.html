@@ -51,6 +51,54 @@
   line-height: 1.4;
 }
 
+/* The verdict carries the worst signal, so it carries that signal's colour. */
+.health-glance.glance-attention {
+  background: var(--warn-wash);
+}
+
+.health-glance.glance-attention .glance-sentence {
+  color: var(--warn-ink);
+}
+
+.glance-action,
+.backlog-verdict-day {
+  color: var(--orange-text-aa, #a15f17);
+  text-decoration: none;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.health-glance.glance-attention .glance-action {
+  color: var(--warn-ink);
+  text-decoration: underline;
+}
+
+.glance-action:hover,
+.backlog-verdict-day:hover {
+  text-decoration: underline;
+}
+
+/* Phone touch targets: the one action button, the empty-state link, and every
+   disclosure on this page were all well under 44px. */
+#vitalsCheckBtn {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.health-dashboard summary {
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 10px 0;
+  cursor: pointer;
+}
+
+.health-dashboard .surface-state-action > a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 4px;
+}
+
 .glance-metrics {
   display: flex;
   align-items: stretch;

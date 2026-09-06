@@ -13,12 +13,12 @@
     <header class="diagnostic-console-header">
       <h3 id="diagnostic-console-title">system messages</h3>
       <div class="diagnostic-console-actions">
-        <button type="button" data-diagnostic-action="clear">clear</button>
-        <button type="button" data-diagnostic-action="send-all">send all</button>
+        <button type="button" data-diagnostic-action="clear" disabled>clear</button>
+        <button type="button" data-diagnostic-action="send-all" disabled>send to support</button>
         <button type="button" data-diagnostic-action="close" aria-label="close">&times;</button>
       </div>
     </header>
-    <p data-diagnostic-reporting-off hidden>I can show these messages, but sending reports is off.</p>
+    <p data-diagnostic-reporting-off hidden>sending reports is off.</p>
     <div class="diagnostic-console-tabs" role="tablist">
       <button type="button" data-diagnostic-filter="all" aria-selected="true">all <span data-diagnostic-count="all">0</span></button>
       <button type="button" data-diagnostic-filter="error" aria-selected="false">errors <span data-diagnostic-count="error">0</span></button>
@@ -26,7 +26,7 @@
       <button type="button" data-diagnostic-filter="info" aria-selected="false">info <span data-diagnostic-count="info">0</span></button>
     </div>
     <div id="diagnostic-console-list"></div>
-    <p id="diagnostic-console-empty" hidden>I haven't seen any system messages this session.</p>
+    <p id="diagnostic-console-empty" hidden>no system messages this session.</p>
   </div>
 </aside>
 <div id="errorModal" class="modal"><div class="modal-content"><button class="close"></button><pre id="errorMessage"></pre></div></div>
@@ -34,18 +34,18 @@
 <script>
   window.CONVEY_COPY = {
     CONSOLE_HEADING: 'system messages',
-    CONSOLE_EMPTY: "I haven't seen any system messages this session.",
+    CONSOLE_EMPTY: 'no system messages this session.',
     CONSOLE_TAB_ALL: 'all',
     CONSOLE_TAB_ERRORS: 'errors',
     CONSOLE_TAB_WARNINGS: 'warnings',
     CONSOLE_TAB_INFO: 'info',
     CONSOLE_LINK_LABEL: 'system messages',
     CONSOLE_ACTION_SEND: 'send',
-    CONSOLE_ACTION_SEND_ALL: 'send all',
+    CONSOLE_ACTION_SEND_ALL: 'send to support',
     CONSOLE_ACTION_CLEAR: 'clear',
     CONSOLE_ACTION_SHOW_DETAILS: 'show details',
     CONSOLE_ACTION_CLOSE: 'close',
-    CONSOLE_REPORTING_OFF: 'I can show these messages, but sending reports is off.',
+    CONSOLE_REPORTING_OFF: 'sending reports is off.',
     CONSOLE_SNAPSHOT_HEADING: 'snapshot of {count} system messages',
     CONSOLE_REPORT_HEADING: 'Last {count} console entries:',
     CONSOLE_TRUNCATED: '[older entries truncated]',
@@ -61,6 +61,8 @@
   };
   window.reportCalls = [];
 </script>
+<script src="../shell_gate.js"></script>
+<script>window.resolveSolShellReady({});</script>
 <script src="../error-handler.js"></script>
 <script src="../diagnostic-console.js"></script>
 <script>
@@ -97,9 +99,28 @@
   }
 
   async function runTests() {
+    // the drawer binds and first renders behind whenShellReady; wait for it so
+    // the click handlers and the empty-state button gating are live.
+    await window.whenShellReady(() => {});
+    await tick();
     sessionStorage.removeItem(STORAGE_KEY);
     let diagnostic = window.convey.diagnosticConsole;
     diagnostic.clear();
+
+    const clearButton = document.querySelector('[data-diagnostic-action="clear"]');
+    const sendAllButton = document.querySelector('[data-diagnostic-action="send-all"]');
+    assert('clear is dead when nothing is held', clearButton.disabled === true);
+    assert('send is dead when nothing is held', sendAllButton.disabled === true);
+    assert('send names its destination', sendAllButton.textContent.trim() === 'send to support');
+    diagnostic.push({ severity: 'info', source: 'manual', summary: 'wakes the actions', detail: {} });
+    assert('clear is live once a message is held', clearButton.disabled === false);
+    assert('send is live once a message is held', sendAllButton.disabled === false);
+    diagnostic.clear();
+    assert('clear goes dead again after clearing', clearButton.disabled === true);
+    assert(
+      'empty copy speaks in no persona',
+      !/(^|\s)(I|I'm|i'm|my|My)(\s|'|$)/.test(document.getElementById('diagnostic-console-empty').textContent)
+    );
 
     const pushed = diagnostic.push({
       severity: 'error',
