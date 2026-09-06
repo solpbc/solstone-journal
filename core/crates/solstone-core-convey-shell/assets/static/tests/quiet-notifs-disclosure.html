@@ -13,7 +13,8 @@
 </head>
 <body>
   <div id="quiet-notifs-section" style="margin-top: 16px;">
-    <h3 style="margin-bottom: 8px;">quiet notifications</h3>
+    <h3 style="margin-bottom: 4px;">quiet notifications</h3>
+    <p style="margin: 0 0 8px; font-size: 13px;">errors from background services that were not shown as notifications.</p>
     <div id="quiet-notifs-list" style="display: flex; flex-direction: column; gap: 4px; font-size: 13px;"></div>
   </div>
   <div id="test-results">RUNNING quiet notifications disclosure</div>
@@ -64,13 +65,13 @@
       if (!section || !list) return;
 
       const notifs = window.AppServices?.quietNotifs?.getAll() || [];
-      section.style.display = notifs.length > 0 ? '' : 'none';
+      section.style.display = '';
 
       if (notifs.length === 0) {
         list.textContent = '';
         const empty = document.createElement('span');
-        empty.style.color = '#9ca3af';
-        empty.textContent = 'no quiet notifications';
+        empty.style.color = 'var(--ink-faint-paper)';
+        empty.textContent = 'no notifications held back';
         list.appendChild(empty);
         return;
       }
@@ -81,7 +82,7 @@
         const k = child.getAttribute('data-id');
         if (k) existingById.set(k, child);
       }
-      // drop stale rows AND any non-keyed node (e.g. a prior "no quiet notifications" span)
+      // drop stale rows AND any non-keyed node (e.g. a prior "no notifications held back" span)
       for (const child of Array.from(list.children)) {
         const k = child.getAttribute('data-id');
         if (!k || !newIds.has(k)) list.removeChild(child);
@@ -223,6 +224,17 @@
       const shortPanel = panelFor(shortBtn);
       shortBtn.click();
       assert('short row expands with same detail text', !shortPanel.hidden && shortPanel.textContent === shortMessage);
+
+      // The settings notifications row deep-links to #quiet-notifs-section, so the
+      // empty state has to be a real landing place, not a 0x0 element (G3-107).
+      const section = document.getElementById('quiet-notifs-section');
+      fakeNotifs.length = 0;
+      renderQuietNotifs();
+      assert('empty section stays visible', section.style.display !== 'none');
+      assert('empty section has a measurable box', section.getBoundingClientRect().height > 0);
+      assert('empty section keeps its heading', section.querySelector('h3').textContent === 'quiet notifications');
+      assert('empty section says what it holds', /errors from background services/.test(section.querySelector('p').textContent));
+      assert('empty state is honest', document.getElementById('quiet-notifs-list').textContent === 'no notifications held back');
 
       summary.textContent = failures ? `FAIL ${failures} failure(s)` : 'PASS quiet notifications disclosure';
       summary.className = failures ? 'fail' : 'pass';
