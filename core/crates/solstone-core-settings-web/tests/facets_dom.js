@@ -618,8 +618,8 @@ async function testCase(name, fn) {
       'the old "set it up" promise text is gone from the card'
     );
     assert.ok(
-      notifDesc.includes('notifications your journal held back'),
-      'the card now describes the log it actually lands on'
+      notifDesc.includes("errors from background services that weren't shown as notifications"),
+      'the card describes exactly what the health destination holds — service errors, not notification preferences'
     );
 
     const sectionDescs = guideSection.querySelectorAll('.settings-section-desc');
