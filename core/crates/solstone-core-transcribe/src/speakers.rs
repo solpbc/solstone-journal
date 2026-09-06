@@ -11,11 +11,7 @@ use std::io;
 use std::io::Read;
 #[cfg(unix)]
 use std::io::Write;
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-#[cfg(unix)]
-use std::process::{Command, Stdio};
 #[cfg(unix)]
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 #[cfg(unix)]
@@ -27,8 +23,11 @@ use std::time::{Duration, SystemTime};
 use serde_json::{Map, Value, json};
 use solstone_core_observe_audio::{AudioError, write_f32le_exclusive};
 #[cfg(unix)]
+use solstone_core_system::lifecycle::{RunId, hosted_child_launch_provenance};
+#[cfg(unix)]
 use solstone_core_system::process::{
-    BoxedTerminateFn, Disposition, LaunchAuthority, LaunchError, launch,
+    BoxedTerminateFn, CommandLaunchRequest, Disposition, LaunchAuthority, LaunchError,
+    launch_command, launch_command_hosted,
 };
 
 #[cfg(unix)]
@@ -374,21 +373,41 @@ pub(crate) fn invoke_speakers_analyze_helper(
     raw_path: &Path,
     budget: SpeakersAnalyzeBudget,
 ) -> Result<HelperInvocationResult, SpeakerAnalyzeError> {
-    let authority = launch(
-        Disposition::IndependentBoundedHelper {
-            timeout: budget.timeout,
-        },
-        || {
-            Command::new(binary)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .process_group(0)
-                .spawn()
-        },
-        speakers_terminate_fn(budget.terminate_grace),
-    )
-    .map_err(|error| SpeakerAnalyzeError::new(raw_path, "invoke", error.to_string(), None))?;
+    let launch_id = RunId::generate()
+        .map(|id| format!("speakers-{id}"))
+        .map_err(|_| {
+            SpeakerAnalyzeError::new(raw_path, "invoke", "launch-identity-unavailable", None)
+        })?;
+    let provenance =
+        hosted_child_launch_provenance(launch_id, Duration::from_secs(3).min(budget.timeout))
+            .map_err(|_| {
+                SpeakerAnalyzeError::new(raw_path, "invoke", "hosted-admission-invalid", None)
+            })?;
+    let command = CommandLaunchRequest {
+        program: binary.as_os_str().to_owned(),
+        arguments: Vec::new(),
+        environment: Default::default(),
+        current_dir: None,
+        process_group: true,
+        stdin_piped: true,
+        stdout_piped: true,
+        stderr_piped: true,
+    };
+    let disposition = Disposition::IndependentBoundedHelper {
+        timeout: budget.timeout,
+    };
+    let terminate = speakers_terminate_fn(budget.terminate_grace);
+    let authority = match provenance {
+        Some(provenance) => launch_command_hosted(disposition, command, provenance, terminate),
+        None => launch_command(disposition, command, terminate),
+    }
+    .map_err(|error| {
+        let reason = match error {
+            LaunchError::Admission(_) => "hosted-admission-refused".to_owned(),
+            other => other.to_string(),
+        };
+        SpeakerAnalyzeError::new(raw_path, "invoke", reason, None)
+    })?;
     invoke_child(authority, request, raw_path, budget)
 }
 

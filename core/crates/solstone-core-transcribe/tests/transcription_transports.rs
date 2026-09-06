@@ -671,6 +671,154 @@ fn write_speaker_helper(directory: &Path, body: &str) -> std::path::PathBuf {
     helper
 }
 
+#[test]
+fn hosted_speaker_process_fixture() {
+    use solstone_core_system::lifecycle::acknowledge_hosted_child_admission;
+
+    let Ok(role) = std::env::var("SOLSTONE_TEST_SPEAKER_ROLE") else {
+        return;
+    };
+    let journal = std::env::var_os("SOLSTONE_JOURNAL").unwrap();
+    if !matches!(role.as_str(), "unacknowledged" | "foreign") {
+        acknowledge_hosted_child_admission(Path::new(&journal)).unwrap();
+    }
+    if role == "helper" {
+        let mut request = String::new();
+        io::stdin().read_to_string(&mut request).unwrap();
+        assert_eq!(request, "speaker-request");
+        println!("speaker-response");
+        return;
+    }
+    let helper = std::env::var_os("SOLSTONE_TEST_SPEAKER_HELPER").unwrap();
+    let result = invoke_speakers_program(
+        Path::new(&helper),
+        b"speaker-request",
+        Path::new("input.wav"),
+        Duration::from_secs(2),
+        4096,
+        4096,
+        Duration::from_millis(20),
+        Duration::from_secs(1),
+    );
+    if matches!(role.as_str(), "sealed" | "unacknowledged" | "foreign") {
+        assert!(
+            matches!(result, SpeakerInvoke::Failed { .. }),
+            "inadmissible parent launched helper"
+        );
+    } else {
+        assert!(
+            matches!(result, SpeakerInvoke::Completed { returncode: 0, ref stdout, .. }
+                if stdout.contains("speaker-response")),
+            "helper did not finish with its own admission"
+        );
+    }
+}
+
+#[test]
+fn hosted_speaker_has_distinct_admission_and_cannot_launch_after_seal() {
+    use solstone_core_system::lifecycle::{
+        AdmissionAcknowledgement, AdmissionIdentity, AdmissionResult, AdmissionResultState,
+        HostedServiceKind, ParentLossLedger, acknowledge_parent_loss_admission,
+    };
+    use solstone_core_system::process::{
+        InspectResult, ProcessInstanceSource, SystemProcessInstanceSource,
+    };
+
+    for role in ["parent", "sealed", "unacknowledged", "foreign"] {
+        let temporary = tempfile::tempdir().unwrap();
+        let journal = temporary.path().join("journal");
+        fs::create_dir(&journal).unwrap();
+        let ledger = ParentLossLedger::open(&journal).unwrap();
+        let InspectResult::Present { instance, uid, .. } =
+            SystemProcessInstanceSource.inspect(std::process::id())
+        else {
+            panic!("fixture process identity unavailable");
+        };
+        let active = ledger
+            .reserve_generation(instance, [HostedServiceKind::Sense])
+            .unwrap();
+        ledger.initialize_record(&active).unwrap();
+        ledger
+            .persist_coordinator_identity(active.generation, instance)
+            .unwrap();
+        ledger.mark_admitting(active.generation, instance).unwrap();
+        if role == "sealed" {
+            ledger.seal(active.generation, instance).unwrap();
+        }
+        if role == "foreign" {
+            acknowledge_parent_loss_admission(
+                &journal,
+                AdmissionIdentity {
+                    generation: active.generation,
+                    launch_id: "transcribe-parent".to_owned(),
+                    instance,
+                    uid,
+                    parent_launch_id: None,
+                },
+            )
+            .unwrap();
+        }
+        let executable = std::env::current_exe().unwrap();
+        let helper = write_speaker_helper(
+            temporary.path(),
+            &format!(
+                "export SOLSTONE_TEST_SPEAKER_ROLE=helper\nexec {} --exact hosted_speaker_process_fixture --nocapture",
+                quote_path(&executable)
+            ),
+        );
+        let output = std::process::Command::new(&executable)
+            .args(["--exact", "hosted_speaker_process_fixture", "--nocapture"])
+            .env("SOLSTONE_TEST_SPEAKER_ROLE", role)
+            .env("SOLSTONE_TEST_SPEAKER_HELPER", helper)
+            .env("SOLSTONE_JOURNAL", &journal)
+            .env("SOL_PARENT_LOSS_GENERATION", active.generation.to_string())
+            .env("SOL_PARENT_LOSS_LAUNCH_ID", "transcribe-parent")
+            .env_remove("SOL_PARENT_LOSS_PARENT_LAUNCH_ID")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let admissions = ledger.generation_path(active.generation).join("admissions");
+        if role == "unacknowledged" {
+            assert!(!admissions.exists());
+            continue;
+        }
+        let children: Vec<_> = fs::read_dir(&admissions)
+            .unwrap()
+            .map(Result::unwrap)
+            .filter(|entry| entry.file_name() != "transcribe-parent")
+            .collect();
+        if role != "parent" {
+            assert!(children.is_empty());
+        } else {
+            let parent: AdmissionAcknowledgement = serde_json::from_slice(
+                &fs::read(admissions.join("transcribe-parent/acknowledgement.json")).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(children.len(), 1);
+            let child: AdmissionAcknowledgement = serde_json::from_slice(
+                &fs::read(children[0].path().join("acknowledgement.json")).unwrap(),
+            )
+            .unwrap();
+            let result: AdmissionResult =
+                serde_json::from_slice(&fs::read(children[0].path().join("result.json")).unwrap())
+                    .unwrap();
+            assert_eq!(
+                child.identity.parent_launch_id.as_deref(),
+                Some("transcribe-parent")
+            );
+            assert_ne!(child.identity.instance, parent.identity.instance);
+            assert_ne!(child.identity.launch_id, parent.identity.launch_id);
+            assert_eq!(result.identity.as_ref(), Some(&child.identity));
+            assert!(matches!(result.state, AdmissionResultState::Admitted));
+        }
+    }
+}
+
 fn invoke_timeout(program: &Path) -> SpeakerInvoke {
     #[cfg(target_os = "macos")]
     let timeout = Duration::from_millis(500);

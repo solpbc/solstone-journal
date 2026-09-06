@@ -12,6 +12,7 @@ use std::io::{self, Write};
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -19,7 +20,9 @@ use thiserror::Error;
 use super::HostedServiceKind;
 use super::parent_loss_ledger::{ParentLossGeneration, ParentLossLedger, ParentLossLedgerError};
 use crate::process::ProcessInstance;
-use crate::process::{InspectResult, ProcessInstanceSource, SystemProcessInstanceSource};
+use crate::process::{
+    HostedLaunchProvenance, InspectResult, ProcessInstanceSource, SystemProcessInstanceSource,
+};
 
 const SCHEMA: u32 = 1;
 #[cfg(unix)]
@@ -202,6 +205,52 @@ pub fn acknowledge_hosted_child_admission(journal: &Path) -> Result<(), ParentLo
         }
     };
     acknowledge_parent_loss_admission(journal, parse_hosted_admission_environment(instance, uid)?)
+}
+
+/// Derive a new descendant launch from this process's acknowledged admission.
+/// Environment inherited from a different process is not launch authority.
+/// The launch boundary still owns the generation seal check and child admission.
+pub fn hosted_child_launch_provenance(
+    launch_id: String,
+    acknowledgement_timeout: Duration,
+) -> Result<Option<HostedLaunchProvenance>, ParentLossAdmissionError> {
+    if [
+        HOSTED_GENERATION_ENV,
+        HOSTED_LAUNCH_ID_ENV,
+        HOSTED_PARENT_LAUNCH_ID_ENV,
+    ]
+    .iter()
+    .all(|name| std::env::var_os(name).is_none())
+    {
+        return Ok(None);
+    }
+    validate_launch_id(&launch_id)?;
+    let journal = std::env::var_os("SOLSTONE_JOURNAL")
+        .map(PathBuf::from)
+        .ok_or(ParentLossAdmissionError::MissingProvenance)?;
+    let InspectResult::Present { instance, uid, .. } =
+        SystemProcessInstanceSource.inspect(std::process::id())
+    else {
+        return Err(ParentLossAdmissionError::MissingProvenance);
+    };
+    let identity = parse_hosted_admission_environment(instance, uid)?;
+    let acknowledgement = read_parent_loss_admission_acknowledgement(
+        &journal,
+        identity.generation,
+        &identity.launch_id,
+    )?
+    .ok_or(ParentLossAdmissionError::MissingProvenance)?;
+    if acknowledgement.schema != SCHEMA || acknowledgement.identity != identity {
+        return Err(ParentLossAdmissionError::IdentityMismatch);
+    }
+    Ok(Some(HostedLaunchProvenance {
+        journal,
+        generation: identity.generation,
+        launch_id,
+        service: None,
+        parent_launch_id: Some(identity.launch_id),
+        acknowledgement_timeout,
+    }))
 }
 
 pub fn write_parent_loss_service_witness(

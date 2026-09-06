@@ -77,9 +77,9 @@ pub use parent_loss_admission::{
     AdmissionAcknowledgement, AdmissionIdentity, AdmissionIntent, AdmissionResult,
     AdmissionResultState, HOSTED_GENERATION_ENV, HOSTED_LAUNCH_ID_ENV, HOSTED_PARENT_LAUNCH_ID_ENV,
     ParentLossAdmissionError, ParentLossServiceWitnessDrop, acknowledge_hosted_child_admission,
-    acknowledge_parent_loss_admission, read_parent_loss_admission_acknowledgement,
-    write_parent_loss_admission_intent, write_parent_loss_admission_result,
-    write_parent_loss_service_witness,
+    acknowledge_parent_loss_admission, hosted_child_launch_provenance,
+    read_parent_loss_admission_acknowledgement, write_parent_loss_admission_intent,
+    write_parent_loss_admission_result, write_parent_loss_service_witness,
 };
 #[cfg(unix)]
 pub use parent_loss_coordinator::{
