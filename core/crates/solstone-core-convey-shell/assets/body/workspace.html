@@ -34,6 +34,12 @@
 }
 
 .body-link {
+  /* X-09: the visible text runs ~19px tall inline in a sentence; grow the
+     tap target to 44px with padding offset by an equal negative margin so
+     the inline text flow doesn't shift. */
+  display: inline-block;
+  padding: 13px 4px;
+  margin: -13px -4px;
   color: var(--orange-ink);
   font-weight: var(--weight-medium);
   text-decoration: none;
