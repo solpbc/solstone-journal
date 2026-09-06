@@ -543,7 +543,7 @@ mod tests {
 
     #[test]
     fn the_preview_is_capped_and_the_cap_is_above_the_floor() {
-        assert!(PREVIEW_CHARS > MIN_PREVIEW_CHARS);
+        const { assert!(PREVIEW_CHARS > MIN_PREVIEW_CHARS) };
         let long = "x".repeat(PREVIEW_CHARS + 40);
         let preview = preview_from_content(&long).expect("a long line previews");
         assert_eq!(preview.chars().count(), PREVIEW_CHARS + 1);
