@@ -338,12 +338,12 @@
     ],
     "corrupt": [
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/",
@@ -351,12 +351,12 @@
         "why": "the app index: the SPA shell, byte-identical"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/workspace",
@@ -364,12 +364,12 @@
         "why": "the app fragment bytes"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/background",
@@ -377,12 +377,12 @@
         "why": "the background fragment"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/static/backup.js",
@@ -390,12 +390,12 @@
         "why": "per-app static script"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/static/backup.css",
@@ -403,12 +403,12 @@
         "why": "per-app static stylesheet"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/status",
@@ -416,12 +416,12 @@
         "why": "🔴 the honesty probe: the full status view an owner's page renders from"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "GET",
         "path": "/app/backup/offload/status",
@@ -429,12 +429,12 @@
         "why": "media-offload status view"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "POST",
         "path": "/app/backup/retention",
@@ -442,12 +442,12 @@
         "why": "mutation with no body: the missing-body refusal"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "POST",
         "path": "/app/backup/retention",
@@ -458,12 +458,12 @@
         "why": "mutation with an uncoercible value: the invalid-value refusal"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "POST",
         "path": "/app/backup/confirm",
@@ -474,12 +474,12 @@
         "why": "recovery-key mismatch: the refusal an owner can actually trigger"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "POST",
         "path": "/app/backup/restore",
@@ -487,12 +487,12 @@
         "why": "restore with no body: refuses before reaching the restore engine"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "POST",
         "path": "/app/backup/restore",
@@ -503,12 +503,12 @@
         "why": "restore with a blank key: whitespace refuses before reaching the restore engine"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "POST",
         "path": "/app/backup/offload/config",
