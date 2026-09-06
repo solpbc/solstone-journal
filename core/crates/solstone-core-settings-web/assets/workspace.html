@@ -2107,10 +2107,10 @@ button:focus:not(:focus-visible) {
       <optgroup label="data">
         <option value="sync">sync</option>
         <option value="storage">storage</option>
+        <option value="facets">facets</option>
       </optgroup>
       <optgroup label="help">
         <option value="support">support</option>
-        <option value="facets">facets</option>
       </optgroup>
     </select>
   </div>
@@ -2139,11 +2139,11 @@ button:focus:not(:focus-visible) {
       <div class="settings-nav-label">data</div>
       <button class="settings-nav-item" data-section="sync" id="tab-sync" role="tab" aria-selected="false" aria-controls="section-sync" tabindex="-1">sync</button>
       <button class="settings-nav-item" data-section="storage" id="tab-storage" role="tab" aria-selected="false" aria-controls="section-storage" tabindex="-1">storage</button>
+      <button class="settings-nav-item" data-section="facets" id="tab-facets" role="tab" aria-selected="false" aria-controls="section-facets" tabindex="-1">facets</button>
     </div>
     <div class="settings-nav-group">
       <div class="settings-nav-label">help</div>
       <button class="settings-nav-item" data-section="support" id="tab-support" role="tab" aria-selected="false" aria-controls="section-support" tabindex="-1">support</button>
-      <button class="settings-nav-item" data-section="facets" id="tab-facets" role="tab" aria-selected="false" aria-controls="section-facets" tabindex="-1">facets</button>
     </div>
   </nav>
 
@@ -2181,14 +2181,14 @@ button:focus:not(:focus-visible) {
         <span class="sapp-open">open ›</span>
       </a>
 
-      <div class="sapp sapp-muted">
+      <a class="sapp" href="/app/health/#quiet-notifs-section">
         <span class="sapp-ic">◔</span>
         <span class="sapp-b">
           <span class="sapp-title">notifications</span>
           <span class="sapp-desc">how and when notifications reach you on any device</span>
         </span>
-        <span class="sapp-tag">built in</span>
-      </div>
+        <span class="sapp-open">open ›</span>
+      </a>
     </section>
 
     <!-- Profile Section -->
@@ -2300,7 +2300,7 @@ button:focus:not(:focus-visible) {
             <span>&#128065;</span>
           </button>
         </div>
-        <small>import audio from Plaud recorder. log into the web portal and extract token from browser console.</small>
+        <small>import audio from Plaud recorder. 1) log into the web portal. 2) open your browser's console. 3) copy the token shown there into the field above.</small>
       </div>
       </form>
     </section>
@@ -2309,7 +2309,7 @@ button:focus:not(:focus-visible) {
     <section class="settings-section" id="section-transcription" role="tabpanel" aria-labelledby="tab-transcription">
       <h2>transcription</h2>
       <p class="settings-section-desc">speech-to-text backend and processing settings.</p>
-      <div id="transcriptionLoadState" class="settings-load-state" aria-live="polite"></div>
+      <div id="transcriptionLoadState" class="settings-load-state" aria-live="polite">loading settings…</div>
 
       <form class="settings-form" onsubmit="return false;">
 
@@ -2345,7 +2345,7 @@ button:focus:not(:focus-visible) {
         <div class="settings-field">
           <label for="field-parakeet-device">device</label>
           <select id="field-parakeet-device">
-            <option value="auto" selected>Auto - detect best available runtime</option>
+            <option value="auto" selected>auto - detect best available runtime</option>
             <option value="cpu">CPU - force processor runtime</option>
             <option value="cuda">CUDA - force NVIDIA runtime</option>
           </select>
@@ -2365,7 +2365,7 @@ button:focus:not(:focus-visible) {
         <div class="settings-field">
           <label for="field-parakeet-cpp-device">device</label>
           <select id="field-parakeet-cpp-device">
-            <option value="auto" selected>Auto - use GPU if available, else CPU</option>
+            <option value="auto" selected>auto - use GPU if available, else CPU</option>
             <option value="cpu">CPU - force processor runtime</option>
           </select>
           <small>runtime preference for the parakeet.cpp server on this host</small>
@@ -2396,7 +2396,7 @@ button:focus:not(:focus-visible) {
     <section class="settings-section" id="section-observer" role="tabpanel" aria-labelledby="tab-observer">
       <h2>devices</h2>
       <p class="settings-section-desc">what the solstone app takes in from your screen and terminal, and how it reaches your journal.</p>
-      <div id="observerLoadState" class="settings-load-state" aria-live="polite"></div>
+      <div id="observerLoadState" class="settings-load-state" aria-live="polite">loading settings…</div>
 
       <form class="settings-form" onsubmit="return false;">
 
@@ -2432,6 +2432,7 @@ button:focus:not(:focus-visible) {
     <section class="settings-section" id="section-vision" role="tabpanel" aria-labelledby="tab-vision">
       <h2>vision</h2>
       <p class="settings-section-desc">settings for understanding what’s on your screen.</p>
+      <div id="visionLoadState" class="settings-load-state" aria-live="polite">loading settings…</div>
 
       <form class="settings-form" onsubmit="return false;">
 
@@ -2481,15 +2482,15 @@ button:focus:not(:focus-visible) {
     <!-- Sync Section -->
     <section class="settings-section" id="section-sync" role="tabpanel" aria-labelledby="tab-sync">
       <h2>sync</h2>
-      <p class="settings-section-desc">configure automatic syncing of observations from external devices.</p>
-      <div id="syncLoadState" class="settings-load-state" aria-live="polite"></div>
+      <p class="settings-section-desc">configure automatic syncing of material from external devices.</p>
+      <div id="syncLoadState" class="settings-load-state" aria-live="polite">loading settings…</div>
 
       <form class="settings-form" onsubmit="return false;">
 
       <div id="plaudSyncCard">
         <h3 class="settings-subsection-title">Plaud</h3>
         <p class="settings-subsection-desc">
-          automatically sync and import observations from your Plaud device every hour.
+          automatically sync and import material from your Plaud device every hour.
         </p>
 
         <div class="settings-field" id="plaudSyncField">
@@ -2499,7 +2500,7 @@ button:focus:not(:focus-visible) {
               <input type="checkbox" id="field-plaud-sync-enabled">
               <span class="slider"></span>
             </label>
-            <span style="color: #666; font-size: 0.9em;">sync and import Plaud observations every hour</span>
+            <span style="color: #666; font-size: 0.9em;">sync and import Plaud material every hour</span>
           </div>
         </div>
 
@@ -2661,7 +2662,6 @@ button:focus:not(:focus-visible) {
         <p class="text-muted">loading…</p>
       </div>
     </section>
-    <p style="font-size: 0.8rem; color: #aaa; margin-top: 1.5rem; text-align: center;">your journal stays on your device — nothing leaves unless you send it</p>
   </div>
 
   <section id="settings-facet-detail-view" class="facet-detail-page" hidden>
@@ -4726,9 +4726,16 @@ async function loadVision() {
     const response = await fetch('api/vision');
     visionData = await response.json();
     if (visionData.error) throw new Error(visionData.error);
+    setLoadState('visionLoadState');
     populateVision(visionData);
   } catch (err) {
     console.error('Error loading vision:', err);
+    setLoadState('visionLoadState', window.SurfaceState.error({
+      heading: "couldn't load vision settings",
+      desc: window.CONVEY_COPY.RELOAD_HINT,
+      serverMessage: err?.serverMessage,
+      detail: err,
+    }));
     setDrawerLine('visionCategoriesLine', '');
     document.getElementById('visionCategoryGroups').textContent = 'error loading categories';
   }
@@ -5498,9 +5505,9 @@ function populateStorage(data) {
   const s = data.summary;
   document.getElementById('storageSummaryRaw').textContent = s.raw_media_human;
   document.getElementById('storageSummaryDerived').textContent = s.derived_human;
-  document.getElementById('storageSummarySegments').textContent = s.total_segments;
+  document.getElementById('storageSummarySegments').textContent = Number(s.total_segments).toLocaleString();
   document.getElementById('storageSummaryDetail').textContent =
-    s.segments_with_raw + ' with raw media · ' + s.segments_purged + ' purged';
+    Number(s.segments_with_raw).toLocaleString() + ' with raw media · ' + Number(s.segments_purged).toLocaleString() + ' purged';
 
   const mode = data.retention.raw_media || 'keep';
   const days = data.retention.raw_media_days;

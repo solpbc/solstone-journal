@@ -563,6 +563,81 @@ async function testCase(name, fn) {
     assert.strictEqual(Boolean(workRow.querySelector('.facet-list-muted')), false);
   });
 
+  await testCase('G3-01 unconditional locality footer is removed', async () => {
+    const harness = createHarness();
+    assert.ok(
+      !harness.document.body.textContent.includes('nothing leaves unless you send it'),
+      'settings no longer renders the static custody claim — that belongs to backup/network, not settings'
+    );
+  });
+
+  await testCase('G3-19 notifications guide row opens health, facets moves out of help', async () => {
+    const harness = createHarness();
+    const notifRow = harness.document
+      .querySelectorAll('.sapp')
+      .find((row) => row.querySelector('.sapp-title')?.textContent === 'notifications');
+    assert.ok(notifRow, 'notifications guide row exists');
+    assert.strictEqual(notifRow.tagName, 'A', 'row is a link like its sibling guide rows');
+    assert.strictEqual(notifRow.getAttribute('href'), '/app/health/#quiet-notifs-section');
+    assert.ok(notifRow.querySelector('.sapp-open'), 'row carries the same "open ›" affordance as its siblings');
+    assert.strictEqual(
+      harness.document.querySelectorAll('.sapp-muted, .sapp-tag').length,
+      0,
+      'the dead "built in" tag/muted row is gone'
+    );
+
+    const facetsLabel = harness.document
+      .getElementById('tab-facets')
+      .closest('.settings-nav-group')
+      .querySelector('.settings-nav-label');
+    assert.strictEqual(facetsLabel.textContent, 'data', 'desktop nav files facets under data, not help');
+
+    const facetsOption = harness.document.querySelector('option[value="facets"]');
+    assert.strictEqual(
+      facetsOption.parentElement.getAttribute('label'),
+      'data',
+      'mobile nav select files facets under data, not help'
+    );
+  });
+
+  await testCase('G3-20 sync retires "observations", API-key hint is a step list', async () => {
+    const harness = createHarness();
+    const syncText = harness.document.getElementById('section-sync').textContent;
+    assert.ok(!syncText.includes('observations'), 'retired vocabulary must not survive in sync copy');
+    assert.ok(syncText.includes('material'), 'sync copy uses the replacement noun');
+
+    const apiKeyHint = harness.document
+      .getElementById('field-env-plaud')
+      .closest('.settings-field')
+      .querySelector('small');
+    assert.ok(
+      !apiKeyHint.textContent.includes('log into the web portal and extract token'),
+      'the run-on console instruction is gone'
+    );
+    assert.ok(/1\).*2\).*3\)/.test(apiKeyHint.textContent), 'the mechanics survive as a numbered step list');
+  });
+
+  await testCase('G3-21 transcription/observer/vision/sync show an explicit loading state', async () => {
+    const harness = createHarness();
+    for (const id of ['transcriptionLoadState', 'observerLoadState', 'visionLoadState', 'syncLoadState']) {
+      assert.strictEqual(
+        harness.document.getElementById(id).textContent,
+        'loading settings…',
+        id + ' must not be a blank pane while its read is in flight'
+      );
+    }
+    // Isolate the vision load-state wiring from the shared shell's Drawer
+    // helper (not loaded by this harness) by stubbing the renderer.
+    await run(harness, 'populateVision = () => {}');
+    harness.context.fetch = async () => response({ max_extractions: 20 });
+    await run(harness, 'loadVision()');
+    assert.strictEqual(
+      harness.document.getElementById('visionLoadState').textContent,
+      '',
+      'a resolved read clears the loading state'
+    );
+  });
+
   process.stdout.write('DOM CASES: ' + cases + ' passed\n', () => process.exit(0));
 })().catch((error) => {
   console.error(error.stack || error);
