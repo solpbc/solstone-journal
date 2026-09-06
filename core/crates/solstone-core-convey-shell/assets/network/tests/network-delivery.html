@@ -10,6 +10,7 @@
 <h1>network delivery classification</h1>
 <div id="results"></div>
 <script src="../../static/relative-time.js"></script>
+<script src="../../static/date_format.js"></script>
 <script src="../network.js"></script>
 <script>
   const results = document.getElementById('results');
@@ -119,6 +120,15 @@
     // check-in age lives in the disclosure
     equal('check-in age', R.checkInLabel(deliveringButStaleHeartbeat, NOW), '12 minutes ago');
     equal('never checked in', R.checkInLabel(neverDelivered, NOW), 'never');
+
+    // G3-216: the last journal segment reads as a time, and keeps its exact key
+    const segment = R.segmentDisplay({ day: '20260901', name: '235249_304' });
+    equal('segment keeps its exact key', segment.key, '20260901/235249_304');
+    assert('segment reads as a time, not a key', Boolean(segment.readable) && !segment.readable.includes('20260901'), segment.readable);
+    assert('segment time is the second the segment opened', segment.readable.includes('11:52') || segment.readable.includes('23:52'), segment.readable);
+    equal('no segment yields no display', R.segmentDisplay(null), null);
+    equal('an undecodable segment still surfaces its key', R.segmentDisplay({ day: 'nope', name: 'x' }).key, 'nope/x');
+    equal('an undecodable segment claims no readable time', R.segmentDisplay({ day: 'nope', name: 'x' }).readable, '');
 
     // paired date resolves to the local calendar day JournalFormat.day reads
     const pairedKey = R.dayKeyFor('2026-07-29T20:35:16Z');

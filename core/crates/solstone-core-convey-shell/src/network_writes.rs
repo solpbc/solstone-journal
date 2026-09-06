@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Native private-link and home-address write routes.
+//! Native private-link, home-address and device-forget write routes.
 //!
-//! These three POST routes have no local-owner check. That is intentional:
+//! These POST routes have no local-owner check. That is intentional:
 //! pairing is itself an owner act, so a paired device may rewrite the home
-//! address and enable or disable the private link. `pair-start` and
-//! `nonce-status` in `network.rs` do require a local owner, because those mint
-//! and inspect enrollment windows. Do not add a local-owner gate here.
+//! address, enable or disable the private link, and forget a device that never
+//! delivered anything. `pair-start` and `nonce-status` in `network.rs` do
+//! require a local owner, because those mint and inspect enrollment windows.
+//! Do not add a local-owner gate here.
 
 use std::net::Ipv4Addr;
 use std::sync::Arc;
@@ -15,13 +16,17 @@ use std::time::{Duration, Instant};
 
 use axum::Json;
 use axum::body::Bytes;
-use axum::extract::Extension;
+use axum::extract::{Extension, Path};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::{Map, Value, json};
 use solstone_core_handoff_nonce::mint_nonce;
 use solstone_core_journal_config::read_direct_door_port;
 use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
+use solstone_core_sol_link::ledger::{
+    AuthorizationLedger, AuthorizedClientsRead, ClientActivity, ClientEntry, DeviceActivityRead,
+    SourceRecord, read_authorized_clients, read_device_activity,
+};
 use solstone_core_sol_link::pairing::addresses::is_usable_ipv4;
 use solstone_core_sol_link::service_identity::{ServiceIdentity, load_or_create_service_identity};
 use solstone_core_spl::{EnrollError, disable_spl, enable_spl_with, enroll_home};
@@ -31,7 +36,7 @@ use solstone_core_thinking::confidential::{
 
 use crate::JournalRoot;
 use crate::assets;
-use crate::network::refusal;
+use crate::network::{refusal, unpair_mutation_refusal};
 use crate::network_status::private_link_body;
 use crate::pair_window_manager::{PairWindowManager, unix_seconds};
 
@@ -173,6 +178,11 @@ pub fn router(prefix: &str) -> axum::Router {
             &format!("{prefix}/private-link/disable"),
             axum::routing::post(private_link_disable),
         )
+        .route(
+            &format!("{prefix}/api/devices/{{fingerprint}}/forget"),
+            axum::routing::post(forget_device),
+        )
+        .layer(Extension(HostLabel(local_host_label())))
         .layer(Extension(runtime))
 }
 
@@ -568,4 +578,193 @@ fn object_at<'a>(parent: &'a mut Map<String, Value>, key: &str) -> &'a mut Map<S
         .get_mut(key)
         .and_then(Value::as_object_mut)
         .expect("object inserted")
+}
+
+// ── forget a never-delivered device ──────────────────────────────────────────
+//
+// A guarded removal for the pairing debris that collects in Network's
+// never-delivered group. It is deliberately narrower than the general
+// `DELETE /api/clients/{cid}` unpair: it refuses any device that has ever
+// delivered material, and it refuses the computer this journal runs on, so the
+// quick action on a collapsed row can never be the one that costs something.
+// `link/authorized_clients.json` is owned by `solstone-core-sol-link`
+// (CLAUDE.md § L2); this route calls that owner's `AuthorizationLedger` and
+// writes no journal state itself.
+
+/// The host label this journal runs under, resolved once at router build.
+/// Tests substitute one rather than mutating process environment.
+#[derive(Clone)]
+pub struct HostLabelOverride(pub String);
+
+#[derive(Clone)]
+struct HostLabel(String);
+
+fn local_host_label() -> String {
+    std::env::var("HOSTNAME")
+        .ok()
+        .or_else(|| std::env::var("COMPUTERNAME").ok())
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| std::fs::read_to_string("/etc/hostname").ok())
+        .unwrap_or_default()
+}
+
+/// The comparable form of a device or host name: the first dot-separated label,
+/// trimmed and lowercased. A paired client's label is built from the pairing
+/// machine's `HOSTNAME`/`COMPUTERNAME`, so this is the only signal that ties a
+/// ledger row back to the computer serving the journal.
+fn host_key(value: &str) -> String {
+    value
+        .trim()
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+}
+
+fn is_this_host(entry: &ClientEntry, host_label: &str) -> bool {
+    let host = host_key(host_label);
+    if host.is_empty() {
+        return false;
+    }
+    [entry.client_label.as_str(), entry.device_label.as_str()]
+        .iter()
+        .any(|label| !label.trim().is_empty() && host_key(label) == host)
+}
+
+fn has_ever_delivered(activity: Option<&ClientActivity>) -> bool {
+    let Some(activity) = activity else {
+        return false;
+    };
+    if activity.last_accepted_ingest_at.is_some() || activity.last_accepted_segment.is_some() {
+        return true;
+    }
+    activity.sources.values().any(|record| match record {
+        SourceRecord::Valid(source) => {
+            source.last_accepted_ingest_at.is_some() || source.last_accepted_segment.is_some()
+        }
+        // A source record we could not parse may be hiding a delivery, so it
+        // counts as one. Refusing to forget is the safe direction.
+        SourceRecord::Malformed(_) => true,
+    })
+}
+
+fn ledger_refusal(read: &AuthorizedClientsRead) -> Option<Response> {
+    let (reason_code, detail) = match read {
+        AuthorizedClientsRead::Unreadable => (
+            "authorization_ledger_unreadable",
+            "authorized-client ledger could not be read",
+        ),
+        AuthorizedClientsRead::Malformed => (
+            "authorization_ledger_malformed",
+            "authorized-client ledger is invalid",
+        ),
+        AuthorizedClientsRead::DuplicateCid => (
+            "authorization_ledger_duplicate_cid",
+            "authorized-client ledger contains a duplicate client identifier",
+        ),
+        _ => return None,
+    };
+    log::warn!("network forget could not read the authorization ledger: {reason_code}");
+    Some(refusal(
+        reason_code,
+        detail,
+        StatusCode::SERVICE_UNAVAILABLE,
+    ))
+}
+
+async fn forget_device(
+    Extension(journal): Extension<Arc<JournalRoot>>,
+    Extension(host_label): Extension<HostLabel>,
+    host_override: Option<Extension<HostLabelOverride>>,
+    Path(fingerprint): Path<String>,
+) -> Response {
+    let fingerprint = fingerprint.trim().to_owned();
+    if fingerprint.is_empty() {
+        return refusal(
+            "missing_required_field",
+            "a device fingerprint is required",
+            StatusCode::BAD_REQUEST,
+        );
+    }
+    let host_label = host_override
+        .map(|Extension(value)| value.0)
+        .unwrap_or(host_label.0);
+
+    let read = read_authorized_clients(&journal.0.join("link/authorized_clients.json"));
+    if let Some(response) = ledger_refusal(&read) {
+        return response;
+    }
+    let entries = match read {
+        AuthorizedClientsRead::Present(entries) => entries,
+        _ => Vec::new(),
+    };
+    let Some(entry) = entries
+        .iter()
+        .find(|entry| entry.fingerprint == fingerprint)
+        .cloned()
+    else {
+        return refusal(
+            "paired_device_not_found",
+            "paired device not found",
+            StatusCode::NOT_FOUND,
+        );
+    };
+
+    if is_this_host(&entry, &host_label) {
+        return refusal(
+            "device_is_this_host",
+            "this is the computer your journal runs on. it can't be forgotten from here.",
+            StatusCode::CONFLICT,
+        );
+    }
+
+    let activity = match read_device_activity(&journal.0.join("link/devices.json")) {
+        DeviceActivityRead::Present(activity) => Some(activity),
+        DeviceActivityRead::Missing => None,
+        // An unreadable activity file cannot rule delivery out, and this route
+        // exists only for devices that have delivered nothing.
+        DeviceActivityRead::Unreadable | DeviceActivityRead::Malformed => {
+            log::warn!("network forget could not read device activity metadata");
+            return refusal(
+                "device_activity_unavailable",
+                "the delivery record for this device couldn't be read, so it can't be forgotten right now.",
+                StatusCode::SERVICE_UNAVAILABLE,
+            );
+        }
+    };
+    if has_ever_delivered(activity.as_ref().and_then(|map| map.get(&fingerprint))) {
+        return refusal(
+            "device_has_delivered",
+            "this device has added material to your journal, so it can't be forgotten from here. unpair it from its device details instead.",
+            StatusCode::CONFLICT,
+        );
+    }
+
+    match AuthorizationLedger::new(&journal.0).remove(&fingerprint) {
+        Ok(outcome) if outcome.authorized_removed => Json(json!({"forgotten": {
+            "fingerprint": entry.fingerprint,
+            "display_label": entry.display_label(),
+        }}))
+        .into_response(),
+        Ok(_) => refusal(
+            "paired_device_not_found",
+            "paired device not found",
+            StatusCode::NOT_FOUND,
+        ),
+        Err(error) => unpair_mutation_refusal(error),
+    }
+}
+
+#[cfg(test)]
+mod host_key_tests {
+    use super::host_key;
+
+    #[test]
+    fn host_key_compares_the_first_dot_label_case_insensitively() {
+        assert_eq!(host_key(" SOL-WinBuild.local "), "sol-winbuild");
+        assert_eq!(host_key("suze"), "suze");
+        assert_eq!(host_key(""), "");
+        assert_eq!(host_key("."), "");
+    }
 }

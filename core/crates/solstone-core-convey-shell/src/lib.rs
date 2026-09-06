@@ -162,8 +162,8 @@ mod thinking_sol_reads_contract;
 mod thinking_sol_writes;
 #[cfg(feature = "host")]
 pub use network_writes::{
-    NetworkOperationsOverride, SplDisableFailureOverride, SplEnrollment, SplPoll, SplPollOutcome,
-    SplRuntimeOverride,
+    HostLabelOverride, NetworkOperationsOverride, SplDisableFailureOverride, SplEnrollment,
+    SplPoll, SplPollOutcome, SplRuntimeOverride,
 };
 #[cfg(feature = "host")]
 pub use thinking::{ConfidentialPoll, ConfidentialRuntimeOverride, PollOutcome};

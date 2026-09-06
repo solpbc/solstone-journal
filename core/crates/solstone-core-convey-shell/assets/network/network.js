@@ -426,6 +426,32 @@
     return elapsed === null ? 'never' : `${global.relativeTime(elapsed)} ago`;
   }
 
+  /// A journal segment key names a day and the second the segment opened. The
+  /// disclosure showed only the key (G3-216), which answers "when did this
+  /// device last add something?" in a form nobody can read; the readable time
+  /// leads and the exact key stays beside it.
+  function segmentDisplay(segment) {
+    if (!segment || typeof segment !== 'object') return null;
+    const day = String(segment.day || '');
+    const name = String(segment.name || '');
+    const key = day && name ? `${day}/${name}` : day || name;
+    if (!/^\d{8}$/.test(day)) return key ? { readable: '', key } : null;
+    const at = /^(\d{2})(\d{2})(\d{2})(?:_|$)/.exec(name);
+    if (!at || Number(at[1]) > 23 || Number(at[2]) > 59 || Number(at[3]) > 59) {
+      return { readable: '', key };
+    }
+    const moment = new Date(
+      Number(day.slice(0, 4)),
+      Number(day.slice(4, 6)) - 1,
+      Number(day.slice(6, 8)),
+      Number(at[1]),
+      Number(at[2]),
+      Number(at[3]),
+    );
+    if (Number.isNaN(moment.getTime())) return { readable: '', key };
+    return { readable: global.JournalFormat.timestamp(moment.getTime()), key };
+  }
+
   /// Local calendar day of an instant, as the YYYYMMDD key JournalFormat.day reads.
   function dayKeyFor(timestamp) {
     if (!timestamp) return '';
@@ -459,6 +485,7 @@
     deliveryChipLabel,
     connectionLineLabel,
     checkInLabel,
+    segmentDisplay,
     dayKeyFor,
     groupClientsByDelivery,
   };
