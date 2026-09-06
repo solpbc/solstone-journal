@@ -5654,7 +5654,7 @@ function renderEntityCards(searchTerm = '') {
   if (term) {
     countEl.textContent = `${matchCount} of ${totalCount} entities`;
     countEl.style.display = '';
-    noMatchEl.style.display = matchCount === 0 && totalCount > 0 ? '' : 'none';
+    noMatchEl.style.display = matchCount === 0 && totalCount > 0 ? 'block' : 'none';
   } else {
     countEl.style.display = 'none';
     noMatchEl.style.display = 'none';

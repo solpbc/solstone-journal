@@ -250,6 +250,11 @@ fn open_index_reader(journal: &Path) -> Result<QueryConnection, IndexAccessError
     }
     let connection = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|error| classify_sql_error(path.clone(), error))?;
+    // Match the store's openers: without a busy timeout a momentary indexer write
+    // fails every concurrent search instantly with SQLITE_BUSY.
+    connection
+        .execute_batch("PRAGMA busy_timeout=5000;")
+        .map_err(|error| classify_sql_error(path.clone(), error))?;
     let mut connection = QueryConnection::new(connection, path);
     connection.require_nonempty_chunks()?;
     Ok(connection)

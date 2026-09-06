@@ -48,6 +48,7 @@
   --orange:      #E8913A; /* THE sol orange. DECORATION ONLY (see contrast law) */
   --orange-ink:  #B06A1A; /* accessible orange — ALL orange text + links on light */
   --orange-wash: #FBEFDD; /* soft orange tint — pill / avatar / badge fills */
+  --orange-text-aa: #A15F17; /* orange for NORMAL-size text on white/cream (5.04 / 4.92 / 4.58:1) — the value every var(--orange-text-aa, #a15f17) fallback already names */
 
   /* ── surfaces (canon background set — no off-canon page colors) ───────── */
   --cream:        #FCF3E4; /* warm page bg (product-chrome / trust surfaces) */

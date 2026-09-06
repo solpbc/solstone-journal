@@ -447,16 +447,11 @@
     return formatElapsed(Math.floor(ms / 1000));
   }
 
+  // One relative-time ladder for the whole page: the shared helper in
+  // /static/relative-time.js (loaded by the shell), never a compact shadow.
   function relativeTime(ms) {
-    let seconds = Math.floor(ms / 1000);
-    if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
-    if (seconds < 60) return `${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h`;
-    const days = Math.floor(hours / 24);
-    return `${days}d`;
+    if (typeof window.relativeTime === 'function') return window.relativeTime(ms);
+    return formatElapsed(Math.floor(ms / 1000));
   }
 
 	  function truncate(str, len) {
