@@ -428,15 +428,21 @@ mod tests {
         // Capitalised single name, multi-word name, hyphenated, accented,
         // digit-bearing, and a lowercase name that is not alone in its field.
         for kept in [
-            "Ada", "Ada Lovelace", "jean-luc picard", "Élan", "studio 54", "de Havilland",
+            "Ada",
+            "Ada Lovelace",
+            "jean-luc picard",
+            "Élan",
+            "studio 54",
+            "de Havilland",
         ] {
             assert!(
                 !is_bare_word_name(json!({"name":kept}).as_object().unwrap()),
                 "{kept} is a real name and must stay on the shelf"
             );
         }
-        for dropped in ["make", "just", "think", "more", "own", "build", "whole", "company", "able"]
-        {
+        for dropped in [
+            "make", "just", "think", "more", "own", "build", "whole", "company", "able",
+        ] {
             assert!(
                 is_bare_word_name(json!({"name":dropped}).as_object().unwrap()),
                 "{dropped} is a bare word"
@@ -444,6 +450,8 @@ mod tests {
         }
         // A missing or blank name is somebody else's problem, not this rule's.
         assert!(!is_bare_word_name(json!({}).as_object().unwrap()));
-        assert!(!is_bare_word_name(json!({"name":"   "}).as_object().unwrap()));
+        assert!(!is_bare_word_name(
+            json!({"name":"   "}).as_object().unwrap()
+        ));
     }
 }

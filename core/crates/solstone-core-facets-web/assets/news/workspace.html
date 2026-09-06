@@ -126,7 +126,7 @@
 .news-populated-framing {
   margin: 0.25rem 0 1rem;
   font-size: 0.95rem;
-  color: #4b5563;
+  color: var(--ink-soft);
 }
 
 .news-index-list {
@@ -172,7 +172,7 @@
 }
 
 .news-index-day {
-  color: #4b5563;
+  color: var(--ink-soft);
   font-size: 0.95rem;
   white-space: nowrap;
 }
@@ -273,6 +273,69 @@
   }
 }
 .news-earlier>summary{min-height:46px;padding:14px 0;cursor:pointer;font-weight:600}.news-day-group h3{font-size:1.05rem}.news-index-link{gap:16px;flex-wrap:wrap}.news-index-link>span:last-child{font-size:.9rem}.news-earlier>summary:focus-visible{outline:2px solid #b06a1a;outline-offset:3px}
+/* phone: collapse each day's newsletters into one compact row. the day label
+   appears once, then each newsletter is a tappable chip, so the index shows
+   about a week per screen instead of one card per newsletter. presentation
+   only: the markup, the hrefs and the focus order stay the desktop ones. this
+   block sits last so it wins the equal-specificity `.news-day-group h3` rule
+   declared above. */
+@media (max-width: 480px) {
+  .news-day-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.65rem;
+    margin: 0 0 0.75rem;
+  }
+
+  .news-day-group h3 {
+    flex: 0 0 auto;
+    margin: 0;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--ink-soft);
+    white-space: nowrap;
+  }
+
+  .news-day-group .news-index-list {
+    flex: 1 1 auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0;
+    min-width: 0;
+  }
+
+  .news-day-group .news-index-list > li {
+    display: flex;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* the chip IS the existing link: same href, same tab stop, 44x44 floor. */
+  .news-day-group .news-index-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    min-height: 44px;
+    min-width: 44px;
+    max-width: 100%;
+    padding: 0 1rem;
+    border-radius: 999px;
+  }
+
+  /* the preview line and the "read newsletter" cue are desktop affordances;
+     on phone the chip carries the facet name alone. */
+  .news-day-group .news-index-link > span:not(.news-index-facet) {
+    display: none;
+  }
+
+  .news-day-group .news-index-facet {
+    min-width: 0;
+    font-size: 0.95rem;
+  }
+}
 </style>
 
 <div class="news-shell" id="newsApp">
@@ -336,8 +399,8 @@
 
   function renderLoading() {
     content.innerHTML = window.SurfaceState
-      ? window.SurfaceState.loading({text: 'loading newsletters...'})
-      : '<p>loading newsletters...</p>';
+      ? window.SurfaceState.loading({text: 'loading…'})
+      : '<p>loading…</p>';
   }
 
   function renderError(err, retry) {
