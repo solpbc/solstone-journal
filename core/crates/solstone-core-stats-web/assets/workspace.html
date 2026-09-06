@@ -573,6 +573,13 @@ h1 {
   border-color: transparent;
 }
 
+/* Names the population this tile counts, so it doesn't read as
+   contradicting the differently-scoped audio backlog above it (G2-41). */
+.repair-section-note {
+  color: var(--ink-soft, #5B5246);
+  margin: 0.25em 0 1em;
+}
+
 /* No default color override here (X-11): a repair tile's color is set
    per-render, neutral (--facet-color, matching the rest of the page) when
    the 30-day verdict is caught up, --danger only when it isn't. */
@@ -741,7 +748,9 @@ h1 {
   /* The button itself stays full-height (a real hit target, G2-10); the
      visible "bar" is a hard-stop gradient fill up to --bar-fill (set per
      button in JS), so the magnitude still reads the same as a resized box
-     did before. */
+     did before. Round 1 only fixed the height — width stayed a 12px sliver
+     on phone, well under a real tap target (X-09) — so the width floor
+     matches the same --touch-min every other control on this page uses. */
   background: linear-gradient(
     to top,
     var(--facet-color, #b06a1a) 0%,
@@ -752,10 +761,10 @@ h1 {
   border: 0;
   border-radius: 3px 3px 0 0;
   cursor: pointer;
-  flex: 1 1 12px;
+  flex: 1 1 var(--touch-min, 44px);
   height: 100%;
-  max-width: 2.25rem;
-  min-width: 12px;
+  max-width: 3rem;
+  min-width: var(--touch-min, 44px);
 }
 
 .token-rollup__bar:hover {
@@ -881,10 +890,6 @@ h1 {
 }
 
 @media (max-width: 480px) {
-  .token-rollup__bar {
-    min-width: 6px;
-  }
-
   .chart-header {
     flex-direction: column;
     align-items: flex-start;
