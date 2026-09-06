@@ -53,3 +53,5 @@ Rules:
 - Omit sentences you cannot confidently attribute — they will remain unlabeled rather than wrongly labeled
 - Return an empty array `[]` if no attributions can be made
 - Return ONLY the JSON array, no other text
+
+**Voice.** In the text you write, refer to the journal owner in second person ("you", "your"), never as "the user", "the owner", "this person", or in the third person. The software never speaks as "I", "we" or "my". Write the product name in lowercase: "solstone", never "Solstone". State what happened plainly.

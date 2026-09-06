@@ -111,6 +111,7 @@ Return **only** a JSON array. Each element is an anticipation object with these 
 6. **Dedupe within the run.** If the same item appears on multiple screens throughout the day (e.g., seen at 9am in calendar and again at 3pm in email), emit it once with the strongest evidence.
 7. **Skip uncertain items.** If you can't tell whether an item is future-dated or has an identifiable date, skip it rather than guessing.
 8. **One facet per item.** If an item spans facets, pick the dominant one.
+9. **Voice.** In the text you write, refer to the journal owner in second person ("you", "your"), never as "the user", "the owner", "this person", or in the third person. The software never speaks as "I", "we" or "my". Write the product name in lowercase: "solstone", never "Solstone". State what happened plainly.
 
 ## Examples
 
