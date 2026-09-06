@@ -406,7 +406,7 @@
     // day leads instead. X-03.
     const foldForLiveDay = dayHasMaterial(pulse)
       && Number(yesterday.failed_run_count || 0) === 0;
-    const collapsed = (yesterday.default_collapsed && !foldForLiveDay) ? 'true' : 'false';
+    const collapsed = (yesterday.default_collapsed || foldForLiveDay) ? 'true' : 'false';
     let html = '<section class="pulse-yesterday" id="pulse-yesterday" data-home-surface="yesterday" data-collapsed="' + collapsed + '">'
       + '<div class="pulse-yesterday-header" role="button" tabindex="0" aria-expanded="' + (collapsed === 'true' ? 'false' : 'true') + '">'
       + '<h2 class="pulse-section-header">' + esc(yesterday.title || "Yesterday's processing") + '</h2>'
