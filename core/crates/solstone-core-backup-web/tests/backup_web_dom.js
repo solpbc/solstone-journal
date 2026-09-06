@@ -458,6 +458,22 @@ testCase('operated restore copy stays on its governed keys', () => {
   ]) assert.ok(source.includes(JSON.stringify(literal)));
 });
 
+testCase('offload byte units are binary, matching settings’ unit family (g3-108)', () => {
+  // Settings renders the same raw-media total as GiB (binary). Before this fix,
+  // backup divided by a decimal gigabyte, so the two screens read up to ~7% apart
+  // on the one number that gates letting media leave the device. The DOM fixture
+  // here has no offload markup to render against, so this pins the constants and
+  // suffixes formatBytes reads from directly.
+  const source = fs.readFileSync(path.join(crateDir, 'assets', 'backup.js'), 'utf8');
+  assert.ok(source.includes('const BYTES_PER_GB = 1073741824;'), 'BYTES_PER_GB must be 2^30, not a decimal gigabyte');
+  assert.ok(source.includes('const BYTES_PER_MB = 1048576;'), 'BYTES_PER_MB must be 2^20, not a decimal megabyte');
+  assert.ok(source.includes('"gb_suffix": "GiB"'), 'the raw-media suffix must read GiB, matching settings');
+  assert.ok(source.includes('"mb_suffix": "MiB"'), 'the sub-GiB suffix must read MiB');
+  assert.ok(source.includes('"under_1mb": "under 1 MiB"'), 'the under-threshold copy must match the MiB suffix');
+  assert.ok(!source.includes('"gb_suffix": "GB"'), 'no leftover decimal GB suffix');
+  assert.ok(!source.includes('"mb_suffix": "MB"'), 'no leftover decimal MB suffix');
+});
+
 asyncCase('initial settings stay hidden until status is known', async () => {
   let release;
   const harness = createHarness({ respond(call) {
