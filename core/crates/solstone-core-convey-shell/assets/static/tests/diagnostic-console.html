@@ -228,6 +228,70 @@
     assert('a visible document reports a cancelled fetch again', diagnostic.list().length === 1
       && diagnostic.list()[0].summary === 'home: refreshVitals failed: Failed to fetch');
 
+    // X-01: leaving by a link cancels the in-flight reads before pagehide or a
+    // visibility change fires. The click itself has to arm the guard.
+    const navHost = document.createElement('div');
+    navHost.innerHTML = [
+      '<a id="nav-same-origin" href="/app/health/">health</a>',
+      '<a id="nav-hash" href="#registeredClientsCard">same page</a>',
+      '<a id="nav-new-tab" href="/app/network/" target="_blank">network</a>',
+      '<a id="nav-external" href="https://example.invalid/x">away</a>',
+      '<a id="nav-handled" href="/app/settings/">handled</a>',
+      '<form id="nav-form" action="/app/search/"><button type="submit">go</button></form>'
+    ].join('');
+    document.body.appendChild(navHost);
+    document.getElementById('nav-handled')
+      .addEventListener('click', (e) => e.preventDefault());
+    // Keep the harness on this page. The guard listens on document; this one
+    // listens on window, which is later in the same bubble path, so the guard
+    // still sees an un-prevented click.
+    const swallowNavigation = (e) => e.preventDefault();
+    window.addEventListener('click', swallowNavigation);
+    window.addEventListener('submit', swallowNavigation);
+
+    const clearUnloading = () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    const cancelledAfterClick = (id) => {
+      clearUnloading();
+      diagnostic.clear();
+      document.getElementById(id).click();
+      window.logError(new TypeError('Failed to fetch'), { context: 'home: refreshVitals failed' });
+      return diagnostic.list().length === 0;
+    };
+
+    assert('a same-origin link click drops the fetch it cancelled',
+      cancelledAfterClick('nav-same-origin'));
+    assert('a same-page hash link does not arm the guard',
+      !cancelledAfterClick('nav-hash'));
+    assert('a link opening a new tab does not arm the guard',
+      !cancelledAfterClick('nav-new-tab'));
+    assert('a cross-origin link does not arm the guard',
+      !cancelledAfterClick('nav-external'));
+    assert('a link whose handler cancels the navigation does not arm the guard',
+      !cancelledAfterClick('nav-handled'));
+
+    clearUnloading();
+    diagnostic.clear();
+    document.getElementById('nav-same-origin').click();
+    window.logError(new Error('real failure while leaving'), { context: 'home' });
+    assert('a link click still reports a real error', diagnostic.list().length === 1);
+
+    clearUnloading();
+    diagnostic.clear();
+    document.getElementById('nav-form').dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }));
+    window.logError(new TypeError('Failed to fetch'), { context: 'settings: loadStorage failed' });
+    assert('a form submit drops the fetch it cancelled', diagnostic.list().length === 0);
+
+    diagnostic.clear();
+    window.dispatchEvent(new Event('pageshow'));
+    window.logError(new TypeError('Failed to fetch'), { context: 'home: refreshVitals failed' });
+    assert('pageshow clears the guard', diagnostic.list().length === 1);
+    window.removeEventListener('click', swallowNavigation);
+    window.removeEventListener('submit', swallowNavigation);
+    navHost.remove();
+
     assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
   }
 

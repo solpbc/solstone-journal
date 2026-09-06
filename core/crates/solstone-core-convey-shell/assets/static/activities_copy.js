@@ -14,7 +14,7 @@
     provScreen: "appeared on screen",
     provOther: "noted in this activity",
     lessCertain: "less certain",
-    empty: "We didn't find anyone in this activity.",
-    unavailable: "We couldn't read this activity's people."
+    empty: "no one was found in this activity.",
+    unavailable: "this activity's people couldn't be read."
   };
 })();

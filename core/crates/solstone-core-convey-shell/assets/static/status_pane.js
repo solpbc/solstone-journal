@@ -11,10 +11,30 @@ window.whenShellReady(() => {
   let lastCaptureStatusForPane = null;
   let _lastHistoryLen = -1;
 
+  // G3-204: the status map's silent-device row is a fixed singular label, and
+  // health's banner counts the devices from the rollup. One screen was stating
+  // the same fact twice with two different numbers. Both now read the count
+  // from the one rollup this pane already fetches.
+  const SILENT_DEVICE_LABEL = "a device hasn't added recently";
+  let silentDeviceCount = 0;
+  function statusLabelText() {
+    const label = window.appEvents?.statusLabel || 'connecting';
+    if (label === SILENT_DEVICE_LABEL && silentDeviceCount > 1) {
+      return silentDeviceCount + " devices haven't added recently";
+    }
+    return label;
+  }
+
+  function countSilentDevices(capture) {
+    return (capture && Array.isArray(capture.clients) ? capture.clients : [])
+      .filter(client => client.status === 'offline' || client.status === 'stale')
+      .length;
+  }
+
   // Shared label updater — called from here and from websocket.js
   window.updateStatusLabel = function() {
     if (!statusIcon) return;
-    const label = window.appEvents?.statusLabel || 'connecting';
+    const label = statusLabelText();
     statusIcon.setAttribute('aria-label', label);
     statusIcon.setAttribute('title', label);
     const unread = window.AppServices?.quietNotifs?.unviewedCount?.() || 0;
@@ -49,6 +69,16 @@ window.whenShellReady(() => {
   document.addEventListener('health:initial-ready', () => {
     initialHealthReady = true;
     revealInitialDestination();
+    // G3-207: health's cards keep growing the page after that first scroll,
+    // which left the destination three quarters down the fold. One more pass
+    // once the page has settled, and only if the owner has not scrolled since,
+    // because a refresh must never pull the page out from under them.
+    const landedAt = window.scrollY;
+    setTimeout(() => {
+      if (window.scrollY !== landedAt) return;
+      initialDestinationPending = true;
+      revealInitialDestination();
+    }, 700);
   });
 
   document.addEventListener('workspace:mounted', () => {
@@ -58,6 +88,7 @@ window.whenShellReady(() => {
       host.appendChild(statusPane);
       statusPane.hidden = false;
       renderQuietNotifs();
+      syncNotificationBlocks();
       updateStatusPane();
       fetchSystemStatus();
       revealInitialDestination();
@@ -91,7 +122,7 @@ window.whenShellReady(() => {
       // connected" under an offline mark.
       const markLabel = window.appEvents?.statusLabel;
       if (markLabel) {
-        statusSentence.textContent = markLabel;
+        statusSentence.textContent = statusLabelText();
         statusSentence.style.color = '';
       } else if (metrics.state === 'connecting') {
         statusSentence.textContent = 'connecting…';
@@ -132,7 +163,11 @@ window.whenShellReady(() => {
 
     if (wsUptimeRaw) {
       if (metrics.connected) {
-        wsUptimeRaw.textContent = formatDuration(Math.floor(metrics.uptimeMs / 1000));
+        // G3-104: the ladder's floor said as a length of time. "24s" and
+        // "0 seconds ago" were the same defect on two lines of one disclosure.
+        wsUptimeRaw.textContent = metrics.uptimeMs < 60000
+          ? 'under a minute'
+          : relativeTime(metrics.uptimeMs);
       } else {
         wsUptimeRaw.textContent = '-';
       }
@@ -140,8 +175,9 @@ window.whenShellReady(() => {
 
     if (wsLastMessageRaw) {
       if (metrics.lastMessageMs !== null) {
-        const seconds = Math.floor(metrics.lastMessageMs / 1000);
-        wsLastMessageRaw.textContent = `${relativeTime(seconds * 1000)} ago`;
+        wsLastMessageRaw.textContent = metrics.lastMessageMs < 60000
+          ? 'just now'
+          : `${relativeTime(metrics.lastMessageMs)} ago`;
       } else if (metrics.connected) {
         wsLastMessageRaw.textContent = 'no messages yet';
       } else {
@@ -150,6 +186,7 @@ window.whenShellReady(() => {
     }
 
     renderQuietNotifs();
+    syncNotificationBlocks();
     const quietSection = document.getElementById('quiet-notifs-section');
     const quietBounds = quietSection?.getBoundingClientRect();
     if (document.visibilityState !== 'hidden' && quietBounds?.height > 0
@@ -169,6 +206,8 @@ window.whenShellReady(() => {
       .then(data => {
         if (data) {
           lastCaptureStatusForPane = data.capture?.status ?? 'unknown';
+          silentDeviceCount = countSilentDevices(data.capture);
+          window.updateStatusLabel?.();
           window.appEvents?.setCaptureStatus?.(data.capture?.status ?? 'unknown');
           if (statusPaneOpen) {
             renderCaptureSection(data.capture);
@@ -176,6 +215,7 @@ window.whenShellReady(() => {
           }
         } else {
           lastCaptureStatusForPane = 'unknown';
+          silentDeviceCount = 0;
           window.appEvents?.setCaptureStatus?.('unknown');
         }
       });
@@ -436,6 +476,42 @@ window.whenShellReady(() => {
     });
   }
 
+  // G3-206: two kickers, two explanatory lines and two empty states for one
+  // subject said nothing, twice, at the foot of the trust page. When neither
+  // list holds anything the block is one kicker and one line; the split returns
+  // the moment either has content. The bell moves with the kicker so the one
+  // control here is never lost.
+  function syncNotificationBlocks() {
+    const quietLabel = document.getElementById('quiet-notifs-label');
+    const quietHeading = document.getElementById('quiet-notifs-heading');
+    const quietExplainer = document.getElementById('quiet-notifs-explainer');
+    const quietList = document.getElementById('quiet-notifs-list');
+    const recentHeading = document.getElementById('recent-notifs-heading');
+    const history = document.getElementById('notification-history');
+    if (!quietLabel || !quietHeading || !quietList || !recentHeading || !history) return;
+
+    const quietCount = window.AppServices?.quietNotifs?.getAll?.()?.length || 0;
+    const recentCount = window.AppServices?.notifications?.getHistory?.()?.length || 0;
+    const bothEmpty = quietCount === 0 && recentCount === 0;
+
+    quietLabel.textContent = bothEmpty ? 'notifications' : 'quiet notifications';
+    if (quietExplainer) quietExplainer.hidden = bothEmpty;
+    recentHeading.hidden = bothEmpty;
+    history.hidden = bothEmpty;
+
+    const bell = document.getElementById('notif-bell');
+    const bellHome = bothEmpty ? quietHeading : recentHeading;
+    if (bell && bell.parentElement !== bellHome) bellHome.appendChild(bell);
+
+    if (bothEmpty) {
+      quietList.textContent = '';
+      const line = document.createElement('span');
+      line.style.color = 'var(--ink-faint-paper)';
+      line.textContent = 'nothing held back, nothing new';
+      quietList.appendChild(line);
+    }
+  }
+
   function updateNotificationHistory() {
     const container = document.getElementById('notification-history');
     if (!container || !window.AppServices?.notifications) return;
@@ -469,16 +545,6 @@ window.whenShellReady(() => {
         </div>`;
       }
     }).join('');
-  }
-
-  function formatDuration(seconds) {
-    if (seconds < 60) return `${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    if (minutes < 60) return `${minutes}m ${secs}s`;
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${hours}h ${mins}m`;
   }
 
   function updateBellState() {

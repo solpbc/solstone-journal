@@ -65,16 +65,57 @@
   // was mid-read when the owner navigated would otherwise leave an error in
   // system messages that never happened to them.
   let unloading = false;
+  let navigationGuard = null;
   function markUnloading() {
     unloading = true;
   }
   // pagehide only: a beforeunload listener costs the back/forward cache.
   window.addEventListener('pagehide', markUnloading);
-  window.addEventListener('pageshow', (e) => {
-    // restored from the back/forward cache: this document is live again
-    if (e.persisted) {
-      unloading = false;
+  window.addEventListener('pageshow', () => {
+    // a fresh load, or a document restored from the back/forward cache: either
+    // way this document is live and its reads are its own again
+    unloading = false;
+    clearTimeout(navigationGuard);
+  });
+
+  // X-01: a same-tab link click cancels this page's in-flight GETs before
+  // pagehide or any visibility change fires, so the guards above never covered
+  // the most common way off a dashboard — and the owner read a phantom
+  // "refreshVitals failed" on the page they had just asked for. A plain
+  // same-origin anchor click, and a form submit, start the same navigation.
+  function startsNavigation(event) {
+    if (event.defaultPrevented) return false;
+    if (typeof event.button === 'number' && event.button !== 0) return false;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
+    const anchor = event.target && event.target.closest ? event.target.closest('a[href]') : null;
+    if (!anchor || anchor.hasAttribute('download')) return false;
+    const target = (anchor.getAttribute('target') || '').trim().toLowerCase();
+    if (target && target !== '_self') return false;
+    let url;
+    try {
+      url = new URL(anchor.getAttribute('href'), document.baseURI);
+    } catch (_) {
+      return false;
     }
+    // mailto:, javascript: and another origin all report a null/foreign origin
+    if (url.origin !== window.location.origin) return false;
+    // a hash on the document we are already on unloads nothing
+    const here = window.location.href.split('#')[0];
+    return url.href.split('#')[0] !== here;
+  }
+
+  // The flag must not latch: if a handler downstream of this one takes the
+  // navigation over, or the browser declines it, this document is still live.
+  function markUnloadingForNavigation() {
+    markUnloading();
+    clearTimeout(navigationGuard);
+    navigationGuard = setTimeout(() => { unloading = false; }, 2000);
+  }
+  document.addEventListener('click', (e) => {
+    if (startsNavigation(e)) markUnloadingForNavigation();
+  });
+  document.addEventListener('submit', (e) => {
+    if (!e.defaultPrevented) markUnloadingForNavigation();
   });
   // B22: pagehide fires on paths that never reach a bfcache restore, and the
   // flag would otherwise latch true for the life of the document and drop
