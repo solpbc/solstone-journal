@@ -539,7 +539,7 @@
   function connectionEvidenceHtml(neighbor, name) {
     const label = typeof neighbor.latest_label === 'string' ? neighbor.latest_label.trim() : '';
     if (!label || label.toLowerCase() === String(name || '').trim().toLowerCase()) return '';
-    return '<span class="pulse-connections-evidence">heard as “' + esc(label) + '”</span>';
+    return '<span class="pulse-connections-evidence">transcribed as “' + esc(label) + '”</span>';
   }
 
   function connectionRowHtml(neighbor, connections, referenceDay) {
