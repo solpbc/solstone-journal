@@ -312,7 +312,7 @@
       source,
       day ? window.JournalFormat.day(day) : '',
       formatCount(importedJson.entries_written, strings.entry, strings.entries),
-      formatCount(importedJson.entities_seeded, strings.entity, strings.entities),
+      formatCount(importedJson.entities_seeded || null, strings.entity, strings.entities),
       formatCount(importedJson.total_files_created, strings.file, strings.files)
     ].filter(hasValue);
     const encodedDay = day ? encodeURIComponent(day) : '';
@@ -345,7 +345,7 @@
       kvRow(strings.target_day, importedJson.target_day),
       kvRow(strings.date_range, formatDateRange(importedJson.date_range)),
       kvRow(strings.entries, formatCount(importedJson.entries_written, strings.entry, strings.entries)),
-      kvRow(strings.entities, formatCount(importedJson.entities_seeded, strings.entity, strings.entities)),
+      kvRow(strings.entities, formatCount(importedJson.entities_seeded || null, strings.entity, strings.entities)),
       kvRow(strings.files, formatCount(importedJson.total_files_created, strings.file, strings.files)),
       kvRow(strings.completed_at, formatDateTime(importedJson.processing_completed)),
       kvRow(strings.failed_at, formatDateTime(importedJson.processing_failed)),

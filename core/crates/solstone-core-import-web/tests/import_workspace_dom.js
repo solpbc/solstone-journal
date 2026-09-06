@@ -180,10 +180,77 @@ async function runConfirmSubmit() {
   cases += 1;
 }
 
+function runHistoryHeaderSummary() {
+  const context = vm.createContext({ console });
+  vm.runInContext([
+    "let cachedSources = [];",
+    "let currentSourceFilter = '';",
+    "const window = { AppServices: { escapeHtml: (value) => String(value) } };",
+    "const escapeHtml = (value) => window.AppServices.escapeHtml(value);",
+  ].join('\n'), context);
+  vm.runInContext(functionSource(workspace, 'buildHistoryHeader'), context);
+
+  const html = vm.runInContext('buildHistoryHeader(417, 4951)', context);
+  assert.ok(
+    html.includes('417 imports, 4,951 entries.'),
+    'G3-114: summary reads as one plain sentence with thousands separators'
+  );
+  assert.ok(
+    !html.includes('entities found') && !html.includes('imports total'),
+    'G3-114: the always-zero entity count and the comma-run wording are gone'
+  );
+
+  const singularHtml = vm.runInContext('buildHistoryHeader(1, 1)', context);
+  assert.ok(singularHtml.includes('1 import, 1 entry.'), 'singular counts use singular nouns');
+  cases += 1;
+}
+
+function runImportRowColumns() {
+  const context = vm.createContext({ console });
+  vm.runInContext([
+    "const window = {",
+    "  AppServices: { escapeHtml: (value) => String(value) },",
+    "  JournalFormat: { timestamp: () => '2026-07-22, 7:30 PM', day: (value) => value },",
+    "};",
+    "const escapeHtml = (value) => window.AppServices.escapeHtml(value);",
+    "const sourceIconSvgByName = {};",
+    "const sourceMetadataByName = {};",
+  ].join('\n'), context);
+  vm.runInContext(functionSource(workspace, 'renderSourceDisplay'), context);
+  vm.runInContext(functionSource(workspace, 'formatImportStats'), context);
+  vm.runInContext(functionSource(workspace, 'renderImportRow'), context);
+
+  const duplicateRow = {
+    timestamp: 't1', status: 'success', imported_at: 1700000000, target_day: null,
+    original_filename: 'note.opus', source_display: 'note.opus',
+    total_files_created: 60, entries_written: 60, entities_seeded: 0,
+  };
+  const duplicateHtml = vm.runInContext(`renderImportRow(${JSON.stringify(duplicateRow)})`, context);
+  assert.ok(
+    /<td class="source-cell">-<\/td>/.test(duplicateHtml),
+    'G3-113: source collapses to a dash when it only repeats the file column, instead of doubling the filename'
+  );
+
+  const distinctRow = {
+    timestamp: 't2', status: 'success', imported_at: 1700000000, target_day: null,
+    original_filename: 'note.opus', source_type: 'plaud', source_display: 'Plaud recorder',
+    total_files_created: 60, entries_written: 60, entities_seeded: 0,
+  };
+  const distinctHtml = vm.runInContext(`renderImportRow(${JSON.stringify(distinctRow)})`, context);
+  assert.ok(distinctHtml.includes('Plaud recorder'), 'source cell keeps text that genuinely differs from the file column');
+  assert.ok(!/class="file-size/.test(distinctHtml), 'G3-113: the always-empty size column is gone');
+  assert.ok(!/class="duration-cell/.test(distinctHtml), 'G3-113: the always-empty duration column is gone');
+  assert.ok(!/class="files-cell/.test(distinctHtml), 'G3-113: files-created is dropped; stats carries the count instead');
+  assert.ok(distinctHtml.includes('60 entries'), 'stats cell still reports the entry count');
+  cases += 1;
+}
+
 Promise.resolve()
   .then(runQuickSubmit)
   .then(runGuidedSubmit)
   .then(runConfirmSubmit)
+  .then(runHistoryHeaderSummary)
+  .then(runImportRowColumns)
   .then(() => console.log(`DOM CASES: ${cases} passed`))
   .catch((error) => {
     console.error(error.stack || error);
