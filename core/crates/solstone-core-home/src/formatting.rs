@@ -247,11 +247,18 @@ pub fn format_heatmap_summary(stats: &Value) -> Option<String> {
     ))
 }
 
+/// Compose the "what didn't finish" links for yesterday's processing.
+///
+/// `overnight_passed` says whether the local day has actually reached the far
+/// side of the overnight window. The overnight review and the morning briefing
+/// are produced inside it, so before it has passed neither can be reported as
+/// unfinished — the work has not been given its chance yet.
 pub fn format_gap_links(
     pipeline: &Value,
     briefing_valid: bool,
     yesterday: &str,
     today: &str,
+    overnight_passed: bool,
 ) -> Vec<Value> {
     let anomalies = pipeline
         .get("anomalies")
@@ -269,8 +276,8 @@ pub fn format_gap_links(
         .filter(|row| row.get("kind").and_then(Value::as_str) == Some("talent_failure"))
         .collect::<Vec<_>>();
     let mut links = Vec::new();
-    if has_daily {
-        links.push(json!({"text":"I didn't finish the full overnight review.","href":format!("/app/thinking/#runs/{yesterday}")}));
+    if has_daily && overnight_passed {
+        links.push(json!({"text":"the overnight review didn't finish.","href":format!("/app/thinking/#runs/{yesterday}")}));
     }
     if has_activity {
         links.push(json!({"text":"I didn't finish writing all of yesterday's notes.","href":format!("/app/thinking/#runs/{yesterday}")}));
@@ -350,8 +357,8 @@ pub fn format_gap_links(
     if !failures.is_empty() && !has_daily && !has_activity && !has_named_failures {
         links.push(json!({"text":"Some of my overnight work didn't finish.","href":format!("/app/thinking/#runs/{yesterday}")}));
     }
-    if !briefing_valid {
-        links.push(json!({"text":"I didn't prepare your morning briefing overnight.","href":format!("/app/thinking/#runs/{today}/morning_briefing")}));
+    if !briefing_valid && overnight_passed {
+        links.push(json!({"text":"your morning briefing wasn't prepared overnight.","href":format!("/app/thinking/#runs/{today}/morning_briefing")}));
     }
     links
 }
@@ -448,6 +455,7 @@ mod tests {
             true,
             "20260813",
             "20260814",
+            true,
         );
         assert_eq!(links.last().unwrap()["text"], "…and 1 more didn't finish.");
 
@@ -459,6 +467,7 @@ mod tests {
             true,
             "20260813",
             "20260814",
+            true,
         );
         assert_eq!(links[0]["text"], "2 daily summary runs didn't finish.");
         assert_eq!(
@@ -474,6 +483,7 @@ mod tests {
             true,
             "20260813",
             "20260814",
+            true,
         );
         assert_eq!(
             links[0]["href"],
@@ -490,6 +500,7 @@ mod tests {
             true,
             "20260813",
             "20260814",
+            true,
         );
         assert_eq!(
             links[0]["text"],
@@ -511,6 +522,7 @@ mod tests {
             true,
             "20260813",
             "20260814",
+            true,
         );
         assert_eq!(links[0]["text"], "2 document runs didn't finish.");
         assert_eq!(links[0]["href"], "/app/thinking/#runs/20260813/documents");
