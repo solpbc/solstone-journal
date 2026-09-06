@@ -579,6 +579,42 @@ async fn matched_entry_read_keeps_large_source_bounded_and_checks_reference() {
     assert_eq!(response.status(), StatusCode::OK);
     let content = response_json(response).await;
     assert!(content["content"].as_str().unwrap().contains("needle"));
+    let read_query = query.replace("/api/entry?", "/api/read?");
+    let read_response = request(&fixture.root, &read_query).await;
+    assert_eq!(read_response.status(), StatusCode::OK);
+    assert_eq!(response_json(read_response).await, content);
+    for invalid in [
+        format!("/app/search/api/read?path={path}&idx={}", hit["idx"]),
+        format!(
+            "/app/search/api/read?path={path}&entry_id={}",
+            hit["entry_id"]
+        ),
+        format!(
+            "/app/search/api/read?idx={}&entry_id={}",
+            hit["idx"], hit["entry_id"]
+        ),
+        format!("{read_query}&agent=pulse"),
+        format!("{read_query}&day=20260731"),
+        format!("{read_query}&segment=120000_300"),
+        format!("{read_query}&max_bytes=0"),
+        format!("/app/search/api/read?path={path}&idx=-1&entry_id=1"),
+        format!("/app/search/api/read?path={path}&idx=0&entry_id=0"),
+    ] {
+        assert_eq!(
+            request(&fixture.root, &invalid).await.status(),
+            StatusCode::BAD_REQUEST,
+            "{invalid}"
+        );
+    }
+    assert_eq!(
+        request(
+            &fixture.root,
+            &read_query.replace("entry_id=", "entry_id=999")
+        )
+        .await
+        .status(),
+        StatusCode::NOT_FOUND
+    );
     assert_eq!(
         request(&fixture.root, &format!("/app/search/api/read?path={path}"))
             .await

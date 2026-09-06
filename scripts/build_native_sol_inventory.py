@@ -78,7 +78,7 @@ FINAL_HTTP_GROUP_COUNTS = {
 }
 
 # The frozen grammar records the pre-migration spellings.  These are the only
-# two surviving commands whose native authority intentionally differs from it.
+# commands whose native authority intentionally differs from it.
 # Keep this table path-keyed and deliberately narrow: it documents migration
 # policy rather than introducing a general per-authority override mechanism.
 ORACLE_GRAMMAR_TRANSFORMS: dict[tuple[str, ...], dict[str, Any]] = {
@@ -92,9 +92,46 @@ ORACLE_GRAMMAR_TRANSFORMS: dict[tuple[str, ...], dict[str, Any]] = {
         "help": "List original media ready for removal.",
         "drop_params": set(),
     },
+    ("journal", "read"): {
+        "path": ("journal", "read"),
+        "help": "Read full content of an agent output.",
+        "drop_params": set(),
+        "add_params": [
+            {
+                "name": "idx",
+                "default": None,
+                "flag_value": None,
+                "kind": "option",
+                "type": "integer",
+                "required": False,
+                "nargs": 1,
+                "multiple": False,
+                "options": ["--idx"],
+                "secondary": [],
+                "hidden": False,
+                "is_flag": False,
+                "count": False,
+            },
+            {
+                "name": "entry_id",
+                "default": None,
+                "flag_value": None,
+                "kind": "option",
+                "type": "integer",
+                "required": False,
+                "nargs": 1,
+                "multiple": False,
+                "options": ["--entry-id"],
+                "secondary": [],
+                "hidden": False,
+                "is_flag": False,
+                "count": False,
+            },
+        ],
+    },
     ("journal", "search"): {
         "path": ("journal", "search"),
-        "help": "Search the journal index.\n\nUse 2-4 content terms instead of natural-language questions; question words\nlike what/how/did/when add noise in this keyword/BM25 index. Syntax: OR for\nany term, quoted phrases for exact text, and * for prefix matches. Zero\nresults means zero: broaden by dropping terms, using OR, then adding *.\nCounts help drill down with --facet, --agent, --day, and --time-bucket.\nResult ids are path:idx; read a hit with `solstone call journal read --path\n<path>` after stripping the :idx suffix.",
+        "help": "Search the journal index.\n\nUse 2-4 content terms instead of natural-language questions; question words\nlike what/how/did/when add noise in this keyword/BM25 index. Syntax: OR for\nany term, quoted phrases for exact text, and * for prefix matches. Zero\nresults means zero: broaden by dropping terms, using OR, then adding *.\nCounts help drill down with --facet, --agent, --day, and --time-bucket.\nRead one result as last indexed with `solstone call journal read --path PATH --idx IDX --entry-id ENTRY_ID`. Copy all three fields from the same result; do not use its display id as a file path.",
         "drop_params": set(),
     },
 }
@@ -497,6 +534,7 @@ def transformed_oracle_entries(
                 for param in entry.get("params", [])
                 if param.get("name") not in transform["drop_params"]
             ]
+            entry["params"].extend(copy.deepcopy(transform.get("add_params", [])))
             path = tuple(transform["path"])
         if path in output:
             errors.append(f"transformed oracle has duplicate path {list(path)!r}")

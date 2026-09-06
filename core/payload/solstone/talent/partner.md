@@ -39,9 +39,13 @@ aggregate omitted count per source rather than enumerating every result.
 5. `solstone call journal search "" --day-from $lookback_start_YYYYMMDD --day-to $day_YYYYMMDD --stream archon -n 2`: up to two journal passages per day, 14 for the window. Treat a passage as owner-authored only when the source explicitly attributes it to the owner.
 6. `solstone call entities overview --day-from $lookback_start_YYYYMMDD --day-to $day_YYYYMMDD --limit 25`: recorded connections for the window
 
-When a search result will support a profile entry, read its full content with
-`solstone call journal read --path PATH` using the exact path returned by search, removing only its trailing `:idx` suffix.
-Do not reconstruct paths from dates or agent names.
+When a search result will support a profile entry, read that indexed entry with
+`solstone call journal read --path PATH --idx IDX --entry-id ENTRY_ID`. Copy the
+`path`, `idx`, and `entry_id` fields from the same search result. The response is
+the entry as last indexed, bounded to 16,384 bytes; it is not the whole source file.
+Do not use the display `id` as a path or reconstruct paths from dates or agent names.
+If a reference is no longer indexed, search again once. If that read also fails,
+record the gap and continue with the other evidence; do not repeat the failed read.
 Read no more than 12 full results across all searches. Add any omitted candidate sources
 to the gap list as an aggregate count for each source.
 

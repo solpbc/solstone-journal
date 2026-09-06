@@ -231,6 +231,8 @@ async fn entry_api(journal_root: PathBuf, Query(query): Query<EntryQuery>) -> Re
 #[derive(Default, Deserialize)]
 struct ReadQuery {
     path: Option<String>,
+    idx: Option<i64>,
+    entry_id: Option<i64>,
     agent: Option<String>,
     day: Option<String>,
     segment: Option<String>,
@@ -240,6 +242,26 @@ struct ReadQuery {
 async fn read_api(journal_root: PathBuf, Query(query): Query<ReadQuery>) -> Response {
     if query.max_bytes.unwrap_or(MAX_BYTES) != MAX_BYTES {
         return invalid_value("max_bytes must be 16384 for HTTP reads");
+    }
+    if query.idx.is_some() || query.entry_id.is_some() {
+        if query.agent.is_some() || query.day.is_some() || query.segment.is_some() {
+            return invalid_path("an indexed entry cannot be combined with agent, day, or segment");
+        }
+        let (Some(path), Some(idx), Some(entry_id)) = (query.path, query.idx, query.entry_id)
+        else {
+            return invalid_value(
+                "an indexed entry requires path, idx, and entry_id from the same search result",
+            );
+        };
+        return entry_api(
+            journal_root,
+            Query(EntryQuery {
+                path,
+                idx,
+                entry_id,
+            }),
+        )
+        .await;
     }
     let rel = if let Some(path) = query.path {
         if query.agent.is_some() || query.day.is_some() || query.segment.is_some() {

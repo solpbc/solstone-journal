@@ -232,7 +232,16 @@ pub fn news(ctx: CommandContext<'_>) -> CommandOutput {
 pub fn read(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse(
         ctx.args,
-        &["--day", "-d", "--segment", "-s", "--max", "--path"],
+        &[
+            "--day",
+            "-d",
+            "--segment",
+            "-s",
+            "--max",
+            "--path",
+            "--idx",
+            "--entry-id",
+        ],
         &[],
     ) {
         Ok(value) => value,
@@ -247,6 +256,8 @@ pub fn read(ctx: CommandContext<'_>) -> CommandOutput {
             ("-s", "segment"),
             ("--max", "max_bytes"),
             ("--path", "path"),
+            ("--idx", "idx"),
+            ("--entry-id", "entry_id"),
         ],
     );
     if let Some(agent) = parsed.positionals.first() {
@@ -583,6 +594,64 @@ mod tests {
             link_serve: None,
             link_status_probe: None,
         })
+    }
+
+    fn run_entry(args: &[&str], transport: &ScriptedHttpTransport) -> CommandOutput {
+        let (_, handler) = crate::aggregate::handler_for(&["journal", "read"])
+            .expect("journal read is a registered native command");
+        handler(CommandContext {
+            args: &args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>(),
+            env: &BTreeMap::new(),
+            stdin: "",
+            today: "20260906",
+            transport,
+            clock: None,
+            files: None,
+            build_identity: None,
+            client_item_ids: None,
+            notification_sink: None,
+            link_pairing: None,
+            link_serve: None,
+            link_status_probe: None,
+        })
+    }
+
+    #[test]
+    fn entry_routes_exact_search_reference_to_bounded_index_reader() {
+        let transport = ScriptedHttpTransport::new(vec![ExpectedHttpCall::Request {
+            expected: ApiRequest {
+                method: HttpMethod::Get,
+                path: "/app/search/api/read".to_owned(),
+                params: vec![
+                    QueryParam::single("path", "20260905/talents/pulse.jsonl"),
+                    QueryParam::single("idx", "99"),
+                    QueryParam::single("entry_id", "15744048"),
+                ],
+                json: None,
+                headers: vec![],
+                policy: TimeoutPolicy::Api,
+            },
+            result: Ok(HttpResponse {
+                status: 200,
+                headers: vec![],
+                body: br#"{"content":"one indexed entry"}"#.to_vec(),
+                policy: TimeoutPolicy::Api,
+            }),
+        }]);
+        let output = run_entry(
+            &[
+                "--path",
+                "20260905/talents/pulse.jsonl",
+                "--idx",
+                "99",
+                "--entry-id",
+                "15744048",
+            ],
+            &transport,
+        );
+        assert_eq!(output.exit, 0, "{}", output.stderr);
+        assert!(output.stdout.contains("one indexed entry"));
+        transport.assert_done();
     }
 
     #[test]

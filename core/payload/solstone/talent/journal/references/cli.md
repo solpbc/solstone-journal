@@ -39,7 +39,7 @@ Behavior notes:
 - Use `*` for prefix matching: `migrat*`.
 - Zero results means zero. These CLI and agent surfaces do not auto-broaden; broaden by dropping terms, changing to `term1 OR term2`, then adding `*`.
 - Use counts with `--facet`, `--agent`, `--day`, and `--time-bucket` to drill down.
-- Result ids are `path:idx`; read the underlying file with `solstone call journal read --path <path>` after stripping the `:idx`.
+- Read one result as last indexed with `solstone call journal read --path PATH --idx IDX --entry-id ENTRY_ID`, copying all three fields from that result. The display `id` is not a file path.
 - Use either `--day` or date range flags; do not combine exact day with range filters.
 
 Examples:
@@ -213,6 +213,20 @@ solstone call journal agents -s 091500_300
 
 ## read
 
+For a search result:
+
+```bash
+solstone call journal read --path PATH --idx IDX --entry-id ENTRY_ID
+```
+
+Read one search result as last indexed, up to 16,384 bytes. Copy `path`, `idx`,
+and `entry_id` from the same result. The index checks all three before returning
+content. This reads the indexed entry, not the whole source file. A result may
+be one chunk of a longer document. If the entry is no longer indexed, search
+again to obtain a current reference. An entry over the limit is refused.
+
+For a whole file or talent output:
+
 ```bash
 solstone call journal read [AGENT] [-d DAY] [-s SEGMENT] [--path PATH] [--max BYTES]
 ```
@@ -222,8 +236,8 @@ Read full content of an agent output or a journal-relative file path.
 - `AGENT`: agent name, e.g. `briefing`, `activity`, `screen` (positional argument).
 - `-d, --day`: day in `YYYYMMDD` (default: `SOL_DAY` env).
 - `-s, --segment`: optional segment key (default: `SOL_SEGMENT` env).
-- `--path`: journal-relative file path, such as a search result path after stripping the `:idx` suffix.
-- `--max`: max output bytes (default `16384`, `0` for unlimited).
+- `--path`: journal-relative file path. For a search result, also pass `--idx` and `--entry-id` as shown above.
+- `--max`: output limit, fixed at `16384` bytes. Other values are refused.
 
 Without `--segment`, reads from the daily agents directory. With `--segment`, reads from that segment's agents directory. With `--path`, pass only the path and do not combine it with `AGENT`, `--day`, or `--segment`.
 
