@@ -171,7 +171,7 @@
   }
 
   function renderUsage(data) {
-    heading.textContent = window.JournalFormat.day(data.day);
+    heading.textContent = dayLabel(data.day);
     summary.textContent = `${requestCount(data.total.requests)} · ${number(data.total.tokens)} tokens`;
     tableData.providers = data.by_provider || [];
     tableData.models = data.by_model || [];
