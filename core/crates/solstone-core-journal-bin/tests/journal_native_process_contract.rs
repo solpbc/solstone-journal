@@ -1518,16 +1518,6 @@ fn native_maintenance_bodies_reach_real_native_owners_without_python() {
             0,
             "prune-logs: disabled",
         ),
-        (
-            ["run", "timeline:rollup-day", "--day", "20260301"].as_slice(),
-            66,
-            "no verified segment timeline.json found",
-        ),
-        (
-            ["run", "timeline:rollup-master"].as_slice(),
-            66,
-            "no day-level timeline.json",
-        ),
     ] {
         let output = run_dispatcher_with_bounded_output(
             &context,

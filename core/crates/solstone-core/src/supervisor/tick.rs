@@ -28,8 +28,7 @@ use solstone_core_system::provider_runtime::{
     RuntimeStore, RuntimeStoreError, cancel_start, store_error_phase,
 };
 use solstone_core_system::request::{
-    BusTaskRequest, DailyCatchupProvenance, ExecutionRequest, ScheduledArgv, ScheduledRequest,
-    TaskArgv,
+    BusTaskRequest, DailyCatchupProvenance, ExecutionRequest, TaskArgv,
 };
 use solstone_core_system::schedule::{ScheduleNow, ScheduleStatus};
 use solstone_core_system::status_wire::{
@@ -971,7 +970,6 @@ fn handle_message(state: &mut SupervisorState, message: CallosumEnvelope) {
     handle_supervisor_drain(state, &message);
     handle_segment_observed(state, &message);
     handle_activity_recorded(state, &message);
-    handle_daily_timeline_rollup(state, &message);
     handle_think_daily_complete(state, &message);
     handle_segment_event_log(&state.journal, &message);
     handle_cortex_outcome(state, &message);
@@ -1149,81 +1147,6 @@ fn handle_activity_recorded(state: &mut SupervisorState, message: &CallosumEnvel
         Some(day),
         None,
     );
-}
-
-fn daily_timeline_rollup_request(
-    journal: &Path,
-    day: &str,
-) -> Result<Option<ScheduledRequest>, String> {
-    if processing_is_deferred(journal) || no_thinking_engine_chosen(journal) {
-        return Ok(None);
-    }
-    if day.len() != 8
-        || !day.bytes().all(|byte| byte.is_ascii_digit())
-        || chrono::NaiveDate::parse_from_str(day, "%Y%m%d").is_err()
-    {
-        return Err("daily completion has an invalid day".to_owned());
-    }
-    let (entry, diagnostics) = solstone_core_system::schedule::read_enabled_schedule_entry(
-        &journal.join("config/schedules.json"),
-        "maintenance:timeline:rollup",
-    )
-    .map_err(|error| error.to_string())?;
-    for diagnostic in diagnostics {
-        log::warn!("supervisor: {}", diagnostic.message);
-    }
-    let Some(entry) = entry else {
-        return Ok(None);
-    };
-    // Custom commands retain their configured trigger and argument semantics.
-    if entry.every != "daily"
-        || entry.cmd
-            != [
-                "journal",
-                "maintenance",
-                "run",
-                "timeline:rollup",
-                "--commit",
-            ]
-    {
-        return Ok(None);
-    }
-    let mut command = entry.cmd;
-    command.extend(["--day".to_owned(), day.to_owned()]);
-    Ok(Some(ScheduledRequest {
-        cmd: ScheduledArgv::from_wire(command).expect("validated Timeline schedule argv"),
-        max_runtime: entry.max_runtime,
-        reference: format!("supervisor-timeline-rollup-{day}"),
-        day: Some(day.to_owned()),
-        scheduler_name: None,
-    }))
-}
-
-fn handle_daily_timeline_rollup(state: &SupervisorState, message: &CallosumEnvelope) {
-    if message.tract != "think"
-        || message.event != "daily_complete"
-        || state.scheduler.is_none()
-        || state.is_remote_mode
-    {
-        return;
-    }
-    let Some(day) = message_string(message, "day") else {
-        return;
-    };
-    let request = match daily_timeline_rollup_request(&state.journal, day) {
-        Ok(Some(request)) => request,
-        Ok(None) => return,
-        Err(error) => {
-            log::warn!("supervisor: could not queue completed-day timeline: {error}");
-            return;
-        }
-    };
-    // Use the existing bounded queue and native day→master publisher. The day
-    // has settled, even when the earlier clock-triggered attempt ran too soon.
-    // A master failure must not undo daily completion or suppress heartbeat.
-    if state.queue.submit(ExecutionRequest::Scheduled(request)) == SubmitOutcome::Rejected {
-        log::warn!("supervisor: completed-day timeline task was rejected for {day}");
-    }
 }
 
 fn handle_think_daily_complete(state: &mut SupervisorState, message: &CallosumEnvelope) {
@@ -1584,96 +1507,6 @@ mod tests {
     }
 
     static NEXT_PATH: AtomicUsize = AtomicUsize::new(0);
-
-    #[test]
-    fn daily_timeline_followup_respects_current_schedule_configuration() {
-        let journal = tempfile::tempdir().unwrap();
-        let config = journal.path().join("config/schedules.json");
-        fs::create_dir_all(config.parent().unwrap()).unwrap();
-        let journal_config = journal.path().join("config/journal.json");
-        let active = json!({"providers":{"active":{"provider":"local"}}});
-        fs::write(&journal_config, serde_json::to_vec(&active).unwrap()).unwrap();
-        let standard = json!([
-            "journal",
-            "maintenance",
-            "run",
-            "timeline:rollup",
-            "--commit"
-        ]);
-        assert!(
-            daily_timeline_rollup_request(journal.path(), "20260102")
-                .unwrap()
-                .is_none()
-        );
-        for (enabled, cadence, command, expected) in [
-            (true, "daily", standard.clone(), true),
-            (false, "daily", standard.clone(), false),
-            (true, "weekly", standard.clone(), false),
-            (true, "hourly", standard.clone(), false),
-            (
-                true,
-                "daily",
-                json!([
-                    "journal",
-                    "maintenance",
-                    "run",
-                    "timeline:rollup",
-                    "--commit",
-                    "--force"
-                ]),
-                false,
-            ),
-            (true, "daily", standard, true),
-        ] {
-            let bytes = serde_json::to_vec(&json!({"maintenance:timeline:rollup": {
-                "cmd": command, "every": cadence, "enabled": enabled, "max_runtime": "95m"
-            }}))
-            .unwrap();
-            fs::write(&config, &bytes).unwrap();
-            let actual = daily_timeline_rollup_request(journal.path(), "20260102").unwrap();
-            assert_eq!(actual.is_some(), expected);
-            if let Some(actual) = actual {
-                let argv = actual.cmd.as_wire();
-                assert_eq!(&argv[argv.len() - 2..], ["--day", "20260102"]);
-                assert!(actual.scheduler_name.is_none());
-                assert_eq!(actual.max_runtime, Some(Duration::from_secs(5700)));
-            }
-            assert_eq!(
-                fs::read(&config).unwrap(),
-                bytes,
-                "followup changed operator configuration"
-            );
-        }
-        for invalid in [
-            "",
-            "../20260102",
-            "20260230",
-            "2026012",
-            "abcdefgh",
-            "+0260102",
-            "2026 1 2",
-        ] {
-            assert!(daily_timeline_rollup_request(journal.path(), invalid).is_err());
-        }
-        for settings in [
-            json!({"providers":{"active":{"provider":"local"}},"processing":{"mode":"deferred"}}),
-            json!({}),
-        ] {
-            fs::write(&journal_config, serde_json::to_vec(&settings).unwrap()).unwrap();
-            assert!(
-                daily_timeline_rollup_request(journal.path(), "20260102")
-                    .unwrap()
-                    .is_none()
-            );
-        }
-        fs::write(&journal_config, serde_json::to_vec(&active).unwrap()).unwrap();
-        fs::write(&config, b"{broken").unwrap();
-        assert!(
-            daily_timeline_rollup_request(journal.path(), "20260102")
-                .unwrap()
-                .is_none()
-        );
-    }
 
     struct Bed {
         root: PathBuf,

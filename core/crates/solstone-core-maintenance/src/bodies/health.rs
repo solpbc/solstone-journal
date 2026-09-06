@@ -75,7 +75,7 @@ fn mark_raw(journal: &Path, services: &HealthServices<'_>) -> CliRun {
     }
 
     // Python uses no-argument `datetime.astimezone()` here: this is host-local,
-    // not the configured owner timezone used by timeline rollups.
+    // deliberately not the owner-configured timezone (`identity.timezone`).
     let today = host_local_date(services.now, services.host_timezone);
     let before = match load(journal) {
         Ok(register) => register,
@@ -572,8 +572,8 @@ mod tests {
 
     #[test]
     fn mark_raw_uses_host_date_even_when_owner_timezone_is_configured() {
-        // Timeline rollups use `identity.timezone`; this health routine matches
-        // Python's no-argument `astimezone()` and must deliberately ignore it.
+        // This health routine matches Python's no-argument `astimezone()`,
+        // which deliberately ignores the owner-configured `identity.timezone`.
         let journal = tempfile::tempdir().unwrap();
         write_config(
             journal.path(),

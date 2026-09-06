@@ -6,15 +6,12 @@ use std::path::Path;
 use solstone_core_backup_runtime::BackupServices;
 
 use crate::schedule_sync::{render_list, render_summary, schedules_path, sync};
-use crate::{CliRun, HealthServices, MaintenanceServices, TimelineServices};
+use crate::{CliRun, HealthServices, MaintenanceServices};
 
 pub const USAGE: &str = "usage: journal maintenance <command> [options]\n";
 const LIST_USAGE: &str = "usage: journal maintenance list\n";
 const SYNC_USAGE: &str = "usage: journal maintenance sync\n";
 const RUN_USAGE: &str = "usage: journal maintenance run ID [ARGS...]\n";
-const CONVERT_STATE_USAGE: &str =
-    "usage: journal maintenance convert-timeline-state [--commit] [--allow-regeneration SUBJECT]\n";
-const MIGRATE_USAGE: &str = "usage: journal maintenance migrate-timeline [--commit] [--limit N]\n";
 
 pub(crate) fn run(
     args: &[String],
@@ -22,7 +19,6 @@ pub(crate) fn run(
     services: &MaintenanceServices<'_>,
     backup_services: Option<&BackupServices<'_>>,
     health_services: Option<&HealthServices<'_>>,
-    timeline_services: Option<&TimelineServices<'_>>,
 ) -> CliRun {
     let args = normalize_global_flags(args);
     if has_help(&args) {
@@ -34,19 +30,7 @@ pub(crate) fn run(
     match command.as_str() {
         "list" if no_positionals(rest) => list(journal, services),
         "sync" if no_positionals(rest) => sync_schedules(journal, services),
-        "run" => run_routine(
-            rest,
-            journal,
-            services,
-            backup_services,
-            health_services,
-            timeline_services,
-        ),
-        // Plan by default: it reports what a legacy-artifact migration would do and writes
-        // nothing. `--commit` is required to write, because the failure mode of this command
-        // is the loss of the owner's historical journal prose.
-        "migrate-timeline" => migrate_timeline(rest, journal),
-        "convert-timeline-state" => convert_timeline_state(rest, journal),
+        "run" => run_routine(rest, journal, services, backup_services, health_services),
         _ => usage_error(USAGE, &args.join(" ")),
     }
 }
@@ -88,99 +72,7 @@ fn usage_for_scope(args: &[String]) -> &'static str {
         Some("list") => LIST_USAGE,
         Some("sync") => SYNC_USAGE,
         Some("run") => RUN_USAGE,
-        Some("migrate-timeline") => MIGRATE_USAGE,
-        Some("convert-timeline-state") => CONVERT_STATE_USAGE,
         _ => USAGE,
-    }
-}
-
-fn convert_timeline_state(args: &[String], journal: &Path) -> CliRun {
-    let mut commit = false;
-    let mut release = None;
-    let mut rest = args.iter();
-    while let Some(argument) = rest.next() {
-        match argument.as_str() {
-            "--commit" => commit = true,
-            "--allow-regeneration" => {
-                let Some(subject) = rest.next() else {
-                    return usage_error(
-                        CONVERT_STATE_USAGE,
-                        "--allow-regeneration needs a subject",
-                    );
-                };
-                release = Some(subject);
-            }
-            other => return usage_error(CONVERT_STATE_USAGE, other),
-        }
-    }
-    let result = if let Some(subject) = release {
-        if !commit {
-            return usage_error(
-                CONVERT_STATE_USAGE,
-                "--allow-regeneration requires --commit",
-            );
-        }
-        solstone_core_timeline::release_timeline_refusal(journal, subject)
-            .map(|()| format!("regeneration allowed for {subject}\n"))
-    } else {
-        solstone_core_timeline::convert_timeline_state(journal, commit)
-            .and_then(|report| serde_json::to_string_pretty(&report).map_err(Into::into))
-    };
-    match result {
-        Ok(stdout) => success(stdout),
-        Err(error) => CliRun {
-            stdout: String::new(),
-            stderr: format!("{error}\n"),
-            exit_code: 1,
-        },
-    }
-}
-
-fn migrate_timeline(args: &[String], journal: &Path) -> CliRun {
-    let mut commit = false;
-    let mut limit = None;
-    let mut rest = args.iter();
-    while let Some(argument) = rest.next() {
-        match argument.as_str() {
-            "--commit" => commit = true,
-            "--limit" => {
-                let Some(value) = rest.next().and_then(|value| value.parse::<u64>().ok()) else {
-                    return usage_error(MIGRATE_USAGE, "--limit needs a positive count");
-                };
-                if value == 0 {
-                    return usage_error(MIGRATE_USAGE, "--limit needs a positive count");
-                }
-                limit = Some(value);
-            }
-            other => return usage_error(MIGRATE_USAGE, other),
-        }
-    }
-    if commit {
-        return match crate::bodies::migrate::commit(journal, limit) {
-            Ok(outcome) => CliRun {
-                stdout: outcome.render(),
-                stderr: String::new(),
-                exit_code: i32::from(outcome.failed != 0),
-            },
-            Err(error) => CliRun {
-                stdout: String::new(),
-                stderr: format!("{error}\n"),
-                exit_code: 1,
-            },
-        };
-    }
-    // `--limit` without `--commit` would read as though it bounded the survey, which it does
-    // not: the plan always counts the whole corpus.
-    if limit.is_some() {
-        return usage_error(MIGRATE_USAGE, "--limit only applies with --commit");
-    }
-    match crate::bodies::migrate::plan(journal) {
-        Ok(plan) => success(plan.render()),
-        Err(error) => CliRun {
-            stdout: String::new(),
-            stderr: format!("{error}\n"),
-            exit_code: 1,
-        },
     }
 }
 
@@ -206,7 +98,6 @@ fn run_routine(
     services: &MaintenanceServices<'_>,
     backup_services: Option<&BackupServices<'_>>,
     health_services: Option<&HealthServices<'_>>,
-    timeline_services: Option<&TimelineServices<'_>>,
 ) -> CliRun {
     let Some((id, routine_args)) = args.split_first() else {
         return usage_error(RUN_USAGE, "");
@@ -262,21 +153,6 @@ fn run_routine(
             },
         };
     }
-    if matches!(
-        id.as_str(),
-        "timeline:rollup" | "timeline:rollup-day" | "timeline:rollup-master"
-    ) {
-        return match timeline_services {
-            Some(timeline_services) => {
-                crate::bodies::timeline::run(id, forwarded, journal, timeline_services)
-            }
-            None => CliRun {
-                stdout: String::new(),
-                stderr: "timeline maintenance services are unavailable.\n".to_owned(),
-                exit_code: 1,
-            },
-        };
-    }
     CliRun {
         stdout: String::new(),
         stderr: format!(
@@ -316,40 +192,6 @@ fn usage_error(usage: &str, arguments: &str) -> CliRun {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn migration_cli_reports_scan_errors_and_publication_refusals_as_failures() {
-        let root = tempfile::tempdir().unwrap();
-        assert_eq!(super::migrate_timeline(&[], root.path()).exit_code, 0);
-        std::fs::write(root.path().join("chronicle"), b"not a directory").unwrap();
-        for args in [vec![], vec!["--commit".to_owned()]] {
-            let result = super::migrate_timeline(&args, root.path());
-            assert_ne!(result.exit_code, 0);
-            assert!(result.stderr.contains("not a directory"));
-        }
-
-        let refused = tempfile::tempdir().unwrap();
-        let segment = refused
-            .path()
-            .join("chronicle/20260101/_default/120000_300");
-        std::fs::create_dir_all(segment.join("talents")).unwrap();
-        std::fs::write(segment.join("talents/activity.md"), "source").unwrap();
-        let original = br#"{"title":"Preserve this"}"#;
-        std::fs::write(segment.join("timeline.json"), original).unwrap();
-        let result = super::migrate_timeline(&["--commit".to_owned()], refused.path());
-        assert_ne!(result.exit_code, 0);
-        assert!(result.stdout.contains("_default"));
-        assert_eq!(
-            std::fs::read(segment.join("timeline.json")).unwrap(),
-            original
-        );
-        assert!(
-            !refused
-                .path()
-                .join("chronicle/20260101/120000_300")
-                .exists()
-        );
-    }
-
     use super::run;
     use crate::MaintenanceServices;
     use crate::registry::routines;
@@ -362,7 +204,6 @@ mod tests {
             &args,
             Path::new("/unused"),
             &MaintenanceServices::new(routines()),
-            None,
             None,
             None,
         );
@@ -382,7 +223,6 @@ mod tests {
             &MaintenanceServices::new(routines()),
             None,
             None,
-            None,
         );
         assert_eq!(result.exit_code, 2);
         assert!(result.stderr.starts_with("usage: journal maintenance"));
@@ -397,34 +237,8 @@ mod tests {
             &MaintenanceServices::new(&[]),
             None,
             None,
-            None,
         );
         assert_eq!(result.exit_code, 0);
         assert_eq!(result.stdout, "No maintenance routines found.\n");
-    }
-
-    #[test]
-    fn run_arguments_are_preserved_after_the_subcommand() {
-        let args = vec![
-            "-v".to_owned(),
-            "run".to_owned(),
-            "timeline:rollup-day".to_owned(),
-            "--".to_owned(),
-            "-v".to_owned(),
-            "--dry-run".to_owned(),
-        ];
-        let result = run(
-            &args,
-            Path::new("/unused"),
-            &MaintenanceServices::new(routines()),
-            None,
-            None,
-            None,
-        );
-        assert_eq!(result.exit_code, 1);
-        assert_eq!(
-            result.stderr,
-            "timeline maintenance services are unavailable.\n"
-        );
     }
 }

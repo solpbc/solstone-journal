@@ -20,7 +20,6 @@ use solstone_core_backup_runtime::{
     ToolInstallDirs, ToolRunner, UreqHttpTransport, prepare, resolve_operational_tools,
     resolve_tools,
 };
-use solstone_core_generate::{GenerateRequest, GenerateResponse, GeneratedResponse, OneShotClient};
 use solstone_core_offload::{OffloadResult, format_offload_result};
 
 pub use parser::USAGE;
@@ -56,24 +55,6 @@ pub struct HealthServices<'a> {
     pub host_timezone: &'a dyn timezone::HostTimezoneSource,
 }
 
-/// Injectable generation dependencies for timeline rollup routines.
-pub struct TimelineServices<'a> {
-    pub now: DateTime<Utc>,
-    pub host_timezone: &'a dyn timezone::HostTimezoneSource,
-    pub picker: &'a dyn RollupPicker,
-}
-
-/// One model selection request for a timeline rollup.
-pub trait RollupPicker: Sync {
-    fn pick(&self, request: &GenerateRequest) -> Result<GeneratedResponse, RollupPickerError>;
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RollupPickerError {
-    Client(String),
-    Refused(String),
-}
-
 impl<'a> MaintenanceServices<'a> {
     pub const fn new(routines: &'a [RoutineDescriptor]) -> Self {
         Self { routines }
@@ -104,7 +85,6 @@ fn run_cli_with_deps(
     let clock = ProductionClock;
     let restore_hooks = NativeJournalMaintenance;
     let host_timezone = timezone::ProductionHostTimezoneSource;
-    let rollup_picker = ProductionRollupPicker;
     let now = Utc::now();
     let placeholder = BackupServices {
         runner,
@@ -123,19 +103,13 @@ fn run_cli_with_deps(
         now,
         host_timezone: &host_timezone,
     };
-    let timeline = TimelineServices {
-        now,
-        host_timezone: &host_timezone,
-        picker: &rollup_picker,
-    };
     match classify_maintenance_tool_resolution(args) {
-        None => run_cli_with_all_services(
+        None => run_cli_with_services(
             args,
             journal,
             &maintenance_services,
             Some(&placeholder),
             Some(&health),
-            Some(&timeline),
         ),
         Some(append_only) => {
             match resolve_operational_tools(runner, downloader, journal, append_only, dirs) {
@@ -145,13 +119,12 @@ fn run_cli_with_deps(
                         rclone_path: tools.rclone_path.as_deref(),
                         ..placeholder
                     };
-                    run_cli_with_all_services(
+                    run_cli_with_services(
                         args,
                         journal,
                         &maintenance_services,
                         Some(&backup_services),
                         Some(&health),
-                        Some(&timeline),
                     )
                 }
                 Err(reason) => format_backup_resolution_error(args, &reason),
@@ -285,7 +258,7 @@ fn maintenance_has_help(args: &[String]) -> bool {
 
 /// Run the maintenance parser with an injected registry.
 pub fn run_cli_with(args: &[String], journal: &Path, services: &MaintenanceServices<'_>) -> CliRun {
-    parser::run(args, journal, services, None, None, None)
+    parser::run(args, journal, services, None, None)
 }
 
 /// Run the maintenance parser with an injected backup runtime service set.
@@ -295,7 +268,7 @@ pub fn run_cli_with_backup(
     services: &MaintenanceServices<'_>,
     backup_services: &BackupServices<'_>,
 ) -> CliRun {
-    parser::run(args, journal, services, Some(backup_services), None, None)
+    parser::run(args, journal, services, Some(backup_services), None)
 }
 
 /// Run the maintenance parser with injected backup and health routine services.
@@ -306,69 +279,7 @@ pub fn run_cli_with_services(
     backup_services: Option<&BackupServices<'_>>,
     health_services: Option<&HealthServices<'_>>,
 ) -> CliRun {
-    parser::run(
-        args,
-        journal,
-        services,
-        backup_services,
-        health_services,
-        None,
-    )
-}
-
-/// Run the maintenance parser with injected timeline services.
-pub fn run_cli_with_timeline(
-    args: &[String],
-    journal: &Path,
-    services: &MaintenanceServices<'_>,
-    timeline_services: &TimelineServices<'_>,
-) -> CliRun {
-    parser::run(args, journal, services, None, None, Some(timeline_services))
-}
-
-/// Run the maintenance parser with every routine service set injected.
-pub fn run_cli_with_all_services(
-    args: &[String],
-    journal: &Path,
-    services: &MaintenanceServices<'_>,
-    backup_services: Option<&BackupServices<'_>>,
-    health_services: Option<&HealthServices<'_>>,
-    timeline_services: Option<&TimelineServices<'_>>,
-) -> CliRun {
-    parser::run(
-        args,
-        journal,
-        services,
-        backup_services,
-        health_services,
-        timeline_services,
-    )
-}
-
-struct ProductionRollupPicker;
-
-impl RollupPicker for ProductionRollupPicker {
-    fn pick(&self, request: &GenerateRequest) -> Result<GeneratedResponse, RollupPickerError> {
-        let client = OneShotClient::sibling()
-            .map_err(|error| RollupPickerError::Client(error.to_string()))?;
-        match client
-            .execute(request)
-            .map_err(|error| RollupPickerError::Client(error.to_string()))?
-        {
-            GenerateResponse::Generated(response) => Ok(*response),
-            GenerateResponse::Refused(response) => {
-                let reason_code = response
-                    .reason_code
-                    .as_ref()
-                    .map_or("none", |code| code.as_wire());
-                Err(RollupPickerError::Refused(format!(
-                    "reason={} reason_code={reason_code} detail={}",
-                    response.reason.as_str(),
-                    response.detail
-                )))
-            }
-        }
-    }
+    parser::run(args, journal, services, backup_services, health_services)
 }
 
 struct ProductionClock;
@@ -399,6 +310,8 @@ mod composed_tests {
     use std::io;
     use std::path::Path;
 
+    use super::{HealthServices, MaintenanceServices, registry, run_cli_with_services};
+    use crate::timezone::HostTimezoneSource;
     use chrono::{TimeZone, Utc};
     use serde_json::json;
     use solstone_core_backup_runtime::hosted_runtime::HttpError;
@@ -406,13 +319,6 @@ mod composed_tests {
         BackupServices, Clock, HttpRequest, HttpResponse, HttpTransport, JournalMaintenance,
         JournalMaintenanceError, ToolOutput, ToolRequest, ToolRunner,
     };
-    use solstone_core_generate::{GenerateRequest, GeneratedResponse};
-
-    use super::{
-        HealthServices, MaintenanceServices, RollupPicker, RollupPickerError, TimelineServices,
-        registry, run_cli_with_all_services,
-    };
-    use crate::timezone::HostTimezoneSource;
 
     struct Runner(RefCell<VecDeque<ToolOutput>>);
 
@@ -466,14 +372,6 @@ mod composed_tests {
         }
     }
 
-    struct Picker;
-
-    impl RollupPicker for Picker {
-        fn pick(&self, _: &GenerateRequest) -> Result<GeneratedResponse, RollupPickerError> {
-            panic!("empty timeline fixtures must not generate")
-        }
-    }
-
     #[test]
     fn all_routines_compose_through_parser_registry_and_schedule_without_python() {
         let journal = tempfile::tempdir().unwrap();
@@ -495,7 +393,6 @@ mod composed_tests {
         let clock = FixtureClock;
         let hooks = Hooks;
         let host = Host;
-        let picker = Picker;
         let backup = BackupServices {
             runner: &runner,
             http: &http,
@@ -510,14 +407,9 @@ mod composed_tests {
             now,
             host_timezone: &host,
         };
-        let timeline = TimelineServices {
-            now,
-            host_timezone: &host,
-            picker: &picker,
-        };
         let services = MaintenanceServices::new(registry::routines());
         let run = |arguments: &[&str]| {
-            run_cli_with_all_services(
+            run_cli_with_services(
                 &arguments
                     .iter()
                     .map(|argument| (*argument).to_owned())
@@ -526,7 +418,6 @@ mod composed_tests {
                 &services,
                 Some(&backup),
                 Some(&health),
-                Some(&timeline),
             )
         };
 
@@ -540,20 +431,10 @@ mod composed_tests {
             ("backup:offload", "backup offload:", 0),
             ("health:mark-raw", "new items: 0", 0),
             ("health:prune-logs", "prune-logs: disabled", 0),
-            ("timeline:rollup", "no verified segment timeline.json", 66),
-            (
-                "timeline:rollup-day",
-                "no verified segment timeline.json",
-                66,
-            ),
-            ("timeline:rollup-master", "no day-level timeline.json", 66),
         ] {
             let mut args = vec!["run", id];
             if id == "backup:offload" {
                 args.push("--dry-run");
-            }
-            if matches!(id, "timeline:rollup" | "timeline:rollup-day") {
-                args.extend(["--day", "20260301"]);
             }
             let result = run(&args);
             assert_eq!(result.exit_code, expected_exit, "{id}: {result:?}");
@@ -1866,12 +1747,11 @@ mod resolution_tests {
                 journal_maintenance: &maintenance,
             };
             let services = MaintenanceServices::new(crate::registry::routines());
-            let expected = super::run_cli_with_all_services(
+            let expected = super::run_cli_with_services(
                 &args,
                 journal.path(),
                 &services,
                 Some(&placeholder),
-                None,
                 None,
             );
             let output = run_cli_with_deps(
@@ -2053,7 +1933,7 @@ mod resolution_tests {
 
     #[test]
     fn injected_service_entry_points_execute_backup_run() {
-        for entry_point in ["backup", "services", "all"] {
+        for entry_point in ["backup", "services"] {
             let journal = byo_journal();
             let runner = RecordingRunner::new();
             let http = UnusedHttp;
@@ -2081,14 +1961,6 @@ mod resolution_tests {
                     Some(&backup_services),
                     None,
                 ),
-                "all" => run_cli_with_all_services(
-                    &run_args,
-                    journal.path(),
-                    &services,
-                    Some(&backup_services),
-                    None,
-                    None,
-                ),
                 _ => unreachable!("fixed entry point"),
             };
             assert_eq!(output.stdout, "backup: ok snapshot_id=snap\n");
@@ -2106,7 +1978,7 @@ mod resolution_tests {
             ),
             ("config-error", "backup: error reason=broker_error\n"),
         ] {
-            for entry_point in ["backup", "services", "all"] {
+            for entry_point in ["backup", "services"] {
                 let journal = tempfile::tempdir().expect("terminal journal creates");
                 let journal_path = match terminal {
                     "skip" => journal.path().to_path_buf(),
@@ -2144,14 +2016,6 @@ mod resolution_tests {
                         &journal_path,
                         &services,
                         Some(&backup_services),
-                        None,
-                    ),
-                    "all" => run_cli_with_all_services(
-                        &run_args,
-                        &journal_path,
-                        &services,
-                        Some(&backup_services),
-                        None,
                         None,
                     ),
                     _ => unreachable!("fixed entry point"),

@@ -27,100 +27,68 @@ pub struct RoutineDescriptor {
     pub description: &'static str,
     pub cadence: Cadence,
     pub max_runtime: Option<&'static str>,
-    pub args: &'static [&'static str],
 }
 
-const ROUTINES: [RoutineDescriptor; 13] = [
+const ROUTINES: [RoutineDescriptor; 10] = [
     RoutineDescriptor {
         id: "speakers:discover-voices",
         description: "Refresh recurring voice discovery cache.",
         cadence: Cadence::Daily,
         max_runtime: Some("10m"),
-        args: &[],
     },
     RoutineDescriptor {
         id: "speakers:candidate-pair-suggestions",
         description: "Find dense speaker candidate pairs for Suggestions.",
         cadence: Cadence::Daily,
         max_runtime: Some("10m"),
-        args: &[],
     },
     RoutineDescriptor {
         id: "speakers:name-variants",
         description: "Find speaker name variants for Suggestions.",
         cadence: Cadence::Daily,
         max_runtime: Some("10m"),
-        args: &[],
     },
     RoutineDescriptor {
         id: "speakers:consolidate-pool",
         description: "Consolidate dense speaker candidates.",
         cadence: Cadence::Daily,
         max_runtime: Some("10m"),
-        args: &[],
     },
     RoutineDescriptor {
         id: "backup:run",
         description: "run encrypted backup.",
         cadence: Cadence::Hourly,
         max_runtime: Some("49h"),
-        args: &[],
     },
     RoutineDescriptor {
         id: "backup:prune",
         description: "apply encrypted backup retention policy.",
         cadence: Cadence::Daily,
         max_runtime: Some("3h"),
-        args: &[],
     },
     RoutineDescriptor {
         id: "backup:verify",
         description: "verify encrypted backup read-back.",
         cadence: Cadence::Weekly,
         max_runtime: Some("90m"),
-        args: &[],
     },
     RoutineDescriptor {
         id: "backup:offload",
         description: "offload verified raw media after backup.",
         cadence: Cadence::Daily,
         max_runtime: Some("7h"),
-        args: &[],
     },
     RoutineDescriptor {
         id: "health:mark-raw",
         description: "list original media ready for removal.",
         cadence: Cadence::Daily,
         max_runtime: Some("60m"),
-        args: &[],
     },
     RoutineDescriptor {
         id: "health:prune-logs",
         description: "prune old operational logs.",
         cadence: Cadence::Daily,
         max_runtime: Some("30m"),
-        args: &[],
-    },
-    RoutineDescriptor {
-        id: "timeline:rollup",
-        description: "Roll segment timelines through the journal master timeline.",
-        cadence: Cadence::Daily,
-        max_runtime: Some("60m"),
-        args: &["--commit"],
-    },
-    RoutineDescriptor {
-        id: "timeline:rollup-day",
-        description: "Roll segment timelines up into one day timeline.",
-        cadence: Cadence::Daily,
-        max_runtime: Some("30m"),
-        args: &[],
-    },
-    RoutineDescriptor {
-        id: "timeline:rollup-master",
-        description: "Roll day timelines up into the journal master timeline.",
-        cadence: Cadence::Daily,
-        max_runtime: Some("30m"),
-        args: &[],
     },
 ];
 
@@ -136,35 +104,21 @@ pub fn routine(id: &str) -> Option<&'static RoutineDescriptor> {
 
 #[cfg(test)]
 fn validate_census(routines: &[RoutineDescriptor]) -> Result<(), String> {
-    const EXPECTED: [(&str, Cadence, Option<&str>, &[&str]); 13] = [
-        ("speakers:discover-voices", Cadence::Daily, Some("10m"), &[]),
+    const EXPECTED: [(&str, Cadence, Option<&str>); 10] = [
+        ("speakers:discover-voices", Cadence::Daily, Some("10m")),
         (
             "speakers:candidate-pair-suggestions",
             Cadence::Daily,
             Some("10m"),
-            &[],
         ),
-        ("speakers:name-variants", Cadence::Daily, Some("10m"), &[]),
-        (
-            "speakers:consolidate-pool",
-            Cadence::Daily,
-            Some("10m"),
-            &[],
-        ),
-        ("backup:run", Cadence::Hourly, Some("49h"), &[]),
-        ("backup:prune", Cadence::Daily, Some("3h"), &[]),
-        ("backup:verify", Cadence::Weekly, Some("90m"), &[]),
-        ("backup:offload", Cadence::Daily, Some("7h"), &[]),
-        ("health:mark-raw", Cadence::Daily, Some("60m"), &[]),
-        ("health:prune-logs", Cadence::Daily, Some("30m"), &[]),
-        (
-            "timeline:rollup",
-            Cadence::Daily,
-            Some("60m"),
-            &["--commit"],
-        ),
-        ("timeline:rollup-day", Cadence::Daily, Some("30m"), &[]),
-        ("timeline:rollup-master", Cadence::Daily, Some("30m"), &[]),
+        ("speakers:name-variants", Cadence::Daily, Some("10m")),
+        ("speakers:consolidate-pool", Cadence::Daily, Some("10m")),
+        ("backup:run", Cadence::Hourly, Some("49h")),
+        ("backup:prune", Cadence::Daily, Some("3h")),
+        ("backup:verify", Cadence::Weekly, Some("90m")),
+        ("backup:offload", Cadence::Daily, Some("7h")),
+        ("health:mark-raw", Cadence::Daily, Some("60m")),
+        ("health:prune-logs", Cadence::Daily, Some("30m")),
     ];
     if routines.len() != EXPECTED.len() {
         return Err(format!(
@@ -173,7 +127,7 @@ fn validate_census(routines: &[RoutineDescriptor]) -> Result<(), String> {
             routines.len()
         ));
     }
-    for (id, cadence, max_runtime, args) in EXPECTED {
+    for (id, cadence, max_runtime) in EXPECTED {
         let matches = routines
             .iter()
             .filter(|descriptor| descriptor.id == id)
@@ -188,9 +142,6 @@ fn validate_census(routines: &[RoutineDescriptor]) -> Result<(), String> {
         if descriptor.max_runtime != max_runtime {
             return Err(format!("routine {id} max_runtime does not match"));
         }
-        if descriptor.args != args {
-            return Err(format!("routine {id} args do not match"));
-        }
     }
     Ok(())
 }
@@ -201,9 +152,9 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
-    fn census_has_thirteen_unique_well_formed_ids() {
+    fn census_has_ten_unique_well_formed_ids() {
         let all = routines();
-        assert_eq!(all.len(), 13);
+        assert_eq!(all.len(), 10);
         let ids = all
             .iter()
             .map(|descriptor| descriptor.id)
@@ -249,7 +200,6 @@ mod tests {
             description: "different wording remains allowed",
             cadence: Cadence::Hourly,
             max_runtime: Some("1m"),
-            args: &[],
         };
         let error = validate_census(&wrong_cap).expect_err("wrong cap must fail");
         assert!(error.contains("backup:run") && error.contains("max_runtime"));

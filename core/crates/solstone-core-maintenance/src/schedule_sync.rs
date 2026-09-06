@@ -16,12 +16,10 @@ use crate::registry::RoutineDescriptor;
 const MAINTENANCE_PREFIX: &str = "maintenance:";
 const RETIRED_ENTRIES: &[&str] = &[
     "maintenance:health:release-raw",
+    "maintenance:timeline:rollup",
     "maintenance:timeline:rollup-day",
     "maintenance:timeline:rollup-master",
 ];
-const LEGACY_TIMELINE_DAY: &str = "maintenance:timeline:rollup-day";
-const LEGACY_TIMELINE_MASTER: &str = "maintenance:timeline:rollup-master";
-const ORCHESTRATED_TIMELINE: &str = "maintenance:timeline:rollup";
 
 /// A routine's relationship to its generated schedule entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,42 +101,28 @@ pub fn render_list(path: &Path, routines: &[RoutineDescriptor]) -> Result<String
     Ok(output)
 }
 
-/// Migrate retired timeline entries and add missing generated entries in one
+/// Prune retired schedule entries and add missing generated entries in one
 /// locked whole-file transaction.
 pub fn sync(path: &Path, routines: &[RoutineDescriptor]) -> Result<SyncSummary, String> {
     initialize_schedule_config(path).map_err(|error| error.to_string())?;
     mutate_schedule_entries(path, |raw| {
         let mut next = raw.clone();
-        let result = plan_sync(&mut next, routines);
-        match result {
-            Ok(summary) => {
-                let changed = next != *raw;
-                if changed {
-                    *raw = next;
-                }
-                ScheduleMutation {
-                    changed,
-                    value: Ok(summary),
-                }
-            }
-            Err(error) => ScheduleMutation {
-                changed: false,
-                value: Err(error),
-            },
+        let summary = plan_sync(&mut next, routines);
+        let changed = next != *raw;
+        if changed {
+            *raw = next;
+        }
+        ScheduleMutation {
+            changed,
+            value: summary,
         }
     })
-    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())
 }
 
-fn plan_sync(
-    raw: &mut Map<String, Value>,
-    routines: &[RoutineDescriptor],
-) -> Result<SyncSummary, String> {
-    let timeline_migrated = migrate_timeline_entries(raw, routines)?;
+fn plan_sync(raw: &mut Map<String, Value>, routines: &[RoutineDescriptor]) -> SyncSummary {
     for entry in RETIRED_ENTRIES {
-        if *entry != LEGACY_TIMELINE_DAY && *entry != LEGACY_TIMELINE_MASTER {
-            raw.remove(*entry);
-        }
+        raw.remove(*entry);
     }
 
     let classified = classify(routines, raw)
@@ -146,19 +130,6 @@ fn plan_sync(
         .filter(|item| !is_retired_schedule_entry(item.descriptor.id));
     let mut summary = SyncSummary::default();
     for item in classified {
-        if item.descriptor.id == "timeline:rollup" {
-            match (timeline_migrated, item.status) {
-                (TimelineMigration::Created, ScheduleStatus::Synced) => {
-                    summary.added.push(item.descriptor.id.to_owned());
-                    continue;
-                }
-                (TimelineMigration::Consolidated, ScheduleStatus::Synced) => {
-                    summary.synced.push(item.descriptor.id.to_owned());
-                    continue;
-                }
-                _ => {}
-            }
-        }
         match item.status {
             ScheduleStatus::Missing => {
                 summary.added.push(item.descriptor.id.to_owned());
@@ -172,145 +143,7 @@ fn plan_sync(
             ScheduleStatus::Disabled => summary.disabled.push(item.descriptor.id.to_owned()),
         }
     }
-    Ok(summary)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TimelineMigration {
-    None,
-    Created,
-    Consolidated,
-}
-
-fn migrate_timeline_entries(
-    raw: &mut Map<String, Value>,
-    routines: &[RoutineDescriptor],
-) -> Result<TimelineMigration, String> {
-    let day = raw.get(LEGACY_TIMELINE_DAY).cloned();
-    let master = raw.get(LEGACY_TIMELINE_MASTER).cloned();
-    match (day, master) {
-        (None, None) => Ok(TimelineMigration::None),
-        (Some(_), None) | (None, Some(_)) => Err(
-            "timeline schedule migration found only one legacy stage; preserved schedules unchanged"
-                .to_owned(),
-        ),
-        (Some(day), Some(master)) => {
-            let day_descriptor = descriptor(routines, "timeline:rollup-day")?;
-            let master_descriptor = descriptor(routines, "timeline:rollup-master")?;
-            let orchestrated_descriptor = descriptor(routines, "timeline:rollup")?;
-            let (day_enabled, mut operator_fields) =
-                legacy_entry(&day, day_descriptor, LEGACY_TIMELINE_DAY)?;
-            let (master_enabled, master_fields) =
-                legacy_entry(&master, master_descriptor, LEGACY_TIMELINE_MASTER)?;
-            if day_enabled != master_enabled {
-                return Err(
-                    "timeline schedule migration found conflicting legacy enabled states; preserved schedules unchanged"
-                        .to_owned(),
-                );
-            }
-            merge_operator_fields(&mut operator_fields, master_fields)?;
-
-            let had_orchestrated = raw.contains_key(ORCHESTRATED_TIMELINE);
-            if let Some(existing) = raw.get(ORCHESTRATED_TIMELINE) {
-                let (enabled, fields) =
-                    legacy_entry(existing, orchestrated_descriptor, ORCHESTRATED_TIMELINE)?;
-                if enabled != day_enabled {
-                    return Err(
-                        "timeline schedule migration found conflicting unified enabled state; preserved schedules unchanged"
-                            .to_owned(),
-                    );
-                }
-                merge_operator_fields(&mut operator_fields, fields)?;
-            }
-
-            let mut replacement = expected_entry(orchestrated_descriptor);
-            replacement["enabled"] = Value::Bool(day_enabled);
-            replacement
-                .as_object_mut()
-                .expect("expected schedule entry is an object")
-                .extend(operator_fields);
-            raw.remove(LEGACY_TIMELINE_DAY);
-            raw.remove(LEGACY_TIMELINE_MASTER);
-            raw.insert(ORCHESTRATED_TIMELINE.to_owned(), replacement);
-            Ok(if had_orchestrated {
-                TimelineMigration::Consolidated
-            } else {
-                TimelineMigration::Created
-            })
-        }
-    }
-}
-
-fn descriptor<'a>(
-    routines: &'a [RoutineDescriptor],
-    id: &str,
-) -> Result<&'a RoutineDescriptor, String> {
-    routines
-        .iter()
-        .find(|descriptor| descriptor.id == id)
-        .ok_or_else(|| format!("timeline schedule migration lacks descriptor {id}"))
-}
-
-fn legacy_entry(
-    value: &Value,
-    descriptor: &RoutineDescriptor,
-    name: &str,
-) -> Result<(bool, Map<String, Value>), String> {
-    let Value::Object(actual) = value else {
-        return Err(format!(
-            "timeline schedule {name} is not an object; preserved schedules unchanged"
-        ));
-    };
-    let Value::Object(expected) = expected_entry(descriptor) else {
-        unreachable!("expected schedule entry is an object")
-    };
-    let enabled = actual.get("enabled").is_none_or(json_truthy);
-    let has_schedule_fields = ["cmd", "every", "max_runtime"]
-        .iter()
-        .any(|field| actual.contains_key(*field));
-    if enabled || has_schedule_fields {
-        for field in ["cmd", "every", "max_runtime"] {
-            if actual.get(field) != expected.get(field) {
-                return Err(format!(
-                    "timeline schedule {name} has a divergent {field}; preserved schedules unchanged"
-                ));
-            }
-        }
-    }
-    let operator_fields = actual
-        .iter()
-        .filter(|(key, _)| !["cmd", "every", "enabled", "max_runtime"].contains(&key.as_str()))
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect();
-    Ok((enabled, operator_fields))
-}
-
-fn json_truthy(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(value) => *value,
-        Value::Number(value) => value.as_f64().is_some_and(|value| value != 0.0),
-        Value::String(value) => !value.is_empty(),
-        Value::Array(value) => !value.is_empty(),
-        Value::Object(value) => !value.is_empty(),
-    }
-}
-
-fn merge_operator_fields(
-    target: &mut Map<String, Value>,
-    incoming: Map<String, Value>,
-) -> Result<(), String> {
-    for (key, value) in incoming {
-        if let Some(existing) = target.get(&key)
-            && existing != &value
-        {
-            return Err(format!(
-                "timeline schedule migration found conflicting operator field {key}; preserved schedules unchanged"
-            ));
-        }
-        target.insert(key, value);
-    }
-    Ok(())
+    summary
 }
 
 /// Render the reference schedule synchronization summary and warnings.
@@ -349,8 +182,7 @@ pub fn schedule_name(id: &str) -> String {
 
 /// Build the generated raw config entry for one routine.
 pub fn expected_entry(descriptor: &RoutineDescriptor) -> Value {
-    let mut command = vec!["journal", "maintenance", "run", descriptor.id];
-    command.extend(descriptor.args);
+    let command = vec!["journal", "maintenance", "run", descriptor.id];
     let mut entry = Map::from_iter([
         ("cmd".to_owned(), json!(command)),
         (
@@ -430,9 +262,7 @@ fn classify_one(descriptor: &RoutineDescriptor, raw: Option<&Value>) -> Schedule
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        ScheduleStatus, classify_one, expected_entry, render_summary, schedule_name, sync,
-    };
+    use super::{ScheduleStatus, classify_one, expected_entry, sync};
     use crate::registry::{Cadence, RoutineDescriptor, routines};
     use serde_json::{Value, json};
     use std::fs;
@@ -442,14 +272,12 @@ mod tests {
         description: "capped",
         cadence: Cadence::Daily,
         max_runtime: Some("30m"),
-        args: &[],
     };
     const UNCAPPED: RoutineDescriptor = RoutineDescriptor {
         id: "app:uncapped",
         description: "uncapped",
         cadence: Cadence::Weekly,
         max_runtime: None,
-        args: &[],
     };
 
     #[test]
@@ -508,260 +336,56 @@ mod tests {
         );
     }
 
-    #[test]
-    fn sync_retires_independent_timeline_entries_and_adds_the_atomic_rollup() {
-        let root = tempfile::tempdir().expect("temporary journal");
-        let config = root.path().join("config/schedules.json");
-        std::fs::create_dir_all(config.parent().expect("config directory"))
-            .expect("config directory");
-        let timeline_day = routines()
-            .iter()
-            .find(|descriptor| descriptor.id == "timeline:rollup-day")
-            .expect("day descriptor");
-        let timeline_master = routines()
-            .iter()
-            .find(|descriptor| descriptor.id == "timeline:rollup-master")
-            .expect("master descriptor");
-        std::fs::write(
-            &config,
-            json!({
-                schedule_name(timeline_day.id): expected_entry(timeline_day),
-                schedule_name(timeline_master.id): expected_entry(timeline_master),
-            })
-            .to_string(),
-        )
-        .expect("schedule config");
-
-        let summary = sync(&config, routines()).expect("sync");
-        assert!(summary.added.contains(&"timeline:rollup".to_owned()));
-        assert!(!summary.added.contains(&"timeline:rollup-day".to_owned()));
-        assert!(!summary.added.contains(&"timeline:rollup-master".to_owned()));
-        let raw: Value = serde_json::from_slice(&std::fs::read(&config).expect("schedule config"))
-            .expect("json");
-        assert_eq!(
-            raw["maintenance:timeline:rollup"]["cmd"],
-            json!([
-                "journal",
-                "maintenance",
-                "run",
-                "timeline:rollup",
-                "--commit"
-            ])
-        );
-        assert!(raw.get("maintenance:timeline:rollup-day").is_none());
-        assert!(raw.get("maintenance:timeline:rollup-master").is_none());
-    }
-
-    fn timeline_legacy(enabled: bool) -> (Value, Value) {
-        let day = routines()
-            .iter()
-            .find(|descriptor| descriptor.id == "timeline:rollup-day")
-            .expect("day descriptor");
-        let master = routines()
-            .iter()
-            .find(|descriptor| descriptor.id == "timeline:rollup-master")
-            .expect("master descriptor");
-        let mut day_entry = expected_entry(day);
-        let mut master_entry = expected_entry(master);
-        day_entry["enabled"] = json!(enabled);
-        master_entry["enabled"] = json!(enabled);
-        (day_entry, master_entry)
-    }
-
     fn write_config(path: &std::path::Path, value: &Value) {
         fs::create_dir_all(path.parent().expect("config parent")).expect("config parent");
         fs::write(path, format!("{value}\n")).expect("schedule config");
     }
 
     #[test]
-    fn timeline_migration_preserves_disabled_intent_and_operator_fields() {
+    fn sync_prunes_retired_timeline_entries_and_preserves_operator_added_entries() {
         let root = tempfile::tempdir().expect("temporary journal");
         let config = root.path().join("config/schedules.json");
-        let (mut day, mut master) = timeline_legacy(false);
-        day["operator_note"] = json!("keep");
-        master["operator_note"] = json!("keep");
-        master["ticket"] = json!(42);
         write_config(
             &config,
             &json!({
-                "maintenance:timeline:rollup-day": day,
-                "maintenance:timeline:rollup-master": master,
+                "maintenance:timeline:rollup": {
+                    "cmd": ["journal", "maintenance", "run", "timeline:rollup", "--commit"],
+                    "every": "daily",
+                    "enabled": true,
+                },
+                "maintenance:timeline:rollup-day": {
+                    "cmd": ["journal", "maintenance", "run", "timeline:rollup-day"],
+                    "every": "daily",
+                    "enabled": true,
+                },
+                "maintenance:timeline:rollup-master": {
+                    "cmd": ["journal", "maintenance", "run", "timeline:rollup-master"],
+                    "every": "daily",
+                    "enabled": true,
+                },
+                "maintenance:operator:custom": {
+                    "cmd": ["operator", "custom"],
+                    "every": "daily",
+                    "enabled": true,
+                },
             }),
         );
 
         let summary = sync(&config, routines()).expect("sync");
-        assert!(summary.disabled.contains(&"timeline:rollup".to_owned()));
         assert!(
-            render_summary(&summary)
-                .contains("timeline:rollup schedule is disabled; preserved disabled")
+            !summary
+                .added
+                .iter()
+                .chain(&summary.synced)
+                .any(|id| id.starts_with("timeline:"))
         );
         let raw: Value = serde_json::from_slice(&fs::read(&config).expect("config")).expect("json");
-        assert_eq!(raw["maintenance:timeline:rollup"]["enabled"], false);
-        assert_eq!(raw["maintenance:timeline:rollup"]["operator_note"], "keep");
-        assert_eq!(raw["maintenance:timeline:rollup"]["ticket"], 42);
+        assert!(raw.get("maintenance:timeline:rollup").is_none());
         assert!(raw.get("maintenance:timeline:rollup-day").is_none());
         assert!(raw.get("maintenance:timeline:rollup-master").is_none());
-
-        let once = fs::read(&config).expect("first sync bytes");
-        sync(&config, routines()).expect("second sync");
-        assert_eq!(fs::read(&config).expect("second sync bytes"), once);
-    }
-
-    #[test]
-    fn timeline_migration_accepts_runtime_enabled_default_and_minimal_disabled_entries() {
-        for (enabled, minimal) in [(true, false), (false, true)] {
-            let root = tempfile::tempdir().expect("temporary journal");
-            let config = root.path().join("config/schedules.json");
-            let (mut day, mut master) = timeline_legacy(enabled);
-            if enabled {
-                day.as_object_mut().expect("day object").remove("enabled");
-                master
-                    .as_object_mut()
-                    .expect("master object")
-                    .remove("enabled");
-            } else if minimal {
-                day = json!({"enabled": false, "operator_note": "keep"});
-                master = json!({"enabled": false, "operator_note": "keep"});
-            }
-            write_config(
-                &config,
-                &json!({
-                    "maintenance:timeline:rollup-day": day,
-                    "maintenance:timeline:rollup-master": master,
-                }),
-            );
-
-            let summary = sync(&config, routines()).expect("sync");
-            let raw: Value =
-                serde_json::from_slice(&fs::read(&config).expect("config")).expect("json");
-            assert_eq!(
-                raw["maintenance:timeline:rollup"]["enabled"],
-                Value::Bool(enabled)
-            );
-            if enabled {
-                assert!(summary.added.contains(&"timeline:rollup".to_owned()));
-            } else {
-                assert!(summary.disabled.contains(&"timeline:rollup".to_owned()));
-                assert_eq!(raw["maintenance:timeline:rollup"]["operator_note"], "keep");
-            }
-        }
-    }
-
-    #[test]
-    fn unsafe_timeline_migrations_fail_without_changing_bytes() {
-        let cases = [
-            {
-                let (day, _) = timeline_legacy(true);
-                json!({"maintenance:timeline:rollup-day": day})
-            },
-            {
-                let (day, mut master) = timeline_legacy(true);
-                master["enabled"] = json!(false);
-                json!({
-                    "maintenance:timeline:rollup-day": day,
-                    "maintenance:timeline:rollup-master": master,
-                })
-            },
-            {
-                let (day, mut master) = timeline_legacy(true);
-                master["cmd"] = json!(["custom", "timeline"]);
-                json!({
-                    "maintenance:timeline:rollup-day": day,
-                    "maintenance:timeline:rollup-master": master,
-                })
-            },
-            {
-                let (mut day, mut master) = timeline_legacy(true);
-                day["operator_note"] = json!("day");
-                master["operator_note"] = json!("master");
-                json!({
-                    "maintenance:timeline:rollup-day": day,
-                    "maintenance:timeline:rollup-master": master,
-                })
-            },
-            {
-                let (day, master) = timeline_legacy(true);
-                let unified = routines()
-                    .iter()
-                    .find(|descriptor| descriptor.id == "timeline:rollup")
-                    .expect("unified descriptor");
-                let mut unified_entry = expected_entry(unified);
-                unified_entry["cmd"] = json!(["custom", "timeline"]);
-                json!({
-                    "maintenance:timeline:rollup-day": day,
-                    "maintenance:timeline:rollup-master": master,
-                    "maintenance:timeline:rollup": unified_entry,
-                })
-            },
-        ];
-        for (index, value) in cases.into_iter().enumerate() {
-            let root = tempfile::tempdir().expect("temporary journal");
-            let config = root.path().join(format!("config/{index}/schedules.json"));
-            write_config(&config, &value);
-            let before = fs::read(&config).expect("before");
-            let error = sync(&config, routines()).expect_err("unsafe migration must fail");
-            assert!(error.contains("preserved schedules unchanged"), "{error}");
-            assert_eq!(fs::read(&config).expect("after"), before);
-        }
-    }
-
-    #[test]
-    fn compatible_preexisting_unified_entry_is_merged_atomically() {
-        let root = tempfile::tempdir().expect("temporary journal");
-        let config = root.path().join("config/schedules.json");
-        let (mut day, master) = timeline_legacy(true);
-        day["legacy_note"] = json!("preserve");
-        let unified = routines()
-            .iter()
-            .find(|descriptor| descriptor.id == "timeline:rollup")
-            .expect("unified descriptor");
-        let mut unified_entry = expected_entry(unified);
-        unified_entry["owner"] = json!("operator");
-        write_config(
-            &config,
-            &json!({
-                "maintenance:timeline:rollup-day": day,
-                "maintenance:timeline:rollup-master": master,
-                "maintenance:timeline:rollup": unified_entry,
-            }),
-        );
-
-        let summary = sync(&config, routines()).expect("sync");
-        assert!(summary.synced.contains(&"timeline:rollup".to_owned()));
-        assert!(!summary.added.contains(&"timeline:rollup".to_owned()));
-        let raw: Value = serde_json::from_slice(&fs::read(&config).expect("config")).expect("json");
         assert_eq!(
-            raw["maintenance:timeline:rollup"]["legacy_note"],
-            "preserve"
+            raw["maintenance:operator:custom"]["cmd"],
+            json!(["operator", "custom"])
         );
-        assert_eq!(raw["maintenance:timeline:rollup"]["owner"], "operator");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn timeline_migration_publication_failure_keeps_the_legacy_pair() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let root = tempfile::tempdir().expect("temporary journal");
-        let config = root.path().join("config/schedules.json");
-        let (day, master) = timeline_legacy(true);
-        write_config(
-            &config,
-            &json!({
-                "maintenance:timeline:rollup-day": day,
-                "maintenance:timeline:rollup-master": master,
-            }),
-        );
-        let before = fs::read(&config).expect("before");
-        let parent = config.parent().expect("config parent");
-        fs::write(parent.join(".schedules.json.lock"), b"").expect("persistent lock sidecar");
-        fs::set_permissions(parent, fs::Permissions::from_mode(0o500))
-            .expect("make publication fail");
-
-        let result = sync(&config, routines());
-        fs::set_permissions(parent, fs::Permissions::from_mode(0o700))
-            .expect("restore config directory");
-        assert!(result.is_err(), "publication failure must fail sync");
-        assert_eq!(fs::read(&config).expect("after"), before);
     }
 }
