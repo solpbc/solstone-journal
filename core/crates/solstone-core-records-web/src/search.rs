@@ -15,7 +15,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_indexer_query::{
-    IndexedEntry, SearchRequest, read_indexed_entry, search, search_counts,
+    IndexAccessError, IndexedEntry, SearchRequest, read_indexed_entry, search, search_counts,
 };
 use solstone_core_journal_io::bounded_read::{JournalReadError, MAX_BYTES, read_text};
 
@@ -101,11 +101,11 @@ async fn search_api(journal_root: PathBuf, Query(query): Query<SearchQuery>) -> 
     base_request.agent = None;
     let base = match search_counts(&journal_root, &base_request, reference) {
         Ok(counts) => counts,
-        Err(error) => return search_failed(&error.to_string()),
+        Err(error) => return search_failed(&error),
     };
     let filtered = match search_counts(&journal_root, &request, reference) {
         Ok(counts) => counts,
-        Err(error) => return search_failed(&error.to_string()),
+        Err(error) => return search_failed(&error),
     };
     let mut days = filtered
         .days
@@ -130,7 +130,7 @@ async fn search_api(journal_root: PathBuf, Query(query): Query<SearchQuery>) -> 
         per_day.limit = request.limit;
         let response = match search(&journal_root, &per_day, reference) {
             Ok(response) => response,
-            Err(error) => return search_failed(&error.to_string()),
+            Err(error) => return search_failed(&error),
         };
         let results = response
             .results
@@ -428,16 +428,60 @@ fn highlight(text: &str, query: &str) -> String {
     if text.split_whitespace().count() > 50 {
         value.push_str("...");
     }
-    for term in query
-        .split_whitespace()
-        .filter(|term| !matches!(term.to_ascii_uppercase().as_str(), "AND" | "OR" | "NOT"))
-    {
-        let term = term.trim_matches(|character| character == '"' || character == '*');
+    for term in highlight_terms(query) {
         if term.len() >= 2 {
-            value = replace_case_insensitive(&value, term);
+            value = replace_case_insensitive(&value, &term);
         }
     }
     value
+}
+
+/// Split a raw query into the literal strings the excerpt should bold.
+///
+/// G2-23: a quoted phrase (`"release burn"`) already compiles to a genuine adjacency
+/// requirement in `solstone-core-indexer-query::atomize` (see its
+/// `balanced_quoted_phrase` case) — the FTS layer does honor the phrase. This function
+/// used to undo that by splitting the raw query on whitespace and bolding each word of
+/// a phrase independently, which highlights an unrelated lone occurrence of one word
+/// (e.g. "burn" inside "vpe:burn") and reads as a phrase search that silently fell back
+/// to separate words. A quoted span here stays one highlight unit — the excerpt only
+/// bolds it where the literal phrase actually appears, matching what was searched.
+fn highlight_terms(query: &str) -> Vec<String> {
+    let mut terms = Vec::new();
+    let mut cursor = 0;
+    while cursor < query.len() {
+        while let Some(character) = query[cursor..].chars().next() {
+            if !character.is_whitespace() {
+                break;
+            }
+            cursor += character.len_utf8();
+        }
+        if cursor == query.len() {
+            break;
+        }
+        if query[cursor..].starts_with('"') {
+            let start = cursor + 1;
+            let end = query[start..]
+                .find('"')
+                .map_or(query.len(), |offset| start + offset);
+            let phrase = query[start..end].trim();
+            if !phrase.is_empty() {
+                terms.push(phrase.to_owned());
+            }
+            cursor = if end == query.len() { end } else { end + 1 };
+            continue;
+        }
+        let end = query[cursor..]
+            .find(char::is_whitespace)
+            .map_or(query.len(), |offset| cursor + offset);
+        let word =
+            query[cursor..end].trim_matches(|character| character == '"' || character == '*');
+        if !word.is_empty() && !matches!(word.to_ascii_uppercase().as_str(), "AND" | "OR" | "NOT") {
+            terms.push(word.to_owned());
+        }
+        cursor = end;
+    }
+    terms
 }
 
 fn html_escape(value: &str) -> String {
@@ -524,23 +568,42 @@ fn file_read_failed(detail: &str) -> Response {
     )
     .into_response()
 }
-fn search_failed(detail: &str) -> Response {
+fn search_failed(error: &IndexAccessError) -> Response {
     // The reference publishes the underlying error text here, and `sol call journal search`
     // prints this body verbatim into a talent's context. Discarding it left an owner and a
     // talent unable to tell an absent index from a corrupt one. Every other refusal helper in
     // this file already carries a detail; this one was the outlier.
+    //
+    // G2-21: an `IndexAccessError` (absent, unreadable, locked, or empty index) is never the
+    // caller's mistake, so it must not read as one. `solstone-core-entities`'s own search route
+    // reaches the same conclusion for the identical error type
+    // (`entity_search_index_access_failure` in `solstone-core-entities/src/router.rs`) and
+    // answers every variant with 503, not 400. Match that: use `error.reason()` — already
+    // documented as "stable machine-readable error reason for the CLI JSON envelope" — as the
+    // reason code, and drop the "I" persona from the message; the detail (unchanged: the raw
+    // `Display` text, which is what the CLI/talent path above depends on) still carries the
+    // absent-vs-corrupt distinction.
     error_envelope(
-        "search_failed",
-        "I couldn't search for that.",
-        detail,
-        StatusCode::BAD_REQUEST,
+        error.reason(),
+        "couldn't search your journal right now.",
+        error.to_string(),
+        StatusCode::SERVICE_UNAVAILABLE,
     )
     .into_response()
 }
 
 #[cfg(test)]
 mod search_failure_detail_tests {
+    use axum::body::to_bytes;
+
     use super::*;
+
+    async fn body_json(response: Response) -> Value {
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        serde_json::from_slice(&bytes).expect("json body")
+    }
 
     // The reference publishes the underlying error text with this refusal, and the
     // journal search command prints the response body verbatim into a talent's
@@ -550,17 +613,150 @@ mod search_failure_detail_tests {
     // Caught in live validation against a running server, not by the frozen corpus:
     // no captured case reaches this branch, because the seeded journal has an index.
     // That is the coverage limit the corpus is meant to state rather than hide.
+    #[tokio::test]
+    async fn search_failure_carries_its_detail() {
+        let error = IndexAccessError::Absent {
+            path: PathBuf::from("/x/indexer/journal.sqlite"),
+        };
+        let response = search_failed(&error);
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let body = body_json(response).await;
+        assert_eq!(
+            body["detail"],
+            "journal index is absent: /x/indexer/journal.sqlite"
+        );
+        assert_eq!(body["reason_code"], "index_absent");
+    }
+
+    #[tokio::test]
+    async fn search_failure_helper_accepts_a_detail_at_all() {
+        // Guards the exact regression: the helper previously took no detail, and every
+        // call site discarded its error with a wildcard match.
+        let error = IndexAccessError::Unreadable {
+            path: PathBuf::from("/x/indexer/journal.sqlite"),
+            detail: "disk I/O error".into(),
+        };
+        let response = search_failed(&error);
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let body = body_json(response).await;
+        assert!(
+            body["detail"]
+                .as_str()
+                .expect("detail string")
+                .contains("disk I/O error")
+        );
+    }
+
+    // G2-21: an intermittent index lock (concurrent write) previously surfaced as a plain
+    // HTTP 400 with no detail, reading as the owner's mistake. It is a server-side,
+    // typically transient condition, so it must not be a 400 and it must say why.
+    #[tokio::test]
+    async fn search_failure_reports_a_locked_index_as_retryable_not_a_client_error() {
+        let error = IndexAccessError::Locked {
+            path: PathBuf::from("/x/indexer/journal.sqlite"),
+            detail: "database is locked".into(),
+        };
+        let response = search_failed(&error);
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let body = body_json(response).await;
+        assert_eq!(body["reason_code"], "index_locked");
+        assert!(
+            body["detail"]
+                .as_str()
+                .expect("detail string")
+                .contains("database is locked")
+        );
+        // The refusal is server-side; it does not speak in the first person about the
+        // owner's request.
+        assert!(!body["error"].as_str().expect("error string").contains('I'));
+    }
+
+    #[tokio::test]
+    async fn search_failure_distinguishes_reason_codes_by_error_variant() {
+        for (error, reason) in [
+            (
+                IndexAccessError::Absent {
+                    path: PathBuf::from("/x"),
+                },
+                "index_absent",
+            ),
+            (
+                IndexAccessError::Empty {
+                    path: PathBuf::from("/x"),
+                },
+                "empty_index",
+            ),
+        ] {
+            let body = body_json(search_failed(&error)).await;
+            assert_eq!(body["reason_code"], reason, "{reason}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod highlight_phrase_tests {
+    use super::*;
+
     #[test]
-    fn search_failure_carries_its_detail() {
-        let response = search_failed("journal index is absent: /x/indexer/journal.sqlite");
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    fn highlight_terms_keeps_a_quoted_phrase_as_one_unit() {
+        assert_eq!(
+            highlight_terms("\"release burn\""),
+            vec!["release burn".to_string()]
+        );
     }
 
     #[test]
-    fn search_failure_helper_accepts_a_detail_at_all() {
-        // Guards the exact regression: the helper previously took no detail, and every
-        // call site discarded its error with a wildcard match.
-        let response = search_failed("journal index is unreadable");
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    fn highlight_terms_splits_unquoted_words_independently() {
+        assert_eq!(
+            highlight_terms("release burn"),
+            vec!["release".to_string(), "burn".to_string()]
+        );
+    }
+
+    #[test]
+    fn highlight_terms_mixes_a_phrase_with_a_bare_word() {
+        assert_eq!(
+            highlight_terms("\"release burn\" hopper"),
+            vec!["release burn".to_string(), "hopper".to_string()]
+        );
+    }
+
+    #[test]
+    fn highlight_terms_drops_bare_boolean_operators_and_star_wildcards() {
+        assert_eq!(
+            highlight_terms("release AND burn*"),
+            vec!["release".to_string(), "burn".to_string()]
+        );
+    }
+
+    // G2-23: this is the exact shape the review captured — a quoted phrase whose two
+    // words are not adjacent in the visible excerpt. The old word-at-a-time highlighter
+    // bolded the lone "burn" inside "vpe:burn", claiming a phrase match the excerpt does
+    // not show. Honoring the phrase as one unit means it is not highlighted at all here,
+    // which is the honest answer for this excerpt.
+    #[test]
+    fn highlight_does_not_bold_one_half_of_an_unmatched_phrase() {
+        let text = "navigated to vpe:burn where an ai assistant completed a handoff";
+        let result = highlight(text, "\"release burn\"");
+        assert!(!result.contains("<strong>"));
+        assert!(result.contains("vpe:burn"));
+    }
+
+    #[test]
+    fn highlight_bolds_a_genuinely_adjacent_phrase_as_one_span() {
+        let text = "we discussed the release burn timeline next";
+        let result = highlight(text, "\"release burn\"");
+        assert!(result.contains("<strong>release burn</strong>"));
+        // Not split into two independent spans.
+        assert!(!result.contains("<strong>release</strong>"));
+        assert!(!result.contains("<strong>burn</strong>"));
+    }
+
+    #[test]
+    fn highlight_keeps_bolding_independent_unquoted_words() {
+        let text = "release notes mention a burn later on";
+        let result = highlight(text, "release burn");
+        assert!(result.contains("<strong>release</strong>"));
+        assert!(result.contains("<strong>burn</strong>"));
     }
 }
