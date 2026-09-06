@@ -352,7 +352,6 @@ fn run_poison_battery_child(root: &Path) {
             ("journal_sync", Status::Ok),
             ("journal_caught_up", Status::Ok),
             ("task_pace", Status::Skip),
-            ("timeline_divergence", Status::Ok),
             ("brain", Status::Warn),
             ("capture_health", Status::Skip),
             ("client_binding", Status::Ok),

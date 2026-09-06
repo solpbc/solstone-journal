@@ -131,7 +131,6 @@
               "talent_operation_failed",
               "talent_run_malformed",
               "talent_run_pending",
-              "timeline_month_not_found",
               "tos_changed",
               "unknown_service",
               "voice_unavailable"

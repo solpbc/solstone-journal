@@ -112,8 +112,5 @@ mod stream_name_identity_consumers;
 #[path = "contracts/talent_config_reader_architecture.rs"]
 mod talent_config_reader_architecture;
 #[cfg(test)]
-#[path = "contracts/timeline_truth_architecture.rs"]
-mod timeline_truth_architecture;
-#[cfg(test)]
 #[path = "contracts/workspace_reachability.rs"]
 mod workspace_reachability;

@@ -20,7 +20,6 @@ mod segment_state;
 mod source;
 mod sync_copy;
 mod terminal;
-mod timeline_divergence;
 mod types;
 mod vocabulary;
 
@@ -58,9 +57,6 @@ pub use sync_copy::{
 pub use terminal::{
     is_floor_talent_capped, read_completed_since, read_completed_units,
     read_daily_deterministic_failures, read_terminal_states,
-};
-pub use timeline_divergence::{
-    TimelineDivergenceDiagnosis, TimelineHealthError, diagnose_timeline_divergence,
 };
 pub use types::{
     BacklogDay, BacklogError, BacklogUnit, BacklogView, BackoffSummary, CappedDailySummary,

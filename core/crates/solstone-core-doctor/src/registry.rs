@@ -70,9 +70,6 @@ fn journal_sync(c: &CheckContext) -> RunnerResult {
 fn caught_up(c: &CheckContext) -> RunnerResult {
     checks::journal_caught_up::run(c, CHECK_CAUGHT_UP)
 }
-fn timeline_divergence(c: &CheckContext) -> RunnerResult {
-    checks::timeline_divergence::run(c, CHECK_TIMELINE_DIVERGENCE)
-}
 fn task_pace(c: &CheckContext) -> RunnerResult {
     checks::task_pace::run(c, CHECK_TASK_PACE)
 }
@@ -156,11 +153,6 @@ const CHECK_SYNC: Check = Check {
 };
 const CHECK_CAUGHT_UP: Check = Check {
     name: "journal_caught_up",
-    severity: Severity::Advisory,
-    platforms: BOTH,
-};
-const CHECK_TIMELINE_DIVERGENCE: Check = Check {
-    name: "timeline_divergence",
     severity: Severity::Advisory,
     platforms: BOTH,
 };
@@ -263,11 +255,6 @@ pub static JOURNAL: &[RegistryEntry] = &[
     RegistryEntry {
         check: CHECK_CAUGHT_UP,
         runner: caught_up,
-        deferred: None,
-    },
-    RegistryEntry {
-        check: CHECK_TIMELINE_DIVERGENCE,
-        runner: timeline_divergence,
         deferred: None,
     },
     RegistryEntry {

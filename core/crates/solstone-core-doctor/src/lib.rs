@@ -126,7 +126,7 @@ mod tests {
     }
     #[test]
     fn registry_ground_truth() {
-        assert_eq!(registry::union_names().len(), 23);
+        assert_eq!(registry::union_names().len(), 22);
         assert_eq!(
             registry::union_names()
                 .iter()
@@ -134,7 +134,7 @@ mod tests {
                     .or_else(|| registry::lookup(Battery::JournalReadiness, name))
                     .is_some())
                 .count(),
-            23
+            22
         );
         assert_eq!(
             registry::union_names()
@@ -526,8 +526,8 @@ mod tests {
         assert_ne!(b.detail, "no local journal");
     }
     #[test]
-    fn ac12_union_is_native_only_23_names() {
-        assert_eq!(registry::union_names().len(), 23);
+    fn ac12_union_is_native_only_22_names() {
+        assert_eq!(registry::union_names().len(), 22);
     }
     #[test]
     fn ac13_battery_is_read_only_for_missing_paths() {
