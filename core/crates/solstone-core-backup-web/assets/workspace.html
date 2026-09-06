@@ -145,6 +145,10 @@
       <section data-hosted-location-section hidden>
         <h2 data-copy="management.status_labels.destination"></h2>
         <p data-hosted-location></p>
+        <details class="backup-disclose" data-hosted-location-detail hidden>
+          <summary data-copy="hosted.location_detail_summary"></summary>
+          <p class="backup-note"><code data-hosted-location-exact></code></p>
+        </details>
         <a class="backup-link" href="" target="_blank" rel="noopener" data-copy-href="hosted.manage_url" data-copy="hosted.manage_label"></a>
       </section>
 
@@ -162,8 +166,15 @@
       <div class="backup-panel-actions">
         <button type="button" class="primary" data-action="backup-now" data-copy="action_labels.backup_now"></button>
         <button type="button" data-action="view-key" data-copy="action_labels.view_key"></button>
-        <button type="button" data-action="rotate-key" data-copy="action_labels.rotate_key"></button>
       </div>
+
+      <details class="backup-disclose backup-rotate-key">
+        <summary data-copy="management.rotate_key_summary"></summary>
+        <p class="backup-warning" data-copy="management.rotate_key_caption"></p>
+        <div class="backup-panel-actions">
+          <button type="button" class="danger" data-action="rotate-key" data-copy="action_labels.rotate_key"></button>
+        </div>
+      </details>
 
       <form data-retention-form class="backup-retention">
         <h2 data-copy="management.status_labels.retention"></h2>

@@ -69,8 +69,9 @@
     },
     "hosted": {
       "setup_hint": "turning this on sets up encrypted backup, operated by sol pbc. turn it on from the services page that opens, then come back here. your journal stays on your device; only the encrypted copy goes to storage sol pbc operates, and sol pbc can never read it.",
-      "location_label": "operated by sol pbc",
-      "manage_label": "manage in your services →",
+      "location_label": "storage sol pbc operates",
+      "location_detail_summary": "exact storage location",
+      "manage_label": "manage your backup at services.solstone.app →",
       "manage_url": "https://services.solstone.app/services/backup"
     },
     "management": {
@@ -82,10 +83,12 @@
       "teardown_confirm_phrase": "delete",
       "teardown_confirm_prompt": "type delete to confirm",
       "teardown_restore_first_action": "restore everything first",
+      "rotate_key_summary": "replace your recovery key",
+      "rotate_key_caption": "this replaces your recovery key. the old key stops working, so every copy of it you saved becomes useless. write the new one down before you leave this page.",
       "retention_hint": "how many recent copies to keep at each interval.",
       "status_labels": {
         "last_backup": "last backup",
-        "last_prune": "last prune",
+        "last_prune": "last cleanup",
         "last_verification": "last verification",
         "not_available": "not yet available",
         "not_yet": "not yet",
@@ -134,7 +137,7 @@
         "failed": "backup attempt failed {duration} ago"
       },
       "last_verification": {
-        "ok": "backup spot-checked {duration} ago",
+        "ok": "{duration} ago",
         "failed": "spot-check failed {duration} ago",
         "skipped": "spot-check couldn't run {duration} ago"
       },
@@ -163,7 +166,7 @@
       "enable_hint": "choose how much older media can leave this device after backup verification.",
       "not_ready": "turn on encrypted backup and confirm your recovery key before using media offload.",
       "labels": {
-        "budget_gb": "raw media budget",
+        "budget_gb": "original media budget",
         "floor_gb": "device free-space floor",
         "budget_short": "budget",
         "floor_short": "floor",
@@ -804,9 +807,19 @@
     const hosted = state.hosted || {};
     const operated = state.mode === 'operated' && hosted.bound;
     section.hidden = !operated;
-    if (operated) {
-      setText('[data-hosted-location]', hostedCopy.location_label || '');
+    const detail = root.querySelector('[data-hosted-location-detail]');
+    if (!operated) {
+      if (detail) detail.hidden = true;
+      return;
     }
+    setText('[data-hosted-location]', hostedCopy.location_label || '');
+    // The heading asks where the backup lives, so the exact storage location is
+    // available (G3-214) — as an exact id, it lives inside the disclosure.
+    const bucket = typeof hosted.bucket === 'string' ? hosted.bucket.trim() : '';
+    const prefix = typeof hosted.prefix === 'string' ? hosted.prefix.trim() : '';
+    const exact = [bucket, prefix].filter(Boolean).join('/');
+    setText('[data-hosted-location-exact]', exact);
+    if (detail) detail.hidden = !exact;
   }
 
   function formatTime(value) {
@@ -918,7 +931,10 @@
 
   function applyOffloadSuggestion(field, hintSelector, suggestedBytes) {
     const suggestion = formatGbInput(suggestedBytes);
-    field.placeholder = suggestion;
+    // The input carries the owner's answer and nothing else. A placeholder here
+    // reads as a set value at a glance (G3-203); the caption below is the only
+    // place the suggestion appears.
+    field.removeAttribute('placeholder');
     const hint = root.querySelector(hintSelector);
     if (!hint) return;
     hint.textContent = suggestion
@@ -1242,8 +1258,8 @@
     if (tiering) tiering.hidden = !showProof;
 
     // A suggestion is never shown as if it were the setting: only a configured
-    // limit fills the input or captions a tile. The suggestion is a placeholder
-    // and a hint, and the server still applies it when enable posts no config.
+    // limit fills the input or captions a tile. The suggestion lives in the hint
+    // line alone, and the server still applies it when enable posts no config.
     const suggestedDefaults = payload.suggested_defaults || {};
     const budget = offload.budget_bytes;
     const floor = offload.floor_bytes;
