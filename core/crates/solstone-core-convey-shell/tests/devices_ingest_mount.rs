@@ -248,7 +248,7 @@ async fn corrupt_post_ingest_is_settings_repair_plain_text() {
         Some("text/plain; charset=utf-8")
     );
     let text = String::from_utf8(bytes).expect("plain text");
-    assert!(text.contains("Your settings were NOT changed"), "{text}");
+    assert!(text.contains("your settings were NOT changed"), "{text}");
 }
 
 #[tokio::test]

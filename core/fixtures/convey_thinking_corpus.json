@@ -1058,7 +1058,7 @@
         "why": "explicit accepted local model"
       },
       {
-        "body_bytes": 157,
+        "body_bytes": 159,
         "body_sha256": "18bb309ed2945dec7f5c9d6b047f2ab426c0906074d043a6b47f3d53edb1c117",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1372,7 +1372,7 @@
         "why": "host fit for the bundled model"
       },
       {
-        "body_bytes": 157,
+        "body_bytes": 159,
         "body_sha256": "18bb309ed2945dec7f5c9d6b047f2ab426c0906074d043a6b47f3d53edb1c117",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1408,7 +1408,7 @@
         "why": "install state machine, read-only"
       },
       {
-        "body_bytes": 157,
+        "body_bytes": 159,
         "body_sha256": "18bb309ed2945dec7f5c9d6b047f2ab426c0906074d043a6b47f3d53edb1c117",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1571,7 +1571,7 @@
         "why": "\u26a0 NO browser or CLI caller reaches this -- recorded so a deletion is a decision"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1587,7 +1587,7 @@
         "why": "missing body is missing_request_body, not a 500"
       },
       {
-        "body_bytes": 217,
+        "body_bytes": 219,
         "body_sha256": "6e83d936e252986006d0e77fa95519216d93b28f6ee8a1b8c0d31f0f55be85b1",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1607,7 +1607,7 @@
         "why": "unmanaged env var names the allowlist"
       },
       {
-        "body_bytes": 120,
+        "body_bytes": 122,
         "body_sha256": "8cec1bbbf9d1b79ce2fbc1186aab3218496bde26380d609f5bcc1a3c2f6e6a97",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1627,7 +1627,7 @@
         "why": "non-string value is invalid_request_value"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1643,7 +1643,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 121,
+        "body_bytes": 123,
         "body_sha256": "ae0338420fa22b65b6e944f01e0594e8d9d8f1fa1c12624a1eba80fc5f21b793",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1663,7 +1663,7 @@
         "why": "empty candidate refuses before any network call"
       },
       {
-        "body_bytes": 210,
+        "body_bytes": 212,
         "body_sha256": "032734ca50cf1efdb7094524d5eac44d50ad0998ffeb36c42e3ed1bdf0ba7fe5",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1683,7 +1683,7 @@
         "why": "unmanaged env var"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1699,7 +1699,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 164,
+        "body_bytes": 166,
         "body_sha256": "e112f56b9bf15f2d9e5eba23c5d7f5d4af399a90cf74e309584514be615f3e9b",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1719,7 +1719,7 @@
         "why": "\ud83d\udd34 local is NOT a cloud BYO provider here"
       },
       {
-        "body_bytes": 131,
+        "body_bytes": 133,
         "body_sha256": "2b7dd2dd7a5b383318a0f4f9ef3029de4762b70433c0552f78dfe990cec57558",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1738,7 +1738,7 @@
         "why": "missing model"
       },
       {
-        "body_bytes": 131,
+        "body_bytes": 133,
         "body_sha256": "2b7dd2dd7a5b383318a0f4f9ef3029de4762b70433c0552f78dfe990cec57558",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1758,7 +1758,7 @@
         "why": "blank model"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1774,7 +1774,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 101,
+        "body_bytes": 96,
         "body_sha256": "aa02b8efc2fc628080bd072df999f3dbf718c3620d84a648194c4c98108bd1f9",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1793,7 +1793,7 @@
         "why": "lane is required"
       },
       {
-        "body_bytes": 181,
+        "body_bytes": 183,
         "body_sha256": "342f97ad3a2debe95c16b6b2a4997921149a569a44dec6e0865e18a54028ee78",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1812,7 +1812,7 @@
         "why": "unknown lane names the closed set"
       },
       {
-        "body_bytes": 200,
+        "body_bytes": 202,
         "body_sha256": "f7ad2f16333930a92abd1ccbbbff6cb30fdeb7e4ce8773559945d66854fd61f8",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1832,7 +1832,7 @@
         "why": "unknown BYO provider"
       },
       {
-        "body_bytes": 195,
+        "body_bytes": 197,
         "body_sha256": "91f2eef3ca2b80e82c177bc9c4b770e41f662e1c7a086030f319b4deff4e0c35",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1851,7 +1851,7 @@
         "why": "BYO with no provider"
       },
       {
-        "body_bytes": 151,
+        "body_bytes": 153,
         "body_sha256": "79c422149e9609071dc3894a0e072205df1819f5396340b0b111206ebb23bb64",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1872,7 +1872,7 @@
         "why": "unknown field is refused, not ignored"
       },
       {
-        "body_bytes": 193,
+        "body_bytes": 195,
         "body_sha256": "6b3feab3174b52e60ddde64410ec81e3bce31b534d2bec3f909e9225308820ba",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1911,7 +1911,7 @@
         "why": "confidential must go through the enable flow"
       },
       {
-        "body_bytes": 222,
+        "body_bytes": 224,
         "body_sha256": "7352409dd25b3a91ca6ea257e7927eccebd48a482819f078481e643fb15fc502",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1935,7 +1935,7 @@
         "why": "unknown alias target"
       },
       {
-        "body_bytes": 195,
+        "body_bytes": 197,
         "body_sha256": "3c9192f58d8c028bbc09bf02aecdc684c1ea841d97f3a474ad42c5b326df92a0",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1959,7 +1959,7 @@
         "why": "alias targets are Google-only"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1975,7 +1975,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 109,
+        "body_bytes": 104,
         "body_sha256": "c8bfd90b7b891e98a4f8e9d2666c5746392b0446ce56385f862451ea6f111829",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -1994,7 +1994,7 @@
         "why": "endpoint_url is required"
       },
       {
-        "body_bytes": 174,
+        "body_bytes": 176,
         "body_sha256": "cdd0b0b534b47eb35bbe13bf94b11c2f3ef40afa2bac75590b857bcfbf1a26c4",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -2014,7 +2014,7 @@
         "why": "scheme allowlist"
       },
       {
-        "body_bytes": 174,
+        "body_bytes": 176,
         "body_sha256": "cdd0b0b534b47eb35bbe13bf94b11c2f3ef40afa2bac75590b857bcfbf1a26c4",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -2034,7 +2034,7 @@
         "why": "a URL with no host"
       },
       {
-        "body_bytes": 112,
+        "body_bytes": 107,
         "body_sha256": "e6995c6e0c0beac7da9b7f8efa305d018a0d8714bb4d9622e129ba6e9ef41824",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -2053,7 +2053,7 @@
         "why": "served_model_id is required"
       },
       {
-        "body_bytes": 108,
+        "body_bytes": 110,
         "body_sha256": "95e2607088da208a1042f8b3875587b66847e35999055cb8cee12881ef3ef0bb",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -2074,7 +2074,7 @@
         "why": "non-string credential"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -2090,7 +2090,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 147,
+        "body_bytes": 149,
         "body_sha256": "5d02a4267e5a88f0424d530bd26bb7b420e4e5cc958391dd29921177bf934718",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -2109,7 +2109,7 @@
         "why": "\ud83d\udd34 the retry body must be EXACTLY the recovery state"
       },
       {
-        "body_bytes": 147,
+        "body_bytes": 149,
         "body_sha256": "5d02a4267e5a88f0424d530bd26bb7b420e4e5cc958391dd29921177bf934718",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -2130,7 +2130,7 @@
         "why": "\u26a0 bool is not an int here, and Python would say it is"
       },
       {
-        "body_bytes": 147,
+        "body_bytes": 149,
         "body_sha256": "5d02a4267e5a88f0424d530bd26bb7b420e4e5cc958391dd29921177bf934718",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -2151,7 +2151,7 @@
         "why": "negative revision"
       },
       {
-        "body_bytes": 178,
+        "body_bytes": 180,
         "body_sha256": "9e8b31767fb47b7b998037807282a8123a8d6a3ec0d2c831b28d0a19f668304b",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -2167,7 +2167,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 151,
+        "body_bytes": 153,
         "body_sha256": "f62ddcbb053070d211f80e69532893e8807e7ca4e24fcd059953344f3641d8e9",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -2188,7 +2188,7 @@
         "why": "disabled must be boolean"
       },
       {
-        "body_bytes": 150,
+        "body_bytes": 152,
         "body_sha256": "8c3e13c08ebe9a47e7cb7b1a4c900bd84e5a647904ee6c8d60d7986878ea6fcd",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -2242,7 +2242,7 @@
         "why": "per-app static traversal refusal"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -3285,7 +3285,7 @@
         "why": "explicit accepted local model"
       },
       {
-        "body_bytes": 157,
+        "body_bytes": 159,
         "body_sha256": "18bb309ed2945dec7f5c9d6b047f2ab426c0906074d043a6b47f3d53edb1c117",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -3598,7 +3598,7 @@
         "why": "host fit for the bundled model"
       },
       {
-        "body_bytes": 157,
+        "body_bytes": 159,
         "body_sha256": "18bb309ed2945dec7f5c9d6b047f2ab426c0906074d043a6b47f3d53edb1c117",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -3634,7 +3634,7 @@
         "why": "install state machine, read-only"
       },
       {
-        "body_bytes": 157,
+        "body_bytes": 159,
         "body_sha256": "18bb309ed2945dec7f5c9d6b047f2ab426c0906074d043a6b47f3d53edb1c117",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -3797,7 +3797,7 @@
         "why": "\u26a0 NO browser or CLI caller reaches this -- recorded so a deletion is a decision"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -3813,7 +3813,7 @@
         "why": "missing body is missing_request_body, not a 500"
       },
       {
-        "body_bytes": 217,
+        "body_bytes": 219,
         "body_sha256": "6e83d936e252986006d0e77fa95519216d93b28f6ee8a1b8c0d31f0f55be85b1",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -3833,7 +3833,7 @@
         "why": "unmanaged env var names the allowlist"
       },
       {
-        "body_bytes": 120,
+        "body_bytes": 122,
         "body_sha256": "8cec1bbbf9d1b79ce2fbc1186aab3218496bde26380d609f5bcc1a3c2f6e6a97",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -3853,7 +3853,7 @@
         "why": "non-string value is invalid_request_value"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -3869,7 +3869,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 121,
+        "body_bytes": 123,
         "body_sha256": "ae0338420fa22b65b6e944f01e0594e8d9d8f1fa1c12624a1eba80fc5f21b793",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -3889,7 +3889,7 @@
         "why": "empty candidate refuses before any network call"
       },
       {
-        "body_bytes": 210,
+        "body_bytes": 212,
         "body_sha256": "032734ca50cf1efdb7094524d5eac44d50ad0998ffeb36c42e3ed1bdf0ba7fe5",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -3909,7 +3909,7 @@
         "why": "unmanaged env var"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -3925,7 +3925,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 164,
+        "body_bytes": 166,
         "body_sha256": "e112f56b9bf15f2d9e5eba23c5d7f5d4af399a90cf74e309584514be615f3e9b",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -3945,7 +3945,7 @@
         "why": "\ud83d\udd34 local is NOT a cloud BYO provider here"
       },
       {
-        "body_bytes": 131,
+        "body_bytes": 133,
         "body_sha256": "2b7dd2dd7a5b383318a0f4f9ef3029de4762b70433c0552f78dfe990cec57558",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -3964,7 +3964,7 @@
         "why": "missing model"
       },
       {
-        "body_bytes": 131,
+        "body_bytes": 133,
         "body_sha256": "2b7dd2dd7a5b383318a0f4f9ef3029de4762b70433c0552f78dfe990cec57558",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -3984,7 +3984,7 @@
         "why": "blank model"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -4000,7 +4000,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 101,
+        "body_bytes": 96,
         "body_sha256": "aa02b8efc2fc628080bd072df999f3dbf718c3620d84a648194c4c98108bd1f9",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -4019,7 +4019,7 @@
         "why": "lane is required"
       },
       {
-        "body_bytes": 181,
+        "body_bytes": 183,
         "body_sha256": "342f97ad3a2debe95c16b6b2a4997921149a569a44dec6e0865e18a54028ee78",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -4038,7 +4038,7 @@
         "why": "unknown lane names the closed set"
       },
       {
-        "body_bytes": 200,
+        "body_bytes": 202,
         "body_sha256": "f7ad2f16333930a92abd1ccbbbff6cb30fdeb7e4ce8773559945d66854fd61f8",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -4058,7 +4058,7 @@
         "why": "unknown BYO provider"
       },
       {
-        "body_bytes": 195,
+        "body_bytes": 197,
         "body_sha256": "91f2eef3ca2b80e82c177bc9c4b770e41f662e1c7a086030f319b4deff4e0c35",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -4077,7 +4077,7 @@
         "why": "BYO with no provider"
       },
       {
-        "body_bytes": 151,
+        "body_bytes": 153,
         "body_sha256": "79c422149e9609071dc3894a0e072205df1819f5396340b0b111206ebb23bb64",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -4098,7 +4098,7 @@
         "why": "unknown field is refused, not ignored"
       },
       {
-        "body_bytes": 193,
+        "body_bytes": 195,
         "body_sha256": "6b3feab3174b52e60ddde64410ec81e3bce31b534d2bec3f909e9225308820ba",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -4137,7 +4137,7 @@
         "why": "confidential must go through the enable flow"
       },
       {
-        "body_bytes": 222,
+        "body_bytes": 224,
         "body_sha256": "7352409dd25b3a91ca6ea257e7927eccebd48a482819f078481e643fb15fc502",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -4161,7 +4161,7 @@
         "why": "unknown alias target"
       },
       {
-        "body_bytes": 195,
+        "body_bytes": 197,
         "body_sha256": "3c9192f58d8c028bbc09bf02aecdc684c1ea841d97f3a474ad42c5b326df92a0",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -4185,7 +4185,7 @@
         "why": "alias targets are Google-only"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -4201,7 +4201,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 109,
+        "body_bytes": 104,
         "body_sha256": "c8bfd90b7b891e98a4f8e9d2666c5746392b0446ce56385f862451ea6f111829",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -4220,7 +4220,7 @@
         "why": "endpoint_url is required"
       },
       {
-        "body_bytes": 174,
+        "body_bytes": 176,
         "body_sha256": "cdd0b0b534b47eb35bbe13bf94b11c2f3ef40afa2bac75590b857bcfbf1a26c4",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -4240,7 +4240,7 @@
         "why": "scheme allowlist"
       },
       {
-        "body_bytes": 174,
+        "body_bytes": 176,
         "body_sha256": "cdd0b0b534b47eb35bbe13bf94b11c2f3ef40afa2bac75590b857bcfbf1a26c4",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -4260,7 +4260,7 @@
         "why": "a URL with no host"
       },
       {
-        "body_bytes": 112,
+        "body_bytes": 107,
         "body_sha256": "e6995c6e0c0beac7da9b7f8efa305d018a0d8714bb4d9622e129ba6e9ef41824",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -4279,7 +4279,7 @@
         "why": "served_model_id is required"
       },
       {
-        "body_bytes": 108,
+        "body_bytes": 110,
         "body_sha256": "95e2607088da208a1042f8b3875587b66847e35999055cb8cee12881ef3ef0bb",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -4300,7 +4300,7 @@
         "why": "non-string credential"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -4316,7 +4316,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 147,
+        "body_bytes": 149,
         "body_sha256": "5d02a4267e5a88f0424d530bd26bb7b420e4e5cc958391dd29921177bf934718",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -4335,7 +4335,7 @@
         "why": "\ud83d\udd34 the retry body must be EXACTLY the recovery state"
       },
       {
-        "body_bytes": 147,
+        "body_bytes": 149,
         "body_sha256": "5d02a4267e5a88f0424d530bd26bb7b420e4e5cc958391dd29921177bf934718",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -4356,7 +4356,7 @@
         "why": "\u26a0 bool is not an int here, and Python would say it is"
       },
       {
-        "body_bytes": 147,
+        "body_bytes": 149,
         "body_sha256": "5d02a4267e5a88f0424d530bd26bb7b420e4e5cc958391dd29921177bf934718",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -4377,7 +4377,7 @@
         "why": "negative revision"
       },
       {
-        "body_bytes": 178,
+        "body_bytes": 180,
         "body_sha256": "9e8b31767fb47b7b998037807282a8123a8d6a3ec0d2c831b28d0a19f668304b",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -4393,7 +4393,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 151,
+        "body_bytes": 153,
         "body_sha256": "f62ddcbb053070d211f80e69532893e8807e7ca4e24fcd059953344f3641d8e9",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -4414,7 +4414,7 @@
         "why": "disabled must be boolean"
       },
       {
-        "body_bytes": 150,
+        "body_bytes": 152,
         "body_sha256": "8c3e13c08ebe9a47e7cb7b1a4c900bd84e5a647904ee6c8d60d7986878ea6fcd",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -4468,7 +4468,7 @@
         "why": "per-app static traversal refusal"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -5497,7 +5497,7 @@
         "why": "explicit accepted local model"
       },
       {
-        "body_bytes": 157,
+        "body_bytes": 159,
         "body_sha256": "18bb309ed2945dec7f5c9d6b047f2ab426c0906074d043a6b47f3d53edb1c117",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -5804,7 +5804,7 @@
         "why": "host fit for the bundled model"
       },
       {
-        "body_bytes": 157,
+        "body_bytes": 159,
         "body_sha256": "18bb309ed2945dec7f5c9d6b047f2ab426c0906074d043a6b47f3d53edb1c117",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -5840,7 +5840,7 @@
         "why": "install state machine, read-only"
       },
       {
-        "body_bytes": 157,
+        "body_bytes": 159,
         "body_sha256": "18bb309ed2945dec7f5c9d6b047f2ab426c0906074d043a6b47f3d53edb1c117",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6003,7 +6003,7 @@
         "why": "\u26a0 NO browser or CLI caller reaches this -- recorded so a deletion is a decision"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6019,7 +6019,7 @@
         "why": "missing body is missing_request_body, not a 500"
       },
       {
-        "body_bytes": 217,
+        "body_bytes": 219,
         "body_sha256": "6e83d936e252986006d0e77fa95519216d93b28f6ee8a1b8c0d31f0f55be85b1",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6039,7 +6039,7 @@
         "why": "unmanaged env var names the allowlist"
       },
       {
-        "body_bytes": 120,
+        "body_bytes": 122,
         "body_sha256": "8cec1bbbf9d1b79ce2fbc1186aab3218496bde26380d609f5bcc1a3c2f6e6a97",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6059,7 +6059,7 @@
         "why": "non-string value is invalid_request_value"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6075,7 +6075,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 121,
+        "body_bytes": 123,
         "body_sha256": "ae0338420fa22b65b6e944f01e0594e8d9d8f1fa1c12624a1eba80fc5f21b793",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6095,7 +6095,7 @@
         "why": "empty candidate refuses before any network call"
       },
       {
-        "body_bytes": 210,
+        "body_bytes": 212,
         "body_sha256": "032734ca50cf1efdb7094524d5eac44d50ad0998ffeb36c42e3ed1bdf0ba7fe5",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6115,7 +6115,7 @@
         "why": "unmanaged env var"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6131,7 +6131,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 164,
+        "body_bytes": 166,
         "body_sha256": "e112f56b9bf15f2d9e5eba23c5d7f5d4af399a90cf74e309584514be615f3e9b",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6151,7 +6151,7 @@
         "why": "\ud83d\udd34 local is NOT a cloud BYO provider here"
       },
       {
-        "body_bytes": 131,
+        "body_bytes": 133,
         "body_sha256": "2b7dd2dd7a5b383318a0f4f9ef3029de4762b70433c0552f78dfe990cec57558",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6170,7 +6170,7 @@
         "why": "missing model"
       },
       {
-        "body_bytes": 131,
+        "body_bytes": 133,
         "body_sha256": "2b7dd2dd7a5b383318a0f4f9ef3029de4762b70433c0552f78dfe990cec57558",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6190,7 +6190,7 @@
         "why": "blank model"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6206,7 +6206,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 101,
+        "body_bytes": 96,
         "body_sha256": "aa02b8efc2fc628080bd072df999f3dbf718c3620d84a648194c4c98108bd1f9",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6225,7 +6225,7 @@
         "why": "lane is required"
       },
       {
-        "body_bytes": 181,
+        "body_bytes": 183,
         "body_sha256": "342f97ad3a2debe95c16b6b2a4997921149a569a44dec6e0865e18a54028ee78",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6244,7 +6244,7 @@
         "why": "unknown lane names the closed set"
       },
       {
-        "body_bytes": 200,
+        "body_bytes": 202,
         "body_sha256": "f7ad2f16333930a92abd1ccbbbff6cb30fdeb7e4ce8773559945d66854fd61f8",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6264,7 +6264,7 @@
         "why": "unknown BYO provider"
       },
       {
-        "body_bytes": 195,
+        "body_bytes": 197,
         "body_sha256": "91f2eef3ca2b80e82c177bc9c4b770e41f662e1c7a086030f319b4deff4e0c35",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6283,7 +6283,7 @@
         "why": "BYO with no provider"
       },
       {
-        "body_bytes": 151,
+        "body_bytes": 153,
         "body_sha256": "79c422149e9609071dc3894a0e072205df1819f5396340b0b111206ebb23bb64",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6343,7 +6343,7 @@
         "why": "confidential must go through the enable flow"
       },
       {
-        "body_bytes": 222,
+        "body_bytes": 224,
         "body_sha256": "7352409dd25b3a91ca6ea257e7927eccebd48a482819f078481e643fb15fc502",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6367,7 +6367,7 @@
         "why": "unknown alias target"
       },
       {
-        "body_bytes": 195,
+        "body_bytes": 197,
         "body_sha256": "3c9192f58d8c028bbc09bf02aecdc684c1ea841d97f3a474ad42c5b326df92a0",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6391,7 +6391,7 @@
         "why": "alias targets are Google-only"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6407,7 +6407,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 109,
+        "body_bytes": 104,
         "body_sha256": "c8bfd90b7b891e98a4f8e9d2666c5746392b0446ce56385f862451ea6f111829",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6426,7 +6426,7 @@
         "why": "endpoint_url is required"
       },
       {
-        "body_bytes": 174,
+        "body_bytes": 176,
         "body_sha256": "cdd0b0b534b47eb35bbe13bf94b11c2f3ef40afa2bac75590b857bcfbf1a26c4",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6446,7 +6446,7 @@
         "why": "scheme allowlist"
       },
       {
-        "body_bytes": 174,
+        "body_bytes": 176,
         "body_sha256": "cdd0b0b534b47eb35bbe13bf94b11c2f3ef40afa2bac75590b857bcfbf1a26c4",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6466,7 +6466,7 @@
         "why": "a URL with no host"
       },
       {
-        "body_bytes": 112,
+        "body_bytes": 107,
         "body_sha256": "e6995c6e0c0beac7da9b7f8efa305d018a0d8714bb4d9622e129ba6e9ef41824",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6485,7 +6485,7 @@
         "why": "served_model_id is required"
       },
       {
-        "body_bytes": 108,
+        "body_bytes": 110,
         "body_sha256": "95e2607088da208a1042f8b3875587b66847e35999055cb8cee12881ef3ef0bb",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6506,7 +6506,7 @@
         "why": "non-string credential"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6522,7 +6522,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 147,
+        "body_bytes": 149,
         "body_sha256": "5d02a4267e5a88f0424d530bd26bb7b420e4e5cc958391dd29921177bf934718",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6541,7 +6541,7 @@
         "why": "\ud83d\udd34 the retry body must be EXACTLY the recovery state"
       },
       {
-        "body_bytes": 147,
+        "body_bytes": 149,
         "body_sha256": "5d02a4267e5a88f0424d530bd26bb7b420e4e5cc958391dd29921177bf934718",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6562,7 +6562,7 @@
         "why": "\u26a0 bool is not an int here, and Python would say it is"
       },
       {
-        "body_bytes": 147,
+        "body_bytes": 149,
         "body_sha256": "5d02a4267e5a88f0424d530bd26bb7b420e4e5cc958391dd29921177bf934718",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6583,7 +6583,7 @@
         "why": "negative revision"
       },
       {
-        "body_bytes": 178,
+        "body_bytes": 180,
         "body_sha256": "9e8b31767fb47b7b998037807282a8123a8d6a3ec0d2c831b28d0a19f668304b",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6599,7 +6599,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 151,
+        "body_bytes": 153,
         "body_sha256": "f62ddcbb053070d211f80e69532893e8807e7ca4e24fcd059953344f3641d8e9",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6620,7 +6620,7 @@
         "why": "disabled must be boolean"
       },
       {
-        "body_bytes": 150,
+        "body_bytes": 152,
         "body_sha256": "8c3e13c08ebe9a47e7cb7b1a4c900bd84e5a647904ee6c8d60d7986878ea6fcd",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -6674,7 +6674,7 @@
         "why": "per-app static traversal refusal"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -7697,7 +7697,7 @@
         "why": "explicit accepted local model"
       },
       {
-        "body_bytes": 157,
+        "body_bytes": 159,
         "body_sha256": "18bb309ed2945dec7f5c9d6b047f2ab426c0906074d043a6b47f3d53edb1c117",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8000,7 +8000,7 @@
         "why": "host fit for the bundled model"
       },
       {
-        "body_bytes": 157,
+        "body_bytes": 159,
         "body_sha256": "18bb309ed2945dec7f5c9d6b047f2ab426c0906074d043a6b47f3d53edb1c117",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8036,7 +8036,7 @@
         "why": "install state machine, read-only"
       },
       {
-        "body_bytes": 157,
+        "body_bytes": 159,
         "body_sha256": "18bb309ed2945dec7f5c9d6b047f2ab426c0906074d043a6b47f3d53edb1c117",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8199,7 +8199,7 @@
         "why": "\u26a0 NO browser or CLI caller reaches this -- recorded so a deletion is a decision"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8215,7 +8215,7 @@
         "why": "missing body is missing_request_body, not a 500"
       },
       {
-        "body_bytes": 217,
+        "body_bytes": 219,
         "body_sha256": "6e83d936e252986006d0e77fa95519216d93b28f6ee8a1b8c0d31f0f55be85b1",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8235,7 +8235,7 @@
         "why": "unmanaged env var names the allowlist"
       },
       {
-        "body_bytes": 120,
+        "body_bytes": 122,
         "body_sha256": "8cec1bbbf9d1b79ce2fbc1186aab3218496bde26380d609f5bcc1a3c2f6e6a97",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8255,7 +8255,7 @@
         "why": "non-string value is invalid_request_value"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8271,7 +8271,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 121,
+        "body_bytes": 123,
         "body_sha256": "ae0338420fa22b65b6e944f01e0594e8d9d8f1fa1c12624a1eba80fc5f21b793",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8291,7 +8291,7 @@
         "why": "empty candidate refuses before any network call"
       },
       {
-        "body_bytes": 210,
+        "body_bytes": 212,
         "body_sha256": "032734ca50cf1efdb7094524d5eac44d50ad0998ffeb36c42e3ed1bdf0ba7fe5",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8311,7 +8311,7 @@
         "why": "unmanaged env var"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8327,7 +8327,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 164,
+        "body_bytes": 166,
         "body_sha256": "e112f56b9bf15f2d9e5eba23c5d7f5d4af399a90cf74e309584514be615f3e9b",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8347,7 +8347,7 @@
         "why": "\ud83d\udd34 local is NOT a cloud BYO provider here"
       },
       {
-        "body_bytes": 131,
+        "body_bytes": 133,
         "body_sha256": "2b7dd2dd7a5b383318a0f4f9ef3029de4762b70433c0552f78dfe990cec57558",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8366,7 +8366,7 @@
         "why": "missing model"
       },
       {
-        "body_bytes": 131,
+        "body_bytes": 133,
         "body_sha256": "2b7dd2dd7a5b383318a0f4f9ef3029de4762b70433c0552f78dfe990cec57558",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8386,7 +8386,7 @@
         "why": "blank model"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8402,7 +8402,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 101,
+        "body_bytes": 96,
         "body_sha256": "aa02b8efc2fc628080bd072df999f3dbf718c3620d84a648194c4c98108bd1f9",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8421,7 +8421,7 @@
         "why": "lane is required"
       },
       {
-        "body_bytes": 181,
+        "body_bytes": 183,
         "body_sha256": "342f97ad3a2debe95c16b6b2a4997921149a569a44dec6e0865e18a54028ee78",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8440,7 +8440,7 @@
         "why": "unknown lane names the closed set"
       },
       {
-        "body_bytes": 200,
+        "body_bytes": 202,
         "body_sha256": "f7ad2f16333930a92abd1ccbbbff6cb30fdeb7e4ce8773559945d66854fd61f8",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8460,7 +8460,7 @@
         "why": "unknown BYO provider"
       },
       {
-        "body_bytes": 195,
+        "body_bytes": 197,
         "body_sha256": "91f2eef3ca2b80e82c177bc9c4b770e41f662e1c7a086030f319b4deff4e0c35",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8479,7 +8479,7 @@
         "why": "BYO with no provider"
       },
       {
-        "body_bytes": 151,
+        "body_bytes": 153,
         "body_sha256": "79c422149e9609071dc3894a0e072205df1819f5396340b0b111206ebb23bb64",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8737,7 +8737,7 @@
         "why": "confidential must go through the enable flow"
       },
       {
-        "body_bytes": 222,
+        "body_bytes": 224,
         "body_sha256": "7352409dd25b3a91ca6ea257e7927eccebd48a482819f078481e643fb15fc502",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8761,7 +8761,7 @@
         "why": "unknown alias target"
       },
       {
-        "body_bytes": 195,
+        "body_bytes": 197,
         "body_sha256": "3c9192f58d8c028bbc09bf02aecdc684c1ea841d97f3a474ad42c5b326df92a0",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8785,7 +8785,7 @@
         "why": "alias targets are Google-only"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8801,7 +8801,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 109,
+        "body_bytes": 104,
         "body_sha256": "c8bfd90b7b891e98a4f8e9d2666c5746392b0446ce56385f862451ea6f111829",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8820,7 +8820,7 @@
         "why": "endpoint_url is required"
       },
       {
-        "body_bytes": 174,
+        "body_bytes": 176,
         "body_sha256": "cdd0b0b534b47eb35bbe13bf94b11c2f3ef40afa2bac75590b857bcfbf1a26c4",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8840,7 +8840,7 @@
         "why": "scheme allowlist"
       },
       {
-        "body_bytes": 174,
+        "body_bytes": 176,
         "body_sha256": "cdd0b0b534b47eb35bbe13bf94b11c2f3ef40afa2bac75590b857bcfbf1a26c4",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8860,7 +8860,7 @@
         "why": "a URL with no host"
       },
       {
-        "body_bytes": 112,
+        "body_bytes": 107,
         "body_sha256": "e6995c6e0c0beac7da9b7f8efa305d018a0d8714bb4d9622e129ba6e9ef41824",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8879,7 +8879,7 @@
         "why": "served_model_id is required"
       },
       {
-        "body_bytes": 108,
+        "body_bytes": 110,
         "body_sha256": "95e2607088da208a1042f8b3875587b66847e35999055cb8cee12881ef3ef0bb",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8900,7 +8900,7 @@
         "why": "non-string credential"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8916,7 +8916,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 147,
+        "body_bytes": 149,
         "body_sha256": "5d02a4267e5a88f0424d530bd26bb7b420e4e5cc958391dd29921177bf934718",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8935,7 +8935,7 @@
         "why": "\ud83d\udd34 the retry body must be EXACTLY the recovery state"
       },
       {
-        "body_bytes": 147,
+        "body_bytes": 149,
         "body_sha256": "5d02a4267e5a88f0424d530bd26bb7b420e4e5cc958391dd29921177bf934718",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8956,7 +8956,7 @@
         "why": "\u26a0 bool is not an int here, and Python would say it is"
       },
       {
-        "body_bytes": 147,
+        "body_bytes": 149,
         "body_sha256": "5d02a4267e5a88f0424d530bd26bb7b420e4e5cc958391dd29921177bf934718",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8977,7 +8977,7 @@
         "why": "negative revision"
       },
       {
-        "body_bytes": 178,
+        "body_bytes": 180,
         "body_sha256": "9e8b31767fb47b7b998037807282a8123a8d6a3ec0d2c831b28d0a19f668304b",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -8993,7 +8993,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 151,
+        "body_bytes": 153,
         "body_sha256": "f62ddcbb053070d211f80e69532893e8807e7ca4e24fcd059953344f3641d8e9",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -9014,7 +9014,7 @@
         "why": "disabled must be boolean"
       },
       {
-        "body_bytes": 150,
+        "body_bytes": 152,
         "body_sha256": "8c3e13c08ebe9a47e7cb7b1a4c900bd84e5a647904ee6c8d60d7986878ea6fcd",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -9068,7 +9068,7 @@
         "why": "per-app static traversal refusal"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -10087,7 +10087,7 @@
         "why": "explicit accepted local model"
       },
       {
-        "body_bytes": 157,
+        "body_bytes": 159,
         "body_sha256": "18bb309ed2945dec7f5c9d6b047f2ab426c0906074d043a6b47f3d53edb1c117",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -10392,7 +10392,7 @@
         "why": "host fit for the bundled model"
       },
       {
-        "body_bytes": 157,
+        "body_bytes": 159,
         "body_sha256": "18bb309ed2945dec7f5c9d6b047f2ab426c0906074d043a6b47f3d53edb1c117",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -10428,7 +10428,7 @@
         "why": "install state machine, read-only"
       },
       {
-        "body_bytes": 157,
+        "body_bytes": 159,
         "body_sha256": "18bb309ed2945dec7f5c9d6b047f2ab426c0906074d043a6b47f3d53edb1c117",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -10591,7 +10591,7 @@
         "why": "\u26a0 NO browser or CLI caller reaches this -- recorded so a deletion is a decision"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -10607,7 +10607,7 @@
         "why": "missing body is missing_request_body, not a 500"
       },
       {
-        "body_bytes": 217,
+        "body_bytes": 219,
         "body_sha256": "6e83d936e252986006d0e77fa95519216d93b28f6ee8a1b8c0d31f0f55be85b1",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -10627,7 +10627,7 @@
         "why": "unmanaged env var names the allowlist"
       },
       {
-        "body_bytes": 120,
+        "body_bytes": 122,
         "body_sha256": "8cec1bbbf9d1b79ce2fbc1186aab3218496bde26380d609f5bcc1a3c2f6e6a97",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -10647,7 +10647,7 @@
         "why": "non-string value is invalid_request_value"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -10663,7 +10663,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 121,
+        "body_bytes": 123,
         "body_sha256": "ae0338420fa22b65b6e944f01e0594e8d9d8f1fa1c12624a1eba80fc5f21b793",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -10683,7 +10683,7 @@
         "why": "empty candidate refuses before any network call"
       },
       {
-        "body_bytes": 210,
+        "body_bytes": 212,
         "body_sha256": "032734ca50cf1efdb7094524d5eac44d50ad0998ffeb36c42e3ed1bdf0ba7fe5",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -10703,7 +10703,7 @@
         "why": "unmanaged env var"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -10719,7 +10719,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 164,
+        "body_bytes": 166,
         "body_sha256": "e112f56b9bf15f2d9e5eba23c5d7f5d4af399a90cf74e309584514be615f3e9b",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -10739,7 +10739,7 @@
         "why": "\ud83d\udd34 local is NOT a cloud BYO provider here"
       },
       {
-        "body_bytes": 131,
+        "body_bytes": 133,
         "body_sha256": "2b7dd2dd7a5b383318a0f4f9ef3029de4762b70433c0552f78dfe990cec57558",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -10758,7 +10758,7 @@
         "why": "missing model"
       },
       {
-        "body_bytes": 131,
+        "body_bytes": 133,
         "body_sha256": "2b7dd2dd7a5b383318a0f4f9ef3029de4762b70433c0552f78dfe990cec57558",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -10778,7 +10778,7 @@
         "why": "blank model"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -10794,7 +10794,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 101,
+        "body_bytes": 96,
         "body_sha256": "aa02b8efc2fc628080bd072df999f3dbf718c3620d84a648194c4c98108bd1f9",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -10813,7 +10813,7 @@
         "why": "lane is required"
       },
       {
-        "body_bytes": 181,
+        "body_bytes": 183,
         "body_sha256": "342f97ad3a2debe95c16b6b2a4997921149a569a44dec6e0865e18a54028ee78",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -10832,7 +10832,7 @@
         "why": "unknown lane names the closed set"
       },
       {
-        "body_bytes": 200,
+        "body_bytes": 202,
         "body_sha256": "f7ad2f16333930a92abd1ccbbbff6cb30fdeb7e4ce8773559945d66854fd61f8",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -10852,7 +10852,7 @@
         "why": "unknown BYO provider"
       },
       {
-        "body_bytes": 195,
+        "body_bytes": 197,
         "body_sha256": "91f2eef3ca2b80e82c177bc9c4b770e41f662e1c7a086030f319b4deff4e0c35",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -10871,7 +10871,7 @@
         "why": "BYO with no provider"
       },
       {
-        "body_bytes": 151,
+        "body_bytes": 153,
         "body_sha256": "79c422149e9609071dc3894a0e072205df1819f5396340b0b111206ebb23bb64",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -11132,7 +11132,7 @@
         "why": "confidential must go through the enable flow"
       },
       {
-        "body_bytes": 222,
+        "body_bytes": 224,
         "body_sha256": "7352409dd25b3a91ca6ea257e7927eccebd48a482819f078481e643fb15fc502",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -11156,7 +11156,7 @@
         "why": "unknown alias target"
       },
       {
-        "body_bytes": 195,
+        "body_bytes": 197,
         "body_sha256": "3c9192f58d8c028bbc09bf02aecdc684c1ea841d97f3a474ad42c5b326df92a0",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -11180,7 +11180,7 @@
         "why": "alias targets are Google-only"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -11196,7 +11196,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 109,
+        "body_bytes": 104,
         "body_sha256": "c8bfd90b7b891e98a4f8e9d2666c5746392b0446ce56385f862451ea6f111829",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -11215,7 +11215,7 @@
         "why": "endpoint_url is required"
       },
       {
-        "body_bytes": 174,
+        "body_bytes": 176,
         "body_sha256": "cdd0b0b534b47eb35bbe13bf94b11c2f3ef40afa2bac75590b857bcfbf1a26c4",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -11235,7 +11235,7 @@
         "why": "scheme allowlist"
       },
       {
-        "body_bytes": 174,
+        "body_bytes": 176,
         "body_sha256": "cdd0b0b534b47eb35bbe13bf94b11c2f3ef40afa2bac75590b857bcfbf1a26c4",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -11255,7 +11255,7 @@
         "why": "a URL with no host"
       },
       {
-        "body_bytes": 112,
+        "body_bytes": 107,
         "body_sha256": "e6995c6e0c0beac7da9b7f8efa305d018a0d8714bb4d9622e129ba6e9ef41824",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -11274,7 +11274,7 @@
         "why": "served_model_id is required"
       },
       {
-        "body_bytes": 108,
+        "body_bytes": 110,
         "body_sha256": "95e2607088da208a1042f8b3875587b66847e35999055cb8cee12881ef3ef0bb",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -11295,7 +11295,7 @@
         "why": "non-string credential"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -11311,7 +11311,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 147,
+        "body_bytes": 149,
         "body_sha256": "5d02a4267e5a88f0424d530bd26bb7b420e4e5cc958391dd29921177bf934718",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -11330,7 +11330,7 @@
         "why": "\ud83d\udd34 the retry body must be EXACTLY the recovery state"
       },
       {
-        "body_bytes": 147,
+        "body_bytes": 149,
         "body_sha256": "5d02a4267e5a88f0424d530bd26bb7b420e4e5cc958391dd29921177bf934718",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -11351,7 +11351,7 @@
         "why": "\u26a0 bool is not an int here, and Python would say it is"
       },
       {
-        "body_bytes": 147,
+        "body_bytes": 149,
         "body_sha256": "5d02a4267e5a88f0424d530bd26bb7b420e4e5cc958391dd29921177bf934718",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -11372,7 +11372,7 @@
         "why": "negative revision"
       },
       {
-        "body_bytes": 178,
+        "body_bytes": 180,
         "body_sha256": "9e8b31767fb47b7b998037807282a8123a8d6a3ec0d2c831b28d0a19f668304b",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -11388,7 +11388,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 151,
+        "body_bytes": 153,
         "body_sha256": "f62ddcbb053070d211f80e69532893e8807e7ca4e24fcd059953344f3641d8e9",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -11409,7 +11409,7 @@
         "why": "disabled must be boolean"
       },
       {
-        "body_bytes": 150,
+        "body_bytes": 152,
         "body_sha256": "8c3e13c08ebe9a47e7cb7b1a4c900bd84e5a647904ee6c8d60d7986878ea6fcd",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -11463,7 +11463,7 @@
         "why": "per-app static traversal refusal"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -11497,7 +11497,7 @@
     ],
     "corrupt": [
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11522,7 +11522,7 @@
         "why": "the bare app route keeps the current origin while adding the canonical slash"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11536,7 +11536,7 @@
         "why": "the app fragment bytes the shell injects"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11550,7 +11550,7 @@
         "why": "per-app static; the whole client"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11569,7 +11569,7 @@
         "why": "the boot payload: providers + keys + ALL owner copy"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11588,7 +11588,7 @@
         "why": "the surface's centre of gravity"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11607,7 +11607,7 @@
         "why": "explicit accepted local model"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11626,7 +11626,7 @@
         "why": "\ud83d\udd34 unknown local model REFUSES; it does not degrade"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11645,7 +11645,7 @@
         "why": "empty local_model falls back to the default"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11664,7 +11664,7 @@
         "why": "key presence + cached validation, never the key"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11683,7 +11683,7 @@
         "why": "local readiness, the local row alone"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11702,7 +11702,7 @@
         "why": "host fit for the bundled model"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11721,7 +11721,7 @@
         "why": "unknown model refusal on the availability route"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11740,7 +11740,7 @@
         "why": "install state machine, read-only"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11759,7 +11759,7 @@
         "why": "unknown model refusal on the status route"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11778,7 +11778,7 @@
         "why": "selectable local models for this backend"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11797,7 +11797,7 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11816,7 +11816,7 @@
         "why": "\u26a0 NO browser or CLI caller reaches this -- recorded so a deletion is a decision"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11835,7 +11835,7 @@
         "why": "missing body is missing_request_body, not a 500"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11858,7 +11858,7 @@
         "why": "unmanaged env var names the allowlist"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11881,7 +11881,7 @@
         "why": "non-string value is invalid_request_value"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11900,7 +11900,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11923,7 +11923,7 @@
         "why": "empty candidate refuses before any network call"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11946,7 +11946,7 @@
         "why": "unmanaged env var"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11965,7 +11965,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -11988,7 +11988,7 @@
         "why": "\ud83d\udd34 local is NOT a cloud BYO provider here"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12010,7 +12010,7 @@
         "why": "missing model"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12033,7 +12033,7 @@
         "why": "blank model"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12052,7 +12052,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12074,7 +12074,7 @@
         "why": "lane is required"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12096,7 +12096,7 @@
         "why": "unknown lane names the closed set"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12119,7 +12119,7 @@
         "why": "unknown BYO provider"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12141,7 +12141,7 @@
         "why": "BYO with no provider"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12165,7 +12165,7 @@
         "why": "unknown field is refused, not ignored"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12188,7 +12188,7 @@
         "why": "model is cloud-BYO only"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12210,7 +12210,7 @@
         "why": "confidential must go through the enable flow"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12237,7 +12237,7 @@
         "why": "unknown alias target"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12264,7 +12264,7 @@
         "why": "alias targets are Google-only"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12283,7 +12283,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12305,7 +12305,7 @@
         "why": "endpoint_url is required"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12328,7 +12328,7 @@
         "why": "scheme allowlist"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12351,7 +12351,7 @@
         "why": "a URL with no host"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12373,7 +12373,7 @@
         "why": "served_model_id is required"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12397,7 +12397,7 @@
         "why": "non-string credential"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12416,7 +12416,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12438,7 +12438,7 @@
         "why": "\ud83d\udd34 the retry body must be EXACTLY the recovery state"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12462,7 +12462,7 @@
         "why": "\u26a0 bool is not an int here, and Python would say it is"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12486,7 +12486,7 @@
         "why": "negative revision"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12505,7 +12505,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12529,7 +12529,7 @@
         "why": "disabled must be boolean"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12553,7 +12553,7 @@
         "why": "extract must be boolean"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12567,7 +12567,7 @@
         "why": "\ud83d\udd34 injected fragment route; no decorator declares it"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12581,7 +12581,7 @@
         "why": "the per-app static 404 shape"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12595,7 +12595,7 @@
         "why": "per-app static traversal refusal"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -12614,7 +12614,7 @@
         "why": "\u26a0 PUT shares POST's handler and was never probed"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -13629,7 +13629,7 @@
         "why": "explicit accepted local model"
       },
       {
-        "body_bytes": 157,
+        "body_bytes": 159,
         "body_sha256": "18bb309ed2945dec7f5c9d6b047f2ab426c0906074d043a6b47f3d53edb1c117",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -13935,7 +13935,7 @@
         "why": "host fit for the bundled model"
       },
       {
-        "body_bytes": 157,
+        "body_bytes": 159,
         "body_sha256": "18bb309ed2945dec7f5c9d6b047f2ab426c0906074d043a6b47f3d53edb1c117",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -13971,7 +13971,7 @@
         "why": "install state machine, read-only"
       },
       {
-        "body_bytes": 157,
+        "body_bytes": 159,
         "body_sha256": "18bb309ed2945dec7f5c9d6b047f2ab426c0906074d043a6b47f3d53edb1c117",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14134,7 +14134,7 @@
         "why": "\u26a0 NO browser or CLI caller reaches this -- recorded so a deletion is a decision"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14150,7 +14150,7 @@
         "why": "missing body is missing_request_body, not a 500"
       },
       {
-        "body_bytes": 217,
+        "body_bytes": 219,
         "body_sha256": "6e83d936e252986006d0e77fa95519216d93b28f6ee8a1b8c0d31f0f55be85b1",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14170,7 +14170,7 @@
         "why": "unmanaged env var names the allowlist"
       },
       {
-        "body_bytes": 120,
+        "body_bytes": 122,
         "body_sha256": "8cec1bbbf9d1b79ce2fbc1186aab3218496bde26380d609f5bcc1a3c2f6e6a97",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14190,7 +14190,7 @@
         "why": "non-string value is invalid_request_value"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14206,7 +14206,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 121,
+        "body_bytes": 123,
         "body_sha256": "ae0338420fa22b65b6e944f01e0594e8d9d8f1fa1c12624a1eba80fc5f21b793",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14226,7 +14226,7 @@
         "why": "empty candidate refuses before any network call"
       },
       {
-        "body_bytes": 210,
+        "body_bytes": 212,
         "body_sha256": "032734ca50cf1efdb7094524d5eac44d50ad0998ffeb36c42e3ed1bdf0ba7fe5",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14246,7 +14246,7 @@
         "why": "unmanaged env var"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14262,7 +14262,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 164,
+        "body_bytes": 166,
         "body_sha256": "e112f56b9bf15f2d9e5eba23c5d7f5d4af399a90cf74e309584514be615f3e9b",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14282,7 +14282,7 @@
         "why": "\ud83d\udd34 local is NOT a cloud BYO provider here"
       },
       {
-        "body_bytes": 131,
+        "body_bytes": 133,
         "body_sha256": "2b7dd2dd7a5b383318a0f4f9ef3029de4762b70433c0552f78dfe990cec57558",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14301,7 +14301,7 @@
         "why": "missing model"
       },
       {
-        "body_bytes": 131,
+        "body_bytes": 133,
         "body_sha256": "2b7dd2dd7a5b383318a0f4f9ef3029de4762b70433c0552f78dfe990cec57558",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14321,7 +14321,7 @@
         "why": "blank model"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14337,7 +14337,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 101,
+        "body_bytes": 96,
         "body_sha256": "aa02b8efc2fc628080bd072df999f3dbf718c3620d84a648194c4c98108bd1f9",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14356,7 +14356,7 @@
         "why": "lane is required"
       },
       {
-        "body_bytes": 181,
+        "body_bytes": 183,
         "body_sha256": "342f97ad3a2debe95c16b6b2a4997921149a569a44dec6e0865e18a54028ee78",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14375,7 +14375,7 @@
         "why": "unknown lane names the closed set"
       },
       {
-        "body_bytes": 200,
+        "body_bytes": 202,
         "body_sha256": "f7ad2f16333930a92abd1ccbbbff6cb30fdeb7e4ce8773559945d66854fd61f8",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14395,7 +14395,7 @@
         "why": "unknown BYO provider"
       },
       {
-        "body_bytes": 195,
+        "body_bytes": 197,
         "body_sha256": "91f2eef3ca2b80e82c177bc9c4b770e41f662e1c7a086030f319b4deff4e0c35",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14414,7 +14414,7 @@
         "why": "BYO with no provider"
       },
       {
-        "body_bytes": 151,
+        "body_bytes": 153,
         "body_sha256": "79c422149e9609071dc3894a0e072205df1819f5396340b0b111206ebb23bb64",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14435,7 +14435,7 @@
         "why": "unknown field is refused, not ignored"
       },
       {
-        "body_bytes": 193,
+        "body_bytes": 195,
         "body_sha256": "6b3feab3174b52e60ddde64410ec81e3bce31b534d2bec3f909e9225308820ba",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14474,7 +14474,7 @@
         "why": "confidential must go through the enable flow"
       },
       {
-        "body_bytes": 222,
+        "body_bytes": 224,
         "body_sha256": "7352409dd25b3a91ca6ea257e7927eccebd48a482819f078481e643fb15fc502",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14498,7 +14498,7 @@
         "why": "unknown alias target"
       },
       {
-        "body_bytes": 195,
+        "body_bytes": 197,
         "body_sha256": "3c9192f58d8c028bbc09bf02aecdc684c1ea841d97f3a474ad42c5b326df92a0",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14522,7 +14522,7 @@
         "why": "alias targets are Google-only"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14538,7 +14538,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 109,
+        "body_bytes": 104,
         "body_sha256": "c8bfd90b7b891e98a4f8e9d2666c5746392b0446ce56385f862451ea6f111829",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14557,7 +14557,7 @@
         "why": "endpoint_url is required"
       },
       {
-        "body_bytes": 174,
+        "body_bytes": 176,
         "body_sha256": "cdd0b0b534b47eb35bbe13bf94b11c2f3ef40afa2bac75590b857bcfbf1a26c4",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14577,7 +14577,7 @@
         "why": "scheme allowlist"
       },
       {
-        "body_bytes": 174,
+        "body_bytes": 176,
         "body_sha256": "cdd0b0b534b47eb35bbe13bf94b11c2f3ef40afa2bac75590b857bcfbf1a26c4",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14597,7 +14597,7 @@
         "why": "a URL with no host"
       },
       {
-        "body_bytes": 112,
+        "body_bytes": 107,
         "body_sha256": "e6995c6e0c0beac7da9b7f8efa305d018a0d8714bb4d9622e129ba6e9ef41824",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14616,7 +14616,7 @@
         "why": "served_model_id is required"
       },
       {
-        "body_bytes": 108,
+        "body_bytes": 110,
         "body_sha256": "95e2607088da208a1042f8b3875587b66847e35999055cb8cee12881ef3ef0bb",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14637,7 +14637,7 @@
         "why": "non-string credential"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14653,7 +14653,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 147,
+        "body_bytes": 149,
         "body_sha256": "5d02a4267e5a88f0424d530bd26bb7b420e4e5cc958391dd29921177bf934718",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14672,7 +14672,7 @@
         "why": "\ud83d\udd34 the retry body must be EXACTLY the recovery state"
       },
       {
-        "body_bytes": 147,
+        "body_bytes": 149,
         "body_sha256": "5d02a4267e5a88f0424d530bd26bb7b420e4e5cc958391dd29921177bf934718",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14693,7 +14693,7 @@
         "why": "\u26a0 bool is not an int here, and Python would say it is"
       },
       {
-        "body_bytes": 147,
+        "body_bytes": 149,
         "body_sha256": "5d02a4267e5a88f0424d530bd26bb7b420e4e5cc958391dd29921177bf934718",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14714,7 +14714,7 @@
         "why": "negative revision"
       },
       {
-        "body_bytes": 178,
+        "body_bytes": 180,
         "body_sha256": "9e8b31767fb47b7b998037807282a8123a8d6a3ec0d2c831b28d0a19f668304b",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14730,7 +14730,7 @@
         "why": "missing body"
       },
       {
-        "body_bytes": 151,
+        "body_bytes": 153,
         "body_sha256": "f62ddcbb053070d211f80e69532893e8807e7ca4e24fcd059953344f3641d8e9",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14751,7 +14751,7 @@
         "why": "disabled must be boolean"
       },
       {
-        "body_bytes": 150,
+        "body_bytes": 152,
         "body_sha256": "8c3e13c08ebe9a47e7cb7b1a4c900bd84e5a647904ee6c8d60d7986878ea6fcd",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
@@ -14805,7 +14805,7 @@
         "why": "per-app static traversal refusal"
       },
       {
-        "body_bytes": 119,
+        "body_bytes": 109,
         "body_sha256": "f0ceefce970bbb2a282692582b6b578b4bf21742243f20d63ab3538128f46331",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",

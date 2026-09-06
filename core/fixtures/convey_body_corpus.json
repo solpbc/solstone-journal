@@ -11,7 +11,7 @@
   "cases": {
     "corrupt_config": [
       {
-        "body_bytes": 268,
+        "body_bytes": 270,
         "body_sha256": "47fcf5053e0ba84f02d272ea47a5d8cff3fc386ecde3242fc6d6eb429c88644a",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
@@ -30,7 +30,7 @@
         "why": "torn status"
       },
       {
-        "body_bytes": 268,
+        "body_bytes": 270,
         "body_sha256": "47fcf5053e0ba84f02d272ea47a5d8cff3fc386ecde3242fc6d6eb429c88644a",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
@@ -49,7 +49,7 @@
         "why": "torn anchor day"
       },
       {
-        "body_bytes": 268,
+        "body_bytes": 270,
         "body_sha256": "47fcf5053e0ba84f02d272ea47a5d8cff3fc386ecde3242fc6d6eb429c88644a",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
@@ -68,7 +68,7 @@
         "why": "torn recent carousel"
       },
       {
-        "body_bytes": 268,
+        "body_bytes": 270,
         "body_sha256": "47fcf5053e0ba84f02d272ea47a5d8cff3fc386ecde3242fc6d6eb429c88644a",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
@@ -87,7 +87,7 @@
         "why": "torn date-nav index"
       },
       {
-        "body_bytes": 268,
+        "body_bytes": 270,
         "body_sha256": "47fcf5053e0ba84f02d272ea47a5d8cff3fc386ecde3242fc6d6eb429c88644a",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
@@ -9929,7 +9929,7 @@
     ],
     "torn_db_unreadable": [
       {
-        "body_bytes": 88,
+        "body_bytes": 82,
         "body_sha256": "33820f75f7b707128610faecf0880ee5d764e111d6966c0994410f9cff23a92c",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
@@ -9948,7 +9948,7 @@
         "why": "torn status"
       },
       {
-        "body_bytes": 88,
+        "body_bytes": 82,
         "body_sha256": "33820f75f7b707128610faecf0880ee5d764e111d6966c0994410f9cff23a92c",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
@@ -9967,7 +9967,7 @@
         "why": "torn anchor day"
       },
       {
-        "body_bytes": 88,
+        "body_bytes": 82,
         "body_sha256": "33820f75f7b707128610faecf0880ee5d764e111d6966c0994410f9cff23a92c",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
@@ -9986,7 +9986,7 @@
         "why": "torn recent carousel"
       },
       {
-        "body_bytes": 88,
+        "body_bytes": 82,
         "body_sha256": "33820f75f7b707128610faecf0880ee5d764e111d6966c0994410f9cff23a92c",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
@@ -10005,7 +10005,7 @@
         "why": "torn date-nav index"
       },
       {
-        "body_bytes": 88,
+        "body_bytes": 82,
         "body_sha256": "33820f75f7b707128610faecf0880ee5d764e111d6966c0994410f9cff23a92c",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
@@ -10894,7 +10894,7 @@
     ],
     "torn_shard": [
       {
-        "body_bytes": 88,
+        "body_bytes": 82,
         "body_sha256": "33820f75f7b707128610faecf0880ee5d764e111d6966c0994410f9cff23a92c",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
@@ -10913,7 +10913,7 @@
         "why": "torn status"
       },
       {
-        "body_bytes": 76,
+        "body_bytes": 78,
         "body_sha256": "f516aaea7f0c2ded3aad53c65d0f5a15c1e3545360a779969242d88e179fe6ff",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
@@ -10932,7 +10932,7 @@
         "why": "torn anchor day"
       },
       {
-        "body_bytes": 88,
+        "body_bytes": 82,
         "body_sha256": "33820f75f7b707128610faecf0880ee5d764e111d6966c0994410f9cff23a92c",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",

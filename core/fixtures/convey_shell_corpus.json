@@ -4,7 +4,7 @@
   "phases": {
     "corrupt": [
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -36,7 +36,7 @@
         "why": "the SPA shell every app serves verbatim"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -55,7 +55,7 @@
         "why": "the one boot payload shell_boot.js fetches"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -74,7 +74,7 @@
         "why": "status_pane.js"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -88,7 +88,7 @@
         "why": "an app index: must be the shell, byte-identical"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -102,7 +102,7 @@
         "why": "the app fragment bytes"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -116,7 +116,7 @@
         "why": "per-app static"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -135,7 +135,7 @@
         "why": "the app's initial-state endpoint"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -154,7 +154,7 @@
         "why": "first data call from workspace.html"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -173,7 +173,7 @@
         "why": "overview quality panel"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -192,7 +192,7 @@
         "why": "known-voices list"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -211,7 +211,7 @@
         "why": "owner voiceprint status"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -230,7 +230,7 @@
         "why": "discovery cache read"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -249,7 +249,7 @@
         "why": "the date_nav framework contract"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
@@ -268,7 +268,7 @@
         "why": "a day with no segments"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
