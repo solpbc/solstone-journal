@@ -424,6 +424,27 @@ const Dashboard = (function() {
     return shadeHex(base, cycle % 2 === 1 ? step : -step);
   }
 
+  // Reserved runtime placeholders (e.g. __RUNTIME_FACETS__) that a producer
+  // occasionally writes onto a record when prompt substitution didn't run.
+  // They are not a facet the owner made; fold their counts into an
+  // "unassigned" bucket instead of charting the raw token (G2-30).
+  const RESERVED_FACET_KEY = /^__.*__$/;
+
+  function foldReservedFacetKeys(countsByDay) {
+    let folded = 0;
+    const result = {};
+    Object.entries(countsByDay || {}).forEach(([day, counts]) => {
+      const dayCounts = {};
+      Object.entries(counts || {}).forEach(([key, value]) => {
+        const target = RESERVED_FACET_KEY.test(key) ? 'unassigned' : key;
+        if (target === 'unassigned') folded += value;
+        dayCounts[target] = (dayCounts[target] || 0) + value;
+      });
+      result[day] = dayCounts;
+    });
+    return {counts: result, folded};
+  }
+
   // Build stacked category chart (for Activities or Facets)
   function buildStackedCategoryChart(container, countsByDay, meta = {}) {
     container.innerHTML = '';
@@ -800,14 +821,25 @@ const Dashboard = (function() {
     const C = backlogCopy();
     const bl = stats.backlog;
     const counts = backlogCounts(stats);
+    const heroChildren = [
+      // The verdict below is scoped to the 30-day backlog window; label it
+      // so it doesn't read as contradicting the all-time totals in the
+      // tiles further down the page (G2-09).
+      el('p', {className: 'backlog-hero-scope'}, ['last 30 days']),
+      el('p', {className: 'backlog-hero-line'}, [backlogVerdict(stats)])
+    ];
+    // The 30-day verdict can say "caught up" while a much larger all-time
+    // backlog sits several screens down (X-11/G2-36) — name it here, right
+    // under the verdict, instead of leaving the owner to reconcile the two
+    // numbers on their own.
+    const olderQueued = count((stats.totals || {}).pending_segments);
+    if (bl && bl.degraded !== true && counts.pending === 0 && counts.stuck === 0 && olderQueued > 0) {
+      heroChildren.push(el('p', {className: 'backlog-hero-line backlog-hero-secondary'}, [
+        `${olderQueued.toLocaleString()} older audio segments are still queued.`
+      ]));
+    }
     const section = el('section', {className: 'backlog-section', id: 'backlogSection'}, [
-      el('div', {className: 'backlog-hero'}, [
-        // The verdict below is scoped to the 30-day backlog window; label it
-        // so it doesn't read as contradicting the all-time totals in the
-        // tiles further down the page (G2-09).
-        el('p', {className: 'backlog-hero-scope'}, ['last 30 days']),
-        el('p', {className: 'backlog-hero-line'}, [backlogVerdict(stats)])
-      ])
+      el('div', {className: 'backlog-hero'}, heroChildren)
     ]);
 
     if (bl && bl.degraded !== true) {
@@ -841,6 +873,10 @@ const Dashboard = (function() {
     if (!data) return;
 
     const stats = data.stats || {};
+    // Facet display names, keyed by the same slug the facets chart counts
+    // by (G2-35). Falls back to the raw slug per-category when a facet
+    // isn't in this map.
+    const facetTitles = data.facet_titles || {};
 
     // Clear loading state and notices
     document.getElementById('loading').style.display = 'none';
@@ -958,15 +994,23 @@ const Dashboard = (function() {
       buildHeatmap(document.getElementById('heatmap'), stats.heatmap);
     }
 
-    // Render Facets stacked bar chart
+    // Render Facets stacked bar chart. Reserved runtime placeholders fold
+    // into "unassigned" instead of charting as a facet (G2-30); each real
+    // facet's legend/tooltip label comes from the owner's own facet titles,
+    // not the storage slug (G2-35).
+    const {counts: facetCounts} = foldReservedFacetKeys(stats.facets.counts_by_day || {});
+    const facetMeta = {
+      emptyIcon: window.ConveyIcons.svg('tag'),
+      emptyText: 'no facet data yet',
+      ariaLabel: 'facets bar chart showing facet distribution over the last 30 days'
+    };
+    Object.entries(facetTitles).forEach(([slug, title]) => {
+      facetMeta[slug] = {title};
+    });
     buildStackedCategoryChart(
       document.getElementById('facetsChart'),
-      stats.facets.counts_by_day || {},
-      {
-        emptyIcon: window.ConveyIcons.svg('tag'),
-        emptyText: 'no facet data yet',
-        ariaLabel: 'facets bar chart showing facet distribution over the last 30 days'
-      }
+      facetCounts,
+      facetMeta
     );
 
     // Render Activities stacked bar chart
@@ -980,8 +1024,11 @@ const Dashboard = (function() {
       }
     );
 
-    // Render repairs if needed
-    const repairs = ['pending_segments', 'segments_pending_think'];
+    // Render repairs if needed. pending_segments is dropped from this list
+    // (G2-36): the audio-processing bar above already carries that same
+    // all-time figure ("N pending"), so it isn't repeated as its own tile
+    // here under a second name.
+    const repairs = ['segments_pending_think'];
     const hasRepairs = repairs.some(key => (totals[key] || 0) > 0);
     const repairSection = document.getElementById('repairSection');
     repairSection.innerHTML = '';
@@ -994,17 +1041,22 @@ const Dashboard = (function() {
 
       const repairGrid = alert.querySelector('#repairGrid');
       const repairLabels = {
-        pending_segments: 'pending segments',
         segments_pending_think: 'segments waiting for processing'
       };
+      // Neutral (matches the rest of the page) once the 30-day verdict is
+      // caught up; --danger only while it isn't (X-11).
+      const backlogCounted = backlogCounts(stats);
+      const caughtUp = backlogCounted.pending === 0 && backlogCounted.stuck === 0
+        && !(stats.backlog && stats.backlog.degraded === true);
+      const repairColor = caughtUp ? null : 'var(--danger)';
 
       repairs.forEach(key => {
-        const count = totals[key] || 0;
-        if (count > 0) {
+        const repairCount = totals[key] || 0;
+        if (repairCount > 0) {
           // These are all-time totals, distinct from the 30-day backlog
           // verdict above them (G2-09).
           repairGrid.appendChild(
-            statCard(repairLabels[key], count.toLocaleString(), 'since your journal began', '#dc2626')
+            statCard(repairLabels[key], repairCount.toLocaleString(), 'since your journal began', repairColor)
           );
         }
       });
