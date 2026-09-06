@@ -865,7 +865,10 @@
       section.hidden = section.dataset.view !== target;
     });
     const nextHash = `#${target}`;
-    if (window.location.hash !== nextHash) {
+    // A hashless load already is the setup route: leave the address alone rather
+    // than writing a route token the owner never asked for.
+    const keepHashless = options.keepHashless && target === 'main' && !window.location.hash;
+    if (!keepHashless && window.location.hash !== nextHash) {
       if (options.replace) {
         window.history.replaceState(null, '', nextHash);
       } else {
@@ -1086,7 +1089,9 @@
       tab.focus();
       return;
     }
-    if ((origin === 'reload' || origin === 'history') && !tablist?.contains(document.activeElement)) {
+    // Only an owner-initiated section change moves focus. A plain load ('reload')
+    // must not draw a focus ring on a heading nobody asked for.
+    if (origin === 'history' && !tablist?.contains(document.activeElement)) {
       (headingId ? $(headingId) : thinkingPanelHeading(tabId))?.focus({preventScroll: true});
     }
   }
@@ -1123,14 +1128,13 @@
     document.querySelectorAll('[data-thinking-section]').forEach((panel) => {
       panel.hidden = true;
     });
-    showView(viewFromHash(), {replace: true});
+    showView(viewFromHash(), {replace: true, keepHashless: true});
     activateThinkingSectionTab('thinkingSetupTab', origin);
   }
 
   function routeThinkingHash(origin = 'history') {
     const hash = window.location.hash;
     if (!hash) {
-      replaceThinkingHash('#main');
       showThinkingSetup(origin);
       return;
     }

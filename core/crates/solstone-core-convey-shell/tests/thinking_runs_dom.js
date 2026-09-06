@@ -320,8 +320,21 @@ async function main() {
   }
 
   window.location.hash = '';
+  document.activeElement = null;
+  nodes.get('thinkingHeading').focused = false;
   thinking.routeThinkingHash('reload');
-  assert.strictEqual(window.location.hash, '#main', 'absent hash canonicalizes to main');
+  assert.strictEqual(window.location.hash, '', 'a plain hashless load leaves the address hash-free');
+  assert.strictEqual(nodes.get('thinkingHeading').focused, false, 'a plain load does not focus the panel heading');
+  assert.strictEqual(document.activeElement, null, 'a plain load moves focus nowhere');
+
+  nodes.get('thinkingRunsHeading').focused = false;
+  window.location.hash = '#runs/20260815';
+  thinking.routeThinkingHash('reload');
+  assert.strictEqual(nodes.get('thinkingRunsHeading').focused, false, 'a plain load of a runs route does not focus the runs heading');
+
+  window.location.hash = '#main';
+  thinking.routeThinkingHash('reload');
+  assert.strictEqual(window.location.hash, '#main', 'an inbound #main link stays on the setup route token');
 
   window.location.hash = '#runs';
   thinking.routeThinkingHash('history');
