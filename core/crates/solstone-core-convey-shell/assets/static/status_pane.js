@@ -331,13 +331,16 @@ window.whenShellReady(() => {
     if (!section || !list) return;
 
     const notifs = window.AppServices?.quietNotifs?.getAll() || [];
-    section.style.display = notifs.length > 0 ? '' : 'none';
+    // The settings notifications row links straight here, so the section stays
+    // on the page with an honest empty state rather than collapsing to 0x0 and
+    // landing the owner at the top of health (G3-107).
+    section.style.display = '';
 
     if (notifs.length === 0) {
       list.textContent = '';
       const empty = document.createElement('span');
-      empty.style.color = '#9ca3af';
-      empty.textContent = 'no quiet notifications';
+      empty.style.color = 'var(--ink-faint-paper)';
+      empty.textContent = 'no notifications held back';
       list.appendChild(empty);
       return;
     }
@@ -437,7 +440,7 @@ window.whenShellReady(() => {
     const resolveIcon = value => window.AppServices.notifications._resolveIcon(value);
 
     if (history.length === 0) {
-      container.innerHTML = '<span style="color: #9ca3af;">no recent activity</span>';
+      container.innerHTML = '<span style="color: var(--ink-faint-paper);">no notifications yet</span>';
       return;
     }
 

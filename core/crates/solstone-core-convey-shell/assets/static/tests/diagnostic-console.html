@@ -190,6 +190,30 @@
     assert('error-handler does not create bottom strip', !document.getElementById('error-log'));
     assert('error-handler routes to diagnostic console', diagnostic.list().length === 1 && diagnostic.list()[0].summary.includes('strip check'));
 
+    // navigation aborts must not reach system messages (X-06)
+    diagnostic.clear();
+    const aborted = new Error('The user aborted a request.');
+    aborted.name = 'AbortError';
+    window.logError(aborted, { context: 'home: refreshVitals failed' });
+    assert('AbortError never reaches system messages', diagnostic.list().length === 0);
+
+    diagnostic.clear();
+    window.logError(new TypeError('Failed to fetch'), { context: 'home: refreshVitals failed' });
+    assert('a live failed fetch still reaches system messages', diagnostic.list().length === 1
+      && diagnostic.list()[0].summary === 'home: refreshVitals failed: Failed to fetch');
+
+    diagnostic.clear();
+    window.logError(new Error('Failed to fetch'), { context: 'not-a-fetch' });
+    assert('a non-TypeError with the same message still reaches system messages', diagnostic.list().length === 1);
+
+    // once the document is going away, the browser's own cancellations are not this session's errors
+    diagnostic.clear();
+    window.dispatchEvent(new Event('pagehide'));
+    window.logError(new TypeError('Failed to fetch'), { context: 'home: refreshBriefing failed' });
+    assert('an unloading document drops cancelled fetches', diagnostic.list().length === 0);
+    window.logError(new Error('real failure while unloading'), { context: 'home' });
+    assert('an unloading document still reports a real error', diagnostic.list().length === 1);
+
     assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
   }
 

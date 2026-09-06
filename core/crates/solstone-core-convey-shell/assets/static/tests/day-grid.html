@@ -329,6 +329,34 @@
     equal('autoscroll wide overflow is above threshold', wideScroller.scrollWidth - wideScroller.clientWidth > 24, true);
     equal('autoscroll wide overflow centers target', Math.abs(wideTargetCenter - wideScrollerCenter) <= 1, true);
 
+    // A narrow grid scrolls inside its own container, every column has to be
+    // reachable, and it has to show that it scrolls (X-13).
+    const wideBody = wideScroller.querySelector('.daygrid-body');
+    wideScroller.scrollLeft = wideScroller.scrollWidth;
+    wideScroller.dispatchEvent(new Event('scroll'));
+    equal(
+      'the last column of a narrow year is reachable',
+      wideBody.getBoundingClientRect().right
+        - (wideScroller.getBoundingClientRect().left + wideScroller.clientWidth) <= 1,
+      true
+    );
+    equal('at the end nothing is left to the right', root.classList.contains('daygrid--more-right'), false);
+    equal('at the end the gutter still carries the shadow', root.classList.contains('daygrid--scrolled'), true);
+
+    wideScroller.scrollLeft = 0;
+    wideScroller.dispatchEvent(new Event('scroll'));
+    equal('at the start there is nothing under the gutter', root.classList.contains('daygrid--scrolled'), false);
+    equal('at the start there is more to the right', root.classList.contains('daygrid--more-right'), true);
+
+    wideScroller.scrollLeft = 40;
+    wideScroller.dispatchEvent(new Event('scroll'));
+    equal('mid-scroll shows both cues',
+      root.classList.contains('daygrid--scrolled') && root.classList.contains('daygrid--more-right'), true);
+
+    equal('a grid that fits shows no scroll cue',
+      fitScroller.closest('.daygrid').classList.contains('daygrid--more-right')
+        || fitScroller.closest('.daygrid').classList.contains('daygrid--scrolled'), false);
+
     mounted = mount(multiYearData(), { today: '20270101' });
     root = mounted.root;
     const beforeT = root.querySelector('[data-daygrid-date="20250107"]');

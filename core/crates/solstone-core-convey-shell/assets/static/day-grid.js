@@ -903,16 +903,29 @@
 
     applyTabStop(active, false);
 
-    const targetElement = targetDay ? root.querySelector(`[${DAY_ATTR}="${targetDay}"]`) : null;
-    if (targetElement) {
-      requestAnimationFrame(() => {
-        const maxScroll = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
-        if (maxScroll > MIN_AUTOSCROLL_OVERFLOW) {
-          const rawLeft = targetElement.offsetLeft - (scroller.clientWidth / 2) + (targetElement.clientWidth / 2);
-          scroller.scrollLeft = clamp(rawLeft, 0, maxScroll);
-        }
-      });
+    // The grid is wider than a phone and scrolls inside its own container. Say
+    // so: a shadow on the sticky gutter once content has slid under it, and an
+    // edge fade while there is more to the right.
+    function updateOverflowCues() {
+      // scrollWidth counts the reserved scrollbar gutter, so it overstates the
+      // reachable end by the gutter width. The body's own width does not.
+      const overflow = Math.max(0, body.offsetWidth - scroller.clientWidth);
+      root.classList.toggle('daygrid--scrolled', scroller.scrollLeft > 1);
+      root.classList.toggle('daygrid--more-right', scroller.scrollLeft < overflow - 1);
     }
+    scroller.addEventListener('scroll', updateOverflowCues, { signal, passive: true });
+    window.addEventListener('resize', updateOverflowCues, { signal });
+    updateOverflowCues();
+
+    const targetElement = targetDay ? root.querySelector(`[${DAY_ATTR}="${targetDay}"]`) : null;
+    requestAnimationFrame(() => {
+      const maxScroll = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+      if (targetElement && maxScroll > MIN_AUTOSCROLL_OVERFLOW) {
+        const rawLeft = targetElement.offsetLeft - (scroller.clientWidth / 2) + (targetElement.clientWidth / 2);
+        scroller.scrollLeft = clamp(rawLeft, 0, maxScroll);
+      }
+      updateOverflowCues();
+    });
 
     stateByHost.set(host, { abort });
     return root;
