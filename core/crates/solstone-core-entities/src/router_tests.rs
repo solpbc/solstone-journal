@@ -1684,6 +1684,226 @@ async fn journal_lists_entities() {
     assert_eq!(v["entities"].as_array().unwrap().len(), 2);
 }
 
+fn seed_typed_entity(root: &Path, id: &str, name: &str, entity_type: &str) {
+    write(
+        root,
+        &format!("entities/{id}/entity.json"),
+        json!({"id":id,"name":name,"type":entity_type}),
+    );
+}
+
+fn summary_ids(body: &Value) -> Vec<String> {
+    body["items"]
+        .as_array()
+        .expect("items is an array")
+        .iter()
+        .map(|item| item["id"].as_str().expect("item id").to_owned())
+        .collect()
+}
+
+fn seed_residue_typed_journal(root: &Path) {
+    seed_typed_entity(root, "a", "Alice", "Person");
+    seed_typed_entity(root, "b", "Acme", "Company");
+    seed_typed_entity(root, "c", "Residue", "*3. ceo/cfo/cio triage (11");
+    seed_typed_entity(root, "d", "Today", "Today (Fri)");
+}
+
+#[tokio::test]
+async fn journal_summary_buckets_residue_types_and_keeps_the_stored_value() {
+    let j = Journal::new();
+    seed_residue_typed_journal(j.path());
+    let (status, v) = call(j.path(), "/app/entities/api/journal/summary").await;
+    assert_eq!(status, 200);
+    assert_eq!(v["entity_total"], 4);
+    assert_eq!(v["total"], 4);
+    let buckets: Vec<(&str, u64)> = v["type_counts"]
+        .as_array()
+        .expect("type_counts is an array")
+        .iter()
+        .map(|row| {
+            (
+                row["bucket"].as_str().expect("bucket"),
+                row["count"].as_u64().expect("count"),
+            )
+        })
+        .collect();
+    assert_eq!(buckets, vec![("person", 1), ("company", 1), ("other", 2)]);
+    let residue = v["items"]
+        .as_array()
+        .expect("items is an array")
+        .iter()
+        .find(|item| item["id"] == "c")
+        .expect("residue entity");
+    assert_eq!(residue["type_bucket"], "other");
+    assert_eq!(residue["type"], "*3. ceo/cfo/cio triage (11");
+}
+
+#[tokio::test]
+async fn journal_summary_filters_by_bucket_and_by_name() {
+    let j = Journal::new();
+    seed_residue_typed_journal(j.path());
+    let (_, other) = call(j.path(), "/app/entities/api/journal/summary?type=other").await;
+    assert_eq!(other["total"], 2);
+    assert_eq!(summary_ids(&other), vec!["c".to_owned(), "d".to_owned()]);
+    assert_eq!(other["entity_total"], 4, "entity_total ignores the filter");
+    let (_, named) = call(j.path(), "/app/entities/api/journal/summary?q=aC").await;
+    assert_eq!(summary_ids(&named), vec!["b".to_owned()]);
+    let (_, both) = call(
+        j.path(),
+        "/app/entities/api/journal/summary?type=person&q=zzz",
+    )
+    .await;
+    assert_eq!(both["total"], 0);
+    assert!(
+        both["items"]
+            .as_array()
+            .expect("items is an array")
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn journal_summary_pages_without_repeating_or_dropping_an_entity() {
+    let j = Journal::new();
+    for index in 0..5 {
+        seed_typed_entity(
+            j.path(),
+            &format!("e{index}"),
+            &format!("Entity {index}"),
+            "Person",
+        );
+    }
+    let mut seen = Vec::new();
+    for offset in [0, 2, 4] {
+        let (status, page) = call(
+            j.path(),
+            &format!("/app/entities/api/journal/summary?offset={offset}&limit=2"),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(page["total"], 5);
+        assert_eq!(page["offset"], offset);
+        assert_eq!(page["limit"], 2);
+        seen.extend(summary_ids(&page));
+    }
+    assert_eq!(
+        seen,
+        vec![
+            "e0".to_owned(),
+            "e1".to_owned(),
+            "e2".to_owned(),
+            "e3".to_owned(),
+            "e4".to_owned()
+        ]
+    );
+}
+
+#[tokio::test]
+async fn journal_summary_refuses_out_of_contract_paging_and_filter_values() {
+    let j = Journal::new();
+    seed_entity(j.path(), "a", "Alice");
+    assert_oracle_refusal(
+        "summary limit ceiling",
+        call(j.path(), "/app/entities/api/journal/summary?limit=101").await,
+        "invalid_request_value",
+        400,
+    );
+    assert_oracle_refusal(
+        "summary negative offset",
+        call(j.path(), "/app/entities/api/journal/summary?offset=-1").await,
+        "invalid_request_value",
+        400,
+    );
+    assert_oracle_refusal(
+        "summary sort value",
+        call(j.path(), "/app/entities/api/journal/summary?sort=sideways").await,
+        "invalid_request_value",
+        400,
+    );
+    assert_oracle_refusal(
+        "summary type bucket",
+        call(
+            j.path(),
+            "/app/entities/api/journal/summary?type=*3.%20ceo%2Fcfo",
+        )
+        .await,
+        "invalid_entity_type",
+        400,
+    );
+}
+
+#[tokio::test]
+async fn journal_summary_sorts_by_name_on_request() {
+    let j = Journal::new();
+    seed_typed_entity(j.path(), "z", "Zoe", "Person");
+    seed_typed_entity(j.path(), "m", "Mallory", "Company");
+    seed_typed_entity(j.path(), "a", "Anders", "Tool");
+    let (_, v) = call(j.path(), "/app/entities/api/journal/summary?sort=name").await;
+    assert_eq!(
+        summary_ids(&v),
+        vec!["a".to_owned(), "m".to_owned(), "z".to_owned()]
+    );
+}
+
+#[tokio::test]
+async fn journal_summary_carries_card_fields_without_facet_descriptions() {
+    let journal = journal_assembly_fixture();
+    let (status, summary) = call(journal.path(), "/app/entities/api/journal/summary").await;
+    assert_eq!(status, 200);
+    let items = summary["items"].as_array().expect("items is an array");
+    assert_eq!(items.len(), 10);
+    let expected: BTreeSet<String> = [
+        "id",
+        "name",
+        "type",
+        "type_bucket",
+        "is_principal",
+        "blocked",
+        "total_observation_count",
+        "last_active_ts",
+        "last_active_day",
+        "facets",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    for item in items {
+        assert_eq!(value_keys(item), expected, "summary item {}", item["id"]);
+    }
+    let ada = items
+        .iter()
+        .find(|item| item["id"] == "ada_lovelace")
+        .expect("ada_lovelace summary row");
+    let work = journal_facet(ada, "work");
+    assert_eq!(
+        value_keys(work),
+        ["color", "name", "title"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<BTreeSet<_>>()
+    );
+    let personal = journal_facet(ada, "personal");
+    assert_eq!(personal["detached"], true);
+    // The detached `personal` relationship keeps its dot but stays out of the
+    // badge count, exactly as the full read computes it.
+    assert_eq!(ada["total_observation_count"], 2);
+    assert_eq!(ada["last_active_day"], "20260115");
+    // The whole point of the summary read: no facet description text rides along.
+    let serialized = serde_json::to_string(&summary).expect("summary serializes");
+    assert!(
+        !serialized.contains("Work context"),
+        "summary must not carry facet descriptions"
+    );
+    // Blocked entities keep their card but never count toward a facet roster tally.
+    assert_eq!(summary["facet_counts"]["work"], 5);
+    assert_eq!(summary["facet_counts"]["empty_title"], 1);
+    assert_eq!(
+        summary["facet_counts"]["personal"],
+        Value::Null,
+        "a detached-only facet has no attached entities to tally"
+    );
+}
+
 fn journal_assembly_fixture() -> Journal {
     let journal = Journal::new();
     let root = journal.path();

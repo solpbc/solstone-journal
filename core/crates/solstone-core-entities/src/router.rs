@@ -89,6 +89,10 @@ fn api_router_from_state(state: Arc<RouterState>) -> Router {
         .route("/app/entities/api/types", get(types_route))
         .route("/app/entities/api/journal", get(journal_route))
         .route(
+            "/app/entities/api/journal/summary",
+            get(journal_summary_route),
+        )
+        .route(
             "/app/entities/api/journal/entity/{entity_id}",
             get(journal_entity_route)
                 .put(update_journal_entity_route)
@@ -2164,6 +2168,257 @@ fn assemble_journal_entity_records(
         );
     }
     Ok(records)
+}
+
+/// Card-sized projection of the journal entity graph, paged for the list view.
+///
+/// The full `/app/entities/api/journal` read stays available for callers that
+/// need every facet description; the list surface only needs what a card
+/// draws, so this route carries names, bucketed types, badge counts and dot
+/// colors and nothing else.
+const JOURNAL_SUMMARY_DEFAULT_LIMIT: usize = 60;
+const JOURNAL_SUMMARY_MAX_LIMIT: usize = 100;
+/// Canonical filter buckets, in display order. Every stored type outside this
+/// set collapses into [`JOURNAL_OTHER_BUCKET`] rather than becoming its own
+/// filter option.
+const JOURNAL_TYPE_BUCKETS: [&str; 4] = ["person", "company", "project", "tool"];
+const JOURNAL_OTHER_BUCKET: &str = "other";
+
+fn journal_type_bucket(stored: &str) -> &'static str {
+    let normalized = stored.trim().to_lowercase();
+    JOURNAL_TYPE_BUCKETS
+        .into_iter()
+        .find(|bucket| *bucket == normalized)
+        .unwrap_or(JOURNAL_OTHER_BUCKET)
+}
+
+fn journal_bucket_rank(bucket: &str) -> usize {
+    JOURNAL_TYPE_BUCKETS
+        .iter()
+        .position(|candidate| *candidate == bucket)
+        .unwrap_or(JOURNAL_TYPE_BUCKETS.len())
+}
+
+#[derive(Deserialize)]
+struct JournalSummaryQuery {
+    offset: Option<String>,
+    limit: Option<String>,
+    #[serde(rename = "type")]
+    entity_type: Option<String>,
+    q: Option<String>,
+    sort: Option<String>,
+}
+
+struct JournalSummaryParams {
+    offset: usize,
+    limit: usize,
+    bucket: Option<String>,
+    needle: Option<String>,
+    by_name: bool,
+}
+
+fn parse_journal_summary_query(
+    query: &JournalSummaryQuery,
+) -> Result<JournalSummaryParams, Box<Response>> {
+    let offset = index_plate_integer(query.offset.as_deref(), "offset", 0)?;
+    let limit = index_plate_integer(
+        query.limit.as_deref(),
+        "limit",
+        JOURNAL_SUMMARY_DEFAULT_LIMIT as i64,
+    )?;
+    if offset < 0 {
+        return Err(Box::new(refusal(
+            ReasonCode::InvalidRequestValue,
+            "offset must not be negative",
+        )));
+    }
+    if limit < 0 || limit > JOURNAL_SUMMARY_MAX_LIMIT as i64 {
+        return Err(Box::new(refusal(
+            ReasonCode::InvalidRequestValue,
+            format!("limit must be between 0 and {JOURNAL_SUMMARY_MAX_LIMIT}"),
+        )));
+    }
+    let bucket =
+        normalize_entity_search_value(query.entity_type.clone()).map(|value| value.to_lowercase());
+    if let Some(bucket) = bucket.as_deref()
+        && bucket != JOURNAL_OTHER_BUCKET
+        && !JOURNAL_TYPE_BUCKETS.contains(&bucket)
+    {
+        return Err(Box::new(refusal(
+            ReasonCode::InvalidEntityType,
+            "type must be a canonical entity type or other",
+        )));
+    }
+    let by_name = match query.sort.as_deref().map(str::trim) {
+        None | Some("") | Some("activity") => false,
+        Some("name") => true,
+        Some(_) => {
+            return Err(Box::new(refusal(
+                ReasonCode::InvalidRequestValue,
+                "sort must be activity or name",
+            )));
+        }
+    };
+    Ok(JournalSummaryParams {
+        offset: usize::try_from(offset).unwrap_or_default(),
+        limit: usize::try_from(limit).unwrap_or_default(),
+        bucket,
+        needle: normalize_entity_search_value(query.q.clone()).map(|value| value.to_lowercase()),
+        by_name,
+    })
+}
+
+struct JournalSummaryRow {
+    rank: usize,
+    last_active_ts: i64,
+    name_key: String,
+    bucket: &'static str,
+    item: Value,
+}
+
+fn summarize_journal_entities(
+    root: &Path,
+    params: &JournalSummaryParams,
+) -> Result<Value, solstone_core_facets::FacetEntityWriteError> {
+    let records = assemble_journal_entity_records(root, None)?;
+    let entity_total = records.len();
+    let mut type_counts: HashMap<&'static str, usize> = HashMap::new();
+    let mut facet_counts: HashMap<String, usize> = HashMap::new();
+    let mut rows: Vec<JournalSummaryRow> = Vec::with_capacity(entity_total);
+    for record in &records {
+        let stored_type = record.get("type").and_then(Value::as_str).unwrap_or("");
+        let bucket = journal_type_bucket(stored_type);
+        *type_counts.entry(bucket).or_default() += 1;
+        let blocked = record
+            .get("blocked")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let empty = Vec::new();
+        let facets = record
+            .get("facets")
+            .and_then(Value::as_array)
+            .unwrap_or(&empty);
+        let mut dots = Vec::with_capacity(facets.len());
+        let mut memberships = BTreeSet::new();
+        for facet in facets {
+            let detached = facet
+                .get("detached")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let name = facet.get("name").and_then(Value::as_str).unwrap_or("");
+            if !detached && !blocked && !name.is_empty() {
+                memberships.insert(name.to_owned());
+            }
+            let mut dot = json!({
+                "name": name,
+                "title": facet.get("title").cloned().unwrap_or_else(|| json!("")),
+                "color": facet.get("color").cloned().unwrap_or_else(|| json!("")),
+            });
+            if detached {
+                dot.as_object_mut()
+                    .expect("facet dot is an object")
+                    .insert("detached".to_owned(), Value::Bool(true));
+            }
+            dots.push(dot);
+        }
+        for name in memberships {
+            *facet_counts.entry(name).or_default() += 1;
+        }
+        let name = record.get("name").and_then(Value::as_str).unwrap_or("");
+        let last_active_ts = record
+            .get("last_active_ts")
+            .and_then(Value::as_i64)
+            .unwrap_or(0);
+        rows.push(JournalSummaryRow {
+            rank: journal_bucket_rank(bucket),
+            last_active_ts,
+            name_key: name.to_lowercase(),
+            bucket,
+            item: json!({
+                "id": record.get("id").cloned().unwrap_or_else(|| json!("")),
+                "name": name,
+                "type": stored_type,
+                "type_bucket": bucket,
+                "is_principal": record.get("is_principal").cloned().unwrap_or_else(|| json!(false)),
+                "blocked": blocked,
+                "total_observation_count": record.get("total_observation_count").cloned().unwrap_or_else(|| json!(0)),
+                "last_active_ts": last_active_ts,
+                "last_active_day": record.get("last_active_day").cloned().unwrap_or(Value::Null),
+                "facets": dots,
+            }),
+        });
+    }
+    rows.retain(|row| {
+        params
+            .bucket
+            .as_deref()
+            .is_none_or(|bucket| bucket == row.bucket)
+            && params
+                .needle
+                .as_deref()
+                .is_none_or(|needle| row.name_key.contains(needle))
+    });
+    if params.by_name {
+        rows.sort_by(|left, right| {
+            left.name_key
+                .cmp(&right.name_key)
+                .then_with(|| right.last_active_ts.cmp(&left.last_active_ts))
+        });
+    } else {
+        rows.sort_by(|left, right| {
+            left.rank
+                .cmp(&right.rank)
+                .then_with(|| right.last_active_ts.cmp(&left.last_active_ts))
+                .then_with(|| left.name_key.cmp(&right.name_key))
+        });
+    }
+    let total = rows.len();
+    let items: Vec<Value> = rows
+        .into_iter()
+        .skip(params.offset)
+        .take(params.limit)
+        .map(|row| row.item)
+        .collect();
+    let type_totals: Vec<Value> = JOURNAL_TYPE_BUCKETS
+        .into_iter()
+        .chain(std::iter::once(JOURNAL_OTHER_BUCKET))
+        .filter_map(|bucket| {
+            type_counts
+                .get(bucket)
+                .map(|count| json!({"bucket": bucket, "count": count}))
+        })
+        .collect();
+    Ok(json!({
+        "items": items,
+        "total": total,
+        "offset": params.offset,
+        "limit": params.limit,
+        "entity_total": entity_total,
+        "type_counts": type_totals,
+        "facet_counts": facet_counts,
+    }))
+}
+
+async fn journal_summary_route(
+    Extension(b): Extension<AccessBasis>,
+    State(root): State<Arc<RouterState>>,
+    Query(query): Query<JournalSummaryQuery>,
+) -> Response {
+    if let Some(r) = admitted(&b) {
+        return r;
+    }
+    let params = match parse_journal_summary_query(&query) {
+        Ok(params) => params,
+        Err(response) => return *response,
+    };
+    match solstone_core_serving::seam::run_blocking(move || {
+        summarize_journal_entities(&root, &params)
+    })
+    .await
+    {
+        Ok(Ok(summary)) => Json(summary).into_response(),
+        _ => refusal(ReasonCode::EntityOperationFailed, "journal read failed"),
+    }
 }
 
 async fn journal_entity_route(
