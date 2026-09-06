@@ -1038,7 +1038,10 @@ tr:hover .entity-delete-btn {
 
 .entities-scope-trigger {
   border: 0;
-  padding: 0;
+  padding: 0.6rem 0;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
   color: #4b5563;
   background: transparent;
   font: inherit;
@@ -1933,6 +1936,22 @@ body.presentation-mode .entities-table td { font-size: 1.05em; padding: 14px 1.5
 body.presentation-mode .entity-name { font-weight: 600; color: #0b1220; }
 body.presentation-mode .entity-desc { color: #4b5563; }
 
+.entity-card-legend{margin:0 0 12px;font-size:0.85em;color:var(--ink-soft)}
+.entity-card-legend .entity-facet-dot,.entity-card-legend .entity-card-type-indicator{display:inline-block;vertical-align:middle;margin-right:4px;background:var(--ink-faint)}
+#journal-entity-cards-content[aria-busy="true"]{opacity:.55}
+.journal-entity-cards-error[hidden]{display:none}
+.journal-entity-cards-error{margin:12px 0;padding:12px 14px;border:1px solid var(--danger);border-radius:8px;background:var(--danger-wash);color:var(--ink);display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.journal-entity-cards-error-detail{font-size:0.85em;color:var(--ink-soft)}
+.journal-entity-cards-error button{font:inherit;min-height:44px;padding:10px 14px;border:1px solid var(--hairline);border-radius:8px;background:white;color:inherit;cursor:pointer}
+.entity-merge-picker{position:relative;flex:1;min-width:min(100%,260px)}
+.entity-merge-picker input{width:100%;min-height:44px;padding:0.5em 0.75em;border:1px solid #ced4da;border-radius:6px;background:white;font:inherit}
+.entity-merge-results{position:absolute;z-index:20;left:0;right:0;top:calc(100% + 4px);margin:0;padding:4px;list-style:none;max-height:min(50vh,320px);overflow-y:auto;background:white;border:1px solid var(--hairline);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.12)}
+.entity-merge-results[hidden]{display:none}
+.entity-merge-results li{margin:0}
+.entity-merge-option{display:flex;flex-direction:column;justify-content:center;gap:2px;width:100%;min-height:44px;padding:8px 10px;border:0;border-radius:6px;background:transparent;font:inherit;text-align:left;cursor:pointer}
+.entity-merge-option:hover,.entity-merge-option:focus-visible,.entity-merge-option[aria-selected="true"]{background:var(--orange-wash);outline:none}
+.entity-merge-option-meta{font-size:0.8em;color:var(--ink-soft)}
+.entity-merge-empty{padding:10px;font-size:0.9em;color:var(--ink-soft)}
 .journal-entity-filter{display:flex;gap:10px;align-items:center;margin:12px 0}.journal-entity-filter select,.journal-entity-pages button{font:inherit;min-height:46px;padding:10px 14px;border:1px solid #d5c8b5;background:white;border-radius:8px;color:inherit}.journal-entity-pages{display:flex;gap:16px;margin:24px 0}.journal-entity-pages button{cursor:pointer}.journal-entity-pages button:disabled{opacity:.5}.journal-entity-filter{min-width:0}.journal-entity-filter select{flex:1;min-width:0;max-width:100%}.journal-entity-filter select:focus-visible,.journal-entity-pages button:focus-visible{outline:2px solid #b06a1a;outline-offset:3px}
 </style>
 
@@ -1960,7 +1979,9 @@ body.presentation-mode .entity-desc { color: #4b5563; }
         <span id="journal-card-search-count" class="entity-card-search-count" style="display: none;"></span>
       </h3>
       <p class="entities-subtitle">people, places, and things across your journal</p>
+      <p class="entity-card-legend" id="journal-entity-legend"><span class="entity-facet-dot" aria-hidden="true"></span>dots are the facets a name appears in, plus its type · the number is how many times it comes up</p>
       <div class="entity-cards-container">
+        <div id="journal-entity-cards-error" class="journal-entity-cards-error" hidden></div>
         <div id="journal-entity-cards-content"></div>
         <div id="no-journal-entities" class="no-journal-entities" style="display: none;">
           <h2>no entities yet</h2>
@@ -1998,7 +2019,11 @@ body.presentation-mode .entity-desc { color: #4b5563; }
       <div id="journal-detail-trust-error" class="error-message" style="display: none;"></div>
       <div class="entity-trust-controls">
         <label for="journal-detail-merge-target" id="journal-detail-merge-label"></label>
-        <select id="journal-detail-merge-target"></select>
+        <div class="entity-merge-picker" id="journal-detail-merge-picker">
+          <input type="text" id="journal-detail-merge-target" role="combobox" autocomplete="off"
+                 aria-autocomplete="list" aria-expanded="false" aria-controls="journal-detail-merge-results">
+          <ul id="journal-detail-merge-results" class="entity-merge-results" role="listbox" hidden></ul>
+        </div>
         <button type="button" class="btn btn-primary" id="journal-detail-merge-btn"></button>
       </div>
       <div class="entity-trust-panel" id="journal-detail-merge-preview" hidden></div>
@@ -2233,7 +2258,23 @@ let ATTENDANCE_KINDS = new Set();
 let currentFacet = null;
 let entitiesData = null;
 let detectedPage = 1;
-let journalEntitiesData = null;  // For all-facet mode
+// All-facet mode reads one card-sized page at a time from
+// api/journal/summary; the list state (search, type bucket, page) lives in the
+// URL so browser history restores it.
+let journalSummary = null;
+let journalSummaryKey = null;
+let journalSummaryRequest = 0;
+let journalEntityPage = 0;
+let journalEntityType = '';
+let journalEntitySearch = '';
+const JOURNAL_ENTITY_PAGE_SIZE = 60;
+let journalSearchDebounce = null;
+// merge-target picker: a typeahead over names, not a select of every entity
+let journalMergeTarget = null;
+let journalMergeSuggestions = [];
+let journalMergeDebounce = null;
+let journalMergeRequest = 0;
+let journalMergeActiveIndex = -1;
 let facetRoster = [];
 let facetEntityCounts = {};
 let scopeMetadataDirty = true;
@@ -3753,7 +3794,7 @@ function renderJournalDetailView(entity) {
     indicators.push(`Last active: ${displayDate}`);
   }
   if (entity.total_observation_count > 0) {
-    indicators.push(`${entity.total_observation_count} observation${entity.total_observation_count !== 1 ? 's' : ''}`);
+    indicators.push(`${entity.total_observation_count} mention${entity.total_observation_count !== 1 ? 's' : ''}`);
   }
   if (entity.facets && entity.facets.length > 0) {
     indicators.push(`${entity.facets.length} facet${entity.facets.length !== 1 ? 's' : ''}`);
@@ -3843,7 +3884,7 @@ function renderJournalDetailView(entity) {
       if (facet.observation_count > 0) {
         const obs = document.createElement('span');
         obs.className = 'facet-rel-obs';
-        obs.textContent = `${facet.observation_count} obs`;
+        obs.textContent = `${facet.observation_count} mention${facet.observation_count !== 1 ? 's' : ''}`;
         meta.appendChild(obs);
       }
 
@@ -3919,7 +3960,8 @@ function resetJournalTrustSurface() {
   document.getElementById('journal-detail-merge-btn').textContent = ENT_COPY.ENT_TRUST_MERGE_ACTION || '';
   document.getElementById('journal-detail-suggestions-heading').textContent = ENT_COPY.ENT_TRUST_SUGGESTIONS_HEADING || '';
   document.getElementById('journal-detail-history-heading').textContent = ENT_COPY.ENT_TRUST_HISTORY_HEADING || '';
-  document.getElementById('journal-detail-merge-target').innerHTML = '';
+  document.getElementById('journal-detail-merge-target').value = '';
+  closeJournalMergeResults();
   document.getElementById('journal-detail-merge-preview').hidden = true;
   document.getElementById('journal-detail-merge-preview').innerHTML = '';
   document.getElementById('journal-detail-undo-panel').hidden = true;
@@ -3929,21 +3971,158 @@ function resetJournalTrustSurface() {
   hideInlineError('journal-detail-trust-error');
 }
 
+function closeJournalMergeResults() {
+  const results = document.getElementById('journal-detail-merge-results');
+  const input = document.getElementById('journal-detail-merge-target');
+  if (results) {
+    results.hidden = true;
+    results.replaceChildren();
+  }
+  if (input) input.setAttribute('aria-expanded', 'false');
+  journalMergeActiveIndex = -1;
+}
+
+function selectJournalMergeTarget(candidate) {
+  const input = document.getElementById('journal-detail-merge-target');
+  journalMergeTarget = {id: candidate.id, name: candidate.name || candidate.id};
+  input.value = journalMergeTarget.name;
+  document.getElementById('journal-detail-merge-btn').disabled = false;
+  closeJournalMergeResults();
+  input.focus();
+}
+
+function renderJournalMergeResults(items, emptyMessage) {
+  const input = document.getElementById('journal-detail-merge-target');
+  const results = document.getElementById('journal-detail-merge-results');
+  if (!input || !results) return;
+  results.replaceChildren();
+  journalMergeActiveIndex = -1;
+  if (!items.length) {
+    const empty = document.createElement('li');
+    empty.setAttribute('role', 'presentation');
+    empty.className = 'entity-merge-empty';
+    empty.textContent = emptyMessage || 'no entity matches that name.';
+    results.append(empty);
+  } else {
+    items.forEach((candidate) => {
+      const row = document.createElement('li');
+      row.setAttribute('role', 'presentation');
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.className = 'entity-merge-option';
+      option.setAttribute('role', 'option');
+      option.setAttribute('aria-selected', 'false');
+      const name = document.createElement('span');
+      name.textContent = candidate.name || candidate.id;
+      option.append(name);
+      if (candidate.meta) {
+        const meta = document.createElement('span');
+        meta.className = 'entity-merge-option-meta';
+        meta.textContent = candidate.meta;
+        option.append(meta);
+      }
+      option.addEventListener('mousedown', (event) => event.preventDefault());
+      option.addEventListener('click', () => selectJournalMergeTarget(candidate));
+      row.append(option);
+      results.append(row);
+    });
+  }
+  results.hidden = false;
+  input.setAttribute('aria-expanded', 'true');
+}
+
+function showJournalMergeSuggestions() {
+  if (!journalMergeSuggestions.length) {
+    closeJournalMergeResults();
+    return;
+  }
+  renderJournalMergeResults(journalMergeSuggestions.map((row) => Object.assign({}, row, {
+    meta: 'suggested match',
+  })));
+}
+
+async function runJournalMergeSearch(entity, term) {
+  const request = ++journalMergeRequest;
+  const params = new URLSearchParams({q: term, limit: '25', sort: 'name'});
+  try {
+    const page = await window.apiJson(`/app/entities/api/journal/summary?${params.toString()}`);
+    if (request !== journalMergeRequest || currentDetailEntity?.id !== entity.id) return;
+    renderJournalMergeResults((page.items || [])
+      .filter((candidate) => candidate.id !== entity.id && candidate.blocked !== true)
+      .slice(0, 20));
+  } catch (err) {
+    if (request !== journalMergeRequest) return;
+    window.logError(err, {context: 'entities: merge target search failed'});
+    renderJournalMergeResults([], "couldn't search for a merge target.");
+  }
+}
+
+function scheduleJournalMergeSearch(entity, term) {
+  if (journalMergeDebounce) clearTimeout(journalMergeDebounce);
+  if (!term) {
+    showJournalMergeSuggestions();
+    return;
+  }
+  journalMergeDebounce = setTimeout(() => {
+    journalMergeDebounce = null;
+    runJournalMergeSearch(entity, term);
+  }, 200);
+}
+
+function handleJournalMergeKeys(event, entity) {
+  const input = document.getElementById('journal-detail-merge-target');
+  const results = document.getElementById('journal-detail-merge-results');
+  const options = results ? Array.from(results.querySelectorAll('.entity-merge-option')) : [];
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    if (!results || results.hidden) {
+      const term = input.value.trim();
+      if (term) runJournalMergeSearch(entity, term);
+      else showJournalMergeSuggestions();
+      return;
+    }
+    if (!options.length) return;
+    const delta = event.key === 'ArrowDown' ? 1 : -1;
+    journalMergeActiveIndex = (journalMergeActiveIndex + delta + options.length) % options.length;
+    options.forEach((option, index) => {
+      const active = index === journalMergeActiveIndex;
+      option.setAttribute('aria-selected', String(active));
+      if (active) option.scrollIntoView({block: 'nearest'});
+    });
+  } else if (event.key === 'Enter') {
+    if (journalMergeActiveIndex >= 0 && options[journalMergeActiveIndex]) {
+      event.preventDefault();
+      options[journalMergeActiveIndex].click();
+    }
+  } else if (event.key === 'Escape') {
+    if (results && !results.hidden) {
+      event.preventDefault();
+      closeJournalMergeResults();
+    }
+  }
+}
+
 function renderJournalTrustControls(entity) {
+  journalMergeTarget = null;
+  journalMergeSuggestions = [];
   resetJournalTrustSurface();
-  const select = document.getElementById('journal-detail-merge-target');
-  const candidates = (journalEntitiesData || [])
-    .filter((candidate) => candidate.id !== entity.id && candidate.blocked !== true)
-    .sort((left, right) => String(left.name || '').localeCompare(String(right.name || '')));
-  candidates.forEach((candidate) => {
-    const option = document.createElement('option');
-    option.value = candidate.id;
-    option.textContent = candidate.name || candidate.id;
-    select.appendChild(option);
-  });
+  const input = document.getElementById('journal-detail-merge-target');
   const mergeButton = document.getElementById('journal-detail-merge-btn');
-  mergeButton.disabled = entity.blocked === true || candidates.length === 0;
-  mergeButton.onclick = () => previewJournalEntityMerge(entity.id, select.value);
+  input.value = '';
+  input.placeholder = 'type a name to find it';
+  input.disabled = entity.blocked === true;
+  mergeButton.disabled = true;
+  mergeButton.onclick = () => {
+    if (journalMergeTarget) previewJournalEntityMerge(entity.id, journalMergeTarget.id);
+  };
+  input.oninput = () => {
+    journalMergeTarget = null;
+    mergeButton.disabled = true;
+    scheduleJournalMergeSearch(entity, input.value.trim());
+  };
+  input.onkeydown = (event) => handleJournalMergeKeys(event, entity);
+  input.onfocus = () => { if (!input.value.trim()) showJournalMergeSuggestions(); };
+  input.onblur = () => { window.setTimeout(closeJournalMergeResults, 150); };
   if (pendingJournalMergeUndo?.available) {
     showJournalMergeUndo(pendingJournalMergeUndo);
   }
@@ -3975,6 +4154,13 @@ function renderJournalEntitySuggestions(entityId, rows) {
   const relevant = rows.filter((row) => (
     row.source_slug === entityId || row.target_slug === entityId
   ));
+  journalMergeSuggestions = relevant
+    .map((row) => {
+      const isSource = row.source_slug === entityId;
+      const id = isSource ? row.target_slug : row.source_slug;
+      return {id, name: (isSource ? row.target : row.source) || id};
+    })
+    .filter((row) => row.id && row.id !== entityId);
   if (!relevant.length) {
     container.textContent = ENT_COPY.ENT_TRUST_SUGGESTIONS_EMPTY || '';
     return;
@@ -4054,7 +4240,7 @@ async function previewJournalEntityMerge(sourceId, targetId) {
       body: JSON.stringify({source_slug: sourceId, target_slug: targetId})
     });
     if (currentDetailEntity?.id !== sourceId) return;
-    const target = (journalEntitiesData || []).find((entity) => entity.id === targetId) || {};
+    const target = journalMergeTarget?.id === targetId ? journalMergeTarget : {};
     renderJournalEntityMergePreview(sourceId, targetId, target.name || targetId, preview);
   } catch (err) {
     showInlineError(
@@ -4343,11 +4529,18 @@ function confirmDeleteJournalEntity() {
       throw new Error(data.error);
     }
     hideInlineError('delete-modal-error');
-    setJournalEntities((journalEntitiesData || []).filter(entity => entity.id !== entityId));
+    if (journalSummary) {
+      const kept = (journalSummary.items || []).filter(entity => entity.id !== entityId);
+      journalSummary = Object.assign({}, journalSummary, {
+        items: kept,
+        total: Math.max(0, (journalSummary.total || 0) - 1),
+        entity_total: Math.max(0, (journalSummary.entity_total || 0) - 1),
+      });
+    }
     closeDeleteJournalEntityModal();
     navigateToList();
     renderScopeControl();
-    renderJournalEntities(document.getElementById('journal-entity-card-search')?.value.trim() || '');
+    renderJournalEntities();
 
     let pendingNotificationId = null;
     pendingNotificationId = window.AppServices.notifications.show({
@@ -4862,34 +5055,44 @@ async function loadEntitiesState() {
   }
 }
 
-function deriveFacetEntityCounts(entities) {
-  const counts = Object.fromEntries(facetRoster.map((facet) => [facet.name, 0]));
-  (entities || []).forEach((entity) => {
-    if (entity.blocked) return;
-    const memberships = new Set();
-    (entity.facets || []).forEach((facet) => {
-      if (!facet.detached && Object.prototype.hasOwnProperty.call(counts, facet.name)) {
-        memberships.add(facet.name);
-      }
-    });
-    memberships.forEach((name) => { counts[name] += 1; });
-  });
-  return counts;
+/// Fetch one card-sized page of the journal entity list for the current list
+/// state.  A hand-edited or retired `type` in the URL falls back to every type
+/// rather than failing a read the owner cannot act on.
+async function fetchJournalSummary({allowTypeReset = true} = {}) {
+  const params = new URLSearchParams();
+  params.set('offset', String(journalEntityPage * JOURNAL_ENTITY_PAGE_SIZE));
+  params.set('limit', String(JOURNAL_ENTITY_PAGE_SIZE));
+  if (journalEntityType) params.set('type', journalEntityType);
+  if (journalEntitySearch) params.set('q', journalEntitySearch);
+  try {
+    return await window.apiJson(`/app/entities/api/journal/summary?${params.toString()}`);
+  } catch (err) {
+    if (allowTypeReset && journalEntityType && err?.reasonCode === 'invalid_entity_type') {
+      journalEntityType = '';
+      journalEntityPage = 0;
+      writeJournalListState({replace: true});
+      return fetchJournalSummary({allowTypeReset: false});
+    }
+    throw err;
+  }
 }
 
-function setJournalEntities(entities) {
-  journalEntitiesData = entities || [];
-  facetEntityCounts = deriveFacetEntityCounts(journalEntitiesData);
+function adoptJournalSummary(summary) {
+  journalSummary = summary;
+  journalSummaryKey = journalListStateKey();
+  facetEntityCounts = summary.facet_counts || {};
 }
 
 async function loadEntityScopeMetadata() {
+  readJournalListState();
   try {
-    const [facetPayload, journalPayload] = await Promise.all([
+    const [facetPayload, summary] = await Promise.all([
       window.apiJson('/app/settings/api/facets'),
-      window.apiJson('/app/entities/api/journal'),
+      fetchJournalSummary(),
     ]);
     facetRoster = facetPayload.facets || [];
-    setJournalEntities(journalPayload.entities || []);
+    adoptJournalSummary(summary);
+    hideJournalListError();
     scopeMetadataDirty = false;
     restoreEntityScopeFromLocation();
     return true;
@@ -4940,7 +5143,15 @@ async function initEntities() {
   const journalCardSearch = document.getElementById('journal-entity-card-search');
   if (journalCardSearch) {
     journalCardSearch.addEventListener('input', function() {
-      renderJournalEntities(this.value.trim());
+      const term = this.value.trim();
+      if (journalSearchDebounce) clearTimeout(journalSearchDebounce);
+      journalSearchDebounce = setTimeout(() => {
+        journalSearchDebounce = null;
+        journalEntitySearch = term;
+        journalEntityPage = 0;
+        writeJournalListState({replace: true});
+        loadJournalEntities({silent: true});
+      }, 220);
     });
   }
 
@@ -5065,18 +5276,35 @@ function renderLoadedJournalEntities() {
   renderJournalEntities();
 }
 
-async function loadJournalEntities({refresh = false} = {}) {
-  if (!refresh && journalEntitiesData !== null) {
+async function loadJournalEntities({refresh = false, silent = false} = {}) {
+  readJournalListState();
+  if (!refresh && journalSummary !== null && journalSummaryKey === journalListStateKey()) {
     renderLoadedJournalEntities();
     return;
   }
 
+  const container = document.getElementById('journal-entity-cards-content');
+  const countEl = document.getElementById('journal-card-search-count');
+  if (silent && container) {
+    container.setAttribute('aria-busy', 'true');
+    if (countEl) { countEl.style.display = ''; countEl.textContent = 'loading entities...'; }
+  }
+  const request = ++journalSummaryRequest;
   try {
-    const data = await window.apiJson('api/journal');
-    setJournalEntities(data.entities || []);
+    const summary = await fetchJournalSummary();
+    if (request !== journalSummaryRequest) return;
+    adoptJournalSummary(summary);
+    hideJournalListError();
     renderLoadedJournalEntities();
   } catch (err) {
+    if (request !== journalSummaryRequest) return;
     window.logError(err, { context: 'entities: loadJournalEntities failed' });
+    if (silent && journalSummary !== null) {
+      container?.removeAttribute('aria-busy');
+      renderJournalEntities();
+      showJournalListError(err);
+      return;
+    }
     window.SurfaceState.replaceLoading('entities-loading', window.SurfaceState.error({
       heading: "Couldn't load entities",
       desc: window.CONVEY_COPY.RELOAD_HINT,
@@ -5094,53 +5322,152 @@ function renderEntities(searchTerm = '') {
   renderDetectedTable(searchTerm);
 }
 
-let journalEntityPage = 0;
-let journalEntityType = '';
-let journalEntitySearch = '';
-const JOURNAL_ENTITY_PAGE_SIZE = 60;
-function renderJournalEntities(searchTerm = '') {
+function entityCountLabel(count) {
+  return `${count} ${count === 1 ? 'entity' : 'entities'}`;
+}
+
+function journalListStateKey() {
+  return `${journalEntitySearch}\u0000${journalEntityType}\u0000${journalEntityPage}`;
+}
+
+/// The URL query is the source of truth for the list state, so browser history
+/// restores the search term, the type bucket and the page together.
+function readJournalListState() {
+  const params = new URLSearchParams(location.search);
+  journalEntitySearch = (params.get('q') || '').trim();
+  journalEntityType = (params.get('type') || '').trim().toLowerCase();
+  const page = Number.parseInt(params.get('page') || '', 10);
+  journalEntityPage = Number.isFinite(page) && page > 1 ? page - 1 : 0;
+}
+
+function writeJournalListState({replace = false} = {}) {
+  const params = new URLSearchParams(location.search);
+  if (journalEntitySearch) params.set('q', journalEntitySearch); else params.delete('q');
+  if (journalEntityType) params.set('type', journalEntityType); else params.delete('type');
+  if (journalEntityPage > 0) params.set('page', String(journalEntityPage + 1)); else params.delete('page');
+  const query = params.toString();
+  const url = `${location.pathname}${query ? `?${query}` : ''}${location.hash}`;
+  if (replace) history.replaceState(null, '', url);
+  else history.pushState(null, '', url);
+}
+
+function hideJournalListError() {
+  const box = document.getElementById('journal-entity-cards-error');
+  if (!box) return;
+  box.hidden = true;
+  box.replaceChildren();
+}
+
+function showJournalListError(err) {
+  const box = document.getElementById('journal-entity-cards-error');
+  if (!box) return;
+  box.replaceChildren();
+  const text = document.createElement('span');
+  text.textContent = "couldn't load that page of entities.";
+  box.append(text);
+  if (err?.serverMessage) {
+    const detail = document.createElement('span');
+    detail.className = 'journal-entity-cards-error-detail';
+    detail.textContent = err.serverMessage;
+    box.append(detail);
+  }
+  const retry = document.createElement('button');
+  retry.type = 'button';
+  retry.textContent = 'try again';
+  retry.onclick = () => {
+    hideJournalListError();
+    loadJournalEntities({refresh: true, silent: true});
+  };
+  box.append(retry);
+  box.hidden = false;
+}
+
+function renderJournalTypeFilter() {
+  const container = document.getElementById('journal-entity-cards-content');
+  let filter = document.getElementById('journal-entity-type-filter');
+  if (!filter) {
+    const label = document.createElement('label');
+    label.className = 'journal-entity-filter';
+    label.textContent = 'type ';
+    filter = document.createElement('select');
+    filter.id = 'journal-entity-type-filter';
+    label.append(filter);
+    container.before(label);
+    filter.addEventListener('change', () => {
+      journalEntityType = filter.value;
+      journalEntityPage = 0;
+      writeJournalListState();
+      loadJournalEntities({silent: true});
+    });
+  }
+  filter.replaceChildren();
+  const all = document.createElement('option');
+  all.value = '';
+  all.textContent = `all types (${journalSummary.entity_total || 0})`;
+  filter.append(all);
+  const buckets = journalSummary.type_counts || [];
+  buckets.forEach(({bucket, count}) => {
+    const option = document.createElement('option');
+    option.value = bucket;
+    option.textContent = `${bucket} (${count})`;
+    filter.append(option);
+  });
+  if (journalEntityType && !buckets.some(({bucket}) => bucket === journalEntityType)) {
+    const option = document.createElement('option');
+    option.value = journalEntityType;
+    option.textContent = `${journalEntityType} (0)`;
+    filter.append(option);
+  }
+  filter.value = journalEntityType;
+}
+
+function renderJournalEntities() {
   const container = document.getElementById('journal-entity-cards-content');
   const noEntities = document.getElementById('no-journal-entities');
   const countEl = document.getElementById('journal-card-search-count');
   const noMatchEl = document.getElementById('no-journal-card-matches');
-  const entities = journalEntitiesData || [];
-  const term = searchTerm.toLowerCase();
-  if (term !== journalEntitySearch) { journalEntityPage = 0; journalEntitySearch = term; }
-  let filter = document.getElementById('journal-entity-type-filter');
-  if (!filter) {
-    const label = document.createElement('label');
-    label.className = 'journal-entity-filter'; label.textContent = 'type ';
-    filter = document.createElement('select'); filter.id = 'journal-entity-type-filter';
-    label.append(filter); container.before(label);
-    filter.addEventListener('change', () => { journalEntityType = filter.value; journalEntityPage = 0; renderJournalEntities(journalEntitySearch); });
+  if (!container || !journalSummary) return;
+  const items = journalSummary.items || [];
+  const total = journalSummary.total || 0;
+  const entityTotal = journalSummary.entity_total || 0;
+  const start = journalSummary.offset || 0;
+  const searchInput = document.getElementById('journal-entity-card-search');
+  if (searchInput && !journalSearchDebounce && searchInput.value.trim() !== journalEntitySearch) {
+    searchInput.value = journalEntitySearch;
   }
-  const groups = groupEntitiesByType(entities);
-  filter.replaceChildren();
-  const all = document.createElement('option'); all.value = ''; all.textContent = `all types (${entities.length})`; filter.append(all);
-  groups.forEach(({label, items}) => { const option = document.createElement('option'); option.value = label; option.textContent = `${label} (${items.length})`; filter.append(option); });
-  if (journalEntityType && !groups.some(group => group.label === journalEntityType)) journalEntityType = '';
-  filter.value = journalEntityType;
-  const matches = groups.filter(group => !journalEntityType || group.label === journalEntityType).flatMap(({label, items}) => items.filter(entity => !term || entity.name.toLowerCase().includes(term)).sort((a,b) => (b.last_active_ts || 0) - (a.last_active_ts || 0)).map(entity => ({label, entity})));
-  journalEntityPage = Math.min(journalEntityPage, Math.max(0, Math.ceil(matches.length / JOURNAL_ENTITY_PAGE_SIZE) - 1));
-  container.replaceChildren(); noEntities.style.display = entities.length ? 'none' : 'block';
-  noMatchEl.style.display = entities.length && !matches.length ? '' : 'none';
+  renderJournalTypeFilter();
+  container.replaceChildren();
+  container.removeAttribute('aria-busy');
+  noEntities.style.display = entityTotal ? 'none' : 'block';
+  // `.no-card-matches` carries `display:none` in the stylesheet, so the
+  // visible state has to name its own display value.
+  noMatchEl.style.display = entityTotal && !total ? 'block' : 'none';
   countEl.style.display = '';
-  const start = journalEntityPage * JOURNAL_ENTITY_PAGE_SIZE;
-  countEl.textContent = matches.length ? `${start+1}–${Math.min(start+JOURNAL_ENTITY_PAGE_SIZE,matches.length)} of ${matches.length} entities` : '0 entities';
+  countEl.textContent = total
+    ? `${start + 1}–${start + items.length} of ${entityCountLabel(total)}`
+    : entityCountLabel(0);
   let label = null, grid = null;
-  matches.slice(start,start+JOURNAL_ENTITY_PAGE_SIZE).forEach(item => {
-    if (item.label !== label) {
-      label = item.label; const group = document.createElement('section'); group.className = 'entity-type-group';
+  items.forEach(entity => {
+    const bucket = entity.type_bucket || 'other';
+    if (bucket !== label) {
+      label = bucket;
+      const group = document.createElement('section'); group.className = 'entity-type-group';
       const heading = document.createElement('h2'); heading.className = 'entity-type-header'; heading.textContent = label;
-      grid = document.createElement('div'); grid.className = 'entity-cards-grid'; group.append(heading,grid); container.append(group);
+      grid = document.createElement('div'); grid.className = 'entity-cards-grid'; group.append(heading, grid); container.append(group);
     }
-    grid.append(createJournalEntityCard(item.entity));
+    grid.append(createJournalEntityCard(entity));
   });
-  if (matches.length > JOURNAL_ENTITY_PAGE_SIZE) {
+  if (total > JOURNAL_ENTITY_PAGE_SIZE) {
     const nav = document.createElement('nav'); nav.className = 'journal-entity-pages'; nav.setAttribute('aria-label','entity pages');
-    for (const [text,delta,disabled] of [['previous',-1,journalEntityPage===0],['next',1,start+JOURNAL_ENTITY_PAGE_SIZE>=matches.length]]) {
+    for (const [text,delta,disabled] of [['previous',-1,journalEntityPage===0],['next',1,start+items.length>=total]]) {
       const button = document.createElement('button'); button.type = 'button'; button.textContent = text; button.disabled = disabled;
-      button.onclick = () => { journalEntityPage += delta; renderJournalEntities(journalEntitySearch); countEl.tabIndex = -1; countEl.focus(); countEl.scrollIntoView({block:'center'}); };
+      button.onclick = () => {
+        journalEntityPage += delta;
+        writeJournalListState();
+        loadJournalEntities({silent: true}).then(() => {
+          countEl.tabIndex = -1; countEl.focus(); countEl.scrollIntoView({block:'center'});
+        });
+      };
       nav.append(button);
     }
     container.append(nav);
@@ -5148,11 +5475,13 @@ function renderJournalEntities(searchTerm = '') {
 }
 
 function appendTypeIndicator(card, type) {
-  const slug = type ? type.toLowerCase().replace(/\s+/g, '-') : 'other';
-  card.classList.add('entity-card-type-' + slug);
+  const label = (type || 'other').toLowerCase();
+  card.classList.add('entity-card-type-' + label.replace(/\s+/g, '-'));
   const dot = document.createElement('span');
   dot.className = 'entity-card-type-indicator';
-  dot.title = type || 'Other';
+  dot.title = `type: ${label}`;
+  dot.setAttribute('role', 'img');
+  dot.setAttribute('aria-label', dot.title);
   let markers = card.querySelector('.entity-card-facet-dots');
   if (!markers) {
     markers = document.createElement('div');
@@ -5209,7 +5538,9 @@ function createJournalEntityCard(entity) {
     const badge = document.createElement('div');
     badge.className = 'entity-card-badge';
     badge.textContent = entity.total_observation_count;
-    badge.title = `${entity.total_observation_count} mention${entity.total_observation_count !== 1 ? 's' : ''} — observations about this entity`;
+    badge.title = `${entity.total_observation_count} mention${entity.total_observation_count !== 1 ? 's' : ''}`;
+    badge.setAttribute('role', 'img');
+    badge.setAttribute('aria-label', badge.title);
     card.appendChild(badge);
   }
 
@@ -5238,14 +5569,16 @@ function createJournalEntityCard(entity) {
       const dot = document.createElement('span');
       dot.className = 'entity-facet-dot';
       dot.style.backgroundColor = facet.color || '#888';
-      dot.title = facet.title;
+      dot.title = `facet: ${facet.title || facet.name}`;
+      dot.setAttribute('role', 'img');
+      dot.setAttribute('aria-label', dot.title);
       dotsContainer.appendChild(dot);
     });
 
     card.appendChild(dotsContainer);
   }
 
-  appendTypeIndicator(card, entity.type);
+  appendTypeIndicator(card, entity.type_bucket || entity.type);
   appendDetailAffordance(card);
 
   return card;
