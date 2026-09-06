@@ -106,6 +106,22 @@
     });
   }
 
+  // Tracks whether the last-rendered day had any activity, so the state can
+  // be re-evaluated once the (much slower) index coverage check resolves,
+  // without re-fetching or re-rendering the day's own data (X-07).
+  let lastUsageEmpty = null;
+
+  function applyCardState() {
+    if (lastUsageEmpty === null) return; // usage hasn't rendered yet
+    if (coverageFailed) {
+      state('index-error', "30-day history isn't available. the selected day is still available.");
+    } else if (lastUsageEmpty) {
+      state('empty', 'no token activity was recorded for this day.');
+    } else {
+      state('ready', '');
+    }
+  }
+
   function renderUsage(data) {
     heading.textContent = window.JournalFormat.day(data.day);
     summary.textContent = `${requestCount(data.total.requests)} · ${number(data.total.tokens)} tokens`;
@@ -114,14 +130,8 @@
     renderTable('providers');
     renderTable('models');
     renderComparison(data.by_type || {});
-    if (coverageFailed) {
-      state('index-error', "30-day history isn't available. the selected day is still available.");
-
-    } else if (Number(data.total.requests || 0) === 0) {
-      state('empty', 'no token activity was recorded for this day.');
-    } else {
-      state('ready', '');
-    }
+    lastUsageEmpty = Number(data.total.requests || 0) === 0;
+    applyCardState();
   }
 
   function select(day, options = {}) {
@@ -168,7 +178,10 @@
       button.dataset.tokensDay = day;
       button.setAttribute('aria-label', `${dayLabel(day)}: ${number(totals[day])} tokens`);
       button.setAttribute('aria-pressed', String(day === selected));
-      button.style.height = `${Math.max(2, totals[day] / max * 100)}%`;
+      // The bar element itself stays full-height (a 44px+ hit target); only
+      // the visible fill (--bar-fill, consumed by the CSS gradient) tracks
+      // the day's share of the 30-day max (G2-10).
+      button.style.setProperty('--bar-fill', `${Math.max(2, totals[day] / max * 100)}%`);
       button.addEventListener('click', () => select(day, { push: true, focus: true }));
       rollup.append(button);
     });
@@ -199,14 +212,21 @@
 
   document.addEventListener('stats:token-rollup', event => renderRollup(event.detail));
 
+  // The selected day's own data (api/usage) is typically an order of
+  // magnitude faster than the 30-day coverage probe (api/index) — fetch them
+  // in parallel instead of gating the day's detail behind the slower one, so
+  // the card renders as soon as its own data is ready (X-07). The coverage
+  // probe only ever narrows the state afterward (to "index-error"); it can't
+  // undo a day that already rendered successfully.
   state('loading', 'loading token activity…');
+  select(selected);
   fetch('/app/stats/api/index')
     .then(response => {
       if (!response.ok) throw new Error('index');
       return response.json();
     })
     .catch(() => { coverageFailed = true; })
-    .then(() => select(selected));
+    .then(() => applyCardState());
 
   addEventListener('popstate', () => {
     const day = new URLSearchParams(location.search).get('tokens');
