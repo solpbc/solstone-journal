@@ -3961,6 +3961,9 @@
   }
 
   function cohesion(value) {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) {
+      return `<span class="spk-overview-muted">${escapeHtml(COPY.SPK_OVERVIEW_COHESION_UNMEASURED)}</span>`;
+    }
     const bin = cohesionBin(value);
     const dots = Array.from({length: 5}, (_, index) => (
       `<span class="spk-dot${index < bin ? ' spk-dot-filled' : ''}"></span>`
@@ -4040,17 +4043,31 @@
     });
   }
 
+  function ownerSamplesText(meta) {
+    const count = Number(meta.cluster_size || 0);
+    const formatted = count.toLocaleString();
+    return meta.cluster_size_capped
+      ? `${formatted} ${COPY.SPK_OVERVIEW_OWNER_SAMPLES_CAP_SUFFIX}`
+      : formatted;
+  }
+
+  function absoluteDate(value) {
+    if (!value) return escapeHtml(COPY.SPK_OVERVIEW_OWNER_BUILT_UNKNOWN);
+    return window.JournalFormat?.timestamp
+      ? escapeHtml(window.JournalFormat.timestamp(value))
+      : relativeTime(value);
+  }
+
   function ownerConfirmed(data) {
     const meta = data.centroid_metadata || {};
     const streams = meta.streams || [];
-    const builtAt = meta.created_at ? relativeTime(meta.created_at) : escapeHtml(COPY.SPK_OVERVIEW_OWNER_BUILT_UNKNOWN);
     ownerPanel.innerHTML = `
       <strong>${escapeHtml(COPY.SPK_OVERVIEW_YOUR_VOICE_CONFIRMED)}</strong>
-      <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_SAMPLES_LABEL)}: ${escapeHtml(String(meta.cluster_size || 0))}</p>
+      <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_SAMPLES_LABEL)}: ${escapeHtml(ownerSamplesText(meta))}</p>
       <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_STREAMS_LABEL)}: ${escapeHtml(streams.length ? streams.join(' · ') : '—')}</p>
       <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_COHESION_LABEL)}: ${cohesion(meta.intra_cosine_p25)}</p>
-      <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_BUILT_PREFIX)}: ${builtAt}</p>
-      <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_REFRESHED_PREFIX)}: ${relativeTime(meta.last_refreshed_at)}</p>
+      <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_BUILT_PREFIX)}: ${absoluteDate(meta.created_at)}</p>
+      <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_REFRESHED_PREFIX)}: ${absoluteDate(meta.last_refreshed_at)}</p>
     `;
   }
 
@@ -4101,9 +4118,14 @@
     `;
   }
 
+  function qualityReadyHeading(data) {
+    const days = qualityCount(data.quality_window_count) || qualityCount(data.quality_window_days) || 30;
+    return (COPY.SPK_OVERVIEW_QUALITY_READY_TEMPLATE || '').replace('{days}', String(days));
+  }
+
   function renderQualityReady(data) {
     qualityPanel.innerHTML = `
-      <strong>${escapeHtml(COPY.SPK_OVERVIEW_QUALITY_READY)}</strong>
+      <strong>${escapeHtml(qualityReadyHeading(data))}</strong>
       ${qualityWarning(data)}
       ${qualityRows(data)}
       ${qualityTeachingLine(data)}
