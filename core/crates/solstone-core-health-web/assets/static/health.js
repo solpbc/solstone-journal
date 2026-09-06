@@ -13,7 +13,7 @@
     "LOGS_STREAM_FILTER_LABEL": "stream"
   };
   const HEALTH_GLANCE_COPY = {
-    "HEALTH_GLANCE_CATCHING_UP": "catching up on {n} {tasks} in the background. last update {age} ago.",
+    "HEALTH_GLANCE_CATCHING_UP": "catching up on {n} {tasks} in the background. last update {age}.",
     "HEALTH_GLANCE_CHECKING": "checking where your journal stands…",
     "HEALTH_GLANCE_CLIENT_SILENT": "one of your devices hasn't reached your journal recently.",
     "HEALTH_GLANCE_DEVICE_FAILING": "{device} isn't reaching your journal.",
@@ -22,7 +22,7 @@
     "HEALTH_GLANCE_DEVICE_SILENT_NO_AGE": "{device} hasn't added to your journal recently.",
     "HEALTH_GLANCE_DEVICES_SILENT": "{n} devices haven't added to your journal recently: {devices}.",
     "HEALTH_GLANCE_DEVICES_UNAVAILABLE": "your devices' delivery status is unavailable right now.",
-    "HEALTH_GLANCE_OK": "everything's working. the solstone app last added to your journal {age} ago.",
+    "HEALTH_GLANCE_OK": "everything's working. the solstone app last added to your journal {age}.",
     "HEALTH_GLANCE_BRAIN_ATTENTION": "{headline}",
     "HEALTH_GLANCE_SERVICE_ATTENTION": "1 service needs attention: {service_names}.",
     "HEALTH_GLANCE_SERVICES_ATTENTION": "{n} services need attention: {service_names}.",
@@ -63,17 +63,15 @@
       if (Number.isFinite(tokens)) {
         state.todayTokens = tokens;
       }
-      updateStatusSummary();
+      renderBrainHealth();
     })
     .catch(() => {
       state.todayTokens = null;
-      elements.glanceTokensValue.textContent = '—';
-      updateStatusSummary();
+      renderBrainHealth();
     });
 
   // State management
   let connectError = false;
-  let receivedEventCount = 0;
 
   const state = {
     supervisorSeen: false,
@@ -122,8 +120,6 @@
   const elements = {
     healthGlance: document.getElementById('healthGlance'),
     healthGlanceSentence: document.getElementById('healthGlanceSentence'),
-    glanceTokensValue: document.getElementById('glanceTokensValue'),
-    glanceActivityValue: document.getElementById('glanceActivityValue'),
     glanceErrorsValue: document.getElementById('glanceErrorsValue'),
     glanceErrorsLabel: document.getElementById('glanceErrorsLabel'),
     serviceDots: document.getElementById('serviceDots'),
@@ -399,19 +395,61 @@
   let programmaticScroll = false;
   const STALE_MS = 30000;
   // Human-readable service names
+  // Owner words for every service the supervisor can report. A service with no
+  // entry here is a codename on the trust page, so the map covers the ones that
+  // ship (spl, parakeet) rather than letting them through raw (X-18).
   const SERVICE_NAMES = {
-    supervisor: 'System Manager',
-    convey: 'Web Interface',
-    cortex: 'AI Engine',
-    sense: 'Media Processor',
-    observe: 'Screen & Audio',
-    think: 'Background Analysis',
+    supervisor: 'system manager',
+    convey: 'web interface',
+    cortex: 'ai engine',
+    sense: 'media processor',
+    observe: 'screen & audio',
+    think: 'background analysis',
     importer: 'file importer',
-    schedule: 'Task Scheduler',
+    schedule: 'task scheduler',
+    spl: 'private link',
+    parakeet: 'transcription',
   };
 
   function serviceName(internal) {
-    return SERVICE_NAMES[internal] || internal;
+    return SERVICE_NAMES[internal] || String(internal || '').replace(/[_:-]+/g, ' ');
+  }
+
+  // Readable names for talent ids that do not humanize cleanly; everything else
+  // falls back to the humanized id. Mirrors thinking.js talentLabel so the two
+  // surfaces name the same talent the same way (X-18).
+  const TALENT_NAMES = {
+    'entities:detection': 'entity detection',
+  };
+
+  function talentName(name) {
+    const id = String(name || '');
+    if (!id) return '';
+    return TALENT_NAMES[id] || id.replace(/[_:]+/g, ' ');
+  }
+
+  // Owner words for the schedule keys the server ships. Returns null for an
+  // unmapped key so callers can fall back to a generic phrase instead of
+  // printing a colon-delimited task identifier (G3-102).
+  const SCHEDULE_NAMES = {
+    'brain': 'processing check',
+    'cadence': 'processing schedule',
+    'heartbeat': 'journal review',
+    'facet-candidates': 'facet suggestions',
+    'maintenance:backup:run': 'backup',
+    'maintenance:backup:prune': 'backup cleanup',
+    'maintenance:backup:verify': 'backup check',
+    'maintenance:backup:offload': 'original media cleanup',
+    'maintenance:health:mark-raw': 'original media review',
+    'maintenance:health:prune-logs': 'log cleanup',
+    'maintenance:speakers:discover-voices': 'voice discovery',
+    'maintenance:speakers:candidate-pair-suggestions': 'speaker suggestions',
+    'maintenance:speakers:name-variants': 'speaker name suggestions',
+    'maintenance:speakers:consolidate-pool': 'speaker cleanup',
+  };
+
+  function scheduleName(name) {
+    return SCHEDULE_NAMES[String(name || '')] || null;
   }
 
   function sweepUnresolvedSkeletons() {
@@ -454,9 +492,19 @@
     return formatElapsed(Math.floor(ms / 1000));
   }
 
+  // Every owner-visible age on this page goes through here: spelled units from
+  // the shared ladder, "just now" under a minute, and the "ago" suffix built in
+  // so no caller invents its own. Abbreviated units, "a few seconds" and
+  // "0 seconds ago" are all the same defect (G3-104).
+  function ageAgo(ms) {
+    const value = Number.isFinite(ms) && ms > 0 ? ms : 0;
+    if (value < 60000) return 'just now';
+    return relativeTime(value) + ' ago';
+  }
+
 	  function truncate(str, len) {
 	    if (!str) return '';
-	    return str.length > len ? str.substring(0, len) + '...' : str;
+	    return str.length > len ? str.substring(0, len).replace(/\s+\S*$/, '') + '…' : str;
 	  }
 
 	  function dayKeyFromTimestamp(ts) {
@@ -494,12 +542,9 @@
     if (!epochMs) return '';
     const delta = epochMs - Date.now();
     if (delta < 0) return 'due now';
-    const mins = Math.floor(delta / 60000);
-    if (mins < 60) return `in ${mins}m`;
-    const hours = Math.floor(mins / 60);
-    if (hours < 24) return `in ${hours}h`;
-    const days = Math.floor(hours / 24);
-    return `in ${days}d`;
+    // Spelled units, same ladder as every other age on the page (G3-104).
+    if (delta < 60000) return 'in under a minute';
+    return `in ${relativeTime(delta)}`;
   }
 
   function renderInfoItems(parent, items) {
@@ -640,7 +685,7 @@
         vars: {
           n: String(catchingUp),
           tasks: catchingUp === 1 ? 'task' : 'tasks',
-          age: relativeTime(now - (state.lastEventTs || now)),
+          age: ageAgo(now - (state.lastEventTs || now)),
         },
       };
     }
@@ -648,7 +693,7 @@
     if (state.services.size > 0 || state.crashed.size > 0) {
       return {
         key: 'HEALTH_GLANCE_OK',
-        vars: { age: relativeTime(now - (state.lastEventTs || now)) },
+        vars: { age: ageAgo(now - (state.lastEventTs || now)) },
       };
     }
 
@@ -702,12 +747,6 @@
     const selection = selectGlanceSentence(state, now);
     renderGlanceVerdict(selection);
 
-    elements.glanceTokensValue.textContent = Number.isFinite(state.todayTokens)
-      ? window.JournalFormat.compactTokens(state.todayTokens)
-      : '—';
-
-    elements.glanceActivityValue.textContent = state.lastEventTs ? receivedEventCount.toLocaleString() : '—';
-
     const today = todayKey();
     if (!state.agentErrorsOk) {
       elements.glanceErrorsValue.textContent = '—';
@@ -730,7 +769,12 @@
     if (brain.headline) lines.push(brain.headline);
     if (identity.lane && identity.provider && identity.model) {
       if (brain.state === 'ready') {
-        const checked = evidence.age_text ? `, checked ${evidence.age_text} ago` : '';
+        // age_text is the server's compact form ("10h"); the page speaks one
+        // vocabulary, so derive from age_seconds and fall back only if absent.
+        const checkedAge = Number.isFinite(evidence.age_seconds)
+          ? ageAgo(evidence.age_seconds * 1000)
+          : (evidence.age_text ? evidence.age_text + ' ago' : '');
+        const checked = checkedAge ? `, checked ${checkedAge}` : '';
         lines.push(`${window.JournalFormat.processingLane(identity.lane)}${checked}`);
       } else {
         lines.push(`${window.JournalFormat.processingLane(identity.lane)}: ${brain.reason_text || ''}${component}`);
@@ -747,14 +791,31 @@
       box.appendChild(p);
     });
     const identityText = [identity.lane, identity.provider, identity.model].filter(Boolean).join(' · ');
-    if (identityText) {
+    // Token counts are provider internals: real, but not something the owner
+    // acts on, so they sit in the processing disclosure rather than leading the
+    // page as a headline figure (G3-106).
+    const tokensText = Number.isFinite(state.todayTokens)
+      ? `${window.JournalFormat.compactTokens(state.todayTokens)} tokens used today`
+      : '';
+    if (identityText || tokensText) {
       const details = document.createElement('details');
       details.open = identityOpen;
       const summary = document.createElement('summary');
       summary.textContent = 'processing details';
-      const value = document.createElement('p');
-      value.textContent = identityText;
-      details.append(summary, value);
+      details.append(summary);
+      if (identityText) {
+        const value = document.createElement('p');
+        value.textContent = identityText;
+        details.append(value);
+      }
+      if (tokensText) {
+        const tokens = document.createElement('p');
+        const link = document.createElement('a');
+        link.href = '/app/stats/#tokens';
+        link.textContent = tokensText;
+        tokens.append(link);
+        details.append(tokens);
+      }
       box.appendChild(details);
       if (identityFocused) summary.focus({preventScroll: true});
     }
@@ -821,9 +882,8 @@
     }
 
     if (state.lastAgentFinishTs) {
-      const ago = relativeTime(Date.now() - state.lastAgentFinishTs);
       const el = ensureChild(idx++);
-      el.textContent = 'last talent finished ' + ago + ' ago';
+      el.textContent = 'last talent finished ' + ageAgo(Date.now() - state.lastAgentFinishTs);
       el.style.color = '';
     }
 
@@ -846,7 +906,13 @@
       .sort((a, b) => a.next_run - b.next_run)[0];
     if (nextSchedule) {
       const el = ensureChild(idx++);
-      el.textContent = 'next: ' + (nextSchedule.name || 'scheduled') + ' ' + formatNextRun(nextSchedule.next_run);
+      // The raw schedule key is a task identifier, not a name the owner chose.
+      // Unmapped keys get the generic phrase; the exact key stays in the
+      // schedules disclosure in the vitals bar (G3-102).
+      const label = scheduleName(nextSchedule.name);
+      el.textContent = label
+        ? 'next: ' + label + ' ' + formatNextRun(nextSchedule.next_run)
+        : 'next scheduled run ' + formatNextRun(nextSchedule.next_run);
       el.style.color = '';
     }
 
@@ -898,6 +964,23 @@
       entry.stage || '',
       entry.error || '',
     ].join(':');
+  }
+
+  // The row summary is interface copy, not the engine's exception string: a
+  // hook name, an internal failure code and a sentence cut at one letter are
+  // not something the owner can act on. The raw message keeps its place in the
+  // row's disclosure panel and in the service logs (G3-103).
+  function recentErrorOwnerPhrase(entry) {
+    if (entry.type === 'agent') return "didn't finish";
+    if (entry.type === 'import') return "didn't finish importing";
+    return 'ran into a problem';
+  }
+
+  // The name an owner recognises for whatever produced the error.
+  function recentErrorName(entry) {
+    if (entry.type === 'agent') return talentName(entry.name);
+    if (entry.type === 'import') return String(entry.name || 'import');
+    return serviceName(entry.name);
   }
 
   function recentErrorOwnerMessage(entry) {
@@ -1072,23 +1155,23 @@
       }
 
       const icon = e.type === 'agent' ? '⚙' : e.type === 'import' ? '↓' : '⚠';
-      const ago = relativeTime(Date.now() - (e.ts || Date.now()));
+      const ago = ageAgo(Date.now() - (e.ts || Date.now()));
       const summaryBtn = row.querySelector('[data-action="toggle-error"]');
       summaryBtn.textContent = '';
       summaryBtn.appendChild(document.createTextNode(icon + ' '));
       const strong = document.createElement('strong');
-      strong.textContent = e.name;
+      strong.textContent = recentErrorName(e);
       summaryBtn.appendChild(strong);
-      summaryBtn.appendChild(document.createTextNode(' — ' + truncate(recentErrorOwnerMessage(e), 70) + ' '));
+      summaryBtn.appendChild(document.createTextNode(' — ' + recentErrorOwnerPhrase(e) + ' '));
       if (count > 1) {
         const countSpan = document.createElement('span');
-        countSpan.style.cssText = 'color: #6b7280; font-size: 0.85em; font-weight: 600;';
+        countSpan.style.cssText = 'color: var(--ink-faint); font-size: 0.85em; font-weight: 600;';
         countSpan.textContent = `×${count} `;
         summaryBtn.appendChild(countSpan);
       }
       const timeSpan = document.createElement('span');
-      timeSpan.style.cssText = 'color: #9ca3af; font-size: 0.85em;';
-      timeSpan.textContent = ago + ' ago';
+      timeSpan.style.cssText = 'color: var(--ink-faint); font-size: 0.85em;';
+      timeSpan.textContent = ago;
       summaryBtn.appendChild(timeSpan);
 
       const panel = row.querySelector('[data-error-panel]');
@@ -1227,7 +1310,7 @@
     const card = btn.closest('[data-key]');
     const errorEl = card?.querySelector('.activity-card-error');
     btn.disabled = true;
-    btn.textContent = 'retrying...';
+    btn.textContent = 'retrying…';
     window.apiJson('/app/health/api/retry-import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1488,10 +1571,9 @@
           ? ` · ${dueNow} are due now`
           : next ? ' · next ' + next : '';
       details.querySelector('summary').textContent = `${schedules.length} scheduled${tail}`;
-      const labels = {brain: 'processing check', cadence: 'processing schedule', heartbeat: 'journal review', 'facet-candidates': 'facet suggestions'};
       details.querySelector('ul').innerHTML = schedules.map(schedule => {
         const name = schedule.name || 'unnamed';
-        const label = labels[name] || name.replace(/^maintenance:/, '').replace(/[:_-]+/g, ' ');
+        const label = scheduleName(name) || name.replace(/^maintenance:/, '').replace(/[:_-]+/g, ' ');
         const next = schedule.due ? 'due now' : formatNextRun(schedule.next_run);
         return `<li>${escapeHtml(label)}${next ? ' · ' + escapeHtml(next) : ''}<code>${escapeHtml(name)}</code></li>`;
       }).join('');
@@ -1524,27 +1606,31 @@
     const text = el.children[1];
     const severity = el.children[2];
 
+    // This chip reads service and process state only. It is NOT the page
+    // verdict: device delivery, processing and the backlog do not reach it, so
+    // its words stay scoped to services and the glance sentence above carries
+    // the worst signal for the whole page (G3-101).
     if (status === 'ok') {
       indicator.className = 'status-indicator active';
-      indicator.setAttribute('aria-label', 'System status: healthy');
-      text.textContent = 'all systems go';
-      severity.textContent = 'healthy';
+      indicator.setAttribute('aria-label', 'services: all running');
+      text.textContent = 'all services running';
+      severity.textContent = '';
     } else if (status === 'warning') {
       indicator.className = 'status-indicator restarting';
-      indicator.setAttribute('aria-label', 'System status: warning');
+      indicator.setAttribute('aria-label', 'services: warning');
       text.textContent = 'some services slow to respond';
       severity.textContent = 'warning';
       el.classList.add('warning');
     } else if (status === 'error') {
       indicator.className = 'status-indicator crashed';
-      indicator.setAttribute('aria-label', 'System status: error');
+      indicator.setAttribute('aria-label', 'services: need attention');
       text.textContent = 'services need attention';
       severity.textContent = 'error';
       el.classList.add('error');
     } else {
       indicator.className = 'status-indicator';
-      indicator.setAttribute('aria-label', 'system status: unavailable');
-      text.textContent = 'unavailable';
+      indicator.setAttribute('aria-label', 'services: status unavailable');
+      text.textContent = 'service status unavailable';
       severity.textContent = '';
       el.classList.add('unavailable');
     }
@@ -1573,7 +1659,7 @@
         badge: 'adding',
         unavailable: false,
         heading: age
-          ? `${name} added to your journal ${age} ago. live detail isn't being reported right now.`
+          ? `${name} added to your journal ${ageAgo(adding[0].capture_elapsed_ms)}. live detail isn't being reported right now.`
           : `${name} is adding to your journal. live detail isn't being reported right now.`,
       };
     }
@@ -1859,13 +1945,13 @@
 	    if (Number.isFinite(lastCapture)) {
 	      const deltaMs = Date.now() - lastCapture;
 	      if (deltaMs < 0) return 'last added from future';
-	      return `last added ${relativeTime(deltaMs)} ago`;
+	      return `last added ${ageAgo(deltaMs)}`;
 	    }
 	    const lastSeen = client.last_seen_at && Date.parse(client.last_seen_at);
 	    if (!Number.isFinite(lastSeen)) return 'no material yet';
 	    const deltaMs = Date.now() - lastSeen;
 	    if (deltaMs < 0) return 'last seen from future';
-	    return `last reported ${relativeTime(deltaMs)} ago`;
+	    return `last reported ${ageAgo(deltaMs)}`;
 	  }
 
 	  function requestBacklogReprocess(button) {
@@ -2066,11 +2152,11 @@
         card.appendChild(providerEl);
         container.appendChild(card);
       }
-      const stateLabel = agent.event === 'thinking' ? 'Thinking...' :
-                        (agent.event === 'tool_start' || agent.event === 'tool_end') ? 'working...' : 'running...';
+      const stateLabel = agent.event === 'thinking' ? 'thinking…' :
+                        (agent.event === 'tool_start' || agent.event === 'tool_end') ? 'working…' : 'running…';
       const elapsed = agent.elapsed_seconds ? formatElapsed(agent.elapsed_seconds) : '0s';
       card.children[0].textContent = '...' + getAgentId(agent.use_id);
-      card.children[1].textContent = agent.name || 'default';
+      card.children[1].textContent = talentName(agent.name) || 'default';
       card.children[2].textContent = stateLabel;
       card.children[3].textContent = elapsed;
       card.children[4].textContent = agent.provider || 'unknown';
@@ -2150,9 +2236,9 @@
                       imp.stage === 'transcribing' ? 50 :
                       imp.stage === 'segmenting' ? 75 : 90;
       const elapsed = imp.elapsed_ms ? formatDuration(imp.elapsed_ms) : '0s';
-      const humanStage = imp.stage === 'initialization' ? 'Starting...' :
-                         imp.stage === 'transcribing' ? 'Transcribing audio...' :
-                         imp.stage === 'segmenting' ? 'Organizing segments...' : 'Processing...';
+      const humanStage = imp.stage === 'initialization' ? 'starting…' :
+                         imp.stage === 'transcribing' ? 'transcribing audio…' :
+                         imp.stage === 'segmenting' ? 'organizing segments…' : 'processing…';
 
       if (isError && imp.error) {
         card.children[3].textContent = truncate(imp.error, 40);
@@ -2716,7 +2802,6 @@
   function handleEvent(msg) {
     const eventTs = Date.now();
     state.lastEventTs = eventTs;
-    receivedEventCount += 1;
     const tract = msg.tract;
     if (tract === 'supervisor') handleSupervisorEvent(msg);
     else if (tract === 'cortex') handleCortexEvent(msg);
@@ -2787,7 +2872,7 @@
     renderLogs();
   });
   elements.vitalsCheckBtn.addEventListener('click', () => {
-    elements.vitalsCheckBtn.textContent = 'checking...';
+    elements.vitalsCheckBtn.textContent = 'checking…';
     elements.vitalsCheckBtn.disabled = true;
     fetch('/app/health/api/info')
       .then(r => r.json())
@@ -3023,20 +3108,20 @@
       elements.logsConnectionNote.classList.remove('hidden');
       return;
     }
-    const ago = Math.floor((Date.now() - state.lastEventTs) / 1000);
-    const agoText = relativeTime(ago * 1000);
+    const ageMs = Date.now() - state.lastEventTs;
+    const ago = Math.floor(ageMs / 1000);
     if (ago >= 60) {
-      el.textContent = `no recent updates (${agoText})`;
+      el.textContent = `no updates in ${relativeTime(ageMs)}`;
       el.className = 'connection-indicator disconnected';
       elements.logsConnectionNote.textContent = 'log updates may be delayed';
       elements.logsConnectionNote.classList.remove('hidden');
     } else if (ago >= 30) {
-      el.textContent = `Stale (${agoText})`;
+      el.textContent = 'updates are slow';
       el.className = 'connection-indicator stale';
       elements.logsConnectionNote.textContent = 'log updates may be delayed';
       elements.logsConnectionNote.classList.remove('hidden');
     } else {
-      el.textContent = `Updated ${agoText} ago`;
+      el.textContent = `updated ${ageAgo(ageMs)}`;
       el.className = 'connection-indicator';
       elements.logsConnectionNote.textContent = '';
       elements.logsConnectionNote.classList.add('hidden');

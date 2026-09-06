@@ -192,10 +192,82 @@ fn ac17_health_static_uses_the_client_projection() {
 }
 
 #[test]
-fn ac16_health_workspace_token_link_targets_stats_token_section() {
-    let asset = include_str!("../assets/workspace.html");
-    assert!(asset.contains("href=\"/app/stats/#tokens\""));
-    assert!(!asset.contains("href=\"/app/tokens/\""));
+fn ac16_health_token_link_targets_stats_token_section() {
+    // The token figure moved out of the glance row and into the brain card's
+    // processing disclosure (G3-106), so the link is built in health.js now.
+    // The invariant is unchanged: the only path to token detail is the stats
+    // token section, and the retired /app/tokens/ route is never linked.
+    let workspace = include_str!("../assets/workspace.html");
+    let script = include_str!("../assets/static/health.js");
+    assert!(script.contains("'/app/stats/#tokens'"));
+    assert!(!workspace.contains("href=\"/app/tokens/\""));
+    assert!(!script.contains("/app/tokens/"));
+}
+
+#[test]
+fn burnin_round1_health_speaks_one_scoped_owner_vocabulary() {
+    let script = include_str!("../assets/static/health.js");
+    let workspace = include_str!("../assets/workspace.html");
+
+    // G3-101: the vitals chip reads service state only, so its words say so.
+    // The page verdict is the glance sentence, which already folds in device
+    // delivery via selectDeviceVerdict.
+    assert!(
+        !script.contains("all systems go"),
+        "vitals chip still claims the whole page"
+    );
+    assert!(!script.contains("severity.textContent = 'healthy'"));
+    assert!(script.contains("text.textContent = 'all services running'"));
+
+    // G3-102: no colon-delimited schedule key reaches the primary card.
+    assert!(
+        !script.contains("'next: ' + (nextSchedule.name || 'scheduled')"),
+        "the raw schedule key is still interpolated into the talents card"
+    );
+    assert!(script.contains("const label = scheduleName(nextSchedule.name);"));
+    assert!(script.contains("'next scheduled run '"));
+
+    // G3-103: the recent-errors summary is interface copy, not an engine string.
+    assert!(
+        !script.contains("truncate(recentErrorOwnerMessage(e), 70)"),
+        "the engine exception is still the visible row summary"
+    );
+    assert!(script.contains("recentErrorOwnerPhrase(e)"));
+    assert!(script.contains("recentErrorName(e)"));
+
+    // G3-104: one age ladder, and nothing renders "0 seconds ago".
+    assert!(script.contains("function ageAgo(ms)"));
+    assert!(script.contains("return 'just now';"));
+    assert!(
+        !script.contains("`Updated ${"),
+        "the Title-cased zero-second form is back"
+    );
+    assert!(
+        !script.contains("`in ${mins}m`"),
+        "abbreviated schedule units are back"
+    );
+
+    // G3-106: engine telemetry no longer leads the page.
+    assert!(!workspace.contains("events since opened"));
+    assert!(!workspace.contains("tokens today</span>"));
+    assert!(workspace.contains("glance-metric-errors"));
+
+    // X-18: talents, services and live states use owner words.
+    assert!(script.contains("spl: 'private link'"));
+    assert!(script.contains("parakeet: 'transcription'"));
+    assert!(script.contains("function talentName(name)"));
+    assert!(script.contains("talentName(agent.name)"));
+    assert!(!script.contains("'Thinking...'"));
+
+    // Palette: no cool-blue literals survive on this surface.
+    for literal in [
+        "#3b82f6", "#2563eb", "#1d4ed8", "#93c5fd", "#dbeafe", "#eff6ff",
+    ] {
+        assert!(
+            !workspace.contains(literal),
+            "cool blue {literal} is back on health"
+        );
+    }
 }
 
 fn replace(value: &mut Value, path: &str, pattern: &str) {

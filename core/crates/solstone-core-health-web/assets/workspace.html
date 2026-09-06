@@ -46,8 +46,10 @@
 
 .glance-sentence {
   margin: 0;
-  color: #374151;
-  font-size: 1.05em;
+  flex: 1 1 auto;
+  color: var(--ink);
+  font-size: 1.15em;
+  font-weight: 500;
   line-height: 1.4;
 }
 
@@ -66,6 +68,13 @@
   text-decoration: none;
   font-weight: 500;
   white-space: nowrap;
+}
+
+.glance-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  min-width: 44px;
 }
 
 .health-glance.glance-attention .glance-action {
@@ -836,7 +845,7 @@ h2.card-title {
 
 .activity-card-progress-bar {
   height: 100%;
-  background: #3b82f6;
+  background: var(--orange);
   transition: width 0.3s ease;
 }
 
@@ -964,9 +973,9 @@ h2.card-title {
 }
 
 .logs-controls button.active {
-  background: #3b82f6;
-  color: white;
-  border-color: #3b82f6;
+  background: var(--orange);
+  color: var(--ink);
+  border-color: var(--orange);
 }
 
 .logs-controls button:hover:not(.active) {
@@ -975,8 +984,8 @@ h2.card-title {
 }
 
 .logs-controls button.active:hover {
-  background: #2563eb;
-  border-color: #2563eb;
+  background: var(--orange);
+  border-color: var(--orange-ink);
 }
 
 .logs-controls button:active:not(.active) {
@@ -984,7 +993,8 @@ h2.card-title {
 }
 
 .logs-controls button.active:active {
-  background: #1d4ed8;
+  background: var(--orange-wash);
+  border-color: var(--orange-ink);
 }
 
 #logBackBtn {
@@ -1022,7 +1032,7 @@ h2.card-title {
 }
 
 .logs-viewport:empty::before {
-  content: 'waiting for log output...';
+  content: 'waiting for log output…';
   color: #9ca3af;
   font-style: italic;
 }
@@ -1253,16 +1263,17 @@ h2.card-title {
   border: 1px solid #d1d5db;
   border-radius: 3px;
   background: white;
-  color: #3b82f6;
+  color: var(--orange-text-aa);
   cursor: pointer;
   transition: background 0.1s ease;
 }
 .error-action-btn:hover:not(:disabled) {
-  background: #eff6ff;
-  border-color: #93c5fd;
+  background: var(--orange-wash);
+  border-color: var(--orange);
 }
 .error-action-btn:active:not(:disabled) {
-  background: #dbeafe;
+  background: var(--orange-wash);
+  border-color: var(--orange-ink);
 }
 
 .error-dismiss-btn {
@@ -1286,17 +1297,17 @@ h2.card-title {
 .error-advice-link {
   background: none;
   border: none;
-  color: #3b82f6;
+  color: var(--orange-text-aa);
   cursor: pointer;
   font-size: 1em;
   padding: 0;
   text-decoration: underline;
 }
 .error-advice-link:hover {
-  color: #2563eb;
+  color: var(--orange-ink);
 }
 .error-advice-link:active {
-  color: #1d4ed8;
+  color: var(--ink);
 }
 
 .import-retry-btn {
@@ -1305,16 +1316,17 @@ h2.card-title {
   border: 1px solid #d1d5db;
   border-radius: 3px;
   background: white;
-  color: #3b82f6;
+  color: var(--orange-text-aa);
   cursor: pointer;
   transition: background 0.1s ease;
 }
 .import-retry-btn:hover:not(:disabled) {
-  background: #eff6ff;
-  border-color: #93c5fd;
+  background: var(--orange-wash);
+  border-color: var(--orange);
 }
 .import-retry-btn:active:not(:disabled) {
-  background: #dbeafe;
+  background: var(--orange-wash);
+  border-color: var(--orange-ink);
 }
 .import-retry-btn:disabled {
   opacity: 0.5;
@@ -1393,14 +1405,6 @@ h2.card-title {
   <div class="health-glance" id="healthGlance">
     <p class="glance-sentence" id="healthGlanceSentence" aria-live="polite"></p>
     <div class="glance-metrics" aria-label="health summary metrics">
-      <a class="glance-metric glance-metric-tokens" href="/app/stats/#tokens" id="glanceTokens">
-        <span class="glance-metric-value" id="glanceTokensValue">—</span>
-        <span class="glance-metric-label">tokens today</span>
-      </a>
-      <div class="glance-metric glance-metric-activity" id="glanceActivity">
-        <span class="glance-metric-value" id="glanceActivityValue">0</span>
-        <span class="glance-metric-label">events since opened</span>
-      </div>
       <a class="glance-metric glance-metric-errors" href="#focus=recent-errors" id="glanceErrors">
         <span class="glance-metric-value" id="glanceErrorsValue">—</span>
         <span class="glance-metric-label" id="glanceErrorsLabel">errors today</span>
@@ -1417,7 +1421,7 @@ h2.card-title {
   </section>
 
   <section class="backlog-verdict-card" id="backlogVerdict">
-    <p class="backlog-verdict-line">checking journal backlog...</p>
+    <p class="backlog-verdict-line">checking journal backlog…</p>
     <div class="backlog-state-error" data-health-state-error hidden></div>
   </section>
 
@@ -1485,7 +1489,7 @@ h2.card-title {
         what's going into your journal
       </div>
       <div class="health-badge idle" id="observeModeBadge">
-        <span id="observeModeLabel">waiting...</span>
+        <span id="observeModeLabel">waiting…</span>
       </div>
     </div>
     <div class="observe-source-note hidden" id="observeSourceNote"></div>
@@ -1498,22 +1502,22 @@ h2.card-title {
     <div class="observe-content hidden" id="observeContent">
       <div class="observe-section">
         <div class="observe-section-title">screen</div>
-        <div class="observe-section-value" id="screencastStatus">waiting...</div>
+        <div class="observe-section-value" id="screencastStatus">waiting…</div>
         <div class="observe-section-detail" id="screencastDetail"></div>
       </div>
       <div class="observe-section">
         <div class="observe-section-title">terminal sessions</div>
-        <div class="observe-section-value" id="tmuxStatus">waiting...</div>
+        <div class="observe-section-value" id="tmuxStatus">waiting…</div>
         <div class="observe-section-detail" id="tmuxDetail"></div>
       </div>
       <div class="observe-section">
         <div class="observe-section-title">audio</div>
-        <div class="observe-section-value" id="audioStatus">waiting...</div>
+        <div class="observe-section-value" id="audioStatus">waiting…</div>
         <div class="observe-section-detail" id="audioDetail"></div>
       </div>
       <div class="observe-section">
         <div class="observe-section-title">system activity</div>
-        <div class="observe-section-value" id="activityStatus">waiting...</div>
+        <div class="observe-section-value" id="activityStatus">waiting…</div>
         <div class="observe-section-detail" id="activityDetail"></div>
       </div>
       <div class="observe-section">
