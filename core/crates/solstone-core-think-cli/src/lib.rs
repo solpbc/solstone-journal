@@ -1771,7 +1771,46 @@ mod tests {
         write_health_event(
             journal.path(),
             "20260813",
-            r#"{"event":"talent.complete","ts":1,"mode":"segment","stream":"default","segment":"one","name":"sense"}"#,
+            r#"{"event":"talent.complete","ts":1,"mode":"segment","stream":"default","segment":"093000_600","name":"sense"}"#,
+        );
+        write_health_event(
+            journal.path(),
+            "20260813",
+            r#"{"event":"talent.complete","ts":2,"mode":"activity","facet":"work","activity":"meeting_1","name":"conversation"}"#,
+        );
+        let segment = journal
+            .path()
+            .join("chronicle/20260813/default/093000_600/talents");
+        fs::create_dir_all(&segment).unwrap();
+        fs::write(segment.join("activity.md"), "Reviewed the current release.").unwrap();
+        write_activity_record(
+            journal.path(),
+            "work",
+            "20260813",
+            serde_json::json!({"id":"meeting_1", "activity":"meeting", "title":"Release review", "description":"Resolved the current blocker"}),
+        );
+        // Yesterday can complete after midnight. Identical IDs on two days
+        // must stay distinct and retain their own source coordinate.
+        write_health_event(
+            journal.path(),
+            "20260812",
+            r#"{"event":"talent.complete","ts":3,"mode":"segment","stream":"default","segment":"093000_600","name":"sense"}"#,
+        );
+        write_health_event(
+            journal.path(),
+            "20260812",
+            r#"{"event":"talent.complete","ts":4,"mode":"activity","facet":"work","activity":"meeting_1","name":"conversation"}"#,
+        );
+        let prior = journal
+            .path()
+            .join("chronicle/20260812/default/093000_600/talents");
+        fs::create_dir_all(&prior).unwrap();
+        fs::write(prior.join("activity.md"), "Yesterday's review.").unwrap();
+        write_activity_record(
+            journal.path(),
+            "work",
+            "20260812",
+            serde_json::json!({"id":"meeting_1", "activity":"meeting", "title":"Yesterday's meeting", "description":"Prior day only"}),
         );
         let roots = tempdir().unwrap();
         let (talent_root, apps_root) = talent_roots(
@@ -1812,6 +1851,52 @@ mod tests {
                 .find(|request| request.name == name)
                 .unwrap();
             assert_eq!(request.config["output"], "json");
+            if name == "cadence-output" {
+                // Pulse needs source coordinates and completion time, not bare IDs.
+                assert_eq!(
+                    request.config["cadence_window"],
+                    serde_json::json!({
+                        "since_ms": 0,
+                        "segments": [{"day":"20260813", "segment": "093000_600", "stream": "default", "ts": 1}, {"day":"20260812", "segment":"093000_600", "stream":"default", "ts":3}],
+                        "activities": [{"day":"20260813", "activity": "meeting_1", "facet": "work", "ts": 2}, {"day":"20260812", "activity":"meeting_1", "facet":"work", "ts":4}],
+                    })
+                );
+                let mut prepared = solstone_core_talent_runtime::PreparedTalent {
+                    name: "pulse".to_owned(),
+                    config: request.config.clone(),
+                };
+                prepared.config.insert(
+                    "prompt".to_owned(),
+                    Value::String("$completed_since".to_owned()),
+                );
+                let pulse_context = solstone_core_talent_runtime::ExecutionContext {
+                    journal: journal.path().to_owned(),
+                };
+                let state =
+                    solstone_core_talent_runtime::pulse::build(&mut prepared, &pulse_context)
+                        .unwrap();
+                solstone_core_talent_runtime::pulse::apply_prompt_override(&mut prepared, &state)
+                    .unwrap();
+                let packet: Value =
+                    serde_json::from_str(prepared.config["prompt"].as_str().unwrap()).unwrap();
+                assert_eq!(
+                    packet["segments"][1]["activity"],
+                    "Reviewed the current release."
+                );
+                assert_eq!(packet["segments"][1]["stream"], "default");
+                assert_eq!(packet["segments"][1]["ts"], 1);
+                assert_eq!(packet["activities"][1]["title"], "Release review");
+                assert_eq!(packet["activities"][1]["facet"], "work");
+                assert_eq!(packet["activities"][1]["ts"], 2);
+                assert_eq!(packet["segments"].as_array().unwrap().len(), 2);
+                assert_eq!(packet["activities"].as_array().unwrap().len(), 2);
+                assert_eq!(packet["segments"][0]["activity"], "Yesterday's review.");
+                assert_eq!(packet["segments"][0]["day"], "20260812");
+                assert_eq!(packet["segments"][1]["day"], "20260813");
+                assert_eq!(packet["activities"][0]["title"], "Yesterday's meeting");
+                assert_eq!(packet["activities"][0]["day"], "20260812");
+                assert_eq!(packet["activities"][1]["day"], "20260813");
+            }
         }
     }
 

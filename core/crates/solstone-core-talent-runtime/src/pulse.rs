@@ -205,7 +205,7 @@ fn build_packet(
     let mut gaps = Vec::new();
     let default = default_pulse();
     let previous = read_latest(&home, &day, "pulse", 7);
-    let (completed, window) = completed_since(&day, &prepared.config, context, &mut gaps);
+    let (completed, window) = completed_since(&prepared.config, context, &mut gaps);
     let awareness = awareness_context(&context.journal, &mut gaps);
     // This reader already owns the declared-facet activity scan used by the reference.
     let anticipated = collect_anticipated_activities(&home, &day);
@@ -249,7 +249,6 @@ fn configured_day(prepared: &PreparedTalent) -> String {
 }
 
 fn completed_since(
-    day: &str,
     config: &Map<String, Value>,
     context: &ExecutionContext,
     gaps: &mut Vec<String>,
@@ -286,6 +285,10 @@ fn completed_since(
     let mut segments = Vec::new();
     let mut activities = Vec::new();
     for (_, kind, unit) in units.into_iter().take(MAX_UNITS) {
+        let Some(day) = unit.get("day").and_then(Value::as_str) else {
+            gaps.push("completed unit missing source day".to_owned());
+            continue;
+        };
         if kind == "segment" {
             if let Some(value) = read_segment_activity(day, &unit, context, gaps) {
                 segments.push(value);
@@ -347,7 +350,7 @@ fn read_segment_activity(
         }
     };
     Some(
-        json!({"segment": segment, "stream": stream, "ts": unit.get("ts").cloned().unwrap_or(Value::Null), "activity": activity}),
+        json!({"day": day, "segment": segment, "stream": stream, "ts": unit.get("ts").cloned().unwrap_or(Value::Null), "activity": activity}),
     )
 }
 
@@ -385,7 +388,7 @@ fn read_activity(
         return None;
     };
     Some(
-        json!({"facet": facet, "activity": activity, "ts": unit.get("ts").cloned().unwrap_or(Value::Null), "title": string_or(record.get("title"), &activity.replace('_', " ")), "description": string_or(record.get("description"), ""), "details": string_or(record.get("details"), ""), "source": record.get("source").cloned().unwrap_or(Value::Null), "segments": record.get("segments").cloned().unwrap_or_else(|| json!([]))}),
+        json!({"day": day, "facet": facet, "activity": activity, "ts": unit.get("ts").cloned().unwrap_or(Value::Null), "title": string_or(record.get("title"), &activity.replace('_', " ")), "description": string_or(record.get("description"), ""), "details": string_or(record.get("details"), ""), "source": record.get("source").cloned().unwrap_or(Value::Null), "segments": record.get("segments").cloned().unwrap_or_else(|| json!([]))}),
     )
 }
 

@@ -60,6 +60,7 @@ pub struct CompletionsSince {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CompletionSegment {
+    pub day: String,
     pub stream: Option<String>,
     pub segment: String,
     pub ts: i64,
@@ -67,6 +68,7 @@ pub struct CompletionSegment {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CompletionActivity {
+    pub day: String,
     pub facet: Option<String>,
     pub activity: String,
     pub ts: i64,
