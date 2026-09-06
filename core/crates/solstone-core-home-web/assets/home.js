@@ -595,7 +595,7 @@
     const count = Number(neighbor.count || 0);
     const moments = count === 1 ? '1 moment' : count.toLocaleString('en-US') + ' moments';
     const day = formatConnectionDay(neighbor.last_seen);
-    return day ? moments + ' · last on ' + day : moments;
+    return day ? moments + ' · most recently ' + day : moments;
   }
 
   // The evidence line repeated the name back under itself on every row but one,
@@ -715,6 +715,7 @@
         && typeof connections.horizon_day === 'string' && connections.horizon_day) {
       html += '<div class="pulse-connections-horizon">'
         + esc(connections.horizon_note.replace('{day}', formatConnectionDay(connections.horizon_day)))
+        + ' '
         + moreLink
         + '</div>';
     } else if (moreLink) {
