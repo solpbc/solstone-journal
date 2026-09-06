@@ -62,7 +62,7 @@ const COPY: [(&str, &str); 52] = [
     ("CUR_SPEAKER_CANDIDATE_PAIR_TARGET_LABEL", "candidate B"),
     (
         "CUR_EMPTY_STATE",
-        "nothing to review — no new structure to suggest yet.",
+        "nothing to review. no new structure to suggest yet.",
     ),
     (
         "CUR_ENTITY_PREVIEW_LEAD",

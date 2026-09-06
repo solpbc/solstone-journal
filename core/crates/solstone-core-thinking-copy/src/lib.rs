@@ -49,11 +49,11 @@ pub const LANES: [Lane; 3] = [
 pub const CONFIDENTIAL_LANE_DETAIL: ConfidentialLaneDetail = ConfidentialLaneDetail {
     heading: "confidential processing",
     sub: "operated by sol pbc",
-    mechanism: "sol pbc runs the model itself on confidential GPUs in Microsoft Azure. the hardware boundary keeps the cloud host excluded from what's processed — no third-party AI provider is in the path.",
-    egress: "when it's on, the thinking leaves your device — text, images, and (with the audio switch on, its default) your audio for transcription. your journal itself never leaves.",
+    mechanism: "sol pbc runs the model itself on confidential GPUs in Microsoft Azure. the hardware boundary keeps the cloud host excluded from what's processed. no third-party AI provider is in the path.",
+    egress: "when it's on, the thinking leaves your device: text, images, and (with the audio switch on, its default) your audio for transcription. your journal itself never leaves.",
     claims: "no content is retained · no human reviews it · nothing is used to train",
-    attestation: "your journal must verify the service before anything is sent — if it can't verify, it doesn't send.",
-    early_access: "confidential processing is coming — scouts get it first.",
+    attestation: "your journal must verify the service before anything is sent. if it can't verify, it doesn't send.",
+    early_access: "confidential processing is coming. scouts get it first.",
 };
 
 #[derive(Clone, Copy)]
@@ -171,13 +171,13 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                         (
                             "attestation",
                             CopyValue::String(
-                                "your journal must verify the service before anything is sent — if it can't verify, it doesn't send.",
+                                "your journal must verify the service before anything is sent. if it can't verify, it doesn't send.",
                             ),
                         ),
                         (
                             "substrate",
                             CopyValue::String(
-                                "sol pbc runs the model itself on confidential GPUs in Microsoft Azure. the hardware boundary keeps the cloud host excluded from what's processed — no third-party AI provider is in the path.",
+                                "sol pbc runs the model itself on confidential GPUs in Microsoft Azure. the hardware boundary keeps the cloud host excluded from what's processed. no third-party AI provider is in the path.",
                             ),
                         ),
                     ]),
@@ -193,7 +193,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "on",
                         CopyValue::String(
-                            "your audio is transcribed on the service — sent over the verified channel, processed, and not kept. on while confidential processing is in use.",
+                            "your audio is transcribed on the service: sent over the verified channel, processed, and not kept. on while confidential processing is in use.",
                         ),
                     ),
                     (
@@ -205,13 +205,13 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "note",
                         CopyValue::String(
-                            "turn it off any time — it takes effect on the next thing you say.",
+                            "turn it off any time. it takes effect on the next thing you say.",
                         ),
                     ),
                     (
                         "deferral",
                         CopyValue::String(
-                            "transcription is waiting — nothing is sent until your journal verifies the service. your audio stays on your device and transcribes once the check passes.",
+                            "transcription is waiting. nothing is sent until your journal verifies the service. your audio stays on your device and transcribes once the check passes.",
                         ),
                     ),
                 ]),
@@ -261,7 +261,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "early_access",
                         CopyValue::String(
-                            "confidential processing is coming — scouts get it first.",
+                            "confidential processing is coming. scouts get it first.",
                         ),
                     ),
                     (
@@ -381,7 +381,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             (
                 "intro",
                 CopyValue::String(
-                    "bring your own AI engine. sol pbc is never in the path — it stays in your journal.",
+                    "bring your own AI engine. sol pbc is never in the path. it stays in your journal.",
                 ),
             ),
             ("chooser_key", CopyValue::String("a key")),
@@ -432,7 +432,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ),
             (
                 "key_ok_strip",
-                CopyValue::String("your {provider} key works — checked {when}"),
+                CopyValue::String("your {provider} key works, checked {when}"),
             ),
             ("check_again", CopyValue::String("check again")),
             (
@@ -442,7 +442,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             (
                 "key_failed",
                 CopyValue::String(
-                    "this key didn't work — {reason}. paste a different key, or fix it with {provider} and check again.",
+                    "this key didn't work: {reason}. paste a different key, or fix it with {provider} and check again.",
                 ),
             ),
             (
@@ -455,7 +455,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ),
             (
                 "reason_network",
-                CopyValue::String("couldn't reach {provider} — check your connection"),
+                CopyValue::String("couldn't reach {provider}. check your connection"),
             ),
             (
                 "reason_unknown",
@@ -468,7 +468,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             (
                 "model_sub",
                 CopyValue::String(
-                    "three sizes from {provider} — or name one yourself. you can change this anytime.",
+                    "three sizes from {provider}, or name one yourself. you can change this anytime.",
                 ),
             ),
             (
@@ -499,7 +499,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ),
             (
                 "custom_ok",
-                CopyValue::String("✓ {model} answered — you can use it"),
+                CopyValue::String("✓ {model} answered, you can use it"),
             ),
             (
                 "custom_not_found",
@@ -517,7 +517,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ),
             (
                 "probe_failed_save",
-                CopyValue::String("your key works, but {model} didn't answer — {reason}."),
+                CopyValue::String("your key works, but {model} didn't answer: {reason}."),
             ),
         ]),
     ),

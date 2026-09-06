@@ -33,7 +33,7 @@ pub fn summary(briefing: Option<&Value>, sections: &Value, needs_count: i64) -> 
     let meetings = briefing.map(meeting_count).unwrap_or(0);
     if meetings > 0 || needs_count > 0 {
         return format!(
-            "morning briefing — {meetings} {}, {needs_count} {} attention",
+            "morning briefing: {meetings} {}, {needs_count} {} attention",
             if meetings == 1 { "meeting" } else { "meetings" },
             if needs_count == 1 {
                 "item needs"
@@ -52,7 +52,7 @@ pub fn summary(briefing: Option<&Value>, sections: &Value, needs_count: i64) -> 
                     } else {
                         line.to_owned()
                     };
-                    return format!("morning briefing — {line}");
+                    return format!("morning briefing: {line}");
                 }
             }
         }
@@ -95,7 +95,7 @@ pub fn render_sections(briefing: &Value) -> Value {
                         let right = row.get(right).and_then(Value::as_str).unwrap_or("").trim();
                         (!left.is_empty() || !right.is_empty()).then(|| {
                             if !left.is_empty() && !right.is_empty() {
-                                format!("- **{left}** — {right}")
+                                format!("- **{left}**: {right}")
                             } else if !left.is_empty() {
                                 format!("- **{left}**")
                             } else {

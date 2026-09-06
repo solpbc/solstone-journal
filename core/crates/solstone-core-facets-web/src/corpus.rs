@@ -242,7 +242,7 @@ async fn replay_record(router: Router, root: &Path, expected: &Value) {
             if let Some(empty) = copy.get_mut("CUR_EMPTY_STATE") {
                 assert_eq!(
                     empty,
-                    "nothing to review — no new structure to suggest yet."
+                    "nothing to review. no new structure to suggest yet."
                 );
                 *empty = Value::String(
                     "nothing to review — solstone hasn't spotted new structure to suggest.".into(),

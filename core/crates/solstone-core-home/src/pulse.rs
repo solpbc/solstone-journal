@@ -210,7 +210,7 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
     let narrative_summary = narrative_content.as_ref().map_or_else(String::new, |_| {
         narrative_updated_at.as_ref().map_or_else(
             || narrative_header.to_owned(),
-            |updated| format!("{narrative_header} — updated {updated}"),
+            |updated| format!("{narrative_header}, updated {updated}"),
         )
     });
     let mut today_parts = Vec::new();

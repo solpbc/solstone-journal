@@ -2664,9 +2664,9 @@
         "sections": {
           "forward_look": "- draft the memo",
           "needs_attention": "- reply to sam",
-          "reading": "- **work** \u2014 three items\n- **life**\n- orphan summary",
+          "reading": "- **work**: three items\n- **life**\n- orphan summary",
           "yesterday": "- shipped the thing\n- 7",
-          "your_day": "- **09:00** \u2014 standup\n- no time"
+          "your_day": "- **09:00**: standup\n- no time"
         }
       },
       {
@@ -2720,7 +2720,7 @@
           "needs_count": 0,
           "sections": {}
         },
-        "output": "morning briefing \u2014 1 meeting, 0 items need attention"
+        "output": "morning briefing: 1 meeting, 0 items need attention"
       },
       {
         "input": {
@@ -2742,7 +2742,7 @@
           "needs_count": 1,
           "sections": {}
         },
-        "output": "morning briefing \u2014 1 meeting, 1 item needs attention"
+        "output": "morning briefing: 1 meeting, 1 item needs attention"
       },
       {
         "input": {
@@ -2763,7 +2763,7 @@
           "needs_count": 2,
           "sections": {}
         },
-        "output": "morning briefing \u2014 0 meetings, 2 items need attention"
+        "output": "morning briefing: 0 meetings, 2 items need attention"
       },
       {
         "input": {
@@ -2782,7 +2782,7 @@
             "yesterday": "- short line"
           }
         },
-        "output": "morning briefing \u2014 short line"
+        "output": "morning briefing: short line"
       },
       {
         "input": {
@@ -2801,7 +2801,7 @@
             "yesterday": "- a line that is definitely longer than fifty eight characters in total"
           }
         },
-        "output": "morning briefing \u2014 a line that is definitely longer than fifty eight chara..."
+        "output": "morning briefing: a line that is definitely longer than fifty eight chara..."
       },
       {
         "input": {
@@ -2820,7 +2820,7 @@
             "yesterday": "\n\n  \n- indented"
           }
         },
-        "output": "morning briefing \u2014 indented"
+        "output": "morning briefing: indented"
       },
       {
         "input": {

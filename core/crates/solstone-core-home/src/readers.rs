@@ -368,7 +368,7 @@ pub fn render_briefing_sections(briefing: &Value) -> BTreeMap<String, String> {
                     .trim();
                 (!left.is_empty() || !right.is_empty()).then(|| {
                     match (left.is_empty(), right.is_empty()) {
-                        (false, false) => format!("- **{left}** — {right}"),
+                        (false, false) => format!("- **{left}**: {right}"),
                         (false, true) => format!("- **{left}**"),
                         (true, false) => format!("- {right}"),
                         _ => String::new(),
@@ -666,7 +666,7 @@ pub fn resolve_attention(context: &HomeContext, awareness: &Value) -> Option<Val
             .collect::<std::collections::BTreeSet<_>>();
         let count = failures.len();
         return Some(
-            json!({"placeholder_text":format!("{count} agent error{} today — ask what happened", if count == 1 { "" } else { "s" }),"context_lines":[format!("System health: {count} unresolved agent error(s) today: {}. If user asks what needs attention, summarize which agents failed.", names.into_iter().take(3).collect::<Vec<_>>().join(", "))]}),
+            json!({"placeholder_text":format!("{count} agent error{} today, ask what happened", if count == 1 { "" } else { "s" }),"context_lines":[format!("System health: {count} unresolved agent error(s) today: {}. If user asks what needs attention, summarize which agents failed.", names.into_iter().take(3).collect::<Vec<_>>().join(", "))]}),
         );
     }
     let imports = awareness.get("imports")?.as_object()?;
@@ -2036,8 +2036,8 @@ mod tests {
         );
         assert!(!rendered.contains_key("yesterday"));
         assert_eq!(rendered["forward_look"], "- next");
-        assert_eq!(rendered["your_day"], "- **9:00** — meeting");
-        assert_eq!(rendered["reading"], "- **work** — read");
+        assert_eq!(rendered["your_day"], "- **9:00**: meeting");
+        assert_eq!(rendered["reading"], "- **work**: read");
         assert_eq!(rendered["needs_attention"], "- act");
     }
 
