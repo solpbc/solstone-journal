@@ -235,15 +235,10 @@
       return strings.processing;
     }
 
+    // The card above already states the entry and file counts; restating them on
+    // the drawer summary made a nine-line page spend two lines on a repeat
+    // (G3-218). The drawer line carries only what the card does not.
     const clauses = [];
-    const files = numberValue(importedJson?.total_files_created);
-    if (files !== null) {
-      clauses.push(`${files} ${strings.files_created}`);
-    }
-    const entries = numberValue(importedJson?.entries_written);
-    if (entries !== null) {
-      clauses.push(`${entries} ${plural(entries, strings.entry, strings.entries)}`);
-    }
     const duration = formatDuration(
       importJson.upload_datetime,
       importedJson?.processing_completed

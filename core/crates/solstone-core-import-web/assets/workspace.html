@@ -204,7 +204,7 @@
 .import-file-label {
   margin-top: 0.65rem;
   font-weight: 700;
-  color: #2f3a4c;
+  color: var(--ink);
 }
 
 .import-path-input {
@@ -311,6 +311,7 @@
 }
 
 .import-primary-btn {
+  min-height: 44px;
   padding: 0.7rem 1rem;
   font-size: 0.95rem;
   font-weight: 700;
@@ -344,7 +345,7 @@
   font-size: 0.95rem;
   font-weight: 600;
   background: white;
-  color: #2f3a4c;
+  color: var(--ink);
   border: 1px solid var(--hairline);
   border-radius: 10px;
   cursor: pointer;
@@ -389,7 +390,7 @@
   padding: 0.55rem 0.7rem;
   border-radius: 10px;
   background: var(--orange-wash);
-  color: #2f3a4c;
+  color: var(--ink);
   font-size: 0.9rem;
 }
 
@@ -421,7 +422,7 @@
 }
 
 .import-history-summary {
-  color: #4b5565;
+  color: var(--ink-soft);
 }
 
 .import-history-filters {
@@ -432,6 +433,7 @@
 }
 
 .import-history-filters select {
+  min-height: 44px;
   padding: 0.45rem 0.65rem;
   border-radius: 8px;
   border: 1px solid var(--hairline);
@@ -475,7 +477,7 @@
 .modal-actions { margin-top: 1em; display: flex; justify-content: flex-end; }
 
 .import-list { margin-top: 2em; overflow-x: auto; }
-.import-list h2 { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.75rem 0; color: #2f3a4c; }
+.import-list h2 { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.75rem 0; color: var(--ink); }
 .import-table { width: 100%; border-collapse: collapse; }
 .import-table th { background: var(--hairline); text-align: left; padding: 8px; border-bottom: 1px solid var(--facet-border, #e5e0db); font-size: 0.9em; }
 .import-table td { padding: 8px; border-bottom: 1px solid var(--hairline); vertical-align: top; }
@@ -530,7 +532,7 @@
 }
 
 .import-stats-cell {
-  color: #4b5565;
+  color: var(--ink-soft);
   font-size: 0.9rem;
 }
 
@@ -1026,7 +1028,7 @@ function formatDateRange(dateRange) {
 function formatImportStats(entriesWritten, entitiesSeeded) {
   const parts = [];
   if (typeof entriesWritten === 'number' && entriesWritten > 0) {
-    parts.push(`${entriesWritten} entries`);
+    parts.push(`${entriesWritten} ${entriesWritten === 1 ? 'entry' : 'entries'}`);
   }
   if (typeof entitiesSeeded === 'number' && entitiesSeeded > 0) {
     parts.push(`${entitiesSeeded} entities`);
@@ -1121,19 +1123,22 @@ function renderImportRow(imp) {
     statusText = 'pending';
   }
 
-  const fileDisplay = imp.original_filename || imp.source_display || '-';
+  // The file column holds a file and nothing else. Falling back to the source
+  // display made it a copy of the source column, which then rendered '-'
+  // (G3-113); each column now answers exactly one question.
+  const fileDisplay = imp.original_filename || '-';
   const sourceDisplayText = imp.source_type
-    ? imp.source_display || sourceMetadataByName[imp.source_type]?.display_name || imp.original_filename || '-'
-    : imp.original_filename || '-';
-  const sourceCell = sourceDisplayText === fileDisplay
-    ? '-'
-    : renderSourceDisplay(imp.source_type || '', sourceDisplayText, sourceDisplayText);
+    ? imp.source_display || sourceMetadataByName[imp.source_type]?.display_name || imp.source_type
+    : '';
+  const sourceCell = sourceDisplayText
+    ? renderSourceDisplay(imp.source_type || '', sourceDisplayText, sourceDisplayText)
+    : '-';
   const statsText = formatImportStats(imp.entries_written, imp.entities_seeded);
 
   let html = `<tr data-import-id="${imp.timestamp}" data-source-type="${imp.source_type || ''}" tabindex="0" role="link" onclick="window.location.href='/app/import/${imp.timestamp}'" onkeydown="if(event.key==='Enter')window.location.href='/app/import/${imp.timestamp}'">`;
-  html += `<td class="nowrap">${importedAt}</td>`;
-  html += `<td>${escapeHtml(fileDisplay)}</td>`;
-  html += `<td class="source-cell">${sourceCell}</td>`;
+  // 'imported to' leads: it is the column that varies, and it is the fact the
+  // owner came for. 'imported at' is constant across a bulk import, so it sits
+  // last rather than first (G3-209).
   html += '<td class="nowrap">';
   if (imp.target_day) {
     html += `<a href="/app/transcripts/${encodeURIComponent(imp.target_day)}" class="timestamp-link" onclick="event.stopPropagation();">${escapeHtml(targetDayDisplay)}</a>`;
@@ -1141,8 +1146,11 @@ function renderImportRow(imp) {
     html += '-';
   }
   html += '</td>';
+  html += `<td>${escapeHtml(fileDisplay)}</td>`;
+  html += `<td class="source-cell">${sourceCell}</td>`;
   html += `<td class="status-cell"><span class="import-status ${statusClass}">${statusText}</span>${statusDetail}</td>`;
   html += `<td class="stats-cell import-stats-cell">${statsText}</td>`;
+  html += `<td class="nowrap">${importedAt}</td>`;
   html += '</tr>';
   return html;
 }
@@ -1183,12 +1191,12 @@ async function loadImports() {
     let html = buildHistoryHeader(data.total, data.total_entries_written || 0);
     html += '<table class="import-table">';
     html += '<thead><tr>';
-    html += '<th>imported at</th>';
+    html += '<th>imported to</th>';
     html += '<th>file</th>';
     html += '<th>source</th>';
-    html += '<th>imported to</th>';
     html += '<th>status</th>';
-    html += '<th>stats</th>';
+    html += '<th>entries</th>';
+    html += '<th>imported at</th>';
     html += '</tr></thead><tbody>';
 
     imports.forEach(imp => {
@@ -1200,7 +1208,7 @@ async function loadImports() {
       html += `
         <div id="importLoadMore" style="text-align: center; margin: 1.5rem 0;">
           <button class="import-primary-btn" onclick="loadMoreImports()">
-            Load More (${importsCache.length} of ${data.total} shown)
+            load more (${importsCache.length} of ${data.total} shown)
           </button>
         </div>
       `;
@@ -1286,7 +1294,7 @@ async function loadMoreImports() {
       if (data.page < data.pages) {
         loadMoreContainer.innerHTML = `
           <button class="import-primary-btn" onclick="loadMoreImports()">
-            Load More (${importsCache.length} of ${data.total} shown)
+            load more (${importsCache.length} of ${data.total} shown)
           </button>`;
       } else {
         loadMoreContainer.remove();
