@@ -795,8 +795,18 @@ h2.card-title {
 
 .activity-card-id {
   font-size: 0.75em;
-  color: #6b7280;
+  color: var(--ink-faint);
+}
+
+.activity-card-id > summary {
+  cursor: pointer;
+  color: var(--ink-faint);
+  list-style: revert;
+}
+
+.activity-card-id-value {
   font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  overflow-wrap: anywhere;
 }
 
 .activity-card-name {
@@ -1260,7 +1270,7 @@ h2.card-title {
 .error-action-btn {
   padding: 0.1em 0.4em;
   font-size: 0.8em;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--hairline-2);
   border-radius: 3px;
   background: white;
   color: var(--orange-text-aa);
@@ -1274,6 +1284,27 @@ h2.card-title {
 .error-action-btn:active:not(:disabled) {
   background: var(--orange-wash);
   border-color: var(--orange-ink);
+}
+
+/* The three recent-errors targets ("view logs", "dismiss", "view ai engine
+   logs") are 0.1em/0.4em chips on desktop, which is well under the 44px touch
+   floor. On phone they grow by padding only, so nothing about their wording,
+   order or behaviour changes. */
+@media (max-width: 480px) {
+  .error-action-btn,
+  .error-dismiss-btn {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0.6em 0.9em;
+  }
+
+  /* "view ai engine logs" sits inside a running sentence, so it grows as an
+     inline-block with its own hit area rather than as a block button. */
+  .error-advice-link {
+    display: inline-block;
+    min-height: 44px;
+    padding: 0.7em 0.5em;
+  }
 }
 
 .error-dismiss-btn {
@@ -1313,7 +1344,7 @@ h2.card-title {
 .import-retry-btn {
   padding: 0.15em 0.5em;
   font-size: 0.78em;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--hairline-2);
   border-radius: 3px;
   background: white;
   color: var(--orange-text-aa);

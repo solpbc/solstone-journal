@@ -2135,8 +2135,19 @@
         card = document.createElement('div');
         card.className = 'activity-card agent-active';
         card.setAttribute('data-key', key);
-        const idEl = document.createElement('div');
+        // The run id is an exact identifier, so it lives behind a disclosure
+        // rather than on the face of the card. It stays at index 0 so the
+        // field indexing below is unchanged, and because the card is built
+        // once and only its text is updated afterwards, an open disclosure
+        // survives a live refresh. G3 health leftovers.
+        const idEl = document.createElement('details');
         idEl.className = 'activity-card-id';
+        const idSummary = document.createElement('summary');
+        idSummary.textContent = 'run id';
+        idEl.appendChild(idSummary);
+        const idValue = document.createElement('code');
+        idValue.className = 'activity-card-id-value';
+        idEl.appendChild(idValue);
         card.appendChild(idEl);
         const nameEl = document.createElement('div');
         nameEl.className = 'activity-card-name';
@@ -2155,7 +2166,7 @@
       const stateLabel = agent.event === 'thinking' ? 'thinking…' :
                         (agent.event === 'tool_start' || agent.event === 'tool_end') ? 'working…' : 'running…';
       const elapsed = agent.elapsed_seconds ? formatElapsed(agent.elapsed_seconds) : '0s';
-      card.children[0].textContent = '...' + getAgentId(agent.use_id);
+      card.children[0].querySelector('.activity-card-id-value').textContent = '…' + getAgentId(agent.use_id);
       card.children[1].textContent = talentName(agent.name) || 'default';
       card.children[2].textContent = stateLabel;
       card.children[3].textContent = elapsed;

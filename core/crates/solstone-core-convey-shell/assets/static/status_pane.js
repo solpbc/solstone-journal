@@ -104,11 +104,18 @@ window.whenShellReady(() => {
 
     if (statusDetail) {
       if (metrics.state === 'connected') {
-        const uptimeText = `connected for ${formatDurationHuman(Math.floor(metrics.uptimeMs / 1000))}`;
+        // G3-104: the pane speaks the shared relativeTime ladder, so the shell
+        // and Health never describe the same instant differently. Under a
+        // minute reads as "just now" rather than a vague "a few seconds".
+        const MINUTE = 60000;
+        const uptimeText = metrics.uptimeMs < MINUTE
+          ? 'connected just now'
+          : `connected for ${relativeTime(metrics.uptimeMs)}`;
         if (metrics.lastMessageMs !== null) {
-          const seconds = Math.floor(metrics.lastMessageMs / 1000);
-          const lastUpdate = seconds === 0 ? 'just now' : `${formatDurationHuman(seconds)} ago`;
-          statusDetail.textContent = `${uptimeText} · last update ${lastUpdate}`;
+          const lastUpdate = metrics.lastMessageMs < MINUTE
+            ? 'updated just now'
+            : `updated ${relativeTime(metrics.lastMessageMs)} ago`;
+          statusDetail.textContent = `${uptimeText} · ${lastUpdate}`;
         } else {
           statusDetail.textContent = uptimeText;
         }
@@ -472,20 +479,6 @@ window.whenShellReady(() => {
     const hours = Math.floor(minutes / 60);
     const mins = minutes % 60;
     return `${hours}h ${mins}m`;
-  }
-
-  function formatDurationHuman(seconds) {
-    if (seconds < 10) return 'a few seconds';
-    if (seconds < 60) return 'less than a minute';
-    const minutes = Math.floor(seconds / 60);
-    if (minutes === 1) return 'about a minute';
-    if (minutes < 60) return minutes + ' minutes';
-    const hours = Math.floor(minutes / 60);
-    if (hours === 1) return 'about an hour';
-    if (hours < 24) return hours + ' hours';
-    const days = Math.floor(hours / 24);
-    if (days === 1) return 'about a day';
-    return days + ' days';
   }
 
   function updateBellState() {
