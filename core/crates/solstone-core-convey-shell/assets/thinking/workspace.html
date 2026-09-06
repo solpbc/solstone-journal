@@ -613,6 +613,13 @@
       overflow-wrap: anywhere;
     }
 
+    /* The one-line stand-in for the columns collapsed out of a uniform
+       group's table (G2-46). */
+    .thinking-workspace .thinking-runs-group-note {
+      color: var(--ink-soft);
+      margin: 0 0 8px;
+    }
+
     .thinking-workspace .thinking-runs-group-detail > .thinking-runs-control {
       margin-top: 10px;
     }
@@ -734,6 +741,18 @@
       .thinking-workspace .thinking-runs-detail-tab,
       .thinking-workspace .thinking-runs-modal-close {
         min-height: 46px;
+      }
+
+      /* X-09: the lane status/detail links ("manage →", "set up the bundled
+         model →", "how it works →") are plain text with no padding, so their
+         tap target was just the text's own line height (16-19px). Widen the
+         box and center the text in it rather than changing the copy or the
+         underlying link behavior. */
+      .thinking-workspace .trail,
+      .thinking-workspace .lanemore {
+        align-items: center;
+        display: inline-flex;
+        min-height: var(--touch-min, 44px);
       }
 
       .thinking-workspace .thinking-runs-table {
