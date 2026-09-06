@@ -1182,24 +1182,34 @@ function layoutScale(opts) {
       };
     }).sort((a, b) => a.anchor - b.anchor);
 
-    // Place under the anchor cell where there is room, slide right to clear
-    // the previous card, and start a new row when the lane has no room left.
+    // As few rows as the lane can hold, dealt round-robin so each row spans the
+    // whole day rather than a contiguous block — neighbours in a row are then
+    // far enough apart that every card can sit near its own cell. Dealing them
+    // in order instead would leave each new row starting where the last one ran
+    // out of room, which stair-steps a busy day off to one side.
+    const perRow = Math.max(1, Math.floor((laneWidth + cardGap) / (width + cardGap)));
+    const rowCount = Math.ceil(items.length / perRow);
+    const rows = Array.from({ length: rowCount }, () => []);
+    items.forEach((it, index) => {
+      it.row = index % rowCount;
+      rows[it.row].push(it);
+    });
+
     const maxLeft = Math.max(0, laneWidth - width);
-    let row = 0;
-    let prevRight = -Infinity;
-    for (const it of items) {
-      const ideal = Math.min(Math.max(it.idealLeft, 0), maxLeft);
-      const slid = prevRight + cardGap;
-      if (ideal >= slid) {
-        it.left = ideal;
-      } else if (slid <= maxLeft) {
-        it.left = slid;
-      } else {
-        row += 1;
-        it.left = ideal;
+    for (const row of rows) {
+      // Forward pass: never overlap the card to the left. Backward pass: pull
+      // the tail back inside the lane. Together they keep every card in view.
+      let prevRight = -Infinity;
+      for (const it of row) {
+        it.left = Math.max(it.idealLeft, prevRight + cardGap);
+        prevRight = it.left + width;
       }
-      it.row = row;
-      prevRight = it.left + width;
+      let nextLeft = laneWidth + cardGap;
+      for (let index = row.length - 1; index >= 0; index -= 1) {
+        row[index].left = Math.min(row[index].left, nextLeft - cardGap - width);
+        nextLeft = row[index].left;
+      }
+      for (const it of row) it.left = Math.min(Math.max(it.left, 0), maxLeft);
     }
 
     const rowHeights = [];
