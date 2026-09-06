@@ -15,8 +15,117 @@ use solstone_core_segment::SegmentDir;
 
 use crate::apply::{AppliedDisposition, AppliedFile, ApplyError};
 use crate::held::{manifest_fields, read_lenient_manifest};
+use crate::{ApplyPlan, FileDisposition};
 
 const ADVANCE_PENDING: &str = "stream_advance_pending";
+const NOTIFIED_FILES: &str = "notified_files";
+
+/// Invalidate delivery receipts before restoring raw bytes. The source mutation
+/// lock held by the ingest caller serializes this with notification completion.
+/// A crash after a raw write must not leave an old receipt suppressing its retry.
+pub(crate) fn prepare_ingest_notifications(plan: &ApplyPlan) -> Result<(), ApplyError> {
+    if !plan
+        .files
+        .iter()
+        .any(|file| matches!(file.disposition, FileDisposition::NeedsWrite { .. }))
+    {
+        return Ok(());
+    }
+    let path = plan.segment.path().join("ingest.json");
+    let _lock = hold_lock(&path, LockOptions::default()).map_err(ApplyError::Lock)?;
+    let Some(mut value) = read_json::<Option<Value>>(&path, None, MalformedPolicy::Raise)
+        .map_err(ApplyError::Read)?
+    else {
+        return Ok(());
+    };
+    let mut changed = false;
+    if let Some(receipts) = value.get_mut(NOTIFIED_FILES).and_then(Value::as_object_mut) {
+        for file in &plan.files {
+            if matches!(file.disposition, FileDisposition::NeedsWrite { .. }) {
+                changed |= receipts.remove(file.name.as_str()).is_some();
+            }
+        }
+    }
+    if changed {
+        publish_manifest_proof(&path, &value)?;
+    }
+    Ok(())
+}
+
+/// Select retained bytes with no matching successful delivery receipt. Missing
+/// receipts require delivery; absent raw bytes with terminal proof never do.
+pub fn pending_ingest_notifications(
+    segment: &SegmentDir,
+    files: &[AppliedFile],
+) -> Result<Vec<String>, ApplyError> {
+    let path = segment.path().join("ingest.json");
+    let value: Option<Value> =
+        read_json(&path, None, MalformedPolicy::Raise).map_err(ApplyError::Read)?;
+    let mut pending = Vec::new();
+    for file in files {
+        if file.disposition == AppliedDisposition::Unwritten {
+            continue;
+        }
+        // AlreadyHeld also covers deliberately removed raw media whose native
+        // terminal output proves completion. Never re-enqueue an absent input.
+        let raw = segment.path().join(file.name.as_str());
+        match fs::metadata(&raw) {
+            Ok(metadata) if metadata.is_file() => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            result => {
+                return Err(ApplyError::Io {
+                    path: raw,
+                    source: result
+                        .err()
+                        .unwrap_or_else(|| io::Error::other("ingest input is not a file")),
+                });
+            }
+        }
+        let notified = value
+            .as_ref()
+            .and_then(|value| value.get(NOTIFIED_FILES))
+            .and_then(|receipts| receipts.get(file.name.as_str()))
+            .is_some_and(|receipt| {
+                receipt["sha256"].as_str() == Some(file.sha256.as_str())
+                    && receipt["size"].as_u64() == Some(file.size)
+            });
+        if !notified {
+            pending.push(file.name.as_str().to_owned());
+        }
+    }
+    Ok(pending)
+}
+
+/// Record only files included in a successful send, not consumer completion.
+/// Caller holds the
+/// source mutation lock across apply, notify and this manifest publication.
+pub fn record_ingest_notification(
+    segment: &SegmentDir,
+    files: &[AppliedFile],
+    announced: &[String],
+) -> Result<(), ApplyError> {
+    let path = segment.path().join("ingest.json");
+    let _lock = hold_lock(&path, LockOptions::default()).map_err(ApplyError::Lock)?;
+    let mut value: Map<String, Value> =
+        read_json(&path, Map::new(), MalformedPolicy::Raise).map_err(ApplyError::Read)?;
+    let receipts = value
+        .entry(NOTIFIED_FILES)
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .ok_or_else(|| ApplyError::Io {
+            path: path.clone(),
+            source: io::Error::other("ingest notification receipts must be an object"),
+        })?;
+    for file in files {
+        if announced.iter().any(|name| name == file.name.as_str()) {
+            receipts.insert(
+                file.name.as_str().to_owned(),
+                serde_json::json!({"sha256": file.sha256, "size": file.size}),
+            );
+        }
+    }
+    publish_manifest_proof(&path, &Value::Object(value))
+}
 
 /// Record first-admission intent before raw writes. Existing manifests without
 /// this field never acquire it; an empty pre-write directory can be retried.
@@ -34,7 +143,7 @@ pub(crate) fn prepare_stream_advance(
         let pending = value.get(ADVANCE_PENDING).and_then(Value::as_bool) == Some(true);
         if pending {
             // A prior attempt may have renamed this proof but failed its sync.
-            publish_admission_proof(&path, &value)?;
+            publish_manifest_proof(&path, &value)?;
         }
         return Ok(pending);
     }
@@ -77,7 +186,7 @@ pub(crate) fn prepare_stream_advance(
         }
         return Ok(false);
     }
-    publish_admission_proof(
+    publish_manifest_proof(
         &path,
         &serde_json::json!({
             "schema_version": 1, "requested_segment": requested_segment,
@@ -87,7 +196,7 @@ pub(crate) fn prepare_stream_advance(
     Ok(true)
 }
 
-fn publish_admission_proof(path: &Path, value: &Value) -> Result<(), ApplyError> {
+fn publish_manifest_proof(path: &Path, value: &Value) -> Result<(), ApplyError> {
     let error = |source| ApplyError::Io {
         path: path.to_owned(),
         source,
@@ -99,7 +208,7 @@ fn publish_admission_proof(path: &Path, value: &Value) -> Result<(), ApplyError>
     {
         DetailedAtomicOutcome::Published => Ok(()),
         outcome => Err(error(io::Error::other(format!(
-            "ingest admission proof publication was not confirmed: {outcome:?}"
+            "ingest manifest publication was not confirmed: {outcome:?}"
         )))),
     }
 }
@@ -159,8 +268,10 @@ pub fn write_ingest_manifest(
         "requested_segment": requested_segment,
         "files": merged,
     });
-    if let Some(pending) = prior.as_ref().and_then(|value| value.get(ADVANCE_PENDING)) {
-        value[ADVANCE_PENDING] = pending.clone();
+    for field in [ADVANCE_PENDING, NOTIFIED_FILES] {
+        if let Some(proof) = prior.as_ref().and_then(|value| value.get(field)) {
+            value[field] = proof.clone();
+        }
     }
     write_json(
         path,

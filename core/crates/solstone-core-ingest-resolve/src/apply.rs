@@ -12,7 +12,9 @@ use solstone_core_segment::{
 };
 
 use crate::held::is_currently_held;
-use crate::manifest::{prepare_stream_advance, write_ingest_manifest};
+use crate::manifest::{
+    prepare_ingest_notifications, prepare_stream_advance, write_ingest_manifest,
+};
 use crate::{ApplyPlan, FileDisposition, IngestFile, PlanStatus};
 
 /// Final file disposition published in the ingest event and response.
@@ -123,6 +125,10 @@ pub fn apply_plan(plan: &ApplyPlan, files: &[IngestFile<'_>]) -> Result<ApplyRes
             .any(|file| matches!(file.disposition, FileDisposition::NeedsWrite { .. })),
     )
     .map_err(|error| ApplyFailure {
+        error,
+        applied: Vec::new(),
+    })?;
+    prepare_ingest_notifications(plan).map_err(|error| ApplyFailure {
         error,
         applied: Vec::new(),
     })?;
@@ -261,6 +267,56 @@ mod tests {
             name: ContentName::new(name).unwrap(),
             bytes,
         }
+    }
+
+    #[test]
+    fn interrupted_raw_restore_cannot_reuse_the_previous_notification_receipt() {
+        let dir = root();
+        let files = [file("audio.flac", b"same")];
+        let resolve = || {
+            let Resolution::Apply(plan) =
+                resolve_ingest(dir.path(), "20260804", "device", "120000_1", &files).unwrap()
+            else {
+                panic!("expected apply plan");
+            };
+            plan
+        };
+        let applied = apply_plan(&resolve(), &files).unwrap();
+        crate::record_ingest_notification(
+            &applied.segment,
+            &applied.files,
+            &["audio.flac".to_owned()],
+        )
+        .unwrap();
+        assert!(
+            crate::pending_ingest_notifications(&applied.segment, &applied.files)
+                .unwrap()
+                .is_empty()
+        );
+        let raw = applied.segment.path().join("audio.flac");
+        fs::remove_file(&raw).unwrap();
+        let restore = resolve();
+        assert!(matches!(
+            restore.files[0].disposition,
+            FileDisposition::NeedsWrite { .. }
+        ));
+        prepare_ingest_notifications(&restore).unwrap();
+        // Stop after publishing the raw bytes but before the normal manifest
+        // update. The retry sees held bytes, not this invocation's Written flag.
+        fs::write(&raw, b"same").unwrap();
+        let retry = apply_plan(&resolve(), &files).unwrap();
+        assert_eq!(retry.files[0].disposition, AppliedDisposition::AlreadyHeld);
+        assert_eq!(
+            crate::pending_ingest_notifications(&retry.segment, &retry.files).unwrap(),
+            ["audio.flac"]
+        );
+        crate::record_ingest_notification(&retry.segment, &retry.files, &["audio.flac".to_owned()])
+            .unwrap();
+        assert!(
+            crate::pending_ingest_notifications(&retry.segment, &retry.files)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

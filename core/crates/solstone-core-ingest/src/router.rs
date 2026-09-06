@@ -492,32 +492,34 @@ fn required_string(
 /// outcome; it is self-healing the same way, since the content and its event
 /// are already durably written and idempotent by the time it can occur.
 fn write_envelope(state: &IngestState, cid: &str, envelope: Envelope) -> Response {
-    let _location_mutation_lock = if envelope.source == "location" {
-        // This outermost guard stays live through every path below. The stream,
-        // registry, segment, and retention locks reached by ingest are acquired
-        // inside it, never before it.
-        match hold_source_mutation(&state.journal_root, "location") {
-            Ok(lock) => Some(lock),
-            Err(error) => {
-                log::warn!("location mutation lock unavailable: {error}");
-                return finish_ingest_completion(
-                    state,
-                    cid,
-                    IngestCompletion::rejected(
-                        ReasonCode::LocationLockUnavailable,
-                        outcome_error(
-                            "retryable",
-                            ReasonCode::LocationLockUnavailable,
-                            StatusCode::SERVICE_UNAVAILABLE,
-                            "location ingest is temporarily unavailable; retry the request",
-                        ),
-                    )
-                    .with_source(Some(envelope.source.clone())),
-                );
-            }
+    // Keep resolve/apply and notification receipts in one source mutation.
+    // Stream, registry, segment and manifest locks are acquired inside this
+    // existing source-lock boundary, never before it.
+    let _source_mutation_lock = match hold_source_mutation(&state.journal_root, &envelope.source) {
+        Ok(lock) => lock,
+        Err(error) => {
+            log::warn!("ingest source mutation lock unavailable: {error}");
+            let (code, detail) = if envelope.source == "location" {
+                (
+                    ReasonCode::LocationLockUnavailable,
+                    "location ingest is temporarily unavailable; retry the request",
+                )
+            } else {
+                (
+                    ReasonCode::JournalWriteFailed,
+                    "cannot resolve or write journal content",
+                )
+            };
+            return finish_ingest_completion(
+                state,
+                cid,
+                IngestCompletion::rejected(
+                    code,
+                    outcome_error("retryable", code, StatusCode::SERVICE_UNAVAILABLE, detail),
+                )
+                .with_source(Some(envelope.source.clone())),
+            );
         }
-    } else {
-        None
     };
     let source = Some(envelope.source.clone());
     let completion = write_envelope_inner(state, cid, envelope).with_source(source);
@@ -637,14 +639,25 @@ fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> I
         }
     };
     let descriptors = descriptors(&envelope.files, &applied.files);
-    // Held bytes may be a retry after a durable write but a failed notification.
-    // Terminal proof without retained bytes must never enqueue absent raw media.
-    let announced_files = applied
-        .files
-        .iter()
-        .filter(|file| !matches!(file.disposition, AppliedDisposition::Unwritten))
-        .map(|file| file.name.as_str().to_owned())
-        .collect::<Vec<_>>();
+    // Re-announce retained bytes only until a successful send is recorded. Replaying
+    // every successful duplicate would dirty the day again in the consumer.
+    let announced_files = match solstone_core_ingest_resolve::pending_ingest_notifications(
+        &applied.segment,
+        &applied.files,
+    ) {
+        Ok(files) => files,
+        Err(_) => {
+            return IngestCompletion::rejected(
+                ReasonCode::JournalWriteFailed,
+                outcome_error(
+                    "failed",
+                    ReasonCode::JournalWriteFailed,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "cannot read ingest notification receipts",
+                ),
+            );
+        }
+    };
     let outcome = match applied.status {
         solstone_core_ingest_resolve::PlanStatus::Ok => "ok",
         solstone_core_ingest_resolve::PlanStatus::Collision => "collision",
@@ -656,7 +669,11 @@ fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> I
         .any(|file| file.disposition == AppliedDisposition::Written)
     {
         true
-    } else if announced_files.is_empty() {
+    } else if applied
+        .files
+        .iter()
+        .all(|file| file.disposition == AppliedDisposition::Unwritten)
+    {
         false
     } else {
         // A receipt is appended only after the dirty marker succeeds. Reuse that
@@ -797,6 +814,23 @@ fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> I
                 ),
             );
         }
+        if solstone_core_ingest_resolve::record_ingest_notification(
+            &applied.segment,
+            &applied.files,
+            &announced_files,
+        )
+        .is_err()
+        {
+            return IngestCompletion::rejected(
+                ReasonCode::JournalWriteFailed,
+                outcome_error(
+                    "failed",
+                    ReasonCode::JournalWriteFailed,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "cannot record ingest notification receipt",
+                ),
+            );
+        }
     }
     let written_names: Vec<String> = descriptors
         .iter()
@@ -888,8 +922,17 @@ fn append_partial_and_fail(
             files: &announced_files,
             meta: &envelope.meta,
         };
-        if let Err(error) = state.notifier.notify(&notice) {
-            log::warn!("partial ingest notification failed: {error}");
+        match state.notifier.notify(&notice) {
+            Err(error) => log::warn!("partial ingest notification failed: {error}"),
+            Ok(()) => {
+                if let Err(error) = solstone_core_ingest_resolve::record_ingest_notification(
+                    &partial.segment,
+                    &partial.applied,
+                    &announced_files,
+                ) {
+                    log::warn!("partial ingest notification receipt failed: {error}");
+                }
+            }
         }
     }
     IngestCompletion::rejected(
@@ -1635,62 +1678,55 @@ mod tests {
     }
 
     #[test]
-    fn location_writes_serialize_before_the_second_stream_bind() {
-        let directory = root();
-        let journal = directory.path().to_path_buf();
-        let state = direct_state(&journal);
-        let (first_at_apply_sender, first_at_apply) = mpsc::channel();
-        let (release_first_sender, release_first) = mpsc::channel();
-        let first_state = state.clone();
-        let first = thread::spawn(move || {
-            set_before_apply_hook(move |_| {
-                first_at_apply_sender.send(()).unwrap();
-                release_first.recv().unwrap();
+    fn source_writes_serialize_before_the_second_stream_bind() {
+        for source in ["location", "audio", ""] {
+            let directory = root();
+            let journal = directory.path().to_path_buf();
+            let state = direct_state(&journal);
+            let (first_at_apply_sender, first_at_apply) = mpsc::channel();
+            let (release_first_sender, release_first) = mpsc::channel();
+            let first_state = state.clone();
+            let first = thread::spawn(move || {
+                set_before_apply_hook(move |_| {
+                    first_at_apply_sender.send(()).unwrap();
+                    release_first.recv().unwrap();
+                });
+                write_envelope(&first_state, CID_A, direct_envelope(source, "first.json")).status()
             });
-            write_envelope(
-                &first_state,
-                CID_A,
-                direct_envelope("location", "first.json"),
-            )
-            .status()
-        });
-        first_at_apply
-            .recv_timeout(Duration::from_secs(1))
-            .expect("first location ingest reached apply while holding its source lock");
+            first_at_apply
+                .recv_timeout(Duration::from_secs(1))
+                .expect("first source ingest reached apply while holding its source lock");
 
-        let (second_started_sender, second_started) = mpsc::channel();
-        let (second_at_apply_sender, second_at_apply) = mpsc::channel();
-        let second_state = state.clone();
-        let second = thread::spawn(move || {
-            set_before_apply_hook(move |_| second_at_apply_sender.send(()).unwrap());
-            second_started_sender.send(()).unwrap();
-            write_envelope(
-                &second_state,
-                CID_B,
-                direct_envelope("location", "second.json"),
-            )
-            .status()
-        });
-        second_started
-            .recv_timeout(Duration::from_secs(1))
-            .expect("second location ingest started");
+            let (second_started_sender, second_started) = mpsc::channel();
+            let (second_at_apply_sender, second_at_apply) = mpsc::channel();
+            let second_state = state.clone();
+            let second = thread::spawn(move || {
+                set_before_apply_hook(move |_| second_at_apply_sender.send(()).unwrap());
+                second_started_sender.send(()).unwrap();
+                write_envelope(&second_state, CID_B, direct_envelope(source, "second.json"))
+                    .status()
+            });
+            second_started
+                .recv_timeout(Duration::from_secs(1))
+                .expect("second source ingest started");
 
-        assert!(matches!(
-            second_at_apply.recv_timeout(Duration::from_millis(100)),
-            Err(mpsc::RecvTimeoutError::Timeout)
-        ));
-        assert_eq!(
-            stream_record_count(&journal),
-            1,
-            "the second ingest must not bind a stream while the first holds the source lock"
-        );
+            assert!(matches!(
+                second_at_apply.recv_timeout(Duration::from_millis(100)),
+                Err(mpsc::RecvTimeoutError::Timeout)
+            ));
+            assert_eq!(
+                stream_record_count(&journal),
+                1,
+                "the second ingest must not bind a stream while the first holds the source lock"
+            );
 
-        release_first_sender.send(()).unwrap();
-        assert_eq!(first.join().unwrap(), StatusCode::OK);
-        second_at_apply
-            .recv_timeout(Duration::from_secs(1))
-            .expect("second location ingest reaches apply after the first releases the lock");
-        assert_eq!(second.join().unwrap(), StatusCode::OK);
+            release_first_sender.send(()).unwrap();
+            assert_eq!(first.join().unwrap(), StatusCode::OK);
+            second_at_apply
+                .recv_timeout(Duration::from_secs(1))
+                .expect("second source ingest reaches apply after the first releases the lock");
+            assert_eq!(second.join().unwrap(), StatusCode::OK);
+        }
     }
 
     #[test]
@@ -2194,7 +2230,7 @@ mod tests {
                     StatusCode::OK
                 );
                 assert_eq!(stream_record(&root, "device")["seq"], sequence);
-                assert_eq!(spy.calls.load(Ordering::SeqCst), if newer { 4 } else { 3 });
+                assert_eq!(spy.calls.load(Ordering::SeqCst), if newer { 3 } else { 2 });
             }
         }
     }
@@ -2230,6 +2266,214 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn successful_notification_settles_identical_upload_across_router_restart() {
+        let dir = root();
+        let root = dir.path();
+        let spy = SpyNotifier::succeeding();
+        let request = envelope(
+            "20260804",
+            "120000_1",
+            json!([{"submitted":"screen.jsonl"}]),
+        );
+        let app = api_router_with_notifier(root, spy.clone());
+        assert_eq!(
+            call_upload(&app, request.clone(), "screen.jsonl", b"screen")
+                .await
+                .0,
+            StatusCode::OK
+        );
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 1);
+        let marker = stream_marker_generation(root, "20260804");
+        // A restarted producer must remember successful delivery after the
+        // consumer has finished and discarded its in-memory active segment.
+        let app = api_router_with_notifier(root, spy.clone());
+        for _ in 0..3 {
+            let (status, body) =
+                call_upload(&app, request.clone(), "screen.jsonl", b"screen").await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(body["status"], "duplicate");
+        }
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(stream_marker_generation(root, "20260804"), marker);
+    }
+
+    #[tokio::test]
+    async fn held_upload_without_notification_receipt_is_announced_once() {
+        let dir = root();
+        let root = dir.path();
+        let spy = SpyNotifier::succeeding();
+        let app = api_router_with_notifier(root, spy.clone());
+        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        assert_eq!(
+            call_upload(&app, request.clone(), "audio.flac", b"sound")
+                .await
+                .0,
+            StatusCode::OK
+        );
+        let path = root.join("chronicle/20260804/device/120000_1/ingest.json");
+        let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        manifest.as_object_mut().unwrap().remove("notified_files");
+        fs::write(&path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        let app = api_router_with_notifier(root, spy.clone());
+        assert_eq!(
+            call_upload(&app, request.clone(), "audio.flac", b"sound")
+                .await
+                .0,
+            StatusCode::OK
+        );
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            call_upload(&app, request, "audio.flac", b"sound").await.0,
+            StatusCode::OK
+        );
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn subset_retry_does_not_acknowledge_another_pending_file() {
+        let dir = root();
+        let root = dir.path();
+        let spy = SpyNotifier::fail_next();
+        let app = api_router_with_notifier(root, spy.clone());
+        let both = envelope(
+            "20260804",
+            "120000_1",
+            json!([{"submitted":"audio.flac"},{"submitted":"notes.json"}]),
+        );
+        assert_eq!(
+            call_upload_files(
+                &app,
+                both.clone(),
+                &[("audio.flac", b"sound"), ("notes.json", b"notes")]
+            )
+            .await
+            .0,
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        let audio = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        assert_eq!(
+            call_upload(&app, audio, "audio.flac", b"sound").await.0,
+            StatusCode::OK
+        );
+        let app = api_router_with_notifier(root, spy.clone());
+        assert_eq!(
+            call_upload_files(
+                &app,
+                both.clone(),
+                &[("audio.flac", b"sound"), ("notes.json", b"notes")]
+            )
+            .await
+            .0,
+            StatusCode::OK
+        );
+        assert_eq!(
+            spy.notices.lock().unwrap().last().unwrap().files,
+            ["notes.json"]
+        );
+        assert_eq!(
+            call_upload_files(
+                &app,
+                both,
+                &[("audio.flac", b"sound"), ("notes.json", b"notes")]
+            )
+            .await
+            .0,
+            StatusCode::OK
+        );
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn completed_absent_media_is_not_announced_without_a_receipt() {
+        let dir = root();
+        let root = dir.path();
+        let spy = SpyNotifier::succeeding();
+        let app = api_router_with_notifier(root, spy.clone());
+        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        assert_eq!(
+            call_upload(&app, request.clone(), "audio.flac", b"sound")
+                .await
+                .0,
+            StatusCode::OK
+        );
+        let segment = root.join("chronicle/20260804/device/120000_1");
+        fs::remove_file(segment.join("audio.flac")).unwrap();
+        fs::write(segment.join("audio.jsonl"), json!({"_solstone_processing":{"schema":"solstone.processing.v1","state":"analyzed","handler":"transcribe","input_size":5}}).to_string() + "\n").unwrap();
+        let path = segment.join("ingest.json");
+        let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        manifest.as_object_mut().unwrap().remove("notified_files");
+        fs::write(&path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "duplicate");
+        assert!(!segment.join("audio.flac").exists());
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn concurrent_identical_uploads_share_one_successful_notification() {
+        let dir = root();
+        let root = dir.path();
+        let spy = SpyNotifier::succeeding();
+        let barrier = std::sync::Barrier::new(4);
+        std::thread::scope(|scope| {
+            let mut tasks = Vec::new();
+            for _ in 0..4 {
+                let spy = spy.clone();
+                let barrier = &barrier;
+                tasks.push(scope.spawn(move || {
+                    let app = api_router_with_notifier(root, spy);
+                    let request = envelope(
+                        "20260804",
+                        "120000_1",
+                        json!([{"submitted":"screen.jsonl"}]),
+                    );
+                    barrier.wait();
+                    tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap()
+                        .block_on(call_upload(&app, request, "screen.jsonl", b"screen"))
+                        .0
+                }));
+            }
+            for task in tasks {
+                assert_eq!(task.join().unwrap(), StatusCode::OK);
+            }
+        });
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(stream_record(root, "device")["seq"], 1);
+    }
+
+    #[tokio::test]
+    async fn restored_bytes_are_announced_again_and_then_settle() {
+        let dir = root();
+        let root = dir.path();
+        let spy = SpyNotifier::succeeding();
+        let app = api_router_with_notifier(root, spy.clone());
+        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        assert_eq!(
+            call_upload(&app, request.clone(), "audio.flac", b"sound")
+                .await
+                .0,
+            StatusCode::OK
+        );
+        fs::remove_file(root.join("chronicle/20260804/device/120000_1/audio.flac")).unwrap();
+        assert_eq!(
+            call_upload(&app, request.clone(), "audio.flac", b"sound")
+                .await
+                .0,
+            StatusCode::OK
+        );
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            call_upload(&app, request, "audio.flac", b"sound").await.0,
+            StatusCode::OK
+        );
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
     async fn notification_failure_is_5xx_and_leaves_durable_writes() {
         let dir = root();
         let root = dir.path().to_path_buf();
@@ -2247,13 +2491,19 @@ mod tests {
         assert_eq!(stream_record(&root, "device")["seq"], 1);
         assert_eq!(stream_marker_generation(&root, "20260804"), 1);
 
-        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
+        let (status, body) = call_upload(&app, request.clone(), "audio.flac", b"sound").await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["status"], "duplicate");
         // Retry re-announces durable bytes without invalidating a completed day.
         assert_eq!(spy.calls.load(Ordering::SeqCst), 2);
         assert_eq!(stream_marker_generation(&root, "20260804"), 1);
         assert_eq!(stream_record(&root, "device")["seq"], 1);
+        let app = api_router_with_notifier(&root, spy.clone());
+        assert_eq!(
+            call_upload(&app, request, "audio.flac", b"sound").await.0,
+            StatusCode::OK
+        );
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]
@@ -2668,7 +2918,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mixed_written_and_already_held_files_bump_once_and_announce_held_bytes() {
+    async fn mixed_written_and_already_held_files_bump_once_and_announce_new_bytes() {
         let dir = root();
         let root = dir.path().to_path_buf();
         let spy = SpyNotifier::succeeding();
@@ -2697,7 +2947,7 @@ mod tests {
         assert_eq!(
             spy.notices.lock().unwrap().last().unwrap(),
             &SpyNotice {
-                files: vec!["audio.flac".to_owned(), "notes.json".to_owned()],
+                files: vec!["notes.json".to_owned()],
                 cid: CID_A.to_owned(),
                 source: String::new(),
             }
