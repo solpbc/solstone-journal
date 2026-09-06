@@ -824,7 +824,7 @@
       })
       .catch(function (error) {
         logError(error, 'home: refreshVitals failed');
-        renderRefreshError('pulse-vitals', error, "Couldn't refresh vitals, showing last known state.");
+        renderRefreshError('pulse-vitals', error, "couldn't refresh service status. showing last known state.");
       });
   }
 
@@ -840,7 +840,7 @@
       })
       .catch(function (error) {
         logError(error, 'home: refreshNarrative failed');
-        renderRefreshError('pulse-narrative', error, "Couldn't refresh narrative, showing last known state.");
+        renderRefreshError('pulse-narrative', error, "couldn't refresh narrative. showing last known state.");
       });
   }
 

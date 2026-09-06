@@ -33,7 +33,7 @@ const COPY: [(&str, &str); 52] = [
         // what clearing the visible batch gets the owner rather than the
         // full count owed.
         "CUR_ENTITY_GROUP_LEDE",
-        "these {count} are the closest matches. clearing them keeps your names straight.",
+        "these {count} names look alike. clearing them keeps your names straight.",
     ),
     ("CUR_ENTITY_SHOW_REST_ACTION", "show the rest ({count})"),
     (

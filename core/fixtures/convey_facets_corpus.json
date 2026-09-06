@@ -1141,7 +1141,7 @@
     },
     {
       "body_bytes": 4857,
-      "body_sha256": "cb90b4c491c17597caf33592b5878a7891002be10d46d85d140ab0ac2c87dbde",
+      "body_sha256": "4985fbc053e966d40aa32632719f588de3c43d7698ff2a4fb3806433fbe9fbc8",
       "body_sha256_basis": "normalized-json",
       "content_type": "application/json",
       "json": {
@@ -1206,7 +1206,7 @@
           "CUR_ENTITY_DISMISS_ACTION": "keep separate",
           "CUR_ENTITY_DONE_FOR_NOW_ACTION": "done for now",
           "CUR_ENTITY_FACETS_LABEL": "(in {facets})",
-          "CUR_ENTITY_GROUP_LEDE": "these {count} are the closest matches. clearing them keeps your names straight.",
+          "CUR_ENTITY_GROUP_LEDE": "these {count} names look alike. clearing them keeps your names straight.",
           "CUR_ENTITY_MERGE_ACTION": "merge",
           "CUR_ENTITY_PREVIEW_EMPTY": "no journal changes are needed for this merge.",
           "CUR_ENTITY_PREVIEW_ERRORS": "some segment updates may need attention.",
@@ -2702,7 +2702,7 @@
       },
       {
         "body_bytes": 3064,
-        "body_sha256": "b98ac117a39f0c17b7720f3ac6b4ffde86b494f52cf3fdc04953b021ba92128b",
+        "body_sha256": "80e983d5e67fe723805cf80615b3c13412c8d63dad0f29163512e68c02a8a7e6",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -2727,7 +2727,7 @@
             "CUR_ENTITY_DISMISS_ACTION": "keep separate",
             "CUR_ENTITY_DONE_FOR_NOW_ACTION": "done for now",
             "CUR_ENTITY_FACETS_LABEL": "(in {facets})",
-            "CUR_ENTITY_GROUP_LEDE": "these {count} are the closest matches. clearing them keeps your names straight.",
+            "CUR_ENTITY_GROUP_LEDE": "these {count} names look alike. clearing them keeps your names straight.",
             "CUR_ENTITY_MERGE_ACTION": "merge",
             "CUR_ENTITY_PREVIEW_EMPTY": "no journal changes are needed for this merge.",
             "CUR_ENTITY_PREVIEW_ERRORS": "some segment updates may need attention.",
@@ -3582,7 +3582,7 @@
       },
       {
         "body_bytes": 5453,
-        "body_sha256": "2383114495bbd8db3b66375e5f28a647ad0b76263770d18a2420907383edab3a",
+        "body_sha256": "429035a024f0155e7d85e294f5d7c7ff6737c3a89b4687b587a3122f0b420d6c",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -3647,7 +3647,7 @@
             "CUR_ENTITY_DISMISS_ACTION": "keep separate",
             "CUR_ENTITY_DONE_FOR_NOW_ACTION": "done for now",
             "CUR_ENTITY_FACETS_LABEL": "(in {facets})",
-            "CUR_ENTITY_GROUP_LEDE": "these {count} are the closest matches. clearing them keeps your names straight.",
+            "CUR_ENTITY_GROUP_LEDE": "these {count} names look alike. clearing them keeps your names straight.",
             "CUR_ENTITY_MERGE_ACTION": "merge",
             "CUR_ENTITY_PREVIEW_EMPTY": "no journal changes are needed for this merge.",
             "CUR_ENTITY_PREVIEW_ERRORS": "some segment updates may need attention.",

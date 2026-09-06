@@ -567,7 +567,7 @@ fn config_error(error: ConfigMutationError) -> Response {
     match error {
         ConfigMutationError::Lock(_) => error_envelope(
             "config_busy",
-            "settings are busy; try again",
+            "your settings are busy. try again.",
             "settings lock unavailable",
             StatusCode::SERVICE_UNAVAILABLE,
         )

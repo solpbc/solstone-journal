@@ -275,8 +275,8 @@ const Dashboard = (function() {
     if (!data || !data.length) {
       renderEmptyChart(container, {
         icon: window.ConveyIcons.svg('mic-vocal'),
-        heading: 'no observations yet',
-        desc: 'no audio or screen observations yet'
+        heading: 'no activity yet',
+        desc: 'no audio or screen activity yet'
       });
       return;
     }
@@ -364,7 +364,7 @@ const Dashboard = (function() {
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const maxVal = Math.max(...data.flat()) || 1;
 
-    const heatmap = el('div', {className: 'heatmap', role: 'grid', 'aria-label': 'activity heatmap showing observations by day of week and hour'});
+    const heatmap = el('div', {className: 'heatmap', role: 'grid', 'aria-label': 'activity heatmap showing activity by day of week and hour'});
 
     // Empty top-left corner
     heatmap.appendChild(el('div'));

@@ -1369,7 +1369,7 @@ fn thinking_config_busy_response() -> Response {
     error_envelope(
         "config_busy",
         "those settings couldn't be saved right now because they were busy. try again in a moment.",
-        "settings are busy; try again",
+        "your settings are busy. try again.",
         StatusCode::SERVICE_UNAVAILABLE,
     )
     .into_response()

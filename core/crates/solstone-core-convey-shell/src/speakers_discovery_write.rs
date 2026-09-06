@@ -37,7 +37,7 @@ const OWNER_VOICE_UNAVAILABLE_MESSAGE: &str =
     "your voice needs to be set up before the search for new voices can start.";
 const INVALID_EMBEDDINGS: &str = "speaker_discovery_invalid_embeddings";
 const INVALID_EMBEDDINGS_MESSAGE: &str =
-    "some voice samples were skipped because they were not usable.";
+    "some voice samples were skipped because they weren't usable.";
 
 type DiscoveryMember = (String, String, String, String, String, i64);
 

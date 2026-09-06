@@ -1646,7 +1646,7 @@ async fn confidential_disable_config_lock_refusal_has_the_exact_envelope() {
         body["error"],
         "those settings couldn't be saved right now because they were busy. try again in a moment."
     );
-    assert_eq!(body["detail"], "settings are busy; try again");
+    assert_eq!(body["detail"], "your settings are busy. try again.");
 }
 
 #[tokio::test]

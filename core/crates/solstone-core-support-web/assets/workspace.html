@@ -958,7 +958,7 @@
         const stale = document.createElement('div');
         stale.id = 'support-announcements-stale';
         stale.className = 'support-announcements-stale';
-        stale.textContent = 'couldn\'t refresh announcements - showing last known state.' +
+        stale.textContent = 'couldn\'t refresh announcements. showing last known state.' +
           (announcementsLastSuccessAt ? ' Last updated ' + announcementsLastSuccessAt.toLocaleString() + '.' : '');
         banner.insertAdjacentElement('afterend', stale);
       }

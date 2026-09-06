@@ -2197,7 +2197,7 @@ a.body-day-cell:focus-visible {
       window.apiJson("/app/body/api/trends")
         .then((payload) => {
           if (payload.warming) {
-            showStatus("preparing trends. building five years of history takes a minute.");
+            showStatus("preparing trends. building your whole history takes a minute.");
             window.setTimeout(loadTrends, POLL_MS);
             return;
           }
