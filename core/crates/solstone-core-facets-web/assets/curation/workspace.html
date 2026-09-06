@@ -660,7 +660,7 @@ window.CUR_COPY = CUR_COPY;
     });
     const count = root.querySelector('[data-review-total]');
     const total = root.querySelectorAll('[data-curation-item]').length;
-    if (count) count.textContent = total ? `${total} suggestions to review. choose a group to begin.` : '';
+    if (count) count.textContent = total ? `${total.toLocaleString()} suggestions to review. choose a group to begin.` : '';
   }
   function renderState(payload, preserveOutcomes = false) {
     const savedOutcomes = preserveOutcomes
@@ -995,6 +995,15 @@ window.CUR_COPY = CUR_COPY;
     if (action === 'curation-show-rest') {
       const more = button.previousElementSibling;
       if (more && more.hasAttribute('data-group-more')) more.hidden = false;
+      // G2-47: the lede above the list sizes the job by the visible batch;
+      // once the rest is revealed, the job is the group's full total, not
+      // the original ten.
+      const group = button.closest('[data-review-group]');
+      const lede = group ? group.querySelector('.curation-group-lede') : null;
+      if (lede && group) {
+        const revealedTotal = Number(group.dataset.groupTotal) || entityArticles().length;
+        lede.textContent = copyFormat(CUR_COPY.CUR_ENTITY_GROUP_LEDE, {count: revealedTotal});
+      }
       button.remove();
       refreshToolbar();
       return;
