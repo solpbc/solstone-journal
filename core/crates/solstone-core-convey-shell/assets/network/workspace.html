@@ -299,7 +299,7 @@
   .link-modebody[hidden] { display: none; }
   .link-mode-note { font-size: 0.84rem; color: #6E6453; margin: 8px 0 0; line-height: 1.45; }
   .link-handoff { margin-top: 12px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .link-handoff a { color: var(--orange-text-aa); font-weight: 600; text-decoration: none; font-size: 0.88rem; }
+  .link-handoff a { color: var(--orange-text-aa); font-weight: 600; text-decoration: none; font-size: 0.88rem; display: inline-flex; align-items: center; min-height: 44px; }
   .link-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid #E8923A; border-radius: 8px; background: #E8923A; color: #1A1A1A; padding: 10px 16px; font: inherit; font-size: 0.92rem; font-weight: 600; cursor: pointer; text-decoration: none; }
   .link-btn-primary:hover { filter: brightness(1.02); }
   .link-reach-detail { margin: 0.25em 0 0; color: #666; }
@@ -510,6 +510,52 @@
 }
 .client-stats dd {
   margin: 0;
+}
+.client-stats dd code.client-segment-key {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+  color: var(--ink-faint);
+}
+.client-forget {
+  margin: 0.5em 0 0;
+}
+.client-forget-open,
+.client-forget-buttons button {
+  padding: 8px 16px;
+  border: 1px solid var(--facet-border, #e5e0db);
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9em;
+  font-weight: 500;
+  min-height: 44px;
+}
+.client-forget-open:hover,
+.client-forget-buttons button:hover {
+  background: rgba(0,0,0,0.05);
+}
+.client-forget-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.client-forget-buttons button.danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.client-forget-buttons button.danger:hover {
+  background: var(--danger-wash);
+}
+.client-forget-question {
+  margin: 0 0 0.5em;
+  font-size: 0.9em;
+}
+.client-forget-status {
+  margin: 0.5em 0 0;
+  font-size: 0.9em;
+  color: var(--ink-soft);
 }
 .client-actions {
   display: flex;
@@ -1553,18 +1599,28 @@ function emptyStateHTML() {
   return empty;
 }
 
+// 'last check-in' is a per-device fact read from that device's own last_seen_at,
+// not a page-load age (G3-217): three devices on one machine heartbeat within a
+// minute of each other, so they honestly round to the same phrase. The label
+// says so, because the card above answers a different question.
+const CHECK_IN_HINT = 'the last time this device reported in. whether it is adding material is the separate line on the card.';
+
 function clientStatsHTML(client, deliveryGroup) {
-  const segment = client.last_accepted_segment;
-  const segmentLabel = segment ? `${segment.day}/${segment.name}` : 'none';
+  const segment = window.NetworkRender.segmentDisplay(client.last_accepted_segment);
+  // G3-216: the readable time answers the question; the storage key stays with
+  // it as the exact id rather than standing in for one.
+  const segmentCell = segment
+    ? `${escapeHtml(segment.readable || 'time unavailable')}<code class="client-segment-key">${escapeHtml(segment.key)}</code>`
+    : 'none';
   const failure = client.ingest_rejection?.reason_code || client.unassessed_reason;
   // The connection fact (open-socket heartbeat) is a distinct signal from delivery,
   // but for an 'adding' device it says nothing the chip doesn't already say — see
   // clientCardHTML, which omits it there entirely rather than passing it through.
   const connectionLabel = deliveryGroup === 'adding' ? '' : window.NetworkRender.connectionLineLabel(client);
   return `<dl>
-    <div><dt>last check-in</dt><dd>${escapeHtml(window.NetworkRender.checkInLabel(client))}</dd></div>
+    <div><dt title="${escapeHtml(CHECK_IN_HINT)}">last check-in</dt><dd>${escapeHtml(window.NetworkRender.checkInLabel(client))}</dd></div>
     ${connectionLabel ? `<div><dt>connection</dt><dd>${escapeHtml(connectionLabel)}</dd></div>` : ''}
-    <div><dt>last journal segment</dt><dd>${escapeHtml(segmentLabel)}</dd></div>
+    <div><dt>last journal segment</dt><dd>${segmentCell}</dd></div>
     ${failure ? `<div><dt>delivery detail</dt><dd>${escapeHtml(failure)}</dd></div>` : ''}
   </dl>`;
 }
@@ -1638,6 +1694,28 @@ function collapsedGroupHTML(section) {
   `;
 }
 
+// G3-208 (founder-approved 2026-09-06). The never-delivered group is pairing
+// debris, and until now the only way to clear a row was the unpair button inside
+// its own disclosure. 'forget this device' sits on the row face, asks in place
+// rather than through a browser dialog, and posts to a route that refuses any
+// device that has ever delivered material and refuses this journal's own host.
+function forgetActionHTML(client) {
+  const name = client.display_label || client.device_label || client.client_label || client.cid_short;
+  return `
+    <div class="client-forget" data-forget-cid="${escapeHtml(client.cid)}">
+      <button type="button" class="client-forget-open" data-forget-action="ask">forget this device</button>
+      <div class="client-forget-confirm" hidden>
+        <p class="client-forget-question">forget ${escapeHtml(name)}? it will need to pair again to add anything.</p>
+        <div class="client-forget-buttons">
+          <button type="button" class="danger" data-forget-action="confirm">forget</button>
+          <button type="button" data-forget-action="cancel">keep it</button>
+        </div>
+      </div>
+      <p class="client-forget-status" role="status" hidden></p>
+    </div>
+  `;
+}
+
 function clientCardHTML(client) {
   const render = window.NetworkRender;
   const displayName = client.display_label || client.device_label || client.client_label || client.cid_short;
@@ -1662,6 +1740,7 @@ function clientCardHTML(client) {
       </div>
       ${lastAdded}
       ${pairedLabel ? `<p class="client-paired">${escapeHtml(pairedLabel)}</p>` : ''}
+      ${deliveryGroup === 'never' ? forgetActionHTML(client) : ''}
       <details class="client-details" data-client-details="${escapeHtml(client.cid)}">
         <summary>device details</summary>
         <div class="client-stats">${clientStatsHTML(client, deliveryGroup)}<dl><div><dt>device id</dt><dd>${escapeHtml(client.cid)}</dd></div></dl></div>
@@ -1719,6 +1798,11 @@ async function loadClients() {
         }
       }
     }
+    const openForgets = new Set(
+      [...clientsList.querySelectorAll('.client-forget')]
+        .filter(el => !el.querySelector('.client-forget-confirm')?.hidden)
+        .map(el => el.dataset.forgetCid),
+    );
     const openDetails = new Set([...clientsList.querySelectorAll('details[open]')].map(el => el.dataset.clientDetails));
     if (activeEl?.matches('summary')) {
       focusSelector = `[data-client-details="${CSS.escape(activeEl.parentElement.dataset.clientDetails)}"] > summary`;
@@ -1727,6 +1811,9 @@ async function loadClients() {
 
     clientsList.innerHTML = renderClients(clients);
     clientsList.querySelectorAll('details').forEach(el => { el.open = openDetails.has(el.dataset.clientDetails); });
+    clientsList.querySelectorAll('.client-forget').forEach(el => {
+      setForgetAsking(el, openForgets.has(el.dataset.forgetCid));
+    });
     clearError();
     clientsList.scrollTop = scrollTop;
 
@@ -1743,6 +1830,69 @@ async function loadClients() {
     }));
   }
 }
+
+function setForgetAsking(row, asking) {
+  const confirmEl = row.querySelector('.client-forget-confirm');
+  const openEl = row.querySelector('.client-forget-open');
+  if (!confirmEl || !openEl) return;
+  confirmEl.hidden = !asking;
+  openEl.hidden = asking;
+}
+
+function showForgetStatus(row, message) {
+  const status = row.querySelector('.client-forget-status');
+  if (!status) return;
+  status.textContent = message || '';
+  status.hidden = !message;
+}
+
+async function forgetDevice(row) {
+  const cid = row.dataset.forgetCid;
+  const confirmBtn = row.querySelector('[data-forget-action="confirm"]');
+  if (!cid || !confirmBtn || confirmBtn.disabled) return;
+  confirmBtn.disabled = true;
+  showForgetStatus(row, 'forgetting…');
+  try {
+    const response = await fetch(`/app/network/api/devices/${encodeURIComponent(cid)}/forget`, {
+      method: 'POST',
+      headers: { accept: 'application/json' },
+    });
+    if (!response.ok) {
+      let detail = '';
+      try {
+        detail = (await response.json())?.detail || '';
+      } catch (_err) {
+        detail = '';
+      }
+      showForgetStatus(row, detail || 'that device couldn\'t be forgotten. ' + window.CONVEY_COPY.RELOAD_HINT);
+      confirmBtn.disabled = false;
+      return;
+    }
+    setForgetAsking(row, false);
+    loadClients();
+  } catch (err) {
+    showForgetStatus(row, 'that device couldn\'t be forgotten. your journal may not be reachable. ' + window.CONVEY_COPY.RELOAD_HINT);
+    confirmBtn.disabled = false;
+  }
+}
+
+clientsList.addEventListener('click', (event) => {
+  const control = event.target?.closest?.('[data-forget-action]');
+  if (!control || !clientsList.contains(control)) return;
+  const row = control.closest('.client-forget');
+  if (!row) return;
+  const action = control.dataset.forgetAction;
+  if (action === 'ask') {
+    showForgetStatus(row, '');
+    setForgetAsking(row, true);
+    row.querySelector('[data-forget-action="confirm"]')?.focus();
+  } else if (action === 'cancel') {
+    setForgetAsking(row, false);
+    row.querySelector('.client-forget-open')?.focus();
+  } else if (action === 'confirm') {
+    forgetDevice(row);
+  }
+});
 
 function clientNameFor(button) {
   return button.closest('.client-card')?.querySelector('.client-name')?.textContent || 'this device';

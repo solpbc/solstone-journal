@@ -586,3 +586,198 @@ async fn link_prefix_write_routes_are_registered() {
     }
     let _ = fs::remove_dir_all(root);
 }
+
+// ── forget a never-delivered device (G3-208) ─────────────────────────────────
+
+fn write_forget_fixture(root: &Path) {
+    fs::create_dir_all(root.join("link")).expect("link directory creates");
+    fs::write(
+        root.join("link/authorized_clients.json"),
+        json!([
+            {
+                "fingerprint": "sha256:never",
+                "device_label": "",
+                "paired_at": "2026-07-02T18:23:01Z",
+                "instance_id": "instance-never",
+                "role": "",
+                "network": "anywhere",
+                "client_label": "SOL-WINBUILD",
+                "kind": "cert",
+            },
+            {
+                "fingerprint": "sha256:delivered",
+                "device_label": "",
+                "paired_at": "2026-06-28T23:17:06Z",
+                "instance_id": "instance-delivered",
+                "role": "",
+                "network": "anywhere",
+                "client_label": "iPhone's iPhone",
+                "kind": "cert",
+            },
+            {
+                "fingerprint": "sha256:thishost",
+                "device_label": "",
+                "paired_at": "2026-06-15T00:33:19Z",
+                "instance_id": "instance-host",
+                "role": "",
+                "network": "network",
+                "client_label": "Suze.local",
+                "kind": "cert",
+            },
+            {
+                "fingerprint": "sha256:sourceonly",
+                "device_label": "",
+                "paired_at": "2026-06-30T16:27:01Z",
+                "instance_id": "instance-source",
+                "role": "",
+                "network": "anywhere",
+                "client_label": "solstone glasses",
+                "kind": "cert",
+            }
+        ])
+        .to_string(),
+    )
+    .expect("authorization ledger writes");
+    fs::write(
+        root.join("link/devices.json"),
+        json!({
+            "sha256:never": {"last_seen_at": "2026-09-05T20:35:27Z"},
+            "sha256:delivered": {
+                "last_seen_at": "2026-09-06T15:17:10Z",
+                "last_accepted_ingest_at": "2026-09-06T15:16:00Z",
+                "last_accepted_segment": {"day": "20260906", "name": "151600_1"}
+            },
+            "sha256:thishost": {"last_seen_at": "2026-09-06T21:35:12Z"},
+            "sha256:sourceonly": {
+                "last_seen_at": "2026-09-06T10:00:00Z",
+                "sources": {
+                    "screen": {"last_accepted_ingest_at": "2026-09-06T09:00:00Z"}
+                }
+            }
+        })
+        .to_string(),
+    )
+    .expect("activity metadata writes");
+}
+
+fn forget_app(root: &Path) -> axum::Router {
+    router(root.to_path_buf()).layer(Extension(solstone_core_convey_shell::HostLabelOverride(
+        "suze".to_owned(),
+    )))
+}
+
+async fn forget(root: &Path, fingerprint: &str) -> (StatusCode, Value) {
+    request(
+        forget_app(root),
+        Method::POST,
+        &format!("/app/network/api/devices/{}/forget", urlencode(fingerprint)),
+        Body::empty(),
+    )
+    .await
+}
+
+fn urlencode(value: &str) -> String {
+    value
+        .bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (byte as char).to_string()
+            }
+            _ => format!("%{byte:02X}"),
+        })
+        .collect()
+}
+
+fn ledger_fingerprints(root: &Path) -> Vec<String> {
+    serde_json::from_slice::<Value>(
+        &fs::read(root.join("link/authorized_clients.json")).expect("ledger reads"),
+    )
+    .expect("ledger parses")
+    .as_array()
+    .expect("ledger array")
+    .iter()
+    .map(|entry| entry["fingerprint"].as_str().unwrap_or_default().to_owned())
+    .collect()
+}
+
+#[tokio::test]
+async fn forget_removes_a_never_delivered_device_and_names_what_it_removed() {
+    let root = journal();
+    write_forget_fixture(&root);
+
+    let (status, body) = forget(&root, "sha256:never").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["forgotten"]["fingerprint"], "sha256:never");
+    assert_eq!(body["forgotten"]["display_label"], "SOL-WINBUILD");
+    assert_eq!(
+        ledger_fingerprints(&root),
+        vec![
+            "sha256:delivered".to_owned(),
+            "sha256:thishost".to_owned(),
+            "sha256:sourceonly".to_owned()
+        ],
+        "only the forgotten row leaves the ledger"
+    );
+}
+
+#[tokio::test]
+async fn forget_refuses_a_device_that_has_ever_delivered_material() {
+    let root = journal();
+    write_forget_fixture(&root);
+
+    let (status, body) = forget(&root, "sha256:delivered").await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["reason_code"], "device_has_delivered");
+    assert!(
+        ledger_fingerprints(&root).contains(&"sha256:delivered".to_owned()),
+        "a refused forget leaves the ledger alone"
+    );
+}
+
+#[tokio::test]
+async fn forget_refuses_a_device_whose_only_delivery_is_recorded_per_source() {
+    let root = journal();
+    write_forget_fixture(&root);
+
+    let (status, body) = forget(&root, "sha256:sourceonly").await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["reason_code"], "device_has_delivered");
+    assert!(ledger_fingerprints(&root).contains(&"sha256:sourceonly".to_owned()));
+}
+
+#[tokio::test]
+async fn forget_refuses_the_computer_this_journal_runs_on() {
+    let root = journal();
+    write_forget_fixture(&root);
+
+    let (status, body) = forget(&root, "sha256:thishost").await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["reason_code"], "device_is_this_host");
+    assert!(
+        ledger_fingerprints(&root).contains(&"sha256:thishost".to_owned()),
+        "the journal's own host is never removed by this route"
+    );
+}
+
+#[tokio::test]
+async fn forget_refuses_a_fingerprint_that_is_not_paired() {
+    let root = journal();
+    write_forget_fixture(&root);
+
+    let (status, body) = forget(&root, "sha256:absent").await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+    assert_eq!(body["reason_code"], "paired_device_not_found");
+    assert_eq!(ledger_fingerprints(&root).len(), 4);
+}
+
+#[tokio::test]
+async fn forget_refuses_when_the_delivery_record_cannot_be_read() {
+    let root = journal();
+    write_forget_fixture(&root);
+    fs::write(root.join("link/devices.json"), b"{not json").expect("devices file rewrites");
+
+    let (status, body) = forget(&root, "sha256:never").await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
+    assert_eq!(body["reason_code"], "device_activity_unavailable");
+    assert_eq!(ledger_fingerprints(&root).len(), 4);
+}

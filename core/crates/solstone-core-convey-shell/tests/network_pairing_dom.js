@@ -726,6 +726,45 @@ async function main() {
     assert.ok(emptyState.includes(env.window.LinkCopy.DEVICE_EMPTY_BODY));
   });
 
+  await testCase('G3-208: only a never-delivered row offers forget, and it asks in place', async () => {
+    const start = workspace.indexOf('const CHECK_IN_HINT =');
+    const end = workspace.indexOf('\nfunction renderClients', start);
+    assert.notStrictEqual(start, -1);
+    assert.notStrictEqual(end, -1);
+    globalThis.relativeTime = () => '2 months';
+    const context = vm.createContext({
+      window: { NetworkRender: require(activeAsset), JournalFormat: { timestamp: () => 'Sep 1, 11:52 PM', day: () => 'Jul 2' } },
+      escapeHtml: (value) => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'),
+    });
+    vm.runInContext(workspace.slice(start, end), context);
+
+    const never = {
+      cid: 'sha256:never', display_label: 'SOL-WINBUILD (2)', state: 'disconnected',
+      capture_state: 'no_capture', last_seen_at: null, last_accepted_ingest_at: null,
+      paired_at: '2026-07-02T18:23:01Z', failing: false,
+    };
+    const delivered = { ...never, cid: 'sha256:delivered', display_label: 'suze', capture_state: 'offline', last_accepted_ingest_at: '2026-09-05T13:32:25Z' };
+
+    const neverHtml = vm.runInContext(`clientCardHTML(${JSON.stringify(never)})`, context);
+    assert.ok(neverHtml.includes('forget this device'), 'the never-delivered row offers forget');
+    assert.ok(
+      neverHtml.includes('forget SOL-WINBUILD (2)? it will need to pair again to add anything.'),
+      'the confirm names the device and states the consequence',
+    );
+    assert.ok(neverHtml.includes('class="client-forget-confirm" hidden'), 'the confirm is in-page and starts closed');
+    assert.ok(!/confirm\(/.test(neverHtml), 'the confirm is not a browser dialog');
+    assert.ok(neverHtml.includes('unpair'), 'the existing unpair path is preserved');
+
+    const deliveredHtml = vm.runInContext(`clientCardHTML(${JSON.stringify(delivered)})`, context);
+    assert.ok(!deliveredHtml.includes('forget this device'), 'a device that has delivered is not offered forget');
+    assert.ok(deliveredHtml.includes('unpair'), 'a delivering device keeps its unpair action');
+
+    assert.ok(
+      workspace.includes('/app/network/api/devices/${encodeURIComponent(cid)}/forget'),
+      'forget posts to the guarded route, not the general unpair route',
+    );
+  });
+
   await testCase('active asset pin distinguishes the network ceremony from retired link init', async () => {
     assert.ok(activeAsset.endsWith('/assets/network/network.js'));
     assert.ok(workspace.includes('/app/network/static/network.js'));

@@ -220,19 +220,35 @@ function runImportRowColumns() {
   vm.runInContext(functionSource(workspace, 'formatImportStats'), context);
   vm.runInContext(functionSource(workspace, 'renderImportRow'), context);
 
-  const duplicateRow = {
+  const sourcelessRow = {
     timestamp: 't1', status: 'success', imported_at: 1700000000, target_day: null,
     original_filename: 'note.opus', source_display: 'note.opus',
     total_files_created: 60, entries_written: 60, entities_seeded: 0,
   };
-  const duplicateHtml = vm.runInContext(`renderImportRow(${JSON.stringify(duplicateRow)})`, context);
+  const sourcelessHtml = vm.runInContext(`renderImportRow(${JSON.stringify(sourcelessRow)})`, context);
   assert.ok(
-    /<td class="source-cell">-<\/td>/.test(duplicateHtml),
-    'G3-113: source collapses to a dash when it only repeats the file column, instead of doubling the filename'
+    /<td class="source-cell">-<\/td>/.test(sourcelessHtml),
+    'G3-113: a row with no source type is the only row whose source cell is a dash'
+  );
+  assert.ok(sourcelessHtml.includes('note.opus'), 'the file column still names the uploaded file');
+
+  const namelessRow = {
+    timestamp: 't3', status: 'success', imported_at: 1700000000, target_day: null,
+    source_type: 'plaud', source_display: 'Plaud recorder',
+    total_files_created: 60, entries_written: 60, entities_seeded: 0,
+  };
+  const namelessHtml = vm.runInContext(`renderImportRow(${JSON.stringify(namelessRow)})`, context);
+  assert.ok(
+    namelessHtml.includes('Plaud recorder'),
+    'G3-113: an import with no filename still names its source instead of dashing the column'
+  );
+  assert.ok(
+    /<td>-<\/td>/.test(namelessHtml),
+    'G3-113: the file column holds a file or a dash, never a copy of the source'
   );
 
   const distinctRow = {
-    timestamp: 't2', status: 'success', imported_at: 1700000000, target_day: null,
+    timestamp: 't2', status: 'success', imported_at: 1700000000, target_day: '20260706',
     original_filename: 'note.opus', source_type: 'plaud', source_display: 'Plaud recorder',
     total_files_created: 60, entries_written: 60, entities_seeded: 0,
   };
@@ -242,6 +258,15 @@ function runImportRowColumns() {
   assert.ok(!/class="duration-cell/.test(distinctHtml), 'G3-113: the always-empty duration column is gone');
   assert.ok(!/class="files-cell/.test(distinctHtml), 'G3-113: files-created is dropped; stats carries the count instead');
   assert.ok(distinctHtml.includes('60 entries'), 'stats cell still reports the entry count');
+  assert.ok(
+    distinctHtml.indexOf('20260706') < distinctHtml.indexOf('2026-07-22, 7:30 PM'),
+    'G3-209: the journal day the material landed on leads, and the constant import clock trails'
+  );
+
+  const singleEntryRow = Object.assign({}, distinctRow, { entries_written: 1 });
+  const singleEntryHtml = vm.runInContext(`renderImportRow(${JSON.stringify(singleEntryRow)})`, context);
+  assert.ok(singleEntryHtml.includes('1 entry'), 'G3-210: one entry reads as "1 entry"');
+  assert.ok(!singleEntryHtml.includes('1 entries'), 'G3-210: "1 entries" is gone');
   cases += 1;
 }
 
