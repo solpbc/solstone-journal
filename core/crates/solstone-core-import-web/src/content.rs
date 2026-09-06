@@ -208,7 +208,7 @@ fn content_manifest(root: &Path, timestamp: &str) -> Result<(PathBuf, Vec<Value>
             Err(_) => {
                 return Err(Box::new(error(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    "I couldn't read that import metadata.",
+                    "that import metadata couldn't be read.",
                     "import_metadata_failed",
                     "Failed to read manifest".to_owned(),
                 )));
@@ -218,7 +218,7 @@ fn content_manifest(root: &Path, timestamp: &str) -> Result<(PathBuf, Vec<Value>
     let items = read_jsonl(&manifest).map_err(|_| {
         Box::new(error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "I couldn't read that import metadata.",
+            "that import metadata couldn't be read.",
             "import_metadata_failed",
             "Failed to read manifest".to_owned(),
         ))

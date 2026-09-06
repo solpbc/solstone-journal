@@ -836,12 +836,12 @@
         "why": "an export guide that exists"
       },
       {
-        "body_sha256": "3c41c78540db3098be5428c316635a273009e1bff571902eb7207c0a980282df",
+        "body_sha256": "54ebb126ce5d3ba434cae017c1e3abaf5c8f080d0a14c2c9aac7673c12038d7d",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "No guide available for 'nope'",
-          "error": "I couldn't find that file.",
+          "error": "that file isn't available.",
           "reason_code": "file_not_found"
         },
         "method": "GET",
@@ -851,12 +851,12 @@
         "why": "an export guide that does not exist: 404, not an empty 200"
       },
       {
-        "body_sha256": "ff633eeb6c690fc27f02eb45147e9d65ffa150a53ee1d184c3d4b68e5cd4bdf6",
+        "body_sha256": "b4f2d19f955c901dee100222d64cdbe60f7e858ecd2ce1202127457733c5d83c",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Invalid source name",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "GET",
@@ -875,12 +875,12 @@
         "why": "the per-import detail shell"
       },
       {
-        "body_sha256": "584aff5b7885dc2369b00111a33ec16dfa4eb54e729f02360e8c549bfec25c57",
+        "body_sha256": "375095006897373ac9f2a3f66984ef412937db4ba85ac6b091d7c59f88bef100",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Import not found",
-          "error": "I couldn't find that import.",
+          "error": "that import isn't in your journal.",
           "reason_code": "import_not_found"
         },
         "method": "GET",
@@ -890,12 +890,12 @@
         "why": "detail for a successfully processed import"
       },
       {
-        "body_sha256": "584aff5b7885dc2369b00111a33ec16dfa4eb54e729f02360e8c549bfec25c57",
+        "body_sha256": "375095006897373ac9f2a3f66984ef412937db4ba85ac6b091d7c59f88bef100",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Import not found",
-          "error": "I couldn't find that import.",
+          "error": "that import isn't in your journal.",
           "reason_code": "import_not_found"
         },
         "method": "GET",
@@ -905,12 +905,12 @@
         "why": "detail for a failed import: status and error_stage travel"
       },
       {
-        "body_sha256": "584aff5b7885dc2369b00111a33ec16dfa4eb54e729f02360e8c549bfec25c57",
+        "body_sha256": "375095006897373ac9f2a3f66984ef412937db4ba85ac6b091d7c59f88bef100",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Import not found",
-          "error": "I couldn't find that import.",
+          "error": "that import isn't in your journal.",
           "reason_code": "import_not_found"
         },
         "method": "GET",
@@ -920,12 +920,12 @@
         "why": "detail for an unstarted import"
       },
       {
-        "body_sha256": "584aff5b7885dc2369b00111a33ec16dfa4eb54e729f02360e8c549bfec25c57",
+        "body_sha256": "375095006897373ac9f2a3f66984ef412937db4ba85ac6b091d7c59f88bef100",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Import not found",
-          "error": "I couldn't find that import.",
+          "error": "that import isn't in your journal.",
           "reason_code": "import_not_found"
         },
         "method": "GET",
@@ -935,12 +935,12 @@
         "why": "detail for an import that does not exist"
       },
       {
-        "body_sha256": "584aff5b7885dc2369b00111a33ec16dfa4eb54e729f02360e8c549bfec25c57",
+        "body_sha256": "375095006897373ac9f2a3f66984ef412937db4ba85ac6b091d7c59f88bef100",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Import not found",
-          "error": "I couldn't find that import.",
+          "error": "that import isn't in your journal.",
           "reason_code": "import_not_found"
         },
         "method": "GET",
@@ -950,12 +950,12 @@
         "why": "content for an import with no manifest and none derivable: refusal, not an empty 200"
       },
       {
-        "body_sha256": "584aff5b7885dc2369b00111a33ec16dfa4eb54e729f02360e8c549bfec25c57",
+        "body_sha256": "375095006897373ac9f2a3f66984ef412937db4ba85ac6b091d7c59f88bef100",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Import not found",
-          "error": "I couldn't find that import.",
+          "error": "that import isn't in your journal.",
           "reason_code": "import_not_found"
         },
         "method": "GET",
@@ -965,12 +965,12 @@
         "why": "the content listing for an import that has a manifest"
       },
       {
-        "body_sha256": "584aff5b7885dc2369b00111a33ec16dfa4eb54e729f02360e8c549bfec25c57",
+        "body_sha256": "375095006897373ac9f2a3f66984ef412937db4ba85ac6b091d7c59f88bef100",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Import not found",
-          "error": "I couldn't find that import.",
+          "error": "that import isn't in your journal.",
           "reason_code": "import_not_found"
         },
         "method": "GET",
@@ -980,12 +980,12 @@
         "why": "the same listing filtered and paged: the arithmetic, not just the shape"
       },
       {
-        "body_sha256": "584aff5b7885dc2369b00111a33ec16dfa4eb54e729f02360e8c549bfec25c57",
+        "body_sha256": "375095006897373ac9f2a3f66984ef412937db4ba85ac6b091d7c59f88bef100",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Import not found",
-          "error": "I couldn't find that import.",
+          "error": "that import isn't in your journal.",
           "reason_code": "import_not_found"
         },
         "method": "GET",
@@ -995,12 +995,12 @@
         "why": "one content item by id"
       },
       {
-        "body_sha256": "584aff5b7885dc2369b00111a33ec16dfa4eb54e729f02360e8c549bfec25c57",
+        "body_sha256": "375095006897373ac9f2a3f66984ef412937db4ba85ac6b091d7c59f88bef100",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Import not found",
-          "error": "I couldn't find that import.",
+          "error": "that import isn't in your journal.",
           "reason_code": "import_not_found"
         },
         "method": "GET",
@@ -1058,12 +1058,12 @@
         "why": "status for a registered source"
       },
       {
-        "body_sha256": "8fd6a2094eead930ed4b25eee19d5950e55b1273beeaa67ff112f0bee1e829e3",
+        "body_sha256": "6d87d1e53cd17bd96a6ea0ad75289a785490daf576ff968970e4336f38e2c8d5",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Journal source 'missing' not found",
-          "error": "I couldn't use that journal source.",
+          "error": "that journal source couldn't be used.",
           "reason_code": "journal_source_problem"
         },
         "method": "GET",
@@ -1087,12 +1087,12 @@
         "why": "staged review items for a registered source"
       },
       {
-        "body_sha256": "8fd6a2094eead930ed4b25eee19d5950e55b1273beeaa67ff112f0bee1e829e3",
+        "body_sha256": "6d87d1e53cd17bd96a6ea0ad75289a785490daf576ff968970e4336f38e2c8d5",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Journal source 'missing' not found",
-          "error": "I couldn't use that journal source.",
+          "error": "that journal source couldn't be used.",
           "reason_code": "journal_source_problem"
         },
         "method": "GET",
@@ -1102,12 +1102,12 @@
         "why": "staged items for an unregistered source: refusal"
       },
       {
-        "body_sha256": "291757152d8947ee33d3e7d864698d7cc45c76b38d00de8402878dab98c89268",
+        "body_sha256": "311d5e049bebc687ffee735516334ecfdbf32453b7252af7c6b974225335cfe3",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Missing client_item_id",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -1118,12 +1118,12 @@
         "why": "register-a-path with no fields: the missing-field refusal"
       },
       {
-        "body_sha256": "ec9ee00d51373266e05750a90c9755929a9c12a88458cbfcb21db24047df95f5",
+        "body_sha256": "e5ba192b0d1fc81c5271f62e8c60debec7ba1911876c4e7b797bbee0e7ecdb07",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Path not found: /nonexistent/corpus/path",
-          "error": "I couldn't find that file.",
+          "error": "that file isn't available.",
           "reason_code": "file_not_found"
         },
         "method": "POST",
@@ -1137,12 +1137,12 @@
         "why": "register-a-path pointing at nothing: refuses before the source is read"
       },
       {
-        "body_sha256": "c4033225676f468e936dc5be368aafdb6b5be13fcf96bd38aaed83b0bbc5c022",
+        "body_sha256": "5a49c2ff8ff7807562af3cfca547e3212b30417e5006b7a4978b9429aa2a73a8",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Missing import path",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -1153,12 +1153,12 @@
         "why": "metadata update with no target"
       },
       {
-        "body_sha256": "882c03f0de998cdd07dd647fabf65bcc133abcfe83b441fd1ad2cb2939f10dbd",
+        "body_sha256": "95e49549595758355a2aedec91a71fb4d428d688b703ee509fe4cc2d95360492",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Name is required",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -1171,12 +1171,12 @@
         "why": "source create with an empty name"
       },
       {
-        "body_sha256": "87558b0f823b7102eea54ede5c516165d4a09472376865f972ced18ce1021bba",
+        "body_sha256": "c0710b30ccf10883b727e2a1c37fc76ddeb253513ecdbe9e94d791f3b6ccbe17",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Invalid journal source name",
-          "error": "I couldn't use that journal source.",
+          "error": "that journal source couldn't be used.",
           "reason_code": "journal_source_problem"
         },
         "method": "POST",
@@ -1189,12 +1189,12 @@
         "why": "\ud83d\udd34 source create with a traversal name: what the name guard ACTUALLY guards"
       },
       {
-        "body_sha256": "18cf601c674bb7e9606fe264d9b53de9847cc19781dd95f4d2f6703d34d64216",
+        "body_sha256": "c410c2cf6e13a9052f25a500188c9431f8012ab49de2b0721e30700df7ca0b3d",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Journal source 'corpus_peer' already exists",
-          "error": "I couldn't use that journal source.",
+          "error": "that journal source couldn't be used.",
           "reason_code": "journal_source_problem"
         },
         "method": "POST",
@@ -1207,12 +1207,12 @@
         "why": "source create colliding with a registered name: 409, not a silent overwrite"
       },
       {
-        "body_sha256": "74e3c2a24104cd3cf7523f2405dee65e01b2a38a5937a799d856838068dd28a7",
+        "body_sha256": "0800a7194b2d1f0a9a92183338d6677aad29960576f3e91a7c32e36d283482d4",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "No staged config diff found.",
-          "error": "I couldn't find that import.",
+          "error": "that import isn't in your journal.",
           "reason_code": "import_not_found"
         },
         "method": "POST",
@@ -1568,12 +1568,12 @@
         "why": "an export guide that exists"
       },
       {
-        "body_sha256": "3c41c78540db3098be5428c316635a273009e1bff571902eb7207c0a980282df",
+        "body_sha256": "54ebb126ce5d3ba434cae017c1e3abaf5c8f080d0a14c2c9aac7673c12038d7d",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "No guide available for 'nope'",
-          "error": "I couldn't find that file.",
+          "error": "that file isn't available.",
           "reason_code": "file_not_found"
         },
         "method": "GET",
@@ -1583,12 +1583,12 @@
         "why": "an export guide that does not exist: 404, not an empty 200"
       },
       {
-        "body_sha256": "ff633eeb6c690fc27f02eb45147e9d65ffa150a53ee1d184c3d4b68e5cd4bdf6",
+        "body_sha256": "b4f2d19f955c901dee100222d64cdbe60f7e858ecd2ce1202127457733c5d83c",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Invalid source name",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "GET",
@@ -1710,12 +1710,12 @@
         "why": "detail for an unstarted import"
       },
       {
-        "body_sha256": "584aff5b7885dc2369b00111a33ec16dfa4eb54e729f02360e8c549bfec25c57",
+        "body_sha256": "375095006897373ac9f2a3f66984ef412937db4ba85ac6b091d7c59f88bef100",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Import not found",
-          "error": "I couldn't find that import.",
+          "error": "that import isn't in your journal.",
           "reason_code": "import_not_found"
         },
         "method": "GET",
@@ -1725,12 +1725,12 @@
         "why": "detail for an import that does not exist"
       },
       {
-        "body_sha256": "6446d0344200bdb7f1b31f9afa18c9d17555844539b4312ca428f0c0ddf27359",
+        "body_sha256": "568bc8e91a427944e62a339234bb0dbffe6c8fb49d1ac91c44029c6e60764afc",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "No content available",
-          "error": "I couldn't find that import.",
+          "error": "that import isn't in your journal.",
           "reason_code": "import_not_found"
         },
         "method": "GET",
@@ -1838,12 +1838,12 @@
         "why": "one content item by id"
       },
       {
-        "body_sha256": "555cd95a6e777a8c43cb04b7a224d3d93a17eabf24e66f50eaa6d4783fcfb29a",
+        "body_sha256": "28aa8d45a34cd7561b8aefb34b1b7684bb232e73bfaab4e07e18a9a6f915817d",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Item not found",
-          "error": "I couldn't find that import.",
+          "error": "that import isn't in your journal.",
           "reason_code": "import_not_found"
         },
         "method": "GET",
@@ -1901,12 +1901,12 @@
         "why": "status for a registered source"
       },
       {
-        "body_sha256": "8fd6a2094eead930ed4b25eee19d5950e55b1273beeaa67ff112f0bee1e829e3",
+        "body_sha256": "6d87d1e53cd17bd96a6ea0ad75289a785490daf576ff968970e4336f38e2c8d5",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Journal source 'missing' not found",
-          "error": "I couldn't use that journal source.",
+          "error": "that journal source couldn't be used.",
           "reason_code": "journal_source_problem"
         },
         "method": "GET",
@@ -1930,12 +1930,12 @@
         "why": "staged review items for a registered source"
       },
       {
-        "body_sha256": "8fd6a2094eead930ed4b25eee19d5950e55b1273beeaa67ff112f0bee1e829e3",
+        "body_sha256": "6d87d1e53cd17bd96a6ea0ad75289a785490daf576ff968970e4336f38e2c8d5",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Journal source 'missing' not found",
-          "error": "I couldn't use that journal source.",
+          "error": "that journal source couldn't be used.",
           "reason_code": "journal_source_problem"
         },
         "method": "GET",
@@ -1945,12 +1945,12 @@
         "why": "staged items for an unregistered source: refusal"
       },
       {
-        "body_sha256": "291757152d8947ee33d3e7d864698d7cc45c76b38d00de8402878dab98c89268",
+        "body_sha256": "311d5e049bebc687ffee735516334ecfdbf32453b7252af7c6b974225335cfe3",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Missing client_item_id",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -1961,12 +1961,12 @@
         "why": "register-a-path with no fields: the missing-field refusal"
       },
       {
-        "body_sha256": "ec9ee00d51373266e05750a90c9755929a9c12a88458cbfcb21db24047df95f5",
+        "body_sha256": "e5ba192b0d1fc81c5271f62e8c60debec7ba1911876c4e7b797bbee0e7ecdb07",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Path not found: /nonexistent/corpus/path",
-          "error": "I couldn't find that file.",
+          "error": "that file isn't available.",
           "reason_code": "file_not_found"
         },
         "method": "POST",
@@ -1980,12 +1980,12 @@
         "why": "register-a-path pointing at nothing: refuses before the source is read"
       },
       {
-        "body_sha256": "c4033225676f468e936dc5be368aafdb6b5be13fcf96bd38aaed83b0bbc5c022",
+        "body_sha256": "5a49c2ff8ff7807562af3cfca547e3212b30417e5006b7a4978b9429aa2a73a8",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Missing import path",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -1996,12 +1996,12 @@
         "why": "metadata update with no target"
       },
       {
-        "body_sha256": "882c03f0de998cdd07dd647fabf65bcc133abcfe83b441fd1ad2cb2939f10dbd",
+        "body_sha256": "95e49549595758355a2aedec91a71fb4d428d688b703ee509fe4cc2d95360492",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Name is required",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -2014,12 +2014,12 @@
         "why": "source create with an empty name"
       },
       {
-        "body_sha256": "87558b0f823b7102eea54ede5c516165d4a09472376865f972ced18ce1021bba",
+        "body_sha256": "c0710b30ccf10883b727e2a1c37fc76ddeb253513ecdbe9e94d791f3b6ccbe17",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Invalid journal source name",
-          "error": "I couldn't use that journal source.",
+          "error": "that journal source couldn't be used.",
           "reason_code": "journal_source_problem"
         },
         "method": "POST",
@@ -2032,12 +2032,12 @@
         "why": "\ud83d\udd34 source create with a traversal name: what the name guard ACTUALLY guards"
       },
       {
-        "body_sha256": "18cf601c674bb7e9606fe264d9b53de9847cc19781dd95f4d2f6703d34d64216",
+        "body_sha256": "c410c2cf6e13a9052f25a500188c9431f8012ab49de2b0721e30700df7ca0b3d",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "Journal source 'corpus_peer' already exists",
-          "error": "I couldn't use that journal source.",
+          "error": "that journal source couldn't be used.",
           "reason_code": "journal_source_problem"
         },
         "method": "POST",
@@ -2050,12 +2050,12 @@
         "why": "source create colliding with a registered name: 409, not a silent overwrite"
       },
       {
-        "body_sha256": "74e3c2a24104cd3cf7523f2405dee65e01b2a38a5937a799d856838068dd28a7",
+        "body_sha256": "0800a7194b2d1f0a9a92183338d6677aad29960576f3e91a7c32e36d283482d4",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "No staged config diff found.",
-          "error": "I couldn't find that import.",
+          "error": "that import isn't in your journal.",
           "reason_code": "import_not_found"
         },
         "method": "POST",

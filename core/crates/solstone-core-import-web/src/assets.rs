@@ -48,7 +48,7 @@ pub(crate) async fn guide(Path(source): Path<String>) -> Response {
     {
         return error(
             axum::http::StatusCode::BAD_REQUEST,
-            "I couldn't use one of those values.",
+            "one of those values couldn't be used.",
             "invalid_request_value",
             "Invalid source name".to_owned(),
         );
@@ -65,7 +65,7 @@ pub(crate) async fn guide(Path(source): Path<String>) -> Response {
     }) else {
         return error(
             axum::http::StatusCode::NOT_FOUND,
-            "I couldn't find that file.",
+            "that file isn't available.",
             "file_not_found",
             format!("No guide available for '{source}'"),
         );

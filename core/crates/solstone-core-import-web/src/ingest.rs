@@ -93,7 +93,7 @@ fn import_file(
 fn invalid_owned_path(detail: String) -> Response {
     error(
         StatusCode::BAD_REQUEST,
-        "I couldn't use one of those values.",
+        "one of those values couldn't be used.",
         "invalid_request_value",
         detail,
     )
@@ -163,7 +163,7 @@ async fn segments_with_attempts(
         Err(e) => {
             return error(
                 StatusCode::BAD_REQUEST,
-                "I couldn't read that JSON request.",
+                "that JSON request couldn't be read.",
                 "invalid_json_request",
                 e.to_owned(),
             );
@@ -180,7 +180,7 @@ async fn segments_with_attempts(
     let Some(Value::Object(meta)) = metadata else {
         return error(
             StatusCode::BAD_REQUEST,
-            "I couldn't find a required field.",
+            "a required field is missing.",
             "missing_required_field",
             "Missing metadata".to_owned(),
         );
@@ -188,7 +188,7 @@ async fn segments_with_attempts(
     let Some(items) = meta.get("segments").and_then(Value::as_array) else {
         return error(
             StatusCode::BAD_REQUEST,
-            "I couldn't find a required field.",
+            "a required field is missing.",
             "missing_required_field",
             "Missing segments array".to_owned(),
         );
@@ -352,7 +352,7 @@ async fn segments_with_attempts(
                 .map_or(detail.clone(), |marker| format!("{detail}; {marker}"));
             return error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "I couldn't save that import.",
+                "that import couldn't be saved.",
                 "import_metadata_failed",
                 detail,
             );
@@ -367,7 +367,7 @@ async fn segments_with_attempts(
             .map_or(detail.clone(), |marker| format!("{detail}; {marker}"));
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "I couldn't save that import.",
+            "that import couldn't be saved.",
             "import_metadata_failed",
             detail,
         );
@@ -375,7 +375,7 @@ async fn segments_with_attempts(
     if let Err(detail) = dirty_segment_days(&app.root, &mutated_days) {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "I couldn't save that import.",
+            "that import couldn't be saved.",
             "stream_marker_failed",
             detail,
         );
@@ -426,7 +426,7 @@ pub(crate) async fn facets(
         Err(detail) => {
             return error(
                 StatusCode::BAD_REQUEST,
-                "I couldn't read that JSON request.",
+                "that JSON request couldn't be read.",
                 "invalid_json_request",
                 detail.to_owned(),
             );
@@ -443,7 +443,7 @@ pub(crate) async fn facets(
     else {
         return error(
             StatusCode::BAD_REQUEST,
-            "I couldn't find a required field.",
+            "a required field is missing.",
             "missing_required_field",
             "Missing facets array".into(),
         );
@@ -451,7 +451,7 @@ pub(crate) async fn facets(
     if has_retired_facet_content(facets) {
         return error(
             StatusCode::BAD_REQUEST,
-            "I couldn't use one of those values.",
+            "one of those values couldn't be used.",
             "invalid_request_value",
             "Retired facet content is not accepted; nothing was imported.".into(),
         );
@@ -561,7 +561,7 @@ pub(crate) async fn facets(
     if let Err(detail) = write_json(&state_path, &facet_state) {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "I couldn't save that import.",
+            "that import couldn't be saved.",
             "import_metadata_failed",
             detail,
         );
@@ -574,7 +574,7 @@ pub(crate) async fn facets(
     ) {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "I couldn't save that import.",
+            "that import couldn't be saved.",
             "import_metadata_failed",
             detail,
         );
@@ -594,7 +594,7 @@ pub(crate) async fn entities(
     let Some(items) = payload.get("entities").and_then(Value::as_array) else {
         return error(
             StatusCode::BAD_REQUEST,
-            "I couldn't find a required field.",
+            "a required field is missing.",
             "missing_required_field",
             "Missing entities array".into(),
         );
@@ -749,7 +749,7 @@ pub(crate) async fn entities(
         if let Err(detail) = write_json(&state_path, &entity_state) {
             return error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "I couldn't save that import.",
+                "that import couldn't be saved.",
                 "import_metadata_failed",
                 detail,
             );
@@ -763,7 +763,7 @@ pub(crate) async fn entities(
     ) {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "I couldn't save that import.",
+            "that import couldn't be saved.",
             "import_metadata_failed",
             detail,
         );
@@ -891,7 +891,7 @@ pub(crate) async fn imports(
     let Some(items) = payload.get("imports").and_then(Value::as_array) else {
         return error(
             StatusCode::BAD_REQUEST,
-            "I couldn't find a required field.",
+            "a required field is missing.",
             "missing_required_field",
             "Missing imports array".into(),
         );
@@ -1011,7 +1011,7 @@ pub(crate) async fn imports(
     if let Err(detail) = write_json(&state_path, &imports_state) {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "I couldn't save that import.",
+            "that import couldn't be saved.",
             "import_metadata_failed",
             detail,
         );
@@ -1019,7 +1019,7 @@ pub(crate) async fn imports(
     if let Err(detail) = record_received(&app.root, &identity, "imports_received", copied) {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "I couldn't save that import.",
+            "that import couldn't be saved.",
             "import_metadata_failed",
             detail,
         );
@@ -1043,7 +1043,7 @@ pub(crate) async fn config(
     else {
         return error(
             StatusCode::BAD_REQUEST,
-            "I couldn't find a required field.",
+            "a required field is missing.",
             "missing_required_field",
             "Missing config object".into(),
         );
@@ -1074,7 +1074,7 @@ pub(crate) async fn config(
         ) {
             return error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "I couldn't save that import.",
+                "that import couldn't be saved.",
                 "import_metadata_failed",
                 detail,
             );
@@ -1103,7 +1103,7 @@ pub(crate) async fn config(
     if let Err(detail) = write_json(&source_config_path, source) {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "I couldn't save that import.",
+            "that import couldn't be saved.",
             "import_metadata_failed",
             detail,
         );
@@ -1111,7 +1111,7 @@ pub(crate) async fn config(
     if let Err(detail) = write_json(&diff_path, &Value::Object(diff.clone())) {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "I couldn't save that import.",
+            "that import couldn't be saved.",
             "import_metadata_failed",
             detail,
         );
@@ -1120,7 +1120,7 @@ pub(crate) async fn config(
     if let Err(detail) = write_json(&state_path, &st) {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "I couldn't save that import.",
+            "that import couldn't be saved.",
             "import_metadata_failed",
             detail,
         );
@@ -1131,7 +1131,7 @@ pub(crate) async fn config(
     ) {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "I couldn't save that import.",
+            "that import couldn't be saved.",
             "import_metadata_failed",
             detail,
         );
@@ -1139,7 +1139,7 @@ pub(crate) async fn config(
     if let Err(detail) = record_received(&app.root, &identity, "config_received", 1) {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "I couldn't save that import.",
+            "that import couldn't be saved.",
             "import_metadata_failed",
             detail,
         );

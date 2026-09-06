@@ -66,7 +66,7 @@ pub(crate) fn error(
 pub(crate) fn import_not_found(detail: &str) -> axum::response::Response {
     error(
         StatusCode::NOT_FOUND,
-        "I couldn't find that import.",
+        "that import isn't in your journal.",
         "import_not_found",
         detail.to_owned(),
     )
