@@ -9,11 +9,13 @@
   <section id="link-identity-header" class="link-identity" hidden>
     <p class="link-identity-title" data-copy="IDENTITY_HEADER_LABEL"></p>
     <div id="link-identity-mark" class="link-identity-mark" aria-hidden="true"></div>
-    <div class="link-identity-id">
-      <span class="link-identity-id-label" data-copy="IDENTITY_ID_LABEL"></span>
-      <code id="link-identity-id-value" class="link-identity-id-value"></code>
-      <button type="button" id="link-identity-id-copy" class="link-identity-id-copy" data-copy="IDENTITY_ID_COPY_LABEL"></button>
-    </div>
+    <details class="link-identity-id-disclosure">
+      <summary data-copy="IDENTITY_ID_LABEL"></summary>
+      <div class="link-identity-id">
+        <code id="link-identity-id-value" class="link-identity-id-value"></code>
+        <button type="button" id="link-identity-id-copy" class="link-identity-id-copy" data-copy="IDENTITY_ID_COPY_LABEL"></button>
+      </div>
+    </details>
   </section>
 
   <header class="link-header">
@@ -138,10 +140,12 @@
       <p class="link-reach-detail link-spl-trust-line" data-copy="REACH_SPL_TRUST_LINE"></p>
       <div class="link-handoff">
         <a href="https://services.solstone.app/" target="_blank" rel="noopener noreferrer" data-copy="REACH_SPL_MANAGE_LABEL"></a>
-        <button type="button" id="link-private-link-disable" class="link-private-link-disable" data-copy="PRIVATE_LINK_DISABLE_CTA"></button>
       </div>
       <p id="link-spl-connecting-note" class="link-spl-connecting-note" hidden data-copy="REACH_SPL_CONNECTING_NOTE"></p>
       <button type="button" id="link-spl-check-again" class="link-spl-check-again" hidden><span aria-hidden="true">[ </span><span data-copy="CHECK_AGAIN_LABEL"></span><span aria-hidden="true"> ]</span></button>
+      <div class="link-disable-row">
+        <button type="button" id="link-private-link-disable" class="link-private-link-disable" data-copy="PRIVATE_LINK_DISABLE_CTA"></button>
+      </div>
     </div>
   </section>
 
@@ -255,9 +259,12 @@
   .link-mark-chip svg { width: 28px; height: 28px; display: block; }
   .link-mark-words { display: flex; align-items: center; justify-content: center; gap: 0.5em; margin-top: 0.55em; font-family: var(--font-display); font-size: 1.1rem; letter-spacing: .3px; color: #222; }
   .link-mark-words .link-mark-sep { color: #c2b9a6; }
-  .link-identity-id { display: flex; align-items: center; justify-content: center; gap: 0.5em; margin-top: 0.9em; font-size: 0.9rem; color: #555; flex-wrap: wrap; }
+  .link-identity-id-disclosure { margin-top: 0.9em; font-size: 0.85rem; }
+  .link-identity-id-disclosure > summary { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 0.4em; color: #6E6453; cursor: pointer; }
+  .link-identity-id-disclosure > summary:focus-visible { outline: 2px solid var(--focus, #B06A1A); outline-offset: 2px; border-radius: 6px; }
+  .link-identity-id { display: flex; align-items: center; justify-content: center; gap: 0.5em; font-size: 0.9rem; color: #555; flex-wrap: wrap; }
   .link-identity-id-value { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #222; word-break: break-all; }
-  .link-identity-id-copy { border: 1px solid #d9c4ab; background: #fff; color: #B06A1A; border-radius: 7px; padding: 0.2em 0.6em; cursor: pointer; font-size: 0.85rem; }
+  .link-identity-id-copy { display: inline-flex; align-items: center; min-height: 44px; border: 1px solid #d9c4ab; background: #fff; color: #B06A1A; border-radius: 7px; padding: 0.2em 0.8em; cursor: pointer; font-size: 0.85rem; }
 
 
   .link-brandlock { font-size: 0.9rem; color: #B06A1A; font-weight: 600; margin: 0 0 14px; display: flex; align-items: center; gap: 8px; }
@@ -319,7 +326,10 @@
   .link-vpn-candidate { display: flex; gap: 0.45em; align-items: baseline; flex-wrap: wrap; }
   .link-vpn-candidate-label { color: #555; font-weight: 500; }
   .link-vpn-candidate-use { color: #777; font-size: 0.85em; }
-  .link-private-link-disable { border: 0; background: transparent; padding: 0; color: #a53a1f; cursor: pointer; font: inherit; font-weight: 600; text-align: left; }
+  .link-disable-row { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--hairline, #ECE3D0); }
+  .link-private-link-disable { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; border: 1px solid var(--danger, #9F2D2D); border-radius: 8px; background: transparent; padding: 10px 16px; color: var(--danger, #9F2D2D); cursor: pointer; font: inherit; font-size: 0.92rem; font-weight: 600; text-align: center; }
+  .link-private-link-disable:hover { background: var(--danger-wash, #F8E9E6); }
+  .link-private-link-disable:focus-visible { outline: 2px solid var(--danger, #9F2D2D); outline-offset: 2px; }
   .link-private-link-operation { margin: 0 0 1.25em; border: 1px solid #e0d8cc; border-radius: 8px; background: #fffdfa; padding: 0.9em; }
   .link-private-link-operation[hidden] { display: none; }
   .link-private-link-operation p { margin: 0 0 0.55em; color: #444; }
@@ -1398,7 +1408,10 @@
   segHosted?.addEventListener('click', () => selectReachMode('hosted'));
   privateLinkSetup?.addEventListener('click', startPrivateLinkSetup);
   privateLinkEnroll?.addEventListener('click', startPrivateLinkSetup);
-  privateLinkDisable?.addEventListener('click', disablePrivateLink);
+  privateLinkDisable?.addEventListener('click', () => {
+    if (!confirm(window.LinkCopy.PRIVATE_LINK_DISABLE_CONFIRM)) return;
+    disablePrivateLink();
+  });
   privateLinkOperationRetry?.addEventListener('click', () => {
     if (privateLinkRetryAction) privateLinkRetryAction();
   });
