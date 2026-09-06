@@ -2516,8 +2516,8 @@
         "why": "the sample view serves the shell"
       },
       {
-        "body_bytes": 574,
-        "body_sha256": "dd14f0810f1daff8e5306031cf0a7c4dafac8ee6068cc68d764b43d745f78d01",
+        "body_bytes": 571,
+        "body_sha256": "f55c154dad0778ea5013dbba3103517e5bbf61fedaf12b186aad55910f42cf9c",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -3391,8 +3391,8 @@
         "why": "the sample view serves the shell"
       },
       {
-        "body_bytes": 574,
-        "body_sha256": "dd14f0810f1daff8e5306031cf0a7c4dafac8ee6068cc68d764b43d745f78d01",
+        "body_bytes": 571,
+        "body_sha256": "f55c154dad0778ea5013dbba3103517e5bbf61fedaf12b186aad55910f42cf9c",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
