@@ -299,7 +299,7 @@
   .link-modebody[hidden] { display: none; }
   .link-mode-note { font-size: 0.84rem; color: #6E6453; margin: 8px 0 0; line-height: 1.45; }
   .link-handoff { margin-top: 12px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .link-handoff a { color: #B06A1A; font-weight: 600; text-decoration: none; font-size: 0.88rem; }
+  .link-handoff a { color: var(--orange-text-aa); font-weight: 600; text-decoration: none; font-size: 0.88rem; }
   .link-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid #E8923A; border-radius: 8px; background: #E8923A; color: #1A1A1A; padding: 10px 16px; font: inherit; font-size: 0.92rem; font-weight: 600; cursor: pointer; text-decoration: none; }
   .link-btn-primary:hover { filter: brightness(1.02); }
   .link-reach-detail { margin: 0.25em 0 0; color: #666; }
@@ -727,6 +727,21 @@
 .client-group-header:not(:first-child) {
   margin-top: 2em;
 }
+/* The never-delivered group folds behind this <details>; count lives in the
+   summary text (see collapsedGroupHTML), styling matches the plain group
+   header plus the same disclosure chevron as .client-details summary. */
+.client-group-collapsed {
+  margin: 0;
+}
+.client-group-collapsed:not(:first-child) {
+  margin-top: 2em;
+}
+.client-group-collapsed > summary {
+  margin: 0 0 0.75em;
+}
+.client-group-collapsed .client-card:first-of-type {
+  margin-top: 0.75em;
+}
 
 /* ── Responsive: Tablet (≤768px) ── */
 @media (max-width: 768px) {
@@ -831,7 +846,7 @@
 .ws-error-dismiss {
   transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
-.client-card.neutral{border-left-color:var(--border,#ddd)}.client-status.neutral{background:#f0f0ed;color:#555}.client-status.neutral::before{display:none}.client-details summary{display:flex;align-items:center;gap:8px;cursor:pointer;min-height:44px;list-style:none}.client-details summary::-webkit-details-marker{display:none}.client-details summary::before{content:'\25B8';color:var(--ink-faint,#6E6453);font-size:.9em;line-height:1}.client-details[open] summary::before{content:'\25BE'}.client-details summary:focus-visible{outline:2px solid var(--orange,#f59e0b);outline-offset:3px}.client-stats dd{overflow-wrap:anywhere}.client-last-material{color:var(--text-secondary,#666);font-size:.9rem;margin:8px 0}.client-connection{color:var(--ink-faint,#6E6453);font-size:.85rem;margin:4px 0 10px}.client-details .client-actions{margin-top:12px}
+.client-card.neutral{border-left-color:var(--border,#ddd)}.client-status.neutral{background:#f0f0ed;color:#555}.client-status.neutral::before{display:none}.client-details summary,.client-group-collapsed>summary{display:flex;align-items:center;gap:8px;cursor:pointer;min-height:44px;list-style:none}.client-details summary::-webkit-details-marker,.client-group-collapsed>summary::-webkit-details-marker{display:none}.client-details summary::before,.client-group-collapsed>summary::before{content:'\25B8';color:var(--ink-faint,#6E6453);font-size:.9em;line-height:1}.client-details[open] summary::before,.client-group-collapsed[open]>summary::before{content:'\25BE'}.client-details summary:focus-visible,.client-group-collapsed>summary:focus-visible{outline:2px solid var(--orange,#f59e0b);outline-offset:3px}.client-stats dd{overflow-wrap:anywhere}.client-last-material{color:var(--text-secondary,#666);font-size:.9rem;margin:8px 0}.client-paired{color:var(--ink-faint,#6E6453);font-size:.85rem;margin:4px 0 10px}.client-details .client-actions{margin-top:12px}
 </style>
 
 <script>
@@ -1538,12 +1553,17 @@ function emptyStateHTML() {
   return empty;
 }
 
-function clientStatsHTML(client) {
+function clientStatsHTML(client, deliveryGroup) {
   const segment = client.last_accepted_segment;
   const segmentLabel = segment ? `${segment.day}/${segment.name}` : 'none';
   const failure = client.ingest_rejection?.reason_code || client.unassessed_reason;
+  // The connection fact (open-socket heartbeat) is a distinct signal from delivery,
+  // but for an 'adding' device it says nothing the chip doesn't already say — see
+  // clientCardHTML, which omits it there entirely rather than passing it through.
+  const connectionLabel = deliveryGroup === 'adding' ? '' : window.NetworkRender.connectionLineLabel(client);
   return `<dl>
     <div><dt>last check-in</dt><dd>${escapeHtml(window.NetworkRender.checkInLabel(client))}</dd></div>
+    ${connectionLabel ? `<div><dt>connection</dt><dd>${escapeHtml(connectionLabel)}</dd></div>` : ''}
     <div><dt>last journal segment</dt><dd>${escapeHtml(segmentLabel)}</dd></div>
     ${failure ? `<div><dt>delivery detail</dt><dd>${escapeHtml(failure)}</dd></div>` : ''}
   </dl>`;
@@ -1602,17 +1622,38 @@ function groupHeaderHTML(group, label) {
   return `<h3 class="client-group-header" data-group="${group}">${escapeHtml(label)}</h3>`;
 }
 
+// The never-delivered group can be most of the page (pairing debris that
+// happens to share a delivery state), so it renders collapsed behind a
+// count instead of at full card weight; every device stays reachable one
+// click away. data-client-details keys into the same open-state tracking
+// loadClients() already does for per-card disclosures, so this survives a
+// live refresh too.
+function collapsedGroupHTML(section) {
+  const label = `${section.label} (${section.clients.length})`;
+  return `
+    <details class="client-group-collapsed" data-client-details="group-${escapeHtml(section.group)}">
+      <summary class="client-group-header" data-group="${escapeHtml(section.group)}">${escapeHtml(label)}</summary>
+      ${section.clients.map(clientCardHTML).join('')}
+    </details>
+  `;
+}
+
 function clientCardHTML(client) {
   const render = window.NetworkRender;
   const displayName = client.display_label || client.device_label || client.client_label || client.cid_short;
   const deliveryLabel = render.deliveryChipLabel(client);
-  const connectionLabel = render.connectionLineLabel(client);
+  const deliveryGroup = render.deliveryGroupFor(client);
+  // A device that is actively adding says so in the chip already; a stale
+  // heartbeat under the same card said the opposite one line down (G3-110).
+  // Only devices outside 'adding' get a connection fact at all, and it lives
+  // in the disclosure (clientStatsHTML), not the card face.
+  const connectionLabel = deliveryGroup === 'adding' ? '' : render.connectionLineLabel(client);
   const ariaLabel = [displayName, deliveryLabel, connectionLabel].filter(Boolean).join(', ');
   const lastAdded = client.last_accepted_ingest_at
     ? `<p class="client-last-material">last added ${escapeHtml(window.JournalFormat.timestamp(client.last_accepted_ingest_at))}</p>`
     : '';
   const pairedDay = render.dayKeyFor(client.paired_at);
-  const pairedLabel = pairedDay ? ` · paired ${window.JournalFormat.day(pairedDay)}` : '';
+  const pairedLabel = pairedDay ? `paired ${window.JournalFormat.day(pairedDay)}` : '';
   return `
     <div class="client-card ${client.failing ? 'stale' : 'neutral'}" data-cid="${escapeHtml(client.cid)}" role="listitem" aria-label="${escapeHtml(ariaLabel)}">
       <div class="client-header">
@@ -1620,10 +1661,10 @@ function clientCardHTML(client) {
         <span class="client-status ${render.deliveryChipClass(client)}">${escapeHtml(deliveryLabel)}</span>
       </div>
       ${lastAdded}
-      <p class="client-connection">${escapeHtml(connectionLabel + pairedLabel)}</p>
+      ${pairedLabel ? `<p class="client-paired">${escapeHtml(pairedLabel)}</p>` : ''}
       <details class="client-details" data-client-details="${escapeHtml(client.cid)}">
         <summary>device details</summary>
-        <div class="client-stats">${clientStatsHTML(client)}<dl><div><dt>device id</dt><dd>${escapeHtml(client.cid)}</dd></div></dl></div>
+        <div class="client-stats">${clientStatsHTML(client, deliveryGroup)}<dl><div><dt>device id</dt><dd>${escapeHtml(client.cid)}</dd></div></dl></div>
       <div class="client-actions">
         <button class="danger" data-cid="${escapeHtml(client.cid)}" onclick="unpairClient(this.dataset.cid, this)">unpair</button>
       </div>
@@ -1638,7 +1679,11 @@ function renderClients(clients) {
   }
 
   const html = window.NetworkRender.groupClientsByDelivery(clients)
-    .map((section) => groupHeaderHTML(section.group, section.label) + section.clients.map(clientCardHTML).join(''))
+    .map((section) => (
+      section.group === 'never'
+        ? collapsedGroupHTML(section)
+        : groupHeaderHTML(section.group, section.label) + section.clients.map(clientCardHTML).join('')
+    ))
     .join('');
 
   return html || emptyStateHTML();

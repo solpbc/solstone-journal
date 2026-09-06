@@ -111,7 +111,7 @@
     );
 
     // connection is a secondary line, worded as a connection fact
-    equal('disconnected connection line', R.connectionLineLabel(deliveringButStaleHeartbeat), 'no live connection');
+    equal('disconnected connection line', R.connectionLineLabel(deliveringButStaleHeartbeat), 'not connected right now');
     equal('connected connection line', R.connectionLineLabel(connected), 'connected now');
     equal('stale connection line', R.connectionLineLabel(notReporting), 'connection not reporting');
     equal('unknown connection line', R.connectionLineLabel(unknown), 'connection unavailable');

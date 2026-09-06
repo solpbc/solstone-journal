@@ -175,9 +175,9 @@
         "last_verify": "last verification",
         "last_restore": "last restore",
         "days": "offloaded days",
-        "mb_suffix": "MB",
-        "under_1mb": "under 1 MB",
-        "gb_suffix": "GB"
+        "mb_suffix": "MiB",
+        "under_1mb": "under 1 MiB",
+        "gb_suffix": "GiB"
       },
       "actions": {
         "enable": "turn on media offload",
@@ -292,8 +292,8 @@
     "error|error": { "backup": { "copy_key": "status.last_backup.failed", "duration_source": "last_backup.time" }, "verification": { "copy_key": "status.last_verification.failed", "duration_source": "last_verification.time" } }
   };
   const copy = BACKUP_COPY;
-  const BYTES_PER_GB = 1000000000;
-  const BYTES_PER_MB = 1000000;
+  const BYTES_PER_GB = 1073741824;
+  const BYTES_PER_MB = 1048576;
   const MAX_OFFLOAD_DAY_ROWS = 21;
   let state = {};
   let offloadState = { status: 'loading', payload: null };

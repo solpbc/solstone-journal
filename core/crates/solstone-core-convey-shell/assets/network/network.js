@@ -383,7 +383,7 @@
   const CONNECTION_LINE_LABELS = {
     connected: 'connected now',
     stale: 'connection not reporting',
-    disconnected: 'no live connection',
+    disconnected: 'not connected right now',
   };
 
   function deliveryGroupFor(client) {
