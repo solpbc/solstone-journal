@@ -8,6 +8,22 @@ const Dashboard = (function() {
   const EXPECTED_SCHEMA_VERSION = 8;
   const DISPLAY_LABELS = { transcript: 'audio', percept: 'screen' };
 
+  // Warm replacement for the prior cool blue (#2171b5) used by the input and
+  // audio series — gold, from --gold in tokens.css (X-12).
+  const WARM_INPUT_COLOR = '#FFCF33';
+
+  // Warm categorical base (gold -> orange -> coral/danger -> warm plum ->
+  // olive/success -> ink-soft), derived from the brand tokens, replacing the
+  // prior unbranded rainbow palette for facets/activities legends (X-12).
+  // Hex values mirror --gold, --orange, --danger, --success and --ink-soft in
+  // tokens.css; "warm plum" has no existing token, so it is a hand-picked
+  // warm-hued fill between the coral and olive anchors.
+  const WARM_CATEGORICAL_BASE = ['#FFCF33', '#E8913A', '#9F2D2D', '#6B3A46', '#3F9D6A', '#5B5246'];
+
+  // Orange sequential ramp for the heatmap, replacing the prior cool
+  // rgba(102,126,234,…) indigo (X-12). RGB of --orange (#E8913A).
+  const WARM_HEATMAP_RGB = '232,145,58';
+
   // DOM element factory
   function el(tag, attrs = {}, children = []) {
     const elem = document.createElement(tag);
@@ -32,13 +48,14 @@ const Dashboard = (function() {
     container.appendChild(wrapper);
   }
 
-  // Format byte counts with GB/MB/KB suffixes
+  // Format byte counts with binary (GiB/MiB/KiB) suffixes, matching
+  // Backup/Settings' units for the same on-disk figure (G2-12).
   function fmtBytes(num) {
     const value = Number(num);
-    if (value >= 1e12) return (value / 1e12).toFixed(1) + ' TB';
-    if (value >= 1e9) return (value / 1e9).toFixed(1) + ' GB';
-    if (value >= 1e6) return (value / 1e6).toFixed(1) + ' MB';
-    if (value >= 1e3) return (value / 1e3).toFixed(1) + ' KB';
+    if (value >= 1099511627776) return (value / 1099511627776).toFixed(1) + ' TiB';
+    if (value >= 1073741824) return (value / 1073741824).toFixed(1) + ' GiB';
+    if (value >= 1048576) return (value / 1048576).toFixed(1) + ' MiB';
+    if (value >= 1024) return (value / 1024).toFixed(1) + ' KiB';
     return String(Math.round(value)) + ' B';
   }
 
@@ -86,6 +103,9 @@ const Dashboard = (function() {
     const pct = total > 0 ? Math.round((processed / total) * 100) : 100;
     return el('div', {className: 'progress-card'}, [
       el('h3', {}, [title]),
+      // These are all-time totals, not the 30-day backlog window above —
+      // scope the label so the two figures don't read as contradictory (G2-09).
+      el('p', {className: 'stat-subtitle'}, ['since your journal began']),
       el('div', {className: 'progress-bar'}, [
         el('div', {
           className: 'progress-fill',
@@ -93,8 +113,8 @@ const Dashboard = (function() {
         }, [`${pct}%`])
       ]),
       el('div', {className: 'progress-stats'}, [
-        el('span', {}, [`${processed} processed`]),
-        el('span', {}, [`${repairable} pending`])
+        el('span', {}, [`${processed.toLocaleString()} processed`]),
+        el('span', {}, [`${repairable.toLocaleString()} pending`])
       ])
     ]);
   }
@@ -218,7 +238,7 @@ const Dashboard = (function() {
     // Add legend
     const legend = el('div', {className: 'token-legend'}, [
       el('div', {className: 'legend-item'}, [
-        el('div', {className: 'legend-color', style: {background: '#2171b5'}, 'aria-hidden': 'true'}),
+        el('div', {className: 'legend-color', style: {background: WARM_INPUT_COLOR}, 'aria-hidden': 'true'}),
         'input'
       ]),
       el('div', {className: 'legend-item'}, [
@@ -321,7 +341,7 @@ const Dashboard = (function() {
     // Add legend
     const legend = el('div', {className: 'token-legend'}, [
       el('div', {className: 'legend-item'}, [
-        el('div', {className: 'legend-color', style: {background: '#2171b5'}, 'aria-hidden': 'true'}),
+        el('div', {className: 'legend-color', style: {background: WARM_INPUT_COLOR}, 'aria-hidden': 'true'}),
         'audio'
       ]),
       el('div', {className: 'legend-item'}, [
@@ -365,7 +385,7 @@ const Dashboard = (function() {
         const cellTitle = `${days[d]} ${h}:00 - ${Math.round(data[d][h])} min`;
         const cell = el('div', {
           className: 'heatmap-cell',
-          style: {background: `rgba(102,126,234,${intensity})`},
+          style: {background: `rgba(${WARM_HEATMAP_RGB},${intensity})`},
           'data-tip': cellTitle,
           'aria-label': cellTitle,
           role: 'gridcell',
@@ -378,15 +398,30 @@ const Dashboard = (function() {
     container.appendChild(heatmap);
   }
 
-  // Generate consistent colors for categories
+  // Lighten (positive percent) or darken (negative percent) a hex color,
+  // used to extend the warm categorical base past its 6 anchor hues.
+  function shadeHex(hex, percent) {
+    const num = parseInt(hex.slice(1), 16);
+    const r = (num >> 16) & 0xff;
+    const g = (num >> 8) & 0xff;
+    const b = num & 0xff;
+    const target = percent < 0 ? 0 : 255;
+    const amount = Math.min(1, Math.abs(percent) / 100);
+    const mix = (channel) => Math.round((target - channel) * amount + channel);
+    return '#' + [mix(r), mix(g), mix(b)].map(v => v.toString(16).padStart(2, '0')).join('');
+  }
+
+  // Generate consistent colors for categories from the warm categorical base
+  // (X-12). Cycles of six reuse the same six warm hues at alternating
+  // lighter/darker shades so a repeated hue at the same palette position
+  // still reads apart from its first pass, instead of falling back to an
+  // unbranded (and previously cool-hued) default set.
   function getCategoryColor(index, total) {
-    // Use a palette of distinct colors
-    const palette = [
-      '#0072B2', '#E69F00', '#009E73', '#CC79A7', '#56B4E9',
-      '#D55E00', '#F0E442', '#000000', '#332288', '#88CCEE',
-      '#44AA99', '#117733', '#999933', '#882255', '#661100'
-    ];
-    return palette[index % palette.length];
+    const cycle = Math.floor(index / WARM_CATEGORICAL_BASE.length);
+    const base = WARM_CATEGORICAL_BASE[index % WARM_CATEGORICAL_BASE.length];
+    if (cycle === 0) return base;
+    const step = Math.ceil(cycle / 2) * 22;
+    return shadeHex(base, cycle % 2 === 1 ? step : -step);
   }
 
   // Build stacked category chart (for Activities or Facets)
@@ -579,6 +614,27 @@ const Dashboard = (function() {
     return null;
   }
 
+  // Per-unit reason_code copy, more specific than the generic why-bucket
+  // text above. Falls back to whyLabel when the reason_code is missing or
+  // unrecognized (G2-14).
+  const UNIT_REASON_COPY = {
+    context_window_exceeded: "a summary step hit the model's context limit",
+  };
+
+  function unitReasonLabel(unit, C) {
+    if (unit && unit.reason_code && UNIT_REASON_COPY[unit.reason_code]) {
+      return UNIT_REASON_COPY[unit.reason_code];
+    }
+    return whyLabel(unit && unit.why, C);
+  }
+
+  // The single most useful reason to surface directly on a collapsed backlog
+  // row, without expanding "work remaining" (G2-14).
+  function topReasonLabel(day, C) {
+    if (!Array.isArray(day.why) || day.why.length === 0) return null;
+    return unitReasonLabel(day.why[0], C);
+  }
+
   function reasonCopy(day, C) {
     const REASON_COPY_KEYS = {
       corrupt_raw: 'REASON_CORRUPT_RAW',
@@ -655,12 +711,18 @@ const Dashboard = (function() {
     }
     mainChildren.push(el('span', {className: 'backlog-row-copy'}, [copy]));
     const whyLabels = Array.isArray(day.why)
-      ? day.why.map(unit => whyLabel(unit.why, C)).filter(Boolean)
+      ? day.why.map(unit => unitReasonLabel(unit, C)).filter(Boolean)
       : [];
+    // Surface the top reason on the row itself for a collapsed (non-expanded)
+    // day, instead of hiding every reason behind "work remaining" (G2-14).
+    const topReason = !options.expanded ? topReasonLabel(day, C) : null;
+    if (topReason) {
+      mainChildren.push(el('span', {className: 'backlog-row-reason'}, [topReason]));
+    }
     const children = [
       el('a', {className: 'backlog-row-link', href: dayHref(day)}, [
         el('div', {className: 'backlog-row-main'}, mainChildren),
-        depth > 0 ? el('span', {className: 'backlog-depth'}, [String(depth)]) : null
+        depth > 0 ? el('span', {className: 'backlog-depth'}, [`${depth.toLocaleString()} steps left`]) : null
       ])
     ];
 
@@ -735,6 +797,10 @@ const Dashboard = (function() {
     const counts = backlogCounts(stats);
     const section = el('section', {className: 'backlog-section', id: 'backlogSection'}, [
       el('div', {className: 'backlog-hero'}, [
+        // The verdict below is scoped to the 30-day backlog window; label it
+        // so it doesn't read as contradicting the all-time totals in the
+        // tiles further down the page (G2-09).
+        el('p', {className: 'backlog-hero-scope'}, ['last 30 days']),
         el('p', {className: 'backlog-hero-line'}, [backlogVerdict(stats)])
       ])
     ]);
@@ -807,18 +873,17 @@ const Dashboard = (function() {
     const freshnessEl = document.getElementById('statsFreshness');
     if (freshnessEl) {
       freshnessEl.textContent = stats.generated_at
-        ? 'Stats generated ' + relativeTime(Date.now() - new Date(stats.generated_at).getTime()) + ' ago'
+        ? 'updated ' + relativeTime(Date.now() - new Date(stats.generated_at).getTime()) + ' ago'
         : '';
-      const refreshLink = el('a', {
-        className: 'stats-refresh',
-        href: '#'
+      const refreshButton = el('button', {
+        type: 'button',
+        className: 'stats-refresh'
       }, ['refresh']);
-      refreshLink.addEventListener('click', function(e) {
-        e.preventDefault();
+      refreshButton.addEventListener('click', function() {
         const statsUrl = document.querySelector('.dashboard').dataset.statsUrl;
         if (statsUrl) Dashboard.load(statsUrl);
       });
-      freshnessEl.appendChild(refreshLink);
+      freshnessEl.appendChild(refreshButton);
     }
 
     document.dispatchEvent(new CustomEvent('stats:token-rollup', {
@@ -853,9 +918,9 @@ const Dashboard = (function() {
     // Render stats cards
     const statsGrid = document.getElementById('statsGrid');
     statsGrid.innerHTML = ''; // Clear existing content
-    statsGrid.appendChild(statCard('total days', totalDays, 'days'));
-    statsGrid.appendChild(statCard('audio hours', totalAudioHours, 'hours'));
-    statsGrid.appendChild(statCard('screen hours', totalScreenHours, 'hours'));
+    statsGrid.appendChild(statCard('total days', totalDays.toLocaleString(), 'days'));
+    statsGrid.appendChild(statCard('audio hours', totalAudioHours.toLocaleString(), 'hours'));
+    statsGrid.appendChild(statCard('screen hours', totalScreenHours.toLocaleString(), 'hours'));
     statsGrid.appendChild(statCard('total tokens', fmtTokens(totalTokens), 'tokens'));
     statsGrid.appendChild(statCard('disk usage', fmtBytes(totals.day_bytes || 0), 'on disk'));
 
@@ -925,14 +990,16 @@ const Dashboard = (function() {
       const repairGrid = alert.querySelector('#repairGrid');
       const repairLabels = {
         pending_segments: 'pending segments',
-        segments_pending_think: 'segments awaiting thinking'
+        segments_pending_think: 'segments waiting for processing'
       };
 
       repairs.forEach(key => {
         const count = totals[key] || 0;
         if (count > 0) {
+          // These are all-time totals, distinct from the 30-day backlog
+          // verdict above them (G2-09).
           repairGrid.appendChild(
-            statCard(repairLabels[key], count, '', '#dc2626')
+            statCard(repairLabels[key], count.toLocaleString(), 'since your journal began', '#dc2626')
           );
         }
       });
