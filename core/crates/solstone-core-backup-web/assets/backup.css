@@ -164,6 +164,25 @@
   font-size: 0.85rem;
 }
 
+.backup-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--orange-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.backup-link:hover {
+  text-decoration: underline;
+}
+
+.backup-link:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
 .backup-error,
 .backup-op-error {
   color: var(--danger);

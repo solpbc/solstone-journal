@@ -358,7 +358,110 @@
     return { close };
   }
 
-  const NetworkRender = { applyCopy, resolve, initPairingCeremony };
+  // ── delivery vs connection ────────────────────────────────────────────────
+  // A paired device carries two independent measurements: whether material is
+  // arriving (capture_state / last_accepted_ingest_at) and whether a heartbeat
+  // is fresh (state / last_seen_at). The card leads with delivery, because that
+  // is what the owner is asking about; the heartbeat is a secondary line.
+  const DELIVERY_GROUP_ORDER = ['failing', 'adding', 'recent', 'quiet', 'never', 'unknown'];
+  const DELIVERY_GROUP_LABELS = {
+    failing: 'not being added right now',
+    adding: 'adding to your journal now',
+    recent: 'added recently',
+    quiet: 'quiet for a while',
+    never: 'nothing added yet',
+    unknown: 'delivery unavailable',
+  };
+  const DELIVERY_GROUP_CHIP_CLASS = {
+    failing: 'stale',
+    adding: 'connected',
+    recent: 'neutral',
+    quiet: 'neutral',
+    never: 'neutral',
+    unknown: 'neutral',
+  };
+  const CONNECTION_LINE_LABELS = {
+    connected: 'connected now',
+    stale: 'connection not reporting',
+    disconnected: 'no live connection',
+  };
+
+  function deliveryGroupFor(client) {
+    if (!client || typeof client !== 'object') return 'unknown';
+    if (client.failing || client.capture_state === 'degraded') return 'failing';
+    if (client.capture_state === 'active') return 'adding';
+    if (client.capture_state === 'stale') return 'recent';
+    if (client.capture_state === 'unknown') return 'unknown';
+    return client.last_accepted_ingest_at ? 'quiet' : 'never';
+  }
+
+  function deliveryChipClass(client) {
+    return DELIVERY_GROUP_CHIP_CLASS[deliveryGroupFor(client)];
+  }
+
+  function elapsedSince(timestamp, nowMs) {
+    const parsed = Date.parse(timestamp);
+    if (!Number.isFinite(parsed)) return null;
+    const now = Number.isFinite(nowMs) ? nowMs : Date.now();
+    return Math.max(0, now - parsed);
+  }
+
+  function deliveryChipLabel(client, nowMs) {
+    const group = deliveryGroupFor(client);
+    if (group === 'failing') return 'delivery problem';
+    if (group === 'adding') return 'adding now';
+    if (group === 'never') return 'nothing added yet';
+    if (group === 'unknown') return 'delivery unavailable';
+    const elapsed = elapsedSince(client.last_accepted_ingest_at, nowMs);
+    return elapsed === null ? 'added earlier' : `added ${global.relativeTime(elapsed)} ago`;
+  }
+
+  function connectionLineLabel(client) {
+    if (!client || typeof client !== 'object') return 'connection unavailable';
+    return CONNECTION_LINE_LABELS[client.state] || 'connection unavailable';
+  }
+
+  function checkInLabel(client, nowMs) {
+    const elapsed = elapsedSince(client.last_seen_at, nowMs);
+    return elapsed === null ? 'never' : `${global.relativeTime(elapsed)} ago`;
+  }
+
+  /// Local calendar day of an instant, as the YYYYMMDD key JournalFormat.day reads.
+  function dayKeyFor(timestamp) {
+    if (!timestamp) return '';
+    const value = new Date(timestamp);
+    if (Number.isNaN(value.getTime())) return '';
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${value.getFullYear()}${month}${day}`;
+  }
+
+  function groupClientsByDelivery(clients) {
+    const groups = new Map(DELIVERY_GROUP_ORDER.map((group) => [group, []]));
+    for (const client of clients || []) {
+      groups.get(deliveryGroupFor(client)).push(client);
+    }
+    return DELIVERY_GROUP_ORDER.filter((group) => groups.get(group).length).map((group) => ({
+      group,
+      label: DELIVERY_GROUP_LABELS[group],
+      clients: groups.get(group),
+    }));
+  }
+
+  const NetworkRender = {
+    applyCopy,
+    resolve,
+    initPairingCeremony,
+    DELIVERY_GROUP_ORDER,
+    DELIVERY_GROUP_LABELS,
+    deliveryGroupFor,
+    deliveryChipClass,
+    deliveryChipLabel,
+    connectionLineLabel,
+    checkInLabel,
+    dayKeyFor,
+    groupClientsByDelivery,
+  };
   global.NetworkRender = NetworkRender;
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = NetworkRender;

@@ -9,11 +9,13 @@
   <section id="link-identity-header" class="link-identity" hidden>
     <p class="link-identity-title" data-copy="IDENTITY_HEADER_LABEL"></p>
     <div id="link-identity-mark" class="link-identity-mark" aria-hidden="true"></div>
-    <div class="link-identity-id">
-      <span class="link-identity-id-label" data-copy="IDENTITY_ID_LABEL"></span>
-      <code id="link-identity-id-value" class="link-identity-id-value"></code>
-      <button type="button" id="link-identity-id-copy" class="link-identity-id-copy" data-copy="IDENTITY_ID_COPY_LABEL"></button>
-    </div>
+    <details class="link-identity-id-disclosure">
+      <summary data-copy="IDENTITY_ID_LABEL"></summary>
+      <div class="link-identity-id">
+        <code id="link-identity-id-value" class="link-identity-id-value"></code>
+        <button type="button" id="link-identity-id-copy" class="link-identity-id-copy" data-copy="IDENTITY_ID_COPY_LABEL"></button>
+      </div>
+    </details>
   </section>
 
   <header class="link-header">
@@ -138,10 +140,12 @@
       <p class="link-reach-detail link-spl-trust-line" data-copy="REACH_SPL_TRUST_LINE"></p>
       <div class="link-handoff">
         <a href="https://services.solstone.app/" target="_blank" rel="noopener noreferrer" data-copy="REACH_SPL_MANAGE_LABEL"></a>
-        <button type="button" id="link-private-link-disable" class="link-private-link-disable" data-copy="PRIVATE_LINK_DISABLE_CTA"></button>
       </div>
       <p id="link-spl-connecting-note" class="link-spl-connecting-note" hidden data-copy="REACH_SPL_CONNECTING_NOTE"></p>
       <button type="button" id="link-spl-check-again" class="link-spl-check-again" hidden><span aria-hidden="true">[ </span><span data-copy="CHECK_AGAIN_LABEL"></span><span aria-hidden="true"> ]</span></button>
+      <div class="link-disable-row">
+        <button type="button" id="link-private-link-disable" class="link-private-link-disable" data-copy="PRIVATE_LINK_DISABLE_CTA"></button>
+      </div>
     </div>
   </section>
 
@@ -255,9 +259,15 @@
   .link-mark-chip svg { width: 28px; height: 28px; display: block; }
   .link-mark-words { display: flex; align-items: center; justify-content: center; gap: 0.5em; margin-top: 0.55em; font-family: var(--font-display); font-size: 1.1rem; letter-spacing: .3px; color: #222; }
   .link-mark-words .link-mark-sep { color: #c2b9a6; }
-  .link-identity-id { display: flex; align-items: center; justify-content: center; gap: 0.5em; margin-top: 0.9em; font-size: 0.9rem; color: #555; flex-wrap: wrap; }
+  .link-identity-id-disclosure { margin-top: 0.9em; font-size: 0.85rem; }
+  .link-identity-id-disclosure > summary { display: inline-flex; align-items: center; justify-content: center; gap: 0.4em; min-height: 44px; padding: 0 0.4em; color: #6E6453; cursor: pointer; list-style: none; }
+  .link-identity-id-disclosure > summary::-webkit-details-marker { display: none; }
+  .link-identity-id-disclosure > summary::before { content: '\25B8'; font-size: 0.9em; line-height: 1; }
+  .link-identity-id-disclosure[open] > summary::before { content: '\25BE'; }
+  .link-identity-id-disclosure > summary:focus-visible { outline: 2px solid var(--focus, #B06A1A); outline-offset: 2px; border-radius: 6px; }
+  .link-identity-id { display: flex; align-items: center; justify-content: center; gap: 0.5em; font-size: 0.9rem; color: #555; flex-wrap: wrap; }
   .link-identity-id-value { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #222; word-break: break-all; }
-  .link-identity-id-copy { border: 1px solid #d9c4ab; background: #fff; color: #B06A1A; border-radius: 7px; padding: 0.2em 0.6em; cursor: pointer; font-size: 0.85rem; }
+  .link-identity-id-copy { display: inline-flex; align-items: center; min-height: 44px; border: 1px solid #d9c4ab; background: #fff; color: #B06A1A; border-radius: 7px; padding: 0.2em 0.8em; cursor: pointer; font-size: 0.85rem; }
 
 
   .link-brandlock { font-size: 0.9rem; color: #B06A1A; font-weight: 600; margin: 0 0 14px; display: flex; align-items: center; gap: 8px; }
@@ -319,7 +329,10 @@
   .link-vpn-candidate { display: flex; gap: 0.45em; align-items: baseline; flex-wrap: wrap; }
   .link-vpn-candidate-label { color: #555; font-weight: 500; }
   .link-vpn-candidate-use { color: #777; font-size: 0.85em; }
-  .link-private-link-disable { border: 0; background: transparent; padding: 0; color: #a53a1f; cursor: pointer; font: inherit; font-weight: 600; text-align: left; }
+  .link-disable-row { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--hairline, #ECE3D0); }
+  .link-private-link-disable { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; border: 1px solid var(--danger, #9F2D2D); border-radius: 8px; background: transparent; padding: 10px 16px; color: var(--danger, #9F2D2D); cursor: pointer; font: inherit; font-size: 0.92rem; font-weight: 600; text-align: center; }
+  .link-private-link-disable:hover { background: var(--danger-wash, #F8E9E6); }
+  .link-private-link-disable:focus-visible { outline: 2px solid var(--danger, #9F2D2D); outline-offset: 2px; }
   .link-private-link-operation { margin: 0 0 1.25em; border: 1px solid #e0d8cc; border-radius: 8px; background: #fffdfa; padding: 0.9em; }
   .link-private-link-operation[hidden] { display: none; }
   .link-private-link-operation p { margin: 0 0 0.55em; color: #444; }
@@ -395,8 +408,6 @@
   min-height: 28px;
   font-size: 0.8em;
   font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
   padding: 4px 10px;
   border-radius: 4px;
   transition: background-color 0.6s ease, color 0.15s ease;
@@ -466,7 +477,6 @@
   color: var(--status-active);
   font-size: 0.75em;
   font-weight: 700;
-  text-transform: uppercase;
 }
 .client-live-pip::before {
   content: '';
@@ -821,7 +831,7 @@
 .ws-error-dismiss {
   transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
-.client-card.neutral{border-left-color:var(--border,#ddd)}.client-status.neutral{background:#f0f0ed;color:#555}.client-details summary{display:flex;align-items:center;gap:12px;cursor:pointer;min-height:44px}.client-details summary:focus-visible{outline:2px solid var(--orange,#f59e0b);outline-offset:3px}.client-stats dd{overflow-wrap:anywhere}.client-last-material{color:var(--text-secondary,#666);font-size:.9rem;margin:8px 0}.client-details .client-actions{margin-top:12px}
+.client-card.neutral{border-left-color:var(--border,#ddd)}.client-status.neutral{background:#f0f0ed;color:#555}.client-status.neutral::before{display:none}.client-details summary{display:flex;align-items:center;gap:8px;cursor:pointer;min-height:44px;list-style:none}.client-details summary::-webkit-details-marker{display:none}.client-details summary::before{content:'\25B8';color:var(--ink-faint,#6E6453);font-size:.9em;line-height:1}.client-details[open] summary::before{content:'\25BE'}.client-details summary:focus-visible{outline:2px solid var(--orange,#f59e0b);outline-offset:3px}.client-stats dd{overflow-wrap:anywhere}.client-last-material{color:var(--text-secondary,#666);font-size:.9rem;margin:8px 0}.client-connection{color:var(--ink-faint,#6E6453);font-size:.85rem;margin:4px 0 10px}.client-details .client-actions{margin-top:12px}
 </style>
 
 <script>
@@ -1401,7 +1411,10 @@
   segHosted?.addEventListener('click', () => selectReachMode('hosted'));
   privateLinkSetup?.addEventListener('click', startPrivateLinkSetup);
   privateLinkEnroll?.addEventListener('click', startPrivateLinkSetup);
-  privateLinkDisable?.addEventListener('click', disablePrivateLink);
+  privateLinkDisable?.addEventListener('click', () => {
+    if (!confirm(window.LinkCopy.PRIVATE_LINK_DISABLE_CONFIRM)) return;
+    disablePrivateLink();
+  });
   privateLinkOperationRetry?.addEventListener('click', () => {
     if (privateLinkRetryAction) privateLinkRetryAction();
   });
@@ -1513,13 +1526,6 @@ const wsErrorCountdown = document.getElementById('wsErrorCountdown');
 let errorAutoHideTimer = null;
 let countdownInterval = null;
 let lastPollTime = Date.now();
-const GROUP_ORDER = ['active', 'stale', 'inactive', 'unknown'];
-const GROUP_LABELS = {
-  active: 'connected devices',
-  stale: 'devices to check',
-  inactive: 'offline devices',
-  unknown: 'connection unavailable'
-};
 
 function emptyStateHTML() {
   const copy = (key) => window.NetworkRender?.resolve(window.LinkCopy, key) || '';
@@ -1532,33 +1538,14 @@ function emptyStateHTML() {
   return empty;
 }
 
-function captureLabel(client) {
-  if (client.failing) return 'failing';
-  return {
-    active: 'adding to your journal',
-    stale: 'no recent material',
-    offline: 'no recent material',
-    no_capture: 'no material received yet',
-    unknown: 'delivery unavailable',
-  }[client.capture_state] || 'delivery unavailable';
-}
-
-function timestampLabel(timestamp) {
-  if (!timestamp) return 'never';
-  const elapsed = Date.now() - Date.parse(timestamp);
-  return Number.isFinite(elapsed) ? `${relativeTime(Math.max(0, elapsed))} ago` : timestamp;
-}
-
 function clientStatsHTML(client) {
   const segment = client.last_accepted_segment;
   const segmentLabel = segment ? `${segment.day}/${segment.name}` : 'none';
   const failure = client.ingest_rejection?.reason_code || client.unassessed_reason;
   return `<dl>
-    <div><dt>connection</dt><dd>${escapeHtml(client.label || client.state || 'unknown')}</dd></div>
-    <div><dt>last check-in</dt><dd>${escapeHtml(timestampLabel(client.last_seen_at))}</dd></div>
-    <div><dt>last material received</dt><dd>${escapeHtml(timestampLabel(client.last_accepted_ingest_at))}</dd></div>
+    <div><dt>last check-in</dt><dd>${escapeHtml(window.NetworkRender.checkInLabel(client))}</dd></div>
     <div><dt>last journal segment</dt><dd>${escapeHtml(segmentLabel)}</dd></div>
-    ${failure ? `<div><dt>capture detail</dt><dd>${escapeHtml(failure)}</dd></div>` : ''}
+    ${failure ? `<div><dt>delivery detail</dt><dd>${escapeHtml(failure)}</dd></div>` : ''}
   </dl>`;
 }
 
@@ -1611,43 +1598,31 @@ function updateCountdownDisplay() {
   wsErrorCountdown.textContent = remaining > 0 ? `retrying in ${remaining}s\u2026` : 'retrying\u2026';
 }
 
-function connectionClass(client) {
-  if (client.failing || client.capture_state === 'degraded') return 'stale';
-  return ['connected', 'stale', 'disconnected'].includes(client.state)
-    ? client.state
-    : 'disconnected';
-}
-
-function captureClass(client) {
-  if (client.failing || client.capture_state === 'degraded') return 'stale';
-  if (client.capture_state === 'active') return 'connected';
-  if (client.capture_state === 'stale') return 'stale';
-  return 'neutral';
-}
-
-function groupFor(client) {
-  return GROUP_ORDER.includes(client.group) ? client.group : 'unknown';
-}
-
-function groupHeaderHTML(group) {
-  return `<h3 class="client-group-header" data-group="${group}">${GROUP_LABELS[group]}</h3>`;
+function groupHeaderHTML(group, label) {
+  return `<h3 class="client-group-header" data-group="${group}">${escapeHtml(label)}</h3>`;
 }
 
 function clientCardHTML(client) {
+  const render = window.NetworkRender;
   const displayName = client.display_label || client.device_label || client.client_label || client.cid_short;
-  const connectionClassName = connectionClass(client);
-  const captureClassName = captureClass(client);
-  const connectionLabel = client.label || client.state || 'unknown';
-  const ariaLabel = [displayName, connectionLabel, captureLabel(client)].filter(Boolean).join(', ');
+  const deliveryLabel = render.deliveryChipLabel(client);
+  const connectionLabel = render.connectionLineLabel(client);
+  const ariaLabel = [displayName, deliveryLabel, connectionLabel].filter(Boolean).join(', ');
+  const lastAdded = client.last_accepted_ingest_at
+    ? `<p class="client-last-material">last added ${escapeHtml(window.JournalFormat.timestamp(client.last_accepted_ingest_at))}</p>`
+    : '';
+  const pairedDay = render.dayKeyFor(client.paired_at);
+  const pairedLabel = pairedDay ? ` · paired ${window.JournalFormat.day(pairedDay)}` : '';
   return `
     <div class="client-card ${client.failing ? 'stale' : 'neutral'}" data-cid="${escapeHtml(client.cid)}" role="listitem" aria-label="${escapeHtml(ariaLabel)}">
       <div class="client-header">
         <span class="client-name">${escapeHtml(displayName)}</span>
-        <span class="client-status ${captureClassName}">${escapeHtml(captureLabel(client))}</span>
+        <span class="client-status ${render.deliveryChipClass(client)}">${escapeHtml(deliveryLabel)}</span>
       </div>
-      <p class="client-last-material">last material received: ${escapeHtml(timestampLabel(client.last_accepted_ingest_at))}</p>
+      ${lastAdded}
+      <p class="client-connection">${escapeHtml(connectionLabel + pairedLabel)}</p>
       <details class="client-details" data-client-details="${escapeHtml(client.cid)}">
-        <summary>device details <span class="client-status ${connectionClassName}">${escapeHtml(connectionLabel)}</span></summary>
+        <summary>device details</summary>
         <div class="client-stats">${clientStatsHTML(client)}<dl><div><dt>device id</dt><dd>${escapeHtml(client.cid)}</dd></div></dl></div>
       <div class="client-actions">
         <button class="danger" data-cid="${escapeHtml(client.cid)}" onclick="unpairClient(this.dataset.cid, this)">unpair</button>
@@ -1662,23 +1637,9 @@ function renderClients(clients) {
     return emptyStateHTML();
   }
 
-  const groups = {
-    active: [],
-    stale: [],
-    inactive: [],
-    unknown: []
-  };
-  for (const client of clients) {
-    const group = groupFor(client);
-    groups[group].push(client);
-  }
-
-  let html = '';
-  for (const group of GROUP_ORDER) {
-    if (!groups[group].length) continue;
-    html += groupHeaderHTML(group);
-    html += groups[group].map(clientCardHTML).join('');
-  }
+  const html = window.NetworkRender.groupClientsByDelivery(clients)
+    .map((section) => groupHeaderHTML(section.group, section.label) + section.clients.map(clientCardHTML).join(''))
+    .join('');
 
   return html || emptyStateHTML();
 }
