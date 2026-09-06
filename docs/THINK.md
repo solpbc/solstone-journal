@@ -85,6 +85,12 @@ key is a named entry with `cmd` and `every`, plus optional `enabled` and
 hourly boundary. Existing configurations are not backfilled with those metadata
 values. Writes go through `solstone-core-system`.
 
+Entries named `maintenance:<routine>` are generated from the maintenance
+routine registry. At every start the supervisor reconciles them before the
+scheduler loads: retired names are removed and missing routines are added with
+their default cadence, while any entry an operator edited or added is left as
+it is. `journal maintenance sync` performs the same reconciliation on demand.
+
 ## Related
 
 - [PROVIDERS.md](PROVIDERS.md) — one active brain, no fallback

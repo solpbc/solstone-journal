@@ -170,13 +170,22 @@ impl ScheduleEngine {
     }
 
     /// Submit every currently due entry at most once, without changing edge markers.
+    ///
+    /// `fresh` names entries that did not exist before this boot. Catch-up replays
+    /// work that was missed while the scheduler was down; an entry that has never
+    /// been scheduled was not missed, so it starts its cadence at its next mark
+    /// exactly as it would had it been added to a running scheduler.
     pub fn catch_up(
         &mut self,
         now: ScheduleNow,
         sink: &dyn ScheduleSubmissionSink,
+        fresh: &BTreeSet<String>,
     ) -> CatchUpReport {
         let mut report = CatchUpReport::default();
         for (name, entry) in self.config.entries.clone() {
+            if fresh.contains(&name) {
+                continue;
+            }
             if is_due(&entry, state_entry(&self.state, &name), &self.config, now)
                 && submit(&name, &entry, now, sink)
             {

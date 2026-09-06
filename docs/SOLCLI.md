@@ -416,7 +416,7 @@ not the codebase. See [APPS.md](APPS.md).
 
 `reprocess` is the on-demand reprocess command: process-now by default; `--from-scratch` re-runs already-complete units and, with `--through`, can queue an inclusive past-day range.
 
-`journal maintenance list|sync|run <name>` runs native maintenance (`solstone-core-maintenance`).
+`journal maintenance list|sync|run <name>` runs native maintenance (`solstone-core-maintenance`). The supervisor performs the same `sync` at every start, so an upgrade that adds or retires a routine takes effect on the next boot; the verb remains for inspection and for applying a change without restarting.
 
 ### Call (`solstone call <app> <cmd>`)
 

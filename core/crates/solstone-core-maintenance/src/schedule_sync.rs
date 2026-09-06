@@ -48,9 +48,10 @@ pub struct RoutineStatus<'a> {
     pub status: ScheduleStatus,
 }
 
-/// Summary emitted by additive maintenance schedule synchronization.
+/// Summary emitted by maintenance schedule synchronization.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SyncSummary {
+    pub removed: Vec<String>,
     pub added: Vec<String>,
     pub synced: Vec<String>,
     pub divergent: Vec<String>,
@@ -121,14 +122,16 @@ pub fn sync(path: &Path, routines: &[RoutineDescriptor]) -> Result<SyncSummary, 
 }
 
 fn plan_sync(raw: &mut Map<String, Value>, routines: &[RoutineDescriptor]) -> SyncSummary {
+    let mut summary = SyncSummary::default();
     for entry in RETIRED_ENTRIES {
-        raw.remove(*entry);
+        if raw.remove(*entry).is_some() {
+            summary.removed.push((*entry).to_owned());
+        }
     }
 
     let classified = classify(routines, raw)
         .into_iter()
         .filter(|item| !is_retired_schedule_entry(item.descriptor.id));
-    let mut summary = SyncSummary::default();
     for item in classified {
         match item.status {
             ScheduleStatus::Missing => {
@@ -150,6 +153,7 @@ fn plan_sync(raw: &mut Map<String, Value>, routines: &[RoutineDescriptor]) -> Sy
 pub fn render_summary(summary: &SyncSummary) -> String {
     let mut output = String::new();
     for (name, ids) in [
+        ("removed", &summary.removed),
         ("added", &summary.added),
         ("synced", &summary.synced),
         ("divergent", &summary.divergent),
@@ -372,6 +376,14 @@ mod tests {
         );
 
         let summary = sync(&config, routines()).expect("sync");
+        assert_eq!(
+            summary.removed,
+            vec![
+                "maintenance:timeline:rollup".to_owned(),
+                "maintenance:timeline:rollup-day".to_owned(),
+                "maintenance:timeline:rollup-master".to_owned(),
+            ]
+        );
         assert!(
             !summary
                 .added

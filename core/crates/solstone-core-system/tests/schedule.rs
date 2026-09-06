@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -463,8 +464,43 @@ fn ac17_ac19_edge_checks_retry_coarse_only_and_catch_up_is_bounded() {
         accepted: true,
         ..Sink::default()
     };
-    let caught = engine.catch_up(now(2026, 3, 22, 11, 0), &sink);
+    let caught = engine.catch_up(now(2026, 3, 22, 11, 0), &sink, &BTreeSet::new());
     assert!(caught.submitted.len() <= 2);
+}
+
+#[test]
+fn catch_up_leaves_fresh_entries_to_their_next_mark() {
+    // A never-run entry is due, so catch-up would submit it at boot. An entry
+    // that did not exist before this boot was not missed: named as fresh, it
+    // waits for its cadence boundary like an entry added to a running scheduler.
+    let bed = Bed::new("fresh");
+    bed.write_config(json!({
+        "missed": {"cmd": ["journal", "heartbeat"], "every": "daily"},
+        "maintenance:new": {"cmd": ["journal", "maintenance", "run", "new"], "every": "daily"}
+    }));
+    let (mut engine, _) =
+        ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 10, 0)).expect("init");
+    let sink = Sink {
+        accepted: true,
+        ..Sink::default()
+    };
+    let fresh = BTreeSet::from(["maintenance:new".to_owned()]);
+    let caught = engine.catch_up(now(2026, 3, 22, 10, 0), &sink, &fresh);
+    assert_eq!(caught.submitted, vec!["missed".to_owned()]);
+    assert_eq!(sink.names(), vec!["missed"]);
+
+    let sink = Sink {
+        accepted: true,
+        ..Sink::default()
+    };
+    engine
+        .check(now(2026, 3, 23, 0, 16), &sink)
+        .expect("daily boundary");
+    assert!(
+        sink.names().contains(&"maintenance:new".to_owned()),
+        "a fresh entry runs at its first daily mark: {:?}",
+        sink.names()
+    );
 }
 
 #[test]

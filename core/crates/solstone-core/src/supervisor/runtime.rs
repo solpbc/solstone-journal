@@ -725,6 +725,40 @@ fn ready_sleep_marker_path(argv: &[String]) -> Option<&str> {
     }
 }
 
+/// Bring the maintenance entries in `config/schedules.json` up to date with the
+/// routine registry before the scheduler loads them: retired names are pruned
+/// and missing routines are added, while operator edits survive untouched.
+/// A failure here leaves the file as it was and never blocks the boot; the
+/// scheduler then runs whatever the file already holds.
+/// Returns the schedule names added by this reconciliation, so the boot
+/// catch-up can leave them to start at their next mark.
+fn reconcile_maintenance_schedules(schedule_config_path: &Path) -> BTreeSet<String> {
+    match solstone_core_maintenance::schedule_sync::sync(
+        schedule_config_path,
+        solstone_core_maintenance::registry::routines(),
+    ) {
+        Ok(summary) if summary.removed.is_empty() && summary.added.is_empty() => BTreeSet::new(),
+        Ok(summary) => {
+            eprintln!(
+                "supervisor: maintenance schedules reconciled (removed: [{}]; added: [{}])",
+                summary.removed.join(", "),
+                summary.added.join(", ")
+            );
+            summary
+                .added
+                .iter()
+                .map(|id| solstone_core_maintenance::schedule_sync::schedule_name(id))
+                .collect()
+        }
+        Err(error) => {
+            eprintln!(
+                "supervisor: maintenance schedule reconciliation skipped; scheduler runs the file as is: {error}"
+            );
+            BTreeSet::new()
+        }
+    }
+}
+
 fn resolve_journal_binary_from(exe_dir: &Path) -> PathBuf {
     exe_dir.join("solstone-core-journal")
 }
@@ -1409,6 +1443,7 @@ pub(crate) async fn boot_and_tick(
                 abort_published_setup(&lifecycle, &queue, &mut connection, &server, error).await,
             );
         }
+        let fresh_schedules = reconcile_maintenance_schedules(&schedule_config_path);
         let mut scheduler = match ScheduleEngine::init(
             schedule_config_path,
             journal.join("health/scheduler.json"),
@@ -1430,7 +1465,7 @@ pub(crate) async fn boot_and_tick(
             queue: queue.clone(),
             server: server.clone(),
         };
-        let _ = scheduler.catch_up(now, &schedule_sink);
+        let _ = scheduler.catch_up(now, &schedule_sink, &fresh_schedules);
         Some(scheduler)
     };
     let fixture_binary = app_fixture_binary();

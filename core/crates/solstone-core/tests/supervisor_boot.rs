@@ -772,6 +772,100 @@ fn ac6_boot_order_is_identity_then_socket_then_ready() {
 }
 
 #[test]
+fn maintenance_schedules_are_reconciled_before_the_scheduler_loads() {
+    // An installed journal carries a retired maintenance entry and an
+    // operator-authored entry; a fresh registry routine is absent. Boot must
+    // prune the retired name, add every registry routine, and leave the
+    // operator's entry byte-for-byte as written, without any manual sync.
+    let journal = TempJournal::new();
+    let operator_entry = serde_json::json!({
+        "cmd": ["journal", "heartbeat"],
+        "every": "weekly",
+        "enabled": false,
+        "note": "operator-authored"
+    });
+    fs::write(
+        journal.0.join("config/schedules.json"),
+        serde_json::json!({
+            "daily_time": "00:15",
+            "weekly_time": "03:15",
+            "maintenance:timeline:rollup": {
+                "cmd": ["journal", "maintenance", "run", "timeline:rollup", "--commit"],
+                "every": "daily",
+                "enabled": true,
+                "max_runtime": "60m"
+            },
+            "operator:custom": operator_entry,
+        })
+        .to_string(),
+    )
+    .expect("seed schedules");
+
+    let mut child = start(&journal);
+    let ready = journal.0.join("health/supervisor.ready");
+    for _ in 0..1_600 {
+        if ready.exists() {
+            break;
+        }
+        if let Some(status) = child.try_wait().expect("supervisor status") {
+            let mut stderr = String::new();
+            if let Some(mut pipe) = child.stderr.take() {
+                pipe.read_to_string(&mut stderr)
+                    .expect("read supervisor stderr");
+            }
+            panic!("supervisor exited during boot: {status}; stderr: {stderr}");
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(ready.exists(), "supervisor did not reach readiness");
+
+    let raw: serde_json::Value = serde_json::from_slice(
+        &fs::read(journal.0.join("config/schedules.json")).expect("schedules"),
+    )
+    .expect("schedules JSON");
+    assert!(
+        raw.get("maintenance:timeline:rollup").is_none(),
+        "retired maintenance entry must be pruned at boot"
+    );
+    assert_eq!(
+        raw["operator:custom"], operator_entry,
+        "operator-authored entries are never rewritten"
+    );
+    assert_eq!(raw["daily_time"], "00:15");
+    let routines = solstone_core_maintenance::registry::routines();
+    assert!(!routines.is_empty());
+    for routine in routines {
+        let entry = &raw[format!("maintenance:{}", routine.id)];
+        assert_eq!(
+            entry["cmd"],
+            serde_json::json!(["journal", "maintenance", "run", routine.id]),
+            "registry routine {} must be scheduled after boot",
+            routine.id
+        );
+        assert_eq!(entry["enabled"], true, "{}", routine.id);
+    }
+    // Entries that first appeared at this boot start at their next cadence
+    // mark; the boot catch-up must not have submitted any of them.
+    if let Ok(bytes) = fs::read(journal.0.join("health/scheduler.json")) {
+        let state: serde_json::Value = serde_json::from_slice(&bytes).expect("scheduler state");
+        let submitted = state
+            .as_object()
+            .map(|entries| {
+                entries
+                    .keys()
+                    .filter(|name| name.starts_with("maintenance:"))
+                    .cloned()
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        assert!(
+            submitted.is_empty(),
+            "fresh maintenance entries were submitted at boot: {submitted:?}"
+        );
+    }
+}
+
+#[test]
 fn ac7_second_instance_refused_first_survives() {
     let journal = TempJournal::new();
     let mut first = start(&journal);
