@@ -76,7 +76,7 @@
     if(content.dataset.loaded)return;
     content.textContent='loading entry…';
     try{const data=await window.apiJson('/app/search/api/entry?'+new URLSearchParams({path,idx:String(hit.idx),entry_id:String(hit.entry_id)}));if(!root.isConnected)return;content.replaceChildren(node('span','search-meta','as last indexed'),document.createTextNode(data.content));content.dataset.loaded='true';}
-    catch(error){if(!root.isConnected)return;content.textContent='couldn’t open this entry. '+String(error.serverMessage||error.message||'try again.');if(error.rawDetail)content.textContent+=' '+String(error.rawDetail);}
+    catch(error){if(!root.isConnected)return;content.textContent="couldn't open this entry. "+String(error.serverMessage||error.message||'try again.');if(error.rawDetail)content.textContent+=' '+String(error.rawDetail);}
    });actions.append(button);card.append(actions,content);
   }else card.append(actions);
   return card;
@@ -86,9 +86,9 @@
  function abortActive(){if(activeController)activeController.abort();}
  const SEARCH_FAILURE_REASONS={
   index_locked:'the search index is busy right now.',
-  index_absent:'your journal doesn’t have a search index yet.',
-  index_unreadable:'the search index couldn’t be read.',
-  empty_index:'there’s nothing indexed yet.'
+  index_absent:"your journal doesn't have a search index yet.",
+  index_unreadable:"the search index couldn't be read.",
+  empty_index:"there's nothing indexed yet."
  };
  async function load(){
   if(!query.value.trim())return;
@@ -124,7 +124,7 @@
    if(!root.isConnected)return;
    status.classList.add('search-error');
    const reason=error&&error.reasonCode&&SEARCH_FAILURE_REASONS[error.reasonCode];
-   status.textContent=reason?('couldn’t search your journal: '+reason):('couldn’t search your journal. '+String(error.serverMessage||error.message||'try again.'));
+   status.textContent=reason?("couldn't search your journal: "+reason):("couldn't search your journal. "+String(error.serverMessage||error.message||'try again.'));
    if(error&&error.rawDetail){const disclosure=node('details');disclosure.append(node('summary','','details'),node('pre','search-source',String(error.rawDetail)));status.append(disclosure);}
    const button=node('button','','try again');button.type='button';button.onclick=()=>{status.classList.remove('search-error');load();};status.append(node('br'),button);
   }finally{stopProgress();if(activeController===controller){root.removeAttribute('aria-busy');activeController=null;}}

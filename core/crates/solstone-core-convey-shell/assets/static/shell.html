@@ -120,8 +120,20 @@
 <main id="main-content" class="workspace" tabindex="-1">
   <div class="surface-state surface-state--loading" role="status" aria-busy="true">
     <div class="surface-state-spinner" aria-hidden="true"></div>
+    <span class="surface-state-text" data-role="loading-status" id="shell-first-paint-loading">loading&hellip;</span>
   </div>
 </main>
+<script>
+  // The shell paints before any app script runs, so the first frame used to be
+  // a bare spinner. This names what is loading from that first frame, without
+  // waiting for a fetch: the app slug is already in the address (X-11).
+  (function () {
+    var el = document.getElementById('shell-first-paint-loading');
+    if (!el) { return; }
+    var app = (window.location.pathname.match(/^\/app\/([a-z0-9_-]+)/i) || [])[1];
+    if (app) { el.textContent = 'loading ' + app.toLowerCase().replace(/[_-]+/g, ' ') + '\u2026'; }
+  })();
+</script>
 
 <div id="errorModal" class="modal">
   <div class="modal-content">
