@@ -162,7 +162,7 @@ function main() {
 
   const start = workspace.indexOf('let ENT_COPY = {};');
   const scopeEnd = workspace.indexOf('function showFacetDetailView', start);
-  const metadataStart = workspace.indexOf('function deriveFacetEntityCounts', start);
+  const metadataStart = workspace.indexOf('function adoptJournalSummary', start);
   const metadataEnd = workspace.indexOf('// Edit form submission', metadataStart);
   check(start !== -1 && scopeEnd !== -1 && metadataStart !== -1 && metadataEnd !== -1, 'workspace exposes scope implementation boundaries');
 
@@ -229,11 +229,14 @@ function main() {
   };
   const scopeSource = `${workspace.slice(start, scopeEnd)}\nfunction loadEntities() { window.__scopeLoads = (window.__scopeLoads || 0) + 1; showListView(); }`;
   vm.runInNewContext(scopeSource, context, {filename: 'entities-scope.js'});
+  // The list-state key builder lives in the paged-list region, outside both slices; the scope
+  // harness only needs adoptJournalSummary to record a key, not to compute one.
+  context.journalListStateKey = () => 'harness';
   vm.runInNewContext(workspace.slice(metadataStart, metadataEnd), context, {filename: 'entities-metadata.js'});
   vm.runInNewContext(`
     window.__entities = {
-      setRoster(value) { facetRoster = value; facetEntityCounts = deriveFacetEntityCounts(journalEntitiesData || []); },
-      setJournal(value) { setJournalEntities(value); },
+      setRoster(value) { facetRoster = value; },
+      setJournal(summary) { adoptJournalSummary(summary); },
       restore: restoreEntityScopeFromLocation,
       render: renderScopeControl,
       showList: showListView,
@@ -256,10 +259,9 @@ function main() {
     {name: 'work', title: 'Work', color: '#2f6fdd'},
     {name: 'personal', title: 'Personal', color: '#a23f7b'},
   ]);
-  entities.setJournal([
-    {id: 'one', facets: [{name: 'work'}]},
-    {id: 'blocked', blocked: true, facets: [{name: 'work'}]},
-  ]);
+  // Counts come from the paged summary read; the route excludes blocked and
+  // detached memberships server-side (see solstone-core-entities router tests).
+  entities.setJournal({facet_counts: {work: 1}});
   entities.restore();
   const control = document.getElementById('entities-scope-control');
   check(control !== null, 'scope control is present when the roster is non-empty');
@@ -268,7 +270,7 @@ function main() {
   check(
     JSON.stringify(options.map((option) => [option.children[0].textContent, option.children[1]?.textContent || '']))
       === JSON.stringify([['your whole journal', ''], ['Work', '1'], ['Personal', '0']]),
-    'scope control derives counts from journal entities and includes zero-entity facets',
+    'scope control shows counts from the journal summary and includes zero-entity facets',
   );
 
   setLocation(window, '/app/entities?facet=work');
@@ -312,7 +314,7 @@ function main() {
   );
 
   entities.setRoster([]);
-  entities.setJournal([]);
+  entities.setJournal({facet_counts: {}});
   entities.render();
   check(document.getElementById('entities-scope-control') === null, 'scope control and popover are removed when the roster is empty');
 

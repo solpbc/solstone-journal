@@ -46,7 +46,7 @@ function settle() {
 
 function renderEmptyStateHTML(workspace, copy) {
   const start = workspace.indexOf('function emptyStateHTML() {');
-  const end = workspace.indexOf('\nfunction captureLabel', start);
+  const end = workspace.indexOf('\nfunction clientStatsHTML', start);
   assert.notStrictEqual(start, -1);
   assert.notStrictEqual(end, -1);
   const context = vm.createContext({
