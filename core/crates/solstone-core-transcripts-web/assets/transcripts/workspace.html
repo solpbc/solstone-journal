@@ -2030,7 +2030,7 @@
   color: #1f2937;
 }
 
-.tr-entry-desc pre {
+.tr-entry-desc pre, .tr-screen-text pre {
   background: #f3f4f6;
   border: 1px solid #e5e7eb;
   border-radius: 6px;
@@ -5450,7 +5450,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   const TR_PRE_COLLAPSE_MAX_HEIGHT = 256; // fallback only, when the computed max-height is not a usable number
 
   function collapseLongPreBlocks(root) {
-    root.querySelectorAll('.tr-entry-desc pre').forEach(pre => {
+    root.querySelectorAll('.tr-entry-desc pre, .tr-screen-text pre').forEach(pre => {
       if (pre.dataset.trPreChecked) return;
       if (!pre.scrollHeight) return; // unmeasurable while the pane is hidden; try again once it is shown
       pre.dataset.trPreChecked = '1';
