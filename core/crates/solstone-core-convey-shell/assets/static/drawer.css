@@ -212,8 +212,8 @@
   }
 
   /* An evidence row's two links (the day and the moment) are 19 px and 14 px
-     tall, set by their type size. On phone they grow to the touch floor by
-     padding alone: same text, same order, same destinations (X-09). */
+     tall, set by their type size. On phone they grow to the touch floor by a
+     minimum box alone: same text, same order, same destinations (X-09). */
   a.drawer-evidence-title,
   a.ev-meta {
     display: inline-flex;

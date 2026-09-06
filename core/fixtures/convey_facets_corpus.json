@@ -2524,7 +2524,7 @@
           "kicker": "facet newsletter",
           "markdown": "# 2026-03-10 News - Verona\n\n## Verona Platform Joint Venture Officially Launches\n**Source:** press-release | **Time:** 14:00\nMontague Tech and Capulet Industries announced a joint venture to develop the Verona Platform, a unified API gateway combining mesh routing and schema translation. The platform demonstrated sub-millisecond latency at 10,000 req/s during the board presentation.",
           "raw_url": "/app/news/sample/raw",
-          "sample_banner": "This is a sample newsletter \u2014 not from your journal.",
+          "sample_banner": "This is a sample newsletter, not from your journal.",
           "sample_h1": "sample newsletter"
         },
         "method": "GET",
@@ -3399,7 +3399,7 @@
           "kicker": "facet newsletter",
           "markdown": "# 2026-03-10 News - Verona\n\n## Verona Platform Joint Venture Officially Launches\n**Source:** press-release | **Time:** 14:00\nMontague Tech and Capulet Industries announced a joint venture to develop the Verona Platform, a unified API gateway combining mesh routing and schema translation. The platform demonstrated sub-millisecond latency at 10,000 req/s during the board presentation.",
           "raw_url": "/app/news/sample/raw",
-          "sample_banner": "This is a sample newsletter \u2014 not from your journal.",
+          "sample_banner": "This is a sample newsletter, not from your journal.",
           "sample_h1": "sample newsletter"
         },
         "method": "GET",

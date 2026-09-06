@@ -23,11 +23,11 @@
     "lane_detail": {
       "heading": "confidential processing",
       "sub": "operated by sol pbc",
-      "mechanism": "sol pbc runs the model itself on confidential GPUs in Microsoft Azure. the hardware boundary keeps the cloud host excluded from what's processed — no third-party AI provider is in the path.",
-      "egress": "when it's on, the thinking leaves your device — text, images, and (with the audio switch on, its default) your audio for transcription. your journal itself never leaves.",
+      "mechanism": "sol pbc runs the model itself on confidential GPUs in Microsoft Azure. the hardware boundary keeps the cloud host excluded from what's processed. no third-party AI provider is in the path.",
+      "egress": "when it's on, the thinking leaves your device: text, images, and (with the audio switch on, its default) your audio for transcription. your journal itself never leaves.",
       "claims": "no content is retained · no human reviews it · nothing is used to train",
-      "attestation": "your journal must verify the service before anything is sent — if it can't verify, it doesn't send.",
-      "early_access": "confidential processing is coming — scouts get it first."
+      "attestation": "your journal must verify the service before anything is sent. if it can't verify, it doesn't send.",
+      "early_access": "confidential processing is coming. scouts get it first."
     }
   }
 }

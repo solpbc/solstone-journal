@@ -130,8 +130,24 @@
   (function () {
     var el = document.getElementById('shell-first-paint-loading');
     if (!el) { return; }
+    // Four apps name themselves differently in their own first frame, and the
+    // slug would contradict them one frame later. These are those apps' own
+    // words, not new ones.
+    var NAMES = {
+      home: 'your day',
+      network: 'devices',
+      import: 'imports',
+      thinking: 'thinking settings'
+    };
+    // Route slugs the owner never sees anywhere else. A plain "loading…" is
+    // better than internal vocabulary on the first frame.
+    var INTERNAL = { body: 1, curation: 1, tokens: 1, sol: 1, observer: 1, awareness: 1, link: 1 };
     var app = (window.location.pathname.match(/^\/app\/([a-z0-9_-]+)/i) || [])[1];
-    if (app) { el.textContent = 'loading ' + app.toLowerCase().replace(/[_-]+/g, ' ') + '\u2026'; }
+    if (app) {
+      var slug = app.toLowerCase();
+      var name = NAMES[slug] || (INTERNAL[slug] ? '' : slug.replace(/[_-]+/g, ' '));
+      if (name) { el.textContent = 'loading ' + name + '\u2026'; }
+    }
   })();
 </script>
 

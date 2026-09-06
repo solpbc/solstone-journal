@@ -26,12 +26,12 @@ your consent is saved; set one up, then enable your private network again:";
 const PRIVATE_LINK_DISABLE_SUCCESS: &str =
     "your private network is off. devices connect directly again.";
 const PRIVATE_LINK_DISABLE_FAILED: &str =
-    "couldn't turn off your private network — it's still on. try again.";
+    "couldn't turn off your private network. it's still on. try again.";
 const PRIVATE_LINK_NEEDS_REPAIR: &str = "your private network needs setting up again.";
 const CLI_PAIR_LINK_LABEL: &str = "pair-link";
 const CLI_PAIR_JOIN_HINT: &str = "link this device with:";
 const CLI_PAIR_CA_FINGERPRINT_LABEL: &str = "CA fingerprint";
-const CLI_PAIR_NO_LAN_ADDRESS: &str = "can't start pairing — your journal isn't reachable on a network address \
+const CLI_PAIR_NO_LAN_ADDRESS: &str = "can't start pairing. your journal isn't reachable on a network address \
 yet. turn on your private network to pair from anywhere, or connect this \
 device to your home network.";
 
@@ -345,7 +345,7 @@ pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
     };
     let mut lines = Vec::new();
     if state.get("instance_id").is_none_or(Value::is_null) {
-        lines.push("Instance ID:   (not provisioned — pair a device to provision)".to_string());
+        lines.push("Instance ID:   (not provisioned, pair a device to provision)".to_string());
         lines.push("Home label:    (not provisioned)".to_string());
     } else {
         lines.push(format!(
@@ -462,7 +462,7 @@ fn append_device_section(
     for device in devices {
         let label = display_label(device);
         lines.push(format!(
-            "- {} — added {} — last seen {} [{}]",
+            "- {} · added {} · last seen {} [{}]",
             label,
             relative_time_field(ctx, device, "paired_at"),
             relative_time_field(ctx, device, "last_seen_at"),
