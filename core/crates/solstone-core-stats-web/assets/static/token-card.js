@@ -61,9 +61,10 @@
   function dayLabel(day) {
     const label = window.JournalFormat.day(day);
     // Owner-facing copy is lowercase sentence case (X-12); JournalFormat's
-    // shared "Today" is capitalized for contexts stats doesn't own, so
-    // lowercase it here rather than editing the shared helper.
-    return label === 'Today' ? 'today' : label;
+    // shared relative labels ("Today", "Yesterday", "Tomorrow") are
+    // capitalized for contexts stats doesn't own, so lowercase them here
+    // rather than editing the shared helper.
+    return ['Today', 'Yesterday', 'Tomorrow'].includes(label) ? label.toLowerCase() : label;
   }
 
   // A handful of local models self-report a raw wire id that differs from
@@ -112,9 +113,18 @@
     return node;
   }
 
+  // The model and provider columns show a readable label, not the raw id
+  // stored on the row. Sort on the same value the reader sees, so the
+  // order the column header promises is the order the rows land in.
+  function sortValue(item, key) {
+    if (key === 'model') return readableModelLabel(item.model);
+    if (key === 'provider') return providerLabel(item.provider);
+    return item[key];
+  }
+
   function compareRows(left, right, key, direction) {
-    const a = left[key];
-    const b = right[key];
+    const a = sortValue(left, key);
+    const b = sortValue(right, key);
     const result = typeof a === 'number' || typeof b === 'number'
       ? Number(a || 0) - Number(b || 0)
       : String(a || '').localeCompare(String(b || ''));
@@ -241,13 +251,16 @@
     bindScrollFade(rollup);
   }
 
-  // Right-edge fade for a horizontally scrollable element with more content
-  // off to the right; removed once scrolled to the end (G2-34). The CSS
-  // rule lives in workspace.html; this only tracks scroll position.
+  // Edge fades for a horizontally scrollable element with more content
+  // off-screen (G2-34). Both edges are tracked: the rollup opens scrolled
+  // to the newest day, so the content it hides is off to the left, and a
+  // right-edge-only fade would show nothing in exactly that case. The CSS
+  // rules live in workspace.html; this only tracks scroll position.
   function updateScrollFade(el) {
     const overflowing = el.scrollWidth > el.clientWidth + 1;
     const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 1;
     el.classList.toggle('has-scroll-fade', overflowing && !atEnd);
+    el.classList.toggle('has-scroll-fade-start', overflowing && el.scrollLeft > 1);
   }
 
   function bindScrollFade(el) {

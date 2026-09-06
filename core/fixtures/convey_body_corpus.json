@@ -12,12 +12,12 @@
     "corrupt_config": [
       {
         "body_bytes": 270,
-        "body_sha256": "47fcf5053e0ba84f02d272ea47a5d8cff3fc386ecde3242fc6d6eb429c88644a",
+        "body_sha256": "1fc78e9c4e5330d5304a3e1b6820b3c4aef8c17b5660e810ce37bdb83ebd772d",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "endpoint": "app:body.api_status",
         "json": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -31,12 +31,12 @@
       },
       {
         "body_bytes": 270,
-        "body_sha256": "47fcf5053e0ba84f02d272ea47a5d8cff3fc386ecde3242fc6d6eb429c88644a",
+        "body_sha256": "1fc78e9c4e5330d5304a3e1b6820b3c4aef8c17b5660e810ce37bdb83ebd772d",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "endpoint": "app:body.api_day",
         "json": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -50,12 +50,12 @@
       },
       {
         "body_bytes": 270,
-        "body_sha256": "47fcf5053e0ba84f02d272ea47a5d8cff3fc386ecde3242fc6d6eb429c88644a",
+        "body_sha256": "1fc78e9c4e5330d5304a3e1b6820b3c4aef8c17b5660e810ce37bdb83ebd772d",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "endpoint": "app:body.api_recent",
         "json": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -69,12 +69,12 @@
       },
       {
         "body_bytes": 270,
-        "body_sha256": "47fcf5053e0ba84f02d272ea47a5d8cff3fc386ecde3242fc6d6eb429c88644a",
+        "body_sha256": "1fc78e9c4e5330d5304a3e1b6820b3c4aef8c17b5660e810ce37bdb83ebd772d",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "endpoint": "app:body.api_index",
         "json": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -88,12 +88,12 @@
       },
       {
         "body_bytes": 270,
-        "body_sha256": "47fcf5053e0ba84f02d272ea47a5d8cff3fc386ecde3242fc6d6eb429c88644a",
+        "body_sha256": "1fc78e9c4e5330d5304a3e1b6820b3c4aef8c17b5660e810ce37bdb83ebd772d",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "endpoint": "app:body.api_month_stats",
         "json": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },

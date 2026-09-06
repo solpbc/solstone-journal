@@ -84,7 +84,7 @@
             "Content-Type": "text/plain; charset=utf-8"
           },
           "status": 500,
-          "text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "text_bytes": 183,
           "text_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a"
         },
@@ -103,7 +103,7 @@
             "Content-Type": "text/plain; charset=utf-8"
           },
           "status": 500,
-          "text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again."
+          "text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again."
         },
         "sends_idempotency_key": false
       },
@@ -120,7 +120,7 @@
             "Content-Type": "text/plain; charset=utf-8"
           },
           "status": 500,
-          "text_prefix": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again."
+          "text_prefix": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again."
         },
         "sends_idempotency_key": false
       },
@@ -137,7 +137,7 @@
             "Content-Type": "text/plain; charset=utf-8"
           },
           "status": 500,
-          "text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "text_bytes": 183,
           "text_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a"
         },
@@ -153,7 +153,7 @@
         "portal_requests": [],
         "response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -174,7 +174,7 @@
         "portal_requests": [],
         "response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -195,7 +195,7 @@
         "portal_requests": [],
         "response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -216,7 +216,7 @@
         "portal_requests": [],
         "response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -237,7 +237,7 @@
         "portal_requests": [],
         "response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -258,7 +258,7 @@
         "portal_requests": [],
         "response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -279,7 +279,7 @@
         "portal_requests": [],
         "response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -300,7 +300,7 @@
         "portal_requests": [],
         "response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -321,7 +321,7 @@
         "portal_requests": [],
         "response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -342,7 +342,7 @@
         "portal_requests": [],
         "response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -383,7 +383,7 @@
         "portal_requests": [],
         "repeat_response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -394,7 +394,7 @@
         },
         "response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -416,7 +416,7 @@
         "portal_requests": [],
         "repeat_response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -427,7 +427,7 @@
         },
         "response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -449,7 +449,7 @@
         "portal_requests": [],
         "repeat_response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -460,7 +460,7 @@
         },
         "response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -482,7 +482,7 @@
         "portal_requests": [],
         "repeat_response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -493,7 +493,7 @@
         },
         "response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -515,7 +515,7 @@
         "portal_requests": [],
         "repeat_response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -526,7 +526,7 @@
         },
         "response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -548,7 +548,7 @@
         "portal_requests": [],
         "repeat_response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -559,7 +559,7 @@
         },
         "response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -581,7 +581,7 @@
         "portal_requests": [],
         "repeat_response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -592,7 +592,7 @@
         },
         "response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -614,7 +614,7 @@
         "portal_requests": [],
         "repeat_response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -625,7 +625,7 @@
         },
         "response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -647,7 +647,7 @@
         "portal_requests": [],
         "repeat_response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
@@ -658,7 +658,7 @@
         },
         "response": {
           "body": {
-            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },

@@ -282,7 +282,7 @@ fn session_response(root: &std::path::Path) -> Option<Response> {
             http::error(
                 "corrupt_config",
                 "your settings couldn't be read.",
-                format!("your settings file at {} couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.", path.display()),
+                format!("your settings file at {} couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.", path.display()),
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
         })

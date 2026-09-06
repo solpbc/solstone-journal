@@ -1072,7 +1072,7 @@ pub(crate) fn entity_allowed(root: &std::path::Path, speaker: &str) -> Result<()
         )),
         Some(entity) if !solstone_core_entity::is_admissible_person(&entity) => Err(err(
             "speaker_not_person",
-            "that speaker couldn't be used because it isn't a Person.",
+            "that speaker couldn't be used because it isn't a person.",
             &format!("Entity '{speaker}' is not a Person. Select an existing, unblocked Person."),
             StatusCode::BAD_REQUEST,
         )),

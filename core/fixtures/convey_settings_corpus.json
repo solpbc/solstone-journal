@@ -10456,7 +10456,7 @@
       "DELETE facet.delete-false-consent": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10471,7 +10471,7 @@
       "DELETE facet.delete-no-consent": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10485,7 +10485,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10498,7 +10498,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10511,7 +10511,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10524,7 +10524,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10537,7 +10537,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10550,7 +10550,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10563,7 +10563,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10576,7 +10576,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10589,7 +10589,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10602,7 +10602,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10615,7 +10615,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10628,7 +10628,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10641,7 +10641,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10654,7 +10654,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10667,7 +10667,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10680,7 +10680,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10693,7 +10693,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10706,7 +10706,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10719,7 +10719,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10732,7 +10732,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10745,7 +10745,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10758,7 +10758,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10771,7 +10771,7 @@
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10783,7 +10783,7 @@
       "POST config.bad-backend": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10801,7 +10801,7 @@
       "POST config.empty-journal-name": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10819,7 +10819,7 @@
       "POST config.no-body": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10832,7 +10832,7 @@
       "POST config.no-section": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10847,7 +10847,7 @@
       "POST config.non-bool-preserve": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10865,7 +10865,7 @@
       "POST config.unknown-section": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10881,7 +10881,7 @@
       "POST facet.no-title": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10896,7 +10896,7 @@
       "POST facet.numeric-title": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10911,7 +10911,7 @@
       "POST facet.rename-no-name": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10924,7 +10924,7 @@
       "POST observe.interval-out-of-range": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10941,7 +10941,7 @@
       "POST observe.no-body": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10954,7 +10954,7 @@
       "POST observe.non-object-tmux": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10969,7 +10969,7 @@
       "POST prune-logs.bad-days": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10984,7 +10984,7 @@
       "PUT facet.absent-update": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -10999,7 +10999,7 @@
       "PUT sol_voice.not-object": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -11014,7 +11014,7 @@
       "PUT storage.bad-days": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -11029,7 +11029,7 @@
       "PUT storage.bad-mode": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -11044,7 +11044,7 @@
       "PUT storage.logs-bad-days": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -11061,7 +11061,7 @@
       "PUT sync.non-bool": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -11078,7 +11078,7 @@
       "PUT sync.non-object": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -11093,7 +11093,7 @@
       "PUT vision.bad-importance": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -11112,7 +11112,7 @@
       "PUT vision.max-extractions-low": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -11127,7 +11127,7 @@
       "PUT vision.redact-not-list": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -11142,7 +11142,7 @@
       "PUT vision.unknown-category": {
         "digest": "026fb028003420c2",
         "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
           "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
@@ -11460,7 +11460,7 @@
         "digest": "809a466a0468c73e",
         "normalized": {
           "detail": "Facet not found",
-          "error": "that facet couldn't be found.",
+          "error": "that facet isn't in your journal.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -11471,7 +11471,7 @@
         "digest": "809a466a0468c73e",
         "normalized": {
           "detail": "Facet not found",
-          "error": "that facet couldn't be found.",
+          "error": "that facet isn't in your journal.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -12147,7 +12147,7 @@
         "digest": "809a466a0468c73e",
         "normalized": {
           "detail": "Facet not found",
-          "error": "that facet couldn't be found.",
+          "error": "that facet isn't in your journal.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -12676,7 +12676,7 @@
         "digest": "809a466a0468c73e",
         "normalized": {
           "detail": "Facet not found",
-          "error": "that facet couldn't be found.",
+          "error": "that facet isn't in your journal.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -12687,7 +12687,7 @@
         "digest": "809a466a0468c73e",
         "normalized": {
           "detail": "Facet not found",
-          "error": "that facet couldn't be found.",
+          "error": "that facet isn't in your journal.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -13374,7 +13374,7 @@
         "digest": "809a466a0468c73e",
         "normalized": {
           "detail": "Facet not found",
-          "error": "that facet couldn't be found.",
+          "error": "that facet isn't in your journal.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -13907,7 +13907,7 @@
         "digest": "809a466a0468c73e",
         "normalized": {
           "detail": "Facet not found",
-          "error": "that facet couldn't be found.",
+          "error": "that facet isn't in your journal.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -13918,7 +13918,7 @@
         "digest": "809a466a0468c73e",
         "normalized": {
           "detail": "Facet not found",
-          "error": "that facet couldn't be found.",
+          "error": "that facet isn't in your journal.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -16430,7 +16430,7 @@
         "digest": "809a466a0468c73e",
         "normalized": {
           "detail": "Facet not found",
-          "error": "that facet couldn't be found.",
+          "error": "that facet isn't in your journal.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -17043,7 +17043,7 @@
         "digest": "809a466a0468c73e",
         "normalized": {
           "detail": "Facet not found",
-          "error": "that facet couldn't be found.",
+          "error": "that facet isn't in your journal.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -17054,7 +17054,7 @@
         "digest": "809a466a0468c73e",
         "normalized": {
           "detail": "Facet not found",
-          "error": "that facet couldn't be found.",
+          "error": "that facet isn't in your journal.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -17744,7 +17744,7 @@
         "digest": "809a466a0468c73e",
         "normalized": {
           "detail": "Facet not found",
-          "error": "that facet couldn't be found.",
+          "error": "that facet isn't in your journal.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -18277,7 +18277,7 @@
         "digest": "809a466a0468c73e",
         "normalized": {
           "detail": "Facet not found",
-          "error": "that facet couldn't be found.",
+          "error": "that facet isn't in your journal.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -18288,7 +18288,7 @@
         "digest": "809a466a0468c73e",
         "normalized": {
           "detail": "Facet not found",
-          "error": "that facet couldn't be found.",
+          "error": "that facet isn't in your journal.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -18969,7 +18969,7 @@
         "digest": "809a466a0468c73e",
         "normalized": {
           "detail": "Facet not found",
-          "error": "that facet couldn't be found.",
+          "error": "that facet isn't in your journal.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],

@@ -154,6 +154,17 @@
       },
       {
         "input": {
+          "now_hour": 0,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
+          "late_hours": 0
+        }
+      },
+      {
+        "input": {
           "now_hour": 1,
           "now_minute": 17,
           "phase": "pending"
@@ -193,6 +204,17 @@
         },
         "output": {
           "late": false,
+          "late_hours": 0
+        }
+      },
+      {
+        "input": {
+          "now_hour": 1,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
           "late_hours": 0
         }
       },
@@ -242,6 +264,17 @@
       },
       {
         "input": {
+          "now_hour": 2,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
+          "late_hours": 0
+        }
+      },
+      {
+        "input": {
           "now_hour": 3,
           "now_minute": 17,
           "phase": "pending"
@@ -281,6 +314,17 @@
         },
         "output": {
           "late": false,
+          "late_hours": 0
+        }
+      },
+      {
+        "input": {
+          "now_hour": 3,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
           "late_hours": 0
         }
       },
@@ -330,6 +374,17 @@
       },
       {
         "input": {
+          "now_hour": 4,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
+          "late_hours": 0
+        }
+      },
+      {
+        "input": {
           "now_hour": 5,
           "now_minute": 17,
           "phase": "pending"
@@ -369,6 +424,17 @@
         },
         "output": {
           "late": false,
+          "late_hours": 0
+        }
+      },
+      {
+        "input": {
+          "now_hour": 5,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
           "late_hours": 0
         }
       },
@@ -418,6 +484,17 @@
       },
       {
         "input": {
+          "now_hour": 6,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
+          "late_hours": 0
+        }
+      },
+      {
+        "input": {
           "now_hour": 7,
           "now_minute": 17,
           "phase": "pending"
@@ -457,6 +534,17 @@
         },
         "output": {
           "late": false,
+          "late_hours": 0
+        }
+      },
+      {
+        "input": {
+          "now_hour": 7,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
           "late_hours": 0
         }
       },
@@ -506,6 +594,17 @@
       },
       {
         "input": {
+          "now_hour": 8,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
+          "late_hours": 0
+        }
+      },
+      {
+        "input": {
           "now_hour": 9,
           "now_minute": 17,
           "phase": "pending"
@@ -545,6 +644,17 @@
         },
         "output": {
           "late": false,
+          "late_hours": 0
+        }
+      },
+      {
+        "input": {
+          "now_hour": 9,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
           "late_hours": 0
         }
       },
@@ -594,6 +704,17 @@
       },
       {
         "input": {
+          "now_hour": 10,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
+          "late_hours": 0
+        }
+      },
+      {
+        "input": {
           "now_hour": 11,
           "now_minute": 17,
           "phase": "pending"
@@ -638,6 +759,17 @@
       },
       {
         "input": {
+          "now_hour": 11,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
+          "late_hours": 1
+        }
+      },
+      {
+        "input": {
           "now_hour": 12,
           "now_minute": 17,
           "phase": "pending"
@@ -678,6 +810,17 @@
         "output": {
           "late": false,
           "late_hours": 0
+        }
+      },
+      {
+        "input": {
+          "now_hour": 12,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
+          "late_hours": 2
         }
       },
       {
@@ -726,6 +869,17 @@
       },
       {
         "input": {
+          "now_hour": 13,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
+          "late_hours": 3
+        }
+      },
+      {
+        "input": {
           "now_hour": 14,
           "now_minute": 17,
           "phase": "pending"
@@ -766,6 +920,17 @@
         "output": {
           "late": false,
           "late_hours": 0
+        }
+      },
+      {
+        "input": {
+          "now_hour": 14,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
+          "late_hours": 4
         }
       },
       {
@@ -814,6 +979,17 @@
       },
       {
         "input": {
+          "now_hour": 15,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
+          "late_hours": 5
+        }
+      },
+      {
+        "input": {
           "now_hour": 16,
           "now_minute": 17,
           "phase": "pending"
@@ -854,6 +1030,17 @@
         "output": {
           "late": false,
           "late_hours": 0
+        }
+      },
+      {
+        "input": {
+          "now_hour": 16,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
+          "late_hours": 6
         }
       },
       {
@@ -902,6 +1089,17 @@
       },
       {
         "input": {
+          "now_hour": 17,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
+          "late_hours": 7
+        }
+      },
+      {
+        "input": {
           "now_hour": 18,
           "now_minute": 17,
           "phase": "pending"
@@ -942,6 +1140,17 @@
         "output": {
           "late": false,
           "late_hours": 0
+        }
+      },
+      {
+        "input": {
+          "now_hour": 18,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
+          "late_hours": 8
         }
       },
       {
@@ -990,6 +1199,17 @@
       },
       {
         "input": {
+          "now_hour": 19,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
+          "late_hours": 9
+        }
+      },
+      {
+        "input": {
           "now_hour": 20,
           "now_minute": 17,
           "phase": "pending"
@@ -1030,6 +1250,17 @@
         "output": {
           "late": false,
           "late_hours": 0
+        }
+      },
+      {
+        "input": {
+          "now_hour": 20,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
+          "late_hours": 10
         }
       },
       {
@@ -1078,6 +1309,17 @@
       },
       {
         "input": {
+          "now_hour": 21,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
+          "late_hours": 11
+        }
+      },
+      {
+        "input": {
           "now_hour": 22,
           "now_minute": 17,
           "phase": "pending"
@@ -1122,6 +1364,17 @@
       },
       {
         "input": {
+          "now_hour": 22,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
+          "late_hours": 12
+        }
+      },
+      {
+        "input": {
           "now_hour": 23,
           "now_minute": 17,
           "phase": "pending"
@@ -1162,6 +1415,17 @@
         "output": {
           "late": false,
           "late_hours": 0
+        }
+      },
+      {
+        "input": {
+          "now_hour": 23,
+          "now_minute": 17,
+          "phase": "missing"
+        },
+        "output": {
+          "late": true,
+          "late_hours": 13
         }
       }
     ],

@@ -1302,7 +1302,7 @@
     }
 
     const phase = operation.phase;
-    let headline = window.LinkCopy.PRIVATE_LINK_SETTING_UP || 'setting up your private network...';
+    let headline = window.LinkCopy.PRIVATE_LINK_SETTING_UP || 'setting up your private network…';
     let detail = typeof operation.guidance === 'string' ? operation.guidance : '';
     let retryAction = null;
     let subscribeUrl = '';
@@ -1359,7 +1359,7 @@
 
   async function startPrivateLinkSetup() {
     setPrivateLinkButtonsBusy(true);
-    setPrivateLinkOperation(window.LinkCopy.PRIVATE_LINK_SETTING_UP || 'setting up your private network...');
+    setPrivateLinkOperation(window.LinkCopy.PRIVATE_LINK_SETTING_UP || 'setting up your private network…');
     try {
       const start = await window.apiJson('/app/network/private-link/enable', { method: 'POST' });
       const consentUrl = start?.operation?.portal_url;
@@ -1439,7 +1439,7 @@
     if (dashboardContent) dashboardContent.hidden = true;
     if (!stateGate || !window.SurfaceState) return;
     stateGate.hidden = false;
-    stateGate.innerHTML = window.SurfaceState.loading({ text: 'loading network...' });
+    stateGate.innerHTML = window.SurfaceState.loading({ text: 'loading network…' });
   }
 
   function revealWorkspace() {

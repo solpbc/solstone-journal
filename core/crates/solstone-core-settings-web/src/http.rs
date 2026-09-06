@@ -17,7 +17,7 @@ pub fn facet_not_found() -> Response {
     (
         axum::http::StatusCode::NOT_FOUND,
         Json(json!({
-            "error": "that facet couldn't be found.",
+            "error": "that facet isn't in your journal.",
             "reason_code": "facet_not_found",
             "detail": "Facet not found",
         })),

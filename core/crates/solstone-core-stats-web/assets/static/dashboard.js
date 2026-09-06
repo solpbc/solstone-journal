@@ -427,22 +427,24 @@ const Dashboard = (function() {
   // Reserved runtime placeholders (e.g. __RUNTIME_FACETS__) that a producer
   // occasionally writes onto a record when prompt substitution didn't run.
   // They are not a facet the owner made; fold their counts into an
-  // "unassigned" bucket instead of charting the raw token (G2-30).
+  // "unassigned" bucket instead of charting the raw token (G2-30). The
+  // bucket's own key is a leading-underscore form the write path cannot
+  // produce, so an owner facet genuinely named "unassigned" keeps its own
+  // counts and its own title instead of silently absorbing placeholders.
   const RESERVED_FACET_KEY = /^__.*__$/;
+  const UNASSIGNED_FACET_KEY = '__unassigned';
 
   function foldReservedFacetKeys(countsByDay) {
-    let folded = 0;
     const result = {};
     Object.entries(countsByDay || {}).forEach(([day, counts]) => {
       const dayCounts = {};
       Object.entries(counts || {}).forEach(([key, value]) => {
-        const target = RESERVED_FACET_KEY.test(key) ? 'unassigned' : key;
-        if (target === 'unassigned') folded += value;
+        const target = RESERVED_FACET_KEY.test(key) ? UNASSIGNED_FACET_KEY : key;
         dayCounts[target] = (dayCounts[target] || 0) + value;
       });
       result[day] = dayCounts;
     });
-    return {counts: result, folded};
+    return result;
   }
 
   // Build stacked category chart (for Activities or Facets)
@@ -998,7 +1000,7 @@ const Dashboard = (function() {
     // into "unassigned" instead of charting as a facet (G2-30); each real
     // facet's legend/tooltip label comes from the owner's own facet titles,
     // not the storage slug (G2-35).
-    const {counts: facetCounts} = foldReservedFacetKeys(stats.facets.counts_by_day || {});
+    const facetCounts = foldReservedFacetKeys(stats.facets.counts_by_day || {});
     const facetMeta = {
       emptyIcon: window.ConveyIcons.svg('tag'),
       emptyText: 'no facet data yet',
@@ -1007,6 +1009,7 @@ const Dashboard = (function() {
     Object.entries(facetTitles).forEach(([slug, title]) => {
       facetMeta[slug] = {title};
     });
+    facetMeta[UNASSIGNED_FACET_KEY] = {title: 'unassigned'};
     buildStackedCategoryChart(
       document.getElementById('facetsChart'),
       facetCounts,

@@ -5320,7 +5320,22 @@ async function loadJournalEntities({refresh = false, silent = false, queryChange
     window.logError(err, { context: 'entities: loadJournalEntities failed' });
     if (silent && journalSummary !== null) {
       container?.removeAttribute('aria-busy');
-      renderJournalEntities();
+      // B42: on a failed filter/search change, renderJournalEntities() would
+      // repaint the previous query's cards and write that query's
+      // `start+1-start+n of N` count line while the search box already shows
+      // the new term. A query that never ran gets the failure where its cards
+      // would have been, not an answer to a question the owner replaced.
+      if (queryChanged && container) {
+        container.innerHTML = window.SurfaceState.error({
+          heading: "that search couldn't be run",
+          desc: 'try again.',
+          serverMessage: err?.serverMessage,
+          detail: err,
+        });
+        if (countEl) { countEl.style.display = 'none'; countEl.textContent = ''; }
+      } else {
+        renderJournalEntities();
+      }
       showJournalListError(err);
       return;
     }
@@ -5710,7 +5725,7 @@ function createEntityCard(entity) {
     const badge = document.createElement('div');
     badge.className = 'entity-card-mention-badge';
     badge.textContent = entity.observation_count;
-    badge.title = `${entity.observation_count} mention${entity.observation_count > 1 ? 's' : ''}: observations about this entity`;
+    badge.title = `${entity.observation_count} mention${entity.observation_count > 1 ? 's' : ''}: times this entity came up`;
     card.appendChild(badge);
   }
 

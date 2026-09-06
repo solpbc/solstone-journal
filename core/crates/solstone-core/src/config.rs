@@ -379,7 +379,7 @@ fn active(path: &Path) -> Result<bool, String> {
 }
 fn corrupt(path: &Path) -> String {
     format!(
-        "your settings file at {} couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+        "your settings file at {} couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
         path.display()
     )
 }

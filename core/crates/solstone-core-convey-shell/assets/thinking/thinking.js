@@ -1292,7 +1292,12 @@
     // G2-38: thinking_count and tool_count are the only two things a run log
     // can ever hold. When both are zero, the log will be empty every time —
     // dim the control so that's visible before the click, not after.
-    if (!(run.thinking_count > 0) && !(run.tool_count > 0)) {
+    // B14: the reads layer emits null for either count whenever the source
+    // entry lacks it, and null > 0 is false. An absent count is unknown, not
+    // zero, so it gets neither the dimming nor the claim that nothing was
+    // recorded.
+    const counted = run.thinking_count != null && run.tool_count != null;
+    if (counted && !(run.thinking_count > 0) && !(run.tool_count > 0)) {
       button.classList.add('thinking-runs-run-control-empty');
       button.title = 'no thinking events or tool calls were recorded for this run';
     }
@@ -1421,6 +1426,10 @@
         showAll.addEventListener('click', () => {
           state.runsFailuresOnly = false;
           renderThinkingRunsDay(payload, route);
+          // B41: the re-render replaces this button's own host, so without
+          // this the focus falls back to body. Land on the same control the
+          // checkbox handler lands on.
+          host.querySelector('input[type=checkbox]')?.focus();
         });
         host.append(showAll);
       }
@@ -1595,6 +1604,10 @@
     // "no detail was recorded for this step" lines. Collapse a run of
     // identical empty markers into the one line that already said it.
     let lastEmptyNote = null;
+    // B40: the collapsed line has to say how many steps it stands for, or N
+    // identical steps read as one.
+    let lastEmptyNoteElement = null;
+    let lastEmptyNoteCount = 0;
     (Array.isArray(run.events) ? run.events : []).forEach((event) => {
       const item = document.createElement('div');
       const fields = [['thinking', event.thinking], ['tools', event.tools], ['args', event.args], ['result', event.result], ['error', event.error]];
@@ -1608,13 +1621,23 @@
         const noteText = runFinished
           ? 'no detail was recorded for this step'
           : (event.event === 'tool_start' ? 'tool call did not complete' : 'did not complete');
-        if (noteText === lastEmptyNote) return;
+        if (noteText === lastEmptyNote) {
+          lastEmptyNoteCount += 1;
+          if (lastEmptyNoteElement) {
+            lastEmptyNoteElement.textContent = `${noteText} (×${lastEmptyNoteCount})`;
+          }
+          return;
+        }
         lastEmptyNote = noteText;
         const note = document.createElement('p');
         note.textContent = noteText;
         item.appendChild(note);
+        lastEmptyNoteElement = note;
+        lastEmptyNoteCount = 1;
       } else {
         lastEmptyNote = null;
+        lastEmptyNoteElement = null;
+        lastEmptyNoteCount = 0;
       }
       panel.appendChild(item);
     });

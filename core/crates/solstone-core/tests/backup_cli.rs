@@ -135,7 +135,7 @@ fn config_read_failures_are_visible_and_read_only() {
             assert!(result.stdout.is_empty());
             let stderr = String::from_utf8(result.stderr).unwrap();
             assert!(stderr.starts_with("Error: your settings file at "));
-            assert!(stderr.contains("Your settings were NOT changed."));
+            assert!(stderr.contains("your settings were not changed."));
             assert_eq!(fs::read(&config).unwrap(), original);
             assert_eq!(fs::metadata(&config).unwrap().modified().unwrap(), modified);
         }
@@ -150,7 +150,7 @@ fn config_read_failures_are_visible_and_read_only() {
     assert!(
         String::from_utf8(result.stderr)
             .unwrap()
-            .contains("Your settings were NOT changed.")
+            .contains("your settings were not changed.")
     );
     assert!(fs::metadata(&config).unwrap().is_dir());
     assert_eq!(fs::metadata(&config).unwrap().modified().unwrap(), modified);
@@ -173,7 +173,7 @@ fn unreadable_config_fails_each_read_verb_without_changing_metadata() {
         assert!(
             String::from_utf8(result.stderr)
                 .unwrap()
-                .contains("Your settings were NOT changed.")
+                .contains("your settings were not changed.")
         );
         assert!(fs::metadata(&config).unwrap().is_dir());
         assert_eq!(fs::metadata(&config).unwrap().modified().unwrap(), modified);

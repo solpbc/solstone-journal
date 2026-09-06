@@ -75,7 +75,7 @@
 
   function lineFor(reason, observed, threshold) {
     if (reason === 'too_few_stmts') {
-      const base = `heard in ${formatMetric(observed)} longer statements`;
+      const base = `transcribed in ${formatMetric(observed)} longer statements`;
       return threshold === null ? base : `${base}, needs ${formatMetric(threshold)}`;
     }
     if (reason === 'median_duration_too_short') {

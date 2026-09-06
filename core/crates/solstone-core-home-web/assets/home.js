@@ -223,8 +223,25 @@
       : ['vitals', 'yesterday', 'briefing', 'narrative', 'reflection', 'today', 'needs', 'connections'];
   }
 
+  // The order the page was actually painted with. refreshVitals and
+  // refreshNarrative merge fresh payloads into lastPulse, and a realtime
+  // observed or status event fires them mid-session, so recomputing the order
+  // from the merged pulse would reorder the page under the owner the moment
+  // the day's first segment lands. Only a full render re-decides the order.
+  let paintedCardOrder = null;
+
+  function activeCardOrder() {
+    return paintedCardOrder || cardOrder(lastPulse);
+  }
+
+  // The live order is the only one that leads with the narrative, so the same
+  // frozen list also says which section defaults the page was painted with.
+  function activeDayIsLive() {
+    return activeCardOrder()[1] === 'narrative';
+  }
+
   function predecessors(name) {
-    const order = cardOrder(lastPulse);
+    const order = activeCardOrder();
     const index = order.indexOf(name);
     return index > 0 ? order.slice(0, index) : [];
   }
@@ -232,6 +249,7 @@
   function renderPulse(data) {
     validatePulse(data);
     lastPulse = data;
+    paintedCardOrder = cardOrder(data);
     briefingSections = isPlainObject(data.briefing_sections) ? data.briefing_sections : {};
     const cards = [renderVitalsHtml(data)];
     if (data.home_state === 'welcome') {
@@ -239,7 +257,7 @@
       setSurfaceHtml(cards.join(''));
       return;
     }
-    cardOrder(data).slice(1).forEach(function (name) {
+    paintedCardOrder.slice(1).forEach(function (name) {
       cards.push(CARD_RENDERERS[name](data));
     });
     setSurfaceHtml(cards.join(''));
@@ -897,7 +915,7 @@
   function restoreSectionState() {
     // A stored choice always wins; the defaults only decide what a browser that
     // has never been told anything shows.
-    const defaults = dayHasMaterial(lastPulse) ? SECTION_DEFAULTS_LIVE : SECTION_DEFAULTS_QUIET;
+    const defaults = activeDayIsLive() ? SECTION_DEFAULTS_LIVE : SECTION_DEFAULTS_QUIET;
     try {
       const saved = JSON.parse(sessionStorage.getItem(SECTION_STATE_KEY) || '{}');
       SECTION_IDS.forEach(function (id) {

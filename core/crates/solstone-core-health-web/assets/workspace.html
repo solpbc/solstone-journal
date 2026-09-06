@@ -370,6 +370,13 @@
   margin-left: 0.5em;
 }
 
+/* A healthy pill carries no severity word. The span stays in the DOM for the
+   next update to fill, but an empty flex item still takes the row's gap and
+   this rule's margin, which reads as a gap the pill never explains. */
+.severity-label:empty {
+  display: none;
+}
+
 /* Shared card base */
 .dashboard-card {
   background: white;
@@ -1286,27 +1293,6 @@ h2.card-title {
   border-color: var(--orange-ink);
 }
 
-/* The three recent-errors targets ("view logs", "dismiss", "view AI engine
-   logs") are 0.1em/0.4em chips on desktop, which is well under the 44px touch
-   floor. On phone they grow by padding only, so nothing about their wording,
-   order or behaviour changes. */
-@media (max-width: 480px) {
-  .error-action-btn,
-  .error-dismiss-btn {
-    min-height: 44px;
-    min-width: 44px;
-    padding: 0.6em 0.9em;
-  }
-
-  /* "view AI engine logs" sits inside a running sentence, so it grows as an
-     inline-block with its own hit area rather than as a block button. */
-  .error-advice-link {
-    display: inline-block;
-    min-height: 44px;
-    padding: 0.7em 0.5em;
-  }
-}
-
 .error-dismiss-btn {
   padding: 0.1em 0.4em;
   font-size: 0.8em;
@@ -1339,6 +1325,29 @@ h2.card-title {
 }
 .error-advice-link:active {
   color: var(--ink);
+}
+
+/* The three recent-errors targets ("view logs", "dismiss", "view AI engine
+   logs") are 0.1em/0.4em chips on desktop, which is well under the 44px touch
+   floor. On phone they grow by padding only, so nothing about their wording,
+   order or behaviour changes. This block sits after the three base rules it
+   overrides: a media query adds no specificity, so source order is what makes
+   the phone padding win. */
+@media (max-width: 480px) {
+  .error-action-btn,
+  .error-dismiss-btn {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0.6em 0.9em;
+  }
+
+  /* "view AI engine logs" sits inside a running sentence, so it grows as an
+     inline-block with its own hit area rather than as a block button. */
+  .error-advice-link {
+    display: inline-block;
+    min-height: 44px;
+    padding: 0.7em 0.5em;
+  }
 }
 
 .import-retry-btn {

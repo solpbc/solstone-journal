@@ -567,16 +567,16 @@ fn config_error(error: ConfigMutationError) -> Response {
     match error {
         ConfigMutationError::Lock(_) => error_envelope(
             "config_busy",
-            "Service Unavailable",
             "settings are busy; try again",
+            "settings lock unavailable",
             StatusCode::SERVICE_UNAVAILABLE,
         )
         .into_response(),
         ConfigMutationError::Load(_) => corrupt_config(),
         ConfigMutationError::Write(_) => error_envelope(
             "config_write_failed",
-            "Internal Server Error",
             "your settings couldn't be saved.",
+            "settings write failed",
             StatusCode::INTERNAL_SERVER_ERROR,
         )
         .into_response(),
@@ -586,8 +586,8 @@ fn config_error(error: ConfigMutationError) -> Response {
 fn corrupt_config() -> Response {
     error_envelope(
         "corrupt_config",
-        "Internal Server Error",
         "your settings couldn't be read.",
+        "settings read failed",
         StatusCode::INTERNAL_SERVER_ERROR,
     )
     .into_response()
@@ -596,7 +596,7 @@ fn corrupt_config() -> Response {
 fn establish_error(error: EstablishError) -> Response {
     error_envelope(
         "link_identity_error",
-        "Internal Server Error",
+        "your journal's identity couldn't be set up.".to_string(),
         error.to_string(),
         StatusCode::INTERNAL_SERVER_ERROR,
     )

@@ -185,6 +185,11 @@ const PREVIEW_CHARS: usize = 220;
 /// body gives the owner nothing to choose on, so the preview keeps reading.
 const MIN_PREVIEW_CHARS: usize = 30;
 
+/// The cap has to sit above the floor or `preview_from_content` would cut every
+/// line it just accepted. Asserted at module scope so a release build carries it
+/// too, not only `cfg(test)`.
+const _: () = assert!(PREVIEW_CHARS > MIN_PREVIEW_CHARS);
+
 /// Choose the line the index card shows for a letter.
 ///
 /// Headings and blank lines are skipped, a leading `TL;DR` label is dropped,
@@ -258,8 +263,24 @@ async fn state(root: PathBuf, _clock: Clock) -> Response {
             .replace("{count}", &total_count.to_string())
             .replace("{month}", &dates::format_news_month(&row.day))
     });
+    // The index card carries the letter's opening line, so listing sixty letters
+    // reads sixty files. Those reads run on a blocking worker rather than on the
+    // async runtime's thread; nothing about the payload or the cap changes.
+    let preview_rows = rows.iter().take(60).cloned().collect::<Vec<_>>();
+    let preview_root = root.clone();
+    let newsletters = match tokio::task::spawn_blocking(move || {
+        preview_rows
+            .iter()
+            .map(|row| label_item(&preview_root, row))
+            .collect::<Vec<Value>>()
+    })
+    .await
+    {
+        Ok(newsletters) => newsletters,
+        Err(_) => return html_error(),
+    };
     json_response(
-        json!({"newsletters": rows.iter().take(60).map(|row| label_item(&root, row)).collect::<Vec<_>>(), "total_count": total_count,
+        json!({"newsletters": newsletters, "total_count": total_count,
       "copy": {"kicker": copy::NEWS_KICKER, "index_h1": copy::NEWS_INDEX_H1, "subtitle": copy::NEWS_SUBTITLE, "empty_body": copy::NEWS_EMPTY_BODY, "empty_next": empty_next, "empty_until_then": copy::NEWS_EMPTY_UNTIL_THEN, "sample_link_label": copy::NEWS_SAMPLE_LINK_LABEL, "sample_url": "/app/news/sample", "populated_framing": copy::NEWS_POPULATED_FRAMING, "populated_sample_link": copy::NEWS_POPULATED_SAMPLE_LINK, "populated_next_footer": "", "grid_title": copy::NEWS_GRID_TITLE, "grid_lede": grid_lede, "grid_unit_one": copy::NEWS_GRID_UNIT_ONE, "grid_unit_other": copy::NEWS_GRID_UNIT_OTHER, "grid_unit_none": copy::NEWS_GRID_UNIT_NONE}}),
     )
 }
@@ -543,7 +564,6 @@ mod tests {
 
     #[test]
     fn the_preview_is_capped_and_the_cap_is_above_the_floor() {
-        const { assert!(PREVIEW_CHARS > MIN_PREVIEW_CHARS) };
         let long = "x".repeat(PREVIEW_CHARS + 40);
         let preview = preview_from_content(&long).expect("a long line previews");
         assert_eq!(preview.chars().count(), PREVIEW_CHARS + 1);

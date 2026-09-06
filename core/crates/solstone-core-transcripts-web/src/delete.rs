@@ -264,7 +264,7 @@ fn invalid_segment(detail: &str, status: StatusCode) -> Response {
 fn operation_unavailable() -> Response {
     legacy_error_response(
         "operation_no_longer_available",
-        "that didn't finish because the action is no longer available.",
+        "that removal didn't finish because the action is no longer available.",
         "already committed or unknown",
         StatusCode::GONE,
     )

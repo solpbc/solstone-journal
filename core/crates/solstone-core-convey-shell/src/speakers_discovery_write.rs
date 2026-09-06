@@ -316,7 +316,7 @@ pub async fn scan(
         Ok(Ok(DiscoveryRefresh::IdentityInvalid)) => {
             return error(
                 "speaker_owner_identity_invalid",
-                "looking for new voices couldn't start because your configured owner identity needs attention.",
+                "the search for new voices couldn't start because your configured owner identity needs attention.",
                 "configured owner identity is not admitted",
                 StatusCode::BAD_REQUEST,
             );

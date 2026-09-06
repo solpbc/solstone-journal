@@ -32,7 +32,7 @@
           "normalized": [],
           "path": "/app/health/",
           "response": {
-            "body": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "body": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "headers": {
               "Content-Type": "text/plain; charset=utf-8"
             },
@@ -46,7 +46,7 @@
           "normalized": [],
           "path": "/app/health/workspace",
           "response": {
-            "body": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "body": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "headers": {
               "Content-Type": "text/plain; charset=utf-8"
             },
@@ -60,7 +60,7 @@
           "normalized": [],
           "path": "/app/health/background",
           "response": {
-            "body": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "body": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "headers": {
               "Content-Type": "text/plain; charset=utf-8"
             },
@@ -74,7 +74,7 @@
           "normalized": [],
           "path": "/app/health/static/health.js",
           "response": {
-            "body": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "body": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
             "headers": {
               "Content-Type": "text/plain; charset=utf-8"
             },
@@ -89,7 +89,7 @@
           "path": "/app/health/api/state",
           "response": {
             "body": {
-              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
               "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
@@ -107,7 +107,7 @@
           "path": "/app/health/api/log?path=chronicle/20260403/health/health.log",
           "response": {
             "body": {
-              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
               "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
@@ -125,7 +125,7 @@
           "path": "/app/health/api/log",
           "response": {
             "body": {
-              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
               "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
@@ -143,7 +143,7 @@
           "path": "/app/health/api/log?path=not-a-valid-log-path",
           "response": {
             "body": {
-              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
               "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
@@ -161,7 +161,7 @@
           "path": "/app/health/api/log?path=chronicle/20260403/health/missing.log",
           "response": {
             "body": {
-              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
               "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
@@ -179,7 +179,7 @@
           "path": "/app/health/api/info",
           "response": {
             "body": {
-              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
               "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },

@@ -214,6 +214,20 @@
     window.logError(new Error('real failure while unloading'), { context: 'home' });
     assert('an unloading document still reports a real error', diagnostic.list().length === 1);
 
+    // B22: pagehide without a bfcache restore used to latch the flag for the
+    // life of the document. A document that is visible again is live again.
+    diagnostic.clear();
+    window.dispatchEvent(new Event('pagehide'));
+    window.logError(new TypeError('Failed to fetch'), { context: 'home: refreshVitals failed' });
+    assert('the latched flag still drops a cancelled fetch before the document comes back',
+      diagnostic.list().length === 0);
+    document.dispatchEvent(new Event('visibilitychange'));
+    assert('the document under test is visible when visibilitychange fires',
+      document.visibilityState === 'visible');
+    window.logError(new TypeError('Failed to fetch'), { context: 'home: refreshVitals failed' });
+    assert('a visible document reports a cancelled fetch again', diagnostic.list().length === 1
+      && diagnostic.list()[0].summary === 'home: refreshVitals failed: Failed to fetch');
+
     assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
   }
 

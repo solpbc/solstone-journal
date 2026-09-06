@@ -39,7 +39,7 @@ impl fmt::Display for DirectDoorPortError {
             Self::Config(error) => error.fmt(formatter),
             Self::Invalid { path } => write!(
                 formatter,
-                "pairing.direct_port in {} couldn't be used. it must be a decimal port from 1 through 65535. your settings were NOT changed.",
+                "pairing.direct_port in {} couldn't be used. it must be a decimal port from 1 through 65535. your settings were not changed.",
                 path.display()
             ),
         }

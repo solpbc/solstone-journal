@@ -62,6 +62,7 @@ Start with a past-tense verb and name no subject at all. Say what was done, neve
 - Good: "Debugged the retry handling in the ingest worker."
 - Good: "Sent the invoice to Sam, then opened the launch checklist."
 - Wrong: "The user navigated between the hub and a project workspace." — it names a subject.
+- Write the product name in lowercase: "solstone", never "Solstone" or "the Solstone system".
 
 Use action verbs and be specific — name the tools, people, projects, and actions. Ban passive words: never use "reviewing", "monitoring", "tracking", "checking", "observing", "maintaining", "managing." Use instead: wrote, sent, discussed, created, switched to, typed, said, decided, asked, proposed.
 

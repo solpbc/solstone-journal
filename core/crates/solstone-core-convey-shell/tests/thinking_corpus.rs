@@ -726,7 +726,7 @@ fn assert_no_slash_deviation(
             assert_eq!(location, &None);
             assert_eq!(
                 body,
-                &format!("your settings file at {}/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.", journal.display()).into_bytes()
+                &format!("your settings file at {}/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.", journal.display()).into_bytes()
             );
         }
         other => panic!("unexpected no-slash deviation phase {other}"),

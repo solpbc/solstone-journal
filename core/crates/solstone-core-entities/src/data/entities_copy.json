@@ -41,7 +41,7 @@
   "ENT_TRUST_RESTORE_ACTION": "restore this version",
   "ENT_TRUST_RESTORE_CONFIRM": "restore the identity from this version? the current identity will remain in history.",
   "ENT_TRUST_LOAD_FAILED": "couldn't load identity trust details. try again.",
-  "ENT_TRUST_ACTION_FAILED": "that identity change couldn't be completed.",
+  "ENT_TRUST_ACTION_FAILED": "that entity change didn't finish.",
   "ENT_TRUST_REPAIR_REQUIRED": "{detail} {remediation}",
   "ENT_CONN_WITH_YOU_EYEBROW": "with you",
   "ENT_CONN_WITH_YOU_SUMMARY": "{n} moments together · latest {kind} ({day})",

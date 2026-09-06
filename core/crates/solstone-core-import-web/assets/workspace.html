@@ -507,7 +507,6 @@
   display: block;
   margin-top: 0.3rem;
 }
-.file-size { color: #4b5565; font-size: 0.9rem; }
 .nowrap { white-space: nowrap; }
 .timestamp-link { color: var(--facet-color, var(--orange-text-aa, #a15f17)); text-decoration: none; }
 .timestamp-link:hover { text-decoration: underline; }
@@ -573,15 +572,6 @@
     padding: 1rem;
   }
 
-  .import-table th:nth-child(4),
-  .import-table td:nth-child(4),
-  .import-table th:nth-child(7),
-  .import-table td:nth-child(7),
-  .import-table th:nth-child(9),
-  .import-table td:nth-child(9) {
-    display: none;
-  }
-
   .import-table th,
   .import-table td {
     padding: 6px 4px;
@@ -602,14 +592,8 @@
   .import-table td:nth-child(2),
   .import-table th:nth-child(4),
   .import-table td:nth-child(4),
-  .import-table th:nth-child(5),
-  .import-table td:nth-child(5),
-  .import-table th:nth-child(7),
-  .import-table td:nth-child(7),
-  .import-table th:nth-child(8),
-  .import-table td:nth-child(8),
-  .import-table th:nth-child(9),
-  .import-table td:nth-child(9) {
+  .import-table th:nth-child(6),
+  .import-table td:nth-child(6) {
     display: none;
   }
 
@@ -637,26 +621,26 @@
     vertical-align: middle;
   }
 
-  .import-table th:nth-child(6),
-  .import-table td:nth-child(6) {
+  .import-table th:nth-child(5),
+  .import-table td:nth-child(5) {
     position: sticky;
     right: 0;
     background: var(--cream-bright);
   }
 
-  .import-table tr:hover td:nth-child(6) {
+  .import-table tr:hover td:nth-child(5) {
     background: var(--orange-wash);
   }
 
-  .import-table tr.import-row--stalled td:nth-child(6) {
+  .import-table tr.import-row--stalled td:nth-child(5) {
     background: rgba(245, 158, 11, 0.08);
   }
 
-  .import-table tr.import-row--stalled:hover td:nth-child(6) {
+  .import-table tr.import-row--stalled:hover td:nth-child(5) {
     background: rgba(245, 158, 11, 0.12);
   }
 
-  .import-table tbody tr:active td:nth-child(6) {
+  .import-table tbody tr:active td:nth-child(5) {
     background: var(--hairline);
   }
 }
@@ -725,21 +709,21 @@ const settingInput = document.getElementById('settingInput');
 const startBtn = document.getElementById('startBtn');
 
 const STAGE_NAMES = {
-  initialization: 'Preparing…',
-  importing: 'Reading your data…',
-  detection: 'Detecting content type…',
-  audio_segmenting: 'Splitting audio…',
-  transcription: 'Transcribing audio…',
-  processing: 'Processing entries…',
-  writing: 'Writing to journal…',
-  indexing: 'Building search index…',
-  cleanup: 'Finishing up…',
-  segmenting: 'Preparing segments…',
-  transcribing: 'Transcribing audio…',
-  segments: 'Merging segments…',
-  entities: 'Merging entities…',
-  facets: 'Merging facets…',
-  imports: 'Copying prior imports…',
+  initialization: 'preparing…',
+  importing: 'reading your data…',
+  detection: 'detecting content type…',
+  audio_segmenting: 'splitting audio…',
+  transcription: 'transcribing audio…',
+  processing: 'processing entries…',
+  writing: 'writing to journal…',
+  indexing: 'building search index…',
+  cleanup: 'finishing up…',
+  segmenting: 'preparing segments…',
+  transcribing: 'transcribing audio…',
+  segments: 'merging segments…',
+  entities: 'merging entities…',
+  facets: 'merging facets…',
+  imports: 'copying prior imports…',
 };
 const IMPORT_STALL_TIMEOUT_MS = 10 * 60 * 1000; // longest observed real import; stalled rows surface amber after this without a terminal event
 const IMPORT_ROW_EVENTS = new Set(['started', 'status', 'completed', 'error']);
@@ -980,7 +964,7 @@ function capitalizeStage(stage) {
 function humanStageName(stage, sourceDisplay = '') {
   const fallback = STAGE_NAMES[stage] || `${capitalizeStage(stage)}…`;
   if (stage === 'importing' && sourceDisplay) {
-    return `Reading ${sourceDisplay}…`;
+    return `reading ${sourceDisplay}…`;
   }
   return fallback;
 }
@@ -1396,9 +1380,7 @@ function updateImportRow(importId, eventData) {
   }
 
   const statusCell = row.querySelector('.status-cell');
-  const filesCell = row.querySelector('.files-cell');
   const statsCell = row.querySelector('.stats-cell');
-  const durationCell = row.querySelector('.duration-cell');
   const sourceCell = row.querySelector('.source-cell');
 
   if (IMPORT_ROW_EVENTS.has(eventData.event)) {
@@ -1406,8 +1388,13 @@ function updateImportRow(importId, eventData) {
   }
 
   if (sourceCell && (eventData.source_type || eventData.source_display)) {
-    const displayText = eventData.source_display || sourceMetadataByName[eventData.source_type]?.display_name || row.children[1]?.textContent || '-';
-    sourceCell.innerHTML = renderSourceDisplay(eventData.source_type || '', displayText, displayText);
+    const fileText = row.children[1]?.textContent || '-';
+    const displayText = eventData.source_display || sourceMetadataByName[eventData.source_type]?.display_name || fileText;
+    if (displayText === fileText) {
+      sourceCell.textContent = '-';
+    } else {
+      sourceCell.innerHTML = renderSourceDisplay(eventData.source_type || '', displayText, displayText);
+    }
     row.dataset.sourceType = eventData.source_type || '';
   }
 
@@ -1430,14 +1417,8 @@ function updateImportRow(importId, eventData) {
     if (statusCell) {
       statusCell.innerHTML = '<span class="import-status success">completed</span>';
     }
-    if (filesCell && eventData.total_files_created !== undefined) {
-      filesCell.textContent = eventData.total_files_created;
-    }
     if (statsCell) {
       statsCell.textContent = formatImportStats(eventData.entries_written, eventData.entities_seeded);
-    }
-    if (durationCell && eventData.duration_ms) {
-      durationCell.textContent = formatElapsed(eventData.duration_ms);
     }
     setTimeout(() => loadImports(), 1000);
 	  } else if (eventData.event === 'error') {
@@ -1968,11 +1949,11 @@ function showProgressView(importId, eventData = null) {
 
   const displayName = currentEvent?.source_display || importInfo?.source_display || source?.display_name || 'Import';
   const stageLabel = currentEvent?.stalled
-    ? 'Stalled: no updates in 10 minutes'
+    ? 'stalled: no updates in 10 minutes'
     : currentEvent?.event === 'completed'
-      ? 'Import complete'
+      ? 'import complete'
       : currentEvent?.event === 'error'
-        ? 'Import failed'
+        ? 'import failed'
         : humanStageName(currentEvent?.stage || 'initialization', displayName);
   const progressHtml = currentEvent ? renderProgressStats(currentEvent) : '';
   let completionHtml = '';
@@ -2006,7 +1987,7 @@ function showProgressView(importId, eventData = null) {
     completionHtml = `
       <div class="import-completion-summary stalled">
         <div><strong>Import ID:</strong> ${escapeHtml(importId)}</div>
-        <div>Stalled: no updates in 10 minutes. ${window.CONVEY_COPY.RELOAD_HINT}</div>
+        <div>stalled: no updates in 10 minutes. ${window.CONVEY_COPY.RELOAD_HINT}</div>
         <div class="import-action-row">
           <a href="#" class="import-secondary-btn" onclick="showGrid(); return false;">import another source</a>
         </div>

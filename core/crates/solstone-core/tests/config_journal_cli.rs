@@ -70,7 +70,7 @@ fn write_legacy_manifest(journal: &Path) {
 fn owner_sentence(journal: &Path) -> String {
     let journal = fs::canonicalize(journal).unwrap_or_else(|_| journal.to_path_buf());
     format!(
-        "your settings file at {} couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+        "your settings file at {} couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
         journal.join("config/journal.json").display()
     )
 }

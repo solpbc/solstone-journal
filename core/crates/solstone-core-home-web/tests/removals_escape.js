@@ -629,13 +629,16 @@ async function main() {
     { approve: { state: 'approve.deleted' }, decline: { state: 'declined.done' } }
   );
 
+  // The origin sentences carry their own count now, so the expectation is the
+  // rendered sentence (4 rows x 2 originals = 8), not the raw template.
   for (const key of ['row.origin_policy_many', 'row.kept_many']) {
+    const expected = rendered(copy, key, { n: 8 });
     assert.strictEqual(
-      occurrences(noteCard.innerHTML, copy[key]),
+      occurrences(noteCard.innerHTML, expected),
       1,
       `${key} is stated once for the list, not once per row`
     );
-    assert(sharedNote(noteCard).includes(copy[key]), `the shared note carries ${key}`);
+    assert(sharedNote(noteCard).includes(expected), `the shared note carries ${key}`);
   }
   assert(
     noteCard.innerHTML.indexOf('</summary>') < noteCard.innerHTML.indexOf('data-removals-note'),
@@ -702,12 +705,22 @@ async function main() {
     },
     { approve: { state: 'approve.refused_before_start', refusals: [] } }
   );
-  for (const key of ['row.origin_policy_one', 'row.origin_offload_many', 'row.kept_many']) {
-    assert(sharedNote(mixedCard).includes(copy[key]), `the mixed note carries ${key}`);
-    assert.strictEqual(occurrences(mixedCard.innerHTML, copy[key]), 1, `${key} is stated once`);
+  // 1 policy original and 3 offload originals, so 4 kept. Each clause names its
+  // own count, which is what tells the reader which rows it covers.
+  const mixedCounts = { 'row.origin_policy_one': 1, 'row.origin_offload_many': 3, 'row.kept_many': 4 };
+  for (const [key, n] of Object.entries(mixedCounts)) {
+    const expected = rendered(copy, key, { n });
+    assert(sharedNote(mixedCard).includes(expected), `the mixed note carries ${key}`);
+    assert.strictEqual(occurrences(mixedCard.innerHTML, expected), 1, `${key} is stated once`);
   }
-  for (const key of ['row.origin_policy_many', 'row.origin_offload_one', 'row.kept_one']) {
-    assert(!sharedNote(mixedCard).includes(copy[key]), `the mixed note must not carry ${key}`);
+  // Rendered with the counts this list actually has, so the negative still has
+  // teeth: an unrendered `{n}` would be trivially absent.
+  const mixedAbsent = { 'row.origin_policy_many': 1, 'row.origin_offload_one': 3, 'row.kept_one': 4 };
+  for (const [key, n] of Object.entries(mixedAbsent)) {
+    assert(
+      !sharedNote(mixedCard).includes(rendered(copy, key, { n })),
+      `the mixed note must not carry ${key}`
+    );
   }
 
   // Nothing marked means no shared note, and the unfinished row still explains

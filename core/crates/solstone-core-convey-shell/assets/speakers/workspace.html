@@ -2073,7 +2073,7 @@
             <div class="spk-owner-diagnostics-line">source: ${escapeHtml(data.source || 'auto')}</div>
             ${data.low_quality_reason ? `
               <div class="spk-owner-diagnostics-line">
-                gate: ${escapeHtml(data.low_quality_reason)}. observed ${escapeHtml(formatOwnerMetric(data.observed_value))}, threshold ${escapeHtml(formatOwnerMetric(data.threshold_value))}
+                gate: ${escapeHtml(data.low_quality_reason)}. measured ${escapeHtml(formatOwnerMetric(data.observed_value))}, needs ${escapeHtml(formatOwnerMetric(data.threshold_value))}
               </div>
             ` : ''}
             <div class="spk-owner-diagnostics-line">Manual tags: ${escapeHtml(String(ownerTeachMomentumCount(data)))}</div>
@@ -3059,7 +3059,7 @@
               detail: err,
             });
           } else {
-            setReviewStatus("Couldn't reload review. showing last known state.", err.serverMessage);
+            setReviewStatus("couldn't refresh review. showing last known state.", err.serverMessage);
           }
         }
         if (throwOnError) throw err;
@@ -3987,7 +3987,7 @@
       : '';
     let diagnostic = '';
     if (data.low_quality_reason) {
-      diagnostic = `<p class="spk-overview-muted">gate: ${escapeHtml(data.low_quality_reason)}; observed ${escapeHtml(String(data.observed_value ?? ''))}; threshold ${escapeHtml(String(data.threshold_value ?? ''))}</p>`;
+      diagnostic = `<p class="spk-overview-muted">gate: ${escapeHtml(data.low_quality_reason)}; measured ${escapeHtml(String(data.observed_value ?? ''))}; needs ${escapeHtml(String(data.threshold_value ?? ''))}</p>`;
     } else if (!hasProgress) {
       diagnostic = `<p class="spk-overview-muted">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_PROGRESS_UNKNOWN)}</p>`;
     } else {
@@ -4119,7 +4119,7 @@
   }
 
   function qualityReadyHeading(data) {
-    const days = qualityCount(data.quality_window_count) || qualityCount(data.quality_window_days) || 30;
+    const days = qualityCount(data.quality_window_days) || 30;
     return (COPY.SPK_OVERVIEW_QUALITY_READY_TEMPLATE || '').replace('{days}', String(days));
   }
 

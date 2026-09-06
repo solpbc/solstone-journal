@@ -928,13 +928,36 @@ h1 {
   margin: 0 0 -0.5em;
 }
 
-/* Right-edge fade for a horizontally scrollable rollup/table that has more
-   content off-screen; removed once scrolled to the end (G2-34). Toggled by
-   token-card.js, which knows the scroll position; this rule only draws it. */
-.token-rollup.has-scroll-fade,
-.token-table-scroll.has-scroll-fade {
-  mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
-  -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
+/* Edge fades for a horizontally scrollable rollup/table that has more
+   content off-screen (G2-34). Drawn on a non-scrolling wrapper rather than
+   as a mask on the scroller itself: a mask clips painting to the border
+   box, which erased the scroller's own keyboard focus ring (it is a tab
+   stop) and the focus rings of the rollup's day buttons. Both edges are
+   drawn, because the rollup opens scrolled to the newest day and the
+   content it hides is off to the left. token-card.js knows the scroll
+   position and toggles the classes; these rules only draw. */
+.token-scroll-fade {
+  position: relative;
+}
+
+.token-scroll-fade:has(> .has-scroll-fade-start)::before,
+.token-scroll-fade:has(> .has-scroll-fade)::after {
+  bottom: 0;
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  width: 28px;
+}
+
+.token-scroll-fade:has(> .has-scroll-fade-start)::before {
+  background: linear-gradient(to left, transparent, var(--paper, #FFFFFF));
+  left: 0;
+}
+
+.token-scroll-fade:has(> .has-scroll-fade)::after {
+  background: linear-gradient(to right, transparent, var(--paper, #FFFFFF));
+  right: 0;
 }
 
 /* Selected-day model row: a readable name up front, exact raw id(s) tucked
@@ -972,26 +995,32 @@ h1 {
       <p class="token-source-note">the chart shows the daily summary. selected-day totals include the latest entries, so they may briefly differ from the chart.</p>
       <div id="statsDateNav" aria-label="selected token day"></div>
       <p id="tokenCardStatus" class="token-card-status" role="status">loading token activity…</p>
-      <div class="token-rollup" id="tokenRollup" aria-label="30-day token activity rollup"></div>
+      <div class="token-scroll-fade">
+        <div class="token-rollup" id="tokenRollup" aria-label="30-day token activity rollup"></div>
+      </div>
       <section class="token-detail" aria-labelledby="tokenDayHeading">
         <h3 id="tokenDayHeading" tabindex="-1" aria-live="polite">selected day</h3>
         <p id="tokenSummary"></p>
         <div class="token-comparison" id="tokenTypeComparison" aria-label="generate and cogitate comparison"></div>
 
         <h4>providers</h4>
-        <div class="token-table-scroll" tabindex="0" aria-label="provider token activity table">
-          <table id="tokenProviderTable">
-            <thead><tr><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="provider">provider</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="requests">requests</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="tokens">tokens</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="cached_tokens">cached</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="percent">token share</button></th></tr></thead>
-            <tbody id="tokenProviders"></tbody>
-          </table>
+        <div class="token-scroll-fade">
+          <div class="token-table-scroll" tabindex="0" aria-label="provider token activity table">
+            <table id="tokenProviderTable">
+              <thead><tr><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="provider">provider</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="requests">requests</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="tokens">tokens</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="cached_tokens">cached</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="percent">token share</button></th></tr></thead>
+              <tbody id="tokenProviders"></tbody>
+            </table>
+          </div>
         </div>
 
         <h4>models</h4>
-        <div class="token-table-scroll" tabindex="0" aria-label="model token activity table">
-          <table id="tokenModelTable">
-            <thead><tr><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="model">model</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="provider">provider</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="requests">requests</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="tokens">tokens</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="cached_tokens">cached</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="percent">token share</button></th></tr></thead>
-            <tbody id="tokenModels"></tbody>
-          </table>
+        <div class="token-scroll-fade">
+          <div class="token-table-scroll" tabindex="0" aria-label="model token activity table">
+            <table id="tokenModelTable">
+              <thead><tr><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="model">model</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="provider">provider</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="requests">requests</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="tokens">tokens</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="cached_tokens">cached</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="percent">token share</button></th></tr></thead>
+              <tbody id="tokenModels"></tbody>
+            </table>
+          </div>
         </div>
       </section>
     </section>

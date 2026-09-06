@@ -76,6 +76,15 @@
       unloading = false;
     }
   });
+  // B22: pagehide fires on paths that never reach a bfcache restore, and the
+  // flag would otherwise latch true for the life of the document and drop
+  // every later cancelled-fetch-shaped error. A document that is visible again
+  // is plainly not going away.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      unloading = false;
+    }
+  });
 
   function isNavigationAbort(error) {
     if (!error) {
@@ -90,7 +99,7 @@
     if (!looksLikeCancelledFetch) {
       return false;
     }
-    return unloading || document.visibilityState === 'hidden';
+    return unloading;
   }
 
   window.logError = (error, context) => {

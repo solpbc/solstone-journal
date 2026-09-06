@@ -324,7 +324,7 @@
     width: 100%;
   }
 }
-.curation-group{border:1px solid #dfd6c9;border-radius:12px;background:#fff}.curation-group>summary{padding:18px;cursor:pointer;font-weight:600;min-height:48px}.curation-group-items{padding:0 18px 18px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.curation-group-items>.curation-item{min-width:0;overflow-wrap:anywhere}.curation-group-items>.curation-item{content-visibility:auto;contain-intrinsic-block-size:auto 240px}.curation-group:focus-within{outline-color:#b06a1a}.curation-group>summary:focus-visible{outline:2px solid #b06a1a;outline-offset:2px}
+.curation-group{border:1px solid #dfd6c9;border-radius:12px;background:#fff}.curation-group>summary{padding:18px;cursor:pointer;font-weight:600;min-height:48px}.curation-group-items{padding:0 18px 18px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.curation-group-more{display:grid;gap:16px}.curation-group-more[hidden]{display:none}.curation-group-items .curation-item{min-width:0;overflow-wrap:anywhere}.curation-group-items .curation-item{content-visibility:auto;contain-intrinsic-block-size:auto 240px}.curation-group:focus-within{outline-color:#b06a1a}.curation-group>summary:focus-visible{outline:2px solid #b06a1a;outline-offset:2px}
 .curation-source-dates{display:flex;flex-wrap:wrap;gap:8px 16px}.curation-source-dates a{display:inline-flex;align-items:center;min-height:46px;color:var(--orange-text-aa,#a15f17)}.curation-origin-details summary{cursor:pointer;padding:12px 0}.curation-origin-details li{overflow-wrap:anywhere}
 </style>
 
@@ -348,7 +348,7 @@ window.CUR_COPY = CUR_COPY;
   // (thinking, stats) — resolve through the declared title, falling back to
   // the raw slug only when nothing was ever declared for it.
   function facetDisplayName(slug) {
-    return curationFacetTitles[slug] || slug;
+    return Object.prototype.hasOwnProperty.call(curationFacetTitles, slug) ? curationFacetTitles[slug] : slug;
   }
 
   function renderLoading() {
@@ -514,9 +514,9 @@ window.CUR_COPY = CUR_COPY;
     const multiFacet = group.facets.length > 1;
     const dismissAttrs = multiFacet
       ? `data-action="entity-dismiss-group"`
-      : `data-action="entity-dismiss" data-facet="${escapeHtml(group.facets[0])}" data-source-slug="${escapeHtml(group.source_slug)}" data-target-slug="${escapeHtml(group.target_slug)}"`;
+      : `data-action="entity-dismiss" data-facet="${escapeAttr(group.facets[0])}" data-source-slug="${escapeAttr(group.source_slug)}" data-target-slug="${escapeAttr(group.target_slug)}"`;
     return `
-      <article class="curation-item" data-curation-item data-kind="entity_merge" data-facets='${escapeAttr(JSON.stringify(group.facets))}' data-source-slug="${escapeHtml(group.source_slug)}" data-target-slug="${escapeHtml(group.target_slug)}" data-source="${escapeHtml(group.source)}" data-target="${escapeHtml(group.target)}">
+      <article class="curation-item" data-curation-item data-kind="entity_merge" data-facets='${escapeAttr(JSON.stringify(group.facets))}' data-source-slug="${escapeAttr(group.source_slug)}" data-target-slug="${escapeAttr(group.target_slug)}" data-source="${escapeAttr(group.source)}" data-target="${escapeAttr(group.target)}">
         <label class="curation-select">
           <span class="curation-tap-target"><input type="checkbox" data-action="entity-select"></span>
           <span class="curation-body">${escapeHtml(copyFormat(CUR_COPY.CUR_ENTITY_BODY, {a: group.source, b: group.target}))}</span>
@@ -971,7 +971,7 @@ window.CUR_COPY = CUR_COPY;
     // G2-26: a merge across more than one facet-scoped suggestion for the
     // same pair confirms as one grouped action, not a re-run per facet.
     const confirmAttrs = groupFacets && groupFacets.length > 1
-      ? `data-action="entity-accept-group" data-source-slug="${escapeHtml(payload.source_slug)}" data-target-slug="${escapeHtml(payload.target_slug)}" data-facets='${escapeAttr(JSON.stringify(groupFacets))}'`
+      ? `data-action="entity-accept-group" data-source-slug="${escapeAttr(payload.source_slug)}" data-target-slug="${escapeAttr(payload.target_slug)}" data-facets='${escapeAttr(JSON.stringify(groupFacets))}'`
       : `data-action="${escapeHtml(acceptAction)}" ${payloadAttrs(payload)}`;
     previewNode.innerHTML = `
       <p class="curation-preview-lead">${escapeHtml(CUR_COPY.CUR_ENTITY_PREVIEW_LEAD)}</p>
@@ -996,6 +996,7 @@ window.CUR_COPY = CUR_COPY;
       const more = button.previousElementSibling;
       if (more && more.hasAttribute('data-group-more')) more.hidden = false;
       button.remove();
+      refreshToolbar();
       return;
     }
 
@@ -1168,7 +1169,7 @@ window.CUR_COPY = CUR_COPY;
             const facets = JSON.parse(selectedItem.dataset.facets || '[]');
             const pairText = `"${selectedItem.dataset.source}" and "${selectedItem.dataset.target}"`;
             const facetsText = facets.length > 1
-              ? `, ${copyFormat(CUR_COPY.CUR_ENTITY_FACETS_LABEL, {facets: formatFacetList(facets)})}`
+              ? ` ${copyFormat(CUR_COPY.CUR_ENTITY_FACETS_LABEL, {facets: formatFacetList(facets)})}`
               : '';
             return `<li>${escapeHtml(pairText + facetsText)}</li>`;
           }).join('')}

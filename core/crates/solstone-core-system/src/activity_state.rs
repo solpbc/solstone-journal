@@ -129,7 +129,11 @@ fn strip_leading_phrase<'a>(text: &'a str, phrase: &str) -> Option<&'a str> {
     if !rest.starts_with(char::is_whitespace) {
         return None;
     }
-    Some(rest.trim_start())
+    // A title keeps its capitals: "I Am Legend finished downloading." opens with
+    // a real subject phrase but the words after it are part of the name, not a
+    // predicate. Every phrase this normaliser is meant to strip is followed by a
+    // lowercase word, so requiring one leaves titles alone.
+    Some(rest.trim_start()).filter(|rest| rest.starts_with(char::is_lowercase))
 }
 
 /// Return the text after a leading auxiliary verb, or `None` when the text
@@ -691,6 +695,14 @@ mod tests {
                 "You have been pairing on the migration.",
                 "Pairing on the migration.",
             ),
+            // Known limitation: the word after the subject phrase is lowercase,
+            // so the deterministic guard cannot tell this noun phrase from a
+            // predicate. Distinguishing them needs a verb check this normaliser
+            // does not do.
+            (
+                "The user manual was open on the second monitor.",
+                "Manual was open on the second monitor.",
+            ),
         ] {
             assert_eq!(normalize_activity_description(written), shown, "{written}");
         }
@@ -708,6 +720,11 @@ mod tests {
             "You're on the launch call at two.",
             "The user",
             "The user, who had opened the checklist, switched panes.",
+            // A capitalised word after the subject phrase is a title, not a
+            // predicate, so the phrase is left in place.
+            "I Was Here on the shelf.",
+            "I Am Legend finished downloading.",
+            "You Only Live Twice starts at 8.",
             "Is the build green?",
             "Was on the launch call at two.",
             "",

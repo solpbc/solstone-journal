@@ -4026,6 +4026,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     }
 
     pane.classList.add('active');
+    collapseLongPreBlocks(pane);
     activeTab = tabId;
     if (selectedSegment) {
       history.replaceState(null, '', segmentLocation(selectedSegment, tabId));
@@ -5446,13 +5447,16 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     return html;
   }
 
-  const TR_PRE_COLLAPSE_MAX_HEIGHT = 256; // 16rem at the default 16px root size
+  const TR_PRE_COLLAPSE_MAX_HEIGHT = 256; // fallback only, when the computed max-height is not a usable number
 
   function collapseLongPreBlocks(root) {
     root.querySelectorAll('.tr-entry-desc pre').forEach(pre => {
       if (pre.dataset.trPreChecked) return;
+      if (!pre.scrollHeight) return; // unmeasurable while the pane is hidden; try again once it is shown
       pre.dataset.trPreChecked = '1';
-      if (pre.scrollHeight <= TR_PRE_COLLAPSE_MAX_HEIGHT + 2) return;
+      const computedMax = parseFloat(getComputedStyle(pre).maxHeight);
+      const maxHeight = Number.isFinite(computedMax) ? computedMax : TR_PRE_COLLAPSE_MAX_HEIGHT;
+      if (pre.scrollHeight <= maxHeight + 2) return;
 
       const toggle = document.createElement('button');
       toggle.type = 'button';

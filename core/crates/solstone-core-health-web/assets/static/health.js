@@ -1999,6 +1999,12 @@
 	    });
 	  }
 
+  // The devices card ships hidden and only appears once there are devices to
+  // list, which is after the browser has already tried to honour the hash. The
+  // first time it appears we take the owner there ourselves, once: a later
+  // refresh must not pull the page out from under them.
+  let devicesDeepLinkScrolled = false;
+
   function renderRegisteredClients(clients) {
     if (!clients || clients.length === 0) {
       elements.registeredClientsCard.classList.add('hidden');
@@ -2007,6 +2013,11 @@
     }
 
     elements.registeredClientsCard.classList.remove('hidden');
+    if (!devicesDeepLinkScrolled && window.location.hash === '#registeredClientsCard') {
+      devicesDeepLinkScrolled = true;
+      const card = elements.registeredClientsCard;
+      requestAnimationFrame(() => card.scrollIntoView({ block: 'start' }));
+    }
     const wasOpen = elements.registeredClientsStrip.querySelector('details')?.open || false;
     elements.registeredClientsStrip.innerHTML = '';
     const unstarted = document.createElement('details');
@@ -2262,7 +2273,7 @@
         card.children[4].style.display = 'none';
       }
 
-      card.children[0].textContent = '...' + getAgentId(imp.import_id);
+      card.children[0].textContent = '…' + getAgentId(imp.import_id);
       card.children[1].textContent = truncate(imp.input_file || 'import', 20);
       card.children[2].textContent = (isError ? '! ' : '') + humanStage;
       card.children[2].setAttribute('data-internal-stage', imp.stage || 'processing');
@@ -2956,7 +2967,7 @@
     }
 
     viewport.textContent = '';
-    appendDeepLinkLogLine(viewport, 'loading...', 'stdout');
+    appendDeepLinkLogLine(viewport, 'loading…', 'stdout');
 
     fetch('/app/health/api/log?path=' + encodeURIComponent(deepLinkLog))
       .then(r => r.json().then(data => ({ok: r.ok, data})))

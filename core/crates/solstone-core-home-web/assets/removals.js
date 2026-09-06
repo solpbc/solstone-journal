@@ -10,10 +10,10 @@
     "card.total_one": "in all: 1 original · {size}",
     "card.total_many": "in all: {n} originals · {size}",
     "row.identity": "{date} · {stream}",
-    "row.origin_policy_one": "your retention settings marked this. this part of the list rebuilds every day.",
-    "row.origin_policy_many": "your retention settings marked these. this part of the list rebuilds every day.",
-    "row.origin_offload_one": "your backup copied this off your device. there's no way to check it's still there.",
-    "row.origin_offload_many": "your backup copied these off your device. there's no way to check they're still there.",
+    "row.origin_policy_one": "1 original marked by your retention settings. this part of the list rebuilds every day.",
+    "row.origin_policy_many": "{n} originals marked by your retention settings. this part of the list rebuilds every day.",
+    "row.origin_offload_one": "1 original copied off your device by your backup. there's no way to check it's still there.",
+    "row.origin_offload_many": "{n} originals copied off your device by your backup. there's no way to check they're still there.",
     "row.what_one": "1 original · {size}",
     "row.what_many": "{n} originals · {size}",
     "row.kept_one": "nothing else goes with it.",
@@ -226,9 +226,11 @@
 
   // The clauses every marked row shares, stated once above the list: one
   // sentence per origin actually present, then the promise that deleting an
-  // original takes nothing else with it. Counted over every marked row in the
-  // list rather than the current page, so it agrees with the totals line and
-  // with the selection, which also span every page.
+  // original takes nothing else with it. Each origin sentence carries its own
+  // count, because on a mixed list a bare "this" or "these" leaves the reader
+  // no way to tell which rows the sentence covers. Counted over every marked
+  // row in the list rather than the current page, so it agrees with the totals
+  // line and with the selection, which also span every page.
   function listNoteHtml() {
     const marked = markedRows();
     if (marked.length === 0) return '';
@@ -240,8 +242,8 @@
       originals[key] += rowCount(row);
     });
     const notes = [];
-    if (present.policy) notes.push(copyForCount('row.origin_policy', originals.policy));
-    if (present.offload) notes.push(copyForCount('row.origin_offload', originals.offload));
+    if (present.policy) notes.push(copyForCount('row.origin_policy', originals.policy, { n: originals.policy }));
+    if (present.offload) notes.push(copyForCount('row.origin_offload', originals.offload, { n: originals.offload }));
     notes.push(copyForCount('row.kept', originals.policy + originals.offload));
     return '<p class="removals-card-origin" data-removals-note>' + notes.join(' ') + '</p>';
   }

@@ -265,7 +265,7 @@ impl fmt::Display for AuthorizedClientsLoadError {
         };
         write!(
             formatter,
-            "your paired devices file at {} couldn't be read. your paired devices were NOT changed. repair the file or restore link/authorized_clients.json from a backup, then try again.",
+            "your paired devices file at {} couldn't be read. your paired devices were not changed. repair the file or restore link/authorized_clients.json from a backup, then try again.",
             path.display()
         )
     }
@@ -1436,7 +1436,7 @@ mod tests {
             ledger.touch_last_seen_at("a", NOW).map(|_| ()),
         ] {
             let error = result.unwrap_err();
-            assert!(error.to_string().contains("were NOT changed"));
+            assert!(error.to_string().contains("were not changed"));
             assert_eq!(
                 fs::read(ledger.authorized_clients_path()).unwrap(),
                 original
@@ -1919,7 +1919,7 @@ mod tests {
             ledger.touch_last_seen_at("a", NOW).map(|_| ()),
         ] {
             let error = result.unwrap_err();
-            assert!(error.to_string().contains("were NOT changed"));
+            assert!(error.to_string().contains("were not changed"));
             assert_eq!(fs::read(&path).unwrap(), original.as_bytes());
         }
     }

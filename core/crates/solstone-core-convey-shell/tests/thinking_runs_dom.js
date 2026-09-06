@@ -831,7 +831,7 @@ async function main() {
   await settle();
   assert.strictEqual(
     nodes.get('thinkingRunsLogPanel').children[0].children[0].textContent,
-    'no detail was recorded for this step',
+    'no detail was recorded for this step (×2)',
     "a completed run's empty step is not reported as a failure",
   );
   assert.strictEqual(nodes.get('thinkingRunsDetailHeading').textContent, 'entity detection', 'the run detail heading reads a label');
