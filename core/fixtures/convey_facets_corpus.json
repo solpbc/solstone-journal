@@ -1140,8 +1140,8 @@
       "why": "the candidate list after both decisions"
     },
     {
-      "body_bytes": 4530,
-      "body_sha256": "3060294797337fec601dd020460fbb36caa2118a243323499589b6a555d5ffd3",
+      "body_bytes": 4857,
+      "body_sha256": "481787f21844f11d868194abe76b8d9c5bec771e53f2a7e45b12bd6d85d0cd7d",
       "body_sha256_basis": "normalized-json",
       "content_type": "application/json",
       "json": {
@@ -1204,11 +1204,16 @@
           "CUR_ENTITY_CANCEL_ACTION": "cancel",
           "CUR_ENTITY_CONFIRM_ACTION": "confirm merge",
           "CUR_ENTITY_DISMISS_ACTION": "keep separate",
+          "CUR_ENTITY_DONE_FOR_NOW_ACTION": "done for now",
+          "CUR_ENTITY_FACETS_LABEL": "in {facets}",
+          "CUR_ENTITY_GROUP_LEDE": "{count} names look like duplicates. clearing them tidies your whole journal.",
           "CUR_ENTITY_MERGE_ACTION": "merge",
           "CUR_ENTITY_PREVIEW_EMPTY": "no journal changes are needed for this merge.",
           "CUR_ENTITY_PREVIEW_ERRORS": "some segment updates may need attention.",
           "CUR_ENTITY_PREVIEW_LEAD": "before merging, here's what will change.",
+          "CUR_ENTITY_PROGRESS_LABEL": "{reviewed} reviewed \u00b7 {left} left",
           "CUR_ENTITY_SELECT_ALL_ACTION": "select all",
+          "CUR_ENTITY_SHOW_REST_ACTION": "show the rest ({count})",
           "CUR_FACET_BODY": "solstone noticed recent activity that doesn't fit your facets well. create a \"{name}\" facet?",
           "CUR_FACET_CREATE_ACTION": "create facet",
           "CUR_FACET_DISMISS_ACTION": "not now",
@@ -1221,7 +1226,7 @@
           "CUR_PREVIEW_VOICEPRINTS_LABEL": "voice samples moved",
           "CUR_REPAIR_REQUIRED": "{detail} {remediation}",
           "CUR_SPEAKER_BODY": "solstone noticed \"{source}\" and \"{target}\" may be the same speaker. merge them?",
-          "CUR_SPEAKER_CANDIDATE_PAIR_BODY": "solstone found two speaker candidates that sound alike. merge them?",
+          "CUR_SPEAKER_CANDIDATE_PAIR_BODY": "two voices in your journal sound alike. merge them?",
           "CUR_SPEAKER_CANDIDATE_PAIR_DISMISS_ACTION": "keep separate",
           "CUR_SPEAKER_CANDIDATE_PAIR_INTERVALS_LABEL": "intervals",
           "CUR_SPEAKER_CANDIDATE_PAIR_MERGE_ACTION": "merge candidates",
@@ -1257,6 +1262,10 @@
           }
         ],
         "facet_items": [],
+        "facet_titles": {
+          "personal": "Personal",
+          "work": "Work"
+        },
         "speaker_candidate_pair_items": [
           {
             "composite": 74.0,
@@ -2692,8 +2701,8 @@
         "why": "per-app static"
       },
       {
-        "body_bytes": 2772,
-        "body_sha256": "53bffbcfc1b3309cbcd639cbc3a3717155c4f04da19ab15b0aa9c9c75d0a7587",
+        "body_bytes": 3064,
+        "body_sha256": "5ce6863ee1dba225959d876f87112707943b5090889f951e499d1af50351a290",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -2716,11 +2725,16 @@
             "CUR_ENTITY_CANCEL_ACTION": "cancel",
             "CUR_ENTITY_CONFIRM_ACTION": "confirm merge",
             "CUR_ENTITY_DISMISS_ACTION": "keep separate",
+            "CUR_ENTITY_DONE_FOR_NOW_ACTION": "done for now",
+            "CUR_ENTITY_FACETS_LABEL": "in {facets}",
+            "CUR_ENTITY_GROUP_LEDE": "{count} names look like duplicates. clearing them tidies your whole journal.",
             "CUR_ENTITY_MERGE_ACTION": "merge",
             "CUR_ENTITY_PREVIEW_EMPTY": "no journal changes are needed for this merge.",
             "CUR_ENTITY_PREVIEW_ERRORS": "some segment updates may need attention.",
             "CUR_ENTITY_PREVIEW_LEAD": "before merging, here's what will change.",
+            "CUR_ENTITY_PROGRESS_LABEL": "{reviewed} reviewed \u00b7 {left} left",
             "CUR_ENTITY_SELECT_ALL_ACTION": "select all",
+            "CUR_ENTITY_SHOW_REST_ACTION": "show the rest ({count})",
             "CUR_FACET_BODY": "solstone noticed recent activity that doesn't fit your facets well. create a \"{name}\" facet?",
             "CUR_FACET_CREATE_ACTION": "create facet",
             "CUR_FACET_DISMISS_ACTION": "not now",
@@ -2733,7 +2747,7 @@
             "CUR_PREVIEW_VOICEPRINTS_LABEL": "voice samples moved",
             "CUR_REPAIR_REQUIRED": "{detail} {remediation}",
             "CUR_SPEAKER_BODY": "solstone noticed \"{source}\" and \"{target}\" may be the same speaker. merge them?",
-            "CUR_SPEAKER_CANDIDATE_PAIR_BODY": "solstone found two speaker candidates that sound alike. merge them?",
+            "CUR_SPEAKER_CANDIDATE_PAIR_BODY": "two voices in your journal sound alike. merge them?",
             "CUR_SPEAKER_CANDIDATE_PAIR_DISMISS_ACTION": "keep separate",
             "CUR_SPEAKER_CANDIDATE_PAIR_INTERVALS_LABEL": "intervals",
             "CUR_SPEAKER_CANDIDATE_PAIR_MERGE_ACTION": "merge candidates",
@@ -2749,6 +2763,7 @@
           },
           "entity_items": [],
           "facet_items": [],
+          "facet_titles": {},
           "speaker_candidate_pair_items": [],
           "speaker_items": []
         },
@@ -3561,8 +3576,8 @@
         "why": "per-app static"
       },
       {
-        "body_bytes": 5126,
-        "body_sha256": "d3dced85edb6e2156baedffaa36b5646f16852ed064742b42aa666f852eb76db",
+        "body_bytes": 5453,
+        "body_sha256": "7b8bda89b2828980c7746b66ca16486bcfcaa8999c3df36840bf11641b8158e9",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -3625,11 +3640,16 @@
             "CUR_ENTITY_CANCEL_ACTION": "cancel",
             "CUR_ENTITY_CONFIRM_ACTION": "confirm merge",
             "CUR_ENTITY_DISMISS_ACTION": "keep separate",
+            "CUR_ENTITY_DONE_FOR_NOW_ACTION": "done for now",
+            "CUR_ENTITY_FACETS_LABEL": "in {facets}",
+            "CUR_ENTITY_GROUP_LEDE": "{count} names look like duplicates. clearing them tidies your whole journal.",
             "CUR_ENTITY_MERGE_ACTION": "merge",
             "CUR_ENTITY_PREVIEW_EMPTY": "no journal changes are needed for this merge.",
             "CUR_ENTITY_PREVIEW_ERRORS": "some segment updates may need attention.",
             "CUR_ENTITY_PREVIEW_LEAD": "before merging, here's what will change.",
+            "CUR_ENTITY_PROGRESS_LABEL": "{reviewed} reviewed \u00b7 {left} left",
             "CUR_ENTITY_SELECT_ALL_ACTION": "select all",
+            "CUR_ENTITY_SHOW_REST_ACTION": "show the rest ({count})",
             "CUR_FACET_BODY": "solstone noticed recent activity that doesn't fit your facets well. create a \"{name}\" facet?",
             "CUR_FACET_CREATE_ACTION": "create facet",
             "CUR_FACET_DISMISS_ACTION": "not now",
@@ -3642,7 +3662,7 @@
             "CUR_PREVIEW_VOICEPRINTS_LABEL": "voice samples moved",
             "CUR_REPAIR_REQUIRED": "{detail} {remediation}",
             "CUR_SPEAKER_BODY": "solstone noticed \"{source}\" and \"{target}\" may be the same speaker. merge them?",
-            "CUR_SPEAKER_CANDIDATE_PAIR_BODY": "solstone found two speaker candidates that sound alike. merge them?",
+            "CUR_SPEAKER_CANDIDATE_PAIR_BODY": "two voices in your journal sound alike. merge them?",
             "CUR_SPEAKER_CANDIDATE_PAIR_DISMISS_ACTION": "keep separate",
             "CUR_SPEAKER_CANDIDATE_PAIR_INTERVALS_LABEL": "intervals",
             "CUR_SPEAKER_CANDIDATE_PAIR_MERGE_ACTION": "merge candidates",
@@ -3725,6 +3745,10 @@
               "target_slug": null
             }
           ],
+          "facet_titles": {
+            "personal": "Personal",
+            "work": "Work"
+          },
           "speaker_candidate_pair_items": [
             {
               "composite": 74.0,

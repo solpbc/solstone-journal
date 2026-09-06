@@ -20,6 +20,7 @@ use solstone_core_entity::{
     EntityWriteError, LockError, MalformedPolicy, accept_merge_candidate, commit_entity_merge,
     dismiss_merge_candidate, load_merge_candidates, preview_entity_merge, read_ambiguities,
 };
+use solstone_core_facets::{list_declared_facet_names, read_facet_declaration};
 use solstone_core_speaker_resolve::{
     candidate_tracker::CandidateTracker, keep_separate::find_assertion,
     speaker_candidate_pair_review_candidates as pair_store,
@@ -121,8 +122,35 @@ fn load_state(root: &Path) -> Result<Value, String> {
         "ambiguity_items": sorted(ambiguity_items),
         "speaker_items": sorted(speaker_items),
         "speaker_candidate_pair_items": sorted(pair_items),
+        "facet_titles": facet_titles(root),
         "copy": copy::payload(),
     }))
+}
+
+// G2-35: resolve facet slugs to the owner-declared title through the same
+// slug -> display-name source thinking's runs facet filter uses
+// (`list_declared_facet_names` + `read_facet_declaration`), falling back to
+// the raw slug only when a facet has no declared title. Without this,
+// curation's own text-munging (`humanizeFacetName` in workspace.html) shows
+// storage keys like "solpbc" next to entity names shown in their real form.
+fn facet_titles(root: &Path) -> Map<String, Value> {
+    list_declared_facet_names(root)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|name| {
+            read_facet_declaration(root, &name)
+                .ok()
+                .flatten()
+                .map(|facet| {
+                    let title = if facet.title.is_empty() {
+                        name.clone()
+                    } else {
+                        facet.title.clone()
+                    };
+                    (name, Value::String(title))
+                })
+        })
+        .collect()
 }
 
 fn sorted(mut items: Vec<Value>) -> Vec<Value> {
@@ -1097,6 +1125,37 @@ mod tests {
         let evidence = entity_item(row)["evidence"].clone();
         assert!(evidence.get("shared_neighbors").is_none());
         assert!(evidence.get("neighborhood_similarity").is_none());
+    }
+
+    // G2-35: curation must resolve an existing facet's declared title the
+    // same way thinking's runs facet filter does, not show the raw slug.
+    // A facet with no declaration at all (never created, only referenced by
+    // a stale candidate row) still needs a value, so it falls back to the
+    // slug rather than panicking or being dropped from the map.
+    #[test]
+    fn facet_titles_resolves_declared_titles_and_falls_back_to_the_slug() {
+        let root = crate::test_support::phase_root("established_empty");
+        solstone_core_facets::create_facet(
+            root.path(),
+            "solpbc",
+            "sol pbc",
+            "",
+            "#000000",
+            "",
+            None,
+        )
+        .expect("create facet");
+
+        let titles = facet_titles(root.path());
+
+        assert_eq!(
+            titles.get("solpbc"),
+            Some(&Value::String("sol pbc".to_owned()))
+        );
+        assert!(
+            titles.get("never-declared").is_none(),
+            "a facet with no declaration on disk is not fabricated into the map"
+        );
     }
 
     #[tokio::test]

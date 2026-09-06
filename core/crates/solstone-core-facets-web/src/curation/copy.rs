@@ -13,7 +13,7 @@ pub fn payload() -> Value {
     )
 }
 
-const COPY: [(&str, &str); 48] = [
+const COPY: [(&str, &str); 52] = [
     ("CUR_HEADING", "suggestions"),
     (
         "CUR_FACET_BODY",
@@ -28,6 +28,19 @@ const COPY: [(&str, &str); 48] = [
     ("CUR_ENTITY_MERGE_ACTION", "merge"),
     ("CUR_ENTITY_DISMISS_ACTION", "keep separate"),
     ("CUR_ENTITY_FACETS_LABEL", "in {facets}"),
+    (
+        // G2-40: the lede a large duplicate-entity group opens on, framed as
+        // what clearing the visible batch gets the owner rather than the
+        // full count owed.
+        "CUR_ENTITY_GROUP_LEDE",
+        "{count} names look like duplicates. clearing them tidies your whole journal.",
+    ),
+    ("CUR_ENTITY_SHOW_REST_ACTION", "show the rest ({count})"),
+    (
+        "CUR_ENTITY_PROGRESS_LABEL",
+        "{reviewed} reviewed · {left} left",
+    ),
+    ("CUR_ENTITY_DONE_FOR_NOW_ACTION", "done for now"),
     (
         "CUR_SPEAKER_BODY",
         "solstone noticed \"{source}\" and \"{target}\" may be the same speaker. merge them?",
