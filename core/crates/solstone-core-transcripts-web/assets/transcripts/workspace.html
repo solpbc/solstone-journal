@@ -3457,7 +3457,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         panel.innerHTML = window.SurfaceState.empty({
           icon: window.ConveyIcons.svg('clock'),
           heading: 'your day at a glance',
-          desc: 'now pick a block in detail to read it'
+          desc: 'now pick a block in the detail column to read it'
         });
       }
     };
@@ -5461,7 +5461,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       toggle.setAttribute('aria-expanded', 'false');
       toggle.addEventListener('click', () => {
         const expanded = pre.classList.toggle('tr-pre-expanded');
-        toggle.textContent = expanded ? 'show less' : 'show full output';
+        toggle.textContent = expanded ? 'show less output' : 'show full output';
         toggle.setAttribute('aria-expanded', String(expanded));
       });
       pre.insertAdjacentElement('afterend', toggle);
@@ -5747,7 +5747,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 	      console.error('transcripts: day data load did not complete:', err);
 	      zoomSegments.innerHTML = '';
 	      panel.innerHTML = window.SurfaceState.error({
-	        heading: "I couldn't load transcripts",
+	        heading: "transcripts couldn't be loaded.",
 	        desc: window.CONVEY_COPY?.RELOAD_HINT || 'reload to try again.',
 	        retry: true,
 	        retryLabel: window.CONVEY_COPY?.ACTION_TRY_AGAIN || 'Try again',
