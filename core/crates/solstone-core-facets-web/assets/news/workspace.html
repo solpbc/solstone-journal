@@ -354,6 +354,10 @@
     return holder.innerHTML;
   }
 
+  function escapeAttr(value) {
+    return escapeHtml(value).replace(/"/g, '&quot;');
+  }
+
   function decodePart(value) {
     try {
       return decodeURIComponent(value || '');
@@ -533,7 +537,7 @@
     const groups = new Map();
     newsletters.forEach(item => { if (!groups.has(item.day)) groups.set(item.day, []); groups.get(item.day).push(item); });
     const days = [...groups.keys()].sort().reverse();
-    const groupHtml = day => `<section class="news-day-group" id="news-day-${escapeHtml(day)}"><h3>${escapeHtml(groups.get(day)[0].label)}</h3><ul class="news-index-list">${groups.get(day).map(item => `<li><a class="news-index-link" href="${escapeHtml(item.url)}"><span class="news-index-facet">${escapeHtml(item.facet)}</span><span class="news-index-preview">${escapeHtml(item.preview || '')}</span><span>read newsletter →</span></a></li>`).join('')}</ul></section>`;
+    const groupHtml = day => `<section class="news-day-group" id="news-day-${escapeHtml(day)}"><h3>${escapeHtml(groups.get(day)[0].label)}</h3><ul class="news-index-list">${groups.get(day).map(item => `<li><a class="news-index-link" href="${escapeAttr(item.url)}"><span class="news-index-facet">${escapeHtml(item.facet)}</span><span class="news-index-preview">${escapeHtml(item.preview || '')}</span><span>read newsletter →</span></a></li>`).join('')}</ul></section>`;
     const targetDay = returnDay();
     const earlierOpen = !!targetDay && days.slice(1).includes(targetDay);
     const listHtml = newsletters.length
@@ -543,14 +547,14 @@
             icon: window.ConveyIcons.svg('mailbox'),
             heading: copy.empty_next,
             desc: copy.empty_body,
-            action: `<p class="surface-state-desc">${escapeHtml(copy.empty_until_then)}</p><a href="${escapeHtml(copy.sample_url)}">${escapeHtml(copy.sample_link_label)}</a>`
+            action: `<p class="surface-state-desc">${escapeHtml(copy.empty_until_then)}</p><a href="${escapeAttr(copy.sample_url)}">${escapeHtml(copy.sample_link_label)}</a>`
           })
         : `
         <div class="news-empty-state">
           <p class="news-empty-body">${escapeHtml(copy.empty_body)}</p>
           <p class="news-empty-next">${escapeHtml(copy.empty_next)}</p>
           <p class="news-empty-until-then">${escapeHtml(copy.empty_until_then)}</p>
-          <p class="news-empty-sample"><a href="${escapeHtml(copy.sample_url)}">${escapeHtml(copy.sample_link_label)}</a></p>
+          <p class="news-empty-sample"><a href="${escapeAttr(copy.sample_url)}">${escapeHtml(copy.sample_link_label)}</a></p>
         </div>
       `);
     content.innerHTML = `
@@ -593,7 +597,7 @@
         <ul class="news-index-list">
           ${newsletters.map((item) => `
             <li>
-              <a class="news-index-link" href="${escapeHtml(item.url)}">
+              <a class="news-index-link" href="${escapeAttr(item.url)}">
                 <span class="news-index-facet">${escapeHtml(item.facet)}</span>
               </a>
             </li>
@@ -620,7 +624,7 @@
         </div>
       </header>
       <section class="news-index">
-        <p class="news-empty-sample"><a href="${escapeHtml(payload.day_url)}">${escapeHtml(copy.day_link)}</a></p>
+        <p class="news-empty-sample"><a href="${escapeAttr(payload.day_url)}">${escapeHtml(copy.day_link)}</a></p>
       </section>
     `;
   }
@@ -637,20 +641,20 @@
     content.innerHTML = `
       <header class="news-header">
         <div>
-          <nav class="news-back" aria-label="Newsletter views"><a class="news-back-link" href="${escapeHtml(newsIndexHref(initialContext.day))}">&larr; newsletters</a></nav>
+          <nav class="news-back" aria-label="Newsletter views"><a class="news-back-link" href="${escapeAttr(newsIndexHref(initialContext.day))}">&larr; newsletters</a></nav>
           <p class="news-kicker">${escapeHtml(payload.kicker)}</p>
           <h2 class="news-title">${escapeHtml(payload.facet)} · ${escapeHtml(payload.date_label)}</h2>
           <p class="news-subtitle">${escapeHtml(payload.subtitle)}</p>
         </div>
         <div class="news-actions">
           <button type="button" class="news-button" id="copyNewsletterButton">copy</button>
-          <a class="news-link-button" href="${escapeHtml(payload.pdf_url)}">download PDF</a>
+          <a class="news-link-button" href="${escapeAttr(payload.pdf_url)}">download PDF</a>
         </div>
       </header>
 
       <section class="news-body" id="newsletterBody"></section>
 
-      <p class="news-debug-link"><a href="${escapeHtml(payload.debug_link_url)}">${escapeHtml(payload.debug_link_label)}</a></p>
+      <p class="news-debug-link"><a href="${escapeAttr(payload.debug_link_url)}">${escapeHtml(payload.debug_link_label)}</a></p>
     `;
     renderMarkdown(payload.markdown);
     attachCopyButton(payload.raw_url);

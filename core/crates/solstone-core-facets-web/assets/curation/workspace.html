@@ -927,9 +927,9 @@ window.CUR_COPY = CUR_COPY;
 
   function payloadAttrs(payload) {
     if (payload.facet !== undefined) {
-      return `data-facet="${escapeHtml(payload.facet)}" data-source-slug="${escapeHtml(payload.source_slug)}" data-target-slug="${escapeHtml(payload.target_slug)}"`;
+      return `data-facet="${escapeAttr(payload.facet)}" data-source-slug="${escapeAttr(payload.source_slug)}" data-target-slug="${escapeAttr(payload.target_slug)}"`;
     }
-    return `data-key="${escapeHtml(payload.key)}" data-source-id="${escapeHtml(payload.source_id)}" data-target-id="${escapeHtml(payload.target_id)}"`;
+    return `data-key="${escapeAttr(payload.key)}" data-source-id="${escapeAttr(payload.source_id)}" data-target-id="${escapeAttr(payload.target_id)}"`;
   }
 
   function previewRows(preview) {

@@ -310,7 +310,13 @@ fn last_added_age(client: &Value, now: DateTime<Utc>) -> Option<String> {
         .and_then(Value::as_str)
         .and_then(parse_time)?;
     let seconds = (now - last).num_seconds();
-    (seconds >= 0).then(|| relative_time(seconds as f64))
+    (seconds >= 0).then(|| {
+        if seconds < 45 {
+            "just now".to_owned()
+        } else {
+            relative_time(seconds as f64)
+        }
+    })
 }
 fn pipeline_issue(pipeline: &Value) -> Option<Value> {
     if !pipeline.is_object() || pipeline.as_object().is_some_and(|row| row.is_empty()) {

@@ -34,10 +34,10 @@ use solstone_core_speaker_resolve::segment_catalog::{
 
 const OWNER_VOICE_UNAVAILABLE: &str = "speaker_discovery_owner_voice_unavailable";
 const OWNER_VOICE_UNAVAILABLE_MESSAGE: &str =
-    "i need your voice set up before looking for new voices.";
+    "your voice needs to be set up before the search for new voices can start.";
 const INVALID_EMBEDDINGS: &str = "speaker_discovery_invalid_embeddings";
 const INVALID_EMBEDDINGS_MESSAGE: &str =
-    "i skipped some voice samples because they were not usable.";
+    "some voice samples were skipped because they were not usable.";
 
 type DiscoveryMember = (String, String, String, String, String, i64);
 
