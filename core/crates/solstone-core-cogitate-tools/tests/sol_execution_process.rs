@@ -128,6 +128,36 @@ fn real_command_fully_captures_then_presentation_truncates_each_stream() {
     );
 }
 
+#[test]
+fn omitted_json_does_not_change_command_exit_or_repeat_a_write() {
+    let root = tempfile::tempdir().unwrap();
+    let response = root.path().join("response.json");
+    let receipt = root.path().join("writes.txt");
+    fs::write(
+        &response,
+        serde_json::json!({"private_prefix": "must-not-leak", "content": "x".repeat(7000)})
+            .to_string(),
+    )
+    .unwrap();
+    for status in [0, 7] {
+        let argv = shell(
+            "printf done >> \"$2\"; cat \"$1\"; exit \"$3\"",
+            &[
+                "fixture".to_owned(),
+                response.display().to_string(),
+                receipt.display().to_string(),
+                status.to_string(),
+            ],
+        );
+        let actual = run_with_timeout(&argv, root.path(), Duration::from_secs(2)).unwrap();
+        assert_eq!(actual.is_error, status != 0);
+        assert!(actual.text.contains("output_omitted"));
+        assert!(!actual.text.contains("must-not-leak"));
+        assert_eq!(actual.text.contains("exit_code: 7"), status == 7);
+    }
+    assert_eq!(fs::read_to_string(receipt).unwrap(), "donedone");
+}
+
 fn quote_fixture_path(path: &Path) -> String {
     format!("'{}'", path.display().to_string().replace('\'', "'\"'\"'"))
 }

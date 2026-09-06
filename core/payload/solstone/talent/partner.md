@@ -32,6 +32,12 @@ each source for that range. Keep a gap list. Add every empty or failed read and 
 profile update to that list. For results omitted because of a stated bound, record one
 aggregate omitted count per source rather than enumerating every result.
 
+`output_omitted` means the command ran but its response did not fit the tool
+output limit. For Search, retry with matching `--day-from` and `--day-to` values
+for one day and `-n 1`. If the response remains unavailable, record the gap.
+Do not repeat a profile write because its output was omitted; read the current
+profile to check whether that change was saved.
+
 1. `solstone call activities list --source anticipated --from $lookback_start_YYYYMMDD --to $day_YYYYMMDD`: scheduled entries for the inclusive window
 2. `solstone call journal search "" --day-from $lookback_start_YYYYMMDD --day-to $day_YYYYMMDD -a pulse -n 2`: up to two pulse narratives per day, 14 for the window
 3. `solstone call journal search "" --day-from $lookback_start_YYYYMMDD --day-to $day_YYYYMMDD -a news -n 2`: up to two work-theme entries per day, 14 for the window
@@ -48,6 +54,9 @@ If a reference is no longer indexed, search again once. If that read also fails,
 record the gap and continue with the other evidence; do not repeat the failed read.
 Read no more than 12 full results across all searches. Add any omitted candidate sources
 to the gap list as an aggregate count for each source.
+An omitted or truncated entry body cannot support a profile claim. Keep the
+source's dates and attribution, and distinguish planned work from completed
+work. Repetition of a generated summary is not independent corroboration.
 
 ## Step 3: Analyze and write supported entries
 

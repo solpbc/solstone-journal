@@ -14,13 +14,13 @@ test-hooks = []
 
 [dependencies]
 regex.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
 solstone-core-cogitate = { workspace = true }
 solstone-core-format.workspace = true
 solstone-core-system.workspace = true
 
 [dev-dependencies]
 serde = { workspace = true }
-serde_json = { workspace = true }
 tempfile = "3.24.0"
 
 [target.'cfg(unix)'.dev-dependencies]

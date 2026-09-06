@@ -38,6 +38,11 @@ well-sourced versus inferred:
 - **Tool-error guard** — if a tool errors, record it as a gap; never treat the
   error text as data; continue with whatever data succeeded; never fabricate to
   fill a gap.
+- **Incomplete output** — `output_omitted` means the command ran but its response
+  did not fit the tool output limit. For Search, retry with one day at a time
+  using matching `--day-from` and `--day-to` values and `-n 1`. If the response
+  still cannot be read, record the gap. Never treat missing output as evidence
+  that there were no records.
 
 ## Gather
 
@@ -58,6 +63,16 @@ There is no dedicated `decisions` or `followups` stream — derive both by synth
 - `followups` — from `action` + anticipated activities
 - `relationship_signals`
 - `gaps`
+
+Search snippets identify candidate sources. Before using one for a consequential
+claim, read the entry with `solstone call journal read --path PATH --idx IDX
+--entry-id ENTRY_ID`, copying all three fields from the same search result.
+Read at most 12 entries; record remaining candidates as a coverage gap. If a
+full entry is unavailable or its output is omitted, leave the claim out. Preserve
+the source's dates, speaker attribution, and distinction between planned work
+and completed work. Repeated generated summaries do not establish independent
+corroboration. A link identifies a source; it does not prove the source supports
+the claim.
 
 ## Writing Rules
 

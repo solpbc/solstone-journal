@@ -348,10 +348,7 @@ pub fn format_shell_output(
 ) -> String {
     let mut parts = Vec::new();
     if !stdout.is_empty() {
-        parts.push(format!(
-            "stdout:\n{}",
-            truncate_output(stdout, SHELL_STDOUT_CAP)
-        ));
+        parts.push(format!("stdout:\n{}", format_stdout(stdout)));
     }
     if !stderr.is_empty() {
         parts.push(format!(
@@ -381,6 +378,39 @@ pub fn truncate_output(text: &str, cap: usize) -> String {
         "{}{TRUNCATION_MARKER}",
         text.chars().take(cap).collect::<String>()
     )
+}
+
+fn format_stdout(text: &str) -> String {
+    if text.chars().count() <= SHELL_STDOUT_CAP {
+        return text.to_owned();
+    }
+    let Ok(raw) = serde_json::from_str::<&serde_json::value::RawValue>(text) else {
+        return truncate_output(text, SHELL_STDOUT_CAP);
+    };
+    // Strip only JSON whitespace outside strings. Preserve number spellings,
+    // duplicate keys, escapes and ordering instead of decoding through Value.
+    let mut compact = String::new();
+    let mut quoted = false;
+    let mut escaped = false;
+    let mut count = 0;
+    for ch in raw.get().chars() {
+        if !quoted && matches!(ch, ' ' | '\n' | '\r' | '\t') {
+            continue;
+        }
+        count += 1;
+        if count > SHELL_STDOUT_CAP {
+            return "output_omitted: the complete JSON response exceeds the tool output limit. No response data is shown. For a read, narrow the query or date range and request fewer results. Do not repeat a write because its output was omitted.".to_owned();
+        }
+        compact.push(ch);
+        if escaped {
+            escaped = false;
+        } else if quoted && ch == '\\' {
+            escaped = true;
+        } else if ch == '"' {
+            quoted = !quoted;
+        }
+    }
+    compact
 }
 
 #[cfg(feature = "test-hooks")]
@@ -454,6 +484,49 @@ mod tests {
                 "é".repeat(SHELL_STDERR_CAP)
             )
         );
+    }
+
+    #[test]
+    fn structured_output_keeps_complete_records_when_compaction_fits() {
+        let value = serde_json::json!({
+            "days": [{"results": (0..80).map(|id| serde_json::json!({
+                "entry_id": id, "text": "dated evidence", "idx": id
+            })).collect::<Vec<_>>() }],
+            "tail": "last field must survive"
+        });
+        let pretty = serde_json::to_string_pretty(&value).unwrap();
+        assert!(pretty.chars().count() > SHELL_STDOUT_CAP);
+        let actual = format_shell_output(&pretty, "", Some(0), false);
+        let body = actual.strip_prefix("stdout:\n").unwrap();
+        assert!(body.chars().count() <= SHELL_STDOUT_CAP);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(body).unwrap(),
+            value
+        );
+    }
+
+    #[test]
+    fn oversized_structured_output_is_omitted_without_partial_evidence() {
+        let raw = serde_json::json!({"claim": "unsupported-prefix", "body": "x".repeat(7000)})
+            .to_string();
+        let actual = format_shell_output(&raw, "native failure", Some(7), false);
+        assert!(actual.contains("output_omitted"));
+        assert!(!actual.contains("unsupported-prefix"));
+        assert!(!actual.contains("[truncated]"));
+        assert!(actual.ends_with("stderr:\nnative failure\n\nexit_code: 7"));
+    }
+
+    #[test]
+    fn structured_compaction_preserves_literals_escapes_and_duplicate_keys() {
+        let raw = r#"{ "n": 1e999, "n": 900719925474099312345, "s": "é  \"quoted\" \\ \n" }"#;
+        let padded = format!("{}{raw}", "\n".repeat(SHELL_STDOUT_CAP));
+        assert_eq!(
+            format_stdout(&padded),
+            r#"{"n":1e999,"n":900719925474099312345,"s":"é  \"quoted\" \\ \n"}"#
+        );
+        let exact = serde_json::json!({"a": "é".repeat(SHELL_STDOUT_CAP - 8)}).to_string();
+        assert_eq!(exact.chars().count(), SHELL_STDOUT_CAP);
+        assert_eq!(format_stdout(&format!("\n{exact}")), exact);
     }
 
     fn unique_temp_dir(name: &str) -> tempfile::TempDir {
