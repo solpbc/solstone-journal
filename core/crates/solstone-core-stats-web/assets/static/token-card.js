@@ -73,7 +73,7 @@
   // (G2-31). Unrecognized ids fall back to the raw id itself — this never
   // invents a name.
   const MODEL_LABELS = {
-    'local/qwen3.5-4b': 'qwen 3.5 4B (local)'
+    'local/qwen3.5-4b': 'Qwen 3.5 4B (local)'
   };
 
   function readableModelLabel(id) {

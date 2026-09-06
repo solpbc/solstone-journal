@@ -835,7 +835,7 @@ const Dashboard = (function() {
     const olderQueued = count((stats.totals || {}).pending_segments);
     if (bl && bl.degraded !== true && counts.pending === 0 && counts.stuck === 0 && olderQueued > 0) {
       heroChildren.push(el('p', {className: 'backlog-hero-line backlog-hero-secondary'}, [
-        `${olderQueued.toLocaleString()} older audio segments are still queued.`
+        `${olderQueued.toLocaleString()} older audio segments from before the last 30 days are still queued.`
       ]));
     }
     const section = el('section', {className: 'backlog-section', id: 'backlogSection'}, [
