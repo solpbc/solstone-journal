@@ -3,6 +3,7 @@
 
 //! Native owner-facing curation routes.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use axum::{
@@ -525,15 +526,37 @@ fn entity_batch(root: &Path, body: Value, accept: bool) -> Response {
     };
     let mut results = Vec::new();
     let mut ok = 0;
+    // G2-26: the same source/target pair can be surfaced as a separate open
+    // review candidate per facet it was detected in. The underlying merge is
+    // facet-agnostic (it operates on the two entity ids), so a second commit
+    // for the same pair within this batch would fail — the source entity is
+    // already gone. Track pairs already merged in this call and adopt that
+    // merge's outcome for the rest instead of re-committing it.
+    let mut merged_pairs: HashMap<(String, String), Value> = HashMap::new();
     for row in items {
         let facet = string(row, "facet");
         let source = string(row, "source_slug");
         let target = string(row, "target_slug");
         let result = if facet.is_empty() || source.is_empty() || target.is_empty() {
             json!({"facet":facet,"source_slug":source,"target_slug":target,"status":"error","error":"candidate is missing facet, source_slug, or target_slug"})
+        } else if accept && let Some(prior) = merged_pairs.get(&(source.clone(), target.clone())) {
+            match record_merge_adoption(root, &facet, &source, &target, prior) {
+                Ok(value) => batch_item_result(&facet, &source, &target, value, accept),
+                Err(TransitionFailure::Busy) => {
+                    json!({"facet":facet,"source_slug":source,"target_slug":target,"status":"error","error":ENTITY_BUSY})
+                }
+                Err(TransitionFailure::Internal(error)) => {
+                    json!({"facet":facet,"source_slug":source,"target_slug":target,"status":"error","error":error})
+                }
+            }
         } else {
             match entity_transition_value(root, &facet, &source, &target, accept) {
-                Ok(value) => batch_item_result(&facet, &source, &target, value, accept),
+                Ok(value) => {
+                    if accept && success_status(&value, accept) {
+                        merged_pairs.insert((source.clone(), target.clone()), value.clone());
+                    }
+                    batch_item_result(&facet, &source, &target, value, accept)
+                }
                 // Batch paths retain per-item reporting instead of exposing a
                 // route-level timeout.
                 Err(TransitionFailure::Busy) => {
@@ -550,6 +573,61 @@ fn entity_batch(root: &Path, body: Value, accept: bool) -> Response {
         results.push(result);
     }
     Json(json!({"results":results, if accept {"accepted"} else {"dismissed"}:ok, "failed":items.len()-ok})).into_response()
+}
+
+/// Mark a duplicate (different-facet) review candidate for a pair already
+/// merged earlier in the same batch as accepted, without re-committing the
+/// merge itself. `prior` is the successful `entity_transition_value` result
+/// (accepted or already_accepted) that performed the real merge.
+fn record_merge_adoption(
+    root: &Path,
+    facet: &str,
+    source: &str,
+    target: &str,
+    prior: &Value,
+) -> Result<Value, TransitionFailure> {
+    let key = entity_key(facet, source, target);
+    let candidate = match entity_candidate(root, facet, source, target) {
+        Ok(Some(value)) => value,
+        Ok(None) => {
+            return Ok(result_error_value(
+                "entity_merge",
+                key,
+                "candidate not found",
+            ));
+        }
+        Err(error) => return Err(TransitionFailure::Internal(error)),
+    };
+    let status = string(&candidate, "status");
+    if status == "accepted" {
+        let merge_id = merge_id(&candidate);
+        return Ok(
+            json!({"status":"already_accepted","kind":"entity_merge","key":key,"candidate":candidate,"merge_id":merge_id,"undo":entity_merge_undo(merge_id)}),
+        );
+    }
+    if status != "open" {
+        return Ok(result_error_value(
+            "entity_merge",
+            key,
+            &format!("cannot accept candidate with status {status}"),
+        ));
+    }
+    let merge_id = prior
+        .get("merge_id")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    match accept_merge_candidate(root, facet, source, target, merge_id.as_deref()) {
+        Ok(Some(candidate)) => Ok(
+            json!({"status":"accepted","kind":"entity_merge","key":key,"merge":prior.get("merge").cloned().unwrap_or(Value::Null),"candidate":candidate,"merge_id":merge_id,"undo":entity_merge_undo(merge_id.as_deref())}),
+        ),
+        Ok(None) => Ok(result_error_value(
+            "entity_merge",
+            key,
+            "candidate not found",
+        )),
+        Err(error) if entity_busy(&error) => Err(TransitionFailure::Busy),
+        Err(error) => Err(TransitionFailure::Internal(error.to_string())),
+    }
 }
 
 async fn speaker_preview(State(root): State<PathBuf>, body: Bytes) -> Response {
@@ -1140,5 +1218,69 @@ mod tests {
             accepted["results"][0]["merge_id"]
         );
         assert_eq!(already_accepted["results"][0]["undo"]["available"], true);
+    }
+
+    /// G2-26: the same source/target pair, surfaced under two different
+    /// facets, must not each try to commit their own merge — the second
+    /// commit would fail because the source entity is already gone.
+    #[tokio::test]
+    async fn entity_batch_adopts_a_shared_merge_for_a_duplicate_pair_across_facets() {
+        let root = crate::test_support::phase_root("established_empty");
+        crate::test_support::write(
+            &root.path().join("entities/review-candidates.jsonl"),
+            "{\"facet\":\"awareness\",\"source_slug\":\"source\",\"target_slug\":\"target\",\"status\":\"open\",\"evidence\":{\"detection_count\":1}}\n\
+             {\"facet\":\"solpbc\",\"source_slug\":\"source\",\"target_slug\":\"target\",\"status\":\"open\",\"evidence\":{\"detection_count\":1}}\n",
+        );
+        solstone_core_entity::save_entity_identity(
+            root.path(),
+            "source",
+            &json!({"id":"source","name":"Source","aka":["Source Alias"],"emails":[]}),
+            None,
+        )
+        .expect("source identity");
+        solstone_core_entity::save_entity_identity(
+            root.path(),
+            "target",
+            &json!({"id":"target","name":"Target","aka":[],"emails":[]}),
+            None,
+        )
+        .expect("target identity");
+
+        let body = json!({"items":[
+            {"facet":"awareness","source_slug":"source","target_slug":"target"},
+            {"facet":"solpbc","source_slug":"source","target_slug":"target"},
+        ]});
+        let response = post_json(
+            routes(root.path().to_path_buf()),
+            "/app/curation/api/entity/accept-batch",
+            body,
+        )
+        .await;
+
+        assert_eq!(
+            response["accepted"], 2,
+            "both facet rows resolve: {response}"
+        );
+        assert_eq!(response["failed"], 0);
+        assert_eq!(response["results"][0]["status"], "accepted");
+        assert_eq!(response["results"][1]["status"], "accepted");
+        let first_merge_id = response["results"][0]["merge_id"].clone();
+        assert!(first_merge_id.is_string());
+        assert_eq!(
+            response["results"][1]["merge_id"], first_merge_id,
+            "the second facet row adopts the first merge rather than re-committing it"
+        );
+        assert_eq!(response["results"][1]["undo"]["available"], true);
+
+        // The merge itself only ran once: the alias was added exactly once,
+        // not duplicated by a second commit attempt.
+        let target = solstone_core_entity::read_entity_identity(root.path(), "target")
+            .expect("target identity")
+            .expect("target exists");
+        let akas = target.value()["aka"].as_array().expect("aliases");
+        assert_eq!(
+            akas.iter().filter(|value| *value == "Source Alias").count(),
+            1
+        );
     }
 }
