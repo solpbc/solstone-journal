@@ -3890,6 +3890,9 @@
   const dayGridHost = document.getElementById('spkDayGridHost');
   const dayGridLegend = document.getElementById('spkDayGridLegend');
   const escapeHtml = (value) => window.AppServices.escapeHtml(value);
+  const pluralize = (count, singular, plural = `${singular}s`) => (count === 1 ? singular : plural);
+  const PLACEHOLDER_SPEAKER_NAME = /^speaker\s+\d+$/i;
+  const isPlaceholderSpeakerName = (name) => PLACEHOLDER_SPEAKER_NAME.test(String(name || '').trim());
   let mountedDayGridKey = null;
   let whoIsThisSheet = null;
   let discoveryClustersById = new Map();
