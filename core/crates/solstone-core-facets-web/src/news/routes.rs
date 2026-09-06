@@ -164,8 +164,37 @@ fn counts(rows: &[store::NewsRow]) -> BTreeMap<String, usize> {
         map
     })
 }
-fn label_item(row: &store::NewsRow) -> Value {
-    json!({"facet": row.facet, "day": row.day, "label": dates::format_news_list_date(&row.day), "url": format!("/app/news/{}/{}", row.facet, row.day)})
+fn label_item(root: &std::path::Path, row: &store::NewsRow) -> Value {
+    json!({"facet": row.facet, "day": row.day, "label": dates::format_news_list_date(&row.day), "url": format!("/app/news/{}/{}", row.facet, row.day), "preview": preview_line(root, &row.facet, &row.day)})
+}
+
+// The index card is interface over stored content: the letter's own opening line
+// (its TL;DR when the letter leads with one, its first sentence otherwise) gives the
+// owner a reason to pick one letter over another without opening every one of them.
+// Best-effort only — a missing or unreadable file yields no preview, not an error.
+fn preview_line(root: &std::path::Path, facet: &str, day: &str) -> Option<String> {
+    let (_, content) = load(root, facet, day).ok().flatten()?;
+    let line = content
+        .lines()
+        .find(|line| {
+            let trimmed = line.trim();
+            !trimmed.is_empty() && !trimmed.starts_with('#')
+        })?
+        .trim()
+        .trim_matches('*')
+        .replace("**", "")
+        .trim()
+        .to_owned();
+    if line.is_empty() {
+        return None;
+    }
+    const PREVIEW_CHARS: usize = 220;
+    if line.chars().count() > PREVIEW_CHARS {
+        let head: String = line.chars().take(PREVIEW_CHARS).collect();
+        Some(format!("{}…", head.trim_end()))
+    } else {
+        Some(line)
+    }
 }
 
 async fn state(root: PathBuf, _clock: Clock) -> Response {
@@ -188,7 +217,7 @@ async fn state(root: PathBuf, _clock: Clock) -> Response {
             .replace("{month}", &dates::format_news_month(&row.day))
     });
     json_response(
-        json!({"newsletters": rows.iter().take(60).map(label_item).collect::<Vec<_>>(), "total_count": total_count,
+        json!({"newsletters": rows.iter().take(60).map(|row| label_item(&root, row)).collect::<Vec<_>>(), "total_count": total_count,
       "copy": {"kicker": copy::NEWS_KICKER, "index_h1": copy::NEWS_INDEX_H1, "subtitle": copy::NEWS_SUBTITLE, "empty_body": copy::NEWS_EMPTY_BODY, "empty_next": empty_next, "empty_until_then": copy::NEWS_EMPTY_UNTIL_THEN, "sample_link_label": copy::NEWS_SAMPLE_LINK_LABEL, "sample_url": "/app/news/sample", "populated_framing": copy::NEWS_POPULATED_FRAMING, "populated_sample_link": copy::NEWS_POPULATED_SAMPLE_LINK, "populated_next_footer": "", "grid_title": copy::NEWS_GRID_TITLE, "grid_lede": grid_lede, "grid_unit_one": copy::NEWS_GRID_UNIT_ONE, "grid_unit_other": copy::NEWS_GRID_UNIT_OTHER, "grid_unit_none": copy::NEWS_GRID_UNIT_NONE}}),
     )
 }
@@ -233,7 +262,7 @@ async fn api_day(root: PathBuf, day: String) -> Response {
     let matching = rows(&root)
         .into_iter()
         .filter(|row| row.day == day)
-        .map(|row| label_item(&row))
+        .map(|row| label_item(&root, &row))
         .collect::<Vec<_>>();
     let date_label = dates::format_news_list_date(&day);
     let mut value = json!({"day": day, "date_label": date_label, "newsletters": matching, "copy": {"title": copy::NEWS_DAY_TITLE.replace("{date_label}", &date_label), "subtitle": copy::NEWS_DAY_SUBTITLE, "empty_title": copy::NEWS_DAY_EMPTY_TITLE.replace("{date_label}", &date_label), "empty_body": copy::NEWS_DAY_EMPTY_BODY}});

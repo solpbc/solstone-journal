@@ -161,6 +161,16 @@
   white-space: nowrap;
 }
 
+.news-index-preview {
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
 .news-index-day {
   color: #4b5563;
   font-size: 0.95rem;
@@ -460,7 +470,7 @@
     const groups = new Map();
     newsletters.forEach(item => { if (!groups.has(item.day)) groups.set(item.day, []); groups.get(item.day).push(item); });
     const days = [...groups.keys()].sort().reverse();
-    const groupHtml = day => `<section class="news-day-group" id="news-day-${escapeHtml(day)}"><h3>${escapeHtml(groups.get(day)[0].label)}</h3><ul class="news-index-list">${groups.get(day).map(item => `<li><a class="news-index-link" href="${escapeHtml(item.url)}"><span class="news-index-facet">${escapeHtml(item.facet)}</span><span>read newsletter →</span></a></li>`).join('')}</ul></section>`;
+    const groupHtml = day => `<section class="news-day-group" id="news-day-${escapeHtml(day)}"><h3>${escapeHtml(groups.get(day)[0].label)}</h3><ul class="news-index-list">${groups.get(day).map(item => `<li><a class="news-index-link" href="${escapeHtml(item.url)}"><span class="news-index-facet">${escapeHtml(item.facet)}</span><span class="news-index-preview">${escapeHtml(item.preview || '')}</span><span>read newsletter →</span></a></li>`).join('')}</ul></section>`;
     const targetDay = returnDay();
     const earlierOpen = !!targetDay && days.slice(1).includes(targetDay);
     const listHtml = newsletters.length

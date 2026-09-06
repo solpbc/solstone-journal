@@ -3055,18 +3055,21 @@
               "day": "20260510",
               "facet": "personal",
               "label": "Sun May 10, 2026",
+              "preview": "The personal facet newsletter, one paragraph, no headings.",
               "url": "/app/news/personal/20260510"
             },
             {
               "day": "20260510",
               "facet": "work",
               "label": "Sun May 10, 2026",
+              "preview": "A short newsletter body with a list:",
               "url": "/app/news/work/20260510"
             },
             {
               "day": "20260503",
               "facet": "work",
               "label": "Sun May 3, 2026",
+              "preview": "An earlier work newsletter so the feed has a second page.",
               "url": "/app/news/work/20260503"
             }
           ],
@@ -3152,8 +3155,8 @@
         "why": "a malformed month: invalid_month"
       },
       {
-        "body_bytes": 465,
-        "body_sha256": "c0dcbb77398f4bcc37699b360573e5ec8e4e41d819c4bb416d1a2eb45b141aff",
+        "body_bytes": 584,
+        "body_sha256": "551cd937e20affdf7eaf07b2ed2b801c9ba76c6c2e468310991d1d51841dff87",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -3170,12 +3173,14 @@
               "day": "20260510",
               "facet": "personal",
               "label": "Sun May 10, 2026",
+              "preview": "The personal facet newsletter, one paragraph, no headings.",
               "url": "/app/news/personal/20260510"
             },
             {
               "day": "20260510",
               "facet": "work",
               "label": "Sun May 10, 2026",
+              "preview": "A short newsletter body with a list:",
               "url": "/app/news/work/20260510"
             }
           ]
