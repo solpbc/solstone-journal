@@ -1516,3 +1516,38 @@ body.presentation-mode .surface-state-desc {
     white-space: nowrap;
   }
 }
+
+/* ==========================================================================
+   Phone touch floor — the shell's own controls (X-24)
+   The system-messages drawer and the skip link are shell chrome, so no app
+   can raise them to the 44px floor its own controls already meet. Padding
+   and box size only; type sizes stay where they are.
+   ========================================================================== */
+@media (max-width: 768px) {
+  .diagnostic-console-actions button,
+  .diagnostic-console-entry button,
+  .diagnostic-console-tabs button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 44px;
+    min-height: 44px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .diagnostic-console-close {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+
+  .skip-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+}
