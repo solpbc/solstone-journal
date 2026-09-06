@@ -159,6 +159,13 @@ fn mark(removal_class: RemovalClass, state: Value, id: &str, names: &[&str]) -> 
     })
 }
 
+fn mark_on_day(id: &str, day: &str, dir: &str) -> Value {
+    let mut value = mark(RemovalClass::PolicyRawRelease, json!("marked"), id, &["a"]);
+    value["target"]["day"] = day.into();
+    value["target"]["dir"] = dir.into();
+    value
+}
+
 fn marks_receipt(marks: Value) -> Value {
     json!({"ok": true, "verb": "marks", "marks": {"version": 1, "marks": marks}})
 }
@@ -228,6 +235,47 @@ fn action_records(root: &Path) -> Vec<Value> {
         })
         .map(|line| serde_json::from_str(&line).expect("action JSON"))
         .collect()
+}
+
+#[test]
+fn list_rows_arrive_in_date_order_newest_first() {
+    // The register is keyed by mark id, so its own iteration order carries no
+    // meaning for the owner. Ids here are deliberately in the opposite order
+    // to their days.
+    let harness = Harness::new();
+    let receipt = marks_receipt(json!({
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": mark_on_day("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "20250220", "070000_17"),
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": mark_on_day("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "20260903", "090000_01"),
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc": mark_on_day("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "20260903", "220000_02"),
+        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd": mark_on_day("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "20260901", "080000_03"),
+    }));
+    let response = harness.call(&receipt, "0", &json!({}), || {
+        response(
+            harness.router(),
+            request("GET", "/app/home/api/removals", Value::Null),
+        )
+    });
+    assert_eq!(response.0, StatusCode::OK);
+    let days = response.1["removals"]
+        .as_array()
+        .expect("rows")
+        .iter()
+        .map(|row| {
+            (
+                row["day"].as_str().unwrap_or("").to_owned(),
+                row["dir"].as_str().unwrap_or("").to_owned(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        days,
+        vec![
+            ("20260903".to_owned(), "220000_02".to_owned()),
+            ("20260903".to_owned(), "090000_01".to_owned()),
+            ("20260901".to_owned(), "080000_03".to_owned()),
+            ("20250220".to_owned(), "070000_17".to_owned()),
+        ]
+    );
 }
 
 #[test]
@@ -588,6 +636,22 @@ fn vitals_render_calm_neutral_without_attention_chip() {
     assert!(
         output.status.success(),
         "vitals render harness: {}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn narrative_and_briefing_placeholder_states_stay_honest() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let output = Command::new("node")
+        .arg(manifest_dir.join("tests/narrative_briefing_render.js"))
+        .arg(manifest_dir)
+        .output()
+        .expect("narrative and briefing render harness");
+    assert!(
+        output.status.success(),
+        "narrative and briefing render harness: {}\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );

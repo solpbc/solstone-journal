@@ -182,7 +182,10 @@ fn replay_convey_home_corpus() {
                 &case["input"]["pipeline_summary"],
                 case["input"]["briefing_valid"].as_bool().unwrap(),
                 "20260513",
-                "20260514"
+                "20260514",
+                // The captured cases carry no clock; they pin the link shape,
+                // which is the far side of the overnight window.
+                true
             )),
             &expected,
             "gap links",

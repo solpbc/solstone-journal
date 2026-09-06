@@ -6,6 +6,7 @@
 use chrono::{DateTime, Duration, Utc};
 use serde_json::{Value, json};
 
+use crate::formatting::join_phrases;
 use crate::model::{BacklogSource, BacklogValidity};
 use crate::needs_you::format_degraded_capture_line;
 
@@ -21,10 +22,16 @@ const NO_ELIGIBLE_HEADLINE: &str =
     "none of your devices have the solstone app set up to add to your journal right now.";
 const RUNNING_REACH_SENTENCE: &str =
     "the app is still running, but it isn't adding to your journal.";
+const RUNNING_REACH_SENTENCE_PLURAL: &str =
+    "the app is still running on them, but it isn't adding to your journal.";
 const ASLEEP_REACH_SENTENCE: &str =
     "the device hasn't been reachable — it could be asleep, off, or having trouble connecting.";
+const ASLEEP_REACH_SENTENCE_PLURAL: &str =
+    "they haven't been reachable — they could be asleep, off, or having trouble connecting.";
 const STALE_ISSUE: &str =
     "the solstone app on one of your devices has not added anything to your journal recently.";
+const STALE_ISSUE_PLURAL: &str =
+    "the solstone app on those devices has not added anything to your journal recently.";
 const OFFLINE_ISSUE: &str = "the solstone app hasn't added anything to your journal recently.";
 
 #[derive(Clone, Copy)]
@@ -157,7 +164,7 @@ fn assessed_empty_or_all_active(capture: &Value) -> bool {
             .all(|row| row.get("status").and_then(Value::as_str) == Some("active"))
 }
 
-fn affected_reach_sentence(capture: &Value) -> Option<&'static str> {
+fn affected_reach_sentence(capture: &Value, plural: bool) -> Option<&'static str> {
     let clients = capture.get("clients").and_then(Value::as_array)?;
     let affected: Vec<&Value> = clients
         .iter()
@@ -177,9 +184,17 @@ fn affected_reach_sentence(capture: &Value) -> Option<&'static str> {
             Some("active" | "stale")
         )
     }) {
-        Some(RUNNING_REACH_SENTENCE)
+        Some(if plural {
+            RUNNING_REACH_SENTENCE_PLURAL
+        } else {
+            RUNNING_REACH_SENTENCE
+        })
     } else {
-        Some(ASLEEP_REACH_SENTENCE)
+        Some(if plural {
+            ASLEEP_REACH_SENTENCE_PLURAL
+        } else {
+            ASLEEP_REACH_SENTENCE
+        })
     }
 }
 
@@ -259,13 +274,15 @@ fn unknown_backlog() -> Value {
     json!({"text":"i can't tell if your journal is caught up right now.","severity":"amber","href":"/app/health"})
 }
 fn capture_issue(capture: &Value) -> Option<Value> {
-    let (base, severity) = match capture.get("status").and_then(Value::as_str) {
+    let status = capture.get("status").and_then(Value::as_str);
+    let (base, plural_base, severity) = match status {
         Some("degraded") => (
             format_degraded_capture_line(capture).expect("degraded"),
+            None,
             "red",
         ),
-        Some("offline") => (OFFLINE_ISSUE.to_owned(), "red"),
-        Some("stale") => (STALE_ISSUE.to_owned(), "amber"),
+        Some("offline") => (OFFLINE_ISSUE.to_owned(), None, "red"),
+        Some("stale") => (STALE_ISSUE.to_owned(), Some(STALE_ISSUE_PLURAL), "amber"),
         _ => {
             let sources = crate::needs_you::named_attention_sources(capture)?;
             return Some(json!({
@@ -277,35 +294,42 @@ fn capture_issue(capture: &Value) -> Option<Value> {
             }));
         }
     };
-    let text = match capture.get("status").and_then(Value::as_str) {
-        Some("stale" | "offline") => match affected_reach_sentence(capture) {
-            Some(sentence) => format!("{base} {sentence}"),
-            None => base,
-        },
-        _ => base,
-    };
+    // Several devices in one row read as a single device with a comma in its
+    // name, and every following pronoun was singular. The names the owner sees
+    // decide the number the sentence is written in.
     let names = capture
         .get("clients")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
         .filter(|client| {
-            matches!(
-                capture.get("status").and_then(Value::as_str),
-                Some("stale" | "offline")
-            ) && matches!(
-                client.get("status").and_then(Value::as_str),
-                Some("stale" | "offline")
-            )
+            matches!(status, Some("stale" | "offline"))
+                && matches!(
+                    client.get("status").and_then(Value::as_str),
+                    Some("stale" | "offline")
+                )
         })
         .filter_map(|client| client.get("name").and_then(Value::as_str))
         .filter(|name| !name.trim().is_empty())
+        .map(str::to_owned)
         .collect::<Vec<_>>();
+    let plural = names.len() > 1;
+    let base = match (plural, plural_base) {
+        (true, Some(plural_base)) => plural_base.to_owned(),
+        _ => base,
+    };
+    let text = match status {
+        Some("stale" | "offline") => match affected_reach_sentence(capture, plural) {
+            Some(sentence) => format!("{base} {sentence}"),
+            None => base,
+        },
+        _ => base,
+    };
     if names.is_empty() {
         return Some(json!({"text":text,"severity":severity,"href":"/app/health"}));
     }
     Some(
-        json!({"text":format!("{}: {text}", names.join(", ")),"severity":severity,"href":"/app/network/#devices"}),
+        json!({"text":format!("{}: {text}", join_phrases(&names)),"severity":severity,"href":"/app/network/#devices"}),
     )
 }
 fn pipeline_issue(pipeline: &Value) -> Option<Value> {
@@ -587,6 +611,47 @@ mod tests {
             assert_eq!(g["severity"], "amber");
             assert!(g["last_observation"].is_null());
         }
+
+        // Two offline devices in one row previously read as one device called
+        // "iPhone's iPhone, suze", followed by singular pronouns.
+        let two_offline = json!({
+            "status": "offline",
+            "clients": [
+                client("iPhone's iPhone", "offline", "offline"),
+                client("suze", "offline", "offline"),
+            ],
+            "unassessed": [],
+            "registry": "registry_complete",
+        });
+        assert_eq!(
+            glance(&two_offline)["issues"][0]["text"],
+            "iPhone's iPhone and suze: the solstone app hasn't added anything to your journal recently. they haven't been reachable — they could be asleep, off, or having trouble connecting."
+        );
+        let three_stale_running = json!({
+            "status": "stale",
+            "clients": [
+                client("desk", "stale", "active"),
+                client("laptop", "stale", "active"),
+                client("suze", "stale", "active"),
+            ],
+            "unassessed": [],
+            "registry": "registry_complete",
+        });
+        assert_eq!(
+            glance(&three_stale_running)["issues"][0]["text"],
+            "desk, laptop, and suze: the solstone app on those devices has not added anything to your journal recently. the app is still running on them, but it isn't adding to your journal."
+        );
+        // One device keeps the singular sentence it already had.
+        let one_offline = json!({
+            "status": "offline",
+            "clients": [client("suze", "offline", "offline")],
+            "unassessed": [],
+            "registry": "registry_complete",
+        });
+        assert_eq!(
+            glance(&one_offline)["issues"][0]["text"],
+            "suze: the solstone app hasn't added anything to your journal recently. the device hasn't been reachable — it could be asleep, off, or having trouble connecting."
+        );
 
         let stale_with_invalid = json!({
             "status": "stale",

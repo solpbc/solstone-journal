@@ -146,23 +146,23 @@ pub fn format_activity_label(activity: &Value) -> String {
         "."
     };
     format!(
-        "I spent {} taking notes in {facet}: {title}{terminator}",
+        "{} in {facet}: {title}{terminator}",
         format_duration(duration)
     )
 }
 
 pub fn format_newsletter_summary(successful: i64, attempted: i64) -> String {
     if attempted == 0 {
-        return "I didn't produce any facet newsletters.".to_owned();
+        return "no facet newsletters written.".to_owned();
     }
     if attempted > successful {
         return format!(
-            "I wrote {successful} of {attempted} newsletter{}.",
+            "{successful} of {attempted} newsletter{} written.",
             if attempted == 1 { "" } else { "s" }
         );
     }
     format!(
-        "I wrote {successful} newsletter{}.",
+        "{successful} newsletter{} written.",
         if successful == 1 { "" } else { "s" }
     )
 }
@@ -175,32 +175,33 @@ pub fn format_processing_summary(
 ) -> String {
     if mode == "degraded" {
         if attempted == 0 && successful == 0 {
-            return "I didn't produce any facet newsletters, and some overnight processing didn't finish.".to_owned();
+            return "no facet newsletters written, and some overnight processing didn't finish."
+                .to_owned();
         }
         if attempted > successful {
             return format!(
-                "I wrote {successful} of {attempted} newsletters, but some overnight processing didn't finish."
+                "{successful} of {attempted} newsletters written, but some overnight processing didn't finish."
             );
         }
         return format!(
-            "I wrote {successful} newsletter{}, but some overnight processing didn't finish.",
+            "{successful} newsletter{} written, but some overnight processing didn't finish.",
             if successful == 1 { "" } else { "s" }
         );
     }
     let mut actions = Vec::new();
     if successful > 0 {
         actions.push(format!(
-            "wrote {successful} newsletter{}",
+            "{successful} newsletter{} written",
             if successful == 1 { "" } else { "s" }
         ));
     }
     if briefing_valid {
-        actions.push("prepared your morning briefing".to_owned());
+        actions.push("your morning briefing was prepared".to_owned());
     }
     if actions.is_empty() {
         return format_newsletter_summary(successful, attempted);
     }
-    format!("I {}.", join_phrases(&actions))
+    format!("{}.", join_phrases(&actions))
 }
 
 pub fn top_heatmap_hours(stats: &Value) -> Vec<i64> {
@@ -247,11 +248,18 @@ pub fn format_heatmap_summary(stats: &Value) -> Option<String> {
     ))
 }
 
+/// Compose the "what didn't finish" links for yesterday's processing.
+///
+/// `overnight_passed` says whether the local day has actually reached the far
+/// side of the overnight window. The overnight review and the morning briefing
+/// are produced inside it, so before it has passed neither can be reported as
+/// unfinished — the work has not been given its chance yet.
 pub fn format_gap_links(
     pipeline: &Value,
     briefing_valid: bool,
     yesterday: &str,
     today: &str,
+    overnight_passed: bool,
 ) -> Vec<Value> {
     let anomalies = pipeline
         .get("anomalies")
@@ -269,11 +277,11 @@ pub fn format_gap_links(
         .filter(|row| row.get("kind").and_then(Value::as_str) == Some("talent_failure"))
         .collect::<Vec<_>>();
     let mut links = Vec::new();
-    if has_daily {
-        links.push(json!({"text":"I didn't finish the full overnight review.","href":format!("/app/thinking/#runs/{yesterday}")}));
+    if has_daily && overnight_passed {
+        links.push(json!({"text":"the overnight review didn't finish.","href":format!("/app/thinking/#runs/{yesterday}")}));
     }
     if has_activity {
-        links.push(json!({"text":"I didn't finish writing all of yesterday's notes.","href":format!("/app/thinking/#runs/{yesterday}")}));
+        links.push(json!({"text":"yesterday's notes weren't all written.","href":format!("/app/thinking/#runs/{yesterday}")}));
     }
     let mut groups = std::collections::BTreeMap::<String, Vec<&Value>>::new();
     for failure in &failures {
@@ -304,7 +312,7 @@ pub fn format_gap_links(
             .all(|row| row.get("state").and_then(Value::as_str) == Some("request_lost"));
         let text = if count == 1 {
             format!(
-                "The {label} run {}.",
+                "the {label} run {}.",
                 if lost {
                     "couldn't start"
                 } else {
@@ -348,10 +356,10 @@ pub fn format_gap_links(
         }
     }
     if !failures.is_empty() && !has_daily && !has_activity && !has_named_failures {
-        links.push(json!({"text":"Some of my overnight work didn't finish.","href":format!("/app/thinking/#runs/{yesterday}")}));
+        links.push(json!({"text":"some overnight work didn't finish.","href":format!("/app/thinking/#runs/{yesterday}")}));
     }
-    if !briefing_valid {
-        links.push(json!({"text":"I didn't prepare your morning briefing overnight.","href":format!("/app/thinking/#runs/{today}/morning_briefing")}));
+    if !briefing_valid && overnight_passed {
+        links.push(json!({"text":"your morning briefing wasn't prepared overnight.","href":format!("/app/thinking/#runs/{today}/morning_briefing")}));
     }
     links
 }
@@ -448,6 +456,7 @@ mod tests {
             true,
             "20260813",
             "20260814",
+            true,
         );
         assert_eq!(links.last().unwrap()["text"], "…and 1 more didn't finish.");
 
@@ -459,6 +468,7 @@ mod tests {
             true,
             "20260813",
             "20260814",
+            true,
         );
         assert_eq!(links[0]["text"], "2 daily summary runs didn't finish.");
         assert_eq!(
@@ -474,6 +484,7 @@ mod tests {
             true,
             "20260813",
             "20260814",
+            true,
         );
         assert_eq!(
             links[0]["href"],
@@ -490,10 +501,11 @@ mod tests {
             true,
             "20260813",
             "20260814",
+            true,
         );
         assert_eq!(
             links[0]["text"],
-            "The entities detection run didn't finish."
+            "the entities detection run didn't finish."
         );
         assert_eq!(
             links[0]["href"],
@@ -511,6 +523,7 @@ mod tests {
             true,
             "20260813",
             "20260814",
+            true,
         );
         assert_eq!(links[0]["text"], "2 document runs didn't finish.");
         assert_eq!(links[0]["href"], "/app/thinking/#runs/20260813/documents");

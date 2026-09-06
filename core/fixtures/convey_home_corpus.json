@@ -5,7 +5,7 @@
         "input": {
           "activity": {}
         },
-        "output": "I spent 0 min taking notes in unknown: untitled activity."
+        "output": "0 min in unknown: untitled activity."
       },
       {
         "input": {
@@ -15,7 +15,7 @@
             "title": "wrote the spec"
           }
         },
-        "output": "I spent 0 min taking notes in work: wrote the spec."
+        "output": "0 min in work: wrote the spec."
       },
       {
         "input": {
@@ -25,7 +25,7 @@
             "title": "wrote the spec"
           }
         },
-        "output": "I spent 45 min taking notes in work: wrote the spec."
+        "output": "45 min in work: wrote the spec."
       },
       {
         "input": {
@@ -35,7 +35,7 @@
             "title": "wrote the spec"
           }
         },
-        "output": "I spent 1.5 hours taking notes in work: wrote the spec."
+        "output": "1.5 hours in work: wrote the spec."
       },
       {
         "input": {
@@ -45,7 +45,7 @@
             "title": "wrote the spec"
           }
         },
-        "output": "I spent 2.1 hours taking notes in life: wrote the spec."
+        "output": "2.1 hours in life: wrote the spec."
       },
       {
         "input": {
@@ -55,7 +55,7 @@
             "title": "Discussion involves Solstone-related projects, along with general AI agent infrastructure."
           }
         },
-        "output": "I spent 30 min taking notes in solstone: Discussion involves Solstone-related projects, along with general AI agent infrastructure."
+        "output": "30 min in solstone: Discussion involves Solstone-related projects, along with general AI agent infrastructure."
       }
     ],
     "activity_title": [
@@ -2901,7 +2901,7 @@
         "output": [
           {
             "href": "/app/sol/20260514#morning_briefing",
-            "text": "I didn't prepare your morning briefing overnight."
+            "text": "your morning briefing wasn't prepared overnight."
           }
         ]
       },
@@ -2921,7 +2921,7 @@
         "output": [
           {
             "href": "/app/sol/20260513",
-            "text": "I didn't finish the full overnight review."
+            "text": "the overnight review didn't finish."
           }
         ]
       },
@@ -2941,7 +2941,7 @@
         "output": [
           {
             "href": "/app/sol/20260513",
-            "text": "I didn't finish writing all of yesterday's notes."
+            "text": "yesterday's notes weren't all written."
           }
         ]
       },
@@ -2963,7 +2963,7 @@
         "output": [
           {
             "href": "/app/sol/20260513#facet_newsletter/u1",
-            "text": "The facet newsletter run didn't finish."
+            "text": "the facet newsletter run didn't finish."
           }
         ]
       },
@@ -2986,7 +2986,7 @@
         "output": [
           {
             "href": "/app/sol/20260513#facet_newsletter/u1",
-            "text": "The facet newsletter run couldn't start."
+            "text": "the facet newsletter run couldn't start."
           }
         ]
       },
@@ -3038,7 +3038,7 @@
         "output": [
           {
             "href": "/app/sol/20260513#x/u",
-            "text": "The x run didn't finish."
+            "text": "the x run didn't finish."
           },
           {
             "href": "/app/sol/20260513",
@@ -3063,7 +3063,7 @@
         "output": [
           {
             "href": "/app/sol/20260513",
-            "text": "Some of my overnight work didn't finish."
+            "text": "some overnight work didn't finish."
           }
         ]
       }
@@ -54681,49 +54681,49 @@
           "attempted": 0,
           "successful": 0
         },
-        "output": "I didn't produce any facet newsletters."
+        "output": "no facet newsletters written."
       },
       {
         "input": {
           "attempted": 1,
           "successful": 0
         },
-        "output": "I wrote 0 of 1 newsletter."
+        "output": "0 of 1 newsletter written."
       },
       {
         "input": {
           "attempted": 2,
           "successful": 0
         },
-        "output": "I wrote 0 of 2 newsletters."
+        "output": "0 of 2 newsletters written."
       },
       {
         "input": {
           "attempted": 1,
           "successful": 1
         },
-        "output": "I wrote 1 newsletter."
+        "output": "1 newsletter written."
       },
       {
         "input": {
           "attempted": 2,
           "successful": 1
         },
-        "output": "I wrote 1 of 2 newsletters."
+        "output": "1 of 2 newsletters written."
       },
       {
         "input": {
           "attempted": 2,
           "successful": 2
         },
-        "output": "I wrote 2 newsletters."
+        "output": "2 newsletters written."
       },
       {
         "input": {
           "attempted": 2,
           "successful": 3
         },
-        "output": "I wrote 3 newsletters."
+        "output": "3 newsletters written."
       }
     ],
     "processing_summary": [
@@ -54734,7 +54734,7 @@
           "mode": "healthy",
           "successful_newsletters": 0
         },
-        "output": "I didn't produce any facet newsletters."
+        "output": "no facet newsletters written."
       },
       {
         "input": {
@@ -54743,7 +54743,7 @@
           "mode": "healthy",
           "successful_newsletters": 0
         },
-        "output": "I prepared your morning briefing."
+        "output": "your morning briefing was prepared."
       },
       {
         "input": {
@@ -54752,7 +54752,7 @@
           "mode": "healthy",
           "successful_newsletters": 0
         },
-        "output": "I wrote 0 of 1 newsletter."
+        "output": "0 of 1 newsletter written."
       },
       {
         "input": {
@@ -54761,7 +54761,7 @@
           "mode": "healthy",
           "successful_newsletters": 0
         },
-        "output": "I prepared your morning briefing."
+        "output": "your morning briefing was prepared."
       },
       {
         "input": {
@@ -54770,7 +54770,7 @@
           "mode": "healthy",
           "successful_newsletters": 1
         },
-        "output": "I wrote 1 newsletter."
+        "output": "1 newsletter written."
       },
       {
         "input": {
@@ -54779,7 +54779,7 @@
           "mode": "healthy",
           "successful_newsletters": 1
         },
-        "output": "I wrote 1 newsletter and prepared your morning briefing."
+        "output": "1 newsletter written and your morning briefing was prepared."
       },
       {
         "input": {
@@ -54788,7 +54788,7 @@
           "mode": "healthy",
           "successful_newsletters": 1
         },
-        "output": "I wrote 1 newsletter."
+        "output": "1 newsletter written."
       },
       {
         "input": {
@@ -54797,7 +54797,7 @@
           "mode": "healthy",
           "successful_newsletters": 1
         },
-        "output": "I wrote 1 newsletter and prepared your morning briefing."
+        "output": "1 newsletter written and your morning briefing was prepared."
       },
       {
         "input": {
@@ -54806,7 +54806,7 @@
           "mode": "healthy",
           "successful_newsletters": 2
         },
-        "output": "I wrote 2 newsletters."
+        "output": "2 newsletters written."
       },
       {
         "input": {
@@ -54815,7 +54815,7 @@
           "mode": "healthy",
           "successful_newsletters": 2
         },
-        "output": "I wrote 2 newsletters and prepared your morning briefing."
+        "output": "2 newsletters written and your morning briefing was prepared."
       },
       {
         "input": {
@@ -54824,7 +54824,7 @@
           "mode": "degraded",
           "successful_newsletters": 0
         },
-        "output": "I didn't produce any facet newsletters, and some overnight processing didn't finish."
+        "output": "no facet newsletters written, and some overnight processing didn't finish."
       },
       {
         "input": {
@@ -54833,7 +54833,7 @@
           "mode": "degraded",
           "successful_newsletters": 0
         },
-        "output": "I didn't produce any facet newsletters, and some overnight processing didn't finish."
+        "output": "no facet newsletters written, and some overnight processing didn't finish."
       },
       {
         "input": {
@@ -54842,7 +54842,7 @@
           "mode": "degraded",
           "successful_newsletters": 0
         },
-        "output": "I wrote 0 of 1 newsletters, but some overnight processing didn't finish."
+        "output": "0 of 1 newsletters written, but some overnight processing didn't finish."
       },
       {
         "input": {
@@ -54851,7 +54851,7 @@
           "mode": "degraded",
           "successful_newsletters": 0
         },
-        "output": "I wrote 0 of 1 newsletters, but some overnight processing didn't finish."
+        "output": "0 of 1 newsletters written, but some overnight processing didn't finish."
       },
       {
         "input": {
@@ -54860,7 +54860,7 @@
           "mode": "degraded",
           "successful_newsletters": 1
         },
-        "output": "I wrote 1 newsletter, but some overnight processing didn't finish."
+        "output": "1 newsletter written, but some overnight processing didn't finish."
       },
       {
         "input": {
@@ -54869,7 +54869,7 @@
           "mode": "degraded",
           "successful_newsletters": 1
         },
-        "output": "I wrote 1 newsletter, but some overnight processing didn't finish."
+        "output": "1 newsletter written, but some overnight processing didn't finish."
       },
       {
         "input": {
@@ -54878,7 +54878,7 @@
           "mode": "degraded",
           "successful_newsletters": 1
         },
-        "output": "I wrote 1 of 3 newsletters, but some overnight processing didn't finish."
+        "output": "1 of 3 newsletters written, but some overnight processing didn't finish."
       },
       {
         "input": {
@@ -54887,7 +54887,7 @@
           "mode": "degraded",
           "successful_newsletters": 1
         },
-        "output": "I wrote 1 of 3 newsletters, but some overnight processing didn't finish."
+        "output": "1 of 3 newsletters written, but some overnight processing didn't finish."
       },
       {
         "input": {
@@ -54896,7 +54896,7 @@
           "mode": "degraded",
           "successful_newsletters": 2
         },
-        "output": "I wrote 2 newsletters, but some overnight processing didn't finish."
+        "output": "2 newsletters written, but some overnight processing didn't finish."
       },
       {
         "input": {
@@ -54905,7 +54905,7 @@
           "mode": "degraded",
           "successful_newsletters": 2
         },
-        "output": "I wrote 2 newsletters, but some overnight processing didn't finish."
+        "output": "2 newsletters written, but some overnight processing didn't finish."
       },
       {
         "input": {
@@ -54914,7 +54914,7 @@
           "mode": "sparse",
           "successful_newsletters": 0
         },
-        "output": "I didn't produce any facet newsletters."
+        "output": "no facet newsletters written."
       },
       {
         "input": {
@@ -54923,7 +54923,7 @@
           "mode": "sparse",
           "successful_newsletters": 0
         },
-        "output": "I prepared your morning briefing."
+        "output": "your morning briefing was prepared."
       },
       {
         "input": {
@@ -54932,7 +54932,7 @@
           "mode": "sparse",
           "successful_newsletters": 0
         },
-        "output": "I wrote 0 of 1 newsletter."
+        "output": "0 of 1 newsletter written."
       },
       {
         "input": {
@@ -54941,7 +54941,7 @@
           "mode": "sparse",
           "successful_newsletters": 0
         },
-        "output": "I prepared your morning briefing."
+        "output": "your morning briefing was prepared."
       },
       {
         "input": {
@@ -54950,7 +54950,7 @@
           "mode": "sparse",
           "successful_newsletters": 1
         },
-        "output": "I wrote 1 newsletter."
+        "output": "1 newsletter written."
       },
       {
         "input": {
@@ -54959,7 +54959,7 @@
           "mode": "sparse",
           "successful_newsletters": 1
         },
-        "output": "I wrote 1 newsletter and prepared your morning briefing."
+        "output": "1 newsletter written and your morning briefing was prepared."
       },
       {
         "input": {
@@ -54968,7 +54968,7 @@
           "mode": "sparse",
           "successful_newsletters": 1
         },
-        "output": "I wrote 1 newsletter."
+        "output": "1 newsletter written."
       },
       {
         "input": {
@@ -54977,7 +54977,7 @@
           "mode": "sparse",
           "successful_newsletters": 1
         },
-        "output": "I wrote 1 newsletter and prepared your morning briefing."
+        "output": "1 newsletter written and your morning briefing was prepared."
       },
       {
         "input": {
@@ -54986,7 +54986,7 @@
           "mode": "sparse",
           "successful_newsletters": 2
         },
-        "output": "I wrote 2 newsletters."
+        "output": "2 newsletters written."
       },
       {
         "input": {
@@ -54995,7 +54995,7 @@
           "mode": "sparse",
           "successful_newsletters": 2
         },
-        "output": "I wrote 2 newsletters and prepared your morning briefing."
+        "output": "2 newsletters written and your morning briefing was prepared."
       }
     ]
   },

@@ -136,10 +136,12 @@
     return typeof stream === 'string' ? window.JournalFormat.stream(stream) : null;
   }
 
+  // The list is a deletion decision, so every row carries an anchored date
+  // rather than the relative label the rest of the app uses.
   function identityText(row) {
     const stream = streamLabel(row.stream);
-    if (stream === null) return escapeHtml(window.JournalFormat.day(row.day));
-    return copy("row.identity", { date: window.JournalFormat.day(row.day), stream: stream });
+    if (stream === null) return escapeHtml(window.JournalFormat.dayFull(row.day));
+    return copy("row.identity", { date: window.JournalFormat.dayFull(row.day), stream: stream });
   }
 
   function identity(text) {
@@ -257,7 +259,7 @@
       const count = rowCount(row);
       const stream = streamLabel(row.stream);
       const bodyKey = 'confirm.body_' + origin(row) + '_' + cardinality(count);
-      const values = { n: count, date: window.JournalFormat.day(row.day), stream: stream };
+      const values = { n: count, date: window.JournalFormat.dayFull(row.day), stream: stream };
       const body = stream === null ? copyWithoutDefaultStream(bodyKey, values) : copy(bodyKey, values);
       return '<section class="removals-card-confirm" role="dialog">'
         + '<h3>' + copyForCount('confirm.heading', count) + '</h3>'

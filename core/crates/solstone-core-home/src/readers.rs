@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 
-use chrono::{DateTime, Duration, NaiveDate, Timelike, Utc};
+use chrono::{DateTime, Duration, FixedOffset, NaiveDate, Timelike, Utc};
 use serde_json::{Map, Value, json};
 use solstone_core_brain::{inspect_brain_state, present_brain_inspection};
 use solstone_core_entities::{ATTENDANCE_KINDS, ENTITIES_COPY};
@@ -55,7 +55,7 @@ pub fn count_journal_age_days(context: &HomeContext) -> i64 {
         })
         .min();
     earliest
-        .map(|day| (context.now_utc.date_naive() - day).num_days().max(0))
+        .map(|day| (context.local_date() - day).num_days().max(0))
         .unwrap_or(0)
 }
 
@@ -443,6 +443,13 @@ pub fn briefing_freshness(context: &HomeContext, day: &str) -> Value {
     json!({"exists": true, "valid": true, "generated_label": label})
 }
 
+/// Whether the overnight window — the hours in which the overnight review and
+/// the morning briefing are produced — has actually passed for the local day.
+/// Before it has, nothing overnight can be reported as having failed to finish.
+pub fn overnight_window_passed(local_hour: u32) -> bool {
+    local_hour >= BRIEFING_MORNING_END_HOUR
+}
+
 pub fn compute_briefing_phase(
     segment_count: i64,
     hour: u32,
@@ -461,7 +468,9 @@ pub fn compute_briefing_phase(
     }
 }
 
-pub fn briefing_lateness_state(now: DateTime<Utc>, phase: &str) -> Value {
+/// The briefing clock is a wall-clock, day-scoped one: `now` is the instant in
+/// the journal's local day coordinate, not UTC.
+pub fn briefing_lateness_state(now: DateTime<FixedOffset>, phase: &str) -> Value {
     let due = now
         .with_hour(BRIEFING_MORNING_END_HOUR)
         .and_then(|time| time.with_minute(0))
@@ -1184,7 +1193,13 @@ mod tests {
     use tempfile::TempDir;
 
     fn context(root: &std::path::Path) -> HomeContext {
-        HomeContext::new(root, Utc.with_ymd_and_hms(2026, 6, 2, 13, 0, 0).unwrap())
+        // Pin the day coordinate so these expectations do not depend on the
+        // host's zone.
+        HomeContext::with_day_offset(
+            root,
+            Utc.with_ymd_and_hms(2026, 6, 2, 13, 0, 0).unwrap(),
+            FixedOffset::east_opt(0).expect("utc day offset"),
+        )
     }
     fn write(root: &std::path::Path, relative: &str, text: &str) {
         let path = root.join(relative);
@@ -1270,7 +1285,10 @@ mod tests {
 
     #[test]
     fn lateness_uses_supplied_phase() {
-        let now = Utc.with_ymd_and_hms(2026, 6, 2, 13, 17, 0).unwrap();
+        let now = Utc
+            .with_ymd_and_hms(2026, 6, 2, 13, 17, 0)
+            .unwrap()
+            .fixed_offset();
         assert_eq!(
             briefing_lateness_state(now, "pending"),
             json!({"late":true,"late_hours":3})
@@ -1529,7 +1547,10 @@ mod tests {
 
     #[test]
     fn briefing_phase_and_lateness_cover_both_guard_directions() {
-        let now = Utc.with_ymd_and_hms(2026, 6, 2, 13, 0, 0).unwrap();
+        let now = Utc
+            .with_ymd_and_hms(2026, 6, 2, 13, 0, 0)
+            .unwrap()
+            .fixed_offset();
         assert_eq!(compute_briefing_phase(0, 9, false), "pending");
         assert_eq!(compute_briefing_phase(1, 13, true), "active");
         assert_eq!(
@@ -1542,7 +1563,9 @@ mod tests {
         );
         assert_eq!(
             briefing_lateness_state(
-                Utc.with_ymd_and_hms(2026, 6, 2, 10, 0, 0).unwrap(),
+                Utc.with_ymd_and_hms(2026, 6, 2, 10, 0, 0)
+                    .unwrap()
+                    .fixed_offset(),
                 "pending"
             ),
             json!({"late":false,"late_hours":0})

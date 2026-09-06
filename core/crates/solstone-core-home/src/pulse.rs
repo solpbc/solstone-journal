@@ -5,7 +5,7 @@
 
 use std::collections::BTreeSet;
 
-use chrono::{DateTime, Timelike, Utc};
+use chrono::{DateTime, FixedOffset, Utc};
 use serde_json::{Map, Value, json};
 use solstone_core_entity::read_journal_principal;
 use solstone_core_facets::{ConnectionsHorizon, refresh_connections_horizon};
@@ -25,16 +25,20 @@ use crate::readers::{
     count_journal_age_days, get_capture_health, last_observe_relative_seconds, load_awareness,
     load_backlog_source, load_briefing, load_connections_network, load_flow_md,
     load_latest_weekly_reflection, load_pulse_narrative, load_stats, load_yesterday_stats,
-    newsletter_attempts_from_think_logs, read_steward_health, read_steward_summary,
-    render_briefing_sections, resolve_attention, summarize_pipeline_day,
+    newsletter_attempts_from_think_logs, overnight_window_passed, read_steward_health,
+    read_steward_summary, render_briefing_sections, resolve_attention, summarize_pipeline_day,
 };
 
 const FIRST_WEEK_FRAMING: &str = "most of what i keep becomes useful after about a week, once your journal has enough of your days in it to show patterns. for now, here's what's already happening:";
 
 /// Complete pre-route pulse context. The instant stays typed until projection.
+///
+/// `now` is the wall clock the surface reads — the instant in the journal's
+/// local day coordinate. Its only consumer compares it against local activity
+/// end times, so a UTC wall clock would misjudge which events are past.
 struct PulseContext {
     fields: Map<String, Value>,
-    now: DateTime<Utc>,
+    now: DateTime<FixedOffset>,
 }
 
 impl PulseContext {
@@ -120,8 +124,8 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
     let briefing_needs = briefing_needs_items(&briefing_document);
     let briefing_exists = !briefing_sections.as_object().is_none_or(Map::is_empty);
     let briefing_phase =
-        compute_briefing_phase(segment_count, context.now_utc.hour(), briefing_exists);
-    let briefing_lateness = briefing_lateness_state(context.now_utc, briefing_phase);
+        compute_briefing_phase(segment_count, context.local_hour(), briefing_exists);
+    let briefing_lateness = briefing_lateness_state(context.now_local(), briefing_phase);
     let show_welcome = narrative_content.is_none()
         && anticipated_activities.is_empty()
         && activities.is_empty()
@@ -303,7 +307,7 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
     debug_assert_eq!(fields.len(), 37);
     PulseContext {
         fields,
-        now: context.now_utc,
+        now: context.now_local(),
     }
 }
 
@@ -328,7 +332,7 @@ pub fn briefing_payload(context: &HomeContext) -> Value {
     })
 }
 
-fn format_now(now: DateTime<Utc>) -> String {
+fn format_now(now: DateTime<FixedOffset>) -> String {
     now.format("%Y-%m-%dT%H:%M:%S%.6f").to_string()
 }
 
@@ -398,6 +402,7 @@ fn summarize_yesterday_processing(context: &HomeContext, journal_age_days: i64) 
         .get("valid")
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    let overnight_passed = overnight_window_passed(context.local_hour());
     let (successful, attempted) = newsletter_attempts_from_think_logs(context, &yesterday);
     let successful = successful as i64;
     let attempted = attempted as i64;
@@ -411,7 +416,9 @@ fn summarize_yesterday_processing(context: &HomeContext, journal_age_days: i64) 
     if pipeline.get("status").and_then(Value::as_str) != Some("healthy") {
         reasons.push(Value::String("pipeline_warning".to_owned()));
     }
-    if !briefing_valid {
+    // Before the overnight window has passed for the local day, a briefing that
+    // is not there yet is pending, not missing.
+    if !briefing_valid && overnight_passed {
         reasons.push(Value::String("briefing_missing".to_owned()));
     }
     let mode = if sparse {
@@ -423,7 +430,7 @@ fn summarize_yesterday_processing(context: &HomeContext, journal_age_days: i64) 
     };
     if mode == "sparse" {
         return Some(
-            json!({"title":"Yesterday's processing","mode":"sparse","default_collapsed":false,"first_week_framing":null,"summary_line":format!("i took in {} yesterday and kept it in your journal.", format_duration(transcript_seconds / 60.0)),"details":null,"gap_links":[],"sparse_lines":["I didn't produce any facet newsletters.","There wasn't much else to process."],"status_reasons":reasons}),
+            json!({"title":"Yesterday's processing","mode":"sparse","default_collapsed":false,"first_week_framing":null,"summary_line":format!("{} of audio went into your journal yesterday.", format_duration(transcript_seconds / 60.0)),"details":null,"gap_links":[],"sparse_lines":["no facet newsletters written.","there wasn't much else to process."],"status_reasons":reasons}),
         );
     }
     let mut details = vec![Value::String(format_newsletter_summary(
@@ -432,8 +439,8 @@ fn summarize_yesterday_processing(context: &HomeContext, journal_age_days: i64) 
     if briefing_valid {
         details.push(Value::String(
             match briefing.get("generated_label").and_then(Value::as_str) {
-                Some(label) => format!("I prepared your morning briefing at {label}."),
-                None => "I prepared your morning briefing.".to_owned(),
+                Some(label) => format!("your morning briefing was prepared at {label}."),
+                None => "your morning briefing was prepared.".to_owned(),
             },
         ));
     }
@@ -458,7 +465,7 @@ fn summarize_yesterday_processing(context: &HomeContext, journal_age_days: i64) 
         "first_week_framing": if journal_age_days <= 7 { Value::String(FIRST_WEEK_FRAMING.to_owned()) } else { Value::Null },
         "summary_line": format_processing_summary(mode, successful, attempted, briefing_valid),
         "details": details,
-        "gap_links": if mode == "degraded" { Value::Array(format_gap_links(&pipeline, briefing_valid, &yesterday, &today)) } else { Value::Array(Vec::new()) },
+        "gap_links": if mode == "degraded" { Value::Array(format_gap_links(&pipeline, briefing_valid, &yesterday, &today, overnight_passed)) } else { Value::Array(Vec::new()) },
         "failed_run_count": failed_run_count,
         "sparse_lines": Value::Null,
         "status_reasons": reasons,
@@ -471,7 +478,7 @@ mod tests {
     use std::io::Write;
     use std::path::Path;
 
-    use chrono::{FixedOffset, NaiveDate, TimeZone};
+    use chrono::{FixedOffset, NaiveDate, TimeZone, Timelike};
     use solstone_core_journal_io::{
         JournalRoot,
         operational_log::{OplogFormat, create_oplog_at},
@@ -501,12 +508,13 @@ mod tests {
     #[test]
     fn empty_payload_has_exact_public_key_set_and_naive_microsecond_now() {
         let root = TempDir::new().unwrap();
-        let context = HomeContext::new(
+        let context = HomeContext::with_day_offset(
             root.path(),
             Utc.with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
                 .unwrap()
                 .with_nanosecond(430_840_000)
                 .unwrap(),
+            utc_day(),
         );
         let payload = pulse_payload(&context);
         assert_eq!(payload.as_object().unwrap().len(), 36);
@@ -682,7 +690,7 @@ mod tests {
     fn empty_journal_phase_tracks_the_injected_hour() {
         let root = TempDir::new().unwrap();
         for hour in 0..24 {
-            let context = HomeContext::new(
+            let context = utc_context(
                 root.path(),
                 Utc.with_ymd_and_hms(2026, 8, 14, hour, 0, 0).unwrap(),
             );
@@ -693,7 +701,7 @@ mod tests {
             );
         }
         for (hour, expected) in [(9, "pending"), (22, "eod")] {
-            let context = HomeContext::new(
+            let context = utc_context(
                 root.path(),
                 Utc.with_ymd_and_hms(2026, 8, 14, hour, 0, 0).unwrap(),
             );
@@ -706,10 +714,113 @@ mod tests {
         assert_eq!(late, json!({"late":true,"late_hours":3}));
     }
 
+    fn mountain_day() -> FixedOffset {
+        FixedOffset::west_opt(6 * 3600).expect("mountain daylight offset")
+    }
+
+    /// Two local days of stats: september 4th and the september 5th that is
+    /// still running when the UTC clock has already rolled over to the 6th.
+    fn september_journal() -> TempDir {
+        let root = TempDir::new().unwrap();
+        for (day, stats) in [
+            (
+                "20260904",
+                r#"{"stats":{"transcript_duration":1800,"transcript_segments":6},"facet_data":{"solstone":{"minutes":30,"count":2}}}"#,
+            ),
+            (
+                "20260905",
+                r#"{"stats":{"transcript_duration":3600,"transcript_segments":12},"facet_data":{"solstone":{"minutes":45,"count":3}}}"#,
+            ),
+        ] {
+            fs::create_dir_all(root.path().join("chronicle").join(day)).unwrap();
+            fs::write(
+                root.path().join("chronicle").join(day).join("stats.json"),
+                stats,
+            )
+            .unwrap();
+        }
+        root
+    }
+
+    #[test]
+    fn a_late_evening_pulse_reports_the_local_day_not_the_utc_one() {
+        // 2026-09-05 21:30 in Denver is already 2026-09-06 03:30 UTC.
+        let root = september_journal();
+        let context = HomeContext::with_day_offset(
+            root.path(),
+            Utc.with_ymd_and_hms(2026, 9, 6, 3, 30, 0).unwrap(),
+            mountain_day(),
+        );
+        let payload = pulse_payload(&context);
+        assert_eq!(payload["today"], "20260905");
+        assert_eq!(payload["now"], "2026-09-05T21:30:00.000000");
+        assert_eq!(
+            payload["segment_count"], 12,
+            "the day still running supplies the flow narrative's segments"
+        );
+        assert_eq!(
+            payload["briefing_phase"], "eod",
+            "no briefing is pending at half past nine at night"
+        );
+        assert_eq!(
+            payload["briefing_lateness"],
+            json!({"late":false,"late_hours":0})
+        );
+        assert_eq!(
+            payload.pointer("/yesterday_processing/gap_links"),
+            Some(&json!([{
+                "text": "your morning briefing wasn't prepared overnight.",
+                "href": "/app/thinking/#runs/20260905/morning_briefing",
+            }])),
+            "the briefing gap points at today's local run, not tomorrow's",
+        );
+    }
+
+    #[test]
+    fn the_overnight_gap_lines_wait_for_the_overnight_window_to_pass() {
+        let root = september_journal();
+        let early = HomeContext::with_day_offset(
+            root.path(),
+            // 2026-09-05 08:00 in Denver: the morning briefing is still due.
+            Utc.with_ymd_and_hms(2026, 9, 5, 14, 0, 0).unwrap(),
+            mountain_day(),
+        );
+        let payload = pulse_payload(&early);
+        assert_eq!(payload["today"], "20260905");
+        assert_eq!(
+            payload.pointer("/yesterday_processing/gap_links"),
+            Some(&json!([])),
+            "nothing overnight has missed its window at eight in the morning",
+        );
+        assert_eq!(
+            payload.pointer("/yesterday_processing/status_reasons"),
+            Some(&json!(["pipeline_warning"])),
+        );
+
+        let late = HomeContext::with_day_offset(
+            root.path(),
+            // 2026-09-05 11:00 in Denver: the window has closed.
+            Utc.with_ymd_and_hms(2026, 9, 5, 17, 0, 0).unwrap(),
+            mountain_day(),
+        );
+        let payload = pulse_payload(&late);
+        assert_eq!(
+            payload.pointer("/yesterday_processing/gap_links"),
+            Some(&json!([{
+                "text": "your morning briefing wasn't prepared overnight.",
+                "href": "/app/thinking/#runs/20260905/morning_briefing",
+            }])),
+        );
+        assert_eq!(
+            payload.pointer("/yesterday_processing/status_reasons"),
+            Some(&json!(["pipeline_warning", "briefing_missing"])),
+        );
+    }
+
     #[test]
     fn absent_yesterday_stats_and_empty_yesterday_return_none() {
         let root = TempDir::new().unwrap();
-        let context = HomeContext::new(
+        let context = utc_context(
             root.path(),
             Utc.with_ymd_and_hms(2026, 8, 14, 13, 0, 0).unwrap(),
         );
@@ -733,7 +844,7 @@ mod tests {
             r#"{"stats":{"transcript_duration":60,"transcript_segments":1},"facet_data":{"focus":{"minutes":1,"count":1}}}"#,
         )
         .unwrap();
-        let context = HomeContext::new(
+        let context = utc_context(
             root.path(),
             Utc.with_ymd_and_hms(2026, 8, 14, 13, 0, 0).unwrap(),
         );
@@ -749,7 +860,7 @@ mod tests {
             r#"{"stats":{"transcript_duration":60,"transcript_segments":1},"facet_data":{}}"#,
         )
         .unwrap();
-        let context = HomeContext::new(
+        let context = utc_context(
             root.path(),
             Utc.with_ymd_and_hms(2026, 8, 14, 13, 0, 0).unwrap(),
         );
@@ -763,8 +874,8 @@ mod tests {
         assert_eq!(
             processing["sparse_lines"],
             json!([
-                "I didn't produce any facet newsletters.",
-                "There wasn't much else to process."
+                "no facet newsletters written.",
+                "there wasn't much else to process."
             ])
         );
     }
@@ -786,7 +897,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         write_think_oplog(root.path(), "20260813", "daily", &format!("{failures}\n"));
-        let context = HomeContext::new(
+        let context = utc_context(
             root.path(),
             Utc.with_ymd_and_hms(2026, 8, 14, 13, 0, 0).unwrap(),
         );
@@ -803,7 +914,7 @@ mod tests {
         assert_eq!(pipeline["talents"]["outstanding_failed"], 21);
         assert_eq!(pipeline["talents"]["failed_list_truncated"], true);
         assert!(
-            format_gap_links(&pipeline, true, "20260813", "20260814")
+            format_gap_links(&pipeline, true, "20260813", "20260814", true)
                 .iter()
                 .any(|link| link["text"] == "…and 1 more didn't finish.")
         );
@@ -825,7 +936,10 @@ mod tests {
         );
         let payload = PulseContext {
             fields,
-            now: Utc.with_ymd_and_hms(2026, 8, 14, 13, 0, 0).unwrap(),
+            now: Utc
+                .with_ymd_and_hms(2026, 8, 14, 13, 0, 0)
+                .unwrap()
+                .fixed_offset(),
         }
         .into_pulse_payload();
         assert_eq!(
@@ -847,7 +961,7 @@ mod tests {
             r#"{"stats":{"transcript_duration":60,"transcript_segments":0},"facet_data":{"focus":{"minutes":1,"count":1}}}"#,
         )
         .unwrap();
-        let context = HomeContext::new(
+        let context = utc_context(
             root.path(),
             Utc.with_ymd_and_hms(2026, 8, 14, 13, 0, 0).unwrap(),
         );
@@ -865,7 +979,7 @@ mod tests {
         let root =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/convey_home_empty_journal");
         let before = tree_entries(&root);
-        let context = HomeContext::new(
+        let context = utc_context(
             &root,
             Utc.with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
                 .unwrap()
@@ -891,7 +1005,7 @@ mod tests {
             r#"{"cid":{"last_seen_at":"2026-08-14T23:24:44.793Z","last_accepted_ingest_at":"2026-08-14T23:24:44.793Z"}}"#,
         )
         .unwrap();
-        let context = HomeContext::new(
+        let context = utc_context(
             root.path(),
             Utc.timestamp_millis_opt(1_786_749_913_793)
                 .single()
@@ -908,7 +1022,7 @@ mod tests {
     fn reflection_fixture_accepts_an_unparseable_eight_digit_stem() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/convey_home_reflection_journal");
-        let context = HomeContext::new(root, Utc.with_ymd_and_hms(2026, 8, 14, 12, 0, 0).unwrap());
+        let context = utc_context(root, Utc.with_ymd_and_hms(2026, 8, 14, 12, 0, 0).unwrap());
         assert_eq!(
             load_latest_weekly_reflection(&context),
             Some(json!({"day":"99999999","label":"99999999"}))
@@ -919,7 +1033,7 @@ mod tests {
     fn seeded_fixture_keeps_the_no_client_cta_branch() {
         let root =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/convey_home_seeded_journal");
-        let context = HomeContext::new(
+        let context = utc_context(
             root,
             Utc.with_ymd_and_hms(2026, 8, 14, 23, 25, 13)
                 .unwrap()
@@ -978,7 +1092,7 @@ mod tests {
     }
 
     fn horizon_context(root: &Path) -> HomeContext {
-        HomeContext::new(root, Utc.with_ymd_and_hms(2026, 6, 2, 13, 0, 0).unwrap())
+        utc_context(root, Utc.with_ymd_and_hms(2026, 6, 2, 13, 0, 0).unwrap())
     }
 
     fn assert_horizon_failure_does_not_change_card(root: &Path) {
@@ -1066,6 +1180,16 @@ mod tests {
         assert!(card.get("horizon_note").is_none());
     }
 
+    fn utc_day() -> FixedOffset {
+        FixedOffset::east_opt(0).expect("utc day offset")
+    }
+
+    /// Pin the day coordinate so a test's expectations do not depend on the
+    /// host's zone; the local-day behaviour has its own tests below.
+    fn utc_context(root: impl Into<std::path::PathBuf>, now: DateTime<Utc>) -> HomeContext {
+        HomeContext::with_day_offset(root, now, utc_day())
+    }
+
     fn fixture_context(fixture: &str, now: DateTime<Utc>) -> (TempDir, HomeContext) {
         let source = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures")
@@ -1080,7 +1204,9 @@ mod tests {
                 "{\"event\":\"run.summary\"}\n",
             );
         }
-        let context = HomeContext::new(root.path(), now);
+        // The captured references were recorded with a UTC day coordinate, so
+        // pin it here rather than let the host's zone decide which day it is.
+        let context = HomeContext::with_day_offset(root.path(), now, utc_day());
         (root, context)
     }
 
