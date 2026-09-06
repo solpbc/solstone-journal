@@ -90,8 +90,8 @@
         "why": "per-app static; the whole client"
       },
       {
-        "body_bytes": 14041,
-        "body_sha256": "d3f33cb8474c9c18c7283eaa2ff00ca06c08bc956c3b17340944d35b906b4b10",
+        "body_bytes": 14061,
+        "body_sha256": "bd5b56fff89bd7770a715b0de0c7731a4cf9322f18aca136e1adc46d1359cac6",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -166,7 +166,7 @@
                 "off": "",
                 "stale": "your journal needs to re-check the service before sending.",
                 "unreachable": "can't reach confidential processing right now. nothing is being sent.",
-                "verified": "confidential processing is ready \u00b7 checked {checked}",
+                "verified": "confidential processing is ready \u00b7 hardware verified {checked}",
                 "verifying": "checking the hardware\u2026"
               },
               "audio": {
@@ -229,7 +229,7 @@
                 "value": "confidential processing"
               },
               "confidential_verified": {
-                "detail": "confidential processing is ready \u00b7 checked {checked}",
+                "detail": "confidential processing is ready \u00b7 hardware verified {checked}",
                 "label": "processing with",
                 "value": "confidential processing"
               },
@@ -2326,8 +2326,8 @@
         "why": "per-app static; the whole client"
       },
       {
-        "body_bytes": 13932,
-        "body_sha256": "266e138276cb5bc313961ddbfba5bf757b2f77f0c9239f4de17c63306675788e",
+        "body_bytes": 13952,
+        "body_sha256": "550943f2fe259e148f3f7cc777607cb4dabaeb30da1df8fdf4ebb12978fd7abe",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -2402,7 +2402,7 @@
                 "off": "",
                 "stale": "your journal needs to re-check the service before sending.",
                 "unreachable": "can't reach confidential processing right now. nothing is being sent.",
-                "verified": "confidential processing is ready \u00b7 checked {checked}",
+                "verified": "confidential processing is ready \u00b7 hardware verified {checked}",
                 "verifying": "checking the hardware\u2026"
               },
               "audio": {
@@ -2465,7 +2465,7 @@
                 "value": "confidential processing"
               },
               "confidential_verified": {
-                "detail": "confidential processing is ready \u00b7 checked {checked}",
+                "detail": "confidential processing is ready \u00b7 hardware verified {checked}",
                 "label": "processing with",
                 "value": "confidential processing"
               },
@@ -4560,8 +4560,8 @@
         "why": "per-app static; the whole client"
       },
       {
-        "body_bytes": 13889,
-        "body_sha256": "ee7a0846ba927523f18010a7cad70582112ec0f641ed68347314643534577ac8",
+        "body_bytes": 13909,
+        "body_sha256": "fba84ac82598fdd273c45909e4688441cb1ce062900c97d915a8a28c3bbab41b",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -4636,7 +4636,7 @@
                 "off": "",
                 "stale": "your journal needs to re-check the service before sending.",
                 "unreachable": "can't reach confidential processing right now. nothing is being sent.",
-                "verified": "confidential processing is ready \u00b7 checked {checked}",
+                "verified": "confidential processing is ready \u00b7 hardware verified {checked}",
                 "verifying": "checking the hardware\u2026"
               },
               "audio": {
@@ -4699,7 +4699,7 @@
                 "value": "confidential processing"
               },
               "confidential_verified": {
-                "detail": "confidential processing is ready \u00b7 checked {checked}",
+                "detail": "confidential processing is ready \u00b7 hardware verified {checked}",
                 "label": "processing with",
                 "value": "confidential processing"
               },
@@ -6774,8 +6774,8 @@
         "why": "per-app static; the whole client"
       },
       {
-        "body_bytes": 13912,
-        "body_sha256": "250ccdcf486fe7bfc459b97c9d81a1ab40fb0fdafde3140c1ebf03124513138b",
+        "body_bytes": 13932,
+        "body_sha256": "d91b6d6c603487abd0d195f764e941848e3b0398fd52c65a137a7309493940cf",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -6850,7 +6850,7 @@
                 "off": "",
                 "stale": "your journal needs to re-check the service before sending.",
                 "unreachable": "can't reach confidential processing right now. nothing is being sent.",
-                "verified": "confidential processing is ready \u00b7 checked {checked}",
+                "verified": "confidential processing is ready \u00b7 hardware verified {checked}",
                 "verifying": "checking the hardware\u2026"
               },
               "audio": {
@@ -6913,7 +6913,7 @@
                 "value": "confidential processing"
               },
               "confidential_verified": {
-                "detail": "confidential processing is ready \u00b7 checked {checked}",
+                "detail": "confidential processing is ready \u00b7 hardware verified {checked}",
                 "label": "processing with",
                 "value": "confidential processing"
               },
@@ -9172,8 +9172,8 @@
         "why": "per-app static; the whole client"
       },
       {
-        "body_bytes": 13853,
-        "body_sha256": "9e3349198bac9b21b53a34d9579e7c017eeaf5ce01fa3ddbf2b39ce494ac26a8",
+        "body_bytes": 13873,
+        "body_sha256": "8f9a8904eb42c454509c7ce66b5594f1da47774ecce63122d3709507acb30f0c",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -9248,7 +9248,7 @@
                 "off": "",
                 "stale": "your journal needs to re-check the service before sending.",
                 "unreachable": "can't reach confidential processing right now. nothing is being sent.",
-                "verified": "confidential processing is ready \u00b7 checked {checked}",
+                "verified": "confidential processing is ready \u00b7 hardware verified {checked}",
                 "verifying": "checking the hardware\u2026"
               },
               "audio": {
@@ -9311,7 +9311,7 @@
                 "value": "confidential processing"
               },
               "confidential_verified": {
-                "detail": "confidential processing is ready \u00b7 checked {checked}",
+                "detail": "confidential processing is ready \u00b7 hardware verified {checked}",
                 "label": "processing with",
                 "value": "confidential processing"
               },
@@ -12713,8 +12713,8 @@
         "why": "per-app static; the whole client"
       },
       {
-        "body_bytes": 13804,
-        "body_sha256": "3ec70a351d5e422db52204c271e5e3e5c342a5d57294256de044eec1b9c91f33",
+        "body_bytes": 13824,
+        "body_sha256": "09e3a4308a5e4c1ae289925781703ae05ec1a5ec2380e8ca8ce70a21489d7860",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -12789,7 +12789,7 @@
                 "off": "",
                 "stale": "your journal needs to re-check the service before sending.",
                 "unreachable": "can't reach confidential processing right now. nothing is being sent.",
-                "verified": "confidential processing is ready \u00b7 checked {checked}",
+                "verified": "confidential processing is ready \u00b7 hardware verified {checked}",
                 "verifying": "checking the hardware\u2026"
               },
               "audio": {
@@ -12852,7 +12852,7 @@
                 "value": "confidential processing"
               },
               "confidential_verified": {
-                "detail": "confidential processing is ready \u00b7 checked {checked}",
+                "detail": "confidential processing is ready \u00b7 hardware verified {checked}",
                 "label": "processing with",
                 "value": "confidential processing"
               },

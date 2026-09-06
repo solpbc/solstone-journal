@@ -587,6 +587,29 @@
       padding: 9px 14px;
     }
 
+    .thinking-workspace .thinking-runs-group h3 {
+      margin: 18px 0 4px;
+    }
+
+    .thinking-workspace .thinking-runs-group-detail > summary,
+    .thinking-workspace .thinking-runs-ids > summary {
+      color: var(--ink-soft);
+      cursor: pointer;
+      min-height: 44px;
+      padding: 11px 0;
+    }
+
+    .thinking-workspace .thinking-runs-group-id,
+    .thinking-workspace .thinking-runs-ids p {
+      color: var(--ink-faint);
+      margin: 0 0 8px;
+      overflow-wrap: anywhere;
+    }
+
+    .thinking-workspace .thinking-runs-group-detail > .thinking-runs-control {
+      margin-top: 10px;
+    }
+
     .thinking-workspace .thinking-runs-table {
       border-collapse: collapse;
       width: 100%;
@@ -1027,7 +1050,7 @@
       <h2 id="thinkingRunsHeading" tabindex="-1">runs</h2>
       <p class="thinking-runs-status" id="thinkingRunsStatus" role="status" aria-live="polite" hidden></p>
       <div class="thinking-runs-controls">
-        <label for="thinkingRunsDate">date</label>
+        <label for="thinkingRunsDate">journal day</label>
         <button type="button" class="thinking-runs-control" id="thinkingRunsPrevious">previous day</button>
         <input type="date" id="thinkingRunsDate">
         <button type="button" class="thinking-runs-control" id="thinkingRunsNext">next day</button>
@@ -1039,6 +1062,10 @@
       <div id="thinkingRunsContent"></div>
       <section class="thinking-runs-detail" id="thinkingRunsDetail" hidden>
         <h3 id="thinkingRunsDetailHeading" tabindex="-1"></h3>
+        <details class="thinking-runs-ids" id="thinkingRunsDetailIds" hidden>
+          <summary>exact ids</summary>
+          <p id="thinkingRunsDetailIdsText"></p>
+        </details>
         <div class="thinking-runs-detail-facts" id="thinkingRunsDetailFacts"></div>
         <p class="thinking-runs-no-output" id="thinkingRunsNoOutput" hidden>this run doesn't have a saved output.</p>
         <button type="button" class="thinking-runs-control" id="thinkingRunsPrompt">prompt</button>
