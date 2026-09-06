@@ -1118,7 +1118,7 @@ a.body-day-cell:focus-visible {
       '<section class="body-card body-archive-hero" aria-labelledby="body-archive-title">',
       '<div class="body-hero-icon" aria-hidden="true">♡</div>',
       '<div>',
-      '<h2 id="body-archive-title" class="body-section-title">body archive</h2>',
+      '<h2 id="body-archive-title" class="body-section-title">your body\'s record</h2>',
       '<p class="body-hero-kicker">what your journal holds about your body over time.</p>',
       coverage ? html([
         '<p class="body-hero-coverage body-num">',
@@ -1126,10 +1126,10 @@ a.body-day-cell:focus-visible {
         '</p>',
         '<p class="body-hero-stats">',
         `<span class="body-num">${escapeHtml(archive.entry_total_label)}</span> entries kept`,
-        ` &middot; <span class="body-num">${escapeHtml(archive.import_count)}</span> health `,
+        ` &middot; <span class="body-num">${escapeHtml(archive.import_count)}</span> body `,
         Number(archive.import_count) === 1 ? "import" : "imports",
         '</p>',
-      ]) : '<p class="body-subtitle">no body data yet. body imports will appear here.</p>',
+      ]) : '<p class="body-subtitle">no body data yet. body imports will appear here. <a class="body-link" href="/app/import/">import body data &rarr;</a></p>',
       '</div>',
       '</section>',
     ]);
@@ -1479,7 +1479,7 @@ a.body-day-cell:focus-visible {
   function renderOverview(status) {
     const archive = asObject(status.archive);
     return html([
-      renderHeader("body", "your health, brought into your journal.", false),
+      renderHeader("body", "your body, brought into your journal.", false),
       renderFreshnessStrip(status.freshness),
       renderArchiveHero(archive),
       renderQuickActions(archive),
@@ -1495,13 +1495,13 @@ a.body-day-cell:focus-visible {
   }
 
   async function loadBodyStatus() {
-    setLoading("loading body archive...");
+    setLoading("loading body data...");
     try {
       const status = await window.apiJson("/app/body/api/status");
       reveal(renderOverview(status));
       initRecentCarousel();
     } catch (err) {
-      showError("Couldn't load body archive", err, initBodyOverview);
+      showError("couldn't load your body data", err, initBodyOverview);
     }
   }
 
@@ -1542,7 +1542,7 @@ a.body-day-cell:focus-visible {
         nearest.prev ? `<a class="body-link" href="${bodyDayHref(nearest.prev)}">&larr; ${escapeHtml(nearest.prev_label)}</a> ` : "",
         nearest.next ? `<a class="body-link" href="${bodyDayHref(nearest.next)}">${escapeHtml(nearest.next_label)} &rarr;</a>` : "",
         '</p>',
-      ]) : '<p class="body-muted">body imports will appear here. <a class="body-link" href="/app/body/">view body archive →</a></p>',
+      ]) : '<p class="body-muted">body imports will appear here. <a class="body-link" href="/app/body/">body overview →</a></p>',
       '</section>',
     ]);
   }
