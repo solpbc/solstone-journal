@@ -9,7 +9,7 @@
 <div class="search-query-row"><input id="journal-search-query" name="q" type="search" required placeholder="what would you like to find?" autocomplete="off"><button type="submit">search</button></div>
 <details id="search-date-options"><summary>date range</summary><div class="search-dates"><div><label for="search-from">from</label><input id="search-from" name="from" type="date"></div><div><label for="search-to">through</label><input id="search-to" name="to" type="date"></div></div></details>
 </form>
-<div class="search-status" role="status" aria-live="polite">enter a few words to search.</div>
+<div class="search-status" role="status" aria-live="polite">search your whole journal. quote an “exact phrase”, or narrow to a day range below for faster results.</div>
 <div class="search-results"></div>
 <nav class="search-paging" aria-label="search result pages"></nav>
 </section>
@@ -22,7 +22,10 @@
  const query=root.querySelector('[name=q]');const from=root.querySelector('[name=from]');const to=root.querySelector('[name=to]');
  const status=root.querySelector('.search-status');const results=root.querySelector('.search-results');const paging=root.querySelector('.search-paging');
  query.value=params.get('q')||'';from.value=params.get('from')||'';to.value=params.get('to')||'';
- root.querySelector('#search-date-options').open=Boolean(from.value||to.value);
+ // G2-39: the day-range narrowing option used to stay collapsed until the
+ // owner opened it manually, so the fastest way to search was invisible on
+ // first visit. Default it open until a search has actually run.
+ root.querySelector('#search-date-options').open=Boolean(from.value||to.value||!query.value.trim());
  const offset=Math.max(0,Number.parseInt(params.get('offset')||'0',10)||0);
  const exactDay=Boolean(from.value&&from.value===to.value);const limit=exactDay?100:5;
  function pageUrl(changes){const p=new URLSearchParams(params);p.delete('offset');Object.entries(changes).forEach(([k,v])=>p.set(k,v));return '/app/search/?'+p.toString();}
