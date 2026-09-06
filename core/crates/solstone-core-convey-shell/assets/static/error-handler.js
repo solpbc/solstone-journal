@@ -143,6 +143,19 @@
     return unloading;
   }
 
+  // The status instrument is the owner's, so it gets a sentence they can act
+  // on. The developer context label and the browser's own exception text
+  // ("date-nav:index: Failed to fetch") stay in the entry detail, which the
+  // "show details" disclosure already renders (G1-118).
+  const NETWORK_FAILURE = /failed to fetch|networkerror|load failed|network request failed/i;
+
+  function ownerSummary(message) {
+    const copy = window.CONVEY_COPY || {};
+    return NETWORK_FAILURE.test(String(message || ''))
+      ? (copy.CONSOLE_SUMMARY_LOAD_FAILED || "couldn't load part of this page.")
+      : (copy.CONSOLE_SUMMARY_UNEXPECTED || "something on this page didn't work.");
+  }
+
   window.logError = (error, context) => {
     if (isNavigationAbort(error)) {
       // still visible to a developer, but it is not a fault of this session
@@ -162,7 +175,7 @@
       diagnosticConsole.push({
         severity: 'error',
         source: 'js',
-        summary: safe.context ? `${safe.context}: ${message}` : message,
+        summary: ownerSummary(message),
         detail: {
           message,
           stack: error instanceof Error ? (error.stack || '') : '',

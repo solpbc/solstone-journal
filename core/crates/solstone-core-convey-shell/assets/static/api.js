@@ -137,9 +137,12 @@
     diagnosticConsole.push({
       severity: 'error',
       source: 'api',
-      summary: `${method} ${apiError.status} ${url}`,
+      // Owner language on the owner's instrument; the method, status, url,
+      // server message and correlation id stay in the detail below (G1-118).
+      summary: window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || "couldn't finish that request.",
       detail: {
         apiError: {
+          method,
           status: apiError.status,
           statusText: apiError.statusText,
           serverMessage: apiError.serverMessage,

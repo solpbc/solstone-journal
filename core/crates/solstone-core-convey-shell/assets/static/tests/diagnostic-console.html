@@ -200,7 +200,7 @@
     diagnostic.clear();
     window.logError(new TypeError('Failed to fetch'), { context: 'home: refreshVitals failed' });
     assert('a live failed fetch still reaches system messages', diagnostic.list().length === 1
-      && diagnostic.list()[0].summary === 'home: refreshVitals failed: Failed to fetch');
+      && diagnostic.list()[0].summary === "couldn't load part of this page.");
 
     diagnostic.clear();
     window.logError(new Error('Failed to fetch'), { context: 'not-a-fetch' });
@@ -226,7 +226,33 @@
       document.visibilityState === 'visible');
     window.logError(new TypeError('Failed to fetch'), { context: 'home: refreshVitals failed' });
     assert('a visible document reports a cancelled fetch again', diagnostic.list().length === 1
-      && diagnostic.list()[0].summary === 'home: refreshVitals failed: Failed to fetch');
+      && diagnostic.list()[0].summary === "couldn't load part of this page.");
+
+    // G1-118: the status instrument is the owner's. The context label and the
+    // browser's exception text move into the "show details" disclosure.
+    diagnostic.clear();
+    window.logError(new TypeError('Failed to fetch'), { context: 'date-nav:index', url: '/app/news/api/index' });
+    const dateNav = diagnostic.list()[0];
+    assert('a failed read reads as an owner sentence, not a source label',
+      dateNav.summary === "couldn't load part of this page.",
+      dateNav.summary);
+    assert('the developer message is kept in the entry detail',
+      dateNav.detail.message === 'Failed to fetch');
+    assert('the developer context is kept in the entry detail',
+      dateNav.detail.context.context === 'date-nav:index'
+      && dateNav.detail.context.url === '/app/news/api/index');
+    const renderedList = document.getElementById('diagnostic-console-list').textContent;
+    assert('no source label reaches the rendered summary row',
+      !renderedList.includes('date-nav:index: Failed to fetch'), renderedList);
+    assert('"show details" is still offered on the row', renderedList.includes('show details'));
+
+    diagnostic.clear();
+    window.logError(new Error('Request failed (HTTP 500)'), { context: 'workspace-fragment-mount' });
+    assert('a non-network failure reads as an owner sentence too',
+      diagnostic.list()[0].summary === "something on this page didn't work.",
+      diagnostic.list()[0].summary);
+    assert('its developer message is kept in the entry detail',
+      diagnostic.list()[0].detail.message === 'Request failed (HTTP 500)');
 
     // X-01: leaving by a link cancels the in-flight reads before pagehide or a
     // visibility change fires. The click itself has to arm the guard.

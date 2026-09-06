@@ -266,7 +266,7 @@
   function renderApiDetail(apiError) {
     const lines = [];
     if (apiError.status || apiError.statusText || apiError.url) {
-      lines.push(`<div>HTTP ${escapeHtml(apiError.status || '')} ${escapeHtml(apiError.statusText || '')} · ${escapeHtml(apiError.url || '')}</div>`);
+      lines.push(`<div>${escapeHtml(apiError.method || 'GET')} · HTTP ${escapeHtml(apiError.status || '')} ${escapeHtml(apiError.statusText || '')} · ${escapeHtml(apiError.url || '')}</div>`);
     }
     lines.push(detailRow('Server reason', apiError.rawDetail || apiError.serverMessage));
     lines.push(detailRow('time', formatDateTime(apiError.timestamp)));
