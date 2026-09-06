@@ -60,6 +60,32 @@
     check('20270301', 'Mon Mar 1 \'27');
     check('20271220', 'Mon Dec 20 \'27');
 
+    // JournalFormat.time / formatTimeOfDay: the time half of the absolute
+    // ladder, added for the home today card. The rendered string is locale
+    // dependent, so the assertions pin the contract, not one locale's output.
+    assert('JournalFormat.time is exported', typeof window.JournalFormat.time === 'function');
+    for (const empty of [null, undefined, '']) {
+      const actual = window.JournalFormat.time(empty);
+      assert(`JournalFormat.time(${JSON.stringify(empty)}) is unavailable, not blank`,
+        actual === 'time unavailable', `got "${actual}"`);
+    }
+    const notATime = window.JournalFormat.time('not a timestamp');
+    assert('JournalFormat.time(garbage) is unavailable', notATime === 'time unavailable', `got "${notATime}"`);
+    // Zero is a real instant (the epoch), not a missing value.
+    assert('JournalFormat.time(0) formats the epoch', window.JournalFormat.time(0) !== 'time unavailable');
+
+    const afternoon = new Date(2026, 8, 6, 13, 5).getTime();
+    const shown = window.JournalFormat.time(afternoon);
+    assert('a real timestamp formats', shown !== 'time unavailable', `got "${shown}"`);
+    assert('the formatted time is hour and minute only',
+      shown === new Date(afternoon).toLocaleString(undefined, { hour: 'numeric', minute: '2-digit' }),
+      `got "${shown}"`);
+    assert('the time carries its two-digit minute', /(^|\D)05(\D|$)/.test(shown), `got "${shown}"`);
+    // Same rendering as the full stamp, without the date, so it is shorter.
+    assert('the time is the stamp without its date',
+      shown.length < window.JournalFormat.timestamp(afternoon).length,
+      `time "${shown}" vs stamp "${window.JournalFormat.timestamp(afternoon)}"`);
+
     assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
   }
 

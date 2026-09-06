@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>status pane label smoke</title>
+<style>
+  body { font: 14px/1.4 sans-serif; padding: 16px; }
+  .pass { color: #166534; }
+  .fail { color: #b91c1c; }
+</style>
+<div id="status-instrument"><a class="status-icon" href="#"><span class="status-label"></span></a></div>
+<div id="status-pane"></div>
+<a id="status-pane-console-link" href="#"></a>
+<div id="status-live-region"></div>
+<div id="results"></div>
+<script>
+  const results = document.getElementById('results');
+  let failures = 0;
+
+  function assert(name, condition, detail) {
+    const row = document.createElement('div');
+    row.className = condition ? 'pass' : 'fail';
+    row.textContent = `${condition ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`;
+    results.appendChild(row);
+    if (!condition) failures += 1;
+  }
+
+  // status_pane.js runs its whole body inside this callback.
+  let shellReady = null;
+  window.whenShellReady = (fn) => { shellReady = fn; };
+</script>
+<script>
+  // G3-204 wired two files together with a string compare: websocket.js builds
+  // the silent-device label, status_pane.js holds a copy of it and swaps in a
+  // real plural when more than one device is silent. Nothing else pins them, so
+  // a stray apostrophe or a reworded label on either side would silently revert
+  // the plural. Both halves are asserted here: the two literals are identical,
+  // and the substitution actually fires end to end.
+  (async function run() {
+    const websocketSource = await (await fetch('../websocket.js')).text();
+    const statusPaneSource = await (await fetch('../status_pane.js')).text();
+
+    const offlineRow = websocketSource
+      .split('\n')
+      .find(line => line.includes('"capture": "offline"')
+        && line.includes('"variant": "mark-offline"')) || '';
+    const offlineMatch = offlineRow.match(/"label":\s*("(?:[^"\\]|\\.)*")/);
+    const offlineLabel = offlineMatch ? JSON.parse(offlineMatch[1]) : '';
+    assert('websocket.js still carries a silent-device label',
+      offlineLabel.includes('device'), `got "${offlineLabel}"`);
+
+    const constantMatch = statusPaneSource.match(/SILENT_DEVICE_LABEL\s*=\s*("(?:[^"\\]|\\.)*")/);
+    const silentDeviceLabel = constantMatch ? JSON.parse(constantMatch[1]) : '';
+    assert('status_pane.js compares against the label websocket.js writes',
+      silentDeviceLabel === offlineLabel && offlineLabel !== '',
+      `websocket.js "${offlineLabel}" vs status_pane.js "${silentDeviceLabel}"`);
+
+    window.appEvents = {
+      statusLabel: offlineLabel,
+      setCaptureStatus() {},
+      getMetrics() { return {}; },
+    };
+    window.AppServices = { quietNotifs: { unviewedCount: () => 0, markViewed() {} } };
+    window.fetch = () => Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({
+        capture: {
+          status: 'degraded',
+          clients: [
+            { status: 'offline' },
+            { status: 'stale' },
+            { status: 'online' },
+            { status: 'offline' },
+          ],
+        },
+        version: {},
+      }),
+    });
+
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = '../status_pane.js';
+      script.onload = resolve;
+      script.onerror = () => reject(new Error('status_pane.js did not load'));
+      document.head.appendChild(script);
+    });
+    assert('status_pane.js waits for the shell', typeof shellReady === 'function');
+    shellReady();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    const visible = document.querySelector('#status-instrument .status-label').textContent;
+    assert('three silent devices read as a real plural',
+      visible === "3 devices haven't added recently", `got "${visible}"`);
+    assert('the icon label says the same thing',
+      document.querySelector('#status-instrument .status-icon').getAttribute('aria-label') === visible,
+      document.querySelector('#status-instrument .status-icon').getAttribute('aria-label'));
+    assert('the live region says the same thing',
+      document.getElementById('status-live-region').textContent === visible);
+
+    // The substitution is keyed on that exact label: every other status word
+    // passes through untouched, plural device count or not.
+    window.appEvents.statusLabel = 'connecting';
+    window.updateStatusLabel();
+    const other = document.querySelector('#status-instrument .status-label').textContent;
+    assert('another status word is not re-plurals', other === 'connecting', `got "${other}"`);
+
+    assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
+  })().catch(error => {
+    assert('uncaught', false, String(error));
+    assert('summary', false, 'uncaught exception');
+  });
+</script>
+</html>
