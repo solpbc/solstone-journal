@@ -330,6 +330,7 @@
     }
     const list = document.getElementById('diagnostic-console-list');
     const empty = document.getElementById('diagnostic-console-empty');
+    const clear = root.querySelector('[data-diagnostic-action="clear"]');
     const sendAll = root.querySelector('[data-diagnostic-action="send-all"]');
     const reportingOff = root.querySelector('[data-diagnostic-reporting-off]');
     const canReport = reportingEnabled();
@@ -348,6 +349,11 @@
     }
     if (empty) {
       empty.hidden = currentEntries.length !== 0;
+    }
+    // "clear" empties the whole session, not just the visible filter, so it is
+    // live whenever anything is held — and dead when nothing is.
+    if (clear) {
+      clear.disabled = entries.length === 0;
     }
     if (sendAll) {
       sendAll.hidden = !canReport;

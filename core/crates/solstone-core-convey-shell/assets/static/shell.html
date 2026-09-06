@@ -61,7 +61,7 @@
       <span id="status-detail"></span>
     </div>
     <details class="status-pane-technical" style="margin-top: 12px;">
-      <summary style="cursor: pointer; user-select: none;">technical details</summary>
+      <summary style="cursor: pointer; user-select: none; min-height: 44px; padding: 10px 0;">technical details</summary>
       <div class="status-pane-technical" style="display: flex; flex-direction: column; gap: 4px; margin-top: 8px;">
         <div><strong>state:</strong> <span id="ws-status-raw">connecting</span></div>
         <div><strong>uptime:</strong> <span id="ws-uptime-raw">-</span></div>
@@ -96,12 +96,12 @@
     <header class="diagnostic-console-header">
       <h3 id="diagnostic-console-title">system messages</h3>
       <div class="diagnostic-console-actions">
-        <button type="button" data-diagnostic-action="clear">Clear</button>
-        <button type="button" data-diagnostic-action="send-all">Send all</button>
-        <button type="button" class="diagnostic-console-close" data-diagnostic-action="close" aria-label="Close">&times;</button>
+        <button type="button" data-diagnostic-action="clear" disabled>clear</button>
+        <button type="button" data-diagnostic-action="send-all" disabled>send to support</button>
+        <button type="button" class="diagnostic-console-close" data-diagnostic-action="close" aria-label="close">&times;</button>
       </div>
     </header>
-    <p class="diagnostic-console-reporting-off" data-diagnostic-reporting-off hidden>I can show these messages, but sending reports is off.</p>
+    <p class="diagnostic-console-reporting-off" data-diagnostic-reporting-off hidden>sending reports is off.</p>
     <div class="diagnostic-console-tabs" role="tablist" aria-label="system messages">
       <button type="button" data-diagnostic-filter="all" aria-selected="true">all <span data-diagnostic-count="all">0</span></button>
       <button type="button" data-diagnostic-filter="error" aria-selected="false">errors <span data-diagnostic-count="error">0</span></button>
@@ -109,7 +109,7 @@
       <button type="button" data-diagnostic-filter="info" aria-selected="false">info <span data-diagnostic-count="info">0</span></button>
     </div>
     <div id="diagnostic-console-list" class="diagnostic-console-list"></div>
-    <p id="diagnostic-console-empty" class="diagnostic-console-empty" hidden>I haven't seen any system messages this session.</p>
+    <p id="diagnostic-console-empty" class="diagnostic-console-empty" hidden>no system messages this session.</p>
   </div>
 </aside>
 
