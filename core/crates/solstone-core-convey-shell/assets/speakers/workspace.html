@@ -2655,7 +2655,7 @@
 	          if (!found && segments.length < segmentTotal) {
 	            loadUntilFound(hashKey, requestSeq);
 	          } else if (!found && segmentsComplete) {
-	            setSegmentsStatus("I couldn't load that speaker review.");
+	            setSegmentsStatus("that speaker review couldn't be loaded.");
 	          }
 	        }
         return true;
@@ -2723,7 +2723,7 @@
           return loadUntilFound(key, activeSeq);
         }
         if (!found && segmentsComplete) {
-          setSegmentsStatus("I couldn't load that speaker review.");
+          setSegmentsStatus("that speaker review couldn't be loaded.");
           return false;
         }
         return found;
