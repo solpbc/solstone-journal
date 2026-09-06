@@ -55,13 +55,22 @@ pub fn build_connections_card(
     // The shelf's job is to summarize who is in the owner's life. An unnamed
     // voice cluster is a speakers task, not a connection, so it is dropped here
     // the way the speakers surface drops it. X-02.
-    let named = neighbors
-        .iter()
-        .filter_map(Value::as_object)
-        .filter(|row| !is_placeholder_speaker(row) && !is_mention_only_word(row))
+    let rows = neighbors.iter().filter_map(Value::as_object);
+    let named = rows
+        .clone()
+        .filter(|row| {
+            !is_placeholder_speaker(row) && !is_mention_only_word(row) && !is_residue_evidence(row)
+        })
         .collect::<Vec<_>>();
     if named.is_empty() {
-        return json!({"state":"unnamed"});
+        // "name voices in speakers" is the way out of a shelf that held nothing
+        // but unnamed voice clusters. A shelf that held nothing but transcript
+        // residue has no such fix, so it reads as the empty shelf it is. G1-102.
+        return if rows.clone().any(is_placeholder_speaker) {
+            json!({"state":"unnamed"})
+        } else {
+            json!({"state":"empty"})
+        };
     }
     let mut attendance_kinds = ATTENDANCE_KINDS.to_vec();
     attendance_kinds.sort_unstable();
@@ -134,6 +143,12 @@ fn is_mention_only_word(row: &serde_json::Map<String, Value>) -> bool {
     if name.split_whitespace().count() != 1 {
         return false;
     }
+    is_mention_dominant(row)
+}
+
+/// Evidence that is at least 99% `mentioned`: the journal has the name in it,
+/// and has never had the owner do anything with whoever carries it.
+fn is_mention_dominant(row: &serde_json::Map<String, Value>) -> bool {
     let Some(kinds) = row.get("kinds").and_then(Value::as_object) else {
         return false;
     };
@@ -152,6 +167,45 @@ fn is_mention_only_word(row: &serde_json::Map<String, Value>) -> bool {
         }
     }
     total > 0 && mentioned * 100 >= total * 99
+}
+
+/// Function words a transcriber leaves behind. A name is not evidence; the
+/// token the match was made on is, and a match made on "The" is a match on
+/// nothing whatever the display name reads. Kept to closed-class words so a
+/// real subject is never on the list.
+const EVIDENCE_RESIDUE_WORDS: [&str; 40] = [
+    "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "from", "had", "has", "have",
+    "he", "her", "his", "i", "in", "is", "it", "its", "of", "on", "or", "our", "she", "so", "than",
+    "that", "the", "their", "them", "then", "there", "they", "this", "to", "was", "with",
+];
+
+/// A neighbor whose latest evidence is one residue token is a transcription
+/// artifact wearing whatever display name the extractor attached to it. The
+/// mention-dominance test still applies, so a person the journal has spoken
+/// with keeps their row no matter what the last transcript fragment reads.
+/// G1-102.
+fn is_residue_evidence(row: &serde_json::Map<String, Value>) -> bool {
+    if !is_mention_dominant(row) {
+        return false;
+    }
+    let label = row
+        .get("evidence")
+        .and_then(Value::as_array)
+        .and_then(|rows| rows.first())
+        .and_then(Value::as_object)
+        .and_then(|evidence| evidence.get("label"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
+    if label.is_empty() || label.split_whitespace().count() != 1 {
+        return false;
+    }
+    let lower = label.to_lowercase();
+    let token = lower.trim_matches(|character: char| !character.is_alphanumeric());
+    token.is_empty()
+        || token.chars().count() == 1
+        || !token.chars().any(char::is_alphabetic)
+        || EVIDENCE_RESIDUE_WORDS.contains(&token)
 }
 
 fn trim_neighbor(row: &serde_json::Map<String, Value>) -> Value {
@@ -388,7 +442,7 @@ mod tests {
     /// as the sorted array.
     fn captured_burn_in_neighbors() -> Value {
         json!({"total_neighbors":12,"neighbors":[
-            {"entity_id":"gallery_at_reunion_the","name":"Gallery At Reunion (The)","evidence_class":"semantic","count":4731,"last_seen":"20260905","kinds":{"mentioned":{"count":4731,"weighted":34945.681165493996}}},
+            {"entity_id":"gallery_at_reunion_the","name":"Gallery At Reunion (The)","evidence_class":"semantic","count":4731,"last_seen":"20260905","evidence":[{"label":"The","kind":"mentioned","day":"20260905"}],"kinds":{"mentioned":{"count":4731,"weighted":34945.681165493996}}},
             {"entity_id":"just","name":"just","evidence_class":"semantic","count":3249,"last_seen":"20260905","kinds":{"mentioned":{"count":3249,"weighted":11745.97663366838}}},
             {"entity_id":"speaker_1","name":"Speaker 1","evidence_class":"mixed","count":2591,"last_seen":"20260905","kinds":{"spoke-with":{"count":2547,"weighted":6852.98353624809},"attended-with":{"count":37,"weighted":17.136822248866938},"mentioned":{"count":4,"weighted":8.267718445734918},"co-present":{"count":3,"weighted":1.9245454626919196}}},
             {"entity_id":"think","name":"think","evidence_class":"semantic","count":2010,"last_seen":"20260904","kinds":{"mentioned":{"count":2010,"weighted":5652.853687785307}}},
@@ -410,25 +464,61 @@ mod tests {
             Ok(captured_burn_in_neighbors()),
             None,
         );
-        let names = card["neighbors"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|row| row["name"].as_str().unwrap().to_owned())
-            .collect::<Vec<_>>();
 
-        // One multi-word name survives. Every one-word name in the capture is
-        // mentions and nothing else -- `make` is 1329 mentions of 1333, still
-        // over the line -- so capitalisation buys `Own`, `Whole`, `Company`
-        // and `Able` nothing. The two unnamed voice clusters stay gone on the
-        // placeholder rule, not this one.
-        assert_eq!(names, vec!["Gallery At Reunion (The)".to_owned()]);
-        for dropped in [
-            "just", "think", "more", "make", "build", "Own", "Whole", "Company", "Able",
+        // Every one-word name in the capture is mentions and nothing else --
+        // `make` is 1329 mentions of 1333, still over the line -- so
+        // capitalisation buys `Own`, `Whole`, `Company` and `Able` nothing.
+        // The four-word name survived that rule and is dropped by the evidence
+        // one: the match behind its 4,731 mentions is the token "The". Two
+        // unnamed voice clusters remain in the source, so the shelf points at
+        // speakers rather than reading as a journal with nobody in it. G1-102.
+        assert_eq!(card, json!({"state":"unnamed"}));
+
+        // The same capture with its two voice clusters already named leaves
+        // residue and nothing else, and that is an empty shelf, not a speakers
+        // task.
+        let mut without_speakers = captured_burn_in_neighbors();
+        without_speakers["neighbors"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|row| !row["entity_id"].as_str().unwrap().starts_with("speaker_"));
+        assert_eq!(
+            build_connections_card(Ok(Some(json!({"id":"owner"}))), Ok(without_speakers), None),
+            json!({"state":"empty"})
+        );
+    }
+
+    #[test]
+    fn the_evidence_rule_reads_the_token_the_match_was_made_on() {
+        // The captured row: four words of display name, one function word of
+        // evidence. G1-102.
+        let captured = json!({"name":"Gallery At Reunion (The)","evidence":[{"label":"The","kind":"mentioned","day":"20260905"}],"kinds":{"mentioned":{"count":4731}}});
+        assert!(is_residue_evidence(captured.as_object().unwrap()));
+
+        // Residue of every shape the transcriber leaves.
+        for label in ["the", " The ", "and", "A", "x", "1979", "—", "of"] {
+            assert!(
+                is_residue_evidence(
+                    json!({"name":"Gallery At Reunion (The)","evidence":[{"label":label}],"kinds":{"mentioned":{"count":40}}})
+                        .as_object()
+                        .unwrap()
+                ),
+                "{label} is a token, not a connection"
+            );
+        }
+
+        // A real subject keeps its row: a real word of evidence, a phrase, or
+        // any interaction evidence at all behind a residue token.
+        for kept in [
+            json!({"name":"Gallery At Reunion (The)","evidence":[{"label":"Reunion"}],"kinds":{"mentioned":{"count":40}}}),
+            json!({"name":"Gallery At Reunion (The)","evidence":[{"label":"the gallery"}],"kinds":{"mentioned":{"count":40}}}),
+            json!({"name":"Ada Lovelace","evidence":[{"label":"the"}],"kinds":{"mentioned":{"count":40},"spoke-with":{"count":9}}}),
+            json!({"name":"Ada Lovelace","kinds":{"mentioned":{"count":40}}}),
+            json!({"name":"Ada Lovelace","evidence":[{"label":""}],"kinds":{"mentioned":{"count":40}}}),
         ] {
             assert!(
-                !names.iter().any(|name| name == dropped),
-                "{dropped} is a word the journal only ever mentioned, not a connection"
+                !is_residue_evidence(kept.as_object().unwrap()),
+                "{kept} is a connection the shelf must keep"
             );
         }
     }

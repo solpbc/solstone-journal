@@ -50,8 +50,12 @@ pub fn build_health_glance(
     now: DateTime<Utc>,
 ) -> Value {
     let mut issues = backlog_issues(backlog, now);
-    if let Some(issue) = capture_issue(capture, now) {
+    // How many devices the capture line names, so a headline over a single
+    // issue can count what that issue's own sentence counts. G1-108.
+    let mut named_devices = 0usize;
+    if let Some((issue, devices)) = capture_issue(capture, now) {
         issues.push(issue);
+        named_devices = devices;
     }
     if let Some(issue) = pipeline_issue(pipeline) {
         issues.push(issue);
@@ -66,7 +70,15 @@ pub fn build_health_glance(
             "amber"
         };
         let count = issues.len();
-        return json!({"verdict":"attention","severity":severity,"headline":if count == 1 { "1 thing needs your attention".to_owned() } else { format!("{count} things need your attention") },"last_observation":null,"cta":null,"issues":issues});
+        // "1 thing needs your attention" over a line naming two devices makes
+        // the reader reconcile two units. When the one issue is about devices,
+        // the headline counts devices. G1-108.
+        let headline = match (count, named_devices) {
+            (1, devices) if devices > 1 => format!("{devices} devices need your attention"),
+            (1, _) => "1 thing needs your attention".to_owned(),
+            _ => format!("{count} things need your attention"),
+        };
+        return json!({"verdict":"attention","severity":severity,"headline":headline,"last_observation":null,"cta":null,"issues":issues});
     }
     let disposition = capture_disposition(capture);
     if matches!(disposition, CaptureDisposition::Unavailable) {
@@ -231,38 +243,46 @@ fn backlog_issues(source: &BacklogSource, now: DateTime<Utc>) -> Vec<Value> {
 fn unknown_backlog() -> Value {
     json!({"text":"it's unclear whether your journal is caught up right now.","severity":"amber","href":"/app/health"})
 }
-fn capture_issue(capture: &Value, now: DateTime<Utc>) -> Option<Value> {
+/// The issue and, when the issue is a device line, how many devices it names.
+fn capture_issue(capture: &Value, now: DateTime<Utc>) -> Option<(Value, usize)> {
     match capture.get("status").and_then(Value::as_str) {
-        Some("degraded") => Some(json!({
-            "text": format_degraded_capture_line(capture).expect("degraded"),
-            "severity": "red",
-            "href": "/app/health",
-        })),
+        Some("degraded") => Some((
+            json!({
+                "text": format_degraded_capture_line(capture).expect("degraded"),
+                "severity": "red",
+                "href": "/app/health",
+            }),
+            0,
+        )),
         // Idle devices are the state health itself rates amber. Red is reserved
         // for a delivery that was refused or a service that failed.
         Some("stale" | "offline") => Some(idle_capture_issue(capture, now)),
         _ => {
             let sources = crate::needs_you::named_attention_sources(capture)?;
-            Some(json!({
-                "text": format!(
-                    "the solstone app on one of your devices is having trouble adding {sources} to your journal."
-                ),
-                "severity": "amber",
-                "href": "/app/health",
-            }))
+            Some((
+                json!({
+                    "text": format!(
+                        "the solstone app on one of your devices is having trouble adding {sources} to your journal."
+                    ),
+                    "severity": "amber",
+                    "href": "/app/health",
+                }),
+                0,
+            ))
         }
     }
 }
-fn idle_capture_issue(capture: &Value, now: DateTime<Utc>) -> Value {
+/// Health's `describeRegisteredClient` and its `HEALTH_GLANCE_DEVICE*_SILENT`
+/// strings are the single source for this sentence; home echoes them, in
+/// health's order (the quietest device first). X-03.
+fn idle_capture_issue(capture: &Value, now: DateTime<Utc>) -> (Value, usize) {
     let idle = idle_clients(capture, now);
     let text = match idle.as_slice() {
         [] => UNNAMED_IDLE_ISSUE.to_owned(),
-        [(name, Some(age))] => {
-            format!("{name} hasn't added anything to your journal in {age}.")
-        }
-        [(name, None)] => format!("{name} hasn't added anything to your journal recently."),
+        [(name, Some(age))] => format!("{name} hasn't added to your journal in {age}."),
+        [(name, None)] => format!("{name} hasn't added to your journal recently."),
         rows => format!(
-            "{} devices haven't added anything to your journal recently: {}.",
+            "{} devices haven't added to your journal recently: {}.",
             rows.len(),
             rows.iter()
                 .map(|(name, age)| match age {
@@ -278,12 +298,15 @@ fn idle_capture_issue(capture: &Value, now: DateTime<Utc>) -> Value {
     } else {
         "/app/network/#devices"
     };
-    json!({"text": text, "severity": "amber", "href": href})
+    (
+        json!({"text": text, "severity": "amber", "href": href}),
+        idle.len(),
+    )
 }
 // The names the owner sees decide the number the sentence is written in, so the
 // devices are collected before the line is composed rather than after.
 fn idle_clients(capture: &Value, now: DateTime<Utc>) -> Vec<(String, Option<String>)> {
-    capture
+    let mut rows = capture
         .get("clients")
         .and_then(Value::as_array)
         .into_iter()
@@ -300,23 +323,36 @@ fn idle_clients(capture: &Value, now: DateTime<Utc>) -> Vec<(String, Option<Stri
                 .and_then(Value::as_str)
                 .map(str::trim)
                 .filter(|name| !name.is_empty())?;
-            Some((name.to_owned(), last_added_age(client, now)))
+            Some((name.to_owned(), idle_seconds(client, now)))
         })
+        .collect::<Vec<_>>();
+    // Health lists the quietest device first and puts a device with no known
+    // age last; home reads the same order. X-03.
+    rows.sort_by(|left, right| {
+        right
+            .1
+            .unwrap_or(-1)
+            .cmp(&left.1.unwrap_or(-1))
+            .then_with(|| left.0.cmp(&right.0))
+    });
+    rows.into_iter()
+        .map(|(name, seconds)| (name, seconds.map(format_idle_age)))
         .collect()
 }
-fn last_added_age(client: &Value, now: DateTime<Utc>) -> Option<String> {
+fn idle_seconds(client: &Value, now: DateTime<Utc>) -> Option<i64> {
     let last = client
         .get("last_accepted_ingest_at")
         .and_then(Value::as_str)
         .and_then(parse_time)?;
     let seconds = (now - last).num_seconds();
-    (seconds >= 0).then(|| {
-        if seconds < 45 {
-            "just now".to_owned()
-        } else {
-            relative_time(seconds as f64)
-        }
-    })
+    (seconds >= 0).then_some(seconds)
+}
+fn format_idle_age(seconds: i64) -> String {
+    if seconds < 45 {
+        "just now".to_owned()
+    } else {
+        relative_time(seconds as f64)
+    }
 }
 fn pipeline_issue(pipeline: &Value) -> Option<Value> {
     if !pipeline.is_object() || pipeline.as_object().is_some_and(|row| row.is_empty()) {
@@ -419,6 +455,58 @@ mod tests {
 
     fn client(name: &str, status: &str, reach: &str) -> Value {
         json!({"name": name, "status": status, "reach": reach})
+    }
+
+    /// The burn-in capture: home's headline counted issues while the line
+    /// beside it counted devices, and the two surfaces spelled the same
+    /// sentence differently and in different orders. Health's
+    /// `describeRegisteredClient` and its `HEALTH_GLANCE_DEVICES_SILENT`
+    /// string are the source; home echoes them, quietest device first.
+    /// G1-108, X-03.
+    #[test]
+    fn the_device_line_echoes_health_and_the_headline_counts_devices() {
+        let mut iphone = client("iPhone's iPhone", "offline", "offline");
+        // 15:30 on 2026-05-14 less six hours, and less one day.
+        iphone["last_accepted_ingest_at"] = json!("2026-05-14T09:30:00Z");
+        let mut suze = client("suze", "offline", "offline");
+        suze["last_accepted_ingest_at"] = json!("2026-05-13T15:30:00Z");
+        let capture = json!({
+            "status": "offline",
+            "clients": [iphone, suze],
+            "unassessed": [],
+            "registry": "registry_complete",
+        });
+        let glanced = glance(&capture);
+        assert_eq!(
+            glanced["issues"][0]["text"],
+            "2 devices haven't added to your journal recently: suze (1 day), iPhone's iPhone (6 hours)."
+        );
+        assert_eq!(glanced["headline"], "2 devices need your attention");
+        assert_eq!(glanced["issues"].as_array().unwrap().len(), 1);
+
+        // One device is one thing; the headline only counts devices when the
+        // single issue's own sentence does.
+        let one = json!({
+            "status": "offline",
+            "clients": [client("suze", "offline", "offline")],
+            "unassessed": [],
+            "registry": "registry_complete",
+        });
+        assert_eq!(glance(&one)["headline"], "1 thing needs your attention");
+
+        // A device with no known age sorts last, the way health sorts it.
+        let mut known = client("known", "stale", "active");
+        known["last_accepted_ingest_at"] = json!("2026-05-14T14:30:00Z");
+        let unknown_last = json!({
+            "status": "stale",
+            "clients": [client("unknown", "stale", "active"), known],
+            "unassessed": [],
+            "registry": "registry_complete",
+        });
+        assert_eq!(
+            glance(&unknown_last)["issues"][0]["text"],
+            "2 devices haven't added to your journal recently: known (1 hour), unknown."
+        );
     }
 
     #[test]
@@ -612,7 +700,7 @@ mod tests {
         });
         assert_eq!(
             glance(&two_offline)["issues"][0]["text"],
-            "2 devices haven't added anything to your journal recently: iPhone's iPhone, suze."
+            "2 devices haven't added to your journal recently: iPhone's iPhone, suze."
         );
         assert_eq!(glance(&two_offline)["severity"], "amber");
         let three_stale_running = json!({
@@ -627,7 +715,7 @@ mod tests {
         });
         assert_eq!(
             glance(&three_stale_running)["issues"][0]["text"],
-            "3 devices haven't added anything to your journal recently: desk, laptop, suze."
+            "3 devices haven't added to your journal recently: desk, laptop, suze."
         );
         // One device is named on its own, with the age of the last thing it
         // added when the record carries one.
@@ -639,14 +727,14 @@ mod tests {
         });
         assert_eq!(
             glance(&one_offline)["issues"][0]["text"],
-            "suze hasn't added anything to your journal recently."
+            "suze hasn't added to your journal recently."
         );
         let mut one_offline_timed = one_offline.clone();
         one_offline_timed["clients"][0]["last_accepted_ingest_at"] = json!("2026-05-13T15:30:00Z");
         let timed = glance(&one_offline_timed);
         assert_eq!(
             timed["issues"][0]["text"],
-            "suze hasn't added anything to your journal in 1 day."
+            "suze hasn't added to your journal in 1 day."
         );
         assert_eq!(timed["severity"], "amber");
         assert_eq!(timed["issues"][0]["href"], "/app/network/#devices");
@@ -676,7 +764,7 @@ mod tests {
             stale_g["issues"][0]["text"]
                 .as_str()
                 .unwrap()
-                .contains("hasn't added anything to your journal recently")
+                .contains("hasn't added to your journal recently")
         );
 
         let offline_partial = json!({
@@ -693,7 +781,7 @@ mod tests {
         assert_eq!(offline_g["issues"].as_array().unwrap().len(), 1);
         assert_eq!(
             offline_g["issues"][0]["text"],
-            "phone hasn't added anything to your journal recently."
+            "phone hasn't added to your journal recently."
         );
 
         let degraded_invalid = json!({
@@ -791,10 +879,7 @@ mod tests {
         let running_text = running_g["issues"][0]["text"].as_str().unwrap();
         let asleep_text = asleep_g["issues"][0]["text"].as_str().unwrap();
         assert_eq!(running_text, asleep_text);
-        assert_eq!(
-            running_text,
-            "phone hasn't added anything to your journal recently."
-        );
+        assert_eq!(running_text, "phone hasn't added to your journal recently.");
         assert!(!running_text.contains("reach"));
         assert!(!running_text.contains("heartbeat"));
 
@@ -812,7 +897,7 @@ mod tests {
         });
         assert_eq!(
             glance(&mixed)["issues"][0]["text"],
-            "2 devices haven't added anything to your journal recently: alpha, bravo."
+            "2 devices haven't added to your journal recently: alpha, bravo."
         );
 
         let corpus_shaped = json!({"status": "stale", "clients": [{"name": "laptop"}]});
