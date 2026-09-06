@@ -174,27 +174,69 @@ fn label_item(root: &std::path::Path, row: &store::NewsRow) -> Value {
 // Best-effort only — a missing or unreadable file yields no preview, not an error.
 fn preview_line(root: &std::path::Path, facet: &str, day: &str) -> Option<String> {
     let (_, content) = load(root, facet, day).ok().flatten()?;
-    let line = content
-        .lines()
-        .find(|line| {
-            let trimmed = line.trim();
-            !trimmed.is_empty() && !trimmed.starts_with('#')
-        })?
-        .trim()
-        .trim_matches('*')
-        .replace("**", "")
-        .trim()
-        .to_owned();
-    if line.is_empty() {
-        return None;
+    preview_from_content(&content)
+}
+
+/// The longest a preview may run before it is cut with an ellipsis.
+const PREVIEW_CHARS: usize = 220;
+
+/// The shortest line the preview will settle on. A letter that opens with a
+/// bare `TL;DR:` label, a one-word line, or a stub the talent left above the
+/// body gives the owner nothing to choose on, so the preview keeps reading.
+const MIN_PREVIEW_CHARS: usize = 30;
+
+/// Choose the line the index card shows for a letter.
+///
+/// Headings and blank lines are skipped, a leading `TL;DR` label is dropped,
+/// and a line too short to say anything is passed over for the next one. A
+/// letter whose every line is that short still gets its first line rather than
+/// nothing at all.
+fn preview_from_content(content: &str) -> Option<String> {
+    let mut fallback: Option<String> = None;
+    let mut chosen: Option<String> = None;
+    for raw in content.lines() {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let cleaned = trimmed.trim_matches('*').replace("**", "");
+        let candidate = strip_preview_label(cleaned.trim()).trim().to_owned();
+        if candidate.is_empty() {
+            continue;
+        }
+        if candidate.chars().count() >= MIN_PREVIEW_CHARS {
+            chosen = Some(candidate);
+            break;
+        }
+        if fallback.is_none() {
+            fallback = Some(candidate);
+        }
     }
-    const PREVIEW_CHARS: usize = 220;
+    let line = chosen.or(fallback)?;
     if line.chars().count() > PREVIEW_CHARS {
         let head: String = line.chars().take(PREVIEW_CHARS).collect();
         Some(format!("{}…", head.trim_end()))
     } else {
         Some(line)
     }
+}
+
+/// Drop a leading `TL;DR` label and the punctuation that follows it. The label
+/// is the letter's own scaffolding, never the sentence the owner wants to read.
+fn strip_preview_label(line: &str) -> &str {
+    for label in ["tl;dr", "tldr"] {
+        let Some(head) = line.get(..label.len()) else {
+            continue;
+        };
+        if !head.eq_ignore_ascii_case(label) {
+            continue;
+        }
+        return line[label.len()..]
+            .trim_start()
+            .trim_start_matches([':', '-'])
+            .trim_start();
+    }
+    line
 }
 
 async fn state(root: PathBuf, _clock: Clock) -> Response {
@@ -447,4 +489,70 @@ pub(crate) fn journal_has_any_observer_input(root: &std::path::Path) -> bool {
         .flatten()
         .filter_map(Result::ok)
         .any(|entry| entry.path().is_dir() && is_day(&entry.file_name().to_string_lossy()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MIN_PREVIEW_CHARS, PREVIEW_CHARS, preview_from_content};
+
+    #[test]
+    fn the_preview_skips_headings_labels_and_lines_too_short_to_say_anything() {
+        for (letter, shown) in [
+            // The seeded corpus letters, unchanged by the label and length rules.
+            (
+                "# What happened\n\nA **short** newsletter body with a list:\n",
+                Some("A short newsletter body with a list:"),
+            ),
+            (
+                "An earlier work newsletter so the feed has a second page.\n",
+                Some("An earlier work newsletter so the feed has a second page."),
+            ),
+            // A bare label line is scaffolding; the sentence under it is the preview.
+            (
+                "TL;DR:\n\nThe migration landed and the backlog is clear again.\n",
+                Some("The migration landed and the backlog is clear again."),
+            ),
+            // A label on the same line keeps its sentence.
+            (
+                "**TL;DR:** the migration landed and the backlog is clear.\n",
+                Some("the migration landed and the backlog is clear."),
+            ),
+            (
+                "tl;dr - the week was quiet, and that is fine.\n",
+                Some("the week was quiet, and that is fine."),
+            ),
+            (
+                "TLDR: the week was quiet, and that is fine.\n",
+                Some("the week was quiet, and that is fine."),
+            ),
+            // A short stub above the body is passed over.
+            (
+                "Summary\n\nThe quarter closed with two launches and one postponed.\n",
+                Some("The quarter closed with two launches and one postponed."),
+            ),
+            // Every line short: the owner still gets the first one.
+            ("a quiet week.\nnothing else.\n", Some("a quiet week.")),
+            // Nothing to show at all.
+            ("# heading only\n\n\n", None),
+            ("", None),
+            ("TL;DR:\n", None),
+        ] {
+            assert_eq!(preview_from_content(letter).as_deref(), shown, "{letter:?}");
+        }
+    }
+
+    #[test]
+    fn the_preview_is_capped_and_the_cap_is_above_the_floor() {
+        assert!(PREVIEW_CHARS > MIN_PREVIEW_CHARS);
+        let long = "x".repeat(PREVIEW_CHARS + 40);
+        let preview = preview_from_content(&long).expect("a long line previews");
+        assert_eq!(preview.chars().count(), PREVIEW_CHARS + 1);
+        assert!(preview.ends_with('…'));
+        // The floor is a floor, not a filter: a line one character over it stays.
+        let just_long_enough = "y".repeat(MIN_PREVIEW_CHARS);
+        assert_eq!(
+            preview_from_content(&format!("short\n\n{just_long_enough}\n")).as_deref(),
+            Some(just_long_enough.as_str())
+        );
+    }
 }
