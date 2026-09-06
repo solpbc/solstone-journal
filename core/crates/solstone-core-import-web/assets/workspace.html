@@ -701,12 +701,13 @@
     <button class="close" type="button" aria-label="close" onclick="closeDetectModal()">&times;</button>
     <div class="confirm-fields">
       <div class="confirm-field">
-        <label for="timestampInput">timestamp</label>
+        <label for="timestampInput">date</label>
         <input id="timestampInput" />
       </div>
       <div class="confirm-field">
-        <label for="settingInput">setting</label>
+        <label for="settingInput">context <span class="import-field-optional">(optional)</span></label>
         <input id="settingInput" placeholder="e.g. rae lunch with joe" />
+        <div class="import-field-hint">a short note about what this is, so it's easier to find later</div>
       </div>
     </div>
     <input type="hidden" id="savedPath" />
@@ -2048,7 +2049,7 @@ startBtn.addEventListener('click', async () => {
   const setting = settingInput.value.trim();
 
   if (!ts) {
-    if (window.showError) showError('Timestamp is required before starting the import.');
+    if (window.showError) showError('the date is required before starting the import.');
     return;
   }
   if (isTerminalDuplicate(window._quickSaved)) {
