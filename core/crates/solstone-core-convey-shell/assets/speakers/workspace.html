@@ -1352,6 +1352,9 @@
 <script>
 (() => {
   const escapeHtml = (value) => window.AppServices.escapeHtml(value);
+  const pluralize = (count, singular, plural = `${singular}s`) => (count === 1 ? singular : plural);
+  const PLACEHOLDER_SPEAKER_NAME = /^speaker\s+\d+$/i;
+  const isPlaceholderSpeakerName = (name) => PLACEHOLDER_SPEAKER_NAME.test(String(name || '').trim());
   const initialEmptyIcon = document.getElementById('spkInitialEmptyIcon');
   if (initialEmptyIcon) {
     initialEmptyIcon.innerHTML = window.ConveyIcons.svg('mouse-pointer-2');
@@ -2561,7 +2564,7 @@
             ${clusters.map(cluster => `
               <div class="spk-discovery-cluster" data-cluster-id="${escapeHtml(cluster.cluster_id)}">
                 <div class="spk-discovery-cluster-title">
-                  Unknown speaker <span style="font-weight: 400">&middot; ${cluster.size} samples &middot; ${cluster.segment_count} segments</span>
+                  Unknown speaker <span style="font-weight: 400">&middot; ${cluster.size} ${pluralize(cluster.size, 'sample')} &middot; ${cluster.segment_count} ${pluralize(cluster.segment_count, 'segment')}</span>
                 </div>
                 ${(cluster.samples || []).map(sample => `
                   <div class="spk-discovery-sample">
@@ -2741,7 +2744,7 @@
 
     if (segmentTotal > 20 && segments.length < segmentTotal) {
       container.style.display = '';
-      btn.textContent = `Load more segments (${segments.length} of ${segmentTotal})`;
+      btn.textContent = `load more segments (${segments.length} of ${segmentTotal})`;
       btn.onclick = loadMoreSegments;
     } else {
       container.style.display = 'none';
@@ -2794,7 +2797,7 @@
           aria-label="${seg.start} - ${seg.end}, ${seg.speaker_count} speaker${seg.speaker_count !== 1 ? 's' : ''}${seg.attribution_needs_review > 0 ? ', ' + seg.attribution_needs_review + ' to review' : ''}">
         <div class="spk-segment-time">
           ${seg.start} - ${seg.end}
-          ${seg.speaker_count > 0 ? `<span class="spk-speaker-count">${seg.speaker_count} speakers</span>` : ''}
+          ${seg.speaker_count > 0 ? `<span class="spk-speaker-count">${seg.speaker_count} ${pluralize(seg.speaker_count, 'speaker')}</span>` : ''}
         </div>
         <div class="spk-segment-meta">${formatDuration(seg.duration)}</div>
         <div class="spk-segment-sources">
@@ -3739,6 +3742,11 @@
 .spk-discovery-clusters > details > summary { cursor: pointer; padding: 12px 0; }
 .spk-discovery-clusters > details > .spk-discovery-card { margin-top: 12px; }
 
+/* Same treatment for placeholder-named ("Speaker 1") known-voice cards. */
+.spk-known-grid > details { grid-column: 1 / -1; }
+.spk-known-grid > details > summary { cursor: pointer; padding: 12px 0; }
+.spk-known-grid > details > .spk-known-card { margin-top: 12px; }
+
 .spk-owner-sample,
 .spk-known-card,
 .spk-discovery-card {
@@ -3882,6 +3890,9 @@
   const dayGridHost = document.getElementById('spkDayGridHost');
   const dayGridLegend = document.getElementById('spkDayGridLegend');
   const escapeHtml = (value) => window.AppServices.escapeHtml(value);
+  const pluralize = (count, singular, plural = `${singular}s`) => (count === 1 ? singular : plural);
+  const PLACEHOLDER_SPEAKER_NAME = /^speaker\s+\d+$/i;
+  const isPlaceholderSpeakerName = (name) => PLACEHOLDER_SPEAKER_NAME.test(String(name || '').trim());
   let mountedDayGridKey = null;
   let whoIsThisSheet = null;
   let discoveryClustersById = new Map();
@@ -4152,17 +4163,31 @@
       return;
     }
     sortSelect.hidden = false;
-    knownContainer.innerHTML = `<div class="spk-known-grid">${speakers.map((speaker) => {
+    const renderCard = (speaker) => {
       const href = `/app/speakers/${TODAY}?speaker=${encodeURIComponent(speaker.entity_id)}`;
       return `
         <a class="spk-known-card" href="${href}">
           <h3 class="spk-card-title">${escapeHtml(speaker.name || 'unlabeled voice')}</h3>
-          <p class="spk-card-line">${escapeHtml(String(speaker.embedding_count || 0))} ${escapeHtml(COPY.SPK_OVERVIEW_CARD_SAMPLES_LABEL)} · ${escapeHtml(String(speaker.segment_count || 0))} ${escapeHtml(COPY.SPK_OVERVIEW_CARD_SEGMENTS_LABEL)}</p>
+          <p class="spk-card-line">${escapeHtml(String(speaker.embedding_count || 0))} ${escapeHtml(pluralize(speaker.embedding_count || 0, 'sample'))} · ${escapeHtml(String(speaker.segment_count || 0))} ${escapeHtml(pluralize(speaker.segment_count || 0, 'segment'))}</p>
           <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_CARD_LAST_HEARD_PREFIX)}: ${relativeTime(speaker.last_seen_ts)}</p>
           ${cohesion(speaker.intra_cosine_p25)}
         </a>
       `;
-    }).join('')}</div>`;
+    };
+    // Placeholder identities ("Speaker 1", "Speaker 2", ...) are the voices
+    // not yet named — they don't belong under "known voices". Keep them
+    // reachable but out of the way, same pattern as the unlabeled discovery
+    // clusters below.
+    const named = speakers.filter((speaker) => !isPlaceholderSpeakerName(speaker.name));
+    const unnamed = speakers.filter((speaker) => isPlaceholderSpeakerName(speaker.name));
+    const wasOpen = knownContainer.querySelector('details')?.open || false;
+    const emptyNotice = named.length === 0
+      ? `<div class="spk-overview-muted">${escapeHtml(COPY.SPK_OVERVIEW_KNOWN_VOICES_EMPTY)}</div>`
+      : '';
+    const unnamedBlock = unnamed.length
+      ? `<details ${wasOpen ? 'open' : ''}><summary>unlabeled voices (${unnamed.length})</summary>${unnamed.map(renderCard).join('')}</details>`
+      : '';
+    knownContainer.innerHTML = `${emptyNotice}<div class="spk-known-grid">${named.map(renderCard).join('')}${unnamedBlock}</div>`;
   }
 
   function loadKnown(options) {
@@ -4366,7 +4391,7 @@
     const renderCluster = (cluster) => `
       <div class="spk-discovery-card" data-cluster-id="${escapeHtml(cluster.cluster_id)}">
         <h3 class="spk-card-title">${escapeHtml(cluster.suggested_name || 'unlabeled voice')}</h3>
-        <p class="spk-card-line">${escapeHtml(String(cluster.size || cluster.count || 0))} ${escapeHtml(COPY.SPK_OVERVIEW_CARD_SAMPLES_LABEL)}</p>
+        <p class="spk-card-line">${escapeHtml(String(cluster.size || cluster.count || 0))} ${escapeHtml(pluralize(cluster.size || cluster.count || 0, 'sample'))}</p>
         <div class="spk-discovery-actions">
           <button type="button" class="spk-overview-btn spk-who-trigger" aria-haspopup="dialog" aria-expanded="false">${escapeHtml(COPY.SPK_ACTION_WHO_IS_THIS || '')}</button>
         </div>
@@ -4584,6 +4609,11 @@
       detail: err,
       retry: true,
     });
+    // The failure above covers the whole overview (its retry re-runs
+    // startOverview, which repopulates these too) — don't leave the other
+    // panels spinning on a load that will never resolve.
+    qualityPanel.innerHTML = '';
+    knownContainer.innerHTML = '';
     ownerPanel.querySelector('.surface-state-retry')?.addEventListener('click', () => {
       window.SPEAKERS_STATE_PROMISE = window.loadSpeakersState();
       startOverview();
@@ -4595,6 +4625,11 @@
     if (context.isDay) return;
     document.getElementById('speakersOverviewView').hidden = false;
     ownerPanel.innerHTML = window.SurfaceState.loading({ text: 'loading speakers...' });
+    // These two panels otherwise sit blank (not a labeled loading state) for
+    // as long as their own reads take, which can be well over ten seconds.
+    qualityPanel.innerHTML = window.SurfaceState.loading({ text: 'loading voice quality...' });
+    knownContainer.innerHTML = window.SurfaceState.loading({ text: 'loading known voices...' });
+    sortSelect.hidden = true;
     try {
       const payload = await window.SPEAKERS_STATE_PROMISE;
       applyOverviewState(payload);
