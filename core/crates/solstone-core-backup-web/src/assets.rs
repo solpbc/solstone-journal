@@ -45,7 +45,7 @@ pub async fn static_asset(axum::extract::Path(name): axum::extract::Path<String>
 mod tests {
     use serde_json::{Value, json};
 
-    use super::JS;
+    use super::{JS, WORKSPACE};
 
     fn embedded_js_object(prefix: &str) -> Value {
         let source = std::str::from_utf8(JS).expect("embedded backup.js is UTF-8");
@@ -155,5 +155,68 @@ mod tests {
                 && !render_fn.contains("if (totals.days > 0)"),
             "banned days>0 gate form"
         );
+    }
+
+    /// A suggestion must never be presented as the configured setting. The
+    /// budget and floor inputs prefill only from a saved limit; the suggestion
+    /// reaches the owner as a placeholder and a labelled hint, and the tile
+    /// captions stay hidden until a limit exists. Pinned at the source, because
+    /// the render path has no seam a headless test can drive.
+    #[test]
+    fn offload_limits_never_present_a_suggestion_as_the_setting() {
+        let source = std::str::from_utf8(JS).expect("embedded backup.js is UTF-8");
+        let start = source
+            .find("  function renderOffload() {")
+            .expect("renderOffload");
+        let end = source[start + 1..]
+            .find("\n  function ")
+            .expect("next function after renderOffload");
+        let render_fn = &source[start..start + 1 + end];
+        assert!(
+            render_fn.contains("const budget = offload.budget_bytes;")
+                && render_fn.contains("const floor = offload.floor_bytes;"),
+            "{render_fn}"
+        );
+        assert!(
+            !render_fn.contains("suggested_defaults.budget_bytes")
+                && !render_fn.contains("suggested_defaults.floor_bytes"),
+            "banned suggestion fallback into the configured limit"
+        );
+        assert!(
+            render_fn.contains("applyOffloadSuggestion(budgetField, '[data-offload-budget-hint]',")
+                && render_fn
+                    .contains("applyOffloadSuggestion(floorField, '[data-offload-floor-hint]',"),
+            "{render_fn}"
+        );
+        let copy = embedded_js_object("  const BACKUP_COPY = ");
+        assert_eq!(copy["offload"]["labels"]["suggested"], "suggested: {value}");
+        // The tile captions read the same configured-only values.
+        assert!(
+            render_fn.contains("const budgetValid = typeof budget === 'number'")
+                && render_fn.contains("const floorValid = typeof floor === 'number'"),
+            "{render_fn}"
+        );
+    }
+
+    /// The status endpoint carries no storage-used or snapshot-list field, so
+    /// the two tiles that read "not yet available" were ghost controls. They
+    /// are gone, and so is the copy that named them.
+    #[test]
+    fn management_grid_offers_no_measurement_the_status_never_produces() {
+        let workspace = std::str::from_utf8(WORKSPACE).expect("embedded workspace is UTF-8");
+        for attribute in ["data-storage-placeholder", "data-snapshot-placeholder"] {
+            assert!(
+                !workspace.contains(attribute),
+                "{attribute} is still rendered"
+            );
+        }
+        let copy = embedded_js_object("  const BACKUP_COPY = ");
+        let labels = copy["management"]["status_labels"]
+            .as_object()
+            .expect("status labels object");
+        for key in ["storage_used", "snapshot_history"] {
+            assert!(!labels.contains_key(key), "{key} copy outlived its tile");
+        }
+        assert!(labels.contains_key("last_backup") && labels.contains_key("last_prune"));
     }
 }

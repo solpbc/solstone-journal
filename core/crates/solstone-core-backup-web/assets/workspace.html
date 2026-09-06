@@ -145,7 +145,7 @@
       <section data-hosted-location-section hidden>
         <h2 data-copy="management.status_labels.destination"></h2>
         <p data-hosted-location></p>
-        <a href="" target="_blank" rel="noopener" data-copy-href="hosted.manage_url" data-copy="hosted.manage_label"></a>
+        <a class="backup-link" href="" target="_blank" rel="noopener" data-copy-href="hosted.manage_url" data-copy="hosted.manage_label"></a>
       </section>
 
       <div class="backup-management-grid">
@@ -156,14 +156,6 @@
         <section>
           <h2 data-copy="management.status_labels.last_prune"></h2>
           <p data-last-prune data-copy="management.status_labels.not_yet"></p>
-        </section>
-        <section>
-          <h2 data-copy="management.status_labels.storage_used"></h2>
-          <p data-storage-placeholder data-copy="management.status_labels.not_available"></p>
-        </section>
-        <section>
-          <h2 data-copy="management.status_labels.snapshot_history"></h2>
-          <p data-snapshot-placeholder data-copy="management.status_labels.not_available"></p>
         </section>
       </div>
 
@@ -203,6 +195,7 @@
                 <input data-offload-budget-input name="budget_gb" type="number" min="0.01" step="any">
                 <span data-copy="offload.labels.gb_suffix"></span>
               </span>
+              <small class="backup-hint" data-offload-budget-hint hidden></small>
             </label>
             <label>
               <span data-copy="offload.labels.floor_gb"></span>
@@ -210,6 +203,7 @@
                 <input data-offload-floor-input name="floor_gb" type="number" min="0.01" step="any">
                 <span data-copy="offload.labels.gb_suffix"></span>
               </span>
+              <small class="backup-hint" data-offload-floor-hint hidden></small>
             </label>
           </div>
           <p class="backup-status-message" data-offload-config-status></p>

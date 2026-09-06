@@ -87,8 +87,6 @@
         "last_backup": "last backup",
         "last_prune": "last prune",
         "last_verification": "last verification",
-        "storage_used": "storage used",
-        "snapshot_history": "snapshot history",
         "not_available": "not yet available",
         "not_yet": "not yet",
         "ago": "{duration} ago",
@@ -169,6 +167,7 @@
         "floor_gb": "device free-space floor",
         "budget_short": "budget",
         "floor_short": "floor",
+        "suggested": "suggested: {value}",
         "raw_media": "on this device",
         "device_free": "device free",
         "device_total": "device total",
@@ -917,6 +916,17 @@
     return String(rounded);
   }
 
+  function applyOffloadSuggestion(field, hintSelector, suggestedBytes) {
+    const suggestion = formatGbInput(suggestedBytes);
+    field.placeholder = suggestion;
+    const hint = root.querySelector(hintSelector);
+    if (!hint) return;
+    hint.textContent = suggestion
+      ? (offloadLabels.suggested || '').replace('{value}', formatBytes(suggestedBytes))
+      : '';
+    hint.hidden = !hint.textContent;
+  }
+
   function formatBytes(bytes) {
     if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) {
       return statusLabels.not_available || '';
@@ -1231,12 +1241,22 @@
     if (proof) proof.hidden = !showProof;
     if (tiering) tiering.hidden = !showProof;
 
-    const budget = offload.budget_bytes || (payload.suggested_defaults && payload.suggested_defaults.budget_bytes);
-    const floor = offload.floor_bytes || (payload.suggested_defaults && payload.suggested_defaults.floor_bytes);
+    // A suggestion is never shown as if it were the setting: only a configured
+    // limit fills the input or captions a tile. The suggestion is a placeholder
+    // and a hint, and the server still applies it when enable posts no config.
+    const suggestedDefaults = payload.suggested_defaults || {};
+    const budget = offload.budget_bytes;
+    const floor = offload.floor_bytes;
     const budgetField = root.querySelector('[data-offload-budget-input]');
     const floorField = root.querySelector('[data-offload-floor-input]');
-    if (budgetField && offloadState.status === 'ready') budgetField.value = formatGbInput(budget);
-    if (floorField && offloadState.status === 'ready') floorField.value = formatGbInput(floor);
+    if (budgetField && offloadState.status === 'ready') {
+      budgetField.value = formatGbInput(budget);
+      applyOffloadSuggestion(budgetField, '[data-offload-budget-hint]', suggestedDefaults.budget_bytes);
+    }
+    if (floorField && offloadState.status === 'ready') {
+      floorField.value = formatGbInput(floor);
+      applyOffloadSuggestion(floorField, '[data-offload-floor-hint]', suggestedDefaults.floor_bytes);
+    }
     for (const field of [budgetField, floorField]) {
       if (field) field.disabled = !showControls;
     }
