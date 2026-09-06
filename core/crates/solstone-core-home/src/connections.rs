@@ -58,7 +58,7 @@ pub fn build_connections_card(
     let named = neighbors
         .iter()
         .filter_map(Value::as_object)
-        .filter(|row| !is_placeholder_speaker(row) && !is_bare_word_name(row))
+        .filter(|row| !is_placeholder_speaker(row) && !is_mention_only_word(row))
         .collect::<Vec<_>>();
     if named.is_empty() {
         return json!({"state":"unnamed"});
@@ -118,26 +118,40 @@ fn is_placeholder_speaker_token(value: &str, separator: char) -> bool {
     !rest.is_empty() && rest.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-/// A neighbor whose whole display name is one bare lowercase word (`make`,
-/// `just`, `think`, `build`) is a semantic-extraction artifact, not somebody in
-/// the owner's life. The test is structural rather than a stop-word list: one
-/// whitespace-separated token, no uppercase letter, no digit. A capitalised
-/// single name (`Ada`) and every multi-word name stay, so the rule can never
-/// take a real connection off the shelf. Applies regardless of evidence class,
-/// and covers both the shelf and the "mentioned in your journal" disclosure,
-/// which read the same list. X-02.
-fn is_bare_word_name(row: &serde_json::Map<String, Value>) -> bool {
+/// A neighbor whose whole display name is one word and whose evidence is
+/// almost entirely `mentioned` is a semantic-extraction artifact, not somebody
+/// in the owner's life: the owner never spoke with it, attended anything with
+/// it, was co-present with it, or messaged it. The test is the evidence rather
+/// than the capitalisation, because capitalisation separated `Own` and `Whole`
+/// from `make` and `just` while the journal says the same thing about all four.
+/// Every multi-word name stays, and so does every one-word name with real
+/// interaction evidence. A row carrying no kind counts at all is left alone —
+/// with no evidence either way the rule refuses to guess. Covers both the shelf
+/// and the "mentioned in your journal" disclosure, which read the same list.
+/// X-02.
+fn is_mention_only_word(row: &serde_json::Map<String, Value>) -> bool {
     let name = row.get("name").and_then(Value::as_str).unwrap_or("").trim();
-    let mut tokens = name.split_whitespace();
-    let Some(only) = tokens.next() else {
-        return false;
-    };
-    if tokens.next().is_some() {
+    if name.split_whitespace().count() != 1 {
         return false;
     }
-    !only
-        .chars()
-        .any(|character| character.is_uppercase() || character.is_numeric())
+    let Some(kinds) = row.get("kinds").and_then(Value::as_object) else {
+        return false;
+    };
+    let mut total: i64 = 0;
+    let mut mentioned: i64 = 0;
+    for (kind, value) in kinds {
+        let count = value
+            .as_object()
+            .and_then(|value| value.get("count"))
+            .and_then(Value::as_i64)
+            .unwrap_or(0)
+            .max(0);
+        total += count;
+        if kind == "mentioned" {
+            mentioned += count;
+        }
+    }
+    total > 0 && mentioned * 100 >= total * 99
 }
 
 fn trim_neighbor(row: &serde_json::Map<String, Value>) -> Value {
@@ -368,26 +382,29 @@ mod tests {
     }
 
     /// The twelve neighbors the burn-in review captured off the founder's own
-    /// journal (`x-home-pulse.json`). Names and evidence classes are verbatim.
+    /// journal (`x-home-pulse.json`). Names, evidence classes and kind counts
+    /// are verbatim; `kinds` carries the source shape the projection reads (a
+    /// map of kind to count and weight), which the captured response renders
+    /// as the sorted array.
     fn captured_burn_in_neighbors() -> Value {
         json!({"total_neighbors":12,"neighbors":[
-            {"entity_id":"gallery_at_reunion_the","name":"Gallery At Reunion (The)","evidence_class":"semantic","count":4731,"last_seen":"20260905","kinds":{}},
-            {"entity_id":"just","name":"just","evidence_class":"semantic","count":3249,"last_seen":"20260905","kinds":{}},
-            {"entity_id":"speaker_1","name":"Speaker 1","evidence_class":"mixed","count":2591,"last_seen":"20260905","kinds":{}},
-            {"entity_id":"think","name":"think","evidence_class":"semantic","count":2010,"last_seen":"20260904","kinds":{}},
-            {"entity_id":"more","name":"more","evidence_class":"semantic","count":1606,"last_seen":"20260904","kinds":{}},
-            {"entity_id":"speaker_2","name":"Speaker 2","evidence_class":"mixed","count":1276,"last_seen":"20260905","kinds":{}},
-            {"entity_id":"make","name":"make","evidence_class":"mixed","count":1333,"last_seen":"20260904","kinds":{}},
-            {"entity_id":"own","name":"Own","evidence_class":"semantic","count":991,"last_seen":"20260904","kinds":{}},
-            {"entity_id":"build","name":"build","evidence_class":"semantic","count":890,"last_seen":"20260904","kinds":{}},
-            {"entity_id":"whole","name":"Whole","evidence_class":"semantic","count":815,"last_seen":"20260904","kinds":{}},
-            {"entity_id":"company","name":"Company","evidence_class":"semantic","count":656,"last_seen":"20260904","kinds":{}},
-            {"entity_id":"able","name":"Able","evidence_class":"semantic","count":612,"last_seen":"20260904","kinds":{}}
+            {"entity_id":"gallery_at_reunion_the","name":"Gallery At Reunion (The)","evidence_class":"semantic","count":4731,"last_seen":"20260905","kinds":{"mentioned":{"count":4731,"weighted":34945.681165493996}}},
+            {"entity_id":"just","name":"just","evidence_class":"semantic","count":3249,"last_seen":"20260905","kinds":{"mentioned":{"count":3249,"weighted":11745.97663366838}}},
+            {"entity_id":"speaker_1","name":"Speaker 1","evidence_class":"mixed","count":2591,"last_seen":"20260905","kinds":{"spoke-with":{"count":2547,"weighted":6852.98353624809},"attended-with":{"count":37,"weighted":17.136822248866938},"mentioned":{"count":4,"weighted":8.267718445734918},"co-present":{"count":3,"weighted":1.9245454626919196}}},
+            {"entity_id":"think","name":"think","evidence_class":"semantic","count":2010,"last_seen":"20260904","kinds":{"mentioned":{"count":2010,"weighted":5652.853687785307}}},
+            {"entity_id":"more","name":"more","evidence_class":"semantic","count":1606,"last_seen":"20260904","kinds":{"mentioned":{"count":1606,"weighted":3855.284950662275}}},
+            {"entity_id":"speaker_2","name":"Speaker 2","evidence_class":"mixed","count":1276,"last_seen":"20260905","kinds":{"spoke-with":{"count":1221,"weighted":3622.505265905339},"attended-with":{"count":53,"weighted":23.41166025606998},"mentioned":{"count":2,"weighted":3.812261932217838}}},
+            {"entity_id":"make","name":"make","evidence_class":"mixed","count":1333,"last_seen":"20260904","kinds":{"mentioned":{"count":1329,"weighted":2812.7364967997646},"co-present":{"count":4,"weighted":3.1815844406006253}}},
+            {"entity_id":"own","name":"Own","evidence_class":"semantic","count":991,"last_seen":"20260904","kinds":{"mentioned":{"count":991,"weighted":2135.6252478430533}}},
+            {"entity_id":"build","name":"build","evidence_class":"semantic","count":890,"last_seen":"20260904","kinds":{"mentioned":{"count":890,"weighted":2127.480501827544}}},
+            {"entity_id":"whole","name":"Whole","evidence_class":"semantic","count":815,"last_seen":"20260904","kinds":{"mentioned":{"count":815,"weighted":1822.4314810784374}}},
+            {"entity_id":"company","name":"Company","evidence_class":"semantic","count":656,"last_seen":"20260904","kinds":{"mentioned":{"count":656,"weighted":1816.1465022013701}}},
+            {"entity_id":"able","name":"Able","evidence_class":"semantic","count":818,"last_seen":"20260904","kinds":{"mentioned":{"count":818,"weighted":1812.6602411961258}}}
         ]})
     }
 
     #[test]
-    fn bare_lowercase_words_are_not_connections() {
+    fn mention_only_words_are_not_connections() {
         let card = build_connections_card(
             Ok(Some(json!({"id":"owner"}))),
             Ok(captured_burn_in_neighbors()),
@@ -400,58 +417,83 @@ mod tests {
             .map(|row| row["name"].as_str().unwrap().to_owned())
             .collect::<Vec<_>>();
 
-        // Every bare lowercase token goes, and the two unnamed voice clusters
-        // stay gone. `Own`, `Whole`, `Company` and `Able` survive on purpose:
-        // they are capitalised, so no structural test separates them from a
-        // real one-name person, and the rule refuses to guess. See the sweep
-        // report's open question.
-        assert_eq!(
-            names,
-            vec![
-                "Gallery At Reunion (The)".to_owned(),
-                "Own".to_owned(),
-                "Whole".to_owned(),
-                "Company".to_owned(),
-                "Able".to_owned(),
-            ]
-        );
-        for dropped in ["just", "think", "more", "make", "build"] {
+        // One multi-word name survives. Every one-word name in the capture is
+        // mentions and nothing else -- `make` is 1329 mentions of 1333, still
+        // over the line -- so capitalisation buys `Own`, `Whole`, `Company`
+        // and `Able` nothing. The two unnamed voice clusters stay gone on the
+        // placeholder rule, not this one.
+        assert_eq!(names, vec!["Gallery At Reunion (The)".to_owned()]);
+        for dropped in [
+            "just", "think", "more", "make", "build", "Own", "Whole", "Company", "Able",
+        ] {
             assert!(
                 !names.iter().any(|name| name == dropped),
-                "{dropped} is a bare word, not a connection"
+                "{dropped} is a word the journal only ever mentioned, not a connection"
             );
         }
     }
 
     #[test]
-    fn the_bare_word_rule_keeps_every_real_name_shape() {
-        // Capitalised single name, multi-word name, hyphenated, accented,
-        // digit-bearing, and a lowercase name that is not alone in its field.
-        for kept in [
-            "Ada",
-            "Ada Lovelace",
-            "jean-luc picard",
-            "Élan",
-            "studio 54",
-            "de Havilland",
+    fn the_mention_only_rule_keeps_every_real_name_shape() {
+        // A one-word name with any real interaction evidence stays, whatever
+        // its case; every multi-word name stays even when it is pure mentions.
+        for (kept, kinds) in [
+            (
+                "Ada",
+                json!({"spoke-with":{"count":12},"mentioned":{"count":400}}),
+            ),
+            (
+                "ada",
+                json!({"attended-with":{"count":3},"mentioned":{"count":40}}),
+            ),
+            (
+                "Sam",
+                json!({"co-present":{"count":2},"mentioned":{"count":100}}),
+            ),
+            ("Ada Lovelace", json!({"mentioned":{"count":900}})),
+            ("de Havilland", json!({"mentioned":{"count":900}})),
+            ("studio 54", json!({"mentioned":{"count":900}})),
         ] {
             assert!(
-                !is_bare_word_name(json!({"name":kept}).as_object().unwrap()),
-                "{kept} is a real name and must stay on the shelf"
+                !is_mention_only_word(json!({"name":kept,"kinds":kinds}).as_object().unwrap()),
+                "{kept} is a real connection and must stay on the shelf"
             );
         }
-        for dropped in [
-            "make", "just", "think", "more", "own", "build", "whole", "company", "able",
+        // One word, mentions and nothing else -- or mentions past the 99% line.
+        for (dropped, kinds) in [
+            (
+                "make",
+                json!({"mentioned":{"count":1329},"co-present":{"count":4}}),
+            ),
+            ("just", json!({"mentioned":{"count":3249}})),
+            ("Own", json!({"mentioned":{"count":991}})),
+            ("Élan", json!({"mentioned":{"count":991}})),
+            ("jean-luc", json!({"mentioned":{"count":991}})),
         ] {
             assert!(
-                is_bare_word_name(json!({"name":dropped}).as_object().unwrap()),
-                "{dropped} is a bare word"
+                is_mention_only_word(json!({"name":dropped,"kinds":kinds}).as_object().unwrap()),
+                "{dropped} is a word the journal only ever mentioned"
             );
         }
+        // Just under the line: one spoken exchange in a hundred keeps a name.
+        assert!(!is_mention_only_word(
+            json!({"name":"Kai","kinds":{"mentioned":{"count":98},"spoke-with":{"count":2}}})
+                .as_object()
+                .unwrap()
+        ));
+        // No evidence either way is not evidence of absence: leave it alone.
+        assert!(!is_mention_only_word(
+            json!({"name":"make"}).as_object().unwrap()
+        ));
+        assert!(!is_mention_only_word(
+            json!({"name":"make","kinds":{}}).as_object().unwrap()
+        ));
         // A missing or blank name is somebody else's problem, not this rule's.
-        assert!(!is_bare_word_name(json!({}).as_object().unwrap()));
-        assert!(!is_bare_word_name(
-            json!({"name":"   "}).as_object().unwrap()
+        assert!(!is_mention_only_word(json!({}).as_object().unwrap()));
+        assert!(!is_mention_only_word(
+            json!({"name":"   ","kinds":{"mentioned":{"count":5}}})
+                .as_object()
+                .unwrap()
         ));
     }
 }
