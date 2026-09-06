@@ -69,7 +69,7 @@
 
 .import-guided-flow {
   margin-bottom: 2rem;
-  border: 1px solid #d9dfeb;
+  border: 1px solid var(--hairline);
   border-radius: 12px;
   padding: 1.25rem;
   background: #ffffff;
@@ -78,7 +78,7 @@
 .import-back-link {
   display: inline-block;
   margin-bottom: 1rem;
-  color: #0f4c81;
+  color: var(--orange-text-aa, #a15f17);
   text-decoration: none;
   font-weight: 600;
 }
@@ -88,11 +88,11 @@
 }
 
 .import-back-link:active {
-  color: #0a3b65;
+  color: var(--ink);
 }
 
 .import-step {
-  border-top: 1px solid #edf1f7;
+  border-top: 1px solid var(--hairline);
   padding-top: 1rem;
   margin-top: 1rem;
 }
@@ -109,8 +109,8 @@
   justify-content: center;
   padding: 0.25rem 0.75rem;
   border-radius: 999px;
-  background: #e8f1fb;
-  color: #0f4c81;
+  background: var(--orange-wash);
+  color: var(--orange-ink);
   font-size: 0.78rem;
   font-weight: 700;
   margin-bottom: 0.5rem;
@@ -168,23 +168,23 @@
 }
 
 .import-upload-area {
-  border: 2px dashed color-mix(in srgb, var(--facet-color, #0f4c81) 40%, #ccc);
+  border: 2px dashed color-mix(in srgb, var(--facet-color, var(--orange)) 40%, #ccc);
   border-radius: 12px;
   padding: 1.5rem;
   text-align: center;
-  background: color-mix(in srgb, var(--facet-color, #0f4c81) 4%, white);
+  background: color-mix(in srgb, var(--facet-color, var(--orange)) 4%, white);
   cursor: pointer;
   transition: border-color 0.18s ease, background 0.18s ease;
 }
 
 .import-upload-area:hover {
-  border-color: color-mix(in srgb, var(--facet-color, #0f4c81) 60%, #ccc);
-  background: color-mix(in srgb, var(--facet-color, #0f4c81) 6%, white);
+  border-color: color-mix(in srgb, var(--facet-color, var(--orange)) 60%, #ccc);
+  background: color-mix(in srgb, var(--facet-color, var(--orange)) 6%, white);
 }
 
 .import-upload-area.dragover {
-  border-color: var(--facet-color, #0f4c81);
-  background: color-mix(in srgb, var(--facet-color, #0f4c81) 8%, white);
+  border-color: var(--facet-color, var(--orange));
+  background: color-mix(in srgb, var(--facet-color, var(--orange)) 8%, white);
 }
 
 .import-upload-area:focus-visible {
@@ -210,23 +210,23 @@
 .import-path-input {
   width: 100%;
   padding: 0.85rem;
-  border: 1px solid #cfd7e3;
+  border: 1px solid var(--hairline);
   border-radius: 10px;
   font-family: monospace;
   font-size: 0.95rem;
   box-sizing: border-box;
-  background: #f8fbff;
+  background: var(--paper);
 }
 
 .import-path-input:hover:not(:focus) {
-  border-color: #a0aec0;
+  border-color: var(--hairline-2);
 }
 
 .import-path-input:focus {
   outline: none;
-  border-color: #0f4c81;
+  border-color: var(--focus);
   background: #ffffff;
-  box-shadow: 0 0 0 3px rgba(15, 76, 129, 0.1);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 10%, transparent);
 }
 
 .import-dedup-notice {
@@ -272,7 +272,7 @@
   width: 100%;
   min-height: 220px;
   padding: 0.75rem;
-  border: 1px solid #cfd7e3;
+  border: 1px solid var(--hairline);
   border-radius: 10px;
   font-family: monospace;
   font-size: 0.9rem;
@@ -281,14 +281,14 @@
 }
 
 .import-paste-text:hover:not(:focus) {
-  border-color: #a0aec0;
+  border-color: var(--hairline-2);
 }
 
 .import-paste-text:focus {
   outline: none;
-  border-color: #0f4c81;
+  border-color: var(--focus);
   background: #ffffff;
-  box-shadow: 0 0 0 3px rgba(15, 76, 129, 0.1);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 10%, transparent);
 }
 
 .import-inline-fields {
@@ -314,8 +314,8 @@
   padding: 0.7rem 1rem;
   font-size: 0.95rem;
   font-weight: 700;
-  background: #0f4c81;
-  color: white;
+  background: var(--orange);
+  color: var(--ink);
   border: none;
   border-radius: 10px;
   cursor: pointer;
@@ -323,7 +323,7 @@
 }
 
 .import-primary-btn:hover {
-  background: #0a3b65;
+  background: color-mix(in srgb, var(--orange) 80%, var(--ink));
 }
 
 .import-primary-btn:disabled {
@@ -333,7 +333,7 @@
 }
 
 .import-primary-btn:active:not(:disabled) {
-  background: #083050;
+  background: color-mix(in srgb, var(--orange) 65%, var(--ink));
 }
 
 .import-secondary-btn {
@@ -345,7 +345,7 @@
   font-weight: 600;
   background: white;
   color: #2f3a4c;
-  border: 1px solid #cfd7e3;
+  border: 1px solid var(--hairline);
   border-radius: 10px;
   cursor: pointer;
   text-decoration: none;
@@ -353,18 +353,18 @@
 }
 
 .import-secondary-btn:hover {
-  background: #f7f9fc;
+  background: var(--cream-bright);
 }
 
 .import-secondary-btn:active {
-  background: #edf1f7;
+  background: var(--hairline);
 }
 
 .import-progress-panel {
-  border: 1px solid #d9dfeb;
+  border: 1px solid var(--hairline);
   border-radius: 12px;
   padding: 1rem;
-  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+  background: linear-gradient(180deg, #ffffff 0%, var(--cream-bright) 100%);
 }
 
 .import-progress-title {
@@ -388,7 +388,7 @@
 .import-progress-stat {
   padding: 0.55rem 0.7rem;
   border-radius: 10px;
-  background: #eef4fb;
+  background: var(--orange-wash);
   color: #2f3a4c;
   font-size: 0.9rem;
 }
@@ -434,18 +434,18 @@
 .import-history-filters select {
   padding: 0.45rem 0.65rem;
   border-radius: 8px;
-  border: 1px solid #cfd7e3;
+  border: 1px solid var(--hairline);
   background: white;
 }
 
 .import-history-filters select:hover {
-  border-color: #a0aec0;
+  border-color: var(--hairline-2);
 }
 
 .import-history-filters select:focus {
   outline: none;
-  border-color: #0f4c81;
-  box-shadow: 0 0 0 3px rgba(15, 76, 129, 0.1);
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 10%, transparent);
 }
 
 .spinner { display:inline-block; width:12px; height:12px; border:2px solid #ccc; border-top-color:#fff; border-radius:50%; animation:spin 1s linear infinite; margin-left:6px; }
@@ -458,32 +458,34 @@
 .confirm-fields { display: flex; gap: 1em; flex-wrap: wrap; margin-top: 0.5em; }
 .confirm-field { display: flex; flex-direction: column; flex: 1 1 180px; min-width: 180px; }
 .confirm-field label { font-size: 0.9em; color: #666; margin-bottom: 0.25em; }
+.import-field-optional { font-weight: 400; color: #666; }
+.import-field-hint { font-size: 0.85em; color: #666; margin-top: 0.3em; }
 .confirm-field input,
 .confirm-field select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; background: white; }
 .confirm-field input:hover:not(:focus),
 .confirm-field select:hover:not(:focus) {
-  border-color: #a0aec0;
+  border-color: var(--hairline-2);
 }
 .confirm-field input:focus,
 .confirm-field select:focus {
   outline: none;
-  border-color: #0f4c81;
-  box-shadow: 0 0 0 3px rgba(15, 76, 129, 0.1);
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 10%, transparent);
 }
 .modal-actions { margin-top: 1em; display: flex; justify-content: flex-end; }
 
 .import-list { margin-top: 2em; overflow-x: auto; }
 .import-list h2 { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.75rem 0; color: #2f3a4c; }
 .import-table { width: 100%; border-collapse: collapse; }
-.import-table th { background: #f4f7fb; text-align: left; padding: 8px; border-bottom: 1px solid var(--facet-border, #e5e0db); font-size: 0.9em; }
-.import-table td { padding: 8px; border-bottom: 1px solid #edf1f7; vertical-align: top; }
-.import-table tr:hover { background: #f7f9fc; cursor: pointer; }
+.import-table th { background: var(--hairline); text-align: left; padding: 8px; border-bottom: 1px solid var(--facet-border, #e5e0db); font-size: 0.9em; }
+.import-table td { padding: 8px; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+.import-table tr:hover { background: var(--orange-wash); cursor: pointer; }
 .import-status { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 0.85em; }
 .import-status.success { background: #edf8ef; color: #1a5c2a; }
 .import-status.pending { background: #fef9e7; color: #5b4a08; }
 .import-status.failed { background: #fff0f0; color: #9b2c2c; }
-.import-status.running { background: #cfe2ff; color: #084298; display: inline-flex; align-items: center; gap: 6px; }
-.import-status.running::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #084298; animation: pulse 1.5s ease-in-out infinite; }
+.import-status.running { background: var(--hairline); color: var(--ink-soft-paper); display: inline-flex; align-items: center; gap: 6px; }
+.import-status.running::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-faint-paper); animation: pulse 1.5s ease-in-out infinite; }
 .import-status.stalled { background: rgba(245, 158, 11, 0.16); color: #92400e; }
 .progress-detail { font-size: 0.8em; color: #8891a0; margin-top: 2px; }
 .progress-detail.import-stalled-meta { color: #92400e; }
@@ -507,7 +509,7 @@
 }
 .file-size { color: #4b5565; font-size: 0.9rem; }
 .nowrap { white-space: nowrap; }
-.timestamp-link { color: var(--facet-color, #0f4c81); text-decoration: none; }
+.timestamp-link { color: var(--facet-color, var(--orange-text-aa, #a15f17)); text-decoration: none; }
 .timestamp-link:hover { text-decoration: underline; }
 .no-imports { color: #666; padding: 2em; text-align: center; }
 .import-source-inline {
@@ -536,7 +538,7 @@
 .import-table tbody tr:focus-visible {
   outline: 2px solid var(--facet-color, var(--focus));
   outline-offset: -2px;
-  background: #f0f4ff;
+  background: var(--orange-wash);
 }
 
 .import-table tbody tr {
@@ -552,7 +554,7 @@
 }
 
 .import-table tbody tr:active {
-  background: #e8edf5;
+  background: var(--hairline);
 }
 
 .import-steps-list {
@@ -618,6 +620,44 @@
 
   .import-table tr[tabindex] {
     min-height: 44px;
+  }
+
+  /* keep the status column visible without a horizontal scroll: it is the
+     one column that answers "did it work" (G3-13). */
+  .import-table td.source-cell {
+    max-width: 38vw;
+  }
+
+  .import-table td.source-cell .import-source-inline span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+    max-width: 100%;
+    vertical-align: middle;
+  }
+
+  .import-table th:nth-child(6),
+  .import-table td:nth-child(6) {
+    position: sticky;
+    right: 0;
+    background: var(--cream-bright);
+  }
+
+  .import-table tr:hover td:nth-child(6) {
+    background: var(--orange-wash);
+  }
+
+  .import-table tr.import-row--stalled td:nth-child(6) {
+    background: rgba(245, 158, 11, 0.08);
+  }
+
+  .import-table tr.import-row--stalled:hover td:nth-child(6) {
+    background: rgba(245, 158, 11, 0.12);
+  }
+
+  .import-table tbody tr:active td:nth-child(6) {
+    background: var(--hairline);
   }
 }
 
@@ -988,7 +1028,7 @@ function retryImport(event) {
     .catch(err => {
       window.logError(err, { context: 'import: retry-import failed' });
       button.disabled = false;
-      button.textContent = stage ? `Retry from ${humanStageName(stage)}` : 'Retry import';
+      button.textContent = stage ? `retry from ${humanStageName(stage)}` : 'retry import';
       if (result) {
         result.innerHTML = window.SurfaceState.error({
           heading: "I couldn't retry that import",
@@ -1065,7 +1105,7 @@ function getImportById(importId) {
 
 function buildHistoryHeader(total, totalEntriesWritten, totalEntitiesSeeded) {
   const sourceOptions = [
-    '<option value="">All sources</option>',
+    '<option value="">all sources</option>',
     ...cachedSources.map(source => {
       const selected = currentSourceFilter === source.name ? ' selected' : '';
       return `<option value="${escapeHtml(source.name)}"${selected}>${escapeHtml(source.display_name)}</option>`;
@@ -1086,28 +1126,29 @@ function buildHistoryHeader(total, totalEntriesWritten, totalEntitiesSeeded) {
 }
 
 function renderImportRow(imp) {
-  const importedAt = imp.imported_at ? new Date(imp.imported_at * 1000).toLocaleString() : new Date(imp.created_at * 1000).toLocaleString();
-  const targetDay = imp.target_day ? imp.target_day.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3') : '-';
+  const importedAtMs = (imp.imported_at || imp.created_at) * 1000;
+  const importedAt = window.JournalFormat.timestamp(importedAtMs);
+  const targetDayDisplay = imp.target_day ? window.JournalFormat.day(imp.target_day) : '-';
 
   let statusClass;
   let statusText;
   let statusDetail = '';
   if (imp.status === 'success') {
     statusClass = 'success';
-    statusText = 'Completed';
+    statusText = 'completed';
   } else if (imp.status === 'failed') {
     statusClass = 'failed';
-    statusText = 'Failed';
+    statusText = 'failed';
     if (imp.error) {
       const errorStage = imp.error_stage ? ` (${capitalizeStage(imp.error_stage)})` : '';
       statusDetail = `<div class="progress-detail">${escapeHtml(imp.error)}${escapeHtml(errorStage)}</div>`;
     }
   } else if (imp.status === 'running') {
     statusClass = 'running';
-    statusText = 'Running';
+    statusText = 'running';
   } else {
     statusClass = 'pending';
-    statusText = 'Pending';
+    statusText = 'pending';
   }
 
   const sourceCell = imp.source_type
@@ -1122,7 +1163,7 @@ function renderImportRow(imp) {
   html += `<td class="file-size nowrap">${formatFileSize(imp.file_size)}</td>`;
   html += '<td class="nowrap">';
   if (imp.target_day) {
-    html += `<a href="/app/import/${encodeURIComponent(imp.timestamp)}" class="timestamp-link" onclick="event.stopPropagation();">${targetDay}</a>`;
+    html += `<a href="/app/timeline/${encodeURIComponent(imp.target_day)}" class="timestamp-link" onclick="event.stopPropagation();">${targetDayDisplay}</a>`;
   } else {
     html += '-';
   }
@@ -1163,7 +1204,7 @@ async function loadImports() {
         icon: window.ConveyIcons.svg('inbox'),
         heading: 'no imports yet',
         desc: 'import your data from any supported source above.',
-        action: '<a href="#" onclick="scrollToGrid(); return false;" style="color: #0f4c81; font-weight: 600;">choose a source →</a>'
+        action: '<a href="#" onclick="scrollToGrid(); return false;" style="color: var(--orange-text-aa, #a15f17); font-weight: 600;">choose a source →</a>'
       });
       return;
     }
@@ -1349,7 +1390,7 @@ function markRowStalled(importId) {
 	    const statusCell = row.querySelector('.status-cell');
 	    if (statusCell) {
 	      const stage = importEvents[importId]?.stage || 'importing';
-	      statusCell.innerHTML = `<span class="import-status stalled">stalled</span><button type="button" class="import-retry-btn" data-import-retry="true" data-import-id="${escapeHtml(importId)}" data-stage="${escapeHtml(stage)}">Retry from ${escapeHtml(humanStageName(stage))}</button><div class="progress-detail import-stalled-meta">stalled — no updates in 10 minutes. import ID: ${escapeHtml(importId)}. ${window.CONVEY_COPY.RELOAD_HINT}</div><div class="import-retry-result"></div>`;
+	      statusCell.innerHTML = `<span class="import-status stalled">stalled</span><button type="button" class="import-retry-btn" data-import-retry="true" data-import-id="${escapeHtml(importId)}" data-stage="${escapeHtml(stage)}">retry from ${escapeHtml(humanStageName(stage))}</button><div class="progress-detail import-stalled-meta">stalled — no updates in 10 minutes. import ID: ${escapeHtml(importId)}. ${window.CONVEY_COPY.RELOAD_HINT}</div><div class="import-retry-result"></div>`;
 	    }
 	  }
 
@@ -1417,7 +1458,7 @@ function updateImportRow(importId, eventData) {
     setTimeout(() => loadImports(), 1000);
 	  } else if (eventData.event === 'error') {
 	    if (statusCell) {
-	      statusCell.innerHTML = `<span class="import-status failed">failed</span><button type="button" class="import-retry-btn" data-import-retry="true" data-import-id="${escapeHtml(importId)}">Retry import</button><div class="progress-detail">${escapeHtml(eventData.error || 'unknown error')}</div><div class="import-retry-result"></div>`;
+	      statusCell.innerHTML = `<span class="import-status failed">failed</span><button type="button" class="import-retry-btn" data-import-retry="true" data-import-id="${escapeHtml(importId)}">retry import</button><div class="progress-detail">${escapeHtml(eventData.error || 'unknown error')}</div><div class="import-retry-result"></div>`;
 	    }
 	  }
 
@@ -1462,13 +1503,17 @@ async function loadGuidedFlow(sourceName) {
   }
 
   let guideHtml = '';
+  let guideStepNumber = 1;
   if (source.has_guide) {
     const response = await fetch(`/app/import/api/guide/${sourceName}`);
     if (response.ok) {
       const markdown = await response.text();
-      guideHtml = `<li><div class="import-step"><div class="import-step-number">step 1</div><div class="import-guide-content">${window.AppServices.renderMarkdown(markdown)}</div></div></li>`;
+      guideHtml = `<li><div class="import-step"><div class="import-step-number">step ${guideStepNumber}</div><div class="import-guide-content">${window.AppServices.renderMarkdown(markdown)}</div></div></li>`;
+      guideStepNumber += 1;
     }
   }
+  const uploadStepNumber = guideStepNumber;
+  const configureStepNumber = uploadStepNumber + 1;
 
   guideSteps.innerHTML = `
     <div>
@@ -1478,16 +1523,16 @@ async function loadGuidedFlow(sourceName) {
     <form id="guidedImportForm" onsubmit="return false;"><ol class="import-steps-list">
     ${guideHtml}
       <li><div class="import-step">
-        <div class="import-step-number">step 2</div>
+        <div class="import-step-number">step ${uploadStepNumber}</div>
         ${source.input_type === 'path_input' ? `
-          <h4>${escapeHtml(source.upload_prompt || 'Paste the full path to your folder')}</h4>
+          <h4>${escapeHtml(source.upload_prompt || 'paste the full path to your folder')}</h4>
           <input id="guidedPathInput" class="import-path-input" type="text"
-            placeholder="${escapeHtml(source.upload_prompt || 'Paste the full path to your folder')}" />
+            placeholder="${escapeHtml(source.upload_prompt || 'paste the full path to your folder')}" />
         ` : `
-          <h4>upload your export</h4>
+          <h4>upload your file</h4>
           <div class="import-upload-area" id="guidedDropArea" role="button" tabindex="0" aria-label="choose file to upload">
-            <p>${escapeHtml(source.upload_prompt || 'Select a file to import')}</p>
-            <div class="import-upload-help">${escapeHtml(source.accept ? `Accepted: ${source.accept}` : 'Any supported file')}</div>
+            <p>${escapeHtml(source.upload_prompt || 'select a file to import')}</p>
+            <div class="import-upload-help">${escapeHtml(source.accept ? `accepts ${source.accept}` : 'any supported file')}</div>
             <input id="guidedFileInput" type="file" accept="${escapeHtml(source.accept || '')}" style="display:none" />
             <div id="guidedFileLabel" class="import-file-label"></div>
           </div>
@@ -1495,7 +1540,7 @@ async function loadGuidedFlow(sourceName) {
         <div id="guidedDedupNotice"></div>
       </div></li>
       <li><div class="import-step">
-        <div class="import-step-number">step 3</div>
+        <div class="import-step-number">step ${configureStepNumber}</div>
         ${source.name === 'journal_archive' ? `
           <h4>preview, then merge your archive</h4>
           <div class="import-action-row">
@@ -1508,8 +1553,9 @@ async function loadGuidedFlow(sourceName) {
           <h4>configure and start</h4>
           <div class="import-inline-fields">
             <div class="confirm-field">
-              <label for="guidedSettingInput">setting</label>
+              <label for="guidedSettingInput">context <span class="import-field-optional">(optional)</span></label>
               <input id="guidedSettingInput" placeholder="e.g. weekly planning" />
+              <div class="import-field-hint">a short note about what this is, so it's easier to find later</div>
             </div>
           </div>
           <div class="import-action-row">
@@ -1557,14 +1603,14 @@ function renderQuickImportFlow() {
   guideSteps.innerHTML = `
     <div>
       <h3 class="import-guide-title">quick import</h3>
-      <p class="import-guide-subtitle">Paste text or drop a file, then confirm the detected timestamp in the modal.</p>
+      <p class="import-guide-subtitle">paste text or drop a file — you'll confirm the date before it goes in.</p>
     </div>
     <form id="importForm">
       <ol class="import-steps-list">
         <li><div class="import-step">
           <div class="import-step-number">step 1</div>
           <div class="import-upload-area" id="dropArea" role="button" tabindex="0" aria-label="choose file to upload">
-            <p>Drag file here or click to select</p>
+            <p>drop a file here or choose one</p>
             <input id="fileInput" type="file" style="display:none" />
             <div id="fileLabel" class="import-file-label"></div>
           </div>
@@ -1574,8 +1620,9 @@ function renderQuickImportFlow() {
           <textarea id="pasteText" class="import-paste-text" placeholder="paste text here..."></textarea>
           <div class="import-inline-fields">
             <div class="confirm-field">
-              <label for="quickSettingInput">setting</label>
+              <label for="quickSettingInput">context <span class="import-field-optional">(optional)</span></label>
               <input id="quickSettingInput" placeholder="e.g. paste from notes app" />
+              <div class="import-field-hint">a short note about what this is, so it's easier to find later</div>
             </div>
           </div>
           <div class="import-action-row">
@@ -2106,9 +2153,9 @@ if (document.readyState === 'loading') {
 
 <style>
 .import-detail-content { padding: 1.5rem 2rem 2rem; }
-.back-link { display: inline-block; margin-bottom: 1em; color: var(--facet-color, #0f4c81); text-decoration: none; }
+.back-link { display: inline-block; margin-bottom: 1em; color: var(--facet-color, var(--orange-text-aa, #a15f17)); text-decoration: none; }
 .back-link:hover { text-decoration: underline; }
-.back-link:active { color: #0056b3; }
+.back-link:active { color: var(--ink); }
 .import-header { margin-bottom: 2em; }
 .import-header h1 { margin: 0 0 0.5em 0; }
 .import-meta { color: #666; font-size: 0.9em; }
@@ -2116,10 +2163,10 @@ if (document.readyState === 'loading') {
 /* Tabs */
 .tabs { display: flex; border-bottom: 2px solid #ddd; margin-bottom: 1em; }
 .tab { padding: 10px 20px; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; min-height: 44px; display: inline-flex; align-items: center; transition: background 0.1s ease, border-bottom-color 0.1s ease; }
-.tab:hover { background: #f7f9fc; }
-.tab:active { background: #e5e7eb; }
+.tab:hover { background: var(--orange-wash); }
+.tab:active { background: var(--hairline); }
 .tab:focus-visible { outline: 2px solid var(--facet-color, #b06a1a); outline-offset: -2px; }
-.tab.active { border-bottom-color: var(--facet-color, #0f4c81); font-weight: bold; }
+.tab.active { border-bottom-color: var(--facet-color, var(--orange-ink)); font-weight: bold; }
 .tab-content { display: none; }
 .tab-content.active { display: block; }
 
@@ -2128,13 +2175,13 @@ if (document.readyState === 'loading') {
 .status-badge.success { background: #edf8ef; color: #1a5c2a; }
 .status-badge.pending { background: #fef9e7; color: #5b4a08; }
 .status-badge.failed { background: #fff0f0; color: #9b2c2c; }
-.status-badge.running { background: #cfe2ff; color: #084298; }
+.status-badge.running { background: var(--hairline); color: var(--ink-soft-paper); }
 
 .import-leads-card { border: 1px solid var(--facet-border, #e5e0db); border-radius: 6px; padding: 1rem; margin-bottom: 1rem; background: #fff; }
 .import-leads-card h2 { margin: 0 0 0.6rem; font-size: 1rem; }
 .import-leads-facts { display: flex; flex-wrap: wrap; gap: 0.4rem 0.75rem; color: #555; font-size: 0.92rem; }
 .import-leads-links { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.75rem; }
-.import-leads-links a { color: var(--facet-color, #0f4c81); text-decoration: none; font-weight: 600; }
+.import-leads-links a { color: var(--facet-color, var(--orange-text-aa, #a15f17)); text-decoration: none; font-weight: 600; }
 .import-leads-links a:hover { text-decoration: underline; }
 .import-drawer-section { margin-top: 1rem; }
 .import-drawer-section h3 { margin: 0 0 0.45rem; font-size: 0.95rem; }
@@ -2150,7 +2197,7 @@ if (document.readyState === 'loading') {
 .no-data { color: #999; font-style: italic; padding: 2em; text-align: center; }
 
 /* Content tab */
-.import-content-summary { margin-bottom: 1em; padding: 0.75em 1em; background: #f0f7ff; border-radius: 4px; font-size: 0.95em; }
+.import-content-summary { margin-bottom: 1em; padding: 0.75em 1em; background: var(--orange-wash); border-radius: 4px; font-size: 0.95em; }
 .import-content-summary-icon {
   display: inline-flex;
   align-items: center;
@@ -2166,15 +2213,15 @@ if (document.readyState === 'loading') {
 }
 .import-content-controls { display: flex; gap: 0.75em; margin-bottom: 1em; }
 .import-content-search { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9em; }
-.import-content-search:hover:not(:focus) { border-color: #a0aec0; }
-.import-content-search:focus { outline: none; border-color: #0f4c81; box-shadow: 0 0 0 3px rgba(15, 76, 129, 0.1); }
+.import-content-search:hover:not(:focus) { border-color: var(--hairline-2); }
+.import-content-search:focus { outline: none; border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 10%, transparent); }
 .import-content-month { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9em; background: #fff; }
-.import-content-month:hover:not(:focus) { border-color: #a0aec0; }
-.import-content-month:focus { outline: none; border-color: #0f4c81; box-shadow: 0 0 0 3px rgba(15, 76, 129, 0.1); }
+.import-content-month:hover:not(:focus) { border-color: var(--hairline-2); }
+.import-content-month:focus { outline: none; border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 10%, transparent); }
 .import-content-items { }
 .import-content-item { border: 1px solid #e5e5e5; border-radius: 4px; margin-bottom: 0.5em; cursor: pointer; transition: border-color 0.15s; }
-.import-content-item:hover { border-color: var(--facet-color, #0f4c81); }
-.import-content-item:active { border-color: #0056b3; background: #f8f9fa; }
+.import-content-item:hover { border-color: var(--facet-color, var(--orange-ink)); }
+.import-content-item:active { border-color: var(--ink); background: #f8f9fa; }
 .import-content-item:focus-visible { outline: 2px solid var(--facet-color, #b06a1a); outline-offset: 2px; }
 .import-content-item-header { padding: 0.75em 1em; display: flex; align-items: center; gap: 0.5em; }
 .import-content-item-title { font-weight: 600; flex: 1; }
@@ -2196,19 +2243,19 @@ if (document.readyState === 'loading') {
 .import-content-markdown pre code { background: none; padding: 0; }
 .import-content-item-body .import-content-message { margin: 0.5em 0; }
 .import-content-item-body .import-content-speaker { font-weight: 600; margin-right: 0.5em; }
-.import-content-item-body .import-content-speaker.human { color: var(--facet-color, #0f4c81); }
+.import-content-item-body .import-content-speaker.human { color: var(--facet-color, var(--orange-text-aa, #a15f17)); }
 .import-content-item-body .import-content-speaker.assistant { color: #28a745; }
 .import-content-pagination { display: flex; gap: 0.5em; justify-content: center; margin-top: 1em; }
 .import-content-pagination button { padding: 6px 14px; border: 1px solid #ddd; border-radius: 4px; background: #fff; cursor: pointer; font-size: 0.9em; }
 .import-content-pagination button:hover { background: #f5f5f5; }
-.import-content-pagination button.active { background: var(--facet-color, #0f4c81); color: #fff; border-color: var(--facet-color, #0f4c81); }
+.import-content-pagination button.active { background: var(--facet-color, var(--orange)); color: #fff; border-color: var(--facet-color, var(--orange)); }
 .import-content-pagination button:disabled { opacity: 0.5; cursor: not-allowed; }
 .import-content-pagination button { transition: background 0.1s ease; }
 .import-content-pagination button:active:not(:disabled):not(.active) { background: #e5e7eb; }
 .import-content-month-header { font-weight: 600; color: #555; padding: 0.75em 0 0.25em; border-bottom: 1px solid #e5e5e5; margin-bottom: 0.5em; margin-top: 0.75em; font-size: 0.9em; }
 .import-content-month-header:first-child { margin-top: 0; }
 .import-content-item-meta { padding: 0 1em 0.25em; font-size: 0.8em; color: #888; }
-.import-content-cal-link { color: var(--facet-color, #0f4c81); text-decoration: none; }
+.import-content-cal-link { color: var(--facet-color, var(--orange-text-aa, #a15f17)); text-decoration: none; }
 .import-content-cal-link:hover { text-decoration: underline; }
 
   </style>
