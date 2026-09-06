@@ -311,6 +311,67 @@ async fn observed_connected_client(
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn reconnect_discards_partial_frame_from_failed_socket() {
+    let socket = TempSocket::new("partial-before-reconnect");
+    let (listener, mut client, mut peer, permissions, mut polled) =
+        observed_connected_client(&socket).await;
+    let partial = format!(
+        "{{\"tract\":\"old\",\"padding\":\"{}",
+        "x".repeat(1024 * 1024)
+    );
+    timeout(Duration::from_secs(2), peer.write_all(partial.as_bytes()))
+        .await
+        .unwrap()
+        .unwrap();
+    // Fail the client's next outgoing write while its incoming frame is still
+    // incomplete; keep our write half open so this is not an ordinary EOF.
+    let peer = peer.into_std().unwrap();
+    peer.shutdown(std::net::Shutdown::Read).unwrap();
+    assert!(client.emit("trigger", "write-failure", Map::new()));
+    assert!(matches!(
+        next_event(&mut client).await,
+        CallosumReceiveEvent::Continuity {
+            phase: CallosumConnectionPhase::Gapped {
+                reason: CallosumGapReason::Disconnected,
+                ..
+            },
+            ..
+        }
+    ));
+    polled.recv().await.expect("retry after failed write");
+    permissions.send(true).unwrap();
+    let mut replacement = timeout(Duration::from_secs(2), listener.accept())
+        .await
+        .unwrap()
+        .unwrap()
+        .0;
+    assert!(matches!(
+        next_event(&mut client).await,
+        CallosumReceiveEvent::Continuity {
+            phase: CallosumConnectionPhase::Connecting { .. },
+            ..
+        }
+    ));
+    assert!(matches!(
+        next_event(&mut client).await,
+        CallosumReceiveEvent::Continuity {
+            phase: CallosumConnectionPhase::Connected,
+            generation: 2,
+            ..
+        }
+    ));
+    replacement
+        .write_all(b"{\"tract\":\"new\",\"event\":\"complete\"}\n")
+        .await
+        .unwrap();
+    assert!(
+        matches!(next_event(&mut client).await, CallosumReceiveEvent::Envelope { envelope, .. } if envelope.tract == "new")
+    );
+    assert_eq!(client.malformed_frame_drops(), 0);
+    client.stop().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn unconsumed_disconnect_gap_blocks_retry_until_delivery() {
     let socket = TempSocket::new("gap-before-retry");
     let (listener, mut client, peer, permissions, mut polled) =
@@ -893,6 +954,37 @@ async fn ac10_emit_merges_defaults_then_positional_then_caller_fields() {
     }
     first.stop().await;
     second.stop().await;
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn outbound_echo_preserves_a_partially_received_frame() {
+    let socket = TempSocket::new("partial-during-echo");
+    let server = CallosumSocketServer::bind(&socket.path).await.unwrap();
+    let (read, mut write) = raw(&socket.path).await.into_split();
+    let mut read = reader(read);
+    wait_for_clients(&server, 1).await;
+    // Exceed the socket send buffer so the receiver must consume part of this
+    // unfinished frame before we queue its outgoing message.
+    let padding = "x".repeat(1024 * 1024);
+    let frame =
+        serde_json::to_vec(&json!({"tract":"fragment", "event":"complete", "padding":padding}))
+            .unwrap();
+    timeout(Duration::from_secs(2), write.write_all(&frame))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        server
+            .broadcast(serde_json::from_value(json!({"tract":"echo", "event":"between"})).unwrap())
+    );
+    let echo: Value = serde_json::from_str(raw_line(&mut read).await.trim()).unwrap();
+    assert_eq!(echo["tract"], "echo");
+    write.write_all(b"\n").await.unwrap();
+    let completed: Value = serde_json::from_str(raw_line(&mut read).await.trim()).unwrap();
+    assert_eq!(completed["tract"], "fragment");
+    assert_eq!(completed["padding"], padding);
+    assert_eq!(server.malformed_frame_drops(), 0);
     server.stop().await;
 }
 

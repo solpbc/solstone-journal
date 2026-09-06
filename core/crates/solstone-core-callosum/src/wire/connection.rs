@@ -677,6 +677,8 @@ async fn run_connection(run: ConnectionRun) {
             while outbound.try_recv().is_ok() {}
             match connect_stream(&socket_path).await {
                 Ok((read_half, writer)) => {
+                    // A canceled read may have retained bytes from the old socket.
+                    buffer.clear();
                     if !ConnectionCounters::checked_increment(&mut counters.generation)
                         || !ConnectionCounters::checked_increment(&mut counters.epoch)
                     {

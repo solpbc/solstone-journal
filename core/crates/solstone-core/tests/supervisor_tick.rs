@@ -374,39 +374,33 @@ async fn wait_for_logged_message(path: &Path, message: &Value) {
     panic_for_wait("expected logged event", outcome);
 }
 
-async fn wait_for_runtime_phase(path: &Path, phase: &str) -> Value {
-    let mut found = None;
-    // The bundled-runtime recycle is an external process transition. Under the
-    // full host suite it can legitimately lose several scheduler turns while
-    // other native fixtures are compiling and exiting. On macOS, preserve the
-    // finite hard-failure bound but amortize a dilated scheduler interval over
-    // a longer positive observation window. Linux full CI uses protected
-    // concurrent shards too, so it needs a bounded observation window that
-    // exceeds the observed recycle time under that load.
-    #[cfg(target_os = "macos")]
-    let iterations = 4_800;
-    #[cfg(not(target_os = "macos"))]
-    let iterations = 4_800;
-    let outcome = await_outcome_async(
-        WaitPolarity::Positive,
+async fn wait_for_local_recycle(
+    reader: &mut tokio::io::BufReader<tokio::net::unix::OwnedReadHalf>,
+) {
+    await_bounded_read(
+        "provider recycle event",
         Duration::from_millis(10),
-        iterations,
-        Instant::now,
-        || {
-            if let Ok(bytes) = fs::read(path)
-                && let Ok(value) = serde_json::from_slice::<Value>(&bytes)
-                && value["phase"] == phase
-            {
-                found = Some(value);
-                return PollState::Held;
+        4_800,
+        async {
+            loop {
+                let mut line = String::new();
+                let bytes = reader
+                    .read_line(&mut line)
+                    .await
+                    .expect("provider event frame");
+                assert!(bytes > 0, "Callosum closed before local provider recycle");
+                let value: Value = serde_json::from_str(&line).expect("provider event JSON");
+                if value["tract"] == "supervisor"
+                    && value["event"] == "provider_runtime"
+                    && value["kind"] == "recycle_requested"
+                    && value["provider"] == "local"
+                {
+                    return;
+                }
             }
-            PollState::Pending
         },
-        tokio::time::sleep,
     )
     .await;
-    panic_for_wait("provider runtime phase", outcome);
-    found.expect("runtime phase recorded when wait passed")
 }
 
 async fn receive_status(
@@ -1238,7 +1232,7 @@ async fn cortex_unavailable_threshold_recycles_bundled_local_runtime() {
     let mut child = start(&journal, None, &[]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
-    let (_reader, mut write) = connect(&socket).await;
+    let (mut reader, mut write) = connect(&socket).await;
 
     for use_id in ["cortex-one", "cortex-two", "cortex-three"] {
         send_message(
@@ -1255,24 +1249,33 @@ async fn cortex_unavailable_threshold_recycles_bundled_local_runtime() {
         .await;
     }
 
-    let runtime = wait_for_runtime_phase(
-        &journal.0.join("health/providers/runtime/local.json"),
-        "retry-requested",
+    // This event is emitted only after the retry token and runtime state have
+    // been published. The live phase may already have advanced when we read it.
+    wait_for_local_recycle(&mut reader).await;
+    let runtime: Value = serde_json::from_slice(
+        &fs::read(journal.0.join("health/providers/runtime/local.json")).unwrap(),
     )
-    .await;
+    .unwrap();
     assert!(
         runtime["generation"]
             .as_u64()
             .is_some_and(|generation| generation >= 1)
     );
-    assert_eq!(runtime["reason_code"], "local-wedge-provider-unavailable");
-    assert_eq!(
-        runtime["detail"]["use_ids"],
-        json!(["cortex-one", "cortex-three", "cortex-two"])
+    let retry: Value = serde_json::from_slice(
+        &fs::read(
+            journal
+                .0
+                .join("health/providers/runtime/local.retry-token.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    // Consumption clears the token payload but keeps its monotonic revision.
+    assert!(
+        retry["revision"]
+            .as_u64()
+            .is_some_and(|revision| revision >= 1)
     );
-    assert_eq!(runtime["detail"]["port"], 4312);
-    assert_eq!(runtime["detail"]["health_state"], "ready");
-    assert!(runtime["detail"]["token_revision"].as_u64().is_some());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1282,7 +1285,7 @@ async fn cortex_finish_resets_wedge_failures_before_the_threshold() {
     let mut child = start(&journal, None, &[]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
-    let (_reader, mut write) = connect(&socket).await;
+    let (mut reader, mut write) = connect(&socket).await;
 
     for use_id in ["cortex-one", "cortex-two", "cortex-three"] {
         send_message(
@@ -1309,14 +1312,24 @@ async fn cortex_finish_resets_wedge_failures_before_the_threshold() {
     )
     .await;
 
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    let path = journal.0.join("health/providers/runtime/local.json");
-    let runtime = fs::read(&path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
-    assert_ne!(
-        runtime.as_ref().map(|value| &value["phase"]),
-        Some(&json!("retry-requested")),
+    // A started task submitted on the same connection proves the preceding
+    // Cortex outcomes have been processed, without racing a transient phase.
+    send_request(
+        &mut write,
+        vec![
+            env!("CARGO_BIN_EXE_solstone-core-system-test-child").into(),
+            "lines".into(),
+        ],
+        "wedge-reset-barrier",
+    )
+    .await;
+    receive_until(&mut reader, "wedge-reset-barrier", "started").await;
+    assert!(
+        !journal
+            .0
+            .join("health/providers/runtime/local.retry-token.json")
+            .try_exists()
+            .expect("retry token existence"),
         "finish must clear the first two failures before the third error"
     );
 }
