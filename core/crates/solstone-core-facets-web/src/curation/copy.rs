@@ -33,7 +33,7 @@ const COPY: [(&str, &str); 52] = [
         // what clearing the visible batch gets the owner rather than the
         // full count owed.
         "CUR_ENTITY_GROUP_LEDE",
-        "these {count} names look alike. clearing them keeps your names straight.",
+        "these {count} pairs look alike. clearing them keeps your names straight.",
     ),
     ("CUR_ENTITY_SHOW_REST_ACTION", "show the rest ({count})"),
     (
@@ -43,7 +43,7 @@ const COPY: [(&str, &str); 52] = [
     ("CUR_ENTITY_DONE_FOR_NOW_ACTION", "done for now"),
     (
         "CUR_SPEAKER_BODY",
-        "solstone noticed “{source}” and “{target}” may be the same speaker. merge them?",
+        "“{source}” and “{target}” may be the same speaker. merge them?",
     ),
     ("CUR_SPEAKER_MERGE_ACTION", "review merge"),
     ("CUR_SPEAKER_DISMISS_ACTION", "keep separate"),
@@ -62,7 +62,7 @@ const COPY: [(&str, &str); 52] = [
     ("CUR_SPEAKER_CANDIDATE_PAIR_TARGET_LABEL", "candidate B"),
     (
         "CUR_EMPTY_STATE",
-        "nothing to review — solstone hasn't spotted new structure to suggest.",
+        "nothing to review — no new structure to suggest yet.",
     ),
     (
         "CUR_ENTITY_PREVIEW_LEAD",

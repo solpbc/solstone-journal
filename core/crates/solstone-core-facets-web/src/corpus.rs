@@ -214,6 +214,41 @@ async fn replay_record(router: Router, root: &Path, expected: &Value) {
             );
             *prompt = Value::String("solstone noticed recent activity that doesn't fit your facets well. create a \"{name}\" facet?".into());
         }
+        // G2-48/G2-49: three more copy revisions, same pattern as the facet
+        // prompt above -- assert the live (post-fix) text, then substitute
+        // back the corpus-frozen (pre-fix) text so the recorded digest still
+        // matches without regenerating the corpus.
+        if let Some(copy) = value.get_mut("copy").and_then(Value::as_object_mut) {
+            if let Some(lede) = copy.get_mut("CUR_ENTITY_GROUP_LEDE") {
+                assert_eq!(
+                    lede,
+                    "these {count} pairs look alike. clearing them keeps your names straight."
+                );
+                *lede = Value::String(
+                    "these {count} names look alike. clearing them keeps your names straight."
+                        .into(),
+                );
+            }
+            if let Some(body) = copy.get_mut("CUR_SPEAKER_BODY") {
+                assert_eq!(
+                    body,
+                    "“{source}” and “{target}” may be the same speaker. merge them?"
+                );
+                *body = Value::String(
+                    "solstone noticed “{source}” and “{target}” may be the same speaker. merge them?"
+                        .into(),
+                );
+            }
+            if let Some(empty) = copy.get_mut("CUR_EMPTY_STATE") {
+                assert_eq!(
+                    empty,
+                    "nothing to review — no new structure to suggest yet."
+                );
+                *empty = Value::String(
+                    "nothing to review — solstone hasn't spotted new structure to suggest.".into(),
+                );
+            }
+        }
         Sha256::digest(canonical(&value))
     };
     assert_eq!(
