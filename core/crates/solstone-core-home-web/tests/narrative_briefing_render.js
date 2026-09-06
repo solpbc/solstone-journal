@@ -12,7 +12,7 @@ if (!manifestDir) throw new Error('manifest directory required');
 let source = fs.readFileSync(path.join(manifestDir, 'assets/home.js'), 'utf8');
 source = source.replace(
   '  window.toggleBriefingCard = toggleBriefingCard;\n',
-  `  window.__home = { renderNarrativeHtml, briefingPlaceholderHtml };
+  `  window.__home = { renderNarrativeHtml, briefingPlaceholderHtml, renderBriefingCardHtml };
   window.toggleBriefingCard = toggleBriefingCard;\n`,
 );
 
@@ -21,6 +21,7 @@ const document = {
   readyState: 'loading',
   addEventListener() {},
   querySelector() { return null; },
+  getElementById() { return null; },
 };
 const window = {
   location,
@@ -31,7 +32,7 @@ window.window = window;
 document.defaultView = window;
 
 vm.runInNewContext(source, { window, document, console }, { filename: 'home.js' });
-const { renderNarrativeHtml, briefingPlaceholderHtml } = window.__home;
+const { renderNarrativeHtml, briefingPlaceholderHtml, renderBriefingCardHtml } = window.__home;
 assert(renderNarrativeHtml, 'renderNarrativeHtml exported');
 assert(briefingPlaceholderHtml, 'briefingPlaceholderHtml exported');
 
@@ -72,10 +73,32 @@ const missing = briefingPlaceholderHtml(
   { briefing_lateness: { late: true, late_hours: 1 }, today: '20260906' },
 );
 assert(missing.includes("your morning briefing wasn't prepared."), missing);
+// The sentence and its link are separate words, not "prepared.see the run".
+// G1-103.
+assert(missing.includes("your morning briefing wasn't prepared. <a"), missing);
 assert(missing.includes('/app/thinking/#runs/20260906/morning_briefing'), missing);
 assert(missing.includes('see the run'), missing);
 assert.strictEqual(/\bI\b|I'm|\bmy\b/.test(missing), false, missing);
 assert.strictEqual(briefingPlaceholderHtml({ phase: 'missing', exists: true }, {}), '');
+
+// A header only announces itself as expandable when there is a body to expand.
+// G1-104.
+const missingCard = renderBriefingCardHtml(
+  { phase: 'missing', exists: false, sections: {}, needs_deduped: [] },
+  { today: '20260906' },
+);
+assert(missingCard.includes('<div class="pulse-briefing-header">'), missingCard);
+assert.strictEqual(missingCard.includes('aria-expanded'), false, missingCard);
+assert.strictEqual(missingCard.includes('role="button"'), false, missingCard);
+assert.strictEqual(missingCard.includes('pulse-briefing-body'), false, missingCard);
+
+const readyCard = renderBriefingCardHtml(
+  { phase: 'morning', exists: true, sections: { your_day: 'a steady morning.' }, needs_deduped: [] },
+  { today: '20260906' },
+);
+assert(readyCard.includes('role="button"'), readyCard);
+assert(readyCard.includes('aria-expanded'), readyCard);
+assert(readyCard.includes('pulse-briefing-body'), readyCard);
 
 // The narrative card is named for what it holds, not for the run that wrote it.
 // X-03.

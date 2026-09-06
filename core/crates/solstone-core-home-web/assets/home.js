@@ -36,6 +36,8 @@
   let surface = null;
   let lastPulse = null;
   let briefingSections = {};
+  const ACTIVITY_PREVIEW = 6;
+  let todayActivitiesExpanded = false;
 
   function esc(value) {
     return String(value ?? '')
@@ -319,7 +321,7 @@
         + '</div>'
         + '<div class="pulse-section-body">'
         + '<div class="pulse-narrative-content" id="pulse-narrative-content">' + markdown(pulse.narrative_content || '') + '</div>'
-        + '<a class="pulse-tell-more" href="/app/thinking/#runs/' + encodeURIComponent(pulse.today) + '/' + encodeURIComponent(pulse.narrative_source || 'pulse') + '">view generation →</a>'
+        + '<a class="pulse-tell-more" href="/app/thinking/#runs/' + encodeURIComponent(pulse.today) + '/' + encodeURIComponent(pulse.narrative_source || 'pulse') + '">how this was written →</a>'
         + updated
         + '</div>'
         + '</div>';
@@ -361,6 +363,29 @@
     return text.substring(0, 8);
   }
 
+  function plural(count, one, many) {
+    return count + ' ' + (count === 1 ? one : many);
+  }
+
+  // The day's stats file measures time for the segments it managed to measure,
+  // which is not the same set as the activity list. Every facet the list holds
+  // gets a chip, and a facet with no measured time says so rather than being
+  // left out of the row entirely. G1-101.
+  function facetChipRows(pulse, activities) {
+    const measuredFacets = isPlainObject(pulse.facet_data) ? pulse.facet_data : {};
+    const names = Object.keys(measuredFacets);
+    activities.forEach(function (activity) {
+      const facet = typeof activity.facet === 'string' ? activity.facet.trim() : '';
+      if (facet && names.indexOf(facet) === -1) names.push(facet);
+    });
+    return names.map(function (name) {
+      const data = measuredFacets[name];
+      const minutes = isPlainObject(data) ? (parseInt(data.minutes || 0, 10) || 0) : 0;
+      const measured = isPlainObject(data) ? (parseInt(data.count || 0, 10) || 0) : 0;
+      return { name: name, measured: measured, text: isPlainObject(data) ? minutes + 'm' : 'no time measured' };
+    });
+  }
+
   function renderTodayHtml(pulse) {
     const anticipated = Array.isArray(pulse.anticipated_activities) ? pulse.anticipated_activities : [];
     const activities = Array.isArray(pulse.activities) ? pulse.activities : [];
@@ -391,20 +416,35 @@
       html += '</div>';
     }
     if (activities.length) {
-      html += '<div class="pulse-activities-label">recent activity</div><div class="pulse-activities">';
-      activities.slice(0, 6).forEach(function (activity) {
+      // The header counted all of them, the list showed six, and the chips
+      // measured a third population. Each number now says what it counts, and
+      // the rest of the list is one click away instead of gone. G1-101.
+      const shown = todayActivitiesExpanded ? activities : activities.slice(0, ACTIVITY_PREVIEW);
+      const label = shown.length === activities.length
+        ? plural(activities.length, 'activity', 'activities')
+        : shown.length + ' of ' + plural(activities.length, 'activity', 'activities');
+      const showAll = shown.length === activities.length
+        ? ''
+        : '<button type="button" class="pulse-activities-more" data-activities-show-all>show all →</button>';
+      html += '<div class="pulse-activities-label">' + esc(label) + showAll + '</div><div class="pulse-activities">';
+      shown.forEach(function (activity) {
         const description = activity.description || activity.activity || '';
         html += '<div class="pulse-activity">'
-          + '<span class="pulse-activity-time">' + esc(activity.display_time ? window.JournalFormat.timestamp(activity.display_time) : '') + '</span>'
+          + '<span class="pulse-activity-time">' + esc(activity.display_time ? window.JournalFormat.time(activity.display_time) : '') + '</span>'
           + '<span>' + esc(description) + '</span>'
           + '</div>';
       });
       html += '</div>';
     }
-    if (isPlainObject(pulse.facet_data) && Object.keys(pulse.facet_data).length) {
-      html += '<div class="pulse-facet-dist">';
-      Object.entries(pulse.facet_data).forEach(function ([name, data]) {
-        html += '<span class="pulse-facet-chip">' + esc(name) + ' · ' + esc(parseInt(data?.minutes || 0, 10) || 0) + 'm</span>';
+    const facetChips = facetChipRows(pulse, activities);
+    if (facetChips.length) {
+      const measured = facetChips.reduce(function (total, chip) { return total + chip.measured; }, 0);
+      const chipLabel = activities.length
+        ? 'time by facet · measured for ' + measured + ' of ' + plural(activities.length, 'activity', 'activities')
+        : 'time by facet';
+      html += '<div class="pulse-activities-label">' + esc(chipLabel) + '</div><div class="pulse-facet-dist">';
+      facetChips.forEach(function (chip) {
+        html += '<span class="pulse-facet-chip">' + esc(chip.name) + ' · ' + esc(chip.text) + '</span>';
       });
       html += '</div>';
     }
@@ -439,7 +479,14 @@
         html += '<p>' + esc(line) + '</p>';
       });
     } else {
-      const gapLinks = yesterday.gap_links || [];
+      // The briefing card states the missing briefing in its own words and
+      // links the same run. Yesterday's list does not say it a second time.
+      // G1-103.
+      const briefingHref = '/app/thinking/#runs/' + encodeURIComponent(pulse?.today || '') + '/morning_briefing';
+      const briefingCardOwnsIt = pulse?.briefing_phase === 'missing' && !pulse?.briefing_exists;
+      const gapLinks = (yesterday.gap_links || []).filter(function (link) {
+        return !(briefingCardOwnsIt && link && link.href === briefingHref);
+      });
       const details = yesterday.details || [];
       const gapListHtml = gapLinks.map(function (link) {
         return '<li><a href="' + esc(link.href || '#') + '">' + esc(link.text || '') + '</a></li>';
@@ -509,16 +556,12 @@
     replaceHomeSurface('needs', renderNeedsYouHtml(pulse), predecessors('needs'));
   }
 
-  function formatConnectionDay(day, referenceDay) {
-    const text = String(day || '');
-    if (!/^\d{8}$/.test(text)) return text;
-    const date = new Date(Number(text.slice(0, 4)), Number(text.slice(4, 6)) - 1, Number(text.slice(6, 8)));
-    let label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase();
-    const reference = String(referenceDay || '');
-    if (/^\d{8}$/.test(reference) && text.slice(0, 4) !== reference.slice(0, 4)) {
-      label += " '" + text.slice(2, 4);
-    }
-    return label;
+  // Every date on this dashboard is one shape, and the shape is the shared
+  // ladder's: JournalFormat.day for a day, JournalFormat.time for a stamp
+  // inside today. The connections shelf used to spell its own lowercase
+  // 'sep 5' beside the activity list's 'Sep 6, 3:38 PM'. G1-105.
+  function formatConnectionDay(day) {
+    return window.JournalFormat.day(day);
   }
 
   function connectionEntityHref(entityId) {
@@ -545,11 +588,14 @@
     return '<span class="pulse-connections-chip-list">' + chips.join('') + '</span>';
   }
 
-  function connectionRowMeta(neighbor, referenceDay) {
+  // A bare four-digit count reads as authoritative without saying what it
+  // covers. The count carries its unit and a thousands separator, and the day
+  // beside it says which end of the window it is. G1-102.
+  function connectionRowMeta(neighbor) {
     const count = Number(neighbor.count || 0);
-    const moments = count === 1 ? '1 moment' : String(count) + ' moments';
-    const day = formatConnectionDay(neighbor.last_seen, referenceDay);
-    return day ? moments + ' · ' + day : moments;
+    const moments = count === 1 ? '1 moment' : count.toLocaleString('en-US') + ' moments';
+    const day = formatConnectionDay(neighbor.last_seen);
+    return day ? moments + ' · last on ' + day : moments;
   }
 
   // The evidence line repeated the name back under itself on every row but one,
@@ -560,14 +606,14 @@
     return '<span class="pulse-connections-evidence">transcribed as “' + esc(label) + '”</span>';
   }
 
-  function connectionRowHtml(neighbor, connections, referenceDay) {
+  function connectionRowHtml(neighbor, connections) {
     const entityId = typeof neighbor.entity_id === 'string' ? neighbor.entity_id : '';
     const name = typeof neighbor.name === 'string' && neighbor.name ? neighbor.name : entityId;
     if (!entityId || !name) return '';
     return '<div class="pulse-connections-row">'
       + '<a class="pulse-connections-name" href="' + esc(connectionEntityHref(entityId)) + '">' + esc(name) + '</a>'
       + connectionKindChipsHtml(neighbor, connections)
-      + '<span class="pulse-connections-meta">' + esc(connectionRowMeta(neighbor, referenceDay)) + '</span>'
+      + '<span class="pulse-connections-meta">' + esc(connectionRowMeta(neighbor)) + '</span>'
       + connectionEvidenceHtml(neighbor, name)
       + '</div>';
   }
@@ -618,9 +664,8 @@
     const attendanceRows = neighbors
       .filter(function (neighbor) { return neighbor.evidence_class === 'attendance'; })
       .slice(0, 8);
-    const referenceDay = pulse?.today || '';
     const relationshipItems = relationshipRows.map(function (neighbor) {
-      return connectionRowHtml(neighbor, connections, referenceDay);
+      return connectionRowHtml(neighbor, connections);
     }).filter(Boolean);
     const attendanceItems = attendanceRows.map(connectionAttendanceItemHtml).filter(Boolean);
     let html = '<div class="pulse-connections" data-home-surface="connections">'
@@ -637,8 +682,11 @@
         + '<div class="pulse-connections-list">'
         + relationshipItems.join('')
         + '</div></div>';
-    } else {
-      html += '<div class="pulse-connections-note">no direct connections found yet.</div>';
+    } else if (!attendanceItems.length && !mentionRows.length) {
+      // Nothing to show is one line, not four blocks. The shelves below state
+      // their own kind, so the note only earns its space when it is the only
+      // thing the section has to say. G1-107, X-04.
+      html += '<div class="pulse-connections-note">no direct connections yet.</div>';
     }
 
     if (attendanceItems.length) {
@@ -649,18 +697,28 @@
     }
 
     if (mentionRows.length) {
-      html += '<details class="pulse-connections-shelf"><summary>mentioned in your journal</summary><div class="pulse-connections-list">'
-        + mentionRows.map(neighbor => connectionRowHtml(neighbor, connections, referenceDay)).join('') + '</div></details>';
+      // The summary says how many rows the disclosure holds, so it stays useful
+      // as the only shelf on the card rather than restating the section. G1-28.
+      const mentionSummary = mentionRows.length === 1
+        ? '1 name mentioned in your journal'
+        : mentionRows.length + ' names mentioned in your journal';
+      html += '<details class="pulse-connections-shelf"><summary>' + esc(mentionSummary) + '</summary><div class="pulse-connections-list">'
+        + mentionRows.map(neighbor => connectionRowHtml(neighbor, connections)).join('') + '</div></details>';
     }
     const rendered = relationshipItems.length + attendanceItems.length + mentionRows.length;
+    // The coverage note and the way out of the section are one block, not two.
+    // G1-107.
+    const moreLink = Number(connections.total || 0) > rendered
+      ? '<a class="pulse-connections-more" href="/app/entities">all connections →</a>'
+      : '';
     if (typeof connections.horizon_note === 'string' && connections.horizon_note
         && typeof connections.horizon_day === 'string' && connections.horizon_day) {
       html += '<div class="pulse-connections-horizon">'
-        + esc(connections.horizon_note.replace('{day}', formatConnectionDay(connections.horizon_day, referenceDay)))
+        + esc(connections.horizon_note.replace('{day}', formatConnectionDay(connections.horizon_day)))
+        + moreLink
         + '</div>';
-    }
-    if (Number(connections.total || 0) > rendered) {
-      html += '<div class="pulse-connections-footer"><a href="/app/entities">all connections →</a></div>';
+    } else if (moreLink) {
+      html += '<div class="pulse-connections-footer">' + moreLink + '</div>';
     }
     return html + '</div>';
   }
@@ -712,7 +770,7 @@
     // in the morning onward. Silence is the worst failure mode. X-04.
     if (data.phase === 'missing') {
       return '<div class="pulse-briefing-placeholder">'
-        + "your morning briefing wasn't prepared."
+        + "your morning briefing wasn't prepared. "
         + '<a class="pulse-briefing-status-link" href="/app/thinking/#runs/' + esc(pulseContext?.today || '') + '/morning_briefing">see the run →</a>'
         + '</div>';
     }
@@ -738,8 +796,14 @@
     const body = data.exists
       ? '<div class="pulse-briefing-body" id="pulse-briefing-body">' + renderBriefingSectionsHtml(data) + '</div>'
       : '';
+    // A header only announces itself as expandable when there is a body to
+    // expand. In the 'missing' and 'pending' phases the card's one line sits
+    // outside the collapsible body, so the header is a plain heading. G1-104.
+    const headerAttrs = data.exists
+      ? ' role="button" tabindex="0" aria-expanded="' + (collapsed === 'false' ? 'true' : 'false') + '"'
+      : '';
     return '<div class="pulse-briefing-card" id="pulse-briefing" data-home-surface="briefing" data-phase="' + esc(data.phase) + '" data-collapsed="' + collapsed + '">'
-      + '<div class="pulse-briefing-header" role="button" tabindex="0" aria-expanded="' + (collapsed === 'false' ? 'true' : 'false') + '">'
+      + '<div class="pulse-briefing-header"' + headerAttrs + '>'
       + '<h2 class="pulse-section-header">morning briefing</h2>'
       + badge
       + meta
@@ -877,6 +941,8 @@
   function toggleBriefingCard() {
     const card = document.getElementById('pulse-briefing');
     if (!card || card.dataset.phase === 'pending') return;
+    // No body, nothing to toggle: the header is a heading in this phase. G1-104.
+    if (!card.querySelector('.pulse-briefing-body')) return;
     card.dataset.collapsed = card.dataset.collapsed === 'true' ? 'false' : 'true';
     const header = card.querySelector('.pulse-briefing-header');
     if (header) header.setAttribute('aria-expanded', card.dataset.collapsed === 'false' ? 'true' : 'false');
@@ -937,6 +1003,13 @@
 
   function handleDashboardClick(event) {
     const target = event.target;
+    const showAll = closest(target, '[data-activities-show-all]');
+    if (showAll) {
+      event.preventDefault();
+      todayActivitiesExpanded = true;
+      if (lastPulse) renderToday(lastPulse);
+      return;
+    }
     const briefingToggle = closest(target, '.pulse-briefing-section-toggle');
     if (briefingToggle) {
       event.preventDefault();
@@ -976,6 +1049,13 @@
   function handleDashboardKeydown(event) {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     const target = event.target;
+    const showAll = closest(target, '[data-activities-show-all]');
+    if (showAll) {
+      event.preventDefault();
+      todayActivitiesExpanded = true;
+      if (lastPulse) renderToday(lastPulse);
+      return;
+    }
     const briefingToggle = closest(target, '.pulse-briefing-section-toggle');
     if (briefingToggle) {
       event.preventDefault();

@@ -106,6 +106,16 @@
     });
   }
 
+  // The time half of the absolute ladder, for a list that already knows which
+  // day it is showing. Same rendering as `formatTimestamp`, without the date.
+  function formatTimeOfDay(timestamp) {
+    if (timestamp === null || timestamp === undefined || timestamp === '') return 'time unavailable';
+    const value = new Date(timestamp);
+    return Number.isNaN(value.getTime()) ? 'time unavailable' : value.toLocaleString(undefined, {
+      hour: 'numeric', minute: '2-digit'
+    });
+  }
+
   function formatDuration(seconds) {
     if (seconds === null || seconds === undefined || !Number.isFinite(Number(seconds))) return 'duration unavailable';
     const value = Math.round(Math.max(0, Number(seconds)));
@@ -117,6 +127,6 @@
       anthropic: 'Anthropic', google: 'Google'})[lane] || 'processing';
   }
 
-  window.JournalFormat = { processingLane, compactTokens: value => value >= 999500 ? `${Math.round(value / 1000000)}M` : value >= 1000 ? `${Math.round(value / 1000)}K` : String(Math.round(value)),  day: formatDateShort, dayFull: formatDateFull, stream: formatStreamLabel, segmentTime: formatSegmentTime, timestamp: formatTimestamp, duration: formatDuration };
+  window.JournalFormat = { processingLane, compactTokens: value => value >= 999500 ? `${Math.round(value / 1000000)}M` : value >= 1000 ? `${Math.round(value / 1000)}K` : String(Math.round(value)),  day: formatDateShort, dayFull: formatDateFull, stream: formatStreamLabel, segmentTime: formatSegmentTime, timestamp: formatTimestamp, time: formatTimeOfDay, duration: formatDuration };
   window.formatDateShort = formatDateShort;
 })();
