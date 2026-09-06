@@ -188,7 +188,7 @@
     diagnostic.clear();
     window.logError(new Error('strip check'), { context: 'smoke' });
     assert('error-handler does not create bottom strip', !document.getElementById('error-log'));
-    assert('error-handler routes to diagnostic console', diagnostic.list().length === 1 && diagnostic.list()[0].summary.includes('strip check'));
+    assert('error-handler routes to diagnostic console', diagnostic.list().length === 1 && diagnostic.list()[0].detail.message === 'strip check');
 
     // navigation aborts must not reach system messages (X-06)
     diagnostic.clear();
