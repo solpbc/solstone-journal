@@ -59,7 +59,48 @@
     return String(error ?? 'unknown error');
   }
 
+  // A page that is going away cancels its own in-flight GETs. The browser
+  // reports that cancellation as an AbortError, or as a bare
+  // "TypeError: Failed to fetch" with no status behind it, and every app that
+  // was mid-read when the owner navigated would otherwise leave an error in
+  // system messages that never happened to them.
+  let unloading = false;
+  function markUnloading() {
+    unloading = true;
+  }
+  // pagehide only: a beforeunload listener costs the back/forward cache.
+  window.addEventListener('pagehide', markUnloading);
+  window.addEventListener('pageshow', (e) => {
+    // restored from the back/forward cache: this document is live again
+    if (e.persisted) {
+      unloading = false;
+    }
+  });
+
+  function isNavigationAbort(error) {
+    if (!error) {
+      return false;
+    }
+    if (error.name === 'AbortError') {
+      return true;
+    }
+    const message = String(error.message || '');
+    const looksLikeCancelledFetch = (error instanceof TypeError || error.name === 'TypeError')
+      && /failed to fetch|networkerror|load failed|network request failed/i.test(message);
+    if (!looksLikeCancelledFetch) {
+      return false;
+    }
+    return unloading || document.visibilityState === 'hidden';
+  }
+
   window.logError = (error, context) => {
+    if (isNavigationAbort(error)) {
+      // still visible to a developer, but it is not a fault of this session
+      if (window.console && typeof window.console.debug === 'function') {
+        window.console.debug('navigation aborted a read:', error, context || '');
+      }
+      return;
+    }
     markError();
     if (window.console && typeof window.console.error === 'function') {
       window.console.error(error, context || '');
