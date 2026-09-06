@@ -169,6 +169,7 @@ fn delete_file_chunks(
 }
 
 pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError> {
+    crate::db::prune_authored_chat_paths(journal)?;
     let mut conn = open_index(journal)?;
     let mut report = ScanReport::default();
     let files = discover_indexable_files(journal)?;

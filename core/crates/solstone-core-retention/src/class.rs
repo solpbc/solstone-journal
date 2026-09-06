@@ -19,7 +19,7 @@ use crate::eligibility::FoundContent;
 pub enum MediaClass {
     /// Ordinary raw media. Uses the stream's raw-media rule and the minimum-age floor.
     Ordinary,
-    /// Every owner-media file is a no-decodable-audio empty terminal.
+    /// Every owner-media file is a handler-written empty audio terminal.
     NoDecodableAudio,
 }
 
@@ -69,8 +69,14 @@ pub(crate) fn is_handler_empty_audio(item: &FoundContent, registry: &dyn Handler
     };
     record.get("schema").and_then(|value| value.as_str()) == Some(vocab::SCHEMA)
         && record.get("state").and_then(|value| value.as_str()) == Some(vocab::STATE_EMPTY)
-        && record.get("reason_code").and_then(|value| value.as_str())
-            == Some(vocab::REASON_NO_DECODABLE_AUDIO)
+        && matches!(
+            record.get("reason_code").and_then(|value| value.as_str()),
+            Some(
+                vocab::REASON_NO_DECODABLE_AUDIO
+                    | vocab::REASON_NO_SPEECH
+                    | vocab::REASON_NO_TRANSCRIPT
+            )
+        )
         && record.get("handler").and_then(|value| value.as_str()) == Some(expected)
         && record.get("source").and_then(|value| value.as_str()) != Some("backfill")
 }
@@ -128,6 +134,23 @@ mod tests {
             classify(&[audio(Some(empty_record()))], &ClosedHandlerSet),
             MediaClass::NoDecodableAudio
         );
+    }
+
+    #[test]
+    fn decoded_empty_audio_keeps_its_existing_retention_policy() {
+        for reason in [vocab::REASON_NO_SPEECH, vocab::REASON_NO_TRANSCRIPT] {
+            let mut record = empty_record();
+            record["reason_code"] = json!(reason);
+            assert_eq!(
+                classify(&[audio(Some(record.clone()))], &ClosedHandlerSet),
+                MediaClass::NoDecodableAudio
+            );
+            record["source"] = json!("backfill");
+            assert_eq!(
+                classify(&[audio(Some(record))], &ClosedHandlerSet),
+                MediaClass::Ordinary
+            );
+        }
     }
 
     #[test]

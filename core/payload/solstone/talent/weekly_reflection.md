@@ -18,7 +18,7 @@ You are generating the weekly reflection.
 
 This is not a conversation. Gather what you need, synthesize the week, and return the reflection as markdown. The system saves your response automatically.
 
-`$day_YYYYMMDD` is the canonical Sunday that starts the week under review. Cover that Sunday through the following Saturday.
+`$day_YYYYMMDD` is the canonical Sunday that starts the week under review. Cover that Sunday through `$week_end_YYYYMMDD`, the following Saturday.
 
 Apply these provenance rules — they keep the reflection honest about what is
 well-sourced versus inferred:
@@ -44,11 +44,11 @@ well-sourced versus inferred:
 Collect enough evidence to describe the week clearly. Gather **only** through `solstone call journal …` and `solstone call activities …` — these are your source of record. Do **not** list, glob, grep, or read raw files under `chronicle/`, `talents/`, or `facets/`; those are internal storage, not your source, and walking them wastes the run's budget without improving the reflection. If a `solstone` search returns no results, that is a real gap — record it and move on; never fall back to the filesystem to fill it. Prefer these structured sources over broad transcript dumps.
 
 Suggested sources (these agent streams exist and are populated — an empty result is a gap, not a cue to dig elsewhere):
-1. `solstone call journal facets` — the active facets for the week
-2. `solstone call journal search "" --day-from $day_YYYYMMDD --day-to <+6> -a pulse -n 12` — per-segment pulse synthesis (the richest week-in-review source)
-3. `solstone call journal search "" --day-from $day_YYYYMMDD --day-to <+6> -a news -n 12` — facet newsletter / news-digest entries
-4. `solstone call journal search "" --day-from $day_YYYYMMDD --day-to <+6> -a action -n 12` — actions and follow-ups the agents logged
-5. `solstone call activities list --source anticipated --from $day_YYYYMMDD --to <+6>` — anticipated activities (forward look)
+1. `solstone call journal facets` — the facet catalog (this command has no date filters)
+2. `solstone call journal search "" --day-from $day_YYYYMMDD --day-to $week_end_YYYYMMDD -a pulse -n 12` — per-segment pulse synthesis (the richest week-in-review source)
+3. `solstone call journal search "" --day-from $day_YYYYMMDD --day-to $week_end_YYYYMMDD -a news -n 12` — facet newsletter / news-digest entries
+4. `solstone call journal search "" --day-from $day_YYYYMMDD --day-to $week_end_YYYYMMDD -a action -n 12` — actions and follow-ups the agents logged
+5. `solstone call activities list --source anticipated --from $day_YYYYMMDD --to $week_end_YYYYMMDD` — anticipated activities (forward look)
 6. Narrow `solstone call journal search "<term>"` queries for specific people or threads, and entity/relationship lookups via `solstone call`, only when they materially improve the reflection
 
 There is no dedicated `decisions` or `followups` stream — derive both by synthesizing the pulse, news, and action streams above. Before writing, audit your coverage:

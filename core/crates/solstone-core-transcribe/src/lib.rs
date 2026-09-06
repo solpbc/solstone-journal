@@ -302,6 +302,8 @@ pub enum TranscribeError {
     },
     /// A non-writer terminal publication failure occurred.
     TerminalWrite { detail: String },
+    /// Exclusive ownership of this transcription attempt could not be acquired.
+    ProcessingClaim { path: PathBuf, detail: String },
     /// Input metadata could not be captured before processing began.
     InputMetadata { path: PathBuf, detail: String },
     /// A terminal writer request could not be serialized.
@@ -374,7 +376,8 @@ impl TranscribeError {
                 | SpeakerTranscriptWriteError::InvalidOutputPath { .. }
                 | SpeakerTranscriptWriteError::DestinationExists { .. } => 1,
             },
-            Self::OrphanNpzRemove { .. }
+            Self::ProcessingClaim { .. }
+            | Self::OrphanNpzRemove { .. }
             | Self::TerminalPayload { .. }
             | Self::TerminalRequest { .. }
             | Self::TranscriptRequest { .. }
@@ -434,6 +437,11 @@ impl std::fmt::Display for TranscribeError {
                 None => write!(formatter, "could not prepare terminal payload: {detail}"),
             },
             Self::TerminalWrite { detail } => formatter.write_str(detail),
+            Self::ProcessingClaim { path, detail } => write!(
+                formatter,
+                "could not acquire transcription ownership for {}: {detail}",
+                path.display()
+            ),
             Self::InputMetadata { path, detail } => {
                 write!(
                     formatter,
@@ -530,7 +538,8 @@ impl std::error::Error for TranscribeError {
             Self::ModelAsset(error) => Some(error),
             Self::SpeakerTranscriptWrite(error) => Some(error),
             Self::SpeakerAnalysis(error) => Some(error),
-            Self::OrphanNpzRemove { .. }
+            Self::ProcessingClaim { .. }
+            | Self::OrphanNpzRemove { .. }
             | Self::TerminalPayload { .. }
             | Self::TerminalWrite { .. }
             | Self::InputMetadata { .. }

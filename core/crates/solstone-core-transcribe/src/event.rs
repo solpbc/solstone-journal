@@ -219,6 +219,7 @@ fn error_type_name(error: &TranscribeError) -> &'static str {
         TranscribeError::OrphanNpzRemove { .. } => "OrphanNpzRemove",
         TranscribeError::TerminalPayload { .. } => "TerminalPayload",
         TranscribeError::TerminalWrite { .. } => "TerminalWrite",
+        TranscribeError::ProcessingClaim { .. } => "ProcessingClaim",
         TranscribeError::InputMetadata { .. } => "InputMetadata",
         TranscribeError::TerminalRequest { .. } => "TerminalRequest",
         TranscribeError::TranscriptRequest { .. } => "TranscriptRequest",

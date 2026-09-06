@@ -22,9 +22,9 @@
 use std::ffi::OsString;
 use std::fmt;
 use std::fs;
-use std::io::Write;
+use std::io::{BufReader, Read, Seek, Write};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -227,59 +227,80 @@ pub fn invoke_ced_analyze_with_args(
     timeout: Duration,
 ) -> Result<Value, CedAnalyzeError> {
     let resolved = resolve_program(program)?;
-    let mut child = Command::new(&resolved.executable)
-        .args(leading_args.iter().map(OsString::from))
-        .args(&resolved.args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| CedAnalyzeError::Spawn {
-            detail: error.to_string(),
-        })?;
-    let body = request.to_string();
-    child
-        .stdin
-        .take()
-        .ok_or_else(|| CedAnalyzeError::Io {
-            detail: "ced helper stdin was unavailable".to_owned(),
-        })?
-        .write_all(body.as_bytes())
-        .map_err(|error| CedAnalyzeError::Io {
-            detail: format!("could not write ced request: {error}"),
-        })?;
-
+    // This finite JSON exchange can exceed a pipe's capacity. File-backed stdio
+    // lets the helper finish without a reader thread or a write-before-read cycle.
+    // Anonymous temporary files are closed on every return, including timeout.
+    let mut input = tempfile::tempfile().map_err(helper_io)?;
+    input
+        .write_all(request.to_string().as_bytes())
+        .map_err(helper_io)?;
+    input.rewind().map_err(helper_io)?;
+    let mut stdout = tempfile::tempfile().map_err(helper_io)?;
+    let mut stderr = tempfile::tempfile().map_err(helper_io)?;
+    let mut child = HelperChild(
+        Command::new(&resolved.executable)
+            .args(leading_args.iter().map(OsString::from))
+            .args(&resolved.args)
+            .stdin(Stdio::from(input))
+            .stdout(Stdio::from(stdout.try_clone().map_err(helper_io)?))
+            .stderr(Stdio::from(stderr.try_clone().map_err(helper_io)?))
+            .spawn()
+            .map_err(|error| CedAnalyzeError::Spawn {
+                detail: error.to_string(),
+            })?,
+    );
     let started = Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(_status)) => break,
-            Ok(None) if started.elapsed() >= timeout => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(CedAnalyzeError::Timeout);
-            }
+    let status = loop {
+        match child.0.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if started.elapsed() >= timeout => return Err(CedAnalyzeError::Timeout),
             Ok(None) => thread::sleep(Duration::from_millis(10)),
-            Err(error) => {
-                return Err(CedAnalyzeError::Io {
-                    detail: error.to_string(),
-                });
-            }
+            Err(error) => return Err(helper_io(error)),
         }
-    }
-    let output = child
-        .wait_with_output()
-        .map_err(|error| CedAnalyzeError::Io {
-            detail: error.to_string(),
-        })?;
-    if !output.status.success() {
+    };
+    if !status.success() {
+        stderr.rewind().map_err(helper_io)?;
+        let mut bytes = Vec::new();
+        stderr
+            .take(64 * 1024)
+            .read_to_end(&mut bytes)
+            .map_err(helper_io)?;
         return Err(CedAnalyzeError::Exit {
-            code: output.status.code(),
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            code: status.code(),
+            stderr: String::from_utf8_lossy(&bytes).into_owned(),
         });
     }
-    serde_json::from_slice(&output.stdout).map_err(|error| CedAnalyzeError::MalformedResponse {
-        detail: error.to_string(),
+    // A malformed helper must not turn a diagnostic into an unbounded allocation.
+    const MAX_RESPONSE_BYTES: u64 = 64 * 1024 * 1024;
+    if stdout.metadata().map_err(helper_io)?.len() > MAX_RESPONSE_BYTES {
+        return Err(CedAnalyzeError::MalformedResponse {
+            detail: "ced response exceeded 64 MiB".to_owned(),
+        });
+    }
+    stdout.rewind().map_err(helper_io)?;
+    serde_json::from_reader(BufReader::new(stdout)).map_err(|error| {
+        CedAnalyzeError::MalformedResponse {
+            detail: error.to_string(),
+        }
     })
+}
+
+fn helper_io(error: std::io::Error) -> CedAnalyzeError {
+    CedAnalyzeError::Io {
+        detail: error.to_string(),
+    }
+}
+
+/// Own the child until it is reaped, including an I/O error or timeout.
+struct HelperChild(Child);
+
+impl Drop for HelperChild {
+    fn drop(&mut self) {
+        if !matches!(self.0.try_wait(), Ok(Some(_))) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
 }
 
 #[cfg(test)]
@@ -385,6 +406,23 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
     }
 
     #[test]
+    fn helper_output_larger_than_pipe_capacity_completes() {
+        let (_root, path) = write_stub(
+            "#!/bin/sh\ncat >/dev/null\nhead -c 1048576 /dev/zero | tr '\\000' ' ' >&2\nprintf '{\"padding\":\"'\nhead -c 1048576 /dev/zero | tr '\\000' 'x'\nprintf '\"}'\n",
+        );
+        let response = invoke_ced_analyze(
+            &CedAnalyzeProgram::Explicit {
+                executable: PathBuf::from("/bin/sh"),
+                args: vec![path.into_os_string()],
+            },
+            &Value::Null,
+            Duration::from_secs(2),
+        )
+        .unwrap();
+        assert_eq!(response["padding"].as_str().unwrap().len(), 1048576);
+    }
+
+    #[test]
     fn nonzero_exit_carries_stderr() {
         let (_root, path) = write_stub(
             "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"library-unloadable\",\"detail\":\"boom\"}' >&2\nexit 69\n",
@@ -414,7 +452,7 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
 
     #[test]
     fn timeout_kills_the_helper() {
-        let (_root, path) = write_stub("#!/bin/sh\ncat >/dev/null\nsleep 30\n");
+        let (_root, path) = write_stub("#!/bin/sh\ncat >/dev/null\nexec sleep 30\n");
         let error = invoke_ced_analyze(&explicit(path), &Value::Null, Duration::from_millis(100))
             .unwrap_err();
         assert!(matches!(error, CedAnalyzeError::Timeout));

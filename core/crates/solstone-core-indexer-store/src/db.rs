@@ -235,6 +235,11 @@ pub fn prune_by_paths(
     Ok(Some(counts))
 }
 
+/// SQL predicate for journal-authored chat rows, with either indexed path shape.
+/// Readers exclude these rows; the index writer owns their removal.
+pub const AUTHORED_CHAT_PATH_PREDICATE: &str =
+    "path LIKE '________/chat/%/chat.jsonl' OR path LIKE 'chronicle/________/chat/%/chat.jsonl'";
+
 /// Drop index rows for journal-authored `YYYYMMDD/chat/<segment>/chat.jsonl` paths.
 ///
 /// Also matches the optional `chronicle/` prefix. Returns `None` when the journal
@@ -247,9 +252,14 @@ pub fn prune_authored_chat_paths(journal: &Path) -> Result<Option<StreamPruneCou
     let mut conn = Connection::open(&path)?;
     conn.execute_batch("PRAGMA busy_timeout=5000;")?;
     let tx = conn.transaction()?;
-    const PREDICATE: &str = "path LIKE '________/chat/%/chat.jsonl' OR path LIKE 'chronicle/________/chat/%/chat.jsonl'";
-    let chunks = tx.execute(&format!("DELETE FROM chunks WHERE {PREDICATE}"), [])? as u64;
-    let files = tx.execute(&format!("DELETE FROM files WHERE {PREDICATE}"), [])? as u64;
+    let chunks = tx.execute(
+        &format!("DELETE FROM chunks WHERE {AUTHORED_CHAT_PATH_PREDICATE}"),
+        [],
+    )? as u64;
+    let files = tx.execute(
+        &format!("DELETE FROM files WHERE {AUTHORED_CHAT_PATH_PREDICATE}"),
+        [],
+    )? as u64;
     tx.commit()?;
     Ok(Some(StreamPruneCounts { chunks, files }))
 }

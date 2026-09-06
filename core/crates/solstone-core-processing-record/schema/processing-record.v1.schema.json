@@ -9,7 +9,7 @@
   "properties": {
     "schema": {"const": "solstone.processing.v1"},
     "state": {"enum": ["analyzed", "empty", "failed"]},
-    "reason_code": {"enum": ["ok", "no_decodable_frames", "no_decodable_audio", "corrupt_input", "analysis_failed"]},
+    "reason_code": {"enum": ["ok", "no_decodable_frames", "no_decodable_audio", "no_speech", "no_transcript", "corrupt_input", "analysis_failed"]},
     "handler": {"enum": ["describe", "transcribe"]},
     "attempted_at": {"type": "string"},
     "input_size": {"type": "integer", "minimum": 0},

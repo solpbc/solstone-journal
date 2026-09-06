@@ -856,7 +856,7 @@ fn seed_chunk(
 }
 
 #[test]
-fn search_purges_authored_chat_rows_without_rescanning() {
+fn search_excludes_authored_chat_rows_and_leaves_cleanup_to_indexing() {
     let (root, connection) = seeded_root("purge-authored-chat");
 
     const PATH_A: &str = "20260508/chat/120000_300/chat.jsonl";
@@ -983,10 +983,10 @@ fn search_purges_authored_chat_rows_without_rescanning() {
     assert!(hit_paths.contains(&PATH_E));
 
     let post = Connection::open(db_path(&root)).expect("open after search");
-    assert_eq!(count_path(&post, "chunks", PATH_A), 0);
-    assert_eq!(count_path(&post, "files", PATH_A), 0);
-    assert_eq!(count_path(&post, "chunks", PATH_B), 0);
-    assert_eq!(count_path(&post, "files", PATH_B), 0);
+    assert_eq!(count_path(&post, "chunks", PATH_A), 1);
+    assert_eq!(count_path(&post, "files", PATH_A), 1);
+    assert_eq!(count_path(&post, "chunks", PATH_B), 1);
+    assert_eq!(count_path(&post, "files", PATH_B), 1);
     assert_eq!(count_path(&post, "chunks", PATH_C), 1);
     assert_eq!(count_path(&post, "files", PATH_C), 1);
     assert_eq!(count_path(&post, "chunks", PATH_D), 1);
@@ -1007,10 +1007,10 @@ fn search_purges_authored_chat_rows_without_rescanning() {
     second_paths.dedup();
     assert_eq!(second_paths, hit_paths);
     let after_second = Connection::open(db_path(&root)).expect("open after second search");
-    assert_eq!(count_path(&after_second, "chunks", PATH_A), 0);
-    assert_eq!(count_path(&after_second, "files", PATH_A), 0);
-    assert_eq!(count_path(&after_second, "chunks", PATH_B), 0);
-    assert_eq!(count_path(&after_second, "files", PATH_B), 0);
+    assert_eq!(count_path(&after_second, "chunks", PATH_A), 1);
+    assert_eq!(count_path(&after_second, "files", PATH_A), 1);
+    assert_eq!(count_path(&after_second, "chunks", PATH_B), 1);
+    assert_eq!(count_path(&after_second, "files", PATH_B), 1);
     drop(after_second);
 
     scan_journal(&root, true).expect("scan after purge");
@@ -1076,5 +1076,53 @@ fn indexed_entry_is_bounded_and_does_not_prune_or_open_source_files() {
         Err(IndexAccessError::Absent { .. })
     ));
     assert!(!absent.exists());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn search_reads_committed_rows_while_an_index_writer_is_active() {
+    let (root, connection) = seeded_root("search-during-index-write");
+    seed_chunk(
+        &connection,
+        "visible record",
+        "20260107/talents/pulse.md",
+        "20260107",
+        "pulse",
+        None,
+    );
+    seed_chunk(
+        &connection,
+        "private authored message",
+        "20260107/chat/owner/chat.jsonl",
+        "20260107",
+        "chat",
+        None,
+    );
+    connection
+        .execute_batch("BEGIN IMMEDIATE")
+        .expect("hold writer transaction");
+    let query = request("visible");
+    let response =
+        search(&root, &query, reference_date()).expect("search must not acquire a writer lock");
+    assert_eq!(response.results.len(), 1);
+    assert_eq!(
+        response.results[0].metadata.path,
+        "20260107/talents/pulse.md"
+    );
+    assert_eq!(
+        search_counts(&root, &request(""), reference_date())
+            .unwrap()
+            .total,
+        1
+    );
+    assert!(!hit_at(&root, "20260107/chat/owner/chat.jsonl", 0).unwrap());
+    assert_eq!(crate::agents(&root).unwrap(), vec!["pulse"]);
+    assert_eq!(coverage(&root).unwrap().state, CoverageState::Available);
+    connection.execute_batch("ROLLBACK").unwrap();
+    assert_eq!(
+        count_path(&connection, "chunks", "20260107/chat/owner/chat.jsonl"),
+        1
+    );
+    drop(connection);
     fs::remove_dir_all(root).unwrap();
 }

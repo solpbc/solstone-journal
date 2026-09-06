@@ -72,18 +72,6 @@ pub struct RealProcessSpawner;
 
 impl ProcessSpawner for RealProcessSpawner {
     fn spawn(&self, program: &OsStr, args: &[OsString]) -> std::io::Result<()> {
-        #[cfg(unix)]
-        {
-            if std::env::var_os(solstone_core_system::lifecycle::HOSTED_GENERATION_ENV).is_some() {
-                let journal = std::env::var_os("SOLSTONE_JOURNAL").ok_or_else(|| {
-                    std::io::Error::other("hosted child is missing SOLSTONE_JOURNAL")
-                })?;
-                solstone_core_system::lifecycle::acknowledge_hosted_child_admission(
-                    std::path::Path::new(&journal),
-                )
-                .map_err(std::io::Error::other)?;
-            }
-        }
         runner::exec_process(program, args)
     }
 }
@@ -91,6 +79,25 @@ impl ProcessSpawner for RealProcessSpawner {
 /// Run the same-device journal command surface as its own process identity.
 #[must_use]
 pub fn run(args: Vec<OsString>) -> ExitCode {
+    // Admission belongs to process entry, including local commands that never
+    // exec a native sibling. Exec preserves this PID and its acknowledged identity.
+    #[cfg(unix)]
+    if std::env::var_os(solstone_core_system::lifecycle::HOSTED_GENERATION_ENV).is_some()
+        || std::env::var_os(solstone_core_system::lifecycle::HOSTED_LAUNCH_ID_ENV).is_some()
+    {
+        let result = std::env::var_os("SOLSTONE_JOURNAL")
+            .ok_or_else(|| std::io::Error::other("hosted child is missing SOLSTONE_JOURNAL"))
+            .and_then(|journal| {
+                solstone_core_system::lifecycle::acknowledge_hosted_child_admission(
+                    std::path::Path::new(&journal),
+                )
+                .map_err(std::io::Error::other)
+            });
+        if let Err(error) = result {
+            eprintln!("journal process admission failed: {error}");
+            return ExitCode::from(70);
+        }
+    }
     match dispatch(evaluate_args(&args), &RealProcessSpawner) {
         Outcome::Help(text) | Outcome::Version(text) => {
             print!("{text}");

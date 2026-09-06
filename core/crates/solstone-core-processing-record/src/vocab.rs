@@ -19,6 +19,10 @@ pub const REASON_OK: &str = "ok";
 pub const REASON_NO_DECODABLE_FRAMES: &str = "no_decodable_frames";
 // Parity: solstone/observe/processing_record.py:39.
 pub const REASON_NO_DECODABLE_AUDIO: &str = "no_decodable_audio";
+/// Audio decoded successfully, but VAD found no usable speech.
+pub const REASON_NO_SPEECH: &str = "no_speech";
+/// Speech was submitted to STT, which returned no transcript statements.
+pub const REASON_NO_TRANSCRIPT: &str = "no_transcript";
 // Parity: solstone/observe/processing_record.py:40.
 pub const REASON_CORRUPT_INPUT: &str = "corrupt_input";
 // Parity: solstone/observe/processing_record.py:41.

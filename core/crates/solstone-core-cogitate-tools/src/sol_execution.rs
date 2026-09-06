@@ -4,11 +4,7 @@
 use std::env;
 #[cfg(unix)]
 use std::io::Read;
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-#[cfg(unix)]
-use std::process::{Command, Stdio};
 #[cfg(unix)]
 use std::thread;
 use std::time::Duration;
@@ -17,7 +13,12 @@ use std::time::Instant;
 
 use solstone_core_cogitate::{AccessTierError, classify_command};
 #[cfg(unix)]
-use solstone_core_system::process::{Disposition, LaunchAuthority, LaunchError, launch};
+use solstone_core_system::lifecycle::{RunId, hosted_child_launch_provenance};
+#[cfg(unix)]
+use solstone_core_system::process::{
+    BoxedTerminateFn, CommandLaunchRequest, Disposition, LaunchAuthority, LaunchError,
+    launch_command, launch_command_hosted,
+};
 
 use crate::{BudgetExhaustedEvent, SlotLease, SlotReacquireError, SolCallBudget};
 
@@ -133,9 +134,17 @@ fn run_command_with_timeout(
             is_error: true,
         });
     };
-    let mut command = Command::new(executable);
-    command.args(&argv[1..]).current_dir(journal_root);
-    let child = ProcessGroupChild::spawn(&mut command, timeout);
+    let command = CommandLaunchRequest {
+        program: executable.into_os_string(),
+        arguments: argv[1..].iter().map(Into::into).collect(),
+        environment: Default::default(),
+        current_dir: Some(journal_root.to_path_buf()),
+        process_group: true,
+        stdin_piped: false,
+        stdout_piped: true,
+        stderr_piped: true,
+    };
+    let child = ProcessGroupChild::spawn(command, timeout);
     let mut child = match child {
         Ok(child) => child,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -211,27 +220,41 @@ struct ProcessGroupChild {
 
 #[cfg(unix)]
 impl ProcessGroupChild {
-    fn spawn(command: &mut Command, timeout: Duration) -> std::io::Result<Self> {
-        command
-            .process_group(0)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        let authority = launch(
-            Disposition::IndependentBoundedHelper { timeout },
-            || command.spawn(),
-            Box::new(|child, _timeout| {
-                let Some(group) = i32::try_from(child.id())
-                    .ok()
-                    .and_then(rustix::process::Pid::from_raw)
-                else {
-                    return child.kill().map_err(LaunchError::Terminate);
-                };
-                match rustix::process::kill_process_group(group, rustix::process::Signal::KILL) {
-                    Ok(()) | Err(rustix::io::Errno::SRCH) => Ok(()),
-                    Err(error) => Err(LaunchError::Terminate(std::io::Error::from(error))),
-                }
-            }),
-        )
+    fn spawn(command: CommandLaunchRequest, timeout: Duration) -> std::io::Result<Self> {
+        // Journal owns native same-device operations and acknowledges admission
+        // at entry. Give it a distinct descendant identity rather than letting
+        // it inherit this talent's acknowledgement. Other allowed tools do not
+        // implement the hosted-child protocol and retain the bounded group path.
+        let provenance = if Path::new(&command.program)
+            .file_name()
+            .is_some_and(|name| name == "journal")
+        {
+            let id = RunId::generate().map_err(std::io::Error::other)?;
+            hosted_child_launch_provenance(
+                format!("journal-tool-{id}"),
+                timeout.min(Duration::from_secs(3)),
+            )
+            .map_err(std::io::Error::other)?
+        } else {
+            None
+        };
+        let terminate: BoxedTerminateFn = Box::new(|child, _timeout| {
+            let Some(group) = i32::try_from(child.id())
+                .ok()
+                .and_then(rustix::process::Pid::from_raw)
+            else {
+                return child.kill().map_err(LaunchError::Terminate);
+            };
+            match rustix::process::kill_process_group(group, rustix::process::Signal::KILL) {
+                Ok(()) | Err(rustix::io::Errno::SRCH) => Ok(()),
+                Err(error) => Err(LaunchError::Terminate(std::io::Error::from(error))),
+            }
+        });
+        let disposition = Disposition::IndependentBoundedHelper { timeout };
+        let authority = match provenance {
+            Some(provenance) => launch_command_hosted(disposition, command, provenance, terminate),
+            None => launch_command(disposition, command, terminate),
+        }
         .map_err(|error| match error {
             LaunchError::Spawn(inner) => inner,
             other => std::io::Error::other(other),

@@ -5,10 +5,11 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use serde_json::{Map, Value};
 use solstone_core_journal_config::JournalConfigRead;
+use solstone_core_journal_io::{LockOptions, hold_lock};
 use solstone_core_observe_audio::{SAMPLE_RATE, audio_to_wav_bytes, decode_f32_mono};
 use solstone_core_speaker_id::writer::WriteResponse;
 use solstone_core_spp_ratls::AttestationStateStore;
@@ -28,7 +29,7 @@ use crate::event::{
     Timings, TranscribedEvent, TranscribedOutcome, build_transcribed_event, emit_transcribed_event,
 };
 use crate::processing::analyzed_record;
-use crate::processing::{corrupt_input_record, empty_record};
+use crate::processing::{EmptyReason, corrupt_input_record, empty_record};
 use crate::speakers::analyze_speakers;
 use crate::terminal::{TerminalWrite, TerminalWriteFailure, write_terminal, write_terminal_with};
 use crate::transcript::{
@@ -88,6 +89,26 @@ pub(crate) fn process_one(
     config: &JournalConfigRead,
     attestation_state: &AttestationStateStore,
 ) -> Result<ProcessOutcome, TranscribeError> {
+    if should_skip_process_one_processed(audio_path, redo) {
+        return Ok(ProcessOutcome::Skipped);
+    }
+    // Live and catch-up dispatchers have separate queues. The output owner must
+    // serialize the entire attempt, including the completed-output check, so a
+    // duplicate cannot run inference before losing an exclusive publication race.
+    // This kernel lock is released on process death; the sidecar is never removed.
+    // Allow an ordinary Sense transcription's 45-minute execution budget to finish.
+    let output = audio_path.with_extension("jsonl");
+    let _claim = hold_lock(
+        &output,
+        LockOptions {
+            timeout: Duration::from_secs(45 * 60),
+            ..LockOptions::default()
+        },
+    )
+    .map_err(|error| TranscribeError::ProcessingClaim {
+        path: audio_path.to_path_buf(),
+        detail: error.to_string(),
+    })?;
     if should_skip_process_one_processed(audio_path, redo) {
         return Ok(ProcessOutcome::Skipped);
     }
@@ -751,7 +772,14 @@ where
     W: FnOnce(&[u8]) -> Result<WriteResponse, TerminalWriteFailure>,
     O: FnOnce(&Path, &Path) -> Result<(), TranscribeError>,
 {
-    terminal_empty(facts, redo, sound_tags, writer, orphan_remover)
+    terminal_empty(
+        facts,
+        EmptyReason::NoSpeech,
+        redo,
+        sound_tags,
+        writer,
+        orphan_remover,
+    )
 }
 
 fn stt_zero_statements_with<W, O>(
@@ -765,11 +793,19 @@ where
     W: FnOnce(&[u8]) -> Result<WriteResponse, TerminalWriteFailure>,
     O: FnOnce(&Path, &Path) -> Result<(), TranscribeError>,
 {
-    terminal_empty(facts, redo, sound_tags, writer, orphan_remover)
+    terminal_empty(
+        facts,
+        EmptyReason::NoTranscript,
+        redo,
+        sound_tags,
+        writer,
+        orphan_remover,
+    )
 }
 
 fn terminal_empty<W, O>(
     facts: &InputFacts,
+    reason: EmptyReason,
     redo: bool,
     sound_tags: Option<&Value>,
     writer: W,
@@ -780,7 +816,7 @@ where
     O: FnOnce(&Path, &Path) -> Result<(), TranscribeError>,
 {
     let (jsonl_path, npz_path) = transcript_paths(&facts.path);
-    let processing = empty_record(facts.input_size);
+    let processing = empty_record(facts.input_size, reason);
     write_terminal_with(
         TerminalWrite {
             raw_path: &facts.path,
@@ -818,6 +854,63 @@ mod tests {
     use crate::TranscribeError;
     use crate::event::Timings;
     use crate::terminal::TerminalWriteFailure;
+
+    #[test]
+    fn overlapping_transcription_waits_then_rechecks_the_published_result() {
+        use solstone_core_journal_io::{LockOptions, hold_lock};
+        use std::sync::mpsc;
+        use std::time::Duration;
+        let dir = tempfile::tempdir().unwrap();
+        let audio = dir.path().join("audio.wav");
+        fs::write(&audio, b"not decoded by the waiting attempt").unwrap();
+        let output = audio.with_extension("jsonl");
+        let claim = hold_lock(
+            &output,
+            LockOptions {
+                timeout: Duration::from_secs(1),
+                poll_interval: Duration::from_millis(10),
+                mode: Some(0o600),
+            },
+        )
+        .unwrap();
+        let root = dir.path().to_path_buf();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let config = solstone_core_journal_config::read_journal_config(&root).unwrap();
+            started_tx.send(()).unwrap();
+            done_tx
+                .send(super::process_one(
+                    &audio,
+                    &root,
+                    false,
+                    None,
+                    &config,
+                    &solstone_core_spp_ratls::AttestationStateStore::new(),
+                ))
+                .unwrap();
+        });
+        started_rx.recv().unwrap();
+        assert!(
+            matches!(
+                done_rx.recv_timeout(Duration::from_millis(100)),
+                Err(mpsc::RecvTimeoutError::Timeout)
+            ),
+            "a second attempt must wait before decoding or publishing"
+        );
+        let published = b"{\"raw\":\"audio.wav\"}\n";
+        fs::write(&output, published).unwrap();
+        drop(claim);
+        assert_eq!(
+            done_rx
+                .recv_timeout(Duration::from_secs(2))
+                .unwrap()
+                .unwrap(),
+            super::ProcessOutcome::Skipped
+        );
+        worker.join().unwrap();
+        assert_eq!(fs::read(output).unwrap(), published);
+    }
 
     fn input(directory: &Path) -> InputFacts {
         let path = directory.join("clip.wav");
@@ -927,6 +1020,13 @@ mod tests {
             TerminalOutcome::Preserved
         );
         assert!(facts.path.exists());
+        let header: Value =
+            serde_json::from_str(&fs::read_to_string(facts.path.with_extension("jsonl")).unwrap())
+                .unwrap();
+        assert_eq!(
+            header["_solstone_processing"]["reason_code"],
+            vocab::REASON_NO_SPEECH
+        );
     }
 
     #[test]
@@ -939,6 +1039,13 @@ mod tests {
             TerminalOutcome::Preserved
         );
         assert!(facts.path.exists());
+        let header: Value =
+            serde_json::from_str(&fs::read_to_string(facts.path.with_extension("jsonl")).unwrap())
+                .unwrap();
+        assert_eq!(
+            header["_solstone_processing"]["reason_code"],
+            vocab::REASON_NO_TRANSCRIPT
+        );
     }
 
     #[test]

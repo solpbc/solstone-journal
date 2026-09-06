@@ -581,6 +581,47 @@ mod tests {
     }
 
     #[test]
+    fn shipped_weekly_talents_receive_concrete_request_window_dates() {
+        let root = tempfile::tempdir().unwrap();
+        let paths = RuntimePaths {
+            talent_root: root.path().join("talent"),
+            apps_root: root.path().join("apps"),
+            templates_dir: root.path().join("templates"),
+        };
+        let context = ExecutionContext {
+            journal: root.path().join("journal"),
+        };
+        for dir in [
+            &paths.talent_root,
+            &paths.apps_root,
+            &paths.templates_dir,
+            &context.journal,
+        ] {
+            fs::create_dir_all(dir).unwrap();
+        }
+        let payload =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../payload/solstone/talent");
+        for name in ["weekly_reflection", "partner"] {
+            let body = fs::read_to_string(payload.join(format!("{name}.md"))).unwrap();
+            fs::write(paths.talent_root.join(format!("{name}.md")), body).unwrap();
+            let request = json!({"name":name, "day":"20260830"});
+            let prepared = prepare(
+                request.as_object().unwrap().clone(),
+                &paths,
+                &context,
+                PrepareMode::Preview,
+            )
+            .unwrap();
+            let instruction = prepared.config["user_instruction"].as_str().unwrap();
+            assert!(
+                instruction.contains("--day-from 20260830 --day-to 20260905"),
+                "{name}: {instruction}"
+            );
+            assert!(!instruction.contains("$week_end_YYYYMMDD"));
+        }
+    }
+
+    #[test]
     fn day_segment_request_renders_the_shipped_preamble_context() {
         let root = tempfile::tempdir().expect("root");
         let talent_root = root.path().join("talent");

@@ -112,15 +112,13 @@ fn classify_windows(
     {
         Ok(directory) => directory,
         Err(error) => {
-            log::warn!("{CED_UNAVAILABLE_GUIDANCE}");
-            log::debug!("ced audio sidecar directory failed: {error}");
+            log::warn!("sound tagging could not prepare audio: {error}");
             return None;
         }
     };
     let audio_path = temporary.path().join("audio.f32le");
     if let Err(error) = write_audio_sidecar(&audio_path, audio) {
-        log::warn!("{CED_UNAVAILABLE_GUIDANCE}");
-        log::debug!("ced audio sidecar write failed: {error}");
+        log::warn!("sound tagging could not prepare audio: {error}");
         return None;
     }
 
@@ -141,8 +139,7 @@ fn classify_windows(
     let response = match invoke_ced_analyze(program, &request, CED_ANALYZE_TIMEOUT) {
         Ok(response) => response,
         Err(error) => {
-            log::warn!("{CED_UNAVAILABLE_GUIDANCE}");
-            log::debug!("ced helper invocation failed: {error}");
+            log::warn!("sound tagging failed: {error}");
             return None;
         }
     };
@@ -164,15 +161,13 @@ fn write_audio_sidecar(path: &Path, audio: &[f32]) -> std::io::Result<()> {
 /// exactly like an unreadable engine did before.
 fn windows_from_response(response: &Value, expected_len: usize) -> Option<Value> {
     if response.get("schema").and_then(Value::as_str) != Some(RESPONSE_SCHEMA) {
-        log::warn!("{CED_UNAVAILABLE_GUIDANCE}");
-        log::debug!("ced helper response had an unexpected schema: {response}");
+        log::warn!("sound tagging returned an unexpected response schema");
         return None;
     }
     let windows = match response.get("windows").and_then(Value::as_array) {
         Some(windows) if windows.len() == expected_len => windows,
         _ => {
-            log::warn!("{CED_UNAVAILABLE_GUIDANCE}");
-            log::debug!("ced helper response had an unexpected windows shape: {response}");
+            log::warn!("sound tagging returned an unexpected window count");
             return None;
         }
     };

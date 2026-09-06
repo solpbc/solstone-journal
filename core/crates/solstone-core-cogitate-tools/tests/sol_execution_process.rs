@@ -127,3 +127,151 @@ fn real_command_fully_captures_then_presentation_truncates_each_stream() {
         )
     );
 }
+
+fn quote_fixture_path(path: &Path) -> String {
+    format!("'{}'", path.display().to_string().replace('\'', "'\"'\"'"))
+}
+
+fn write_journal_fixture(directory: &Path, body: &str) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let helper = directory.join("journal");
+    fs::write(&helper, format!("#!/bin/sh\n{body}\n")).unwrap();
+    fs::set_permissions(&helper, fs::Permissions::from_mode(0o755)).unwrap();
+    helper
+}
+
+#[test]
+fn hosted_journal_tool_fixture() {
+    use solstone_core_system::lifecycle::acknowledge_hosted_child_admission;
+    let Ok(role) = env::var("SOLSTONE_TEST_JOURNAL_TOOL_ROLE") else {
+        return;
+    };
+    let journal = env::var_os("SOLSTONE_JOURNAL").unwrap();
+    if !matches!(role.as_str(), "unacknowledged" | "foreign") {
+        acknowledge_hosted_child_admission(Path::new(&journal)).unwrap();
+    }
+    if role == "helper" {
+        println!("journal-result");
+        return;
+    }
+    let helper = env::var("SOLSTONE_TEST_JOURNAL_TOOL_HELPER").unwrap();
+    let actual = run_with_timeout(&[helper], Path::new(&journal), Duration::from_secs(2)).unwrap();
+    if matches!(role.as_str(), "sealed" | "unacknowledged" | "foreign") {
+        assert!(
+            actual.is_error,
+            "inadmissible parent launched journal: {}",
+            actual.text
+        );
+    } else {
+        assert!(
+            !actual.is_error && actual.text.contains("journal-result"),
+            "{}",
+            actual.text
+        );
+    }
+}
+
+#[test]
+fn journal_tool_has_distinct_admission_and_cannot_launch_after_seal() {
+    use solstone_core_system::lifecycle::{
+        AdmissionAcknowledgement, AdmissionIdentity, AdmissionResult, AdmissionResultState,
+        HostedServiceKind, ParentLossLedger, acknowledge_parent_loss_admission,
+    };
+    use solstone_core_system::process::{
+        InspectResult, ProcessInstanceSource, SystemProcessInstanceSource,
+    };
+
+    for role in ["parent", "sealed", "unacknowledged", "foreign"] {
+        let temporary = tempfile::tempdir().unwrap();
+        let journal = temporary.path().join("journal-data");
+        fs::create_dir(&journal).unwrap();
+        let ledger = ParentLossLedger::open(&journal).unwrap();
+        let InspectResult::Present { instance, uid, .. } =
+            SystemProcessInstanceSource.inspect(std::process::id())
+        else {
+            panic!("fixture process identity unavailable");
+        };
+        let active = ledger
+            .reserve_generation(instance, [HostedServiceKind::Cortex])
+            .unwrap();
+        ledger.initialize_record(&active).unwrap();
+        ledger
+            .persist_coordinator_identity(active.generation, instance)
+            .unwrap();
+        ledger.mark_admitting(active.generation, instance).unwrap();
+        if role == "sealed" {
+            ledger.seal(active.generation, instance).unwrap();
+        }
+        if role == "foreign" {
+            acknowledge_parent_loss_admission(
+                &journal,
+                AdmissionIdentity {
+                    generation: active.generation,
+                    launch_id: "talent-parent".to_owned(),
+                    instance,
+                    uid,
+                    parent_launch_id: None,
+                },
+            )
+            .unwrap();
+        }
+        let executable = std::env::current_exe().unwrap();
+        let helper = write_journal_fixture(
+            temporary.path(),
+            &format!(
+                "export SOLSTONE_TEST_JOURNAL_TOOL_ROLE=helper\nexec {} --exact hosted_journal_tool_fixture --nocapture",
+                quote_fixture_path(&executable)
+            ),
+        );
+        let output = std::process::Command::new(&executable)
+            .args(["--exact", "hosted_journal_tool_fixture", "--nocapture"])
+            .env("SOLSTONE_TEST_JOURNAL_TOOL_ROLE", role)
+            .env("SOLSTONE_TEST_JOURNAL_TOOL_HELPER", helper)
+            .env("SOLSTONE_JOURNAL", &journal)
+            .env("SOL_PARENT_LOSS_GENERATION", active.generation.to_string())
+            .env("SOL_PARENT_LOSS_LAUNCH_ID", "talent-parent")
+            .env_remove("SOL_PARENT_LOSS_PARENT_LAUNCH_ID")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let admissions = ledger.generation_path(active.generation).join("admissions");
+        if role == "unacknowledged" {
+            assert!(!admissions.exists());
+            continue;
+        }
+        let children: Vec<_> = fs::read_dir(&admissions)
+            .unwrap()
+            .map(Result::unwrap)
+            .filter(|entry| entry.file_name() != "talent-parent")
+            .collect();
+        if role != "parent" {
+            assert!(children.is_empty());
+        } else {
+            let parent: AdmissionAcknowledgement = serde_json::from_slice(
+                &fs::read(admissions.join("talent-parent/acknowledgement.json")).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(children.len(), 1);
+            let child: AdmissionAcknowledgement = serde_json::from_slice(
+                &fs::read(children[0].path().join("acknowledgement.json")).unwrap(),
+            )
+            .unwrap();
+            let result: AdmissionResult =
+                serde_json::from_slice(&fs::read(children[0].path().join("result.json")).unwrap())
+                    .unwrap();
+            assert_eq!(
+                child.identity.parent_launch_id.as_deref(),
+                Some("talent-parent")
+            );
+            assert_ne!(child.identity.instance, parent.identity.instance);
+            assert_ne!(child.identity.launch_id, parent.identity.launch_id);
+            assert_eq!(result.identity.as_ref(), Some(&child.identity));
+            assert!(matches!(result.state, AdmissionResultState::Admitted));
+        }
+    }
+}

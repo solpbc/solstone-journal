@@ -1297,3 +1297,37 @@ fn archive_merge_directory_source_is_unsafe() {
     assert!(stderr.contains("SOURCE must be a regular file"), "{stderr}");
     assert_sentinel_untouched(&sentinel);
 }
+
+#[test]
+fn hosted_local_journal_entry_acknowledges_once_and_rejects_identity_reuse() {
+    let temp = TempDir::new("journal-local-admission");
+    let journal = temp.path.join("journal");
+    fs::create_dir(&journal).unwrap();
+    let invoke = || {
+        Command::new(bin())
+            .arg("--help")
+            .env("SOLSTONE_JOURNAL", &journal)
+            .env("SOL_PARENT_LOSS_GENERATION", "1")
+            .env("SOL_PARENT_LOSS_LAUNCH_ID", "journal-tool-local")
+            .env("SOL_PARENT_LOSS_PARENT_LAUNCH_ID", "talent-parent")
+            .output()
+            .unwrap()
+    };
+    let first = invoke();
+    assert!(
+        first.status.success(),
+        "{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let ack_path = journal.join(
+        "health/parent-loss/generations/1/admissions/journal-tool-local/acknowledgement.json",
+    );
+    let before = fs::read(&ack_path).expect("local entry must acknowledge before returning help");
+    let ack: Value = serde_json::from_slice(&before).unwrap();
+    assert_eq!(ack["identity"]["parent_launch_id"], "talent-parent");
+    assert_eq!(ack["identity"]["launch_id"], "journal-tool-local");
+    let second = invoke();
+    assert_eq!(second.status.code(), Some(70));
+    assert!(second.stdout.is_empty());
+    assert_eq!(fs::read(ack_path).unwrap(), before);
+}

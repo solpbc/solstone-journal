@@ -31,6 +31,7 @@ solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write.workspace = true
 uuid = { version = "1", features = ["v4"] }
 log.workspace = true
+tempfile = "3.24.0"
 
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["time"] }
@@ -40,7 +41,6 @@ solstone-core-distribution.workspace = true
 
 [dev-dependencies]
 socket2 = "0.6.5"
-tempfile = "3.24.0"
 rcgen.workspace = true
 rustls.workspace = true
 

@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use chrono::NaiveDate;
+use chrono::{Days, NaiveDate};
 use serde_json::{Map, Value};
 use solstone_core_format::segment::segment_start_and_end_seconds;
 use solstone_core_system_health::find_segment_dir;
@@ -24,6 +24,19 @@ pub(crate) fn build(journal: &Path, config: &Map<String, Value>) -> BTreeMap<Str
 
     context.insert("day".to_owned(), format_day(day));
     context.insert("day_YYYYMMDD".to_owned(), day.to_owned());
+    if config.get("schedule").and_then(Value::as_str) == Some("weekly") {
+        // The weekly orchestrator supplies the Sunday under review. Keep date
+        // arithmetic in the runtime so tool examples contain executable dates.
+        if let Some(end) = NaiveDate::parse_from_str(day, "%Y%m%d")
+            .ok()
+            .and_then(|start| start.checked_add_days(Days::new(6)))
+        {
+            context.insert(
+                "week_end_YYYYMMDD".to_owned(),
+                end.format("%Y%m%d").to_string(),
+            );
+        }
+    }
 
     let configured_stream = config
         .get("stream")
@@ -386,6 +399,21 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn weekly_window_ends_six_calendar_days_after_the_requested_start() {
+        let root = tempfile::tempdir().unwrap();
+        for (start, end) in [
+            ("20260830", "20260905"),
+            ("20231231", "20240106"),
+            ("20240225", "20240302"),
+        ] {
+            let config = json!({"day":start, "schedule":"weekly"});
+            let context = build(root.path(), config.as_object().unwrap());
+            assert_eq!(context["day_YYYYMMDD"], start);
+            assert_eq!(context["week_end_YYYYMMDD"], end);
+        }
+    }
 
     #[test]
     fn request_context_preserves_python_date_time_stream_and_duration_values() {

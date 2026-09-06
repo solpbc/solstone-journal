@@ -8,6 +8,7 @@ use chrono::NaiveDate;
 use rusqlite::{
     Connection, Error, ErrorCode, OpenFlags, OptionalExtension, params, params_from_iter,
 };
+use solstone_core_indexer_store::db::AUTHORED_CHAT_PATH_PREDICATE;
 
 use crate::compile::{CompileOutcome, compile_query};
 use crate::ladder::relaxed_plan;
@@ -20,8 +21,7 @@ use crate::types::{
 
 /// Execute one journal search.
 ///
-/// The index is opened read-only after a brief derived-row cleanup on the
-/// shared access path.
+/// Reads committed index rows without acquiring a writer lock.
 pub fn search(
     journal: &Path,
     request: &SearchRequest,
@@ -40,7 +40,7 @@ pub fn search(
             degraded: None,
         });
     }
-    let mut connection = open_read_only(journal)?;
+    let mut connection = open_index_reader(journal)?;
     search_on_connection(&mut connection, request, reference_date, compilation)
 }
 
@@ -54,7 +54,7 @@ pub fn search_counts(
     if matches!(compilation.outcome, CompileOutcome::NoTokenizableTerm) {
         return Ok(CountsResponse::default());
     }
-    let mut connection = open_read_only(journal)?;
+    let mut connection = open_index_reader(journal)?;
     let (plan, relaxed) = resolve_plan(&mut connection, request, reference_date, compilation)?;
     let mut counts = connection.aggregate_counts(&plan, relaxed)?;
     counts.degraded = connection.index_degraded()?;
@@ -63,19 +63,19 @@ pub fn search_counts(
 
 /// Return whether one exact journal path and chunk index are represented in the index.
 pub fn hit_at(journal: &Path, path: &str, idx: i64) -> Result<bool, IndexAccessError> {
-    let mut connection = open_read_only(journal)?;
+    let mut connection = open_index_reader(journal)?;
     connection.hit_at(path, idx)
 }
 
 /// Return the distinct nonempty indexed agents. Search never calls this query.
 pub fn agents(journal: &Path) -> Result<Vec<String>, IndexAccessError> {
-    let mut connection = open_read_only(journal)?;
+    let mut connection = open_index_reader(journal)?;
     connection.agents()
 }
 
 /// Return the dated span of a nonempty index.
 pub fn coverage(journal: &Path) -> Result<CoverageResponse, IndexAccessError> {
-    let mut connection = open_read_only(journal)?;
+    let mut connection = open_index_reader(journal)?;
     let mut coverage = connection.coverage()?;
     coverage.degraded = connection.index_degraded()?;
     Ok(coverage)
@@ -83,7 +83,7 @@ pub fn coverage(journal: &Path) -> Result<CoverageResponse, IndexAccessError> {
 
 /// Return the canonical entity IDs represented by indexed entity-search rows.
 pub fn indexed_entity_ids(journal: &Path) -> Result<BTreeSet<String>, IndexAccessError> {
-    let mut connection = open_read_only(journal)?;
+    let mut connection = open_index_reader(journal)?;
     connection.indexed_entity_ids()
 }
 
@@ -160,6 +160,7 @@ pub(crate) fn plan_from_outcome(
             has_live_match_expression: false,
         },
     };
+    plan.where_clause = visible_rows(&plan.where_clause);
     append_filters(&mut plan, &predicate);
     plan
 }
@@ -224,23 +225,8 @@ pub(crate) struct QueryConnection {
     agents_calls: usize,
 }
 
-fn open_read_only(journal: &Path) -> Result<QueryConnection, IndexAccessError> {
-    let path = solstone_core_indexer_store::db::db_path(journal);
-    if !path.is_file() {
-        return Err(IndexAccessError::Absent { path });
-    }
-    solstone_core_indexer_store::db::prune_authored_chat_paths(journal).map_err(
-        |error| match error {
-            solstone_core_indexer_store::StoreError::Sql(sql_error) => {
-                classify_sql_error(path.clone(), sql_error)
-            }
-            other => IndexAccessError::Unreadable {
-                path: path.clone(),
-                detail: other.to_string(),
-            },
-        },
-    )?;
-    open_index_reader(journal)
+fn visible_rows(clause: &str) -> String {
+    format!("{clause} AND NOT ({AUTHORED_CHAT_PATH_PREDICATE})")
 }
 
 fn open_index_reader(journal: &Path) -> Result<QueryConnection, IndexAccessError> {
@@ -281,11 +267,12 @@ pub fn read_indexed_entry(
     let found: Option<(i64, Option<String>)> = reader
         .connection
         .query_row(
-            "SELECT length(CAST(content AS BLOB)),
+            &format!(
+                "SELECT length(CAST(content AS BLOB)),
                 CASE WHEN length(CAST(content AS BLOB)) <= ?4 THEN content ELSE NULL END
-         FROM chunks WHERE rowid=?1 AND path=?2 AND idx=?3
-           AND NOT (path LIKE '________/chat/%/chat.jsonl'
-                    OR path LIKE 'chronicle/________/chat/%/chat.jsonl') LIMIT 1",
+         FROM chunks WHERE {} LIMIT 1",
+                visible_rows("rowid=?1 AND path=?2 AND idx=?3")
+            ),
             params![
                 row_id,
                 path,
@@ -332,7 +319,11 @@ impl QueryConnection {
         }
         let found: Option<i64> = self
             .connection
-            .query_row("SELECT 1 FROM chunks LIMIT 1", [], |row| row.get(0))
+            .query_row(
+                &format!("SELECT 1 FROM chunks WHERE {} LIMIT 1", visible_rows("1=1")),
+                [],
+                |row| row.get(0),
+            )
             .optional()
             .map_err(|error| self.classify(error))?;
         if found.is_none() {
@@ -450,7 +441,10 @@ impl QueryConnection {
         let found: Option<i64> = self
             .connection
             .query_row(
-                "SELECT 1 FROM chunks WHERE path=?1 AND idx=?2 LIMIT 1",
+                &format!(
+                    "SELECT 1 FROM chunks WHERE {} LIMIT 1",
+                    visible_rows("path=?1 AND idx=?2")
+                ),
                 params![path, idx],
                 |row| row.get(0),
             )
@@ -509,10 +503,10 @@ impl QueryConnection {
         }
         let mut statement = self
             .connection
-            .prepare(
-                "SELECT DISTINCT agent FROM chunks \
-                 WHERE agent IS NOT NULL AND agent != '' ORDER BY agent ASC",
-            )
+            .prepare(&format!(
+                "SELECT DISTINCT agent FROM chunks WHERE {} ORDER BY agent ASC",
+                visible_rows("agent IS NOT NULL AND agent != ''")
+            ))
             .map_err(|error| self.classify(error))?;
         statement
             .query_map([], |row| row.get::<_, String>(0))
@@ -546,7 +540,10 @@ impl QueryConnection {
         let (start, end): (Option<String>, Option<String>) = self
             .connection
             .query_row(
-                "SELECT MIN(day), MAX(day) FROM chunks WHERE day != ''",
+                &format!(
+                    "SELECT MIN(day), MAX(day) FROM chunks WHERE {}",
+                    visible_rows("day != ''")
+                ),
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
