@@ -5471,7 +5471,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "160",
+            "Content-Length": "168",
             "Content-Type": "application/json"
           },
           "status": 410,
@@ -5492,7 +5492,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "160",
+            "Content-Length": "168",
             "Content-Type": "application/json"
           },
           "status": 410,
