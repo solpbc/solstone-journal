@@ -563,6 +563,14 @@ async function testCase(name, fn) {
     assert.strictEqual(Boolean(workRow.querySelector('.facet-list-muted')), false);
   });
 
+  await testCase('G3-01 unconditional locality footer is removed', async () => {
+    const harness = createHarness();
+    assert.ok(
+      !harness.document.body.textContent.includes('nothing leaves unless you send it'),
+      'settings no longer renders the static custody claim — that belongs to backup/network, not settings'
+    );
+  });
+
   process.stdout.write('DOM CASES: ' + cases + ' passed\n', () => process.exit(0));
 })().catch((error) => {
   console.error(error.stack || error);
