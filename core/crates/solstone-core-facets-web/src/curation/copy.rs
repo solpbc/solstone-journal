@@ -30,10 +30,10 @@ const COPY: [(&str, &str); 52] = [
     ("CUR_ENTITY_FACETS_LABEL", "(in {facets})"),
     (
         // G2-40: the lede a large duplicate-entity group opens on, framed as
-        // what clearing the visible batch gets the owner rather than the
+        // what merging the visible batch gets the owner rather than the
         // full count owed.
         "CUR_ENTITY_GROUP_LEDE",
-        "these {count} pairs look alike. clearing them keeps your names straight.",
+        "these {count} pairs look alike. merging them keeps your names straight.",
     ),
     ("CUR_ENTITY_SHOW_REST_ACTION", "show the rest ({count})"),
     (

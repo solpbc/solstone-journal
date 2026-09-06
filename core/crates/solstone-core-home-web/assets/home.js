@@ -560,8 +560,21 @@
   // ladder's: JournalFormat.day for a day, JournalFormat.time for a stamp
   // inside today. The connections shelf used to spell its own lowercase
   // 'sep 5' beside the activity list's 'Sep 6, 3:38 PM'. G1-105.
+  // `JournalFormat.day` capitalises its relative tokens ("Yesterday",
+  // "Wednesday") because it usually opens a line or a cell. Mid-sentence they
+  // have to be lowercase; an absolute day ("Thu Sep 3") keeps its capitals.
+  const RELATIVE_DAY_WORDS = new Set([
+    'today', 'yesterday', 'tomorrow',
+    'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'
+  ]);
+
   function formatConnectionDay(day) {
     return window.JournalFormat.day(day);
+  }
+
+  function midSentenceDay(day) {
+    const text = String(day === null || day === undefined ? '' : day);
+    return RELATIVE_DAY_WORDS.has(text.toLowerCase()) ? text.toLowerCase() : text;
   }
 
   function connectionEntityHref(entityId) {
@@ -595,7 +608,7 @@
     const count = Number(neighbor.count || 0);
     const moments = count === 1 ? '1 moment' : count.toLocaleString('en-US') + ' moments';
     const day = formatConnectionDay(neighbor.last_seen);
-    return day ? moments + ' · most recently ' + day : moments;
+    return day ? moments + ' · most recently ' + midSentenceDay(day) : moments;
   }
 
   // The evidence line repeated the name back under itself on every row but one,
@@ -714,7 +727,7 @@
     if (typeof connections.horizon_note === 'string' && connections.horizon_note
         && typeof connections.horizon_day === 'string' && connections.horizon_day) {
       html += '<div class="pulse-connections-horizon">'
-        + esc(connections.horizon_note.replace('{day}', formatConnectionDay(connections.horizon_day)))
+        + esc(connections.horizon_note.replace('{day}', midSentenceDay(formatConnectionDay(connections.horizon_day))))
         + ' '
         + moreLink
         + '</div>';

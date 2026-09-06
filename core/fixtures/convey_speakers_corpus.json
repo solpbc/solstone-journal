@@ -66,7 +66,7 @@
           "SPK_OVERVIEW_COHESION_UNMEASURED": "not measured yet",
           "SPK_OVERVIEW_KNOWN_VOICES_EMPTY": "no one else's voice has been learned yet. once the same voice shows up across a few segments, that person will appear here. you can also tag voices manually in any segment.",
           "SPK_OVERVIEW_KNOWN_VOICES_HEADER": "known voices",
-          "SPK_OVERVIEW_KNOWN_VOICES_QUALITY_HINT": "the word beside each voice shows how confidently it's recognised, not how much of it there is.",
+          "SPK_OVERVIEW_KNOWN_VOICES_QUALITY_HINT": "the word beside each voice shows how confidently it's recognized, not how much of it there is.",
           "SPK_OVERVIEW_KNOWN_VOICES_SORTS": [
             "recent",
             "most samples",

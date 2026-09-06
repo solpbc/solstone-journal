@@ -683,7 +683,7 @@ async fn forget_device(
     if fingerprint.is_empty() {
         return refusal(
             "missing_required_field",
-            "a device fingerprint is required",
+            "that device couldn't be identified.",
             StatusCode::BAD_REQUEST,
         );
     }
@@ -714,7 +714,7 @@ async fn forget_device(
     if is_this_host(&entry, &host_label) {
         return refusal(
             "device_is_this_host",
-            "this is the computer your journal runs on. it can't be forgotten from here.",
+            "this is the computer your journal lives on. it can't be forgotten from here.",
             StatusCode::CONFLICT,
         );
     }

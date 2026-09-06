@@ -222,7 +222,7 @@ async fn replay_record(router: Router, root: &Path, expected: &Value) {
             if let Some(lede) = copy.get_mut("CUR_ENTITY_GROUP_LEDE") {
                 assert_eq!(
                     lede,
-                    "these {count} pairs look alike. clearing them keeps your names straight."
+                    "these {count} pairs look alike. merging them keeps your names straight."
                 );
                 *lede = Value::String(
                     "these {count} names look alike. clearing them keeps your names straight."

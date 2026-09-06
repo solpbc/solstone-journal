@@ -8,6 +8,18 @@ const Dashboard = (function() {
   const EXPECTED_SCHEMA_VERSION = 8;
   const DISPLAY_LABELS = { transcript: 'audio', percept: 'screen' };
 
+  // Activity slugs are lowercase storage words, but 'ai' is an initialism the
+  // owner reads as AI, not as a word. Only tokens listed here are re-cased;
+  // everything else stays lowercase sentence case.
+  const ACTIVITY_WORD_LABELS = { ai: 'AI' };
+
+  function activityTitle(activityId) {
+    return String(activityId)
+      .split('_')
+      .map(word => ACTIVITY_WORD_LABELS[word] || word)
+      .join(' ');
+  }
+
   // Warm replacement for the prior cool blue (#2171b5) used by the input and
   // audio series — gold, from --gold in tokens.css (X-12).
   const WARM_INPUT_COLOR = '#FFCF33';
@@ -1025,7 +1037,7 @@ const Dashboard = (function() {
     // of meta rather than falling back to the raw key (G2-42). There's no
     // server-supplied title list for activities, so the fallback title is
     // the slug with underscores turned into spaces — enough to turn
-    // 'ai_conversation' into 'ai conversation' without inventing a name.
+    // 'ai_conversation' into 'AI conversation' without inventing a name.
     const activityCounts = stats.talents.counts_by_day || {};
     const activityMeta = {
       emptyIcon: window.ConveyIcons.svg('zap'),
@@ -1035,7 +1047,7 @@ const Dashboard = (function() {
     Object.values(activityCounts).forEach(dayCounts => {
       Object.keys(dayCounts || {}).forEach(activityId => {
         if (!activityMeta[activityId]) {
-          activityMeta[activityId] = {title: activityId.replace(/_/g, ' ')};
+          activityMeta[activityId] = {title: activityTitle(activityId)};
         }
       });
     });
