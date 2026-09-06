@@ -14,13 +14,27 @@
   margin-bottom: 1.5rem;
 }
 
+.news-back {
+  margin: 0 0 0.6rem;
+}
+
+.news-back-link {
+  color: var(--orange-text-aa, #a15f17);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.news-back-link:hover {
+  color: var(--orange-ink);
+}
+
 .news-kicker {
   margin: 0 0 0.35rem;
   font-size: 0.85rem;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #1d4ed8;
+  color: var(--orange-text-aa, #a15f17);
 }
 
 .news-title {
@@ -62,8 +76,8 @@
 
 .news-button:hover,
 .news-link-button:hover {
-  background: #dbeafe;
-  border-color: #2563eb;
+  background: var(--orange-wash);
+  border-color: var(--orange-ink);
 }
 
 .news-body,
@@ -95,18 +109,18 @@
 .news-body blockquote {
   margin: 1.5rem 0;
   padding-left: 1rem;
-  border-left: 3px solid #2563eb;
+  border-left: 3px solid var(--orange);
   color: #6b7280;
 }
 
 .news-body a,
 .news-index a {
-  color: #1d4ed8;
+  color: var(--orange-text-aa, #a15f17);
 }
 
 .news-body a:hover,
 .news-index a:hover {
-  color: #1e3a8a;
+  color: var(--orange-ink);
 }
 
 .news-populated-framing {
@@ -130,14 +144,14 @@
   align-items: center;
   padding: 1rem 1.1rem;
   border-radius: 14px;
-  background: #eff6ff;
-  border: 1px solid #93c5fd;
+  background: var(--cream-bright);
+  border: 1px solid var(--hairline);
   text-decoration: none;
   color: #1f2937;
 }
 
 .news-index-link:hover {
-  background: #dbeafe;
+  background: var(--orange-wash);
 }
 
 .news-index-facet {
@@ -208,9 +222,9 @@
   padding: 0.5rem 0.875rem;
   margin: 0 0 1rem;
   border-radius: 0.5rem;
-  background: #eff6ff;
-  border: 1px solid #93c5fd;
-  color: #1e3a8a;
+  background: var(--cream-bright);
+  border: 1px solid var(--hairline);
+  color: var(--ink-soft);
   font-size: 0.9rem;
   font-style: italic;
 }
@@ -292,6 +306,7 @@
       const day = decodePart(parts[4]);
       return {
         mode: 'detail',
+        day,
         url: `/app/news/api/${encodeURIComponent(facet)}/${encodeURIComponent(day)}`
       };
     }
@@ -431,15 +446,21 @@
     window.DayGrid.legend(legend, {unit, data});
   }
 
+  function returnDay() {
+    return new URLSearchParams(window.location.search).get('day');
+  }
+
   function renderIndex(payload) {
     const copy = payload.copy || {};
     const newsletters = payload.newsletters || [];
     const groups = new Map();
     newsletters.forEach(item => { if (!groups.has(item.day)) groups.set(item.day, []); groups.get(item.day).push(item); });
     const days = [...groups.keys()].sort().reverse();
-    const groupHtml = day => `<section class="news-day-group"><h3>${escapeHtml(groups.get(day)[0].label)}</h3><ul class="news-index-list">${groups.get(day).map(item => `<li><a class="news-index-link" href="${escapeHtml(item.url)}"><span class="news-index-facet">${escapeHtml(item.facet)}</span><span>read newsletter →</span></a></li>`).join('')}</ul></section>`;
+    const groupHtml = day => `<section class="news-day-group" id="news-day-${escapeHtml(day)}"><h3>${escapeHtml(groups.get(day)[0].label)}</h3><ul class="news-index-list">${groups.get(day).map(item => `<li><a class="news-index-link" href="${escapeHtml(item.url)}"><span class="news-index-facet">${escapeHtml(item.facet)}</span><span>read newsletter →</span></a></li>`).join('')}</ul></section>`;
+    const targetDay = returnDay();
+    const earlierOpen = !!targetDay && days.slice(1).includes(targetDay);
     const listHtml = newsletters.length
-      ? `<h3>latest newsletters</h3>${groupHtml(days[0])}${days.length > 1 ? `<details class="news-earlier"><summary>earlier newsletters</summary>${days.slice(1).map(groupHtml).join('')}</details>` : ''}`
+      ? `<h3>latest newsletters</h3>${groupHtml(days[0])}${days.length > 1 ? `<details class="news-earlier"${earlierOpen ? ' open' : ''}><summary>earlier newsletters</summary>${days.slice(1).map(groupHtml).join('')}</details>` : ''}`
       : (window.SurfaceState
         ? window.SurfaceState.empty({
             icon: window.ConveyIcons.svg('mailbox'),
@@ -471,6 +492,9 @@
         <div class="news-grid-legend" id="newsGridLegend"></div>
       </section>
     `;
+    if (targetDay) {
+      document.getElementById(`news-day-${targetDay}`)?.scrollIntoView({block: 'start'});
+    }
     renderNewsGrid(copy);
   }
 
@@ -524,6 +548,10 @@
     `;
   }
 
+  function newsIndexHref(day) {
+    return day ? `/app/news/?day=${encodeURIComponent(day)}` : '/app/news/';
+  }
+
   function renderDetail(payload) {
     if (payload.empty) {
       renderDetailEmpty(payload);
@@ -532,6 +560,7 @@
     content.innerHTML = `
       <header class="news-header">
         <div>
+          <nav class="news-back" aria-label="Newsletter views"><a class="news-back-link" href="${escapeHtml(newsIndexHref(initialContext.day))}">&larr; newsletters</a></nav>
           <p class="news-kicker">${escapeHtml(payload.kicker)}</p>
           <h2 class="news-title">${escapeHtml(payload.facet)} · ${escapeHtml(payload.date_label)}</h2>
           <p class="news-subtitle">${escapeHtml(payload.subtitle)}</p>
