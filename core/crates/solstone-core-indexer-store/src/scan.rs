@@ -2042,10 +2042,20 @@ mod tests {
             "{not json",
         );
 
+        write(
+            &root,
+            "chronicle/20260430/default/083259_draft/screen.jsonl",
+            "{}",
+        );
+        write(
+            &root,
+            "chronicle/20260430/default/090000_300_extra/talents/documents.json",
+            "{}",
+        );
         let report = rebuild_edges(&root).expect("rebuild invalid and failed edges");
-        assert_eq!(report.files, 2);
+        assert_eq!(report.files, 4);
         assert_eq!(report.rows, 0);
-        assert_eq!(report.skipped, 1);
+        assert_eq!(report.skipped, 3);
         assert_eq!(report.failed, 1);
         assert!(report.warnings.iter().any(|warning| {
             warning.starts_with(

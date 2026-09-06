@@ -160,7 +160,7 @@ pub fn apply_story(
             if group == "decisions"
                 && row
                     .get("counterparty")
-                    .is_some_and(|item| !item.is_string())
+                    .is_some_and(|item| !item.is_string() && !item.is_null())
             {
                 log::warn!("story hook: skipping decision: invalid counterparty");
                 continue;
@@ -249,6 +249,69 @@ mod tests {
     use crate::contract::{CommitDisposition, STORY};
     use crate::{ExecutionContext, generate_and_write};
     use std::fs;
+    #[test]
+    fn decision_counterparty_contract_survives_the_story_writer() {
+        let root = tempfile::tempdir().unwrap();
+        let activity_path = root.path().join("facets/work/activities/20260101.jsonl");
+        fs::create_dir_all(activity_path.parent().unwrap()).unwrap();
+        fs::write(&activity_path, "{\"id\":\"activity-1\"}\n").unwrap();
+        let prepared = PreparedTalent {
+            name: "conversation".into(),
+            config: Map::from_iter([
+                ("facet".into(), json!("work")),
+                ("day".into(), json!("20260101")),
+                ("activity".into(), json!({"id":"activity-1"})),
+            ]),
+        };
+        let mut decisions = vec![json!({"owner":"Owner","action":"absent","context":"meeting"})];
+        for (action, counterparty) in [
+            ("null", Value::Null),
+            ("empty", json!("")),
+            ("named", json!("Someone")),
+            ("number", json!(42)),
+            ("object", json!({})),
+            ("array", json!([])),
+        ] {
+            decisions.push(json!({"owner":"Owner", "action":action, "context":"meeting", "counterparty":counterparty}));
+        }
+        let output = json!({"body":"A completed conversation.","topics":["work"],"confidence":0.9,
+            "commitments":[],"closures":[],"relations":[],"decisions":decisions})
+        .to_string();
+        let plan = commit(
+            parse(&output, &prepared, &PrePostState::None).unwrap(),
+            &prepared,
+            &PrePostState::None,
+        )
+        .unwrap();
+        crate::writers::apply(
+            plan,
+            &ExecutionContext {
+                journal: root.path().into(),
+            },
+        )
+        .unwrap();
+        let record = solstone_core_facets::get_activity_record(
+            root.path(),
+            "work",
+            "20260101",
+            "activity-1",
+        )
+        .unwrap()
+        .unwrap();
+        let decisions = record["decisions"].as_array().unwrap();
+        assert_eq!(
+            decisions
+                .iter()
+                .map(|row| row["action"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["absent", "null", "empty", "named"]
+        );
+        assert!(decisions[1]["counterparty"].is_null());
+        for row in &decisions[..3] {
+            assert!(row["counterparty_entity_id"].is_null());
+        }
+    }
+
     #[test]
     fn criterion_22_story_stage_uses_plain_resolution_for_written_id() {
         let root = tempfile::tempdir().unwrap();

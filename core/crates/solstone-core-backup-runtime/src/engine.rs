@@ -25,7 +25,8 @@ use crate::runner::{ToolRunner, reason_for_returncode, run_restic, select_summar
 pub const ARCHIVE_TAG: &str = "solstone-archive";
 pub const ARCHIVE_BACKUP_TIMEOUT_SECONDS: u64 = 6 * 60 * 60;
 pub const ARCHIVE_LS_TIMEOUT_SECONDS: u64 = 30 * 60;
-pub const ARCHIVE_RETRY_LOCK: &str = "30m";
+// Repository contention is coordinated by Restic, within each operation’s deadline.
+const REPOSITORY_RETRY_LOCK: &str = "30m";
 pub const BACKUP_TIMEOUT_SECONDS: u64 = 6 * 60 * 60;
 pub const INITIAL_BACKUP_TIMEOUT_SECONDS: u64 = 48 * 60 * 60;
 pub const PRUNE_TIMEOUT_SECONDS: u64 = 2 * 60 * 60;
@@ -520,7 +521,14 @@ fn restic(
     let restic_path = services.restic_path()?;
     let mut full = Vec::new();
     full.append(&mut runtime.global_options.clone());
+    let waits_for_repository = matches!(
+        args.first().map(String::as_str),
+        Some("backup" | "forget" | "check")
+    );
     full.append(&mut args);
+    if waits_for_repository {
+        full.extend(["--retry-lock".into(), REPOSITORY_RETRY_LOCK.into()]);
+    }
     run_restic(
         services.runner,
         &full,
@@ -1279,11 +1287,7 @@ pub fn run_archive_backup(
         }
     };
     unlock(services, &runtime);
-    let mut args = vec![
-        "--retry-lock".into(),
-        ARCHIVE_RETRY_LOCK.into(),
-        "backup".into(),
-    ];
+    let mut args = vec!["backup".into()];
     args.extend(paths.iter().map(|path| path.display().to_string()));
     args.extend(["--tag".into(), ARCHIVE_TAG.into()]);
     match restic(
@@ -1564,7 +1568,7 @@ mod tests {
     }
     fn json_backup_args(resolved_journal: &Path) -> Vec<String> {
         let mut args = backup_args(resolved_journal);
-        args.push("--json".into());
+        args.extend(["--retry-lock".into(), "30m".into(), "--json".into()]);
         args
     }
     fn configure_journal(journal: &Path) {
@@ -1660,6 +1664,74 @@ mod tests {
             Err(result) => result,
         }
     }
+    #[test]
+    fn repository_operations_wait_for_native_locks_within_existing_deadlines() {
+        let journal = configured_journal();
+        let runner = ObservedScript {
+            outputs: RefCell::new(VecDeque::from([
+                output(0, ""),
+                output(0, r#"{"message_type":"summary","snapshot_id":"snap"}"#),
+                output(0, ""),
+                output(0, ""),
+                output(0, ""),
+                output(0, ""),
+                output(0, r#"{"message_type":"summary","snapshot_id":"archive"}"#),
+            ])),
+            requests: RefCell::new(Vec::new()),
+            after_unlock: RefCell::new(None),
+        };
+        let services = services(&runner, &Http, &FixedClock, &Maintenance);
+        assert_eq!(
+            prepare(journal.path(), &FixedClock)
+                .unwrap()
+                .execute(&services)
+                .status,
+            "ok"
+        );
+        assert_eq!(run_prune(journal.path(), &services).status, "ok");
+        assert_eq!(
+            run_verification(journal.path(), &services, &FixedClock).status,
+            "ok"
+        );
+        assert_eq!(
+            run_archive_backup(journal.path(), &services, &[journal.path().join("archive")]).status,
+            "ok"
+        );
+        let requests = runner.requests.borrow();
+        assert_eq!(requests.len(), 7);
+        let mut operations = Vec::new();
+        for request in requests.iter() {
+            let waits: Vec<_> = request
+                .argv
+                .windows(2)
+                .filter(|args| args[0] == "--retry-lock")
+                .collect();
+            if request.argv.iter().any(|arg| arg == "unlock") {
+                assert!(waits.is_empty());
+                assert_eq!(
+                    request.timeout,
+                    Some(Duration::from_secs(UNLOCK_TIMEOUT_SECONDS))
+                );
+                continue;
+            }
+            assert_eq!(waits.len(), 1, "{:?}", request.argv);
+            assert_eq!(waits[0][1], "30m");
+            let (operation, timeout) = if request.argv.iter().any(|arg| arg == "forget") {
+                ("prune", PRUNE_TIMEOUT_SECONDS)
+            } else if request.argv.iter().any(|arg| arg == "check") {
+                ("verify", VERIFY_TIMEOUT_SECONDS)
+            } else if request.argv.iter().any(|arg| arg == "--tag") {
+                ("archive", ARCHIVE_BACKUP_TIMEOUT_SECONDS)
+            } else {
+                ("backup", INITIAL_BACKUP_TIMEOUT_SECONDS)
+            };
+            assert_eq!(request.timeout, Some(Duration::from_secs(timeout)));
+            operations.push(operation);
+        }
+        assert_eq!(operations, ["backup", "prune", "verify", "archive"]);
+        assert!(runner.outputs.borrow().is_empty());
+    }
+
     #[test]
     fn excludes_are_exact_and_keep_durable_health() {
         assert!(!BACKUP_EXCLUDES.contains(&"health"));

@@ -45,7 +45,7 @@ pub(crate) fn backup_run_result(result: BackupResult) -> CliRun {
             result.error_reason.as_deref().unwrap_or("None")
         ),
     };
-    success(line)
+    routine_result(line, &result.status)
 }
 
 fn backup_prune(journal: &Path, services: &BackupServices<'_>) -> CliRun {
@@ -61,7 +61,7 @@ fn backup_prune_result(result: PruneResult) -> CliRun {
             result.error_reason.as_deref().unwrap_or("None")
         ),
     };
-    success(line)
+    routine_result(line, &result.status)
 }
 
 fn backup_verify(journal: &Path, services: &BackupServices<'_>) -> CliRun {
@@ -80,7 +80,7 @@ fn backup_verify_result(result: VerificationResult) -> CliRun {
             result.reason.as_deref().unwrap_or("None")
         ),
     };
-    success(line)
+    routine_result(line, &result.status)
 }
 
 fn backup_offload(args: &[String], journal: &Path, services: &BackupServices<'_>) -> CliRun {
@@ -91,6 +91,13 @@ fn backup_offload(args: &[String], journal: &Path, services: &BackupServices<'_>
     success(format_offload_result(&run_offload(
         journal, services, dry_run,
     )))
+}
+
+fn routine_result(line: String, status: &str) -> CliRun {
+    CliRun {
+        exit_code: i32::from(!matches!(status, "ok" | "skipped")),
+        ..success(line)
+    }
 }
 
 fn success(line: String) -> CliRun {
@@ -283,6 +290,33 @@ mod tests {
             .stdout,
             "backup verify: error reason=integrity_failed\n"
         );
+    }
+
+    #[test]
+    fn failed_backup_routines_report_failure_to_the_scheduler() {
+        let journal = configured_journal();
+        let http = UnusedHttp;
+        let clock = FixedClock;
+        let hooks = UnusedRestoreHooks;
+        for id in ["backup:run", "backup:prune", "backup:verify"] {
+            for code in [1, 11] {
+                let mut outputs = VecDeque::new();
+                if id != "backup:verify" {
+                    outputs.push_back(output(0, b""));
+                }
+                outputs.push_back(output(code, b""));
+                let runner = FixtureRunner(RefCell::new(outputs));
+                let result = run(
+                    id,
+                    &[],
+                    journal.path(),
+                    &services(&runner, &http, &clock, &hooks),
+                );
+                assert_eq!(result.exit_code, 1, "{id}: {}", result.stdout);
+                assert!(result.stdout.contains("error reason="));
+                assert!(runner.0.borrow().is_empty());
+            }
+        }
     }
 
     #[test]

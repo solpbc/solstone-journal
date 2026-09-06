@@ -181,7 +181,11 @@ fn format_backup_resolution_error(args: &[String], reason: &str) -> CliRun {
         }),
         _ => format!("backup: error reason={reason}"),
     };
-    backup_routine_line(line)
+    CliRun {
+        stdout: format!("{line}\n"),
+        stderr: String::new(),
+        exit_code: i32::from(id.as_deref() != Some("backup:offload")),
+    }
 }
 
 fn run_admitted_backup(
@@ -207,14 +211,6 @@ fn run_admitted_backup(
             }
         },
         Err(result) => bodies::backup::backup_run_result(result),
-    }
-}
-
-fn backup_routine_line(line: String) -> CliRun {
-    CliRun {
-        stdout: format!("{line}\n"),
-        stderr: String::new(),
-        exit_code: 0,
     }
 }
 
@@ -990,13 +986,13 @@ mod resolution_tests {
     fn assert_restic_unavailable_output(output: &CliRun) {
         assert_eq!(output.stdout, "backup: error reason=restic_unavailable\n");
         assert_eq!(output.stderr, "");
-        assert_eq!(output.exit_code, 0);
+        assert_eq!(output.exit_code, 1);
     }
 
     fn assert_rclone_unavailable_output(output: &CliRun) {
         assert_eq!(output.stdout, "backup: error reason=rclone_unavailable\n");
         assert_eq!(output.stderr, "");
-        assert_eq!(output.exit_code, 0);
+        assert_eq!(output.exit_code, 1);
     }
 
     fn assert_no_backup_execution(runner: &RecordingRunner) {
@@ -1092,7 +1088,7 @@ mod resolution_tests {
             &UnusedHttp,
             dirs(restic_dir.path(), None),
         );
-        assert_eq!(output.exit_code, 0);
+        assert_eq!(output.exit_code, 1);
         assert!(output.stdout.contains("restic_unavailable"));
         assert_eq!(
             last_backup_reason(journal.path()).as_deref(),
@@ -1731,7 +1727,7 @@ mod resolution_tests {
             "backup: error reason=journal_path_unresolved\n"
         );
         assert_eq!(output.stderr, "");
-        assert_eq!(output.exit_code, 0);
+        assert_eq!(output.exit_code, 1);
         assert!(runner.programs.borrow().is_empty());
         assert_alias_resolved_once();
         assert_eq!(journal_config_bytes(journal_b.path()), replacement_before);
@@ -1781,7 +1777,7 @@ mod resolution_tests {
 
         assert_eq!(output.stdout, "backup: error reason=broker_error\n");
         assert_eq!(output.stderr, "");
-        assert_eq!(output.exit_code, 0);
+        assert_eq!(output.exit_code, 1);
         assert!(runner.programs.borrow().is_empty());
         assert_alias_resolved_once();
         assert_eq!(journal_config_bytes(journal_a.path()), source_before);
@@ -1818,7 +1814,7 @@ mod resolution_tests {
             unresolved.stdout,
             "backup: error reason=journal_path_unresolved\n"
         );
-        assert_eq!(unresolved.exit_code, 0);
+        assert_eq!(unresolved.exit_code, 1);
         assert!(runner.programs.borrow().is_empty());
 
         let runner = RecordingRunner::new();
@@ -1838,7 +1834,7 @@ mod resolution_tests {
             ToolInstallDirs::default(),
         );
         assert_eq!(config_error.stdout, "backup: error reason=broker_error\n");
-        assert_eq!(config_error.exit_code, 0);
+        assert_eq!(config_error.exit_code, 1);
         assert!(runner.programs.borrow().is_empty());
     }
 
@@ -1972,7 +1968,7 @@ mod resolution_tests {
             &BrokerHttp::new(),
             dirs(restic_dir.path(), Some(rclone_dir.path())),
         );
-        assert_eq!(output.exit_code, 0);
+        assert_eq!(output.exit_code, 1);
         assert!(output.stdout.contains("rclone_unavailable"));
         assert_eq!(
             last_backup_reason(journal.path()).as_deref(),
@@ -2162,7 +2158,11 @@ mod resolution_tests {
                 };
                 assert_eq!(output.stdout, expected, "{terminal}/{entry_point}");
                 assert_eq!(output.stderr, "", "{terminal}/{entry_point}");
-                assert_eq!(output.exit_code, 0, "{terminal}/{entry_point}");
+                assert_eq!(
+                    output.exit_code,
+                    i32::from(terminal != "skip"),
+                    "{terminal}/{entry_point}"
+                );
                 assert!(
                     runner.programs.borrow().is_empty(),
                     "{terminal}/{entry_point}"

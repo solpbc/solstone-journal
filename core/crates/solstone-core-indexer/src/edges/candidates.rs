@@ -10,7 +10,7 @@ use chrono_tz::Tz;
 use serde_json::{Map, Value};
 use solstone_core_entity_matching::{EntityNameCandidate, find_matching_entity};
 
-use crate::edges::speaker::MentionCandidateIndex;
+use crate::edges::speaker::SpeakerEntityIndex;
 use crate::edges::{EdgeContext, EdgeError};
 
 type JsonObject = Map<String, Value>;
@@ -39,7 +39,7 @@ pub struct EdgeResolver {
     cache: BTreeMap<String, Vec<EntityNameCandidate>>,
     drops: EdgeDropCounter,
     owner_timezone: Option<Result<Tz, EdgeError>>,
-    mention_candidates: Option<MentionCandidateIndex>,
+    speaker_entities: Option<SpeakerEntityIndex>,
 }
 
 impl EdgeResolver {
@@ -49,7 +49,7 @@ impl EdgeResolver {
             cache: BTreeMap::new(),
             drops: EdgeDropCounter::default(),
             owner_timezone: None,
-            mention_candidates: None,
+            speaker_entities: None,
         }
     }
 
@@ -115,16 +115,14 @@ impl EdgeResolver {
         timezone
     }
 
-    pub(super) fn mention_candidates(&mut self) -> Result<&MentionCandidateIndex, EdgeError> {
-        if self.mention_candidates.is_none() {
-            let candidates = super::speaker::build_candidate_index(&self.journal)?;
-            self.mention_candidates = Some(candidates);
+    pub(super) fn speaker_entities(&mut self) -> Result<&SpeakerEntityIndex, EdgeError> {
+        if self.speaker_entities.is_none() {
+            let candidates = super::speaker::build_speaker_entity_index(&self.journal)?;
+            self.speaker_entities = Some(candidates);
         }
-        match self.mention_candidates.as_ref() {
+        match self.speaker_entities.as_ref() {
             Some(candidates) => Ok(candidates),
-            None => Err(EdgeError::Io(
-                "speaker mention candidate cache missing".to_string(),
-            )),
+            None => Err(EdgeError::Io("speaker entity cache missing".to_string())),
         }
     }
 }

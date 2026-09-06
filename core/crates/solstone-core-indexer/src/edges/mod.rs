@@ -245,7 +245,16 @@ pub fn extract_file_edges(
             warnings: Vec::new(),
         });
     };
-    if let Some(segment) = segment_key(rel)
+    // Day-rooted edge sources have an exact day/origin/segment shape. Validate
+    // the whole segment component: searching for a numeric substring misses
+    // unfinished drafts and accepts valid-looking prefixes of malformed names.
+    let segment = match kind {
+        EdgeSourceKind::Screen | EdgeSourceKind::Document | EdgeSourceKind::Speaker => {
+            rel.replace('\\', "/").split('/').nth(2).map(str::to_owned)
+        }
+        _ => segment_key(rel),
+    };
+    if let Some(segment) = segment
         && segment_parse(&segment).is_none()
     {
         return Ok(EdgeFileRows {

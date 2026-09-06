@@ -24,7 +24,9 @@ struct MentionVariant {
     chars: Vec<char>,
 }
 
-pub(super) struct MentionCandidateIndex {
+/// Immutable entity view for one edge scan; a new resolver observes entity changes.
+pub(super) struct SpeakerEntityIndex {
+    admissible_speakers: BTreeSet<String>,
     candidates_by_key: BTreeMap<String, MentionCandidate>,
     variants: Vec<MentionVariant>,
     buckets: BTreeMap<char, Vec<usize>>,
@@ -63,17 +65,12 @@ pub(crate) fn extract_speaker_edges(
         });
     }
 
-    let entities = load_journal_entities(journal)?;
+    let ts = segment_start_ts_ms(&context.day, &segment, resolver.owner_timezone()?)?;
+    let entities = resolver.speaker_entities()?;
     let speaker_ids = raw_speaker_ids
         .into_iter()
-        .filter(|entity_id| {
-            entities
-                .iter()
-                .find(|(id, _)| id == entity_id)
-                .is_some_and(|(_, entity)| is_admissible_speaker_entity(entity))
-        })
+        .filter(|entity_id| entities.admissible_speakers.contains(entity_id))
         .collect::<BTreeSet<_>>();
-    let ts = segment_start_ts_ms(&context.day, &segment, resolver.owner_timezone()?)?;
     let mut rows = spoke_with_rows(&speaker_ids, context, &composite_id, ts);
     let mention_labels = valid_label_records(labels);
     if mention_labels.is_empty() {
@@ -101,11 +98,10 @@ pub(crate) fn extract_speaker_edges(
         return Ok(SpeakerExtraction { rows, warnings });
     }
 
-    let candidates = resolver.mention_candidates()?;
     rows.extend(mentioned_rows(
         &mention_labels,
         &transcript_texts,
-        candidates,
+        entities,
         context,
         &composite_id,
         ts,
@@ -113,10 +109,14 @@ pub(crate) fn extract_speaker_edges(
     Ok(SpeakerExtraction { rows, warnings })
 }
 
-pub(super) fn build_candidate_index(journal: &Path) -> Result<MentionCandidateIndex, EdgeError> {
+pub(super) fn build_speaker_entity_index(journal: &Path) -> Result<SpeakerEntityIndex, EdgeError> {
+    let mut admissible_speakers = BTreeSet::new();
     let mut candidates_by_key = BTreeMap::new();
     let mut ambiguous = BTreeSet::new();
     for (entity_id, entity) in load_journal_entities(journal)? {
+        if is_admissible_speaker_entity(&entity) {
+            admissible_speakers.insert(entity_id.clone());
+        }
         if json_truthy(entity.get("blocked")) {
             continue;
         }
@@ -178,7 +178,8 @@ pub(super) fn build_candidate_index(journal: &Path) -> Result<MentionCandidateIn
             .or_default()
             .push(index);
     }
-    Ok(MentionCandidateIndex {
+    Ok(SpeakerEntityIndex {
+        admissible_speakers,
         candidates_by_key,
         variants,
         buckets,
@@ -377,7 +378,7 @@ fn load_transcript_texts(
 fn mentioned_rows(
     labels: &[LabelRecord],
     transcript_texts: &BTreeMap<i64, String>,
-    candidates: &MentionCandidateIndex,
+    candidates: &SpeakerEntityIndex,
     context: &EdgeContext,
     composite_id: &str,
     ts: i64,
@@ -431,7 +432,7 @@ fn mentioned_rows(
     rows
 }
 
-impl MentionCandidateIndex {
+impl SpeakerEntityIndex {
     fn candidates_in_text(&self, text: &str) -> Vec<&MentionCandidate> {
         let mut matches = Vec::new();
         let mut index = 0;
@@ -739,7 +740,7 @@ mod tests {
             json!({"name":"Blocked Target","blocked":true}),
         );
 
-        let index = build_candidate_index(&root).expect("build speaker candidate index");
+        let index = build_speaker_entity_index(&root).expect("build speaker candidate index");
         let matches = index
             .candidates_in_text("Project Zephyr met Case Twin and Blocked Target.")
             .iter()
@@ -807,7 +808,8 @@ mod tests {
         buckets.insert('a', vec![0, 2]);
         buckets.insert('p', vec![1]);
         buckets.insert('i', vec![3]);
-        let index = MentionCandidateIndex {
+        let index = SpeakerEntityIndex {
+            admissible_speakers: BTreeSet::new(),
             candidates_by_key: candidates,
             variants,
             buckets,
@@ -940,6 +942,43 @@ mod tests {
             warnings,
             vec!["speaker edge transcript duplicate sentence_id 3 for 20260808/default/120000_300"]
         );
+    }
+
+    #[test]
+    fn speaker_entity_snapshot_is_consistent_within_a_scan_and_refreshes_next_scan() {
+        let root = temp_root("speaker-snapshot");
+        write_entity(&root, "one", json!({"name":"One", "type":"Person"}));
+        write_entity(&root, "two", json!({"name":"Two", "type":"Person"}));
+        let context = EdgeContext {
+            path: "20260808/default/120000_300/talents/speaker_labels.json".into(),
+            day: "20260808".into(),
+            facet: String::new(),
+        };
+        // No sentence IDs: exercise speaker admission without mention extraction.
+        let payload = json!({"labels":[{"speaker":"one"},{"speaker":"two"}]});
+        let extract = |resolver: &mut EdgeResolver| {
+            extract_speaker_edges(payload.as_object().unwrap(), &context, &root, resolver)
+                .unwrap()
+                .rows
+        };
+        let mut scan = EdgeResolver::new(&root);
+        let first = extract(&mut scan);
+        assert_eq!(first.len(), 1);
+        write_entity(
+            &root,
+            "two",
+            json!({"name":"Two", "type":"Person", "blocked":true}),
+        );
+        assert_eq!(
+            extract(&mut scan),
+            first,
+            "one scan must use one speaker-entity view"
+        );
+        assert!(
+            extract(&mut EdgeResolver::new(&root)).is_empty(),
+            "a new scan must observe the block"
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
