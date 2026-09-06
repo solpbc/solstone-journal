@@ -818,7 +818,7 @@
             "SPK_OVERVIEW_OWNER_PROGRESS_UNKNOWN": "learning progress unavailable",
             "SPK_OVERVIEW_OWNER_REFRESHED_PREFIX": "refreshed",
             "SPK_OVERVIEW_OWNER_SAMPLES_LABEL": "voice samples",
-            "SPK_OVERVIEW_OWNER_SAMPLES_CAP_SUFFIX": "(the most it keeps)",
+            "SPK_OVERVIEW_OWNER_SAMPLES_CAP_SUFFIX": "(the sample cap)",
             "SPK_OVERVIEW_OWNER_STATUS_ERROR": "couldn't load voice status",
             "SPK_OVERVIEW_OWNER_STREAMS_LABEL": "where heard",
             "SPK_OVERVIEW_QUALITY_ERROR_HEADING": "couldn't load voice quality",
