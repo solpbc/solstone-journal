@@ -5150,7 +5150,7 @@ async function initEntities() {
         journalEntitySearch = term;
         journalEntityPage = 0;
         writeJournalListState({replace: true});
-        loadJournalEntities({silent: true});
+        loadJournalEntities({silent: true, queryChanged: true});
       }, 220);
     });
   }
@@ -5276,7 +5276,21 @@ function renderLoadedJournalEntities() {
   renderJournalEntities();
 }
 
-async function loadJournalEntities({refresh = false, silent = false} = {}) {
+/// The count line above the grid is not enough signal on its own: G2-32 found
+/// the owner reading several seconds of stale, non-matching cards while only
+/// that small line said "loading entities…". A filter/search change (as
+/// opposed to paging through an unchanged query) clears the stale cards and
+/// shows the shared labelled loading state naming what it's looking for.
+function journalFilterLoadingLabel() {
+  const term = journalEntitySearch;
+  const type = journalEntityType;
+  if (term && type) return `finding ${type} entities matching "${term}"…`;
+  if (term) return `finding entities matching "${term}"…`;
+  if (type) return `finding ${type} entities…`;
+  return 'finding entities…';
+}
+
+async function loadJournalEntities({refresh = false, silent = false, queryChanged = false} = {}) {
   readJournalListState();
   if (!refresh && journalSummary !== null && journalSummaryKey === journalListStateKey()) {
     renderLoadedJournalEntities();
@@ -5286,6 +5300,11 @@ async function loadJournalEntities({refresh = false, silent = false} = {}) {
   const container = document.getElementById('journal-entity-cards-content');
   const countEl = document.getElementById('journal-card-search-count');
   if (silent && container) {
+    if (queryChanged) {
+      container.innerHTML = window.SurfaceState.loading({ text: journalFilterLoadingLabel() });
+      document.getElementById('no-journal-card-matches')?.style.setProperty('display', 'none');
+      document.getElementById('no-journal-entities')?.style.setProperty('display', 'none');
+    }
     container.setAttribute('aria-busy', 'true');
     if (countEl) { countEl.style.display = ''; countEl.textContent = 'loading entities…'; }
   }
@@ -5397,7 +5416,7 @@ function renderJournalTypeFilter() {
       journalEntityType = filter.value;
       journalEntityPage = 0;
       writeJournalListState();
-      loadJournalEntities({silent: true});
+      loadJournalEntities({silent: true, queryChanged: true});
     });
   }
   filter.replaceChildren();
