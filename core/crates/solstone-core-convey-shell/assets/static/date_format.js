@@ -64,10 +64,11 @@
     if (deltaDays >= -6 && deltaDays < 0) return WEEKDAYS[parsed.getDay()];
 
     let short = `${WEEKDAYS_SHORT[parsed.getDay()]} ${MONTHS_SHORT[parsed.getMonth()]} ${parsed.getDate()}`;
-    const monthsAgo =
-      (today.getFullYear() - parsed.getFullYear()) * 12 +
-      (today.getMonth() - parsed.getMonth());
-    if (monthsAgo > 6 && parsed.getFullYear() !== today.getFullYear()) {
+    // Same rule formatDateFull already uses: a year suffix whenever the day
+    // isn't in the current year. The old "more than 6 months ago" gate used
+    // today-minus-parsed, which is negative for every future day, so a
+    // future-dated day never carried its year at all (G2-52).
+    if (parsed.getFullYear() !== today.getFullYear()) {
       short += ` '${String(parsed.getFullYear()).slice(-2)}`;
     }
     return short;
