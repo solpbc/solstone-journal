@@ -615,15 +615,17 @@ mod tests {
     #[test]
     fn a_leading_subject_phrase_is_stripped_and_the_verb_capitalised() {
         for (written, shown) in [
+            // X-21, verbatim from the 2026-09-06 review capture of the live
+            // journal's home pulse.
             (
-                "The user navigated between the hub and a project workspace.",
-                "Navigated between the hub and a project workspace.",
+                "The user navigated between the personal foundation hub and a specific project workspace to manage a UX verification task.",
+                "Navigated between the personal foundation hub and a specific project workspace to manage a UX verification task.",
+            ),
+            (
+                "You reviewed personal project management tasks related to timeline history and wave burn-in issues within your own workspace.",
+                "Reviewed personal project management tasks related to timeline history and wave burn-in issues within your own workspace.",
             ),
             ("I sent the invoice to Sam.", "Sent the invoice to Sam."),
-            (
-                "You reviewed personal project tasks.",
-                "Reviewed personal project tasks.",
-            ),
             (
                 "The owner debugged the retry handling.",
                 "Debugged the retry handling.",
@@ -645,6 +647,7 @@ mod tests {
     #[test]
     fn every_other_description_is_returned_untouched() {
         for description in [
+            "Resolved a technical incident involving hub daemons and updated system tracking documents.",
             "Debugged the retry handling in the ingest worker.",
             "Investigated the request timeout.",
             "The users of the beta build reported a crash.",
@@ -667,7 +670,7 @@ mod tests {
     fn update_writes_a_subjectless_description_onto_new_and_continuing_records() {
         let mut machine = ActivityStateMachine::default();
         let opened = machine.update(
-            &json!({"density":"active","content_type":"terminal","activity_summary":"The user typed a status report.","facets":[{"facet":"work","level":"high","activity":"The user navigated between the hub and a project workspace."}]}),
+            &json!({"density":"active","content_type":"terminal","activity_summary":"The user typed a status report.","facets":[{"facet":"work","level":"high","activity":"The user navigated between the personal foundation hub and a specific project workspace to manage a UX verification task."}]}),
             "100558_300",
             "20260906",
             None,
@@ -677,7 +680,7 @@ mod tests {
         assert_eq!(opened[0]["_change"], "new");
         assert_eq!(
             opened[0]["description"],
-            "Navigated between the hub and a project workspace."
+            "Navigated between the personal foundation hub and a specific project workspace to manage a UX verification task."
         );
 
         let continued = machine.update(
