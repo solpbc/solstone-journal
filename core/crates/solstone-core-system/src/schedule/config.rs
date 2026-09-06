@@ -79,13 +79,14 @@ pub fn read_enabled_schedule_entry(
     Ok((loaded.config.entries.remove(name), loaded.diagnostics))
 }
 
-pub(crate) fn register_defaults(
-    path: &Path,
-    _loaded: &ScheduleConfig,
-) -> Result<bool, ScheduleError> {
-    let initialized = initialize_schedule_config(path)?;
+/// Add the built-in schedule entries that are absent from the configuration,
+/// creating the configuration first when it does not exist. Existing entries,
+/// including disabled or edited built-ins, are left untouched. Returns the
+/// names that were added.
+pub fn register_default_entries(path: &Path) -> Result<Vec<String>, ScheduleError> {
+    initialize_schedule_config(path)?;
     let defaults = BTreeMap::from(default_entries().map(|(name, value)| (name.to_owned(), value)));
-    Ok(initialized || !add_missing_schedule_entries(path, &defaults)?.is_empty())
+    add_missing_schedule_entries(path, &defaults)
 }
 
 /// Seed timing metadata only when the schedule configuration is absent.

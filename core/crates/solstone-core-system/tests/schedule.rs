@@ -364,8 +364,10 @@ fn ac13_ac16_defaults_are_idempotent_and_preserve_disabled_raw_entries() {
     let (mut engine, diagnostics) =
         ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 10, 0)).expect("init");
     assert!(diagnostics.is_empty());
-    assert!(engine.register_defaults().expect("defaults"));
-    assert!(!engine.register_defaults().expect("idempotent"));
+    let added = engine.register_defaults().expect("defaults");
+    assert_eq!(added.len(), 5, "brain is preserved disabled: {added:?}");
+    assert!(!added.iter().any(|name| name == "brain"));
+    assert!(engine.register_defaults().expect("idempotent").is_empty());
     let raw: Value =
         serde_json::from_slice(&fs::read(bed.config()).expect("config")).expect("json");
     assert_eq!(raw["brain"]["enabled"], false);

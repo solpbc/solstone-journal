@@ -11,7 +11,7 @@ use serde_json::{Map, Value};
 use crate::request::{ScheduledArgv, ScheduledRequest};
 
 use super::completion::{load_runtime_state, record_completion};
-use super::config::{ConfigDiagnostic, load_runtime, minute_interval, register_defaults};
+use super::config::{ConfigDiagnostic, load_runtime, minute_interval, register_default_entries};
 use super::due::{compute_next_run, current_marks, effective_every, is_due, state_entry};
 use super::status::ScheduleStatus;
 use super::{ScheduleConfig, ScheduleError, ScheduleNow, ScheduleSubmissionSink};
@@ -80,12 +80,13 @@ impl ScheduleEngine {
     }
 
     /// Strictly add missing built-ins, preserving disabled raw defaults.
-    pub fn register_defaults(&mut self) -> Result<bool, ScheduleError> {
-        let changed = register_defaults(&self.config_path, &self.config)?;
-        if changed {
+    /// Returns the names that were added.
+    pub fn register_defaults(&mut self) -> Result<Vec<String>, ScheduleError> {
+        let added = register_default_entries(&self.config_path)?;
+        if !added.is_empty() {
             self.config = load_runtime(&self.config_path)?.config;
         }
-        Ok(changed)
+        Ok(added)
     }
 
     /// Retry pending coarse emissions and submit entries crossing a new boundary.

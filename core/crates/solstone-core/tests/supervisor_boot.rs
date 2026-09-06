@@ -772,11 +772,12 @@ fn ac6_boot_order_is_identity_then_socket_then_ready() {
 }
 
 #[test]
-fn maintenance_schedules_are_reconciled_before_the_scheduler_loads() {
+fn schedules_are_reconciled_before_the_scheduler_loads() {
     // An installed journal carries a retired maintenance entry and an
-    // operator-authored entry; a fresh registry routine is absent. Boot must
-    // prune the retired name, add every registry routine, and leave the
-    // operator's entry byte-for-byte as written, without any manual sync.
+    // operator-authored entry; the built-in entries and a registry routine are
+    // absent. Boot must prune the retired name, register every built-in and
+    // every registry routine, and leave the operator's entry byte-for-byte as
+    // written, without any manual sync.
     let journal = TempJournal::new();
     let operator_entry = serde_json::json!({
         "cmd": ["journal", "heartbeat"],
@@ -844,8 +845,38 @@ fn maintenance_schedules_are_reconciled_before_the_scheduler_loads() {
         );
         assert_eq!(entry["enabled"], true, "{}", routine.id);
     }
+    for (name, cmd, every) in [
+        ("heartbeat", &["journal", "heartbeat"][..], "daily"),
+        (
+            "weekly-agents",
+            &["journal", "think", "--weekly", "-v"][..],
+            "weekly",
+        ),
+        ("cadence", &["journal", "think", "--cadence"][..], "5m"),
+        ("brain", &["journal", "brain", "refresh"][..], "daily"),
+        (
+            "facet-candidates",
+            &["journal", "facet-candidates"][..],
+            "weekly",
+        ),
+        (
+            "rebuild-edges",
+            &["journal", "indexer", "--rebuild-edges"][..],
+            "weekly",
+        ),
+    ] {
+        assert_eq!(
+            raw[name]["cmd"],
+            serde_json::json!(cmd),
+            "built-in {name} must be scheduled after boot"
+        );
+        assert_eq!(raw[name]["every"], every, "{name}");
+        assert_eq!(raw[name]["enabled"], true, "{name}");
+    }
     // Entries that first appeared at this boot start at their next cadence
-    // mark; the boot catch-up must not have submitted any of them.
+    // mark; the boot catch-up must not have submitted any of them. The
+    // five-minute cadence entry is excluded here because a minute boundary can
+    // legitimately pass during this test.
     if let Ok(bytes) = fs::read(journal.0.join("health/scheduler.json")) {
         let state: serde_json::Value = serde_json::from_slice(&bytes).expect("scheduler state");
         let submitted = state
@@ -853,14 +884,24 @@ fn maintenance_schedules_are_reconciled_before_the_scheduler_loads() {
             .map(|entries| {
                 entries
                     .keys()
-                    .filter(|name| name.starts_with("maintenance:"))
+                    .filter(|name| {
+                        name.starts_with("maintenance:")
+                            || matches!(
+                                name.as_str(),
+                                "heartbeat"
+                                    | "weekly-agents"
+                                    | "brain"
+                                    | "facet-candidates"
+                                    | "rebuild-edges"
+                            )
+                    })
                     .cloned()
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
         assert!(
             submitted.is_empty(),
-            "fresh maintenance entries were submitted at boot: {submitted:?}"
+            "fresh schedule entries were submitted at boot: {submitted:?}"
         );
     }
 }
