@@ -128,7 +128,7 @@ pub(crate) async fn reprocess_segment(
     else {
         return legacy_error_response(
             "invalid_request_value",
-            "I couldn't use one of those values.",
+            "one of those values couldn't be used.",
             "modality must be audio or screen",
             StatusCode::BAD_REQUEST,
         );
@@ -138,7 +138,7 @@ pub(crate) async fn reprocess_segment(
     if signals.state == DataState::Analyzed {
         return legacy_error_response(
             "invalid_operation_for_state",
-            "I couldn't take that action in the current state.",
+            "that action isn't available in the current state.",
             "Segment modality is already analyzed",
             StatusCode::BAD_REQUEST,
         );
@@ -146,7 +146,7 @@ pub(crate) async fn reprocess_segment(
     if signals.state == DataState::Purged || !signals.has_raw {
         return legacy_error_response(
             "raw_media_not_available",
-            "I couldn't run analysis because the raw media is no longer available.",
+            "analysis couldn't run because the raw media is no longer available.",
             "Raw media is no longer available",
             StatusCode::BAD_REQUEST,
         );
@@ -174,7 +174,7 @@ pub(crate) async fn reprocess_segment(
         Ok(Err(CreateMarkerError::Io(error))) => {
             return legacy_error_response(
                 "file_read_failed",
-                "I couldn't read that file.",
+                "that file couldn't be read.",
                 format!("Failed to create analysis marker: {error}"),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
@@ -182,7 +182,7 @@ pub(crate) async fn reprocess_segment(
         Err(error) => {
             return legacy_error_response(
                 "file_read_failed",
-                "I couldn't read that file.",
+                "that file couldn't be read.",
                 format!("Failed to create analysis marker: {error}"),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
@@ -200,7 +200,7 @@ pub(crate) async fn reprocess_segment(
             let _ = fs::remove_file(&marker.path);
             return legacy_error_response(
                 "file_read_failed",
-                "I couldn't read that file.",
+                "that file couldn't be read.",
                 format!("Failed to start analysis: {error}"),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
@@ -536,13 +536,13 @@ fn data_state(
 }
 
 fn invalid_day(detail: &str, status: StatusCode) -> Response {
-    legacy_error_response("invalid_day", "I couldn't use that day.", detail, status)
+    legacy_error_response("invalid_day", "that day couldn't be used.", detail, status)
 }
 
 fn invalid_segment(detail: &str, status: StatusCode) -> Response {
     legacy_error_response(
         "invalid_segment_or_stream",
-        "I couldn't use that segment or stream.",
+        "that segment or stream couldn't be used.",
         detail,
         status,
     )

@@ -183,7 +183,7 @@ impl TranscriptError {
     pub(crate) fn response(self) -> Response {
         solstone_core_convey_http::envelope::error_envelope(
             "internal_error",
-            "I couldn't complete that request.",
+            "that request didn't finish.",
             self.0,
             StatusCode::INTERNAL_SERVER_ERROR,
         )

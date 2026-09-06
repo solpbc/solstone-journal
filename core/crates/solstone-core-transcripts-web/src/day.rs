@@ -101,7 +101,7 @@ pub(crate) fn valid_day(day: &str) -> bool {
 pub(crate) fn invalid_day() -> Response {
     legacy_error_response(
         "invalid_day",
-        "I couldn't use that day.",
+        "that day couldn't be used.",
         "Day not found",
         StatusCode::NOT_FOUND,
     )

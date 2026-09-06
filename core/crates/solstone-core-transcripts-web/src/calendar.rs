@@ -31,7 +31,7 @@ pub(crate) async fn stats(
     if !valid_month(&month) {
         return legacy_error_response(
             "invalid_month",
-            "I couldn't use that month.",
+            "that month couldn't be used.",
             "Invalid month format",
             StatusCode::BAD_REQUEST,
         )
