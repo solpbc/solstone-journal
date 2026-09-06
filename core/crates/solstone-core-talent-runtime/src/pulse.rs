@@ -11,10 +11,7 @@ use serde_json::{Map, Value, json};
 use solstone_core_facets::{
     load_activity_records, load_current, load_imports, load_recent_entity_names,
 };
-use solstone_core_home::{
-    HomeContext,
-    readers::{collect_anticipated_activities, read_latest},
-};
+use solstone_core_home::{HomeContext, readers::collect_anticipated_activities};
 use solstone_core_system_health::find_segment_dir;
 
 use crate::contract::{CommitPlan, GateDecision, ParsedOutput, PrePostState};
@@ -53,7 +50,6 @@ pub struct PulseWindowNote {
 pub struct PulsePreState {
     default: PulseSummary,
     window: PulseWindowNote,
-    previous_pulse: String,
     completed_since: String,
     awareness: String,
     anticipated: String,
@@ -98,10 +94,6 @@ pub fn apply_prompt_override(
     apply_template_vars(
         &mut prepared.config,
         &Map::from_iter([
-            (
-                "previous_pulse".to_owned(),
-                Value::String(state.previous_pulse.clone()),
-            ),
             (
                 "completed_since".to_owned(),
                 Value::String(state.completed_since.clone()),
@@ -204,7 +196,6 @@ fn build_packet(
     let home = HomeContext::new(&context.journal, now);
     let mut gaps = Vec::new();
     let default = default_pulse();
-    let previous = read_latest(&home, &day, "pulse", 7);
     let (completed, window) = completed_since(&prepared.config, context, &mut gaps);
     let awareness = awareness_context(&context.journal, &mut gaps);
     // This reader already owns the declared-facet activity scan used by the reference.
@@ -221,7 +212,6 @@ fn build_packet(
     Ok(PulsePreState {
         default,
         window,
-        previous_pulse: previous.map_or_else(|| "(none - first run)".to_owned(), compact_json),
         completed_since: compact_json(completed),
         awareness: compact_json(awareness),
         anticipated: compact_json(Value::Array(anticipated)),
@@ -573,7 +563,6 @@ mod tests {
                 since_ms: Value::Null,
                 gaps: Vec::new(),
             },
-            previous_pulse: String::new(),
             completed_since: String::new(),
             awareness: String::new(),
             anticipated: String::new(),

@@ -864,6 +864,77 @@ mod tests {
     }
 
     #[test]
+    fn pulse_generation_uses_current_sources_without_prior_summary_feedback() {
+        let (_root, paths, context) = fixture("pulse", r#"{"type":"generate"}"#);
+        let payload = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../payload/solstone/talent");
+        fs::write(
+            paths.talent_root.join("pulse.md"),
+            fs::read_to_string(payload.join("pulse.md")).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            paths.talent_root.join("pulse.schema.json"),
+            fs::read_to_string(payload.join("pulse.schema.json")).unwrap(),
+        )
+        .unwrap();
+        let day = "20260906";
+        let segment = "130223_304";
+        let activity_dir = context
+            .journal
+            .join("chronicle")
+            .join(day)
+            .join("device")
+            .join(segment)
+            .join("talents");
+        fs::create_dir_all(&activity_dir).unwrap();
+        fs::write(activity_dir.join("activity.md"), "CURRENT_SOURCE_SENTINEL: deployment checks for a game returned HTTP 404 for a requested file.").unwrap();
+        let old_dir = context.journal.join("chronicle/20260905/talents");
+        fs::create_dir_all(&old_dir).unwrap();
+        let old_path = old_dir.join("pulse.jsonl");
+        let old = json!({"title":"STALE_PRIOR_PULSE_SENTINEL", "one_sentence":"An old plan", "full_details":"An old day", "needs_you":[]});
+        let old_bytes = format!("{old}\n");
+        fs::write(&old_path, &old_bytes).unwrap();
+        let home = solstone_core_home::HomeContext::new(&context.journal, chrono::Utc::now());
+        assert!(
+            solstone_core_home::readers::read_latest(&home, day, "pulse", 7)
+                .unwrap()
+                .to_string()
+                .contains("STALE_PRIOR_PULSE_SENTINEL")
+        );
+        let mut prepared = prepare::prepare(
+            source_config(json!({"name":"pulse", "day":day, "prompt":"", "cadence_window":{"since_ms":1788721500742_i64,"segments":[{"day":day,"segment":segment,"stream":"device","ts":1788721683332_i64}],"activities":[]}})),
+            &paths, &context, prepare::PrepareMode::Execute,
+        ).unwrap();
+        let stage = resolve_hook("pulse").unwrap();
+        let state = stage.build.unwrap()(&mut prepared, &context).unwrap();
+        stage.prompt_override.unwrap()(&mut prepared, &state).unwrap();
+        let text = generate_contents(&prepared)
+            .into_iter()
+            .filter_map(|part| match part {
+                ContentPart::Text { text } => Some(text),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            text.contains("CURRENT_SOURCE_SENTINEL"),
+            "current source must reach the model"
+        );
+        assert!(
+            !text.contains("STALE_PRIOR_PULSE_SENTINEL"),
+            "generated summaries must not become source evidence"
+        );
+        assert!(!text.contains("$completed_since"));
+        assert!(!text.contains("$day_YYYYMMDD"));
+        assert!(text.contains(day));
+        assert_eq!(
+            fs::read_to_string(old_path).unwrap(),
+            old_bytes,
+            "preparation preserves history"
+        );
+    }
+
+    #[test]
     fn criterion_5_template_vars_match_python_capitalize_and_keep_unmatched() {
         let mut config = Map::from_iter([
             (

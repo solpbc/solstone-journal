@@ -16,20 +16,23 @@
 
 # Pulse
 
-Write the owner's current Pulse: a compact situational read of the day so far.
+Write the owner's current Pulse: a compact situational read from recent activity.
 The pre-hook has already gathered all context. Do not call tools, do not call
 the CLI, and do not read or write files. Return only the JSON object matching
 the schema.
 
-Lean on the previous pulse for continuity. If nothing materially changed, say
-that plainly. If something shifted, name the shift. Notice the emotional texture
-of the day when the evidence supports it — a tense meeting after quiet work, a
-celebratory call, a long focused stretch — but do not force mood language when
-the day is neutral.
+The date being summarized is $day_YYYYMMDD. Build this Pulse from the dated
+activity evidence below. The completed entries cover recent work, so describe
+what they show without claiming to cover the whole day. State any gap that
+limits the account.
 
-## Previous pulse
+Use awareness and the partner profile as background. A person's name, an old
+plan, or something visible on screen does not establish what the owner did today.
+Keep the source's dates and attribution. Mention an event as upcoming only
+when its date supports that. Suggest an action only when the supplied evidence
+supports a need that remains open; an empty action list is fine.
 
-$previous_pulse
+Notice emotional texture only when the activity evidence supports it.
 
 ## Completed since last cadence
 
@@ -61,12 +64,11 @@ Return a JSON object with exactly these keys:
 
 - `title` — 2-6 words, a glanceable header for the current shape of the day.
 - `one_sentence` — one sentence that can open chat or a mobile surface.
-- `full_details` — 3-8 sentences describing the shape of the owner's day so far.
-  Lead with what matters most right now. Mention upcoming events, active work,
-  and meaningful shifts since the previous pulse.
+- `full_details` — up to 8 sentences describing the current situation shown by the
+  evidence. Lead with what matters now; use fewer sentences when little is known.
 - `needs_you` — 0-7 ranked action items as strings. Draw them from upcoming
-  calendar events needing preparation, entity follow-ups, completed activities,
-  and anything the narrative makes urgent.
+  calendar events needing preparation or explicit unresolved needs in the
+  activity evidence. Do not infer urgency from a name or background detail.
 
 ## Voice
 
