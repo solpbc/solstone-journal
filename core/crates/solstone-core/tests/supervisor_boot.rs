@@ -613,6 +613,7 @@ fn ac4_parent_loss_before_readiness_aborts_the_pre_ready_lifecycle() {
     let child_pid = journal.0.join("hosted-child.pid");
     let outcome = journal.0.join("hosted.outcome");
     let nonce = next_receipt_nonce(&outcome);
+    let stderr_path = journal.0.join("hosted.stderr");
     let mut command = Command::new(journal.hosted_supervisor_fixture());
     command
         .args(["launcher"])
@@ -622,7 +623,9 @@ fn ac4_parent_loss_before_readiness_aborts_the_pre_ready_lifecycle() {
         .arg(&nonce)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::from(
+            fs::File::create(&stderr_path).expect("hosted stderr file"),
+        ))
         .env("HOME", home)
         .env("SOLSTONE_LOCAL_BINARY", journal.system_test_child())
         .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
@@ -640,19 +643,26 @@ fn ac4_parent_loss_before_readiness_aborts_the_pre_ready_lifecycle() {
         "SOLSTONE_SPEAKERS_ANALYZE_BINARY",
         journal.system_test_child(),
     );
-    let mut launcher = command.spawn().expect("paused hosted launcher starts");
+    let mut launcher =
+        SupervisorGuard::new(command.spawn().expect("paused hosted launcher starts"));
     for _ in 0..1_600 {
         if marker.exists() {
             break;
         }
         if let Some(status) = launcher.try_wait().expect("launcher status") {
-            panic!("launcher exited before pause: {status}");
+            panic!(
+                "launcher exited before pause: {status}; outcome={:?}; stderr={:?}",
+                fs::read_to_string(&outcome),
+                fs::read_to_string(&stderr_path),
+            );
         }
         thread::sleep(Duration::from_millis(5));
     }
     assert!(
         marker.exists(),
-        "hosted runtime reached final parent-check barrier"
+        "hosted runtime did not reach final parent-check barrier; outcome={:?}; stderr={:?}",
+        fs::read_to_string(&outcome),
+        fs::read_to_string(&stderr_path),
     );
     nix::sys::signal::kill(
         nix::unistd::Pid::from_raw(launcher.id() as i32),
