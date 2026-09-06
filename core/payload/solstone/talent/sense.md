@@ -58,7 +58,12 @@ The dominant activity type observed:
 - **idle**: No meaningful activity
 
 ### activity_summary
-Describe what you did during this segment using action verbs, writing directly to the owner in second person ("you wrote...", "you discussed..."). Never refer to the owner as "the user," "the session," "this person," or in the third person — this text is shown directly to them. Be specific — name the tools, people, projects, and actions. Ban passive words: never use "reviewing", "monitoring", "tracking", "checking", "observing", "maintaining", "managing." Use instead: wrote, sent, discussed, created, switched to, typed, said, decided, asked, proposed.
+Start with a past-tense verb and name no subject at all. Say what was done, never who did it: never begin with "I", "You", "We", "The user", "The owner", "The person", or "This person". This text is shown to the owner on their own dashboard.
+- Good: "Debugged the retry handling in the ingest worker."
+- Good: "Sent the invoice to Sam, then opened the launch checklist."
+- Wrong: "The user navigated between the hub and a project workspace." — it names a subject.
+
+Use action verbs and be specific — name the tools, people, projects, and actions. Ban passive words: never use "reviewing", "monitoring", "tracking", "checking", "observing", "maintaining", "managing." Use instead: wrote, sent, discussed, created, switched to, typed, said, decided, asked, proposed.
 
 ### entities
 Extract ALL named entities mentioned in the content. Be thorough — extract every entity you can identify, not just the most prominent ones. Write each `name` in natural reading order, exactly as it would normally be written — never move a leading article ("The", "A", "An") to a parenthetical suffix (write "The Gallery at Reunion", never "Gallery At Reunion (The)"). Four types only:
@@ -95,7 +100,7 @@ Centrality is independent of `role`: an entity can be `role: mentioned` yet `lev
 ### facets
 Classify into the owner's configured facets. Always include at least one facet — pick the closest configured facet. If multiple facets fit, include the dominant one as `level: high` and others at `level: medium` or `level: low`. For each:
 - `facet`: The facet ID slug — MUST be one of the configured facets listed in the input
-- `activity`: 1-sentence description of what was observed for this facet
+- `activity`: 1-sentence description of what was done for this facet, written the same way as `activity_summary` above — start with a past-tense verb, name no subject. Good: "Refined the sense prompt and re-ran the segment." Wrong: "The user reviewed the sense prompt." This string is rendered verbatim in the owner's recent activity list.
 - `level`: "high" (primary focus), "medium" (significant), "low" (brief/peripheral)
 
 **Facet assignment rules:** Do not invent facet IDs that are not in the configured journal facet list. The array always has at least one entry — pick the closest configured facet even when the match is loose, and use `level: low` to signal weak fit. If a better new name is warranted, put it only in `speculative_facet`, not in `facets[]`.
@@ -154,5 +159,6 @@ The observable emotional tone of the segment based on conversation tone, speech 
 7. Skip entities whose name contains a speaker-uncertainty placeholder. If the transcript says "a game called Museum something" or "the new whatever-thing-it's-called", the speaker is signaling they don't know the actual name — do not extract a placeholder name as an entity.
 8. If `meeting_detected=true`, `speakers` must contain at least one entry (use generic labels if no names are identifiable). If `activity_summary` mentions specific named people, projects, or tools, those names should also appear in `entities` (subject to the per-type rules above) — don't reference an entity by name in the summary and then omit it from `entities`.
 9. Emit a `speculative_facet` name only when all `facets[]` entries are `level: low`; otherwise emit `null`. Never invent a `facets[]` ID.
+10. `activity_summary` and every `facets[].activity` begin with a past-tense verb and name no subject — never "I", "You", "We", "The user", "The owner", "The person", or "This person".
 
 Return ONLY the JSON object, no other text or explanation.

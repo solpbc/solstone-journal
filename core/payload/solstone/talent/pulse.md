@@ -72,7 +72,9 @@ Return a JSON object with exactly these keys:
 
 Every string value is shown directly to the owner in their own journal.
 Address them in second person ("you"/"your") — never in the third person, and
-never as "the user" or "the owner." Write the way a person would describe
+never as "the user" or "the owner." Never write as "I", "we" or "my" — the
+software has no voice of its own here, it is describing the owner's day.
+Write the way a person would describe
 their own day to themselves: plain, direct, specific. Avoid corporate or
 bureaucratic phrasing ("aligned with communication standards," "leveraging,"
 "initiate protocol for") — say what's actually happening in ordinary words.
