@@ -600,6 +600,23 @@ async function testCase(name, fn) {
     );
   });
 
+  await testCase('G3-20 sync retires "observations", API-key hint is a step list', async () => {
+    const harness = createHarness();
+    const syncText = harness.document.getElementById('section-sync').textContent;
+    assert.ok(!syncText.includes('observations'), 'retired vocabulary must not survive in sync copy');
+    assert.ok(syncText.includes('material'), 'sync copy uses the replacement noun');
+
+    const apiKeyHint = harness.document
+      .getElementById('field-env-plaud')
+      .closest('.settings-field')
+      .querySelector('small');
+    assert.ok(
+      !apiKeyHint.textContent.includes('log into the web portal and extract token'),
+      'the run-on console instruction is gone'
+    );
+    assert.ok(/1\).*2\).*3\)/.test(apiKeyHint.textContent), 'the mechanics survive as a numbered step list');
+  });
+
   process.stdout.write('DOM CASES: ' + cases + ' passed\n', () => process.exit(0));
 })().catch((error) => {
   console.error(error.stack || error);

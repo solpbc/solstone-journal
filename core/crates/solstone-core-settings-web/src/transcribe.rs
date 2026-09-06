@@ -23,16 +23,20 @@ pub async fn get(journal_root: PathBuf) -> Response {
     let available_gb =
         available.map(|bytes| (bytes as f64 / 1024_f64.powi(3) * 10.0).round() / 10.0);
     json_response(json!({
-        "backends": [
-            {"name": "parakeet", "label": "Parakeet - Local processing (Apple Silicon CoreML or Linux parakeet.cpp)", "description": "On-device speech recognition via Parakeet TDT; macOS uses a FluidAudio/CoreML helper, Linux uses the supervised parakeet.cpp server. Requires `make install`.", "env_key": null, "settings": ["model_version", "device", "timeout_sec"]},
-            {"name": "parakeet-cpp", "label": "Parakeet.cpp - Local processing (Linux)", "description": "On-device speech recognition via a supervised parakeet.cpp server (mudler/parakeet.cpp). Linux only; install with `journal install-provider parakeet`.", "env_key": null, "settings": ["device"]},
-        ],
+        "backends": backend_metadata(),
         "api_keys": {"parakeet": true, "parakeet-cpp": true},
         "config": transcribe,
         "runtime_label": runtime_label(std::env::consts::OS, std::env::consts::ARCH),
         "parakeet_uses_cpp": parakeet_uses_cpp(std::env::consts::OS, std::env::consts::ARCH),
         "resource": {"min_ram_gb": 6, "available_memory_gb": available_gb, "requirement": "local transcription needs about 6 GB of free memory for the on-device model (transcription, speaker labels, and overlap detection).", "detected": available_gb.map(|value| format!("{value} GB of free memory detected on this machine.")).unwrap_or_else(|| "free memory on this machine could not be detected.".to_owned()), "needs_setup": available.is_some_and(|value| value < 6 * 1024_u64.pow(3)), "notice": ""},
     }))
+}
+
+fn backend_metadata() -> serde_json::Value {
+    json!([
+        {"name": "parakeet", "label": "Parakeet - local processing (Apple Silicon CoreML or Linux parakeet.cpp)", "description": "On-device speech recognition via Parakeet TDT; macOS uses a FluidAudio/CoreML helper, Linux uses the supervised parakeet.cpp server. Requires `make install`.", "env_key": null, "settings": ["model_version", "device", "timeout_sec"]},
+        {"name": "parakeet-cpp", "label": "Parakeet.cpp - local processing (Linux)", "description": "On-device speech recognition via a supervised parakeet.cpp server (mudler/parakeet.cpp). Linux only; install with `journal install-provider parakeet`.", "env_key": null, "settings": ["device"]},
+    ])
 }
 
 pub fn runtime_label(os: &str, arch: &str) -> &'static str {
@@ -49,7 +53,33 @@ pub fn parakeet_uses_cpp(os: &str, arch: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{parakeet_uses_cpp, runtime_label};
+    use super::{backend_metadata, parakeet_uses_cpp, runtime_label};
+
+    /// G3-20: option/backend labels are sentence case, not Title Case — the
+    /// only capitals allowed are proper nouns/acronyms already present
+    /// elsewhere in this dashboard (Parakeet, Apple Silicon, CoreML, Linux).
+    #[test]
+    fn g3_20_backend_labels_are_sentence_case_not_title_case() {
+        let backends = backend_metadata();
+        let labels: Vec<&str> = backends
+            .as_array()
+            .expect("backends is an array")
+            .iter()
+            .map(|entry| entry["label"].as_str().expect("label is a string"))
+            .collect();
+        assert!(
+            labels
+                .iter()
+                .any(|label| label.contains("local processing")),
+            "expected a lowercase 'local processing', got {labels:?}"
+        );
+        assert!(
+            !labels
+                .iter()
+                .any(|label| label.contains("Local processing")),
+            "Title-case 'Local processing' should not survive G3-20: {labels:?}"
+        );
+    }
 
     #[test]
     fn ac12_runtime_label_has_all_three_branches() {
