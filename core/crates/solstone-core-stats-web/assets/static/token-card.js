@@ -302,6 +302,17 @@
   });
 
   document.addEventListener('stats:token-rollup', event => renderRollup(event.detail));
+  // This card's own data (api/usage, below) can resolve and render before
+  // dashboard.js reveals #mainContent (display:none -> block); bindScrollFade
+  // would then measure a hidden, zero-size ancestor and never recheck, since
+  // nothing else fires a scroll or resize event afterward — exactly the
+  // direct-390-load case where the fade never appears (G2-44). The rollup
+  // above doesn't hit this because renderRollup only ever runs from this same
+  // event, which dashboard.js fires after #mainContent is already visible;
+  // give the two tables that same "now visible" recheck.
+  document.addEventListener('stats:token-rollup', () => {
+    ['providers', 'models'].forEach(name => bindScrollFade(scrollHostFor(name)));
+  });
 
   // The selected day's own data (api/usage) is typically an order of
   // magnitude faster than the 30-day coverage probe (api/index) — fetch them

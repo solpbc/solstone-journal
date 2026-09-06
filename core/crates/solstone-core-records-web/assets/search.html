@@ -31,6 +31,22 @@
  function pageUrl(changes){const p=new URLSearchParams(params);p.delete('offset');Object.entries(changes).forEach(([k,v])=>p.set(k,v));return '/app/search/?'+p.toString();}
  function node(tag,cls,text){const e=document.createElement(tag);e.className=cls||'';if(text!==undefined)e.textContent=text;return e;}
  function dayLink(day){const a=node('a','',window.JournalFormat.day(day));a.href='/app/transcripts/'+encodeURIComponent(day);return a;}
+ // G2-53: a whole-journal search rendered data.days in whatever order the
+ // API returned it, which put every future-dated day (G2-52: a clock error
+ // or imported content, not a defect on its own) above today — the answer
+ // to "where did I talk about this recently" landed after all of them.
+ // Newest-first here means newest relative to today: real days sort most
+ // recent first as before, and a future-dated day still shows (nothing here
+ // hides it) but sorts after every real day instead of ahead of all of them.
+ function todayDay(){const d=new Date();const pad=n=>String(n).padStart(2,'0');return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;}
+ function orderedDays(days){
+  const today=todayDay();
+  return days.slice().sort((a,b)=>{
+   const aFuture=a.day>today,bFuture=b.day>today;
+   if(aFuture!==bFuture)return aFuture?1:-1;
+   return b.day.localeCompare(a.day);
+  });
+ }
  function sourceLink(hit){
   const path=String(hit.path||'');
   if(path.startsWith('entity_search:'))return '/app/entities/#'+encodeURIComponent(path.slice('entity_search:'.length));
@@ -92,7 +108,7 @@
    const data=await window.apiJson('/app/search/api/search?'+p,{signal:controller.signal});if(!root.isConnected)return;
    status.textContent=data.total?`${data.total.toLocaleString()} matches across ${data.total_days.toLocaleString()} ${data.total_days===1?'day':'days'}.`:'no matches. try fewer words or a wider date range.';
    if(data.relaxed)status.append(node('p','','showing broader matches because the original search had few results.'));
-   for(const day of data.days){
+   for(const day of orderedDays(data.days)){
     const section=node('section','search-day');const heading=node('h2');heading.append(dayLink(day.day));section.append(heading);
     if(day.total>day.showing)section.append(node('p','search-meta',`showing the top ${day.showing} of ${day.total} matches for this day.`));
     for(const hit of day.results)section.append(renderHit(hit));

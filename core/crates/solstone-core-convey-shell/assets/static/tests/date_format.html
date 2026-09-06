@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>date_format.js smoke</title>
+<style>
+  body { font: 14px/1.4 sans-serif; padding: 16px; }
+  .pass { color: #166534; }
+  .fail { color: #b91c1c; }
+</style>
+<h1>date_format.js smoke</h1>
+<div id="results"></div>
+<script src="../date_format.js"></script>
+<script>
+  const results = document.getElementById('results');
+  let failures = 0;
+
+  function assert(name, condition, detail) {
+    const row = document.createElement('div');
+    row.className = condition ? 'pass' : 'fail';
+    row.textContent = `${condition ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`;
+    results.appendChild(row);
+    if (!condition) failures += 1;
+  }
+
+  // Fixed reference "today" so this page never depends on the wall clock.
+  const NOW = new Date(2026, 8, 6); // Sunday, Sep 6 2026
+
+  function check(dateString, expected) {
+    const actual = window.formatDateShort(dateString, NOW);
+    assert(`formatDateShort(${dateString})`, actual === expected, `expected "${expected}", got "${actual}"`);
+  }
+
+  function run() {
+    // Relative labels near "today" are untouched by the year rule.
+    check('20260906', 'Today');
+    check('20260905', 'Yesterday');
+    check('20260907', 'Tomorrow');
+
+    // The last 6 past days collapse to a bare weekday, still no year.
+    check('20260831', 'Monday');
+    // One day further back falls through to the short form.
+    check('20260830', 'Sun Aug 30');
+    check('20260829', 'Sat Aug 29');
+
+    // Far in the past, same year as "today": no year suffix.
+    check('20260107', 'Wed Jan 7');
+
+    // Far in the past, a different year: formatDateFull's rule already
+    // covered this case even before the fix — pin it so it stays covered.
+    check('20250315', 'Sat Mar 15 \'25');
+
+    // Future day, same year: no year suffix either way.
+    check('20261225', 'Fri Dec 25');
+
+    // G2-52: a future day in a different year used to render with no year
+    // at all, because `monthsAgo` (today minus the parsed day) is negative
+    // for every future day and the old guard only fired when it was > 6.
+    // These are exactly the shape of the live defect (a 2027 search result
+    // reading as this year).
+    check('20270301', 'Mon Mar 1 \'27');
+    check('20271220', 'Mon Dec 20 \'27');
+
+    assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
+  }
+
+  run();
+</script>
+</html>

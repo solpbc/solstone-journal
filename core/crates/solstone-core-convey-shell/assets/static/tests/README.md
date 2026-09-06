@@ -1,6 +1,7 @@
 Open `solstone/convey/static/tests/api.html` in a browser; each assertion reports pass/fail inline.
 Open `solstone/convey/static/tests/diagnostic-console.html` in a browser; each assertion reports pass/fail inline.
 Open `solstone/convey/static/tests/date-nav.html` in a browser; each assertion reports pass/fail inline for date-nav.js labels, log1p heat, year totals, unit pluralization, and dayless fallback.
+Open `solstone/convey/static/tests/date_format.html` in a browser; each assertion reports pass/fail inline for formatDateShort's relative labels, last-week weekday collapse, and the year suffix (including future-dated days, G2-52).
 Open `solstone/convey/static/tests/day-grid.html` in a browser; each assertion reports pass/fail inline for the DayGrid primitive's year blocks, legend, keyboard, peek, anchor, remount, and select-range behavior.
 Open `solstone/convey/static/tests/gate-drawer.html` in a browser; each assertion reports pass/fail inline for gate-drawer.js reason lines, metric rows, missing metrics, action html, and open-state preservation.
 Open `solstone/apps/curation/static/tests/curation-evidence-drawer.html` in a browser; each assertion reports pass/fail inline.

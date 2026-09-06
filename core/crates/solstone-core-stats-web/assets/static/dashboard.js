@@ -833,11 +833,14 @@ const Dashboard = (function() {
     // The 30-day verdict can say "caught up" while a much larger all-time
     // backlog sits several screens down (X-11/G2-36) — name it here, right
     // under the verdict, instead of leaving the owner to reconcile the two
-    // numbers on their own.
+    // numbers on their own. "waiting to be transcribed" names the specific
+    // population (pending_segments) so it reads as a different job from the
+    // broader "items needing processing" tile further down the page, which
+    // counts every processing step, not just audio (G2-41).
     const olderQueued = count((stats.totals || {}).pending_segments);
     if (bl && bl.degraded !== true && counts.pending === 0 && counts.stuck === 0 && olderQueued > 0) {
       heroChildren.push(el('p', {className: 'backlog-hero-line backlog-hero-secondary'}, [
-        `${olderQueued.toLocaleString()} older audio segments from before the last 30 days are still queued.`
+        `${olderQueued.toLocaleString()} older audio segments from before the last 30 days are still waiting to be transcribed.`
       ]));
     }
     const section = el('section', {className: 'backlog-section', id: 'backlogSection'}, [
@@ -1016,15 +1019,30 @@ const Dashboard = (function() {
       facetMeta
     );
 
-    // Render Activities stacked bar chart
+    // Render Activities stacked bar chart. Activity ids are storage slugs
+    // (e.g. 'ai_conversation'); the facets chart above already gets a
+    // {title} per slug from the server, so give this chart the same shape
+    // of meta rather than falling back to the raw key (G2-42). There's no
+    // server-supplied title list for activities, so the fallback title is
+    // the slug with underscores turned into spaces — enough to turn
+    // 'ai_conversation' into 'ai conversation' without inventing a name.
+    const activityCounts = stats.talents.counts_by_day || {};
+    const activityMeta = {
+      emptyIcon: window.ConveyIcons.svg('zap'),
+      emptyText: 'no activity data yet',
+      ariaLabel: 'activities bar chart showing activity counts over the last 30 days'
+    };
+    Object.values(activityCounts).forEach(dayCounts => {
+      Object.keys(dayCounts || {}).forEach(activityId => {
+        if (!activityMeta[activityId]) {
+          activityMeta[activityId] = {title: activityId.replace(/_/g, ' ')};
+        }
+      });
+    });
     buildStackedCategoryChart(
       document.getElementById('activitiesChart'),
-      stats.talents.counts_by_day || {},
-      {
-        emptyIcon: window.ConveyIcons.svg('zap'),
-        emptyText: 'no activity data yet',
-        ariaLabel: 'activities bar chart showing activity counts over the last 30 days'
-      }
+      activityCounts,
+      activityMeta
     );
 
     // Render repairs if needed. pending_segments is dropped from this list
@@ -1039,12 +1057,19 @@ const Dashboard = (function() {
     if (hasRepairs) {
       const alert = el('div', {className: 'chart-section alert-repair'}, [
         el('h2', {}, ['items needing processing']),
+        // This tile counts every processing step (audio, screen, and
+        // everything else waiting on the thinking pass), not just the
+        // audio backlog named in the verdict above — the two are different
+        // jobs, not two answers to the same question (G2-41).
+        el('p', {className: 'repair-section-note'}, [
+          'this counts every step of processing, not just the audio backlog above.'
+        ]),
         el('div', {className: 'stats-grid', id: 'repairGrid'})
       ]);
 
       const repairGrid = alert.querySelector('#repairGrid');
       const repairLabels = {
-        segments_pending_think: 'segments waiting for processing'
+        segments_pending_think: 'material waiting for the thinking pass'
       };
       // Neutral (matches the rest of the page) once the 30-day verdict is
       // caught up; --danger only while it isn't (X-11).

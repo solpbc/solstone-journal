@@ -72,6 +72,14 @@
     local: 'Local',
   };
   let providerLabels = fallbackProviderLabels;
+  // Mirrors stats' MODEL_LABELS (solstone-core-stats-web/assets/static/token-card.js):
+  // a local model can self-report a raw wire id that reads fine in a log but
+  // not as a fact on a table row. Keeping the same resolved name here means
+  // the same runs read the same way in both apps (G2-43); the exact raw id
+  // stays in this view's own "exact ids" disclosure, untouched by this.
+  const LOCAL_MODEL_LABELS = {
+    'local/qwen3.5-4b': 'Qwen 3.5 4B (local)',
+  };
   const providerTerms = {
     anthropic: 'https://www.anthropic.com/legal/commercial-terms',
     google: 'https://ai.google.dev/gemini-api/terms',
@@ -1306,12 +1314,75 @@
     return button;
   }
 
-  function renderThinkingRunList(host, runs) {
+  function runStatusLabel(run) {
+    return run.failed ? 'failed' : (run.status || 'unknown').replaceAll('_', ' ');
+  }
+
+  // Column order for the runs table. `hideable` columns can be lifted out
+  // of the table (into the group summary sentence, or dropped outright when
+  // every row in the group is blank) when a whole group agrees on them —
+  // a ten-column table where three columns repeat one value on every row
+  // and two are always empty answers "is my journal thinking?" with mostly
+  // noise (G2-46). `ran` and the run-log control are never hidden.
+  const thinkingRunColumns = [
+    {key: 'status', label: 'status', hideable: true, value: runStatusLabel},
+    {key: 'model', label: 'model', hideable: true, value: runModelLabel},
+    {key: 'provider', label: 'provider', hideable: true, value: runProviderLabel},
+    {key: 'runtime', label: 'runtime', hideable: false, value: (run) => window.JournalFormat.duration(run.runtime_seconds)},
+    {key: 'thinking_count', label: 'thinking events', hideable: false, value: (run) => run.thinking_count},
+    {key: 'tool_count', label: 'tool calls', hideable: false, value: (run) => run.tool_count},
+    {key: 'facet', label: 'facet', hideable: true, value: (run) => run.facet},
+    {key: 'output', label: 'output', hideable: true, value: (run) => (run.output_file ? 'output' : '')},
+  ];
+
+  // A group-wide constant (status/model/provider identical on every run) or
+  // an always-empty column (facet/output) is redundant on every row; both
+  // conditions are computed once per group, from the full group rather than
+  // just the shown page, so the table shape doesn't change as more rows
+  // page in (G2-46).
+  function thinkingRunHiddenColumns(group) {
+    const hidden = new Set();
+    ['status', 'model', 'provider'].forEach((key) => {
+      const column = thinkingRunColumns.find((col) => col.key === key);
+      const values = new Set(group.map((run) => String(column.value(run) ?? '')));
+      if (values.size === 1) hidden.add(key);
+    });
+    ['facet', 'output'].forEach((key) => {
+      const column = thinkingRunColumns.find((col) => col.key === key);
+      if (group.every((run) => !column.value(run))) hidden.add(key);
+    });
+    return hidden;
+  }
+
+  // "all 52 pulse runs completed on qwen3.5-4b, about 20 seconds each" — the
+  // sentence a reader would otherwise have to derive by scanning 52 identical
+  // rows, shown once when the group actually is that uniform (G2-46).
+  function thinkingRunGroupNote(label, group) {
+    if (!group.length) return null;
+    const statuses = new Set(group.map(runStatusLabel));
+    const models = new Set(group.map(runModelLabel));
+    const providers = new Set(group.map(runProviderLabel));
+    if (statuses.size !== 1 || models.size !== 1 || providers.size !== 1) return null;
+    const durations = group
+      .map((run) => Number(run.runtime_seconds))
+      .filter((seconds) => Number.isFinite(seconds));
+    const avgSeconds = durations.length
+      ? Math.round(durations.reduce((sum, seconds) => sum + seconds, 0) / durations.length)
+      : null;
+    const runWord = group.length === 1 ? 'run' : 'runs';
+    const durationText = avgSeconds !== null ? `, about ${window.JournalFormat.duration(avgSeconds)} each` : '';
+    return `all ${group.length} ${label} ${runWord} ${[...statuses][0]} on ${[...models][0]}${durationText}.`;
+  }
+
+  function renderThinkingRunList(host, runs, hiddenColumns = new Set()) {
+    const visibleColumns = thinkingRunColumns.filter((column) => !hiddenColumns.has(column.key));
     const table = document.createElement('table');
     table.className = 'thinking-runs-table';
     const head = document.createElement('thead');
     const headRow = document.createElement('tr');
-    for (const label of ['ran', 'status', 'model', 'provider', 'runtime', 'thinking events', 'tool calls', 'facet', 'output', 'prompt']) {
+    // G2-45: this column holds the run-log button, not the prompt — the
+    // word "prompt" already names a different tab inside the run detail.
+    for (const label of ['ran', ...visibleColumns.map((column) => column.label), 'run log']) {
       const cell = document.createElement('th');
       cell.scope = 'col';
       cell.textContent = label;
@@ -1323,17 +1394,15 @@
     runs.forEach((run) => {
       const row = document.createElement('tr');
       if (run.failed) row.className = 'thinking-run-failed';
-      for (const value of [window.JournalFormat.timestamp(run.start), run.failed ? 'failed' : (run.status || 'unknown').replaceAll('_', ' '), runModelLabel(run), runProviderLabel(run), window.JournalFormat.duration(run.runtime_seconds), run.thinking_count, run.tool_count, run.facet]) {
+      const values = [window.JournalFormat.timestamp(run.start), ...visibleColumns.map((column) => column.value(run))];
+      for (const value of values) {
         const cell = document.createElement('td');
         if (value !== null && value !== undefined && value !== '') cell.textContent = value;
         row.appendChild(cell);
       }
-      const output = document.createElement('td');
-      if (run.output_file) output.textContent = 'output';
-      row.appendChild(output);
-      const prompt = document.createElement('td');
-      prompt.appendChild(thinkingRunControl(run));
-      row.appendChild(prompt);
+      const runLog = document.createElement('td');
+      runLog.appendChild(thinkingRunControl(run));
+      row.appendChild(runLog);
       body.appendChild(row);
     });
     table.appendChild(body);
@@ -1458,8 +1527,19 @@
       exact.className = 'thinking-runs-group-id';
       exact.textContent = `exact id: ${name}`;
       details.appendChild(exact);
+      // Computed from the whole group, not just the shown page, so the
+      // note and the set of hidden columns don't change shape as more rows
+      // page in (G2-46).
+      const groupNote = thinkingRunGroupNote(talentLabel(name), group);
+      if (groupNote) {
+        const note = document.createElement('p');
+        note.className = 'thinking-runs-group-note';
+        note.textContent = groupNote;
+        details.appendChild(note);
+      }
+      const hiddenColumns = thinkingRunHiddenColumns(group);
       const shown = state.runsGroupShown.get(name) || thinkingRunsPageSize;
-      renderThinkingRunList(details, group.slice(0, shown));
+      renderThinkingRunList(details, group.slice(0, shown), hiddenColumns);
       if (group.length > shown) {
         const remaining = group.length - shown;
         const next = Math.min(thinkingRunsPageSize, remaining);
@@ -1851,14 +1931,26 @@
   function runModelLabel(run) {
     const modelId = String(run.model || '').trim();
     if (!modelId) return run.model;
+    const provider = String(run.provider || '').trim();
+    const prefix = `${provider}/`;
+    // The local lane has no model_tiers entry (byoModelLabel below only
+    // covers BYO cloud providers), so it fell through to the bare wire id
+    // ("qwen3.5-4b") while stats showed the same run as "Qwen 3.5 4B
+    // (local)" — same model, three renderings across the two apps (G2-43).
+    const qualifiedId = prefix.length > 1 && modelId.startsWith(prefix) ? modelId : `${prefix}${modelId}`;
+    const knownLabel = LOCAL_MODEL_LABELS[qualifiedId.toLowerCase()];
+    if (knownLabel) return knownLabel;
     const tierLabel = byoModelLabel(run.provider, modelId, state.providers);
     if (tierLabel && tierLabel !== modelId) return tierLabel;
-    const prefix = `${String(run.provider || '').trim()}/`;
     return prefix.length > 1 && modelId.startsWith(prefix) ? modelId.slice(prefix.length) : modelId;
   }
 
+  // providerLabel() brand-names a provider for the BYO provider chooser
+  // ("Claude", "Local"); the runs table is a plain metadata column, and the
+  // rest of the shell (stats' provider column) shows that value lowercase
+  // (G2-43).
   function runProviderLabel(run) {
-    return run.provider ? providerLabel(run.provider) : run.provider;
+    return run.provider ? providerLabel(run.provider).toLowerCase() : run.provider;
   }
 
   function talentLabel(name) {
