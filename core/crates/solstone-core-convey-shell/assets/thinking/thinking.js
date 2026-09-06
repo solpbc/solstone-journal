@@ -1428,7 +1428,7 @@
         const more = document.createElement('button');
         more.type = 'button';
         more.className = 'thinking-runs-control';
-        more.textContent = `show ${next} more run${next !== 1 ? 's' : ''} of ${remaining} left`;
+        more.textContent = `show ${next} more run${next !== 1 ? 's' : ''} · ${remaining} left`;
         more.addEventListener('click', () => {
           state.runsGroupShown.set(name, shown + thinkingRunsPageSize);
           state.runsGroupOpen.set(name, true);

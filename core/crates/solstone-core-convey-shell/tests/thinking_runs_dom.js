@@ -739,7 +739,7 @@ async function main() {
   assert.strictEqual(busyGroup.children[2].children[0].children[0].children[0].textContent, 'ran', 'the run time column says when the run executed');
   assert.strictEqual(busyGroup.children[2].children[1].children.length, 50, 'a group pages its runs 50 at a time');
   const showMore = busyGroup.children[busyGroup.children.length - 1];
-  assert.strictEqual(showMore.textContent, 'show 50 more runs of 70 left', 'the group offers the next page');
+  assert.strictEqual(showMore.textContent, 'show 50 more runs \u00b7 70 left', 'the group offers the next page');
   showMore.emit('click');
   const pagedGroup = nodes.get('thinkingRunsContent').children[1].children[1];
   assert.strictEqual(pagedGroup.children[2].children[1].children.length, 100, 'showing more extends the same group');
