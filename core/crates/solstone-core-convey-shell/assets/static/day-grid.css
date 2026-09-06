@@ -373,3 +373,14 @@ button.daygrid-cell {
     flex-direction: column;
   }
 }
+
+/* On a phone the day cells were 12x12, far under a finger. The grid already
+   lives in a horizontal scroller, so the cells can grow there without pushing
+   anything else off the page; the legend swatches stay small because they are
+   read, not tapped (X-09). */
+@media (max-width: 480px) {
+  .daygrid {
+    --daygrid-cell: 24px;
+    --daygrid-gap: 3px;
+  }
+}

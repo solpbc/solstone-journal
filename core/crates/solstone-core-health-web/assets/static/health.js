@@ -1172,7 +1172,8 @@
         summaryBtn.setAttribute('data-action', 'toggle-error');
         summaryBtn.setAttribute('aria-expanded', 'false');
         summaryBtn.setAttribute('aria-controls', panelId);
-        summaryBtn.style.cssText = 'flex: 1 1 auto; min-width: 0; text-align: left; background: none; border: none; padding: 0; margin: 0; font: inherit; color: inherit; cursor: pointer;';
+        summaryBtn.className = 'error-summary-btn';
+        summaryBtn.style.cssText = 'flex: 1 1 auto; min-width: 0; text-align: left; background: none; border: none; margin: 0; font: inherit; color: inherit; cursor: pointer;';
         row.appendChild(summaryBtn);
 
         const actions = document.createElement('span');

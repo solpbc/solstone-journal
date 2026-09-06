@@ -3794,7 +3794,7 @@ function renderJournalDetailView(entity) {
     indicators.push(`Last active: ${displayDate}`);
   }
   if (entity.total_observation_count > 0) {
-    indicators.push(`${entity.total_observation_count} mention${entity.total_observation_count !== 1 ? 's' : ''}`);
+    indicators.push(`${groupedCount(entity.total_observation_count)} mention${entity.total_observation_count !== 1 ? 's' : ''}`);
   }
   if (entity.facets && entity.facets.length > 0) {
     indicators.push(`${entity.facets.length} facet${entity.facets.length !== 1 ? 's' : ''}`);
@@ -3884,7 +3884,7 @@ function renderJournalDetailView(entity) {
       if (facet.observation_count > 0) {
         const obs = document.createElement('span');
         obs.className = 'facet-rel-obs';
-        obs.textContent = `${facet.observation_count} mention${facet.observation_count !== 1 ? 's' : ''}`;
+        obs.textContent = `${groupedCount(facet.observation_count)} mention${facet.observation_count !== 1 ? 's' : ''}`;
         meta.appendChild(obs);
       }
 
@@ -5356,8 +5356,15 @@ function renderEntities(searchTerm = '') {
   renderDetectedTable(searchTerm);
 }
 
+/// Owner-facing counts on this surface reach five digits, so they carry the
+/// same thousands separators stats already writes (G2-50).
+function groupedCount(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toLocaleString() : String(value ?? '');
+}
+
 function entityCountLabel(count) {
-  return `${count} ${count === 1 ? 'entity' : 'entities'}`;
+  return `${groupedCount(count)} ${count === 1 ? 'entity' : 'entities'}`;
 }
 
 function journalListStateKey() {
@@ -5437,13 +5444,13 @@ function renderJournalTypeFilter() {
   filter.replaceChildren();
   const all = document.createElement('option');
   all.value = '';
-  all.textContent = `all types (${journalSummary.entity_total || 0})`;
+  all.textContent = `all types (${groupedCount(journalSummary.entity_total || 0)})`;
   filter.append(all);
   const buckets = journalSummary.type_counts || [];
   buckets.forEach(({bucket, count}) => {
     const option = document.createElement('option');
     option.value = bucket;
-    option.textContent = `${bucket} (${count})`;
+    option.textContent = `${bucket} (${groupedCount(count)})`;
     filter.append(option);
   });
   if (journalEntityType && !buckets.some(({bucket}) => bucket === journalEntityType)) {
@@ -5478,7 +5485,7 @@ function renderJournalEntities() {
   noMatchEl.style.display = entityTotal && !total ? 'block' : 'none';
   countEl.style.display = '';
   countEl.textContent = total
-    ? `${start + 1}–${start + items.length} of ${entityCountLabel(total)}`
+    ? `${groupedCount(start + 1)}–${groupedCount(start + items.length)} of ${entityCountLabel(total)}`
     : entityCountLabel(0);
   let label = null, grid = null;
   items.forEach(entity => {
@@ -5571,8 +5578,8 @@ function createJournalEntityCard(entity) {
   if (entity.total_observation_count > 0) {
     const badge = document.createElement('div');
     badge.className = 'entity-card-badge';
-    badge.textContent = entity.total_observation_count;
-    badge.title = `${entity.total_observation_count} mention${entity.total_observation_count !== 1 ? 's' : ''}`;
+    badge.textContent = groupedCount(entity.total_observation_count);
+    badge.title = `${groupedCount(entity.total_observation_count)} mention${entity.total_observation_count !== 1 ? 's' : ''}`;
     badge.setAttribute('role', 'img');
     badge.setAttribute('aria-label', badge.title);
     card.appendChild(badge);
@@ -5686,7 +5693,7 @@ function renderEntityCards(searchTerm = '') {
 
   const matchCount = container.querySelectorAll('.entity-card:not(.entity-card-pending)').length;
   if (term) {
-    countEl.textContent = `${matchCount} of ${totalCount} entities`;
+    countEl.textContent = `${groupedCount(matchCount)} of ${groupedCount(totalCount)} entities`;
     countEl.style.display = '';
     noMatchEl.style.display = matchCount === 0 && totalCount > 0 ? 'block' : 'none';
   } else {
@@ -5724,8 +5731,8 @@ function createEntityCard(entity) {
   if (entity.observation_count && entity.observation_count > 0) {
     const badge = document.createElement('div');
     badge.className = 'entity-card-mention-badge';
-    badge.textContent = entity.observation_count;
-    badge.title = `${entity.observation_count} mention${entity.observation_count > 1 ? 's' : ''}: times this entity came up`;
+    badge.textContent = groupedCount(entity.observation_count);
+    badge.title = `${groupedCount(entity.observation_count)} mention${entity.observation_count > 1 ? 's' : ''}: times this entity came up`;
     card.appendChild(badge);
   }
 
@@ -5844,7 +5851,7 @@ function renderDetectedPagination(total, start, end) {
   const nextDisabled = detectedPage >= totalPages ? 'disabled' : '';
   el.innerHTML =
     `<button ${prevDisabled} id="detected-prev-btn">previous</button>` +
-    `<span class="detected-page-info">showing ${start + 1}\u2013${end} of ${total} detected entities</span>` +
+    `<span class="detected-page-info">showing ${groupedCount(start + 1)}\u2013${groupedCount(end)} of ${groupedCount(total)} detected entities</span>` +
     `<button ${nextDisabled} id="detected-next-btn">next</button>`;
 
   const prevBtn = document.getElementById('detected-prev-btn');
@@ -5889,8 +5896,8 @@ function createDetectedRow(entity) {
   if (entity.count && entity.count > 0) {
     const badge = document.createElement('span');
     badge.className = 'mention-count-badge';
-    badge.textContent = entity.count;
-    badge.title = `${entity.count} mention${entity.count !== 1 ? 's' : ''}: days detected in the last 30 days`;
+    badge.textContent = groupedCount(entity.count);
+    badge.title = `${groupedCount(entity.count)} mention${entity.count !== 1 ? 's' : ''}: days detected in the last 30 days`;
     nameCell.appendChild(badge);
   }
   row.appendChild(nameCell);

@@ -895,6 +895,10 @@ h2.card-title {
   border-left: 4px solid #6b7280;
 }
 
+.error-summary-btn {
+  padding: 0;
+}
+
 .logs-header {
   display: flex;
   flex-wrap: wrap;
@@ -1362,6 +1366,16 @@ h2.card-title {
     display: inline-block;
     min-height: 44px;
     padding: 0.7em 0.5em;
+  }
+
+  /* The two disclosure rows that open a recent error and the service logs are
+     16px and 20px tall, set by their content. On phone they grow by padding
+     only, so wording, order and behaviour are unchanged. */
+  .error-summary-btn,
+  .logs-header {
+    min-height: 44px;
+    padding-top: 0.6em;
+    padding-bottom: 0.6em;
   }
 }
 
