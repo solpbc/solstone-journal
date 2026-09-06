@@ -1396,13 +1396,17 @@ function updateImportRow(importId, eventData) {
   }
 
   if (sourceCell && (eventData.source_type || eventData.source_display)) {
-    const fileText = row.children[1]?.textContent || '-';
-    const displayText = eventData.source_display || sourceMetadataByName[eventData.source_type]?.display_name || fileText;
-    if (displayText === fileText) {
-      sourceCell.textContent = '-';
-    } else {
-      sourceCell.innerHTML = renderSourceDisplay(eventData.source_type || '', displayText, displayText);
-    }
+    // Same rule as renderImportRow: the source column answers one question and
+    // never borrows the file name, so a live event and a reload agree (G3-113).
+    // Reading the file cell by position is gone with it -- the column order has
+    // already moved once.
+    const displayText = eventData.source_display
+      || sourceMetadataByName[eventData.source_type]?.display_name
+      || eventData.source_type
+      || '';
+    sourceCell.innerHTML = displayText
+      ? renderSourceDisplay(eventData.source_type || '', displayText, displayText)
+      : '-';
     row.dataset.sourceType = eventData.source_type || '';
   }
 

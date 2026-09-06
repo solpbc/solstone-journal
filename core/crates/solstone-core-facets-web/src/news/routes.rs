@@ -174,10 +174,11 @@ fn label_item(root: &std::path::Path, row: &store::NewsRow) -> Value {
 // Best-effort only — a missing or unreadable file yields no preview, not an error.
 fn preview_line(root: &std::path::Path, facet: &str, day: &str) -> Option<String> {
     let (_, content) = load(root, facet, day).ok().flatten()?;
-    // G1-116: a letter that never gets past its own metadata header (or is
-    // otherwise all header/heading/blank lines) has no prose to preview --
-    // fall back to the row's own facet name rather than showing nothing.
-    Some(preview_from_content(&content).unwrap_or_else(|| facet.to_owned()))
+    // G1-116 filled this slot with the row's own facet name when a letter had
+    // no prose to preview, but the card already renders `facet` in the cell
+    // immediately before this one, so the row read the same storage slug
+    // twice. No preview is honest; a duplicate is not.
+    preview_from_content(&content)
 }
 
 /// The longest a preview may run before it is cut with an ellipsis.
@@ -234,11 +235,18 @@ fn preview_from_content(content: &str) -> Option<String> {
     }
 }
 
+/// The header labels a letter's own scaffolding uses. Anything else before the
+/// colon is prose: "Reminder: the release ships Friday." is a sentence, not a
+/// header, and testing for "any single word" swallowed it.
+const HEADER_LABELS: [&str; 8] = [
+    "date", "from", "to", "subject", "sent", "cc", "bcc", "reply",
+];
+
 /// A leading `Label: value` metadata line ("Date: Saturday, September 05,
 /// 2026") is the letter's own header scaffolding, not something to preview --
 /// skip it like a heading. `TL;DR` gets its own handling below (its sentence
-/// is kept, not dropped); this catches everything else in that "word colon
-/// space" shape, and only before the first real paragraph.
+/// is kept, not dropped); this catches the rest of that "header colon space"
+/// shape, and only before the first real paragraph.
 fn is_metadata_line(line: &str) -> bool {
     match line.find(':') {
         Some(idx) if idx > 0 => {
@@ -247,7 +255,7 @@ fn is_metadata_line(line: &str) -> bool {
             // `TLDR:`/`TL;DR:` keep their own handling below (the sentence
             // after the label is the preview, not scaffolding to discard).
             !label.eq_ignore_ascii_case("tldr")
-                && label.chars().all(|c| c.is_ascii_alphanumeric())
+                && HEADER_LABELS.contains(&label.to_ascii_lowercase().as_str())
                 && after.starts_with(' ')
         }
         _ => false,
@@ -586,10 +594,20 @@ mod tests {
                 Some("The roundup covers the week's three launches."),
             ),
             // A letter that never gets past its own header has nothing to
-            // preview; the caller (preview_line) falls back to the facet name,
-            // not this function -- here it stays None.
+            // preview, and the caller shows no preview rather than repeating
+            // the facet name the card already carries.
             ("Date: Saturday, September 05, 2026\n", None),
             ("From: the team\nSubject: weekly notes\n", None),
+            // ...but "one word, colon, space" is also the shape of a very
+            // common lead-in. Only real header labels are scaffolding.
+            (
+                "Reminder: the release ships Friday and the backlog is clear.\n",
+                Some("Reminder: the release ships Friday and the backlog is clear."),
+            ),
+            (
+                "Monday: a quiet start, then two launches landed by lunch.\n",
+                Some("Monday: a quiet start, then two launches landed by lunch."),
+            ),
             // Every line short: the owner still gets the first one.
             ("a quiet week.\nnothing else.\n", Some("a quiet week.")),
             // Nothing to show at all.

@@ -1885,7 +1885,10 @@ clientsList.addEventListener('click', (event) => {
   if (action === 'ask') {
     showForgetStatus(row, '');
     setForgetAsking(row, true);
-    row.querySelector('[data-forget-action="confirm"]')?.focus();
+    // Focus the safe choice, not the destructive one: a held Enter on "forget
+    // this device" would otherwise repeat straight through the confirm. "keep
+    // it" sits in the same button row, so the confirm is one Tab away.
+    row.querySelector('[data-forget-action="cancel"]')?.focus();
   } else if (action === 'cancel') {
     setForgetAsking(row, false);
     row.querySelector('.client-forget-open')?.focus();

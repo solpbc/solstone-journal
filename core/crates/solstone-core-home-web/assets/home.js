@@ -381,8 +381,9 @@
     return names.map(function (name) {
       const data = measuredFacets[name];
       const minutes = isPlainObject(data) ? (parseInt(data.minutes || 0, 10) || 0) : 0;
-      const measured = isPlainObject(data) ? (parseInt(data.count || 0, 10) || 0) : 0;
-      return { name: name, measured: measured, text: isPlainObject(data) ? minutes + 'm' : 'no time measured' };
+      // No `count` here on purpose: facet_data counts the whole day, and the
+      // label beside these chips counts the window the card shows.
+      return { name: name, text: isPlainObject(data) ? minutes + 'm' : 'no time measured' };
     });
   }
 
@@ -438,7 +439,17 @@
     }
     const facetChips = facetChipRows(pulse, activities);
     if (facetChips.length) {
-      const measured = facetChips.reduce(function (total, chip) { return total + chip.measured; }, 0);
+      // Both halves of "N of M" have to count the same population. The
+      // facet_data counts are whole-day and cover every facet, while
+      // `activities` is the rolling window this card shows, so summing the
+      // counts against it printed a numerator larger than its denominator.
+      // Count the shown activities that land in a measured facet instead.
+      // G1-101.
+      const measuredFacets = isPlainObject(pulse.facet_data) ? pulse.facet_data : {};
+      const measured = activities.filter(function (activity) {
+        const facet = typeof activity.facet === 'string' ? activity.facet.trim() : '';
+        return Boolean(facet) && isPlainObject(measuredFacets[facet]);
+      }).length;
       const chipLabel = activities.length
         ? 'time by facet · measured for ' + measured + ' of ' + plural(activities.length, 'activity', 'activities')
         : 'time by facet';

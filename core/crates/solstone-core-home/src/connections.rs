@@ -171,8 +171,11 @@ fn is_mention_dominant(row: &serde_json::Map<String, Value>) -> bool {
 
 /// Function words a transcriber leaves behind. A name is not evidence; the
 /// token the match was made on is, and a match made on "The" is a match on
-/// nothing whatever the display name reads. Kept to closed-class words so a
-/// real subject is never on the list.
+/// nothing whatever the display name reads. Closed-class words only, but that
+/// is not a guarantee on its own: `he`, `an`, `so`, `than`, `or`, `i`, `it`
+/// and `to` are all real short personal names, and the single-character arm
+/// below has the same shape for CJK names. `is_residue_evidence` keeps a row
+/// whose token is the row's own name, which is what makes the list safe.
 const EVIDENCE_RESIDUE_WORDS: [&str; 40] = [
     "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "from", "had", "has", "have",
     "he", "her", "his", "i", "in", "is", "it", "its", "of", "on", "or", "our", "she", "so", "than",
@@ -202,6 +205,19 @@ fn is_residue_evidence(row: &serde_json::Map<String, Value>) -> bool {
     }
     let lower = label.to_lowercase();
     let token = lower.trim_matches(|character: char| !character.is_alphanumeric());
+    // A person really can be named "He", "An" or a single CJK character. When
+    // the residue token *is* the row's own name, the match was made on the
+    // name, which is the one case where a short token is real evidence.
+    // "Gallery At Reunion (The)" against the token "the" still drops.
+    let name = row
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_lowercase();
+    if !name.is_empty() && name == token {
+        return false;
+    }
     token.is_empty()
         || token.chars().count() == 1
         || !token.chars().any(char::is_alphabetic)
@@ -515,6 +531,11 @@ mod tests {
             json!({"name":"Ada Lovelace","evidence":[{"label":"the"}],"kinds":{"mentioned":{"count":40},"spoke-with":{"count":9}}}),
             json!({"name":"Ada Lovelace","kinds":{"mentioned":{"count":40}}}),
             json!({"name":"Ada Lovelace","evidence":[{"label":""}],"kinds":{"mentioned":{"count":40}}}),
+            // A person really is named "He", "An" or a single character, and
+            // the token the match was made on is their own name.
+            json!({"name":"He","evidence":[{"label":"He"}],"kinds":{"mentioned":{"count":40}}}),
+            json!({"name":"An","evidence":[{"label":"an"}],"kinds":{"mentioned":{"count":40}}}),
+            json!({"name":"\u{4f55}","evidence":[{"label":"\u{4f55}"}],"kinds":{"mentioned":{"count":40}}}),
         ] {
             assert!(
                 !is_residue_evidence(kept.as_object().unwrap()),

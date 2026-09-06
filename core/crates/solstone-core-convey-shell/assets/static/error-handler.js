@@ -114,8 +114,26 @@
   document.addEventListener('click', (e) => {
     if (startsNavigation(e)) markUnloadingForNavigation();
   });
+  // A submit only unloads this document when it actually navigates it: a form
+  // with target="_blank", or one whose handler preventDefaults after an await,
+  // leaves the owner here, and the 2 s guard would swallow a genuine failure.
+  // Same target/origin gate the click path uses.
+  function submitStartsNavigation(event) {
+    if (event.defaultPrevented) return false;
+    const form = event.target;
+    if (!form || typeof form.getAttribute !== 'function') return false;
+    const target = (form.getAttribute('target') || '').trim().toLowerCase();
+    if (target && target !== '_self') return false;
+    let url;
+    try {
+      url = new URL(form.getAttribute('action') || '', document.baseURI);
+    } catch (_) {
+      return false;
+    }
+    return url.origin === window.location.origin;
+  }
   document.addEventListener('submit', (e) => {
-    if (!e.defaultPrevented) markUnloadingForNavigation();
+    if (submitStartsNavigation(e)) markUnloadingForNavigation();
   });
   // B22: pagehide fires on paths that never reach a bfcache restore, and the
   // flag would otherwise latch true for the life of the document and drop
