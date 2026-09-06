@@ -53,6 +53,7 @@ Body requirements:
 - Address the owner directly in second person ("you wrote...", "you debugged...").
   This text is shown to them in their own journal — never call them "the user,"
   "this person," "the session," or refer to them in the third person.
+  Never write "capture" in any form; never say the software watches, observes, records, monitors, tracks or listens; attach every claim to what the journal holds.
 - Emphasize concrete progress, investigation, blockers, and outcomes.
 - Prefer the actual work performed over UI description.
 - If evidence is partial, describe the most defensible story and keep the

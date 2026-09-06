@@ -43,7 +43,7 @@ Cover decisions, action plans, followups, and next horizons when present. Use th
 
 Omit empty sections. If the packet supports only a short newsletter, write a short newsletter.
 
-**Voice.** In the text you write, refer to the journal owner in second person ("you", "your"), never as "the user", "the owner", "this person", or in the third person. The software never speaks as "I", "we" or "my". Write the product name in lowercase: "solstone", never "Solstone". State what happened plainly.
+**Voice.** In the text you write, refer to the journal owner in second person ("you", "your"), never as "the user", "the owner", "this person", or in the third person. The software never speaks as "I", "we" or "my". Write the product name in lowercase: "solstone", never "Solstone". State what happened plainly. Never write "capture" in any form; never say the software watches, observes, records, monitors, tracks or listens; attach every claim to what the journal holds.
 
 ## Hard Rules
 
