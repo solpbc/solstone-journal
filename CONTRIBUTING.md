@@ -13,7 +13,7 @@ Required everywhere:
 - Git
 - ripgrep (`rg`)
 - ffmpeg for audio processing
-- minisign 0.12 exactly; `scripts/transparency_signing.py` enforces this version
+- minisign 0.12 exactly
 
 Linux is the primary development platform. macOS is supported. Source-checkout installs on Apple Silicon need Xcode command line tools to build the CoreML parakeet helper. Owner-facing installs are the relocatable tree in [INSTALL.md](INSTALL.md), not a pip/uv/pipx package.
 
@@ -53,61 +53,24 @@ xcode-select --install
 brew install python git ripgrep ffmpeg uv
 ```
 
-## Source-checkout install
+## Source-checkout development
+
+`make install` is retired and exits with an error. The journal itself is Rust and has no Python environment; develop in the checkout with Cargo, via the Makefile targets in [AGENTS.md](AGENTS.md). The remaining `scripts/` hygiene tooling still uses `uv`, and the targets that need it build that environment on demand.
 
 ```bash
 git clone https://github.com/solpbc/solstone-journal.git
 cd solstone-journal
-make install
-.venv/bin/journal setup
+make test
+make ci
 ```
 
-`make install` creates `.venv/`, syncs dependencies from `pyproject.toml` and `uv.lock`, installs the package in editable mode, regenerates router skill references, and refreshes the `solstone` + `journal` project skill symlinks into the journal.
+To run a journal, install it from the distribution tree as described in [INSTALL.md](INSTALL.md); a checkout is not itself an installable journal. `journal setup` then configures the journal path, installs local transcription models, installs the agent skills, and starts the background service.
 
-In a source checkout, bare `uv sync` removes the published speakers-analyze helper because the workspace config prunes that package from the active dev environment; the `make speakers-analyze-helper` target that restored it was removed with the Python reference cut, so the helper must currently be reinstalled by hand. Use `uv sync --inexact` when you intentionally need a prune-free sync, which avoids the prune and is now the cleaner route. ⚠ If you do reinstall the helper by hand, note that from inside this workspace `uv pip install` can report success with exit code 0 while installing nothing unless `--no-config` is passed.
-
-`.venv/bin/journal setup` runs doctor diagnostics, confirms the journal path, installs local transcription models, installs the `solstone` user skill for Claude Code / Codex / Gemini when those agents are configured, installs the `solstone` + `journal` router skills into the journal, creates or refreshes the source-checkout wrappers at `~/.local/bin/solstone` and `~/.local/bin/journal`, and starts the background service. The default web interface listens on http://localhost:5015. Use `.venv/bin/journal setup --port 8000` to choose another port on the first run.
-
-After the first setup run, the wrapper lets you use `solstone` from anywhere:
-
-```bash
-journal service status
-journal setup
-```
-
-The source-checkout journal lives at `journal/` inside the repo unless you pass `--journal` or have already configured another path.
-
-Configure API keys in `journal/config/journal.json`. This file is the only key configuration method for source-checkout development:
-
-```bash
-mkdir -p journal/config
-cat > journal/config/journal.json << 'EOF'
-{
-  "env": {
-    "GOOGLE_API_KEY": "your-key-here"
-  }
-}
-EOF
-chmod 600 journal/config/journal.json
-```
-
-Replace `your-key-here` with your Google AI API key. Optional provider keys can be added to the same `env` object:
-
-```json
-{
-  "env": {
-    "GOOGLE_API_KEY": "your-gemini-key",
-    "OPENAI_API_KEY": "your-openai-key",
-    "ANTHROPIC_API_KEY": "your-anthropic-key"
-  }
-}
-```
-
-`journal.json` contains API keys and credentials. Keep it private and restricted (`chmod 600`).
+⚠ The prerequisites list above still describes the retired Python environment and is pending a rewrite. Provider keys are configured in the web interface under settings → providers, as described in [INSTALL.md](INSTALL.md).
 
 ### Seeding a dev/test journal from public media
 
-If you want a journal seeded with public-domain audio and screen media instead of your own journal material — useful for contributors who shouldn't be exposed to a maintainer's personal journal, integration-test scenarios, or a clean dev environment — see [docs/FIELD_JOURNAL.md](docs/FIELD_JOURNAL.md). The `setup_field_journal.sh` script at the repo root populates `journal/chronicle/` from a local clone of [solpbc/field_journal](https://github.com/solpbc/field_journal). It is opt-in and deliberately not part of `make install` or `journal setup`.
+If you want a journal seeded with public-domain audio and screen media instead of your own journal material — useful for contributors who shouldn't be exposed to a maintainer's personal journal, integration-test scenarios, or a clean dev environment — see [docs/FIELD_JOURNAL.md](docs/FIELD_JOURNAL.md). The `setup_field_journal.sh` script at the repo root populates the checkout's dev journal at `journal/chronicle/` from a local clone of [solpbc/field_journal](https://github.com/solpbc/field_journal). It is opt-in and deliberately not part of `journal setup`.
 
 ## Repo layout
 
@@ -184,11 +147,11 @@ After changing a router skill or an app command fragment, run:
 make skills
 ```
 
-That target first runs `scripts/build_skill_references.py` to regenerate the checked-in references, then refreshes the `solstone` + `journal` router skill symlinks inside the journal. `make install` also runs this target. Run `make check-skill-references` directly, or use `make install-checks`, to catch stale generated references.
+That target first runs `scripts/build_skill_references.py` to regenerate the checked-in references, then refreshes the `solstone` + `journal` router skill symlinks inside the journal. Run `make check-skill-references` directly, or use `make install-checks`, to catch stale generated references.
 
 ## Migrating from a source install to a tree install
 
-A tree install puts `solstone` and `journal` on PATH directly. See [INSTALL.md](INSTALL.md). It does not use the source-checkout managed wrapper, and it does not use `.venv/bin/solstone`.
+A tree install puts `solstone` and `journal` on PATH directly. See [INSTALL.md](INSTALL.md). It does not use a source-checkout wrapper.
 
 `make uninstall` is disabled by design. To migrate cleanly from a source checkout to a tree install, remove user-runtime artifacts explicitly:
 

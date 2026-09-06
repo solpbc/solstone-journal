@@ -2,7 +2,7 @@
 
 `setup_field_journal.sh` (at the repo root) populates `journal/chronicle/` with content from [solpbc/field_journal](https://github.com/solpbc/field_journal) — a curated public-domain set of audio and screen media — so an instance of solstone runs against real, reproducible test material instead of personal journal material.
 
-This is an **opt-in dev/test primitive**. It is not part of the canonical install or setup paths (`make install` and `journal setup` do not invoke it, and the script is deliberately not wired into the Makefile). Reach for it when you want:
+This is an **opt-in dev/test primitive**. It is not part of the canonical install or setup paths (`journal setup` does not invoke it, and the script is deliberately not wired into the Makefile). Reach for it when you want:
 
 - a contributor or contractor on solstone who shouldn't be exposed to a maintainer's personal journal,
 - an integration-test scenario seeded from stable, redistributable media,
@@ -23,7 +23,7 @@ git clone https://github.com/solpbc/field_journal ~/Field_Journal
 
 ### 2. Scaffold the journal
 
-If you don't already have a configured `journal/` (identity, providers, convey secret, facets), bootstrap one the normal way first — `make install` (source checkout) or the tree install in [INSTALL.md](../INSTALL.md), followed by `journal setup`, then whatever initial first-run wizard work brings the journal to a usable state. `setup_field_journal.sh` only populates `chronicle/`; it expects the rest of the journal scaffolding to already exist.
+If you don't already have a configured `journal/` (identity, providers, convey secret, facets), bootstrap one the normal way first, the tree install in [INSTALL.md](../INSTALL.md) followed by `journal setup`, then whatever initial first-run wizard work brings the journal to a usable state. `setup_field_journal.sh` only populates `chronicle/`; it expects the rest of the journal scaffolding to already exist.
 
 ### 3. Populate chronicle from field_journal
 
