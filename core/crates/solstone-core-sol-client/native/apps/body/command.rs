@@ -9,7 +9,7 @@ use crate::error::{ClientError, SERVICE_DOWN_MESSAGE};
 use crate::json_format::sorted_json_pretty_ascii;
 use crate::transport::{ApiRequest, HttpMethod, QueryParam, TimeoutPolicy};
 
-const BODY_RESPONSE_ERROR: &str = "I couldn't read the response from the body app.";
+const BODY_RESPONSE_ERROR: &str = "the response from the body app couldn't be read.";
 
 #[must_use]
 pub fn status(ctx: CommandContext<'_>) -> CommandOutput {

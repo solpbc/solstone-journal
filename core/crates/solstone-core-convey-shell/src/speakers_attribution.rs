@@ -32,22 +32,22 @@ use solstone_core_speaker_resolve::segment_catalog::{
 
 const OWNER_TOO_CLOSE: (&str, &str, StatusCode) = (
     "speaker_owner_voice_too_close",
-    "I couldn't save that voice because it sounds too much like yours.",
+    "that voice couldn't be saved because it sounds too much like yours.",
     StatusCode::BAD_REQUEST,
 );
 const OWNER_NOT_ENOUGH: (&str, &str, StatusCode) = (
     "speaker_owner_centroid_required",
-    "I couldn't run that speaker command until your owner voice is set up.",
+    "that speaker command can't run until your owner voice is set up.",
     StatusCode::CONFLICT,
 );
 const OWNER_DAMAGED: (&str, &str, StatusCode) = (
     "speaker_owner_voice_reference_invalid",
-    "I couldn't save that voice because your owner voice reference needs attention.",
+    "that voice couldn't be saved because your owner voice reference needs attention.",
     StatusCode::CONFLICT,
 );
 const OWNER_IDENTITY_INVALID: (&str, &str, StatusCode) = (
     OWNER_IDENTITY_INVALID_REASON,
-    "I couldn't run that speaker command because your configured owner identity needs attention.",
+    "that speaker command couldn't run because your configured owner identity needs attention.",
     StatusCode::BAD_REQUEST,
 );
 
@@ -93,7 +93,7 @@ pub async fn assign(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
     {
         return err(
             "speaker_attribution_state_invalid",
-            "I couldn't apply that change because the sentence isn't in the right state.",
+            "that change couldn't be applied because the sentence isn't in the right state.",
             "Pick a sentence without a speaker.",
             StatusCode::BAD_REQUEST,
         );
@@ -177,7 +177,7 @@ pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
     let Some(speaker) = current.get("speaker").and_then(Value::as_str) else {
         return err(
             "speaker_attribution_state_invalid",
-            "I couldn't apply that change because the sentence isn't in the right state.",
+            "that change couldn't be applied because the sentence isn't in the right state.",
             "sentence has no speaker assignment yet",
             StatusCode::BAD_REQUEST,
         );
@@ -194,7 +194,7 @@ pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
     if current.get("confidence").and_then(Value::as_str) != Some("medium") {
         return err(
             "speaker_attribution_state_invalid",
-            "I couldn't apply that change because the sentence isn't in the right state.",
+            "that change couldn't be applied because the sentence isn't in the right state.",
             "attribution is not medium confidence",
             StatusCode::BAD_REQUEST,
         );
@@ -476,7 +476,7 @@ pub async fn propagate(Extension(root): Extension<Arc<JournalRoot>>, request: Re
     if old_speaker == new_speaker {
         return err(
             "invalid_request_value",
-            "I couldn't use one of those values.",
+            "one of those values couldn't be used.",
             "Choose two different speakers.",
             StatusCode::BAD_REQUEST,
         );
@@ -854,7 +854,7 @@ fn assign_fields(value: &Value) -> Result<Fields, Response> {
     let Some(source) = source.as_str() else {
         return Err(err(
             "internal_error",
-            "I couldn't complete that request.",
+            "that request didn't finish.",
             "source was not a string",
             StatusCode::INTERNAL_SERVER_ERROR,
         ));
@@ -915,7 +915,7 @@ fn common_fields(value: &Value, correction: bool) -> Result<Fields, Response> {
     ) else {
         return Err(err(
             "internal_error",
-            "I couldn't complete that request.",
+            "that request didn't finish.",
             "regex input was not a string",
             StatusCode::INTERNAL_SERVER_ERROR,
         ));
@@ -1005,7 +1005,7 @@ fn classify_indeterminate(
         "probe_not_found" | "probe_zero_norm" => Ok(OWNER_DAMAGED),
         _ => Err(err(
             "internal_error",
-            "I couldn't complete that request.",
+            "that request didn't finish.",
             &format!("unknown owner-contamination reason: {reason}"),
             StatusCode::INTERNAL_SERVER_ERROR,
         )),
@@ -1066,20 +1066,20 @@ pub(crate) fn entity_allowed(root: &std::path::Path, speaker: &str) -> Result<()
     match entity {
         Some(entity) if entity.is_blocked() => Err(err(
             "entity_blocked",
-            "I couldn't use that speaker because it's blocked.",
+            "that speaker couldn't be used because it's blocked.",
             &format!("Entity '{speaker}' is blocked"),
             StatusCode::BAD_REQUEST,
         )),
         Some(entity) if !solstone_core_entity::is_admissible_person(&entity) => Err(err(
             "speaker_not_person",
-            "I couldn't use that speaker because it isn't a Person.",
+            "that speaker couldn't be used because it isn't a Person.",
             &format!("Entity '{speaker}' is not a Person. Select an existing, unblocked Person."),
             StatusCode::BAD_REQUEST,
         )),
         Some(_) => Ok(()),
         None => Err(err(
             "speaker_not_found",
-            "I couldn't find that speaker.",
+            "that speaker couldn't be found.",
             &format!("Entity '{speaker}' not found"),
             StatusCode::NOT_FOUND,
         )),
@@ -1173,7 +1173,7 @@ fn valid_stream(value: &str) -> bool {
 fn invalid_day(detail: &str) -> Response {
     err(
         "invalid_day",
-        "I couldn't use that day.",
+        "that day couldn't be used.",
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -1181,7 +1181,7 @@ fn invalid_day(detail: &str) -> Response {
 fn invalid_segment_or_stream(detail: &str) -> Response {
     err(
         "invalid_segment_or_stream",
-        "I couldn't use that segment or stream.",
+        "that segment or stream couldn't be used.",
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -1207,7 +1207,7 @@ async fn request_json(request: Request) -> Result<Value, Response> {
     let value: Value = serde_json::from_slice(&bytes).map_err(|_| {
         err(
             "invalid_json_request",
-            "I couldn't read that JSON request.",
+            "that JSON request couldn't be read.",
             "request body must be a JSON object",
             StatusCode::BAD_REQUEST,
         )
@@ -1224,7 +1224,7 @@ fn owner_refusal(reason: (&str, &str, StatusCode), detail: &str) -> Response {
 fn sentence_missing(detail: &str) -> Response {
     err(
         "speaker_sentence_missing",
-        "I couldn't find that sentence. Try refreshing the page.",
+        "that sentence couldn't be found. try refreshing the page.",
         detail,
         StatusCode::NOT_FOUND,
     )
@@ -1232,7 +1232,7 @@ fn sentence_missing(detail: &str) -> Response {
 fn review_unavailable() -> Response {
     err(
         "speaker_review_unavailable",
-        "I couldn't load that speaker review.",
+        "that speaker review couldn't be loaded.",
         "No speaker labels found",
         StatusCode::NOT_FOUND,
     )
@@ -1240,7 +1240,7 @@ fn review_unavailable() -> Response {
 fn missing_body() -> Response {
     err(
         "missing_request_body",
-        "I couldn't find any data in that request.",
+        "that request had no data in it.",
         "No data provided",
         StatusCode::BAD_REQUEST,
     )
@@ -1248,7 +1248,7 @@ fn missing_body() -> Response {
 fn required(detail: &str) -> Response {
     err(
         "missing_required_field",
-        "I couldn't find a required field.",
+        "a required field is missing.",
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -1258,19 +1258,19 @@ fn write_error(detail: String, labels: bool) -> Response {
         let (code, message) = if labels {
             (
                 "speaker_labels_busy",
-                "I couldn't update those speaker attributions right now because they were busy. Try again in a moment.",
+                "those speaker attributions couldn't be updated right now because they were busy. try again in a moment.",
             )
         } else {
             (
                 "speaker_voiceprint_busy",
-                "I couldn't update that voice right now because it was busy. Try again in a moment.",
+                "that voice couldn't be updated right now because it was busy. try again in a moment.",
             )
         };
         err(code, message, &detail, StatusCode::SERVICE_UNAVAILABLE)
     } else {
         err(
             "speaker_command_failed",
-            "I couldn't finish that speaker command.",
+            "that speaker command didn't finish.",
             &detail,
             StatusCode::BAD_REQUEST,
         )

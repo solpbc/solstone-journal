@@ -48,7 +48,7 @@ pub async fn identify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
         Err(IdentifyPreflightError::Failed(detail)) => {
             return err(
                 "speaker_command_failed",
-                "I couldn't finish that speaker command.",
+                "that speaker command didn't finish.",
                 &detail,
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
@@ -99,7 +99,7 @@ pub async fn identify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
         Ok(value) => identify_response(value),
         Err(error) => err(
             "speaker_command_failed",
-            "I couldn't finish that speaker command.",
+            "that speaker command didn't finish.",
             &error.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
@@ -113,7 +113,7 @@ pub async fn operations(Extension(root): Extension<Arc<JournalRoot>>) -> Respons
         Err(error) => {
             return err(
                 "speaker_command_failed",
-                "I couldn't finish that speaker command.",
+                "that speaker command didn't finish.",
                 &error.to_string(),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
@@ -126,7 +126,7 @@ pub async fn operations(Extension(root): Extension<Arc<JournalRoot>>) -> Respons
         }
         Err(error) => err(
             "speaker_command_failed",
-            "I couldn't finish that speaker command.",
+            "that speaker command didn't finish.",
             &error.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
@@ -143,7 +143,7 @@ pub async fn operation(
         Err(error) => {
             return err(
                 "speaker_command_failed",
-                "I couldn't finish that speaker command.",
+                "that speaker command didn't finish.",
                 &error.to_string(),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
@@ -153,13 +153,13 @@ pub async fn operation(
         Ok(Some(state)) => Json(json!({"operation":summary(&state)})).into_response(),
         Ok(None) => err(
             "speaker_identify_operation_not_found",
-            "I couldn't find that speaker identify operation.",
+            "that speaker identify operation couldn't be found.",
             &format!("operation_id={operation_id}"),
             StatusCode::NOT_FOUND,
         ),
         Err(error) => err(
             "speaker_command_failed",
-            "I couldn't finish that speaker command.",
+            "that speaker command didn't finish.",
             &error.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
@@ -180,31 +180,31 @@ fn identify_response(value: Value) -> Response {
         | "already_undone" => Json(value).into_response(),
         "recoverable" | "in_progress" | "undoing" => err(
             "speaker_identify_recoverable",
-            "I couldn't finish that speaker identify operation, but it can be retried.",
+            "that speaker identify operation didn't finish, but it can be retried.",
             &value.to_string(),
             StatusCode::CONFLICT,
         ),
         "repair_required" | "undo_repair_required" => err(
             "speaker_identify_repair_required",
-            "I couldn't safely finish that speaker identify operation without repair.",
+            "that speaker identify operation couldn't finish safely without repair.",
             &value.to_string(),
             StatusCode::CONFLICT,
         ),
         "conflict" | "operation_already_undone" => err(
             "speaker_identify_conflict",
-            "I couldn't run that speaker identify operation because it conflicts with existing state.",
+            "that speaker identify operation couldn't run because it conflicts with existing state.",
             &value.to_string(),
             StatusCode::CONFLICT,
         ),
         "not_found" => err(
             "speaker_not_found",
-            "I couldn't find that speaker.",
+            "that speaker couldn't be found.",
             &value.to_string(),
             StatusCode::NOT_FOUND,
         ),
         _ => err(
             "speaker_command_failed",
-            "I couldn't finish that speaker command.",
+            "that speaker command didn't finish.",
             &value.to_string(),
             StatusCode::BAD_REQUEST,
         ),
@@ -228,7 +228,7 @@ fn encoder() -> solstone_core_entity::EncoderIdentity {
 fn bad(code: &str, detail: &str) -> Response {
     err(
         code,
-        "I couldn't use that request.",
+        "that request couldn't be used.",
         detail,
         StatusCode::BAD_REQUEST,
     )

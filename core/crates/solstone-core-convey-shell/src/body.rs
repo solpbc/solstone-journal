@@ -33,7 +33,7 @@ pub async fn background() -> Response {
 fn day_refusal() -> Response {
     solstone_core_convey_http::envelope::error_envelope(
         "invalid_day",
-        "I couldn't use that day.",
+        "that day couldn't be used.",
         "Invalid day",
         StatusCode::BAD_REQUEST,
     )

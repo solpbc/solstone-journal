@@ -44,7 +44,7 @@ pub async fn known(
     ) {
         return error_envelope(
             "invalid_request_value",
-            "I couldn't use one of those values.",
+            "one of those values couldn't be used.",
             "Invalid sort parameter",
             StatusCode::BAD_REQUEST,
         )

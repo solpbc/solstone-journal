@@ -114,7 +114,7 @@ async fn ac14_shell_router_applies_session_and_corrupt_contracts() {
                     .to_vec()
             )
             .expect("UTF-8")
-            .contains("Your settings were NOT changed")
+            .contains("your settings were NOT changed")
         );
     }
 }

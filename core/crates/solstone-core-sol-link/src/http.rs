@@ -576,7 +576,7 @@ fn config_error(error: ConfigMutationError) -> Response {
         ConfigMutationError::Write(_) => error_envelope(
             "config_write_failed",
             "Internal Server Error",
-            "I couldn't save your settings.",
+            "your settings couldn't be saved.",
             StatusCode::INTERNAL_SERVER_ERROR,
         )
         .into_response(),
@@ -587,7 +587,7 @@ fn corrupt_config() -> Response {
     error_envelope(
         "corrupt_config",
         "Internal Server Error",
-        "I couldn't read your settings.",
+        "your settings couldn't be read.",
         StatusCode::INTERNAL_SERVER_ERROR,
     )
     .into_response()

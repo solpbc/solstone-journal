@@ -46,7 +46,7 @@ pub async fn segments(
     if !is_day(&day) {
         return err(
             "invalid_day",
-            "I couldn't use that day.",
+            "that day couldn't be used.",
             "Invalid day format",
             StatusCode::BAD_REQUEST,
         );
@@ -62,7 +62,7 @@ pub async fn segments(
         _ => {
             return err(
                 "invalid_request_value",
-                "I couldn't use one of those values.",
+                "one of those values couldn't be used.",
                 "limit must be a positive integer",
                 StatusCode::BAD_REQUEST,
             );
@@ -73,7 +73,7 @@ pub async fn segments(
         Err(error) => {
             return err(
                 "speaker_command_failed",
-                "I couldn't finish that speaker command.",
+                "that speaker command didn't finish.",
                 &error.to_string(),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
@@ -97,7 +97,7 @@ pub async fn review(
     if !is_day(&day) {
         return err(
             "invalid_day",
-            "I couldn't use that day.",
+            "that day couldn't be used.",
             "Invalid day format",
             StatusCode::BAD_REQUEST,
         );
@@ -115,7 +115,7 @@ pub async fn review(
         SegmentLookup::Absent => {
             return err(
                 "speaker_review_unavailable",
-                "I couldn't load that speaker review.",
+                "that speaker review couldn't be loaded.",
                 "No transcript found",
                 StatusCode::NOT_FOUND,
             );
@@ -123,7 +123,7 @@ pub async fn review(
         SegmentLookup::MalformedLayout => {
             return err(
                 "invalid_segment_or_stream",
-                "I couldn't use that segment or stream.",
+                "that segment or stream couldn't be used.",
                 "Invalid segment key or stream",
                 StatusCode::BAD_REQUEST,
             );
@@ -131,7 +131,7 @@ pub async fn review(
         SegmentLookup::Failed(error) => {
             return err(
                 "speaker_command_failed",
-                "I couldn't finish that speaker command.",
+                "that speaker command didn't finish.",
                 &error.to_string(),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
@@ -139,7 +139,7 @@ pub async fn review(
         SegmentLookup::UnsupportedLayout => {
             return err(
                 "speaker_command_failed",
-                "I couldn't finish that speaker command.",
+                "that speaker command didn't finish.",
                 "segment layout is not readable",
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
@@ -149,7 +149,7 @@ pub async fn review(
     let Ok(raw) = fs::read_to_string(transcript) else {
         return err(
             "speaker_review_unavailable",
-            "I couldn't load that speaker review.",
+            "that speaker review couldn't be loaded.",
             "No transcript found",
             StatusCode::NOT_FOUND,
         );
@@ -204,7 +204,7 @@ pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
         solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid => {
             return err(
                 "speaker_owner_identity_invalid",
-                "I couldn't load speaker status because your configured owner identity needs attention.",
+                "speaker status couldn't be loaded because your configured owner identity needs attention.",
                 "configured owner identity is not admitted",
                 StatusCode::BAD_REQUEST,
             );
@@ -222,7 +222,7 @@ pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
         Err(error) => {
             return err(
                 "speaker_command_failed",
-                "I couldn't finish that speaker command.",
+                "that speaker command didn't finish.",
                 &error.to_string(),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
@@ -257,7 +257,7 @@ pub async fn suggest(
         _ => {
             return err(
                 "invalid_request_value",
-                "I couldn't use one of those values.",
+                "one of those values couldn't be used.",
                 "limit must be an integer",
                 StatusCode::BAD_REQUEST,
             );
@@ -268,7 +268,7 @@ pub async fn suggest(
         Err(error) => {
             return err(
                 "speaker_command_failed",
-                "I couldn't finish that speaker command.",
+                "that speaker command didn't finish.",
                 &error.to_string(),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );

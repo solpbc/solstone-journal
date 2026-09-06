@@ -32,7 +32,7 @@
           "normalized": [],
           "path": "/app/sol/",
           "response": {
-            "body": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "body": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
             "headers": {
               "Content-Type": "text/plain; charset=utf-8"
             },
@@ -46,7 +46,7 @@
           "normalized": [],
           "path": "/app/sol/20260403",
           "response": {
-            "body": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "body": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
             "headers": {
               "Content-Type": "text/plain; charset=utf-8"
             },
@@ -60,7 +60,7 @@
           "normalized": [],
           "path": "/app/sol/notaday",
           "response": {
-            "body": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "body": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
             "headers": {
               "Content-Type": "text/plain; charset=utf-8"
             },
@@ -74,7 +74,7 @@
           "normalized": [],
           "path": "/app/sol/workspace",
           "response": {
-            "body": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "body": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
             "headers": {
               "Content-Type": "text/plain; charset=utf-8"
             },
@@ -88,7 +88,7 @@
           "normalized": [],
           "path": "/app/sol/background",
           "response": {
-            "body": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "body": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
             "headers": {
               "Content-Type": "text/plain; charset=utf-8"
             },
@@ -103,8 +103,8 @@
           "path": "/app/sol/api/talents/20260403",
           "response": {
             "body": {
-              "detail": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-              "error": "I couldn't read your settings.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
             "headers": {
@@ -121,8 +121,8 @@
           "path": "/app/sol/api/talents/20260403?facet=work",
           "response": {
             "body": {
-              "detail": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-              "error": "I couldn't read your settings.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
             "headers": {
@@ -139,8 +139,8 @@
           "path": "/app/sol/api/run/1710000000000",
           "response": {
             "body": {
-              "detail": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-              "error": "I couldn't read your settings.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
             "headers": {
@@ -157,8 +157,8 @@
           "path": "/app/sol/api/run/1710000060000",
           "response": {
             "body": {
-              "detail": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-              "error": "I couldn't read your settings.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
             "headers": {
@@ -175,8 +175,8 @@
           "path": "/app/sol/api/run/1710000120000",
           "response": {
             "body": {
-              "detail": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-              "error": "I couldn't read your settings.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
             "headers": {
@@ -193,8 +193,8 @@
           "path": "/app/sol/api/output/20260403/talents/example-output.md",
           "response": {
             "body": {
-              "detail": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-              "error": "I couldn't read your settings.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
             "headers": {
@@ -211,8 +211,8 @@
           "path": "/app/sol/api/output/20260403/../../etc/passwd",
           "response": {
             "body": {
-              "detail": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-              "error": "I couldn't read your settings.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
             "headers": {
@@ -229,8 +229,8 @@
           "path": "/app/sol/api/preview/chat",
           "response": {
             "body": {
-              "detail": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-              "error": "I couldn't read your settings.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
             "headers": {
@@ -247,8 +247,8 @@
           "path": "/app/sol/api/index",
           "response": {
             "body": {
-              "detail": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-              "error": "I couldn't read your settings.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
             "headers": {
@@ -265,8 +265,8 @@
           "path": "/app/sol/api/stats/202604",
           "response": {
             "body": {
-              "detail": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-              "error": "I couldn't read your settings.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
             "headers": {
@@ -283,8 +283,8 @@
           "path": "/app/sol/api/badge-count",
           "response": {
             "body": {
-              "detail": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-              "error": "I couldn't read your settings.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
             "headers": {
@@ -301,8 +301,8 @@
           "path": "/app/sol/api/updated-days",
           "response": {
             "body": {
-              "detail": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-              "error": "I couldn't read your settings.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
             "headers": {
@@ -988,7 +988,7 @@
           "response": {
             "body": {
               "detail": "talent run 1710000000000 not found",
-              "error": "I couldn't find that talent run.",
+              "error": "that talent run couldn't be found.",
               "reason_code": "talent_not_found"
             },
             "headers": {
@@ -1006,7 +1006,7 @@
           "response": {
             "body": {
               "detail": "talent run 1710000060000 not found",
-              "error": "I couldn't find that talent run.",
+              "error": "that talent run couldn't be found.",
               "reason_code": "talent_not_found"
             },
             "headers": {
@@ -1024,7 +1024,7 @@
           "response": {
             "body": {
               "detail": "talent run 1710000120000 not found",
-              "error": "I couldn't find that talent run.",
+              "error": "that talent run couldn't be found.",
               "reason_code": "talent_not_found"
             },
             "headers": {
@@ -1042,7 +1042,7 @@
           "response": {
             "body": {
               "detail": "File not found",
-              "error": "I couldn't find that file.",
+              "error": "that file isn't available.",
               "reason_code": "file_not_found"
             },
             "headers": {
@@ -1060,7 +1060,7 @@
           "response": {
             "body": {
               "detail": "Invalid path",
-              "error": "I couldn't use that path.",
+              "error": "that path couldn't be used.",
               "reason_code": "invalid_path"
             },
             "headers": {
@@ -1949,7 +1949,7 @@
           "response": {
             "body": {
               "detail": "",
-              "error": "I'm still working on that talent run.",
+              "error": "that talent run is still running.",
               "reason_code": "talent_run_pending"
             },
             "headers": {
@@ -1967,7 +1967,7 @@
           "response": {
             "body": {
               "detail": "talent run 1710000120000 is malformed",
-              "error": "I couldn't read that talent run.",
+              "error": "that talent run couldn't be read.",
               "reason_code": "talent_run_malformed"
             },
             "headers": {
@@ -2003,7 +2003,7 @@
           "response": {
             "body": {
               "detail": "Invalid path",
-              "error": "I couldn't use that path.",
+              "error": "that path couldn't be used.",
               "reason_code": "invalid_path"
             },
             "headers": {
@@ -2904,7 +2904,7 @@
           "response": {
             "body": {
               "detail": "",
-              "error": "I'm still working on that talent run.",
+              "error": "that talent run is still running.",
               "reason_code": "talent_run_pending"
             },
             "headers": {
@@ -2922,7 +2922,7 @@
           "response": {
             "body": {
               "detail": "talent run 1710000120000 is malformed",
-              "error": "I couldn't read that talent run.",
+              "error": "that talent run couldn't be read.",
               "reason_code": "talent_run_malformed"
             },
             "headers": {
@@ -2958,7 +2958,7 @@
           "response": {
             "body": {
               "detail": "Invalid path",
-              "error": "I couldn't use that path.",
+              "error": "that path couldn't be used.",
               "reason_code": "invalid_path"
             },
             "headers": {
@@ -3859,7 +3859,7 @@
           "response": {
             "body": {
               "detail": "",
-              "error": "I'm still working on that talent run.",
+              "error": "that talent run is still running.",
               "reason_code": "talent_run_pending"
             },
             "headers": {
@@ -3877,7 +3877,7 @@
           "response": {
             "body": {
               "detail": "talent run 1710000120000 is malformed",
-              "error": "I couldn't read that talent run.",
+              "error": "that talent run couldn't be read.",
               "reason_code": "talent_run_malformed"
             },
             "headers": {
@@ -3913,7 +3913,7 @@
           "response": {
             "body": {
               "detail": "Invalid path",
-              "error": "I couldn't use that path.",
+              "error": "that path couldn't be used.",
               "reason_code": "invalid_path"
             },
             "headers": {
@@ -4813,7 +4813,7 @@
           "response": {
             "body": {
               "detail": "",
-              "error": "I'm still working on that talent run.",
+              "error": "that talent run is still running.",
               "reason_code": "talent_run_pending"
             },
             "headers": {
@@ -4831,7 +4831,7 @@
           "response": {
             "body": {
               "detail": "talent run 1710000120000 is malformed",
-              "error": "I couldn't read that talent run.",
+              "error": "that talent run couldn't be read.",
               "reason_code": "talent_run_malformed"
             },
             "headers": {
@@ -4867,7 +4867,7 @@
           "response": {
             "body": {
               "detail": "Invalid path",
-              "error": "I couldn't use that path.",
+              "error": "that path couldn't be used.",
               "reason_code": "invalid_path"
             },
             "headers": {

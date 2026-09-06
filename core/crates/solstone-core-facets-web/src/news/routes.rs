@@ -136,7 +136,7 @@ fn shared_not_found() -> Response {
 fn invalid_day_not_found() -> Response {
     http::error(
         "invalid_day",
-        "I couldn't use that day.",
+        "that day couldn't be used.",
         "Day not found".to_owned(),
         StatusCode::NOT_FOUND,
     )
@@ -144,7 +144,7 @@ fn invalid_day_not_found() -> Response {
 fn invalid_request(detail: impl Into<String>) -> Response {
     http::error(
         "invalid_request_value",
-        "I couldn't use one of those values.",
+        "one of those values couldn't be used.",
         detail.into(),
         StatusCode::BAD_REQUEST,
     )
@@ -240,7 +240,7 @@ async fn stats(root: PathBuf, month: String) -> Response {
     if !is_month(&month) {
         return http::error(
             "invalid_month",
-            "I couldn't use that month.",
+            "that month couldn't be used.",
             "Invalid month format, expected YYYYMM".to_owned(),
             StatusCode::BAD_REQUEST,
         );
@@ -287,7 +287,7 @@ async fn facet_feed(root: PathBuf, facet: String, RawQuery(query): RawQuery) -> 
     if day.is_some_and(|value| !is_day(value)) {
         return http::error(
             "invalid_day",
-            "I couldn't use that day.",
+            "that day couldn't be used.",
             "day must be YYYYMMDD".to_owned(),
             StatusCode::BAD_REQUEST,
         );
@@ -376,7 +376,7 @@ async fn detail(root: PathBuf, facet: String, day: String) -> Response {
     if !store::valid_facet(&facet) || !is_day(&day) {
         return http::error(
             "file_not_found",
-            "I couldn't find that file.",
+            "that file isn't available.",
             "Newsletter not found".to_owned(),
             StatusCode::NOT_FOUND,
         );

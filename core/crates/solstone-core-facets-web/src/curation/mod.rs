@@ -79,7 +79,7 @@ async fn state(State(root): State<PathBuf>) -> Response {
         Ok(value) => Json(value).into_response(),
         Err(error) => http::error(
             "entity_operation_failed",
-            "I couldn't complete that entity operation.",
+            "that entity operation couldn't be completed.",
             error,
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
@@ -1065,7 +1065,7 @@ fn batch_item_result(
 fn missing(field: &str) -> Response {
     http::error(
         "missing_required_field",
-        "I couldn't find a required field.",
+        "a required field is missing.",
         format!("Missing {field}"),
         StatusCode::BAD_REQUEST,
     )
@@ -1073,7 +1073,7 @@ fn missing(field: &str) -> Response {
 fn invalid(detail: &str) -> Response {
     http::error(
         "invalid_request_value",
-        "I couldn't use one of those values.",
+        "one of those values couldn't be used.",
         detail.to_owned(),
         StatusCode::BAD_REQUEST,
     )
@@ -1089,7 +1089,7 @@ fn busy(detail: &str) -> Response {
 fn internal(detail: String) -> Response {
     http::error(
         "entity_operation_failed",
-        "I couldn't complete that entity operation.",
+        "that entity operation couldn't be completed.",
         detail,
         StatusCode::INTERNAL_SERVER_ERROR,
     )
@@ -1106,8 +1106,8 @@ fn corrupt_config(root: &Path) -> Option<Response> {
         .map(|_| {
             http::error(
                 "corrupt_config",
-                "I couldn't read your settings.",
-                format!("I couldn't read your settings file at {}. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.", path.display()),
+                "your settings couldn't be read.",
+                format!("your settings file at {} couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.", path.display()),
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
         })

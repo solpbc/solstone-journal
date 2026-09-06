@@ -49,7 +49,7 @@ const OWNER_THRESHOLD: f32 = 0.43;
 const EXISTING_CENTROID_GUIDANCE: &str = "Owner centroid already exists. Run solstone call speakers rebuild-owner to refresh it from current manual tags.";
 const OWNER_IDENTITY_INVALID: &str = "speaker_owner_identity_invalid";
 const OWNER_IDENTITY_INVALID_MESSAGE: &str =
-    "I couldn't run that speaker command because your configured owner identity needs attention.";
+    "that speaker command couldn't run because your configured owner identity needs attention.";
 const OWNER_IDENTITY_INVALID_DETAIL: &str = "configured owner identity is not admitted";
 
 pub async fn detect(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
@@ -66,7 +66,7 @@ pub async fn build_from_tags(Extension(root): Extension<Arc<JournalRoot>>) -> Re
         Ok(value) if value["reason_code"] == OWNER_IDENTITY_INVALID => owner_identity_invalid(),
         Ok(value) if value.get("error").is_some() => err(
             "entity_not_found",
-            "I couldn't find that person.",
+            "that person couldn't be found.",
             value["error"].as_str().unwrap_or("owner build failed"),
             StatusCode::BAD_REQUEST,
         ),
@@ -118,7 +118,7 @@ pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
         Ok(None) => {
             return err(
                 "speaker_review_unavailable",
-                "I couldn't load that speaker review.",
+                "that speaker review couldn't be loaded.",
                 "No candidate available",
                 StatusCode::NOT_FOUND,
             );
@@ -195,7 +195,7 @@ pub async fn classify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
     if !valid_day(day) {
         return err(
             "invalid_day",
-            "I couldn't use that day.",
+            "that day couldn't be used.",
             "Invalid day format",
             StatusCode::BAD_REQUEST,
         );
@@ -213,7 +213,7 @@ pub async fn classify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
         SegmentLookup::MalformedLayout => {
             return err(
                 "invalid_segment_or_stream",
-                "I couldn't use that segment or stream.",
+                "that segment or stream couldn't be used.",
                 "Invalid segment key",
                 StatusCode::BAD_REQUEST,
             );
@@ -221,7 +221,7 @@ pub async fn classify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
         SegmentLookup::Failed(error) => {
             return err(
                 "speaker_command_failed",
-                "I couldn't finish that speaker command.",
+                "that speaker command didn't finish.",
                 &error.to_string(),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
@@ -229,7 +229,7 @@ pub async fn classify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
         SegmentLookup::UnsupportedLayout => {
             return err(
                 "speaker_command_failed",
-                "I couldn't finish that speaker command.",
+                "that speaker command didn't finish.",
                 "segment layout is not readable",
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
@@ -1114,7 +1114,7 @@ async fn required_json(request: Request) -> Result<Value, Response> {
     let value: Value = serde_json::from_slice(&bytes).map_err(|_| {
         err(
             "invalid_json_request",
-            "I couldn't read that JSON request.",
+            "that JSON request couldn't be read.",
             "request body must be a JSON object",
             StatusCode::BAD_REQUEST,
         )
@@ -1127,7 +1127,7 @@ fn valid_day(value: &str) -> bool {
 fn missing_fields() -> Response {
     err(
         "missing_required_field",
-        "I couldn't find a required field.",
+        "a required field is missing.",
         "Missing required fields",
         StatusCode::BAD_REQUEST,
     )
@@ -1135,7 +1135,7 @@ fn missing_fields() -> Response {
 fn missing_body() -> Response {
     err(
         "missing_request_body",
-        "I couldn't find any data in that request.",
+        "that request had no data in it.",
         "No data provided",
         StatusCode::BAD_REQUEST,
     )
@@ -1150,14 +1150,14 @@ fn owner_error(detail: String) -> Response {
     if detail.contains("busy") || detail.contains("lock") {
         err(
             "speaker_voiceprint_busy",
-            "I couldn't update that voice right now because it was busy. Try again in a moment.",
+            "that voice couldn't be updated right now because it was busy. try again in a moment.",
             &detail,
             StatusCode::SERVICE_UNAVAILABLE,
         )
     } else {
         err(
             "speaker_command_failed",
-            "I couldn't finish that speaker command.",
+            "that speaker command didn't finish.",
             &detail,
             StatusCode::BAD_REQUEST,
         )

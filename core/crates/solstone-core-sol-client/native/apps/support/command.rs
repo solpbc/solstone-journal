@@ -14,7 +14,7 @@ use crate::transport::{
 };
 
 const SUPPORT_FALLBACK_1: &str =
-    "I couldn't reach support because solstone isn't reachable right now.";
+    "support couldn't be reached because solstone isn't reachable right now.";
 const SUPPORT_FALLBACK_2: &str = "To file a support ticket, visit https://support.solstone.app";
 const DRAFT_NOTICE: &str =
     "(Draft not captured — solstone wasn't reachable to save it for review.)";
@@ -1614,7 +1614,7 @@ mod tests {
             output,
             CommandOutput {
                 stdout: String::new(),
-                stderr: "I couldn't reach support because solstone isn't reachable right now.\nTo file a support ticket, visit https://support.solstone.app\n".to_string(),
+                stderr: "support couldn't be reached because solstone isn't reachable right now.\nTo file a support ticket, visit https://support.solstone.app\n".to_string(),
                 exit: 1,
             }
         );

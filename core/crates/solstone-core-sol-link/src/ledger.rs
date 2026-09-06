@@ -265,7 +265,7 @@ impl fmt::Display for AuthorizedClientsLoadError {
         };
         write!(
             formatter,
-            "I couldn't read your paired devices file at {}. Your paired devices were NOT changed. Repair the file or restore link/authorized_clients.json from a backup, then try again.",
+            "your paired devices file at {} couldn't be read. your paired devices were NOT changed. repair the file or restore link/authorized_clients.json from a backup, then try again.",
             path.display()
         )
     }
@@ -353,7 +353,7 @@ impl fmt::Display for DevicesMutationError {
             Self::Lock(error) => error.fmt(formatter),
             Self::Unreadable { path, .. } | Self::Malformed { path, .. } => write!(
                 formatter,
-                "I couldn't read your paired device activity file at {}. Your device activity was NOT changed. Repair the file or restore link/devices.json from a backup, then try again.",
+                "your paired device activity file at {} couldn't be read. your device activity was NOT changed. repair the file or restore link/devices.json from a backup, then try again.",
                 path.display()
             ),
             Self::Write(error) => error.fmt(formatter),

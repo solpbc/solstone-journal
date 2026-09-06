@@ -161,7 +161,7 @@ async fn name_keyed_routes_return_the_legacy_not_found_envelope() {
         assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
         assert_eq!(
             body_json(&bytes),
-            json!({"error":"I couldn't find that entity.","reason_code":"entity_not_found","detail":"no entity named 'Nobody'"})
+            json!({"error":"that entity couldn't be found.","reason_code":"entity_not_found","detail":"no entity named 'Nobody'"})
         );
     }
 }
@@ -658,7 +658,7 @@ async fn active_window_days_validation_uses_legacy_error_envelopes() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(
         body_json(&bytes),
-        json!({"error":"I couldn't use one of those values.","reason_code":"invalid_request_value","detail":"window_days must be an integer"})
+        json!({"error":"one of those values couldn't be used.","reason_code":"invalid_request_value","detail":"window_days must be an integer"})
     );
     for value in ["0", "-1", "-2"] {
         let (status, _, bytes) = get(
@@ -669,7 +669,7 @@ async fn active_window_days_validation_uses_legacy_error_envelopes() {
         assert_eq!(status, StatusCode::BAD_REQUEST, "{value}");
         assert_eq!(
             body_json(&bytes),
-            json!({"error":"I couldn't use one of those values.","reason_code":"invalid_request_value","detail":"window_days must be positive"})
+            json!({"error":"one of those values couldn't be used.","reason_code":"invalid_request_value","detail":"window_days must be positive"})
         );
     }
 }

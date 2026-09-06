@@ -134,7 +134,7 @@ fn config_read_failures_are_visible_and_read_only() {
             assert_eq!(result.status.code(), Some(1));
             assert!(result.stdout.is_empty());
             let stderr = String::from_utf8(result.stderr).unwrap();
-            assert!(stderr.starts_with("Error: I couldn't read your settings file at "));
+            assert!(stderr.starts_with("Error: your settings file at "));
             assert!(stderr.contains("Your settings were NOT changed."));
             assert_eq!(fs::read(&config).unwrap(), original);
             assert_eq!(fs::metadata(&config).unwrap().modified().unwrap(), modified);

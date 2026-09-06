@@ -266,7 +266,7 @@ pub async fn dismiss(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
     let Some(members) = members.filter(|members| !members.is_empty()) else {
         return error(
             "speaker_review_unavailable",
-            "I couldn't load that speaker review.",
+            "that speaker review couldn't be loaded.",
             &format!("Cluster {cluster_id} was not found. Run a discovery scan first."),
             StatusCode::NOT_FOUND,
         );
@@ -316,7 +316,7 @@ pub async fn scan(
         Ok(Ok(DiscoveryRefresh::IdentityInvalid)) => {
             return error(
                 "speaker_owner_identity_invalid",
-                "I couldn't look for new voices because your configured owner identity needs attention.",
+                "looking for new voices couldn't start because your configured owner identity needs attention.",
                 "configured owner identity is not admitted",
                 StatusCode::BAD_REQUEST,
             );
@@ -592,25 +592,25 @@ fn map(value: Value) -> Response {
         | "already_undone" => Json(value).into_response(),
         "recoverable" | "in_progress" | "undoing" => error(
             "speaker_identify_recoverable",
-            "I couldn't finish that speaker identify operation, but it can be retried.",
+            "that speaker identify operation didn't finish, but it can be retried.",
             &value.to_string(),
             StatusCode::CONFLICT,
         ),
         "repair_required" | "undo_repair_required" => error(
             "speaker_identify_repair_required",
-            "I couldn't safely finish that speaker identify operation without repair.",
+            "that speaker identify operation couldn't finish safely without repair.",
             &value.to_string(),
             StatusCode::CONFLICT,
         ),
         "conflict" | "operation_already_undone" => error(
             "speaker_identify_conflict",
-            "I couldn't run that speaker identify operation because it conflicts with existing state.",
+            "that speaker identify operation couldn't run because it conflicts with existing state.",
             &value.to_string(),
             StatusCode::CONFLICT,
         ),
         "not_found" => error(
             "speaker_identify_operation_not_found",
-            "I couldn't find that speaker identify operation.",
+            "that speaker identify operation couldn't be found.",
             &value.to_string(),
             StatusCode::NOT_FOUND,
         ),
@@ -641,12 +641,12 @@ fn identify_error(detail: String) -> Response {
             if lower.contains("speaker_labels") || lower.contains("speaker_corrections") {
                 (
                     "speaker_labels_busy",
-                    "I couldn't update speaker labels because another update is running.",
+                    "speaker labels couldn't be updated because another update is running.",
                 )
             } else {
                 (
                     "speaker_voiceprint_busy",
-                    "I couldn't update that voice because another update is running.",
+                    "that voice couldn't be updated because another update is running.",
                 )
             };
         return error(code, message, &detail, StatusCode::SERVICE_UNAVAILABLE);
@@ -663,7 +663,7 @@ async fn body(request: Request) -> Result<Value, Response> {
 fn bad(code: &str, detail: &str) -> Response {
     error(
         code,
-        "I couldn't use that request.",
+        "that request couldn't be used.",
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -671,7 +671,7 @@ fn bad(code: &str, detail: &str) -> Response {
 fn command(detail: String, status: StatusCode) -> Response {
     error(
         "speaker_command_failed",
-        "I couldn't finish that speaker command.",
+        "that speaker command didn't finish.",
         &detail,
         status,
     )

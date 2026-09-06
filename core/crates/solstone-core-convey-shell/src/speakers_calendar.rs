@@ -66,7 +66,7 @@ pub async fn stats(
     if !is_month(&month) {
         return refusal(
             "invalid_month",
-            "I couldn't use that month.",
+            "that month couldn't be used.",
             "Invalid month format, expected YYYYMM",
         );
     }
@@ -84,7 +84,7 @@ pub async fn segments(
     if !is_day(&day) {
         return refusal(
             "invalid_day",
-            "I couldn't use that day.",
+            "that day couldn't be used.",
             "Invalid day format",
         );
     }
@@ -93,7 +93,7 @@ pub async fn segments(
         None => {
             return refusal(
                 "invalid_request_value",
-                "I couldn't use one of those values.",
+                "one of those values couldn't be used.",
                 "Invalid limit/offset parameter",
             );
         }
@@ -103,7 +103,7 @@ pub async fn segments(
         None => {
             return refusal(
                 "invalid_request_value",
-                "I couldn't use one of those values.",
+                "one of those values couldn't be used.",
                 "Invalid limit/offset parameter",
             );
         }
@@ -114,7 +114,7 @@ pub async fn segments(
             if value.is_empty() {
                 return refusal(
                     "invalid_request_value",
-                    "I couldn't use one of those values.",
+                    "one of those values couldn't be used.",
                     "Invalid speaker parameter",
                 );
             }
@@ -158,7 +158,7 @@ fn refusal(reason_code: &str, message: &str, detail: &str) -> Response {
 fn catalog_failure(error: CatalogBuildError) -> Response {
     error_envelope(
         "speaker_command_failed",
-        "I couldn't finish that speaker command.",
+        "that speaker command didn't finish.",
         error.to_string(),
         StatusCode::INTERNAL_SERVER_ERROR,
     )

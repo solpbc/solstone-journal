@@ -1500,7 +1500,7 @@ mod tests {
         assert!(matches!(
             error,
             EdgeError::JournalConfigCorrupt { ref path, ref message }
-                if path == &corrupt_path && message.starts_with("I couldn't read your settings file")
+                if path == &corrupt_path && message.starts_with("your settings file")
         ));
 
         let unreadable = temp_root("directory-timezone");

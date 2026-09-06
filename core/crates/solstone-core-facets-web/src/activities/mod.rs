@@ -416,7 +416,7 @@ fn string_values(record: &Map<String, Value>, key: &str) -> Vec<String> {
 fn invalid(detail: &str) -> Response {
     http::error(
         "activity_invalid",
-        "I couldn't use that activity setting.",
+        "that activity setting couldn't be used.",
         detail.to_owned(),
         StatusCode::BAD_REQUEST,
     )
@@ -424,7 +424,7 @@ fn invalid(detail: &str) -> Response {
 fn not_found(detail: String) -> Response {
     http::error(
         "activity_not_found",
-        "I couldn't find that activity in the facet.",
+        "that activity isn't in the facet.",
         detail,
         StatusCode::NOT_FOUND,
     )
@@ -432,7 +432,7 @@ fn not_found(detail: String) -> Response {
 fn already_exists(detail: String) -> Response {
     http::error(
         "activity_already_exists",
-        "I couldn't create that activity because it already exists.",
+        "that activity couldn't be created because it already exists.",
         detail,
         StatusCode::CONFLICT,
     )
@@ -440,7 +440,7 @@ fn already_exists(detail: String) -> Response {
 fn internal(detail: String) -> Response {
     http::error(
         "internal_error",
-        "I couldn't complete that request.",
+        "that request didn't finish.",
         detail,
         StatusCode::INTERNAL_SERVER_ERROR,
     )
@@ -454,8 +454,8 @@ fn store_error(error: solstone_core_facets::ActivityRecordStoreError) -> Respons
     ) {
         http::error(
             "activities_busy",
-            "I couldn't update activities right now because they were busy. Try again in a moment.",
-            "I couldn't update activities right now because they were busy. Try again in a moment."
+            "activities couldn't be updated right now because they were busy. try again in a moment.",
+            "activities couldn't be updated right now because they were busy. try again in a moment."
                 .to_owned(),
             StatusCode::SERVICE_UNAVAILABLE,
         )
@@ -949,7 +949,7 @@ mod tests {
         assert_eq!(body["reason_code"], "activities_busy");
         assert_eq!(
             body["error"],
-            "I couldn't update activities right now because they were busy. Try again in a moment."
+            "activities couldn't be updated right now because they were busy. try again in a moment."
         );
     }
 }

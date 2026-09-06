@@ -45,7 +45,7 @@ async fn state(State((root, _)): State<(PathBuf, Clock)>, RawQuery(query): RawQu
                 .unwrap_or_else(|| {
                     http::error(
                         "awareness_section_not_found",
-                        "I couldn't find that part of what I know.",
+                        "that part of your journal couldn't be found.",
                         format!("no awareness section named '{section}'"),
                         StatusCode::NOT_FOUND,
                     )
@@ -170,7 +170,7 @@ async fn create_log(State((root, clock)): State<(PathBuf, Clock)>, body: Bytes) 
     else {
         return http::error(
             "missing_required_field",
-            "I couldn't find a required field.",
+            "a required field is missing.",
             "kind is required".to_owned(),
             StatusCode::BAD_REQUEST,
         );
@@ -220,7 +220,7 @@ fn awareness_body(bytes: &[u8]) -> AwarenessBodyResult {
     if bytes.is_empty() {
         return Err(Box::new(http::error(
             "missing_request_body",
-            "I couldn't find any data in that request.",
+            "that request had no data in it.",
             "no request body".to_owned(),
             StatusCode::BAD_REQUEST,
         )));
@@ -231,7 +231,7 @@ fn awareness_body(bytes: &[u8]) -> AwarenessBodyResult {
         .ok_or_else(|| {
             Box::new(http::error(
                 "invalid_json_request",
-                "I couldn't read that JSON request.",
+                "that JSON request couldn't be read.",
                 "request body must be a JSON object".to_owned(),
                 StatusCode::BAD_REQUEST,
             ))
@@ -241,7 +241,7 @@ fn awareness_body(bytes: &[u8]) -> AwarenessBodyResult {
 fn invalid(detail: String) -> Response {
     http::error(
         "invalid_request_value",
-        "I couldn't use one of those values.",
+        "one of those values couldn't be used.",
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -257,7 +257,7 @@ fn busy() -> Response {
 fn internal(detail: String) -> Response {
     http::error(
         "internal_error",
-        "I couldn't complete that request.",
+        "that request didn't finish.",
         detail,
         StatusCode::INTERNAL_SERVER_ERROR,
     )
@@ -281,8 +281,8 @@ fn session_response(root: &std::path::Path) -> Option<Response> {
         .map(|_| {
             http::error(
                 "corrupt_config",
-                "I couldn't read your settings.",
-                format!("I couldn't read your settings file at {}. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.", path.display()),
+                "your settings couldn't be read.",
+                format!("your settings file at {} couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.", path.display()),
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
         })

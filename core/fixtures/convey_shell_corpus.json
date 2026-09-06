@@ -4,13 +4,13 @@
   "phases": {
     "corrupt": [
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256": "e547220e912b42048937166b05c9dbdf6f888b04d264d6e5808f82309978b883",
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "GET",
         "path": "/",
@@ -36,16 +36,16 @@
         "why": "the SPA shell every app serves verbatim"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256": "47fcf5053e0ba84f02d272ea47a5d8cff3fc386ecde3242fc6d6eb429c88644a",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -55,16 +55,16 @@
         "why": "the one boot payload shell_boot.js fetches"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256": "47fcf5053e0ba84f02d272ea47a5d8cff3fc386ecde3242fc6d6eb429c88644a",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -74,13 +74,13 @@
         "why": "status_pane.js"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256": "e547220e912b42048937166b05c9dbdf6f888b04d264d6e5808f82309978b883",
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "GET",
         "path": "/app/speakers/",
@@ -88,13 +88,13 @@
         "why": "an app index: must be the shell, byte-identical"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256": "e547220e912b42048937166b05c9dbdf6f888b04d264d6e5808f82309978b883",
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "GET",
         "path": "/app/speakers/workspace",
@@ -102,13 +102,13 @@
         "why": "the app fragment bytes"
       },
       {
-        "body_bytes": 183,
+        "body_bytes": 184,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256": "e547220e912b42048937166b05c9dbdf6f888b04d264d6e5808f82309978b883",
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "GET",
         "path": "/app/speakers/static/who_is_this.js",
@@ -116,16 +116,16 @@
         "why": "per-app static"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256": "47fcf5053e0ba84f02d272ea47a5d8cff3fc386ecde3242fc6d6eb429c88644a",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -135,16 +135,16 @@
         "why": "the app's initial-state endpoint"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256": "47fcf5053e0ba84f02d272ea47a5d8cff3fc386ecde3242fc6d6eb429c88644a",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -154,16 +154,16 @@
         "why": "first data call from workspace.html"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256": "47fcf5053e0ba84f02d272ea47a5d8cff3fc386ecde3242fc6d6eb429c88644a",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -173,16 +173,16 @@
         "why": "overview quality panel"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256": "47fcf5053e0ba84f02d272ea47a5d8cff3fc386ecde3242fc6d6eb429c88644a",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -192,16 +192,16 @@
         "why": "known-voices list"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256": "47fcf5053e0ba84f02d272ea47a5d8cff3fc386ecde3242fc6d6eb429c88644a",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -211,16 +211,16 @@
         "why": "owner voiceprint status"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256": "47fcf5053e0ba84f02d272ea47a5d8cff3fc386ecde3242fc6d6eb429c88644a",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -230,16 +230,16 @@
         "why": "discovery cache read"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256": "47fcf5053e0ba84f02d272ea47a5d8cff3fc386ecde3242fc6d6eb429c88644a",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -249,16 +249,16 @@
         "why": "the date_nav framework contract"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256": "47fcf5053e0ba84f02d272ea47a5d8cff3fc386ecde3242fc6d6eb429c88644a",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -268,16 +268,16 @@
         "why": "a day with no segments"
       },
       {
-        "body_bytes": 269,
+        "body_bytes": 271,
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256": "47fcf5053e0ba84f02d272ea47a5d8cff3fc386ecde3242fc6d6eb429c88644a",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",

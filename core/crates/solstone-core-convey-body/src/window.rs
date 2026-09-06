@@ -73,7 +73,7 @@ pub(crate) async fn window_route(
 fn invalid_window_response(detail: &str) -> Response {
     error_envelope(
         "invalid_request_value",
-        "I couldn't use one of those values.",
+        "one of those values couldn't be used.",
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -918,7 +918,7 @@ mod tests {
                 serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
                     .unwrap();
             assert_eq!(body["reason_code"], "invalid_request_value");
-            assert_eq!(body["error"], "I couldn't use one of those values.");
+            assert_eq!(body["error"], "one of those values couldn't be used.");
             assert_eq!(body["detail"], INVALID_BOUNDS);
         }
         for (path, detail) in [
@@ -940,7 +940,7 @@ mod tests {
                 serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
                     .unwrap();
             assert_eq!(body["reason_code"], "invalid_request_value");
-            assert_eq!(body["error"], "I couldn't use one of those values.");
+            assert_eq!(body["error"], "one of those values couldn't be used.");
             assert_eq!(body["detail"], detail);
         }
         for path in [

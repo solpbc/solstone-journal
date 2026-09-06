@@ -1015,10 +1015,10 @@ async fn ac5_ac6_ac11_shell_gate_and_fallback_contracts() {
                     }
                 );
                 let actual = substitute(std::str::from_utf8(&body).expect("UTF-8"), root.path());
-                let detail = "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.";
+                let detail = "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.";
                 let expected = if is_api {
                     format!(
-                        r#"{{"error":"I couldn't read your settings.","reason_code":"corrupt_config","detail":"{detail}"}}"#
+                        r#"{{"error":"your settings couldn't be read.","reason_code":"corrupt_config","detail":"{detail}"}}"#
                     )
                 } else {
                     detail.to_owned()

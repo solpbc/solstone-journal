@@ -1306,7 +1306,7 @@ fn envelope(
 fn missing_request_body() -> Response {
     envelope(
         "missing_request_body",
-        "I couldn't find any data in that request.",
+        "that request had no data in it.",
         "No data provided",
         StatusCode::BAD_REQUEST,
     )
@@ -1314,7 +1314,7 @@ fn missing_request_body() -> Response {
 fn missing_field(detail: impl Into<String>) -> Response {
     envelope(
         "missing_required_field",
-        "I couldn't find a required field.",
+        "a required field is missing.",
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -1322,7 +1322,7 @@ fn missing_field(detail: impl Into<String>) -> Response {
 fn invalid_config(detail: impl Into<String>) -> Response {
     envelope(
         "invalid_config_value",
-        "I couldn't save that setting because one value was invalid.",
+        "that setting couldn't be saved because one value was invalid.",
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -1330,7 +1330,7 @@ fn invalid_config(detail: impl Into<String>) -> Response {
 fn invalid_request(detail: impl Into<String>) -> Response {
     envelope(
         "invalid_request_value",
-        "I couldn't use one of those values.",
+        "one of those values couldn't be used.",
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -1338,7 +1338,7 @@ fn invalid_request(detail: impl Into<String>) -> Response {
 fn invalid_state(detail: impl Into<String>) -> Response {
     envelope(
         "invalid_operation_for_state",
-        "I couldn't take that action in the current state.",
+        "that action isn't available in the current state.",
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -1349,7 +1349,7 @@ fn thinking_failure() -> Response {
 fn thinking_failure_with_detail(detail: impl Into<String>) -> Response {
     envelope(
         "settings_operation_failed",
-        "I couldn't save those settings.",
+        "those settings couldn't be saved.",
         detail,
         StatusCode::INTERNAL_SERVER_ERROR,
     )
@@ -1368,7 +1368,7 @@ fn mutation_error(error: solstone_core_thinking::MutationError) -> Response {
 fn thinking_config_busy_response() -> Response {
     error_envelope(
         "config_busy",
-        "I couldn't save those settings right now because they were busy. Try again in a moment.",
+        "those settings couldn't be saved right now because they were busy. try again in a moment.",
         "settings are busy; try again",
         StatusCode::SERVICE_UNAVAILABLE,
     )

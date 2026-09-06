@@ -147,7 +147,7 @@ async fn serve_audio_matches_every_captured_case_except_the_declared_refusal() {
             assert_eq!(
                 serde_json::from_slice::<Value>(&body).expect("response JSON parses"),
                 serde_json::json!({
-                    "error": "I couldn't use one of those values.",
+                    "error": "one of those values couldn't be used.",
                     "reason_code": "invalid_request_value",
                     "detail": "Unregistered media extension",
                 })

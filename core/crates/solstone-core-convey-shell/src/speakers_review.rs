@@ -44,7 +44,7 @@ pub async fn segment_speakers(
     if !is_day(&day) {
         return bad_request(
             "invalid_day",
-            "I couldn't use that day.",
+            "that day couldn't be used.",
             "Invalid day format",
         );
     }
@@ -95,7 +95,7 @@ pub async fn review(
     if !is_day(&day) {
         return bad_request(
             "invalid_day",
-            "I couldn't use that day.",
+            "that day couldn't be used.",
             "Invalid day format",
         );
     }
@@ -111,7 +111,7 @@ pub async fn review(
         Ok(None) => {
             return error_envelope(
                 "speaker_review_unavailable",
-                "I couldn't load that speaker review.",
+                "that speaker review couldn't be loaded.",
                 "No transcript found",
                 StatusCode::NOT_FOUND,
             )
@@ -124,7 +124,7 @@ pub async fn review(
     if sentences.is_empty() {
         return error_envelope(
             "speaker_review_unavailable",
-            "I couldn't load that speaker review.",
+            "that speaker review couldn't be loaded.",
             "No transcript found",
             StatusCode::NOT_FOUND,
         )
@@ -287,19 +287,19 @@ fn lookup_read_segment(
         SegmentLookup::Absent => Ok(None),
         SegmentLookup::MalformedLayout => Err(bad_request(
             "invalid_segment_or_stream",
-            "I couldn't use that segment or stream.",
+            "that segment or stream couldn't be used.",
             "Invalid segment key",
         )),
         SegmentLookup::Failed(error) => Err(error_envelope(
             "speaker_review_unavailable",
-            "I couldn't load that speaker review.",
+            "that speaker review couldn't be loaded.",
             error.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
         )
         .into_response()),
         SegmentLookup::UnsupportedLayout => Err(error_envelope(
             "speaker_review_unavailable",
-            "I couldn't load that speaker review.",
+            "that speaker review couldn't be loaded.",
             "segment layout is not readable",
             StatusCode::INTERNAL_SERVER_ERROR,
         )

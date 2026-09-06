@@ -147,7 +147,7 @@ fn parse_window_days(value: Option<&str>) -> Result<i64, &'static str> {
 fn entity_not_found(name: &str) -> Response {
     error_envelope(
         "entity_not_found",
-        "I couldn't find that entity.",
+        "that entity couldn't be found.",
         format!("no entity named '{name}'"),
         StatusCode::NOT_FOUND,
     )
@@ -157,7 +157,7 @@ fn entity_not_found(name: &str) -> Response {
 fn invalid_request(detail: &str) -> Response {
     error_envelope(
         "invalid_request_value",
-        "I couldn't use one of those values.",
+        "one of those values couldn't be used.",
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -168,7 +168,7 @@ fn internal_error(error: ProfileError) -> Response {
     log::error!("profile route failed: {error}");
     error_envelope(
         "profile_unavailable",
-        "I couldn't load that profile.",
+        "that profile couldn't be loaded.",
         "profile unavailable",
         StatusCode::INTERNAL_SERVER_ERROR,
     )

@@ -54,14 +54,14 @@ async fn bootstrap_call(root: Arc<JournalRoot>, request: Request, imports: bool)
     match result {
         Ok(value) if value["error"] == "speaker_owner_identity_invalid" => err(
             "speaker_owner_identity_invalid",
-            "I couldn't run that speaker command because your configured owner identity needs attention.",
+            "that speaker command couldn't run because your configured owner identity needs attention.",
             "configured owner identity is not admitted",
             StatusCode::BAD_REQUEST,
         ),
         Ok(value) => Json(value).into_response(),
         Err(error) => err(
             "speaker_command_failed",
-            "I couldn't finish that speaker command.",
+            "that speaker command didn't finish.",
             &error.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
@@ -79,13 +79,13 @@ pub async fn wipe(Extension(root): Extension<Arc<JournalRoot>>, request: Request
             solstone_core_journal_io::LockError::Timeout(timeout),
         )) => err(
             "speaker_voiceprint_busy",
-            "I couldn't update that voice right now because it was busy. Try again in a moment.",
+            "that voice couldn't be updated right now because it was busy. try again in a moment.",
             &timeout.to_string(),
             StatusCode::SERVICE_UNAVAILABLE,
         ),
         Err(error) => err(
             "speaker_command_failed",
-            "I couldn't finish that speaker command.",
+            "that speaker command didn't finish.",
             &error.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
@@ -109,7 +109,7 @@ pub async fn resolve_names(
             Err(error) => {
                 return err(
                     "speaker_command_failed",
-                    "I couldn't finish that speaker command.",
+                    "that speaker command didn't finish.",
                     &error.to_string(),
                     StatusCode::INTERNAL_SERVER_ERROR,
                 );
@@ -148,7 +148,7 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
             SegmentLookup::MalformedLayout => {
                 return err(
                     "invalid_segment_or_stream",
-                    "I couldn't use that segment or stream.",
+                    "that segment or stream couldn't be used.",
                     "Invalid segment key or stream",
                     StatusCode::BAD_REQUEST,
                 );
@@ -156,7 +156,7 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
             SegmentLookup::Absent => {
                 return err(
                     "speaker_review_unavailable",
-                    "I couldn't load that speaker review.",
+                    "that speaker review couldn't be loaded.",
                     "No transcript found",
                     StatusCode::NOT_FOUND,
                 );
@@ -164,7 +164,7 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
             SegmentLookup::Failed(error) => {
                 return err(
                     "speaker_command_failed",
-                    "I couldn't finish that speaker command.",
+                    "that speaker command didn't finish.",
                     &error.to_string(),
                     StatusCode::INTERNAL_SERVER_ERROR,
                 );
@@ -178,7 +178,7 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
         Err(error) => {
             return err(
                 "speaker_command_failed",
-                "I couldn't finish that speaker command.",
+                "that speaker command didn't finish.",
                 &error.to_string(),
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
@@ -191,7 +191,7 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
     ) {
         return err(
             "speaker_owner_identity_invalid",
-            "I couldn't run that speaker command because your configured owner identity needs attention.",
+            "that speaker command couldn't run because your configured owner identity needs attention.",
             "configured owner identity is not admitted",
             StatusCode::BAD_REQUEST,
         );
@@ -202,7 +202,7 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
     ) {
         return err(
             "speaker_owner_centroid_required",
-            "I couldn't run that speaker command until your owner voice is set up.",
+            "that speaker command can't run until your owner voice is set up.",
             "owner centroid unavailable",
             StatusCode::CONFLICT,
         );
@@ -262,7 +262,7 @@ pub async fn backfill(Extension(root): Extension<Arc<JournalRoot>>, request: Req
             Err(error) => {
                 return err(
                     "speaker_command_failed",
-                    "I couldn't finish that speaker command.",
+                    "that speaker command didn't finish.",
                     &error.to_string(),
                     StatusCode::INTERNAL_SERVER_ERROR,
                 );
@@ -355,7 +355,7 @@ pub async fn backfill_last_seen(
         Err(error) => {
             return err(
                 "speaker_command_failed",
-                "I couldn't finish that speaker command.",
+                "that speaker command didn't finish.",
                 &error,
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
@@ -521,7 +521,7 @@ fn accumulation_error(
 ) -> Response {
     err(
         "speaker_command_failed",
-        "I couldn't finish that speaker command.",
+        "that speaker command didn't finish.",
         &error.to_string(),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
@@ -582,7 +582,7 @@ async fn json_body(request: Request) -> Result<Value, Response> {
         .map_err(|_| {
             err(
                 "missing_request_body",
-                "I couldn't find any data in that request.",
+                "that request had no data in it.",
                 "unable to read request body",
                 StatusCode::BAD_REQUEST,
             )
@@ -593,7 +593,7 @@ async fn json_body(request: Request) -> Result<Value, Response> {
     serde_json::from_slice(&bytes).map_err(|_| {
         err(
             "invalid_json_request",
-            "I couldn't read that JSON request.",
+            "that JSON request couldn't be read.",
             "request body must be a JSON object",
             StatusCode::BAD_REQUEST,
         )
@@ -604,7 +604,7 @@ fn fields(body: &Value) -> Result<(&str, &str, &str), Response> {
     let day = body.get("day").and_then(Value::as_str).ok_or_else(|| {
         err(
             "missing_required_field",
-            "I couldn't find a required field.",
+            "a required field is missing.",
             "day is required",
             StatusCode::BAD_REQUEST,
         )
@@ -612,7 +612,7 @@ fn fields(body: &Value) -> Result<(&str, &str, &str), Response> {
     let stream = body.get("stream").and_then(Value::as_str).ok_or_else(|| {
         err(
             "missing_required_field",
-            "I couldn't find a required field.",
+            "a required field is missing.",
             "stream is required",
             StatusCode::BAD_REQUEST,
         )
@@ -620,7 +620,7 @@ fn fields(body: &Value) -> Result<(&str, &str, &str), Response> {
     let segment = body.get("segment").and_then(Value::as_str).ok_or_else(|| {
         err(
             "missing_required_field",
-            "I couldn't find a required field.",
+            "a required field is missing.",
             "segment is required",
             StatusCode::BAD_REQUEST,
         )
@@ -711,7 +711,7 @@ fn seed_value(outcome: solstone_core_speaker_resolve::bootstrap::SeedFromImports
 fn write_error(detail: String, _labels: bool) -> Response {
     err(
         "speaker_labels_busy",
-        "I couldn't update those speaker attributions right now because they were busy. Try again in a moment.",
+        "those speaker attributions couldn't be updated right now because they were busy. try again in a moment.",
         &detail,
         StatusCode::SERVICE_UNAVAILABLE,
     )

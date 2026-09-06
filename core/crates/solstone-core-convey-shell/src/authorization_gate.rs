@@ -229,7 +229,7 @@ fn pl_revoked_response() -> Response {
     (
         StatusCode::FORBIDDEN,
         Json(AuthorizationRefusal {
-            error: "I couldn't use that paired device because it was revoked.",
+            error: "that paired device couldn't be used because it was revoked.",
             reason: "pl_revoked",
             reason_code: "pl_revoked",
             detail: "paired device revoked",

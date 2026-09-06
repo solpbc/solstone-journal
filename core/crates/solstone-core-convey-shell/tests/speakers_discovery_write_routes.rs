@@ -350,7 +350,7 @@ async fn identify_uses_the_standard_voiceprint_busy_response_for_a_held_trust_lo
     assert_eq!(body["reason_code"], "speaker_voiceprint_busy");
     assert_eq!(
         body["error"],
-        "I couldn't update that voice because another update is running."
+        "that voice couldn't be updated because another update is running."
     );
 }
 

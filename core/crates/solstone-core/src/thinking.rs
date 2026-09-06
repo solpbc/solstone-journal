@@ -278,9 +278,7 @@ mod tests {
         let outcome = run_set_lane(journal.path(), &options("local", None, None));
         assert_eq!(outcome.exit, EXIT_UNAVAILABLE);
         assert!(
-            outcome
-                .stderr
-                .contains("I couldn't read your settings file"),
+            outcome.stderr.contains("your settings file at "),
             "{}",
             outcome.stderr
         );

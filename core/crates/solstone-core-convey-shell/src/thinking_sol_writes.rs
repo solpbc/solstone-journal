@@ -20,8 +20,7 @@ use solstone_core_journal_config_write::{
 
 use crate::JournalRoot;
 
-const IDENTITY_BUSY: &str =
-    "I couldn't update my identity right now because it was busy. Try again in a moment.";
+const IDENTITY_BUSY: &str = "your journal's identity couldn't be updated right now because it was busy. try again in a moment.";
 
 pub(crate) async fn api_set_owner(
     Extension(journal): Extension<Arc<JournalRoot>>,
@@ -131,7 +130,7 @@ fn response_bio(bio: &Value) -> Value {
 fn invalid_config_value(detail: &str) -> Response {
     error_envelope(
         "invalid_config_value",
-        "I couldn't save that setting because one value was invalid.",
+        "that setting couldn't be saved because one value was invalid.",
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -141,7 +140,7 @@ fn invalid_config_value(detail: &str) -> Response {
 fn missing_body(detail: &str) -> Response {
     error_envelope(
         "missing_request_body",
-        "I couldn't find any data in that request.",
+        "that request had no data in it.",
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -151,7 +150,7 @@ fn missing_body(detail: &str) -> Response {
 fn invalid_json() -> Response {
     error_envelope(
         "invalid_json_request",
-        "I couldn't read that JSON request.",
+        "that JSON request couldn't be read.",
         "request body must be a JSON object",
         StatusCode::BAD_REQUEST,
     )
@@ -161,7 +160,7 @@ fn invalid_json() -> Response {
 fn required_field(field: &str) -> Response {
     error_envelope(
         "missing_required_field",
-        "I couldn't find a required field.",
+        "a required field is missing.",
         format!("{field} is required"),
         StatusCode::BAD_REQUEST,
     )
@@ -184,7 +183,7 @@ fn operation_failed(detail: String) -> Response {
     // other failure can be misreported as busy.
     error_envelope(
         "internal_error",
-        "I couldn't update my identity right now.",
+        "your journal's identity couldn't be updated right now.",
         detail,
         StatusCode::INTERNAL_SERVER_ERROR,
     )
