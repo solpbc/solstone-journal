@@ -58,7 +58,7 @@ pub fn build_connections_card(
     let named = neighbors
         .iter()
         .filter_map(Value::as_object)
-        .filter(|row| !is_placeholder_speaker(row))
+        .filter(|row| !is_placeholder_speaker(row) && !is_bare_word_name(row))
         .collect::<Vec<_>>();
     if named.is_empty() {
         return json!({"state":"unnamed"});
@@ -116,6 +116,28 @@ fn is_placeholder_speaker_token(value: &str, separator: char) -> bool {
     };
     let rest = rest.trim_start_matches(separator);
     !rest.is_empty() && rest.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+/// A neighbor whose whole display name is one bare lowercase word (`make`,
+/// `just`, `think`, `build`) is a semantic-extraction artifact, not somebody in
+/// the owner's life. The test is structural rather than a stop-word list: one
+/// whitespace-separated token, no uppercase letter, no digit. A capitalised
+/// single name (`Ada`) and every multi-word name stay, so the rule can never
+/// take a real connection off the shelf. Applies regardless of evidence class,
+/// and covers both the shelf and the "mentioned in your journal" disclosure,
+/// which read the same list. X-02.
+fn is_bare_word_name(row: &serde_json::Map<String, Value>) -> bool {
+    let name = row.get("name").and_then(Value::as_str).unwrap_or("").trim();
+    let mut tokens = name.split_whitespace();
+    let Some(only) = tokens.next() else {
+        return false;
+    };
+    if tokens.next().is_some() {
+        return false;
+    }
+    !only
+        .chars()
+        .any(|character| character.is_uppercase() || character.is_numeric())
 }
 
 fn trim_neighbor(row: &serde_json::Map<String, Value>) -> Value {
@@ -343,5 +365,85 @@ mod tests {
                 .as_object()
                 .unwrap()
         ));
+    }
+
+    /// The twelve neighbors the burn-in review captured off the founder's own
+    /// journal (`x-home-pulse.json`). Names and evidence classes are verbatim.
+    fn captured_burn_in_neighbors() -> Value {
+        json!({"total_neighbors":12,"neighbors":[
+            {"entity_id":"gallery_at_reunion_the","name":"Gallery At Reunion (The)","evidence_class":"semantic","count":4731,"last_seen":"20260905","kinds":{}},
+            {"entity_id":"just","name":"just","evidence_class":"semantic","count":3249,"last_seen":"20260905","kinds":{}},
+            {"entity_id":"speaker_1","name":"Speaker 1","evidence_class":"mixed","count":2591,"last_seen":"20260905","kinds":{}},
+            {"entity_id":"think","name":"think","evidence_class":"semantic","count":2010,"last_seen":"20260904","kinds":{}},
+            {"entity_id":"more","name":"more","evidence_class":"semantic","count":1606,"last_seen":"20260904","kinds":{}},
+            {"entity_id":"speaker_2","name":"Speaker 2","evidence_class":"mixed","count":1276,"last_seen":"20260905","kinds":{}},
+            {"entity_id":"make","name":"make","evidence_class":"mixed","count":1333,"last_seen":"20260904","kinds":{}},
+            {"entity_id":"own","name":"Own","evidence_class":"semantic","count":991,"last_seen":"20260904","kinds":{}},
+            {"entity_id":"build","name":"build","evidence_class":"semantic","count":890,"last_seen":"20260904","kinds":{}},
+            {"entity_id":"whole","name":"Whole","evidence_class":"semantic","count":815,"last_seen":"20260904","kinds":{}},
+            {"entity_id":"company","name":"Company","evidence_class":"semantic","count":656,"last_seen":"20260904","kinds":{}},
+            {"entity_id":"able","name":"Able","evidence_class":"semantic","count":612,"last_seen":"20260904","kinds":{}}
+        ]})
+    }
+
+    #[test]
+    fn bare_lowercase_words_are_not_connections() {
+        let card = build_connections_card(
+            Ok(Some(json!({"id":"owner"}))),
+            Ok(captured_burn_in_neighbors()),
+            None,
+        );
+        let names = card["neighbors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["name"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+
+        // Every bare lowercase token goes, and the two unnamed voice clusters
+        // stay gone. `Own`, `Whole`, `Company` and `Able` survive on purpose:
+        // they are capitalised, so no structural test separates them from a
+        // real one-name person, and the rule refuses to guess. See the sweep
+        // report's open question.
+        assert_eq!(
+            names,
+            vec![
+                "Gallery At Reunion (The)".to_owned(),
+                "Own".to_owned(),
+                "Whole".to_owned(),
+                "Company".to_owned(),
+                "Able".to_owned(),
+            ]
+        );
+        for dropped in ["just", "think", "more", "make", "build"] {
+            assert!(
+                !names.iter().any(|name| name == dropped),
+                "{dropped} is a bare word, not a connection"
+            );
+        }
+    }
+
+    #[test]
+    fn the_bare_word_rule_keeps_every_real_name_shape() {
+        // Capitalised single name, multi-word name, hyphenated, accented,
+        // digit-bearing, and a lowercase name that is not alone in its field.
+        for kept in [
+            "Ada", "Ada Lovelace", "jean-luc picard", "Élan", "studio 54", "de Havilland",
+        ] {
+            assert!(
+                !is_bare_word_name(json!({"name":kept}).as_object().unwrap()),
+                "{kept} is a real name and must stay on the shelf"
+            );
+        }
+        for dropped in ["make", "just", "think", "more", "own", "build", "whole", "company", "able"]
+        {
+            assert!(
+                is_bare_word_name(json!({"name":dropped}).as_object().unwrap()),
+                "{dropped} is a bare word"
+            );
+        }
+        // A missing or blank name is somebody else's problem, not this rule's.
+        assert!(!is_bare_word_name(json!({}).as_object().unwrap()));
+        assert!(!is_bare_word_name(json!({"name":"   "}).as_object().unwrap()));
     }
 }
