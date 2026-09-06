@@ -106,6 +106,19 @@ pub fn parse_converse_response(data: &Value) -> Result<LocalConverseResponse, Lo
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_owned();
+    // A length stop ends the turn before any tool invocation is complete.
+    // Even parseable arguments can describe only part of the intended action.
+    if matches!(
+        choice.get("finish_reason").and_then(Value::as_str),
+        Some("length" | "max_tokens")
+    ) {
+        return Ok(LocalConverseResponse {
+            text,
+            tool_calls: Vec::new(),
+            finish_reason: "max_tokens".to_owned(),
+            usage: crate::generate::extract_usage(data),
+        });
+    }
     let tool_calls = parse_tool_calls(message.get("tool_calls"))?;
 
     let finish_reason = if !tool_calls.is_empty() {
@@ -454,6 +467,21 @@ mod tests {
             "type": "function",
             "function": {"name": name, "arguments": arguments},
         })
+    }
+
+    #[test]
+    fn length_stop_never_recovers_or_executes_partial_tool_calls() {
+        for arguments in ["{", "{\"content\":\"partial\"}"] {
+            let parsed = parse_converse_response(&json!({
+                "choices":[{"message":{"content":"<tool_call>partial", "tool_calls":[{
+                    "id":"final", "type":"function", "function":{"name":"emit_final","arguments":arguments}
+                }]},"finish_reason":"length"}],
+                "usage":{"prompt_tokens":10,"completion_tokens":1024,"total_tokens":1034}
+            })).unwrap();
+            assert_eq!(parsed.finish_reason, "max_tokens");
+            assert!(parsed.tool_calls.is_empty());
+            assert_eq!(parsed.usage.unwrap().output_tokens, 1024);
+        }
     }
 
     #[test]

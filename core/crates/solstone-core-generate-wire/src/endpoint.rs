@@ -396,13 +396,30 @@ pub(crate) fn endpoint_converse_with<T: EndpointTransport>(
         // arbitrary BYO endpoints may not support them.
         include_qwen_sampling_controls: endpoint.is_bundled || endpoint.is_confidential,
     };
-    let body = match build_converse_request_body(&local_request, input_budget_tokens) {
+    let mut body = match build_converse_request_body(&local_request, input_budget_tokens) {
         Ok(body) => body,
         Err(LocalConverseError::ContextBudgetExceeded) => {
             return converse_failure("context_budget_exceeded");
         }
         Err(_) => return converse_failure("provider_response_invalid"),
     };
+    // Fitting reserves part of the window for output but does not change the
+    // requested completion ceiling. Clamp that ceiling to the actual remaining
+    // room, just as generate does, including the system and tool schemas.
+    let completion_limit = match served_window {
+        Some(window) => {
+            let prompt_tokens = estimate_tokens(&serde_json::to_string(&body).expect("JSON body"));
+            let room = window
+                .saturating_sub(prompt_tokens)
+                .saturating_sub(SAFETY_MARGIN_TOKENS);
+            if room < max_tokens.min(MIN_COMPLETION_TOKENS) {
+                return converse_failure("context_budget_exceeded");
+            }
+            max_tokens.min(room)
+        }
+        None => max_tokens.min(UNKNOWN_WINDOW_MAX_COMPLETION_TOKENS),
+    };
+    body["max_tokens"] = json!(completion_limit);
     let timeout = request_timeout(request.timeout_s);
     let started = Instant::now();
     let Some(admission_timeout) = remaining_timeout(started, timeout) else {
@@ -2474,6 +2491,47 @@ mod tests {
             };
             assert_eq!(failure.reason_code, reason_code);
         }
+    }
+    #[test]
+    fn converse_completion_fits_remaining_window_and_preserves_small_requests() {
+        let journal = journal_path();
+        for requested in [8, 8192] {
+            let mut request = request(None);
+            request.max_output_tokens = requested;
+            let mut transport = StubTransport {
+                post_script: vec![Ok(response())],
+                ..Default::default()
+            };
+            let config = json!({"providers":{"local":{"served_context_window":2048}}})
+                .as_object()
+                .unwrap()
+                .clone();
+            endpoint_converse_with(
+                EndpointConverseCall {
+                    request: &request,
+                    messages: &[ConverseMessage::User {
+                        text: "hello".repeat(150),
+                    }],
+                    tools: &[],
+                    journal_path: &journal,
+                    endpoint: &endpoint("http://endpoint"),
+                    config: &config,
+                    runtime: &EndpointRuntime::default(),
+                },
+                &mut transport,
+                Instant::now(),
+            )
+            .unwrap();
+            let body = &transport.posts[0];
+            let completion = body["max_tokens"].as_u64().unwrap();
+            let input = u64::from(estimate_tokens(&body.to_string()));
+            assert!(input + completion + u64::from(SAFETY_MARGIN_TOKENS) <= 2048);
+            assert!(completion <= requested);
+            if requested == 8 {
+                assert_eq!(completion, 8);
+            }
+        }
+        std::fs::remove_dir_all(journal).unwrap();
     }
 }
 

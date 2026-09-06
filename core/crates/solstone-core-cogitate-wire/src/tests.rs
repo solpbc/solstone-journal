@@ -889,13 +889,21 @@ impl EndpointTransport for CapturingEndpointTransport {
 }
 
 fn endpoint_provider(secret: &str, confidential: bool) -> DispatchConverseProvider {
+    endpoint_provider_for(&request(), secret, confidential)
+}
+
+fn endpoint_provider_for(
+    request: &CogitateRequest,
+    secret: &str,
+    confidential: bool,
+) -> DispatchConverseProvider {
     let mut value = json!({
         "providers": {
             "active": {"provider": "local"},
             "local": {
                 "endpoint_url": "http://configured.invalid",
                 "served_model_id": "configured",
-                "served_context_window": 4096
+                "served_context_window": 32768
             }
         }
     });
@@ -905,7 +913,7 @@ fn endpoint_provider(secret: &str, confidential: bool) -> DispatchConverseProvid
     let config = value.as_object().expect("config object").clone();
     let (_, lane) = resolve_lane(&config);
     DispatchConverseProvider::from_lane(
-        &request(),
+        request,
         config,
         lane,
         EndpointOverrides::from_values(
@@ -1224,4 +1232,58 @@ fn confidential_dispatch_ready_negative_attempts_one_channel_and_zero_endpoints(
         .expect_err("failed channel establishment refuses dispatch");
     assert_eq!(failure.reason_code, "attestation_failed");
     assert_eq!(&*order.borrow(), &["readiness", "channel"]);
+}
+
+#[test]
+fn completion_budget_is_a_validated_request_value() {
+    let mut value = request_value();
+    value["max_output_tokens"] = json!(4096);
+    let parsed = CogitateRequest::from_value(&value).expect("explicit completion budget");
+    assert_eq!(parsed.to_value()["max_output_tokens"], 4096);
+    for invalid in [
+        json!(0),
+        json!(-1),
+        json!(1.5),
+        json!("4096"),
+        json!(u64::from(u32::MAX) + 1),
+    ] {
+        value["max_output_tokens"] = invalid;
+        assert!(CogitateRequest::from_value(&value).is_err());
+    }
+}
+
+#[test]
+fn completion_budget_reaches_the_actual_endpoint_request() {
+    for (window, explicit, expected) in [
+        (None, None, 8192),
+        (Some(4096), None, 1024),
+        (Some(32768), Some(6000), 6000),
+        (Some(32768), Some(8), 8),
+    ] {
+        let mut value = request_value();
+        value["context_window"] = json!(window);
+        value["max_output_tokens"] = json!(explicit);
+        let request = CogitateRequest::from_value(&value).unwrap();
+        let mut provider = endpoint_provider_for(&request, "", false);
+        let mut transport = CapturingEndpointTransport {
+            response: Ok(HttpResponse {
+                status: 200,
+                body: final_turn_response(),
+            }),
+            calls: Vec::new(),
+        };
+        provider
+            .converse_endpoint_with_transport(
+                "model",
+                None,
+                &[ConverseMessage::User {
+                    text: "hello".to_owned(),
+                }],
+                &[],
+                std::time::Duration::from_secs(1),
+                &mut transport,
+            )
+            .unwrap();
+        assert_eq!(transport.calls[0].2["max_tokens"], expected);
+    }
 }

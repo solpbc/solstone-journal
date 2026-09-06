@@ -2564,6 +2564,23 @@ fn run_cogitate(command: CogitateCommand) -> ExitCode {
 }
 
 fn run_cogitate_one_shot() -> ExitCode {
+    // Admission must finish before reading stdin: the hosted launcher waits
+    // for this acknowledgement before it sends the one-shot request.
+    #[cfg(unix)]
+    if std::env::var_os(solstone_core_system::lifecycle::HOSTED_GENERATION_ENV).is_some()
+        || std::env::var_os(solstone_core_system::lifecycle::HOSTED_LAUNCH_ID_ENV).is_some()
+    {
+        let result = std::env::var_os("SOLSTONE_JOURNAL")
+            .ok_or_else(|| std::io::Error::other("hosted child is missing SOLSTONE_JOURNAL"))
+            .and_then(|journal| {
+                acknowledge_hosted_child_admission(Path::new(&journal))
+                    .map_err(std::io::Error::other)
+            });
+        if let Err(error) = result {
+            eprintln!("cogitate process admission failed: {error}");
+            return ExitCode::from(EXIT_INTERNAL_FAILURE);
+        }
+    }
     // One-shot cogitate has one complete request, rather than generate's
     // multiplexed session framing, so a direct read-to-string is sufficient.
     let mut raw = String::new();

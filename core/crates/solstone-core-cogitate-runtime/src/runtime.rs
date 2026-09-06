@@ -98,6 +98,21 @@ pub fn run_cogitate(
                 correlation_id: config.correlation_id.clone(),
             });
         }
+        // A truncated provider turn is not a complete action or final result.
+        // Replaying it as ordinary assistant text repeats the same cut-off
+        // submission and conceals the actual resource failure as agent_stuck.
+        if turn.finish_reason == "max_tokens" {
+            return terminal(sink, RunOutcome {
+                reason_code: Some("token_budget_exceeded".to_owned()),
+                error_text: Some("token_budget_exceeded: provider exhausted the response token budget before completing its turn".to_owned()),
+                result: None,
+                usage,
+                raw_payload: None,
+                terminal: true,
+                correlation_id: config.correlation_id.clone(),
+                provider_failure: None,
+            });
+        }
         messages.push(ConverseMessage::Assistant {
             text: turn.text.clone(),
             tool_calls: turn.tool_calls.clone(),

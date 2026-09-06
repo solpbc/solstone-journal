@@ -87,6 +87,9 @@ pub fn cogitate_request(
     if let Some(window) = positive_u64(prepared.config.get("context_window")) {
         object.insert("context_window".to_owned(), json!(window));
     }
+    if let Some(tokens) = prepared.config.get("max_output_tokens") {
+        object.insert("max_output_tokens".to_owned(), tokens.clone());
+    }
     object.insert(
         "timeout_ms".to_owned(),
         json!(
@@ -327,6 +330,7 @@ mod tests {
             ("day".to_owned(), json!("20260809")),
             ("read_scope_span".to_owned(), json!(7)),
             ("max_turns".to_owned(), json!(100)),
+            ("max_output_tokens".to_owned(), json!(6000)),
             ("max_run_cost_usd".to_owned(), json!(5.0)),
             ("user_instruction".to_owned(), json!("weekly body")),
             (
@@ -348,6 +352,7 @@ mod tests {
         );
         assert_eq!(weekly.talent_instruction.as_deref(), Some("weekly body"));
         assert_eq!(weekly.max_turns, 100);
+        assert_eq!(weekly.max_output_tokens, Some(6000));
         assert_eq!(weekly.timeout_ms, 600_000);
         assert_eq!(weekly.read_call_budget, 200);
         assert_eq!(weekly.sol_tool_name.as_deref(), Some("solstone"));

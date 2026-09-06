@@ -877,3 +877,38 @@ fn events_include_tool_ladder_and_terminal() {
         Some(RuntimeEvent::Terminal { .. })
     ));
 }
+
+#[test]
+fn truncated_turn_stops_before_tools_or_repeated_completion() {
+    for calls in [
+        vec![],
+        vec![final_call(false, "partial")],
+        vec![call(
+            "solstone",
+            json!({"command":"journal identity partner"}),
+        )],
+    ] {
+        let mut response = turn(
+            "<tool_call>incomplete",
+            calls,
+            json!({"output_tokens":1024}),
+        );
+        response.turn.finish_reason = "max_tokens".to_owned();
+        let mut provider = ScriptedProvider::new([Ok(response)]);
+        let mut tools = ScriptedTools::default();
+        let mut sink = RecordingEventSink::default();
+        let outcome = run_cogitate(
+            &mut provider,
+            &mut tools,
+            input(RunConfig::default()),
+            &mut sink,
+        );
+        assert_eq!(
+            outcome.reason_code.as_deref(),
+            Some("token_budget_exceeded")
+        );
+        assert!(outcome.result.is_none());
+        assert!(tools.calls.is_empty());
+        assert_eq!(provider.seen_messages.len(), 1);
+    }
+}

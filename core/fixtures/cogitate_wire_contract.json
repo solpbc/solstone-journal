@@ -22,6 +22,7 @@
       "read_scope": "string_array",
       "output_path": "null_or_string",
       "schedule": "null_or_string",
+      "max_output_tokens": "null_or_positive_u32",
       "dry_run": "boolean"
     }
   },

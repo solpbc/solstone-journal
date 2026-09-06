@@ -656,3 +656,140 @@ fn dead_stdout_pipe_uses_contract_exit_code() {
     stub.join();
     assert_eq!(status.code(), Some(contract_exit_code("dead_stdout_pipe")));
 }
+
+#[cfg(unix)]
+#[test]
+fn hosted_one_shot_client_fixture() {
+    use solstone_core_cogitate_wire::{CogitateOneShotClient, CogitateRequest};
+    use solstone_core_system::lifecycle::acknowledge_hosted_child_admission;
+    let Ok(role) = std::env::var("SOLSTONE_TEST_COGITATE_ADMISSION_ROLE") else {
+        return;
+    };
+    let journal = PathBuf::from(std::env::var_os("SOLSTONE_JOURNAL").unwrap());
+    if role != "foreign" {
+        acknowledge_hosted_child_admission(&journal).unwrap();
+    }
+    let request = CogitateRequest::from_value(&json!({
+        "schema":"solstone-cogitate-request-v2", "access_tier":"normal",
+        "max_turns":4, "timeout_ms":30000, "read_call_budget":5,
+        "model":"fixture", "correlation_id":"admission-fixture",
+        "initial_prompt":"dry run", "journal_root":journal, "dry_run":true
+    }))
+    .unwrap();
+    let result = CogitateOneShotClient::at_path(env!("CARGO_BIN_EXE_solstone-core"))
+        .with_prefix_arguments(["cogitate".into()])
+        .execute(&request);
+    if role == "parent" {
+        let events = result
+            .expect("admitted one-shot produces valid NDJSON")
+            .events;
+        assert!(events.iter().any(|event| event["event"] == "dry_run"));
+    } else {
+        assert!(result.is_err(), "inadmissible parent spawned a one-shot");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn one_shot_gets_its_own_admission_before_receiving_stdin() {
+    use solstone_core_system::lifecycle::{
+        AdmissionAcknowledgement, AdmissionIdentity, AdmissionResult, AdmissionResultState,
+        HostedServiceKind, ParentLossLedger, acknowledge_parent_loss_admission,
+    };
+    use solstone_core_system::process::{
+        InspectResult, ProcessInstanceSource, SystemProcessInstanceSource,
+    };
+    for role in ["parent", "sealed", "foreign"] {
+        let journal = TempJournal::new("hosted-client");
+        let ledger = ParentLossLedger::open(&journal.0).unwrap();
+        let InspectResult::Present { instance, uid, .. } =
+            SystemProcessInstanceSource.inspect(std::process::id())
+        else {
+            panic!("fixture identity");
+        };
+        let active = ledger
+            .reserve_generation(instance, [HostedServiceKind::Cortex])
+            .unwrap();
+        ledger.initialize_record(&active).unwrap();
+        ledger
+            .persist_coordinator_identity(active.generation, instance)
+            .unwrap();
+        ledger.mark_admitting(active.generation, instance).unwrap();
+        if role == "sealed" {
+            ledger.seal(active.generation, instance).unwrap();
+        }
+        if role == "foreign" {
+            acknowledge_parent_loss_admission(
+                &journal.0,
+                AdmissionIdentity {
+                    generation: active.generation,
+                    launch_id: "talent-parent".to_owned(),
+                    instance,
+                    uid,
+                    parent_launch_id: None,
+                },
+            )
+            .unwrap();
+        }
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "cogitate_session::hosted_one_shot_client_fixture",
+                "--nocapture",
+            ])
+            .env("SOLSTONE_TEST_COGITATE_ADMISSION_ROLE", role)
+            .env("SOLSTONE_JOURNAL", &journal.0)
+            .env("SOL_PARENT_LOSS_GENERATION", active.generation.to_string())
+            .env("SOL_PARENT_LOSS_LAUNCH_ID", "talent-parent")
+            .env_remove("SOL_PARENT_LOSS_PARENT_LAUNCH_ID")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while child.try_wait().unwrap().is_none() {
+            if Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("one-shot admission blocked before stdin");
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let admissions = ledger.generation_path(active.generation).join("admissions");
+        let children: Vec<_> = fs::read_dir(&admissions)
+            .unwrap()
+            .map(Result::unwrap)
+            .filter(|entry| entry.file_name() != "talent-parent")
+            .collect();
+        if role != "parent" {
+            assert!(children.is_empty());
+            continue;
+        }
+        assert_eq!(children.len(), 1);
+        let parent: AdmissionAcknowledgement = serde_json::from_slice(
+            &fs::read(admissions.join("talent-parent/acknowledgement.json")).unwrap(),
+        )
+        .unwrap();
+        let child: AdmissionAcknowledgement = serde_json::from_slice(
+            &fs::read(children[0].path().join("acknowledgement.json")).unwrap(),
+        )
+        .unwrap();
+        let result: AdmissionResult =
+            serde_json::from_slice(&fs::read(children[0].path().join("result.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            child.identity.parent_launch_id.as_deref(),
+            Some("talent-parent")
+        );
+        assert_ne!(child.identity.instance, parent.identity.instance);
+        assert_eq!(result.identity.as_ref(), Some(&child.identity));
+        assert!(matches!(result.state, AdmissionResultState::Admitted));
+    }
+}

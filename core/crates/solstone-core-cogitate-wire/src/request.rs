@@ -28,6 +28,7 @@ pub struct CogitateRequest {
     pub schedule: Option<String>,
     pub max_turns: usize,
     pub context_window: Option<u64>,
+    pub max_output_tokens: Option<u32>,
     pub timeout_ms: u64,
     pub read_call_budget: i64,
     pub model: String,
@@ -82,6 +83,11 @@ impl CogitateRequest {
             schedule: optional_string(object, "schedule")?,
             max_turns: required_positive_usize(object, "max_turns")?,
             context_window: optional_positive_u64(object, "context_window")?,
+            max_output_tokens: optional_positive_u64(object, "max_output_tokens")?
+                .map(|tokens| {
+                    u32::try_from(tokens).map_err(|_| malformed("max_output_tokens exceeds u32"))
+                })
+                .transpose()?,
             timeout_ms: required_positive_u64(object, "timeout_ms")?,
             read_call_budget: required_positive_i64(object, "read_call_budget")?,
             model: required_string(object, "model")?,
@@ -105,6 +111,7 @@ impl CogitateRequest {
             "schedule": self.schedule,
             "max_turns": self.max_turns,
             "context_window": self.context_window,
+            "max_output_tokens": self.max_output_tokens,
             "timeout_ms": self.timeout_ms,
             "read_call_budget": self.read_call_budget,
             "model": self.model,
@@ -159,6 +166,7 @@ fn reject_unknown_fields(object: &Map<String, Value>) -> Result<(), MalformedReq
         "schedule",
         "max_turns",
         "context_window",
+        "max_output_tokens",
         "timeout_ms",
         "read_call_budget",
         "model",

@@ -6,6 +6,7 @@ use std::env;
 use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+#[cfg(not(unix))]
 use std::process::{Command, Stdio};
 
 use serde_json::Value;
@@ -67,9 +68,54 @@ impl CogitateOneShotClient {
         }
     }
 
+    #[cfg(unix)]
+    fn spawn_hosted(&self) -> Result<solstone_core_system::process::LaunchAuthority, ClientError> {
+        use solstone_core_system::lifecycle::{RunId, hosted_child_launch_provenance};
+        use solstone_core_system::process::{
+            BoxedTerminateFn, CommandLaunchRequest, Disposition, LaunchError, launch_command,
+            launch_command_hosted,
+        };
+        use std::time::Duration;
+        let id = RunId::generate().map_err(|error| ClientError::Io(error.to_string()))?;
+        let provenance =
+            hosted_child_launch_provenance(format!("cogitate-{id}"), Duration::from_secs(3))
+                .map_err(|error| ClientError::Io(error.to_string()))?;
+        let request = CommandLaunchRequest {
+            program: self.executable.clone().into_os_string(),
+            arguments: self
+                .prefix_arguments
+                .iter()
+                .cloned()
+                .chain([OsString::from("--one-shot")])
+                .collect(),
+            environment: self
+                .environment
+                .iter()
+                .map(|(key, value)| (key.into(), value.into()))
+                .collect(),
+            current_dir: None,
+            // Cortex cancellation owns this inherited process group.
+            process_group: false,
+            stdin_piped: true,
+            stdout_piped: true,
+            stderr_piped: true,
+        };
+        let terminate: BoxedTerminateFn =
+            Box::new(|child, _| child.kill().map_err(LaunchError::Terminate));
+        let disposition = Disposition::InheritedParentScope;
+        match provenance {
+            Some(provenance) => launch_command_hosted(disposition, request, provenance, terminate),
+            None => launch_command(disposition, request, terminate),
+        }
+        .map_err(|error| ClientError::Io(error.to_string()))
+    }
+
     pub fn execute(&self, request: &CogitateRequest) -> Result<CogitateOneShotRun, ClientError> {
         let input = serde_json::to_vec(&request.to_value())
             .map_err(|error| ClientError::Decode(error.to_string()))?;
+        #[cfg(unix)]
+        let mut child = self.spawn_hosted()?;
+        #[cfg(not(unix))]
         let mut child = Command::new(&self.executable)
             .args(&self.prefix_arguments)
             .arg("--one-shot")
@@ -79,9 +125,11 @@ impl CogitateOneShotClient {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|error| ClientError::Io(error.to_string()))?;
-        child
-            .stdin
-            .as_mut()
+        #[cfg(unix)]
+        let stdin = child.take_stdin();
+        #[cfg(not(unix))]
+        let stdin = child.stdin.take();
+        stdin
             .ok_or_else(|| ClientError::Io("wire stdin is unavailable".to_owned()))?
             .write_all(&input)
             .map_err(|error| ClientError::Io(error.to_string()))?;

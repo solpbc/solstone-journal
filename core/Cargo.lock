@@ -3696,6 +3696,7 @@ dependencies = [
  "solstone-core-local",
  "solstone-core-spp-attest",
  "solstone-core-spp-ratls",
+ "solstone-core-system",
  "thiserror 2.0.20",
 ]
 

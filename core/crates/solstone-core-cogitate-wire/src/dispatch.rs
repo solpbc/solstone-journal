@@ -22,6 +22,7 @@ pub struct DispatchConverseProvider {
     endpoint_runtime: EndpointRuntime,
     journal_root: PathBuf,
     request_id: String,
+    max_output_tokens: u64,
     next_response_id: u64,
 }
 
@@ -63,6 +64,14 @@ impl DispatchConverseProvider {
             endpoint_runtime: EndpointRuntime::default(),
             journal_root: request.journal_root.clone(),
             request_id: request.correlation_id.clone(),
+            // Long final tool submissions need a completion budget independent
+            // of the number of tool turns. Reserve at most a quarter of a known
+            // window by default; an explicit talent budget remains authoritative.
+            max_output_tokens: request.max_output_tokens.map(u64::from).unwrap_or_else(|| {
+                request
+                    .context_window
+                    .map_or(8192, |window| (window / 4).clamp(1, 8192))
+            }),
             next_response_id: 0,
         })
     }
@@ -74,7 +83,7 @@ impl DispatchConverseProvider {
             contents: Vec::new(),
             system_instruction: system_instruction.map(ToOwned::to_owned),
             temperature: 0.2,
-            max_output_tokens: 1024,
+            max_output_tokens: self.max_output_tokens,
             thinking_budget: None,
             timeout_s: Some(deadline.as_secs_f64()),
             json_output: false,
