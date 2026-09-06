@@ -103,6 +103,20 @@ pub fn day_rollup(root: &Path, day: &str) -> Value {
     })
 }
 
+/// Days the master rollup already covers, and how many segments each one was
+/// built from. A day can outlive the segment directories it was rolled up from,
+/// so the segment scan alone is not the set of days the timeline can open.
+pub(super) fn rollup_day_counts(root: &Path, month: Option<&str>) -> BTreeMap<String, usize> {
+    master(root)
+        .value
+        .into_iter()
+        .flat_map(|master| master.months.into_values())
+        .flat_map(|month_value| month_value.days.into_values())
+        .filter(|day| month.is_none_or(|ym| day.day.starts_with(ym)))
+        .map(|day| (day.day.clone(), day.segment_count))
+        .collect()
+}
+
 pub fn rollup_watermark(projection: &ArtifactProjection<MasterTimelineV1>) -> Option<String> {
     (projection.status == projection::TimelineStatus::Current)
         .then_some(projection.value.as_ref())

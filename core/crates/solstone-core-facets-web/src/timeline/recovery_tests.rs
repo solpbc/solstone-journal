@@ -18,10 +18,10 @@ use solstone_core_maintenance::{
 };
 use solstone_core_system_health::{TimelineDivergenceDiagnosis, diagnose_timeline_divergence};
 use solstone_core_timeline::{
-    AttemptOutcome, AttemptStateV1, CURRENT_SCHEMA_VERSION, CurationRecordV1, MasterTimelineV1,
-    PublishedArtifactV1, SegmentBindingV1, SegmentSummaryV1, SegmentTimelineV1, TimelineKind,
-    TimelineRecordV1, day_timeline_path, master_subject_key, publish_segment_timeline,
-    timeline_record_path,
+    AttemptOutcome, AttemptStateV1, CURRENT_SCHEMA_VERSION, CurationRecordV1, DayTimelineV1,
+    MasterTimelineV1, MonthTimelineV1, PublishedArtifactV1, SegmentBindingV1, SegmentSummaryV1,
+    SegmentTimelineV1, TimelineKind, TimelineRecordV1, day_timeline_path, master_subject_key,
+    publish_segment_timeline, timeline_record_path,
 };
 use tower::ServiceExt;
 
@@ -228,6 +228,82 @@ async fn day_api_currentness_follows_changed_and_incomplete_native_inputs() {
         api_payload(journal.path(), &route).await["status"],
         "current"
     );
+}
+
+#[tokio::test]
+async fn date_picker_coverage_offers_days_the_rollup_covers_without_segment_directories() {
+    let journal = tempfile::tempdir().expect("temporary coverage journal");
+    // One day whose segments are still on disk, and one the master rollup
+    // covers with nothing left under chronicle/ to scan.
+    let scanned = "20260601";
+    let rolled_up = "20260610";
+    fs::create_dir_all(
+        journal
+            .path()
+            .join("chronicle")
+            .join(scanned)
+            .join("_default/090000_300"),
+    )
+    .expect("scanned segment directory creates");
+    fs::write(
+        journal.path().join("timeline.json"),
+        serde_json::to_vec(&master_covering(rolled_up, 7)).expect("master serializes"),
+    )
+    .expect("master writes");
+    assert!(
+        !journal.path().join("chronicle").join(rolled_up).exists(),
+        "the rolled-up day must have no segment directory to scan"
+    );
+
+    let index = api_payload(journal.path(), "/app/timeline/api/index").await;
+    assert_eq!(
+        index["coverage"],
+        json!({"start": scanned, "end": rolled_up})
+    );
+    assert_eq!(index["months"], json!({"202606": 8}));
+
+    let stats = api_payload(journal.path(), "/app/timeline/api/stats/202606").await;
+    assert_eq!(stats[scanned], json!(1));
+    assert_eq!(
+        stats[rolled_up],
+        json!(7),
+        "a rolled-up day carries the rollup's own segment count, never an invented one"
+    );
+}
+
+fn master_covering(day: &str, segment_count: usize) -> MasterTimelineV1 {
+    let curation = || CurationRecordV1 {
+        input_digest: "coverage-fixture".to_owned(),
+        candidate_count: 0,
+        picks: Vec::new(),
+        rationale: "coverage fixture".to_owned(),
+        error: None,
+        provenance: None,
+    };
+    let mut master = stale_master();
+    master.months.insert(
+        day[..6].to_owned(),
+        MonthTimelineV1 {
+            day_count: 1,
+            days: BTreeMap::from([(
+                day.to_owned(),
+                DayTimelineV1 {
+                    schema_version: CURRENT_SCHEMA_VERSION,
+                    kind: TimelineKind::Day,
+                    day: day.to_owned(),
+                    source_digest: "coverage-fixture".to_owned(),
+                    generated_at_ms: 1,
+                    top_n: TOP,
+                    segment_count,
+                    hour_count: 1,
+                    hours: BTreeMap::new(),
+                    day_curation: curation(),
+                },
+            )]),
+            month_curation: curation(),
+        },
+    );
+    master
 }
 
 fn build_recovery_fixture(journal: &Path) -> Vec<FixtureSegment> {

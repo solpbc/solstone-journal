@@ -597,6 +597,17 @@ function renderEmptyState(headline, body, opts = {}) {
   `;
 }
 
+// Loading is its own state, never a blank panel: the day fetch can run for
+// tens of seconds and silence reads as "this day has nothing".
+function renderLoadingState(label) {
+  return `
+    <div class="timeline-loading-state" data-timeline-state="loading" role="status">
+      <span class="timeline-loading-spinner" aria-hidden="true"></span>
+      <p>${escapeHtml(label)}</p>
+    </div>
+  `;
+}
+
 function renderErrorState() {
   return `
     <div class="timeline-empty-state" data-timeline-state="error" role="alert">
@@ -726,6 +737,11 @@ async function dispatchBootView() {
         "this day has no timeline data.",
       );
       return;
+    }
+    // Only on a cold day — a live refresh already has the day cached, and
+    // flashing a skeleton over it would throw away the reader's place.
+    if (!dayCache.has(day)) {
+      timeline.innerHTML = renderLoadingState(`loading ${window.JournalFormat.day(day)} …`);
     }
     await loadMonth(day.slice(0, 6));
     await loadDay(day);
@@ -1039,9 +1055,14 @@ async function renderDay(monthIndex, day) {
 // Generic layout primitive used by each axis view with events above and below
 // (month, day, and hour). For each
 // side: each card's ideal left = its anchor cell's center − cardWidth/2;
-// sort by anchor key; forward-pass to push apart any overlap; then draw
+// sort by anchor key; place left-to-right, wrapping into another row once the
+// lane is full so no card is ever pushed past the panel edge; then draw
 // SVG dotted connectors from card edge to anchor cell edge so slants
 // appear when cards had to slide off their cells.
+//
+// Every card stays inside its lane, the lanes grow to hold their rows, and the
+// hour axis plus the panel grow with them. Nothing depends on the view's
+// overflow to hide a card that did not fit.
 //
 // opts: {
 //   viewSelector,    // e.g. ".minute-view"
@@ -1053,8 +1074,41 @@ async function renderDay(monthIndex, day) {
 //   anchorAttr,      // e.g. "data-anchor-minute"
 //   svgSelector,     // e.g. ".minute-connectors"
 //   cardWidth,       // e.g. 170
+//   minCardWidth,    // e.g. 132  (narrowest a card may shrink to before wrapping)
 //   cardGap,         // e.g. 14
+//   rowGap,          // e.g. 12   (vertical gap between wrapped rows)
 // }
+
+// Drop every inline value a previous pass wrote so each pass measures the
+// stylesheet's own geometry rather than its own last answer.
+function resetScaleLayout(view, opts) {
+  view.style.removeProperty("--axis-top");
+  view.style.removeProperty("min-height");
+  const panel = view.querySelector(opts.panelSelector);
+  if (panel) panel.style.removeProperty("min-height");
+  for (const sideName of ["top", "bottom"]) {
+    const lane = view.querySelector(opts.laneSelectorFor(sideName));
+    if (!lane) continue;
+    lane.style.removeProperty("top");
+    lane.style.removeProperty("height");
+  }
+  for (const card of view.querySelectorAll(opts.eventSelector)) {
+    card.style.removeProperty("left");
+    card.style.removeProperty("width");
+    card.style.removeProperty("top");
+    card.style.removeProperty("bottom");
+  }
+}
+
+// Widest card that still lets every card in this lane share one row, clamped
+// to [minCardWidth, cardWidth]. Lanes that already fit keep the full width.
+function laneCardWidth(count, laneWidth, cardWidth, minCardWidth, cardGap) {
+  const capped = Math.min(cardWidth, laneWidth);
+  if (count < 2) return capped;
+  const fitsOneRow = (laneWidth - (count - 1) * cardGap) / count;
+  return Math.max(Math.min(capped, fitsOneRow), Math.min(minCardWidth, laneWidth));
+}
+
 function layoutScale(opts) {
   const view = document.querySelector(opts.viewSelector);
   if (!view) return;
@@ -1063,12 +1117,13 @@ function layoutScale(opts) {
   const svg = view.querySelector(opts.svgSelector);
   if (!panel || !grid || !svg) return;
 
+  resetScaleLayout(view, opts);
+
   // Mobile responsive layouts use a stacked block flow; skip the
   // absolute-positioned overlay entirely so it doesn't fight CSS.
   const isMobile = window.matchMedia("(max-width: 768px)").matches;
   if (isMobile) {
     svg.innerHTML = "";
-    for (const c of view.querySelectorAll(opts.eventSelector)) c.style.left = "";
     return;
   }
 
@@ -1076,23 +1131,42 @@ function layoutScale(opts) {
   const useTablet = tabletQuery.matches && opts.tablet;
   const cardWidth = useTablet ? opts.tablet.cardWidth : opts.cardWidth;
   const cardGap = useTablet ? opts.tablet.cardGap : opts.cardGap;
+  const minCardWidth = Math.min(
+    useTablet ? opts.tablet.minCardWidth : opts.minCardWidth,
+    cardWidth,
+  );
+  const rowGap = opts.rowGap;
 
-  const panelRect = panel.getBoundingClientRect();
-  svg.setAttribute("viewBox", `0 0 ${panelRect.width} ${panelRect.height}`);
-  svg.style.width = panelRect.width + "px";
-  svg.style.height = panelRect.height + "px";
-  svg.innerHTML = "";
+  const baseAxisTop = parseFloat(getComputedStyle(view).getPropertyValue("--axis-top")) || 0;
+  const basePanelMin = parseFloat(getComputedStyle(panel).minHeight) || 0;
 
-  const ns = "http://www.w3.org/2000/svg";
-  const accent = getComputedStyle(view).getPropertyValue("--accent").trim() || "#0f4c81";
-
+  // Pass 1 — width, row assignment and row heights, per lane.
+  const lanes = [];
   for (const sideName of ["top", "bottom"]) {
     const lane = view.querySelector(opts.laneSelectorFor(sideName));
     if (!lane) continue;
+    const laneStyle = getComputedStyle(lane);
+    const entry = {
+      sideName,
+      lane,
+      items: [],
+      baseTop: parseFloat(laneStyle.top) || 0,
+      baseHeight: parseFloat(laneStyle.height) || 0,
+    };
+    entry.height = entry.baseHeight;
+    lanes.push(entry);
+
     const cards = Array.from(lane.querySelectorAll(opts.eventSelector));
     if (!cards.length) continue;
 
     const laneRect = lane.getBoundingClientRect();
+    const laneWidth = laneRect.width;
+    const width = laneCardWidth(cards.length, laneWidth, cardWidth, minCardWidth, cardGap);
+    for (const card of cards) card.style.width = width + "px";
+
+    const insetProperty = sideName === "top" ? "bottom" : "top";
+    const inset = parseFloat(getComputedStyle(cards[0])[insetProperty]) || 0;
+
     const items = cards.map((card) => {
       const anchor = parseInt(card.getAttribute(opts.anchorAttr), 10);
       const cell = grid.querySelector(opts.cellSelectorFor(anchor));
@@ -1104,29 +1178,96 @@ function layoutScale(opts) {
         card,
         cell,
         anchor,
-        idealLeft: cellCenterInLane - cardWidth / 2,
+        idealLeft: cellCenterInLane - width / 2,
       };
     }).sort((a, b) => a.anchor - b.anchor);
 
-    // Forward pass: never let a card overlap its left neighbor.
-    let prevRight = -Infinity;
+    // As few rows as the lane can hold, dealt round-robin so each row spans the
+    // whole day rather than a contiguous block — neighbours in a row are then
+    // far enough apart that every card can sit near its own cell. Dealing them
+    // in order instead would leave each new row starting where the last one ran
+    // out of room, which stair-steps a busy day off to one side.
+    const perRow = Math.max(1, Math.floor((laneWidth + cardGap) / (width + cardGap)));
+    const rowCount = Math.ceil(items.length / perRow);
+    const rows = Array.from({ length: rowCount }, () => []);
+    items.forEach((it, index) => {
+      it.row = index % rowCount;
+      rows[it.row].push(it);
+    });
+
+    const maxLeft = Math.max(0, laneWidth - width);
+    for (const row of rows) {
+      // Forward pass: never overlap the card to the left. Backward pass: pull
+      // the tail back inside the lane. Together they keep every card in view.
+      let prevRight = -Infinity;
+      for (const it of row) {
+        it.left = Math.max(it.idealLeft, prevRight + cardGap);
+        prevRight = it.left + width;
+      }
+      let nextLeft = laneWidth + cardGap;
+      for (let index = row.length - 1; index >= 0; index -= 1) {
+        row[index].left = Math.min(row[index].left, nextLeft - cardGap - width);
+        nextLeft = row[index].left;
+      }
+      for (const it of row) it.left = Math.min(Math.max(it.left, 0), maxLeft);
+    }
+
+    const rowHeights = [];
     for (const it of items) {
-      it.left = Math.max(it.idealLeft, prevRight + cardGap);
-      prevRight = it.left + cardWidth;
+      rowHeights[it.row] = Math.max(rowHeights[it.row] || 0, it.card.offsetHeight);
+    }
+    const rowInsets = [];
+    let stacked = inset;
+    for (let index = 0; index < rowHeights.length; index += 1) {
+      rowInsets.push(stacked);
+      stacked += rowHeights[index] + rowGap;
     }
     for (const it of items) {
       it.card.style.left = it.left + "px";
+      it.card.style[insetProperty] = rowInsets[it.row] + "px";
     }
 
-    // Connectors — drawn in panel coords so the SVG layer can overlap
-    // both lanes and the central grid.
-    for (const it of items) {
+    entry.items = items;
+    entry.height = Math.max(entry.baseHeight, stacked - rowGap + inset);
+  }
+
+  // Pass 2 — grow the lanes, and push the axis and the panel down with them so
+  // the extra rows are laid out in real space instead of over the hour strip.
+  const topLane = lanes.find((entry) => entry.sideName === "top");
+  const axisShift = topLane ? Math.max(0, topLane.height - topLane.baseHeight) : 0;
+  const axisTop = baseAxisTop + axisShift;
+  if (axisShift > 0) view.style.setProperty("--axis-top", axisTop + "px");
+  let panelExtent = axisTop;
+  for (const entry of lanes) {
+    const laneTop = entry.sideName === "top" ? entry.baseTop : entry.baseTop + axisShift;
+    if (laneTop !== entry.baseTop) entry.lane.style.top = laneTop + "px";
+    if (entry.height !== entry.baseHeight) entry.lane.style.height = entry.height + "px";
+    panelExtent = Math.max(panelExtent, laneTop + entry.height + 24);
+  }
+  if (panelExtent > basePanelMin) {
+    panel.style.minHeight = panelExtent + "px";
+    view.style.minHeight = panelExtent + "px";
+  }
+
+  const panelRect = panel.getBoundingClientRect();
+  svg.setAttribute("viewBox", `0 0 ${panelRect.width} ${panelRect.height}`);
+  svg.style.width = panelRect.width + "px";
+  svg.style.height = panelRect.height + "px";
+  svg.innerHTML = "";
+
+  const ns = "http://www.w3.org/2000/svg";
+  const accent = getComputedStyle(view).getPropertyValue("--accent").trim() || "#0f4c81";
+
+  // Connectors — drawn in panel coords so the SVG layer can overlap
+  // both lanes and the central grid.
+  for (const entry of lanes) {
+    for (const it of entry.items) {
       if (!it.cell) continue;
       const cardRect = it.card.getBoundingClientRect();
       const cellRect = it.cell.getBoundingClientRect();
 
-      const cardEdgeY = sideName === "top" ? cardRect.bottom : cardRect.top;
-      const cellEdgeY = sideName === "top" ? cellRect.top : cellRect.bottom;
+      const cardEdgeY = entry.sideName === "top" ? cardRect.bottom : cardRect.top;
+      const cellEdgeY = entry.sideName === "top" ? cellRect.top : cellRect.bottom;
 
       const x1 = cardRect.left + cardRect.width / 2 - panelRect.left;
       const y1 = cardEdgeY - panelRect.top;
@@ -1166,8 +1307,10 @@ const LAYOUT_MINUTE = {
   laneSelectorFor: (s) => `.minute-lane.timeline-${s}`,
   cellSelectorFor: (k) => `.segment-cell[data-minute="${k}"]`,
   cardWidth: 170,
+  minCardWidth: 132,
   cardGap: 14,
-  tablet: { cardWidth: 140, cardGap: 10 },
+  rowGap: 12,
+  tablet: { cardWidth: 140, minCardWidth: 120, cardGap: 10 },
 };
 const LAYOUT_DAY = {
   viewSelector: ".day-view",
@@ -1179,8 +1322,10 @@ const LAYOUT_DAY = {
   laneSelectorFor: (s) => `.hour-lane.timeline-${s}`,
   cellSelectorFor: (k) => `.hour-cell[data-hour="${k}"]`,
   cardWidth: 170,
+  minCardWidth: 132,
   cardGap: 12,
-  tablet: { cardWidth: 140, cardGap: 10 },
+  rowGap: 12,
+  tablet: { cardWidth: 140, minCardWidth: 120, cardGap: 10 },
 };
 const LAYOUT_MONTH = {
   viewSelector: ".month-view",
@@ -1192,8 +1337,10 @@ const LAYOUT_MONTH = {
   laneSelectorFor: (s) => `.events-lane.timeline-${s}`,
   cellSelectorFor: (k) => `.day-cell[data-day="${k}"]`,
   cardWidth: 170,
+  minCardWidth: 132,
   cardGap: 12,
-  tablet: { cardWidth: 140, cardGap: 10 },
+  rowGap: 12,
+  tablet: { cardWidth: 140, minCardWidth: 120, cardGap: 10 },
 };
 
 function layoutMinute() { layoutScale(LAYOUT_MINUTE); }
@@ -1525,9 +1672,14 @@ async function renderFiveMinute(monthIndex, day, hour, minute) {
 
 function renderEdgeDay(monthIndex, day, position) {
   const month = months[monthIndex];
+  // A bare "4" reads as nothing; name the day and point the chevron the way
+  // it moves. The accessible name stays the full date either way.
+  const label = position === "prev"
+    ? `‹ ${month.name.slice(0, 3)} ${day}`
+    : `${month.name.slice(0, 3)} ${day} ›`;
   return `
     <button class="edge-day timeline-${position}" type="button" data-month="${monthIndex}" data-day="${day}" aria-label="open ${month.name} ${day}, ${month.year || ""}">
-      ${day}
+      ${escapeHtml(label)}
     </button>
   `;
 }
