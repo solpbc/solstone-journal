@@ -5,9 +5,43 @@
   'use strict';
 
   // --- owner-facing strings ---
-  const PROVENANCE_TITLE_PREFIX = 'rolled up at';
-  const PROVENANCE_TITLE_ON = 'on';
+  const STATE_LABEL = {
+    current: 'current',
+    stale: 'out of date',
+    missing: 'not made yet',
+    failed: "couldn't be made",
+  };
+  const STATE_ACTION = {
+    stale: 'update this day →',
+    missing: 'make this day →',
+    failed: 'try again in system health →',
+  };
+  const ROLLED_UP_PREFIX = 'rolled up';
+  const NEWER_MATERIAL_PREFIX = 'newer material arrived after';
+  const NEWER_MATERIAL_UNDATED = 'newer material arrived after it was made';
+  const PROVENANCE_SUMMARY = 'how this was made';
+  const FACT_MODEL = 'model';
+  const FACT_ROLLED_UP = 'rolled up';
+  const FACT_REASON = 'reason';
   // --- end owner-facing strings ---
+
+  const ACTION_HREF = '/app/health';
+  // Outcomes where the artifact itself could not be read or trusted, as
+  // opposed to one that is simply behind the material it was made from.
+  const UNMAKEABLE_OUTCOMES = ['unreadable', 'malformed', 'invalid', 'state_unavailable'];
+
+  // The day re-renders whole on a live refresh, so the disclosure's open state
+  // has to live outside the markup or every refresh would snap it shut.
+  let provenanceOpen = false;
+  if (typeof document !== 'undefined') {
+    // 'toggle' does not bubble; listen in the capture phase.
+    document.addEventListener('toggle', (event) => {
+      const target = event.target;
+      if (target && target.classList && target.classList.contains('timeline-truth-provenance')) {
+        provenanceOpen = Boolean(target.open);
+      }
+    }, true);
+  }
 
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (char) => ({
@@ -19,43 +53,68 @@
     })[char]);
   }
 
-  function pad2(value) {
-    return String(value).padStart(2, '0');
+  function rollupTimeLabel(generatedAtMs) {
+    if (!generatedAtMs) return '';
+    return global.JournalFormat.timestamp(generatedAtMs);
   }
 
-  function absoluteRollupTitle(generatedAtMs) {
-    const date = new Date(generatedAtMs);
-    const hh = pad2(date.getHours());
-    const mm = pad2(date.getMinutes());
-    const y = date.getFullYear();
-    const mo = pad2(date.getMonth() + 1);
-    const da = pad2(date.getDate());
-    return `${PROVENANCE_TITLE_PREFIX} ${hh}:${mm} ${PROVENANCE_TITLE_ON} ${y}-${mo}-${da}`;
+  function truthState(status, artifactOutcome) {
+    if (status === 'current') return 'current';
+    if (status === 'missing') return 'missing';
+    if (UNMAKEABLE_OUTCOMES.includes(artifactOutcome)) return 'failed';
+    return 'stale';
+  }
+
+  // The one line the owner reads first: where this day stands, in plain words.
+  function truthDetail(state, artifactOutcome, timeLabel) {
+    if (state === 'current') {
+      return timeLabel ? `${ROLLED_UP_PREFIX} ${timeLabel}` : '';
+    }
+    if (state === 'stale' && artifactOutcome === 'digest_mismatch') {
+      return timeLabel ? `${NEWER_MATERIAL_PREFIX} ${timeLabel}` : NEWER_MATERIAL_UNDATED;
+    }
+    return '';
+  }
+
+  function renderFact(term, value) {
+    return `<div><dt>${escapeHtml(term)}</dt><dd>${escapeHtml(value)}</dd></div>`;
+  }
+
+  // Model, exact time and the machine reason are required by the agent-output
+  // canon but are not the owner's first line — they live behind a disclosure.
+  function renderProvenanceDetails(state, generatedAtMs, provenance, artifactOutcome, timeLabel) {
+    const facts = [];
+    if (provenance?.model) facts.push(renderFact(FACT_MODEL, provenance.model));
+    if (timeLabel) facts.push(renderFact(FACT_ROLLED_UP, timeLabel));
+    if (artifactOutcome && artifactOutcome !== 'current' && artifactOutcome !== state) {
+      facts.push(renderFact(FACT_REASON, artifactOutcome.replaceAll('_', ' ')));
+    }
+    if (!facts.length) return '';
+    return `<details class="timeline-truth-provenance"${provenanceOpen ? ' open' : ''}>
+      <summary>${escapeHtml(PROVENANCE_SUMMARY)}</summary>
+      <dl class="timeline-truth-facts">${facts.join('')}</dl>
+    </details>`;
   }
 
   function renderArtifactTruth(status, generatedAtMs, provenance, artifactOutcome) {
-    const normalized = ["current", "stale", "missing"].includes(status) ? status : "stale";
-    const label = normalized === "current" ? "current" : normalized === "stale" ? "refresh needed" : "missing";
-    const model = provenance?.model ? ` · ${provenance.model}` : "";
-    const generated = generatedAtMs ? ` · ${absoluteRollupTitle(generatedAtMs)}` : "";
-    // Only show the outcome in parens when it says something the status
-    // badge doesn't already say -- status "missing" with outcome "missing"
-    // has no more specific reason to add, and rendered as "MISSING (missing)".
-    const reason = artifactOutcome && artifactOutcome !== "current" && artifactOutcome !== normalized
-      ? ` (${artifactOutcome.replaceAll("_", " ")})`
-      : "";
-    const recovery = normalized === "current"
-      ? ""
-      : '<a class="timeline-truth-action" href="/app/health">refresh timeline in system health →</a>';
-    return `<div class="timeline-truth timeline-truth-${normalized}" role="status">
-      <span class="timeline-truth-badge">${escapeHtml(label)}</span>
-      <span class="timeline-truth-detail">${escapeHtml(`${generated}${model}${reason}`.replace(/^ · /, ""))}</span>
-      ${recovery}
+    const state = truthState(status, artifactOutcome);
+    const timeLabel = rollupTimeLabel(generatedAtMs);
+    const detail = truthDetail(state, artifactOutcome, timeLabel);
+    const action = STATE_ACTION[state]
+      ? `<a class="timeline-truth-action" href="${ACTION_HREF}">${escapeHtml(STATE_ACTION[state])}</a>`
+      : '';
+    return `<div class="timeline-truth timeline-truth-${state}">
+      <p class="timeline-truth-line" role="status">
+        <span class="timeline-truth-badge">${escapeHtml(STATE_LABEL[state])}</span>
+        ${detail ? `<span class="timeline-truth-detail">${escapeHtml(detail)}</span>` : ''}
+        ${action}
+      </p>
+      ${renderProvenanceDetails(state, generatedAtMs, provenance, artifactOutcome, timeLabel)}
     </div>`;
   }
 
   const TimelineProvenance = {
-    absoluteRollupTitle,
+    truthState,
     renderArtifactTruth,
   };
   global.TimelineProvenance = TimelineProvenance;

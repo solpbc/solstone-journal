@@ -18,11 +18,26 @@
   <div data-date-nav></div>
   <div id="timeline-shell" class="timeline-shell">
     <section aria-label="Interactive timeline">
-      <p class="timeline-artifact-note">Timeline rollups show their verified publication state and generation provenance.</p>
-      <div id="timeline-root"></div>
+      <div id="timeline-root">
+        <div class="timeline-loading-state" data-timeline-state="loading" role="status">
+          <span class="timeline-loading-spinner" aria-hidden="true"></span>
+          <p data-timeline-loading-label>loading your journal …</p>
+        </div>
+      </div>
     </section>
   </div>
 </div>
+
+<script>
+// Name the day in the first paint: the fetch behind it can run for many
+// seconds, and a blank panel reads as "this day has nothing".
+(function() {
+  const day = window.timelineInitial && window.timelineInitial.day;
+  const label = document.querySelector("[data-timeline-loading-label]");
+  if (!label || !/^\d{8}$/.test(day || "")) return;
+  label.textContent = `loading ${window.JournalFormat.day(day)} …`;
+})();
+</script>
 
 <script defer src="/app/timeline/static/timeline_provenance.js"></script>
 <script defer src="/app/timeline/static/timeline.js"></script>

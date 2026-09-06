@@ -42,14 +42,6 @@
   padding-bottom: 18px;
 }
 
-.timeline-shell .timeline-artifact-note {
-  width: min(100%, 1160px);
-  margin: 12px auto 0;
-  padding: 0 clamp(14px, 4vw, 32px);
-  color: var(--muted);
-  font-size: .78rem;
-}
-
 .timeline-shell .timeline-rollup-status {
   display: flex;
   flex-wrap: wrap;
@@ -87,15 +79,60 @@
   height: 32px;
 }
 
-.timeline-shell .timeline-truth {
+.timeline-shell .timeline-loading-state {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: .75rem;
+  width: min(100%, 520px);
+  margin: clamp(96px, 18vh, 180px) auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.timeline-shell .timeline-loading-state p {
+  margin: 0;
+  color: var(--muted);
+  font-size: .92rem;
+}
+
+.timeline-shell .timeline-loading-spinner {
+  display: block;
+  width: 26px;
+  height: 26px;
+  border: 3px solid var(--soft-line);
+  border-top-color: var(--orange);
+  border-radius: 50%;
+  animation: timeline-spin 900ms linear infinite;
+}
+
+@keyframes timeline-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timeline-shell .timeline-loading-spinner {
+    animation: none;
+  }
+}
+
+.timeline-shell .timeline-truth {
   margin: 10px 0 0;
   color: var(--muted);
   font-size: .76rem;
   line-height: 1.35;
+}
+
+.timeline-shell .timeline-truth-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.timeline-shell .timeline-empty-state .timeline-truth-line {
+  justify-content: center;
 }
 
 .timeline-shell .timeline-truth-badge {
@@ -107,12 +144,12 @@
   border-radius: 999px;
   font-weight: 800;
   letter-spacing: .02em;
-  text-transform: uppercase;
 }
 
 .timeline-shell .timeline-truth-current { color: #16715d; }
 .timeline-shell .timeline-truth-stale { color: #a65a00; }
 .timeline-shell .timeline-truth-missing { color: #ad3e33; }
+.timeline-shell .timeline-truth-failed { color: var(--danger); }
 
 .timeline-shell .timeline-truth-detail {
   color: var(--muted);
@@ -122,6 +159,48 @@
   color: inherit;
   font-weight: 700;
   text-decoration: underline;
+}
+
+.timeline-shell .timeline-truth-provenance {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.timeline-shell .timeline-truth-provenance > summary {
+  display: inline-block;
+  min-height: 22px;
+  padding: 3px 0;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.timeline-shell .timeline-truth-provenance > summary:hover,
+.timeline-shell .timeline-truth-provenance > summary:focus-visible {
+  color: var(--ink);
+}
+
+.timeline-shell .timeline-truth-facts {
+  display: grid;
+  gap: 2px 10px;
+  margin: 4px 0 0;
+}
+
+.timeline-shell .timeline-truth-facts > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.timeline-shell .timeline-truth-facts dt {
+  min-width: 5.5rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.timeline-shell .timeline-truth-facts dd {
+  margin: 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
 }
 
 .timeline-shell .timeline-history-view {
@@ -497,20 +576,24 @@
   position: absolute;
   z-index: 4;
   top: var(--axis-top);
-  width: 72px;
-  height: 54px;
-  border-radius: 8px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 999px;
   transform: translateY(-50%);
   box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.94);
-  font-size: 1rem;
+  font-size: 0.86rem;
+  white-space: nowrap;
 }
 
+/* Inside the panel: the day strip is only as wide as .hour-grid, so a chip
+   sitting in the panel's own padding never reaches the panel edge. */
 .timeline-shell .edge-day.timeline-prev {
-  left: -18px;
+  left: 8px;
 }
 
 .timeline-shell .edge-day.timeline-next {
-  right: -18px;
+  right: 8px;
 }
 
 .timeline-shell .day-focus-node {
@@ -1688,19 +1771,10 @@
     display: none;
   }
 
+  /* The date nav above the panel already carries prev/next at this width;
+     two more day buttons in the flow only orphan themselves above the day. */
   .timeline-shell .edge-day {
-    position: static;
-    display: inline-grid;
-    width: 50px;
-    height: 38px;
-    margin: 0 8px 16px 0;
-    transform: none;
-    font-size: 0.8rem;
-  }
-
-  .timeline-shell .edge-day:hover,
-  .timeline-shell .edge-day:focus-visible {
-    transform: translateY(-2px);
+    display: none;
   }
 
   .timeline-shell .hour-panel {
