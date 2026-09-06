@@ -629,10 +629,15 @@ const Dashboard = (function() {
   }
 
   // The single most useful reason to surface directly on a collapsed backlog
-  // row, without expanding "work remaining" (G2-14).
+  // row, without expanding "work remaining" (G2-14). Real backlog days can
+  // carry several why[] units where only some have a specific, mapped
+  // reason_code (e.g. one "failed" unit with no code alongside another with
+  // reason_code: "context_window_exceeded") — prefer the most specific one
+  // over always taking why[0], which may just be the generic case.
   function topReasonLabel(day, C) {
     if (!Array.isArray(day.why) || day.why.length === 0) return null;
-    return unitReasonLabel(day.why[0], C);
+    const specific = day.why.find(unit => unit && unit.reason_code && UNIT_REASON_COPY[unit.reason_code]);
+    return unitReasonLabel(specific || day.why[0], C);
   }
 
   function reasonCopy(day, C) {
