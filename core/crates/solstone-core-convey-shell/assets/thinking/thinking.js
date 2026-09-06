@@ -1235,8 +1235,8 @@
   function thinkingRunFacts(run) {
     return [
       ['ran', window.JournalFormat.timestamp(run.start)],
-      ['model', run.model],
-      ['provider', run.provider],
+      ['model', runModelLabel(run)],
+      ['provider', runProviderLabel(run)],
       ['runtime', window.JournalFormat.duration(run.runtime_seconds)],
       ['status', run.failed ? 'failed' : (run.status || 'unknown').replaceAll('_', ' ')],
       ['thinking events', run.thinking_count],
@@ -1289,6 +1289,13 @@
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'thinking-runs-run-control';
+    // G2-38: thinking_count and tool_count are the only two things a run log
+    // can ever hold. When both are zero, the log will be empty every time —
+    // dim the control so that's visible before the click, not after.
+    if (!(run.thinking_count > 0) && !(run.tool_count > 0)) {
+      button.classList.add('thinking-runs-run-control-empty');
+      button.title = 'no thinking events or tool calls were recorded for this run';
+    }
     button.textContent = 'run log';
     button.addEventListener('click', () => navigateThinkingRun(run));
     return button;
@@ -1311,7 +1318,7 @@
     runs.forEach((run) => {
       const row = document.createElement('tr');
       if (run.failed) row.className = 'thinking-run-failed';
-      for (const value of [window.JournalFormat.timestamp(run.start), run.failed ? 'failed' : (run.status || 'unknown').replaceAll('_', ' '), run.model, run.provider, window.JournalFormat.duration(run.runtime_seconds), run.thinking_count, run.tool_count, run.facet]) {
+      for (const value of [window.JournalFormat.timestamp(run.start), run.failed ? 'failed' : (run.status || 'unknown').replaceAll('_', ' '), runModelLabel(run), runProviderLabel(run), window.JournalFormat.duration(run.runtime_seconds), run.thinking_count, run.tool_count, run.facet]) {
         const cell = document.createElement('td');
         if (value !== null && value !== undefined && value !== '') cell.textContent = value;
         row.appendChild(cell);
@@ -1393,8 +1400,30 @@
       const heading = document.createElement('p');
       heading.textContent = state.runsFailuresOnly ? 'no failed runs match this view' : route.talent ? 'no runs found for this talent on this day' : 'no talent runs on this day';
       const detail = document.createElement('p');
-      detail.textContent = route.talent ? 'this day has no matching run record in the current view. try all talents or another day.' : 'runs appear here when processing takes place.';
+      // G2-33: the failures-only heading is filter-aware, but this line used to
+      // fall through to "runs appear here when processing takes place" even on
+      // a day where matchingRuns.length runs plainly did happen — just none of
+      // them failed. Say what's true for that case instead.
+      if (state.runsFailuresOnly && matchingRuns.length) {
+        const count = matchingRuns.length;
+        detail.textContent = `all ${count} ${count === 1 ? 'run' : 'runs'} on this day completed.`;
+      } else if (route.talent) {
+        detail.textContent = 'this day has no matching run record in the current view. try all talents or another day.';
+      } else {
+        detail.textContent = 'runs appear here when processing takes place.';
+      }
       host.append(heading, detail);
+      if (state.runsFailuresOnly && matchingRuns.length) {
+        const showAll = document.createElement('button');
+        showAll.type = 'button';
+        showAll.className = 'thinking-runs-control';
+        showAll.textContent = 'show all runs';
+        showAll.addEventListener('click', () => {
+          state.runsFailuresOnly = false;
+          renderThinkingRunsDay(payload, route);
+        });
+        host.append(showAll);
+      }
       return;
     }
     const groups = new Map();
@@ -1562,6 +1591,10 @@
     // The run-level outcome is run.status; a step with no recorded detail only
     // means "nothing was written for this step", never that the run failed.
     const runFinished = run.failed !== true && run.status === 'completed';
+    // G2-38: two adjacent steps with nothing recorded produced two identical
+    // "no detail was recorded for this step" lines. Collapse a run of
+    // identical empty markers into the one line that already said it.
+    let lastEmptyNote = null;
     (Array.isArray(run.events) ? run.events : []).forEach((event) => {
       const item = document.createElement('div');
       const fields = [['thinking', event.thinking], ['tools', event.tools], ['args', event.args], ['result', event.result], ['error', event.error]];
@@ -1572,13 +1605,16 @@
         item.appendChild(fact);
       });
       if (!item.children.length) {
+        const noteText = runFinished
+          ? 'no detail was recorded for this step'
+          : (event.event === 'tool_start' ? 'tool call did not complete' : 'did not complete');
+        if (noteText === lastEmptyNote) return;
+        lastEmptyNote = noteText;
         const note = document.createElement('p');
-        if (runFinished) {
-          note.textContent = 'no detail was recorded for this step';
-        } else {
-          note.textContent = event.event === 'tool_start' ? 'tool call did not complete' : 'did not complete';
-        }
+        note.textContent = noteText;
         item.appendChild(note);
+      } else {
+        lastEmptyNote = null;
       }
       panel.appendChild(item);
     });
@@ -1782,6 +1818,24 @@
 
   function providerLabel(provider) {
     return providerLabels[provider] || provider || 'provider';
+  }
+
+  // Prior partial G2-05: the runs table and cards still showed the raw
+  // provider-prefixed model id (`local/qwen3.5-4b`) and raw provider slug as
+  // top-level facts. Readable names go in the fact/column; the exact ids stay
+  // in the run detail view's existing "exact ids" disclosure, which reads
+  // run.provider/run.model directly and is untouched by this.
+  function runModelLabel(run) {
+    const modelId = String(run.model || '').trim();
+    if (!modelId) return run.model;
+    const tierLabel = byoModelLabel(run.provider, modelId, state.providers);
+    if (tierLabel && tierLabel !== modelId) return tierLabel;
+    const prefix = `${String(run.provider || '').trim()}/`;
+    return prefix.length > 1 && modelId.startsWith(prefix) ? modelId.slice(prefix.length) : modelId;
+  }
+
+  function runProviderLabel(run) {
+    return run.provider ? providerLabel(run.provider) : run.provider;
   }
 
   function talentLabel(name) {

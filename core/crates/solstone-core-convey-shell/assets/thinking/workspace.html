@@ -587,6 +587,13 @@
       padding: 9px 14px;
     }
 
+    /* G2-38: a run with no thinking events and no tool calls opens to an empty
+       log. Dim the control so the owner can see there is nothing to open
+       before clicking, rather than learning to distrust the link. */
+    .thinking-workspace .thinking-runs-run-control-empty {
+      color: var(--ink-faint);
+    }
+
     .thinking-workspace .thinking-runs-group h3 {
       margin: 18px 0 4px;
     }
