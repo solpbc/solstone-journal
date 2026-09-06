@@ -319,6 +319,27 @@ fn project_register(receipt: &Value) -> Option<Vec<Value>> {
             removals.push(row);
         }
     }
+    // The register is keyed by mark id, which is not an order the owner can
+    // read. Newest first, so a page of rows is a run of days.
+    removals.sort_by(|left, right| {
+        let key = |row: &Value| {
+            (
+                row.get("day")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
+                row.get("dir")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
+                row.get("id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
+            )
+        };
+        key(right).cmp(&key(left))
+    });
     Some(removals)
 }
 

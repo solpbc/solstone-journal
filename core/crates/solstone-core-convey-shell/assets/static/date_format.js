@@ -73,6 +73,20 @@
     return short;
   }
 
+  // Always an anchored date. `formatDateShort` deliberately collapses the last
+  // week to a bare weekday, which loses its anchor in a list that is not in
+  // date order — and a bare "Tuesday" is not enough to decide a deletion on.
+  function formatDateFull(dateString, now) {
+    const parsed = parseDay(dateString);
+    if (!parsed) return dateString;
+    const today = normalizeToday(now);
+    let label = `${WEEKDAYS_SHORT[parsed.getDay()]} ${MONTHS_SHORT[parsed.getMonth()]} ${parsed.getDate()}`;
+    if (parsed.getFullYear() !== today.getFullYear()) {
+      label += ` '${String(parsed.getFullYear()).slice(-2)}`;
+    }
+    return label;
+  }
+
   function formatStreamLabel(stream) {
     return String(stream || '').replace(/[._-]+/g, ' ').trim();
   }
@@ -103,6 +117,6 @@
       anthropic: 'Anthropic', google: 'Google'})[lane] || 'processing';
   }
 
-  window.JournalFormat = { processingLane, compactTokens: value => value >= 999500 ? `${Math.round(value / 1000000)}M` : value >= 1000 ? `${Math.round(value / 1000)}K` : String(Math.round(value)),  day: formatDateShort, stream: formatStreamLabel, segmentTime: formatSegmentTime, timestamp: formatTimestamp, duration: formatDuration };
+  window.JournalFormat = { processingLane, compactTokens: value => value >= 999500 ? `${Math.round(value / 1000000)}M` : value >= 1000 ? `${Math.round(value / 1000)}K` : String(Math.round(value)),  day: formatDateShort, dayFull: formatDateFull, stream: formatStreamLabel, segmentTime: formatSegmentTime, timestamp: formatTimestamp, duration: formatDuration };
   window.formatDateShort = formatDateShort;
 })();

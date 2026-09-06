@@ -61,6 +61,11 @@
     equal('formatDateShort fallback rung', window.formatDateShort('20260711', new Date(2026, 7, 20)), 'Sat Jul 11');
     equal('formatDateShort weekday rung', window.formatDateShort('20260711', now), 'Saturday');
 
+    equal('dayFull keeps the date inside the week', window.JournalFormat.dayFull('20260711', now), 'Sat Jul 11');
+    equal('dayFull keeps the date for today', window.JournalFormat.dayFull('20260714', now), 'Tue Jul 14');
+    equal('dayFull carries the year when it differs', window.JournalFormat.dayFull('20250102', now), "Thu Jan 2 '25");
+    equal('dayFull passes a malformed day through', window.JournalFormat.dayFull('nope', now), 'nope');
+
     equal('heading today', window.DateNav.headingLabel('20260714', now), 'Today');
     equal('heading yesterday', window.DateNav.headingLabel('20260713', now), 'Yesterday');
     equal('heading tomorrow', window.DateNav.headingLabel('20260715', now), 'Tomorrow');
