@@ -10,8 +10,6 @@ solstone/apps/entities/talent/entity_observer.md
 solstone/apps/entities/talent/entity_observer.schema.json
 solstone/apps/health/talent/health/SKILL.md
 solstone/apps/support/talent/support/SKILL.md
-solstone/apps/timeline/talent/segment_summary.md
-solstone/apps/timeline/talent/segment_summary.schema.json
 solstone/apps/transcripts/talent/transcripts/SKILL.md
 solstone/talent/conversation.md
 solstone/talent/daily_schedule.md

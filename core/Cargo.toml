@@ -30,7 +30,6 @@ members = [
     "crates/solstone-core-support-portal",
     "crates/solstone-core-support-web",
     "crates/solstone-core-brain",
-    "crates/solstone-core-timeline",
     "crates/solstone-core-installation-identity",
     "crates/solstone-core-backup",
     "crates/solstone-core-backup-cli",
@@ -184,7 +183,6 @@ solstone-core-body-ingest = { path = "crates/solstone-core-body-ingest" }
 solstone-core-convey-body = { path = "crates/solstone-core-convey-body" }
 solstone-core-records-web = { path = "crates/solstone-core-records-web" }
 solstone-core-brain = { path = "crates/solstone-core-brain" }
-solstone-core-timeline = { path = "crates/solstone-core-timeline" }
 solstone-core-installation-identity = { path = "crates/solstone-core-installation-identity" }
 solstone-core-backup = { path = "crates/solstone-core-backup" }
 solstone-core-backup-cli = { path = "crates/solstone-core-backup-cli" }
