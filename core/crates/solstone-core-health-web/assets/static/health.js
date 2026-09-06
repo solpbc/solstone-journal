@@ -232,7 +232,7 @@
     errorHost.hidden = false;
     if (window.SurfaceState) {
       errorHost.innerHTML = window.SurfaceState.error({
-        heading: "I couldn't load health state",
+        heading: "health state couldn't be loaded",
         desc: window.CONVEY_COPY?.RELOAD_HINT || 'reload to try again.',
         retry: true,
         detail: error,

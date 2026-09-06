@@ -3642,7 +3642,7 @@ function showFacetDetailView(entityId) {
       const container = document.getElementById('detail-description-container');
       if (container) {
         container.innerHTML = window.SurfaceState.error({
-          heading: "I couldn't load this entity",
+          heading: "this entity couldn't be loaded",
           desc: window.CONVEY_COPY.RELOAD_HINT,
           serverMessage: error?.message,
           detail: error,
@@ -3690,7 +3690,7 @@ function showJournalDetailView(entityId) {
       const container = document.getElementById('journal-detail-facets');
       if (container) {
         container.innerHTML = window.SurfaceState.error({
-          heading: "I couldn't load this entity",
+          heading: "this entity couldn't be loaded",
           desc: window.CONVEY_COPY.RELOAD_HINT,
           serverMessage: error?.message,
           detail: error,

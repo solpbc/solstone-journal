@@ -51,7 +51,7 @@
         "auth_failed": "the destination rejected the key or credentials. check the recovery key and destination details.",
         "locked": "the destination is busy. try again shortly.",
         "timeout": "the destination took too long to respond. try again shortly.",
-        "unreachable": "i couldn't reach the destination. check the repository path and try again."
+        "unreachable": "the destination couldn't be reached. check the repository path and try again."
       },
       "modes": {
         "byo": {
@@ -235,18 +235,18 @@
     "operation_reason_labels": {
       "backup_busy": "another backup task is already running. try again in a moment.",
       "backup_not_confirmed": "confirm your recovery key before turning on backup.",
-      "backup_operation_failed": "i couldn't finish that backup action. check the recovery key and destination, then try again.",
-      "backup_unavailable": "i couldn't ask the background service to start a backup. start it, then try again.",
+      "backup_operation_failed": "that backup action couldn't be finished. check the recovery key and destination, then try again.",
+      "backup_unavailable": "the background service couldn't be asked to start a backup. start it, then try again.",
       "invalid_key": "that recovery key didn't unlock the backup. re-enter the key from your saved copy.",
       "invalid_config_value": "use non-negative whole numbers, then save again.",
       "invalid_operation_for_state": "finish the current backup setup step, then try again.",
       "invalid_request_value": "check the destination details and try again.",
-      "restic_unavailable": "i couldn't prepare the backup tool. try again after setup finishes.",
-      "repo_missing": "i couldn't find a backup repository at that destination.",
+      "restic_unavailable": "the backup tool couldn't be prepared. try again after setup finishes.",
+      "repo_missing": "no backup repository was found at that destination.",
       "auth_failed": "that recovery key didn't unlock the backup. check the key first, then the destination details.",
       "locked": "the destination is busy. try again shortly.",
       "timeout": "the destination took too long to respond. try again shortly.",
-      "failed": "i couldn't finish the backup action. check the recovery key and destination, then try again.",
+      "failed": "the backup action couldn't be finished. check the recovery key and destination, then try again.",
       "incomplete": "the backup action didn't finish. you can try again.",
       "body_rebuild_failed": "your journal was restored, but your body history couldn't be rebuilt from it. the restore wasn't finalized.",
       "integrity_failed": "your journal was restored to this device, but the backup copy failed its integrity check and may be damaged.",

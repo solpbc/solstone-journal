@@ -29,7 +29,7 @@ use crate::readers::{
     read_steward_summary, render_briefing_sections, resolve_attention, summarize_pipeline_day,
 };
 
-const FIRST_WEEK_FRAMING: &str = "most of what i keep becomes useful after about a week, once your journal has enough of your days in it to show patterns. for now, here's what's already happening:";
+const FIRST_WEEK_FRAMING: &str = "most of what your journal keeps becomes useful after about a week, once your journal has enough of your days in it to show patterns. for now, here's what's already happening:";
 
 /// Complete pre-route pulse context. The instant stays typed until projection.
 ///

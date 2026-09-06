@@ -12,7 +12,7 @@ use crate::needs_you::format_degraded_capture_line;
 
 pub const BACKLOG_FRESHNESS_MAX_AGE_HOURS: i64 = 36;
 
-const UNAVAILABLE_HEADLINE: &str = "i don't know the status of your devices right now.";
+const UNAVAILABLE_HEADLINE: &str = "your devices' status isn't known right now.";
 const EMPTY_REGISTRY_HEADLINE: &str =
     "no devices are running the solstone app yet. set one up to start your journal.";
 const AWAITING_FIRST_HEADLINE: &str =
@@ -250,7 +250,7 @@ fn backlog_issues(source: &BacklogSource, now: DateTime<Utc>) -> Vec<Value> {
     if backlog.get("degraded").and_then(Value::as_bool) == Some(true) {
         issues.push(unknown_backlog());
     }
-    match source.generated_at.as_deref().and_then(parse_time) { Some(generated) if now - generated <= Duration::hours(BACKLOG_FRESHNESS_MAX_AGE_HOURS) => {}, Some(generated) => issues.push(json!({"text":format!("i can't tell if your journal is caught up; the last update was {} ago.", age(now - generated)),"severity":"amber","href":"/app/health"})), None => issues.push(json!({"text":"i can't tell if your journal is caught up; the last update age is unknown.","severity":"amber","href":"/app/health"})), };
+    match source.generated_at.as_deref().and_then(parse_time) { Some(generated) if now - generated <= Duration::hours(BACKLOG_FRESHNESS_MAX_AGE_HOURS) => {}, Some(generated) => issues.push(json!({"text":format!("whether your journal is caught up isn't known; the last update was {} ago.", age(now - generated)),"severity":"amber","href":"/app/health"})), None => issues.push(json!({"text":"whether your journal is caught up isn't known; the last update age is unknown.","severity":"amber","href":"/app/health"})), };
     if backlog
         .get("stuck_days")
         .and_then(Value::as_i64)
@@ -271,7 +271,7 @@ fn backlog_issues(source: &BacklogSource, now: DateTime<Utc>) -> Vec<Value> {
     issues
 }
 fn unknown_backlog() -> Value {
-    json!({"text":"i can't tell if your journal is caught up right now.","severity":"amber","href":"/app/health"})
+    json!({"text":"whether your journal is caught up isn't known right now.","severity":"amber","href":"/app/health"})
 }
 fn capture_issue(capture: &Value) -> Option<Value> {
     let status = capture.get("status").and_then(Value::as_str);
@@ -592,7 +592,7 @@ mod tests {
             invalid_g["headline"]
                 .as_str()
                 .unwrap()
-                .contains("i don't know the status")
+                .contains("status isn't known")
         );
         assert_eq!(glance(&invalid_offline)["verdict"], invalid_g["verdict"]);
         assert_eq!(glance(&invalid_offline)["severity"], invalid_g["severity"]);
@@ -724,7 +724,7 @@ mod tests {
                 .any(|issue| issue["text"]
                     .as_str()
                     .unwrap()
-                    .contains("i can't tell if your journal is caught up"))
+                    .contains("whether your journal is caught up isn't known"))
         );
 
         let active_awaiting = json!({

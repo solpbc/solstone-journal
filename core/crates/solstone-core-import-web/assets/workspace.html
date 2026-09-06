@@ -1032,7 +1032,7 @@ function retryImport(event) {
       button.textContent = stage ? `retry from ${humanStageName(stage)}` : 'retry import';
       if (result) {
         result.innerHTML = window.SurfaceState.error({
-          heading: "I couldn't retry that import",
+          heading: "that import couldn't be retried",
           desc: window.CONVEY_COPY?.RELOAD_HINT || 'reload to try again.',
           serverMessage: err.serverMessage,
           detail: err,
