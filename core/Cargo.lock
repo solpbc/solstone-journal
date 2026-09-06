@@ -5147,6 +5147,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-convey-shell",
+ "solstone-core-facets",
  "solstone-core-journal",
  "solstone-core-journal-io",
  "solstone-core-journal-stats-cli",

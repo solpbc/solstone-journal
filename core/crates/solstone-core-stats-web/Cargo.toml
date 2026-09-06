@@ -15,6 +15,7 @@ axum = { workspace = true, features = ["tokio"] }
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+solstone-core-facets.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-journal.workspace = true
 solstone-core-talent-config.workspace = true
