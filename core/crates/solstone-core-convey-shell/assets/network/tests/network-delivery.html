@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>network delivery classification</title>
+<style>
+  body { font: 14px/1.4 sans-serif; padding: 16px; }
+  .pass { color: #166534; }
+  .fail { color: #b91c1c; }
+</style>
+<h1>network delivery classification</h1>
+<div id="results"></div>
+<script src="../../static/relative-time.js"></script>
+<script src="../network.js"></script>
+<script>
+  const results = document.getElementById('results');
+  let failures = 0;
+
+  function assert(name, condition, detail) {
+    const row = document.createElement('div');
+    row.className = condition ? 'pass' : 'fail';
+    row.textContent = `${condition ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`;
+    results.appendChild(row);
+    if (!condition) failures += 1;
+  }
+
+  function equal(name, actual, expected) {
+    assert(name, actual === expected, `expected "${expected}", got "${actual}"`);
+  }
+
+  const R = window.NetworkRender;
+  const NOW = Date.parse('2026-09-06T03:25:00Z');
+
+  // The live-journal shape that produced finding G3-02: a device whose material
+  // arrived 34 s ago while its heartbeat is 12 min stale. Delivery and connection
+  // are separate measurements and the card must not merge them.
+  const deliveringButStaleHeartbeat = {
+    cid: 'sha256:a',
+    display_label: 'extro-tmux-native',
+    state: 'disconnected',
+    group: 'inactive',
+    label: 'offline',
+    capture_state: 'active',
+    last_seen_at: '2026-09-06T03:12:58Z',
+    last_accepted_ingest_at: '2026-09-06T03:24:26Z',
+    paired_at: '2026-07-29T20:35:16Z',
+    failing: false,
+  };
+  const neverDelivered = {
+    cid: 'sha256:b',
+    display_label: 'SOL-WINBUILD (2)',
+    state: 'disconnected',
+    label: 'offline',
+    capture_state: 'no_capture',
+    last_seen_at: null,
+    last_accepted_ingest_at: null,
+    paired_at: '2026-07-02T18:23:01Z',
+    failing: false,
+  };
+  const quiet = {
+    cid: 'sha256:c',
+    display_label: 'suze',
+    state: 'disconnected',
+    label: 'offline',
+    capture_state: 'offline',
+    last_seen_at: '2026-09-06T03:12:58Z',
+    last_accepted_ingest_at: '2026-09-05T13:32:25Z',
+    paired_at: '2026-07-31T16:07:52Z',
+    failing: false,
+  };
+  const recent = { ...quiet, cid: 'sha256:d', capture_state: 'stale', last_accepted_ingest_at: '2026-09-06T03:17:00Z' };
+  const failing = { ...deliveringButStaleHeartbeat, cid: 'sha256:e', capture_state: 'degraded', failing: true };
+  const unknown = { ...quiet, cid: 'sha256:f', capture_state: 'unknown', state: 'unknown' };
+  const connected = { ...deliveringButStaleHeartbeat, cid: 'sha256:g', state: 'connected' };
+  const notReporting = { ...deliveringButStaleHeartbeat, cid: 'sha256:h', state: 'stale' };
+
+  function run() {
+    // grouping is by delivery, never by the connection flag
+    equal('active delivery groups as adding', R.deliveryGroupFor(deliveringButStaleHeartbeat), 'adding');
+    equal('stale delivery groups as recent', R.deliveryGroupFor(recent), 'recent');
+    equal('offline delivery with an ingest groups as quiet', R.deliveryGroupFor(quiet), 'quiet');
+    equal('no ingest ever groups as never', R.deliveryGroupFor(neverDelivered), 'never');
+    equal('rejecting device groups as failing', R.deliveryGroupFor(failing), 'failing');
+    equal('unassessable delivery groups as unknown', R.deliveryGroupFor(unknown), 'unknown');
+    assert(
+      'a disconnected device is never grouped by its connection flag',
+      ['inactive', 'stale', 'active'].every(
+        (flag) => R.deliveryGroupFor({ ...deliveringButStaleHeartbeat, group: flag }) === 'adding',
+      ),
+    );
+
+    // the headline chip is delivery, and it carries recency
+    equal('adding chip', R.deliveryChipLabel(deliveringButStaleHeartbeat, NOW), 'adding now');
+    equal('quiet chip carries recency', R.deliveryChipLabel(quiet, NOW), 'added 13 hours ago');
+    equal('recent chip carries recency', R.deliveryChipLabel(recent, NOW), 'added 8 minutes ago');
+    equal('never chip', R.deliveryChipLabel(neverDelivered, NOW), 'nothing added yet');
+    equal('failing chip', R.deliveryChipLabel(failing, NOW), 'delivery problem');
+    equal('unknown chip', R.deliveryChipLabel(unknown, NOW), 'delivery unavailable');
+    assert(
+      'no chip says offline',
+      [deliveringButStaleHeartbeat, recent, quiet, neverDelivered, failing, unknown].every(
+        (client) => !R.deliveryChipLabel(client, NOW).includes('offline'),
+      ),
+    );
+
+    // chip colour: only live delivery is a hue, everything quiet is neutral
+    equal('adding chip is the success hue', R.deliveryChipClass(deliveringButStaleHeartbeat), 'connected');
+    equal('failing chip is the warn hue', R.deliveryChipClass(failing), 'stale');
+    assert(
+      'recent, quiet, never and unknown chips are neutral',
+      [recent, quiet, neverDelivered, unknown].every((client) => R.deliveryChipClass(client) === 'neutral'),
+    );
+
+    // connection is a secondary line, worded as a connection fact
+    equal('disconnected connection line', R.connectionLineLabel(deliveringButStaleHeartbeat), 'no live connection');
+    equal('connected connection line', R.connectionLineLabel(connected), 'connected now');
+    equal('stale connection line', R.connectionLineLabel(notReporting), 'connection not reporting');
+    equal('unknown connection line', R.connectionLineLabel(unknown), 'connection unavailable');
+
+    // check-in age lives in the disclosure
+    equal('check-in age', R.checkInLabel(deliveringButStaleHeartbeat, NOW), '12 minutes ago');
+    equal('never checked in', R.checkInLabel(neverDelivered, NOW), 'never');
+
+    // paired date resolves to the local calendar day JournalFormat.day reads
+    const pairedKey = R.dayKeyFor('2026-07-29T20:35:16Z');
+    assert('paired day key is YYYYMMDD', /^\d{8}$/.test(pairedKey), pairedKey);
+    equal('unset paired date yields no key', R.dayKeyFor(null), '');
+
+    // grouped render: order is fixed, empty groups are dropped, every client lands once
+    const sections = R.groupClientsByDelivery([quiet, neverDelivered, deliveringButStaleHeartbeat, failing, recent]);
+    equal('sections in delivery order', sections.map((s) => s.group).join(','), 'failing,adding,recent,quiet,never');
+    equal('empty groups are not rendered', sections.some((s) => s.group === 'unknown'), false);
+    equal('every client lands in exactly one section', sections.reduce((n, s) => n + s.clients.length, 0), 5);
+    equal('adding section label', sections[1].label, 'adding to your journal now');
+    assert(
+      'no group header says offline devices',
+      sections.every((s) => !s.label.includes('offline')),
+    );
+    equal('empty input yields no sections', R.groupClientsByDelivery([]).length, 0);
+
+    assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
+  }
+
+  run();
+</script>
+</html>
