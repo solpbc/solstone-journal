@@ -581,7 +581,7 @@
       },
       "json": {
         "detail": "Invalid sort parameter",
-        "error": "I couldn't use one of those values.",
+        "error": "one of those values couldn't be used.",
         "reason_code": "invalid_request_value"
       },
       "method": "GET",
@@ -756,7 +756,7 @@
       },
       "json": {
         "detail": "Cluster 999 was not found. Run a discovery scan first.",
-        "error": "I couldn't load that speaker review.",
+        "error": "that speaker review couldn't be loaded.",
         "reason_code": "speaker_review_unavailable"
       },
       "method": "GET",
@@ -776,7 +776,7 @@
       },
       "json": {
         "detail": "",
-        "error": "I couldn't complete that request.",
+        "error": "that request couldn't be completed.",
         "reason_code": "http_error"
       },
       "method": "GET",
@@ -936,7 +936,7 @@
       },
       "json": {
         "detail": "Invalid month format, expected YYYYMM",
-        "error": "I couldn't use that month.",
+        "error": "that month couldn't be used.",
         "reason_code": "invalid_month"
       },
       "method": "GET",
@@ -1090,7 +1090,7 @@
       },
       "json": {
         "detail": "Invalid limit/offset parameter",
-        "error": "I couldn't use one of those values.",
+        "error": "one of those values couldn't be used.",
         "reason_code": "invalid_request_value"
       },
       "method": "GET",
@@ -1110,7 +1110,7 @@
       },
       "json": {
         "detail": "Invalid speaker parameter",
-        "error": "I couldn't use one of those values.",
+        "error": "one of those values couldn't be used.",
         "reason_code": "invalid_request_value"
       },
       "method": "GET",
@@ -1677,7 +1677,7 @@
       },
       "json": {
         "detail": "No transcript found",
-        "error": "I couldn't load that speaker review.",
+        "error": "that speaker review couldn't be loaded.",
         "reason_code": "speaker_review_unavailable"
       },
       "method": "GET",
@@ -1733,7 +1733,7 @@
       },
       "json": {
         "detail": "",
-        "error": "I couldn't complete that request.",
+        "error": "that request couldn't be completed.",
         "reason_code": "http_error"
       },
       "method": "GET",
@@ -1789,7 +1789,7 @@
       },
       "json": {
         "detail": "",
-        "error": "I couldn't use that path.",
+        "error": "that path couldn't be used.",
         "reason_code": "invalid_path"
       },
       "method": "GET",
@@ -1809,7 +1809,7 @@
       },
       "json": {
         "detail": "",
-        "error": "I couldn't complete that request.",
+        "error": "that request couldn't be completed.",
         "reason_code": "internal_error"
       },
       "method": "GET",
@@ -1829,7 +1829,7 @@
       },
       "json": {
         "detail": "File not found",
-        "error": "I couldn't find that file.",
+        "error": "that file couldn't be found.",
         "reason_code": "file_not_found"
       },
       "method": "GET",
@@ -1849,7 +1849,7 @@
       },
       "json": {
         "detail": "Day not found",
-        "error": "I couldn't use that day.",
+        "error": "that day couldn't be used.",
         "reason_code": "invalid_day"
       },
       "method": "GET",

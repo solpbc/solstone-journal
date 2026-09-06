@@ -370,7 +370,7 @@ fn disabled(root: &std::path::Path, badge: bool) -> Option<Response> {
     (!is_enabled(root)).then(|| {
         error_envelope(
             "feature_unavailable",
-            "I couldn't use that feature because it isn't enabled.",
+            "that feature couldn't be used because it isn't enabled.",
             if badge {
                 "Support is not enabled"
             } else {
@@ -384,7 +384,7 @@ fn disabled(root: &std::path::Path, badge: bool) -> Option<Response> {
 fn portal_failed(detail: &str) -> Response {
     error_envelope(
         "support_portal_failed",
-        "I couldn't reach support right now.",
+        "support couldn't be reached right now.",
         detail,
         StatusCode::INTERNAL_SERVER_ERROR,
     )
@@ -393,7 +393,7 @@ fn portal_failed(detail: &str) -> Response {
 fn http_not_found() -> Response {
     error_envelope(
         "http_error",
-        "I couldn't complete that request.",
+        "that request couldn't be completed.",
         "",
         StatusCode::NOT_FOUND,
     )
@@ -411,7 +411,7 @@ fn request_error(
 fn missing_required(detail: impl Into<String>) -> Response {
     request_error(
         "missing_required_field",
-        "I couldn't find a required field.",
+        "a required field is missing.",
         detail,
     )
 }
@@ -419,7 +419,7 @@ fn missing_required(detail: impl Into<String>) -> Response {
 fn invalid_value(detail: impl Into<String>) -> Response {
     request_error(
         "invalid_request_value",
-        "I couldn't use one of those values.",
+        "one of those values couldn't be used.",
         detail,
     )
 }
@@ -427,7 +427,7 @@ fn invalid_value(detail: impl Into<String>) -> Response {
 fn payload_too_large(detail: impl Into<String>) -> Response {
     error_envelope(
         "payload_too_large",
-        "I couldn't accept that request because it's too large.",
+        "that request couldn't be accepted because it's too large.",
         detail.into(),
         StatusCode::PAYLOAD_TOO_LARGE,
     )

@@ -74,7 +74,7 @@ pub(crate) async fn day_route(
         Err(DayError::Store(error)) => unavailable_response(StoreError::Read(error)),
         Err(DayError::Chronicle(error)) => error_envelope(
             "internal_error",
-            "I couldn't complete that request.",
+            "that request couldn't be completed.",
             error,
             StatusCode::INTERNAL_SERVER_ERROR,
         )
@@ -92,7 +92,7 @@ pub(crate) enum DayError {
 fn invalid_day_response() -> Response {
     error_envelope(
         "invalid_day",
-        "I couldn't use that day.",
+        "that day couldn't be used.",
         "Invalid day",
         StatusCode::BAD_REQUEST,
     )
@@ -2313,7 +2313,7 @@ pub(crate) mod tests {
                 .unwrap();
                 assert_eq!(
                     body,
-                    json!({"reason_code":"invalid_day","error":"I couldn't use that day.","detail":"Invalid day"})
+                    json!({"reason_code":"invalid_day","error":"that day couldn't be used.","detail":"Invalid day"})
                 );
             }
         }

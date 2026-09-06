@@ -2072,7 +2072,7 @@
       "method": "POST",
       "normalized": {
         "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
-        "error": "I couldn't save those settings.",
+        "error": "those settings couldn't be saved.",
         "reason_code": "settings_operation_failed"
       },
       "normalized_paths": [],
@@ -3540,7 +3540,7 @@
       "method": "PUT",
       "normalized": {
         "detail": "sol_voice.enabled is not a recognized setting",
-        "error": "I couldn't save that setting because one value was invalid.",
+        "error": "that setting couldn't be saved because one value was invalid.",
         "reason_code": "invalid_config_value"
       },
       "normalized_paths": [],
@@ -7297,7 +7297,7 @@
       "method": "POST",
       "normalized": {
         "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
-        "error": "I couldn't save those settings.",
+        "error": "those settings couldn't be saved.",
         "reason_code": "settings_operation_failed"
       },
       "normalized_paths": [],
@@ -8713,7 +8713,7 @@
       "method": "PUT",
       "normalized": {
         "detail": "sol_voice.enabled is not a recognized setting",
-        "error": "I couldn't save that setting because one value was invalid.",
+        "error": "that setting couldn't be saved because one value was invalid.",
         "reason_code": "invalid_config_value"
       },
       "normalized_paths": [],
@@ -10456,8 +10456,8 @@
       "DELETE facet.delete-false-consent": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10471,8 +10471,8 @@
       "DELETE facet.delete-no-consent": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10485,8 +10485,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10498,8 +10498,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10511,8 +10511,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10524,8 +10524,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10537,8 +10537,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10550,8 +10550,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10563,8 +10563,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10576,8 +10576,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10589,8 +10589,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10602,8 +10602,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10615,8 +10615,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10628,8 +10628,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10641,8 +10641,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10654,8 +10654,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10667,8 +10667,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10680,8 +10680,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10693,8 +10693,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10706,8 +10706,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10719,8 +10719,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10732,8 +10732,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10745,8 +10745,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10758,8 +10758,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10771,8 +10771,8 @@
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10783,8 +10783,8 @@
       "POST config.bad-backend": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10801,8 +10801,8 @@
       "POST config.empty-journal-name": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10819,8 +10819,8 @@
       "POST config.no-body": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10832,8 +10832,8 @@
       "POST config.no-section": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10847,8 +10847,8 @@
       "POST config.non-bool-preserve": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10865,8 +10865,8 @@
       "POST config.unknown-section": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10881,8 +10881,8 @@
       "POST facet.no-title": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10896,8 +10896,8 @@
       "POST facet.numeric-title": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10911,8 +10911,8 @@
       "POST facet.rename-no-name": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10924,8 +10924,8 @@
       "POST observe.interval-out-of-range": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10941,8 +10941,8 @@
       "POST observe.no-body": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10954,8 +10954,8 @@
       "POST observe.non-object-tmux": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10969,8 +10969,8 @@
       "POST prune-logs.bad-days": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10984,8 +10984,8 @@
       "PUT facet.absent-update": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -10999,8 +10999,8 @@
       "PUT sol_voice.not-object": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -11014,8 +11014,8 @@
       "PUT storage.bad-days": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -11029,8 +11029,8 @@
       "PUT storage.bad-mode": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -11044,8 +11044,8 @@
       "PUT storage.logs-bad-days": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -11061,8 +11061,8 @@
       "PUT sync.non-bool": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -11078,8 +11078,8 @@
       "PUT sync.non-object": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -11093,8 +11093,8 @@
       "PUT vision.bad-importance": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -11112,8 +11112,8 @@
       "PUT vision.max-extractions-low": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -11127,8 +11127,8 @@
       "PUT vision.redact-not-list": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -11142,8 +11142,8 @@
       "PUT vision.unknown-category": {
         "digest": "899a444cde0057fa",
         "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "normalized_paths": [
@@ -11164,7 +11164,7 @@
         "digest": "26b1d9e6b25956b3",
         "normalized": {
           "detail": "consent must be true",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "normalized_paths": [],
@@ -11177,7 +11177,7 @@
         "digest": "7362fccdafcc40a7",
         "normalized": {
           "detail": "consent is required",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "normalized_paths": [],
@@ -11460,7 +11460,7 @@
         "digest": "34d590bbdcf8dddb",
         "normalized": {
           "detail": "Facet not found",
-          "error": "I couldn't find that facet.",
+          "error": "that facet couldn't be found.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -11471,7 +11471,7 @@
         "digest": "34d590bbdcf8dddb",
         "normalized": {
           "detail": "Facet not found",
-          "error": "I couldn't find that facet.",
+          "error": "that facet couldn't be found.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -11972,7 +11972,7 @@
         "digest": "04fa7eabfd121ea9",
         "normalized": {
           "detail": "Invalid backend: not-a-backend. Must be one of: parakeet, parakeet-cpp",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -11988,7 +11988,7 @@
         "digest": "f3a686de8dd6011d",
         "normalized": {
           "detail": "Journal name cannot be empty",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -12004,7 +12004,7 @@
         "digest": "77ff02770ff2058a",
         "normalized": {
           "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
-          "error": "I couldn't save those settings.",
+          "error": "those settings couldn't be saved.",
           "reason_code": "settings_operation_failed"
         },
         "normalized_paths": [],
@@ -12015,7 +12015,7 @@
         "digest": "cf2a18c2efaf0ac4",
         "normalized": {
           "detail": "No section specified",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "normalized_paths": [],
@@ -12028,7 +12028,7 @@
         "digest": "663a3e6da6b72fce",
         "normalized": {
           "detail": "transcribe.preserve_all must be a boolean",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -12044,7 +12044,7 @@
         "digest": "bd6850e7f1f20d8e",
         "normalized": {
           "detail": "Unknown section: nope",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -12058,7 +12058,7 @@
         "digest": "0f833f5c3b4af298",
         "normalized": {
           "detail": "Title is required",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "normalized_paths": [],
@@ -12071,7 +12071,7 @@
         "digest": "c07406bafc143278",
         "normalized": {
           "detail": "Title must start with a letter.",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "normalized_paths": [],
@@ -12084,7 +12084,7 @@
         "digest": "41b18868ae428a41",
         "normalized": {
           "detail": "new_name is required",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "normalized_paths": [],
@@ -12095,7 +12095,7 @@
         "digest": "452bcbf1394d25bd",
         "normalized": {
           "detail": "tmux.capture_interval must be an integer between 1 and 60",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -12110,7 +12110,7 @@
         "digest": "77ff02770ff2058a",
         "normalized": {
           "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
-          "error": "I couldn't save those settings.",
+          "error": "those settings couldn't be saved.",
           "reason_code": "settings_operation_failed"
         },
         "normalized_paths": [],
@@ -12121,7 +12121,7 @@
         "digest": "acfa390ebd74ab5c",
         "normalized": {
           "detail": "tmux must be an object",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -12134,7 +12134,7 @@
         "digest": "7fb4813ac737cfab",
         "normalized": {
           "detail": "days must be a positive integer",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -12147,7 +12147,7 @@
         "digest": "34d590bbdcf8dddb",
         "normalized": {
           "detail": "Facet not found",
-          "error": "I couldn't find that facet.",
+          "error": "that facet couldn't be found.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -12160,7 +12160,7 @@
         "digest": "0aff885ffe9336bf",
         "normalized": {
           "detail": "sol_voice update must be an object",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -12173,7 +12173,7 @@
         "digest": "7fb4813ac737cfab",
         "normalized": {
           "detail": "days must be a positive integer",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -12186,7 +12186,7 @@
         "digest": "80786798720c6818",
         "normalized": {
           "detail": "Invalid mode: sometimes",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -12199,7 +12199,7 @@
         "digest": "7fb4813ac737cfab",
         "normalized": {
           "detail": "days must be a positive integer",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -12214,7 +12214,7 @@
         "digest": "f9cbca0511b8e152",
         "normalized": {
           "detail": "plaud.enabled must be a boolean",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -12229,7 +12229,7 @@
         "digest": "426e5db9c097cedf",
         "normalized": {
           "detail": "plaud must be an object",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -12242,7 +12242,7 @@
         "digest": "17af8fb36b8c677c",
         "normalized": {
           "detail": "Invalid importance for browsing: urgent. Must be one of: high, ignore, low, normal",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -12259,7 +12259,7 @@
         "digest": "4e7078e34b82b7c8",
         "normalized": {
           "detail": "max_extractions must be an integer between 5 and 100",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -12272,7 +12272,7 @@
         "digest": "84f9003e5ce34cfb",
         "normalized": {
           "detail": "redact must be a list of strings",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -12285,7 +12285,7 @@
         "digest": "599bbc470ab1a622",
         "normalized": {
           "detail": "Unknown category: no_such_category",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -12304,7 +12304,7 @@
         "digest": "26b1d9e6b25956b3",
         "normalized": {
           "detail": "consent must be true",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "normalized_paths": [],
@@ -12317,7 +12317,7 @@
         "digest": "7362fccdafcc40a7",
         "normalized": {
           "detail": "consent is required",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "normalized_paths": [],
@@ -12676,7 +12676,7 @@
         "digest": "34d590bbdcf8dddb",
         "normalized": {
           "detail": "Facet not found",
-          "error": "I couldn't find that facet.",
+          "error": "that facet couldn't be found.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -12687,7 +12687,7 @@
         "digest": "34d590bbdcf8dddb",
         "normalized": {
           "detail": "Facet not found",
-          "error": "I couldn't find that facet.",
+          "error": "that facet couldn't be found.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -13199,7 +13199,7 @@
         "digest": "04fa7eabfd121ea9",
         "normalized": {
           "detail": "Invalid backend: not-a-backend. Must be one of: parakeet, parakeet-cpp",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -13215,7 +13215,7 @@
         "digest": "f3a686de8dd6011d",
         "normalized": {
           "detail": "Journal name cannot be empty",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -13231,7 +13231,7 @@
         "digest": "77ff02770ff2058a",
         "normalized": {
           "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
-          "error": "I couldn't save those settings.",
+          "error": "those settings couldn't be saved.",
           "reason_code": "settings_operation_failed"
         },
         "normalized_paths": [],
@@ -13242,7 +13242,7 @@
         "digest": "cf2a18c2efaf0ac4",
         "normalized": {
           "detail": "No section specified",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "normalized_paths": [],
@@ -13255,7 +13255,7 @@
         "digest": "663a3e6da6b72fce",
         "normalized": {
           "detail": "transcribe.preserve_all must be a boolean",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -13271,7 +13271,7 @@
         "digest": "bd6850e7f1f20d8e",
         "normalized": {
           "detail": "Unknown section: nope",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -13285,7 +13285,7 @@
         "digest": "0f833f5c3b4af298",
         "normalized": {
           "detail": "Title is required",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "normalized_paths": [],
@@ -13298,7 +13298,7 @@
         "digest": "c07406bafc143278",
         "normalized": {
           "detail": "Title must start with a letter.",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "normalized_paths": [],
@@ -13311,7 +13311,7 @@
         "digest": "41b18868ae428a41",
         "normalized": {
           "detail": "new_name is required",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "normalized_paths": [],
@@ -13322,7 +13322,7 @@
         "digest": "452bcbf1394d25bd",
         "normalized": {
           "detail": "tmux.capture_interval must be an integer between 1 and 60",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -13337,7 +13337,7 @@
         "digest": "77ff02770ff2058a",
         "normalized": {
           "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
-          "error": "I couldn't save those settings.",
+          "error": "those settings couldn't be saved.",
           "reason_code": "settings_operation_failed"
         },
         "normalized_paths": [],
@@ -13348,7 +13348,7 @@
         "digest": "acfa390ebd74ab5c",
         "normalized": {
           "detail": "tmux must be an object",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -13361,7 +13361,7 @@
         "digest": "7fb4813ac737cfab",
         "normalized": {
           "detail": "days must be a positive integer",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -13374,7 +13374,7 @@
         "digest": "34d590bbdcf8dddb",
         "normalized": {
           "detail": "Facet not found",
-          "error": "I couldn't find that facet.",
+          "error": "that facet couldn't be found.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -13387,7 +13387,7 @@
         "digest": "0aff885ffe9336bf",
         "normalized": {
           "detail": "sol_voice update must be an object",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -13400,7 +13400,7 @@
         "digest": "7fb4813ac737cfab",
         "normalized": {
           "detail": "days must be a positive integer",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -13413,7 +13413,7 @@
         "digest": "80786798720c6818",
         "normalized": {
           "detail": "Invalid mode: sometimes",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -13426,7 +13426,7 @@
         "digest": "7fb4813ac737cfab",
         "normalized": {
           "detail": "days must be a positive integer",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -13441,7 +13441,7 @@
         "digest": "f9cbca0511b8e152",
         "normalized": {
           "detail": "plaud.enabled must be a boolean",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -13456,7 +13456,7 @@
         "digest": "426e5db9c097cedf",
         "normalized": {
           "detail": "plaud must be an object",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -13469,7 +13469,7 @@
         "digest": "17af8fb36b8c677c",
         "normalized": {
           "detail": "Invalid importance for browsing: urgent. Must be one of: high, ignore, low, normal",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -13486,7 +13486,7 @@
         "digest": "4e7078e34b82b7c8",
         "normalized": {
           "detail": "max_extractions must be an integer between 5 and 100",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -13499,7 +13499,7 @@
         "digest": "84f9003e5ce34cfb",
         "normalized": {
           "detail": "redact must be a list of strings",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -13512,7 +13512,7 @@
         "digest": "599bbc470ab1a622",
         "normalized": {
           "detail": "Unknown category: no_such_category",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -13531,7 +13531,7 @@
         "digest": "26b1d9e6b25956b3",
         "normalized": {
           "detail": "consent must be true",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "normalized_paths": [],
@@ -13544,7 +13544,7 @@
         "digest": "7362fccdafcc40a7",
         "normalized": {
           "detail": "consent is required",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "normalized_paths": [],
@@ -13907,7 +13907,7 @@
         "digest": "34d590bbdcf8dddb",
         "normalized": {
           "detail": "Facet not found",
-          "error": "I couldn't find that facet.",
+          "error": "that facet couldn't be found.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -13918,7 +13918,7 @@
         "digest": "34d590bbdcf8dddb",
         "normalized": {
           "detail": "Facet not found",
-          "error": "I couldn't find that facet.",
+          "error": "that facet couldn't be found.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -16255,7 +16255,7 @@
         "digest": "04fa7eabfd121ea9",
         "normalized": {
           "detail": "Invalid backend: not-a-backend. Must be one of: parakeet, parakeet-cpp",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -16271,7 +16271,7 @@
         "digest": "f3a686de8dd6011d",
         "normalized": {
           "detail": "Journal name cannot be empty",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -16287,7 +16287,7 @@
         "digest": "77ff02770ff2058a",
         "normalized": {
           "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
-          "error": "I couldn't save those settings.",
+          "error": "those settings couldn't be saved.",
           "reason_code": "settings_operation_failed"
         },
         "normalized_paths": [],
@@ -16298,7 +16298,7 @@
         "digest": "cf2a18c2efaf0ac4",
         "normalized": {
           "detail": "No section specified",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "normalized_paths": [],
@@ -16311,7 +16311,7 @@
         "digest": "663a3e6da6b72fce",
         "normalized": {
           "detail": "transcribe.preserve_all must be a boolean",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -16327,7 +16327,7 @@
         "digest": "bd6850e7f1f20d8e",
         "normalized": {
           "detail": "Unknown section: nope",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -16341,7 +16341,7 @@
         "digest": "0f833f5c3b4af298",
         "normalized": {
           "detail": "Title is required",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "normalized_paths": [],
@@ -16354,7 +16354,7 @@
         "digest": "c07406bafc143278",
         "normalized": {
           "detail": "Title must start with a letter.",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "normalized_paths": [],
@@ -16367,7 +16367,7 @@
         "digest": "41b18868ae428a41",
         "normalized": {
           "detail": "new_name is required",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "normalized_paths": [],
@@ -16378,7 +16378,7 @@
         "digest": "452bcbf1394d25bd",
         "normalized": {
           "detail": "tmux.capture_interval must be an integer between 1 and 60",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -16393,7 +16393,7 @@
         "digest": "77ff02770ff2058a",
         "normalized": {
           "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
-          "error": "I couldn't save those settings.",
+          "error": "those settings couldn't be saved.",
           "reason_code": "settings_operation_failed"
         },
         "normalized_paths": [],
@@ -16404,7 +16404,7 @@
         "digest": "acfa390ebd74ab5c",
         "normalized": {
           "detail": "tmux must be an object",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -16417,7 +16417,7 @@
         "digest": "7fb4813ac737cfab",
         "normalized": {
           "detail": "days must be a positive integer",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -16430,7 +16430,7 @@
         "digest": "34d590bbdcf8dddb",
         "normalized": {
           "detail": "Facet not found",
-          "error": "I couldn't find that facet.",
+          "error": "that facet couldn't be found.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -16443,7 +16443,7 @@
         "digest": "0aff885ffe9336bf",
         "normalized": {
           "detail": "sol_voice update must be an object",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -16456,7 +16456,7 @@
         "digest": "7fb4813ac737cfab",
         "normalized": {
           "detail": "days must be a positive integer",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -16469,7 +16469,7 @@
         "digest": "80786798720c6818",
         "normalized": {
           "detail": "Invalid mode: sometimes",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -16482,7 +16482,7 @@
         "digest": "7fb4813ac737cfab",
         "normalized": {
           "detail": "days must be a positive integer",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -16497,7 +16497,7 @@
         "digest": "f9cbca0511b8e152",
         "normalized": {
           "detail": "plaud.enabled must be a boolean",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -16512,7 +16512,7 @@
         "digest": "426e5db9c097cedf",
         "normalized": {
           "detail": "plaud must be an object",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -16525,7 +16525,7 @@
         "digest": "17af8fb36b8c677c",
         "normalized": {
           "detail": "Invalid importance for browsing: urgent. Must be one of: high, ignore, low, normal",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -16542,7 +16542,7 @@
         "digest": "4e7078e34b82b7c8",
         "normalized": {
           "detail": "max_extractions must be an integer between 5 and 100",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -16555,7 +16555,7 @@
         "digest": "84f9003e5ce34cfb",
         "normalized": {
           "detail": "redact must be a list of strings",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -16568,7 +16568,7 @@
         "digest": "599bbc470ab1a622",
         "normalized": {
           "detail": "Unknown category: no_such_category",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -16667,7 +16667,7 @@
         "digest": "26b1d9e6b25956b3",
         "normalized": {
           "detail": "consent must be true",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "normalized_paths": [],
@@ -16680,7 +16680,7 @@
         "digest": "7362fccdafcc40a7",
         "normalized": {
           "detail": "consent is required",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "normalized_paths": [],
@@ -17043,7 +17043,7 @@
         "digest": "34d590bbdcf8dddb",
         "normalized": {
           "detail": "Facet not found",
-          "error": "I couldn't find that facet.",
+          "error": "that facet couldn't be found.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -17054,7 +17054,7 @@
         "digest": "34d590bbdcf8dddb",
         "normalized": {
           "detail": "Facet not found",
-          "error": "I couldn't find that facet.",
+          "error": "that facet couldn't be found.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -17569,7 +17569,7 @@
         "digest": "04fa7eabfd121ea9",
         "normalized": {
           "detail": "Invalid backend: not-a-backend. Must be one of: parakeet, parakeet-cpp",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -17585,7 +17585,7 @@
         "digest": "f3a686de8dd6011d",
         "normalized": {
           "detail": "Journal name cannot be empty",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -17601,7 +17601,7 @@
         "digest": "77ff02770ff2058a",
         "normalized": {
           "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
-          "error": "I couldn't save those settings.",
+          "error": "those settings couldn't be saved.",
           "reason_code": "settings_operation_failed"
         },
         "normalized_paths": [],
@@ -17612,7 +17612,7 @@
         "digest": "cf2a18c2efaf0ac4",
         "normalized": {
           "detail": "No section specified",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "normalized_paths": [],
@@ -17625,7 +17625,7 @@
         "digest": "663a3e6da6b72fce",
         "normalized": {
           "detail": "transcribe.preserve_all must be a boolean",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -17641,7 +17641,7 @@
         "digest": "bd6850e7f1f20d8e",
         "normalized": {
           "detail": "Unknown section: nope",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -17655,7 +17655,7 @@
         "digest": "0f833f5c3b4af298",
         "normalized": {
           "detail": "Title is required",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "normalized_paths": [],
@@ -17668,7 +17668,7 @@
         "digest": "c07406bafc143278",
         "normalized": {
           "detail": "Title must start with a letter.",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "normalized_paths": [],
@@ -17681,7 +17681,7 @@
         "digest": "41b18868ae428a41",
         "normalized": {
           "detail": "new_name is required",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "normalized_paths": [],
@@ -17692,7 +17692,7 @@
         "digest": "452bcbf1394d25bd",
         "normalized": {
           "detail": "tmux.capture_interval must be an integer between 1 and 60",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -17707,7 +17707,7 @@
         "digest": "77ff02770ff2058a",
         "normalized": {
           "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
-          "error": "I couldn't save those settings.",
+          "error": "those settings couldn't be saved.",
           "reason_code": "settings_operation_failed"
         },
         "normalized_paths": [],
@@ -17718,7 +17718,7 @@
         "digest": "acfa390ebd74ab5c",
         "normalized": {
           "detail": "tmux must be an object",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -17731,7 +17731,7 @@
         "digest": "7fb4813ac737cfab",
         "normalized": {
           "detail": "days must be a positive integer",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -17744,7 +17744,7 @@
         "digest": "34d590bbdcf8dddb",
         "normalized": {
           "detail": "Facet not found",
-          "error": "I couldn't find that facet.",
+          "error": "that facet couldn't be found.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -17757,7 +17757,7 @@
         "digest": "0aff885ffe9336bf",
         "normalized": {
           "detail": "sol_voice update must be an object",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -17770,7 +17770,7 @@
         "digest": "7fb4813ac737cfab",
         "normalized": {
           "detail": "days must be a positive integer",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -17783,7 +17783,7 @@
         "digest": "80786798720c6818",
         "normalized": {
           "detail": "Invalid mode: sometimes",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -17796,7 +17796,7 @@
         "digest": "7fb4813ac737cfab",
         "normalized": {
           "detail": "days must be a positive integer",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -17811,7 +17811,7 @@
         "digest": "f9cbca0511b8e152",
         "normalized": {
           "detail": "plaud.enabled must be a boolean",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -17826,7 +17826,7 @@
         "digest": "426e5db9c097cedf",
         "normalized": {
           "detail": "plaud must be an object",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -17839,7 +17839,7 @@
         "digest": "17af8fb36b8c677c",
         "normalized": {
           "detail": "Invalid importance for browsing: urgent. Must be one of: high, ignore, low, normal",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -17856,7 +17856,7 @@
         "digest": "4e7078e34b82b7c8",
         "normalized": {
           "detail": "max_extractions must be an integer between 5 and 100",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -17869,7 +17869,7 @@
         "digest": "84f9003e5ce34cfb",
         "normalized": {
           "detail": "redact must be a list of strings",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -17882,7 +17882,7 @@
         "digest": "599bbc470ab1a622",
         "normalized": {
           "detail": "Unknown category: no_such_category",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -17901,7 +17901,7 @@
         "digest": "26b1d9e6b25956b3",
         "normalized": {
           "detail": "consent must be true",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "normalized_paths": [],
@@ -17914,7 +17914,7 @@
         "digest": "7362fccdafcc40a7",
         "normalized": {
           "detail": "consent is required",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "normalized_paths": [],
@@ -18277,7 +18277,7 @@
         "digest": "34d590bbdcf8dddb",
         "normalized": {
           "detail": "Facet not found",
-          "error": "I couldn't find that facet.",
+          "error": "that facet couldn't be found.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -18288,7 +18288,7 @@
         "digest": "34d590bbdcf8dddb",
         "normalized": {
           "detail": "Facet not found",
-          "error": "I couldn't find that facet.",
+          "error": "that facet couldn't be found.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -18794,7 +18794,7 @@
         "digest": "04fa7eabfd121ea9",
         "normalized": {
           "detail": "Invalid backend: not-a-backend. Must be one of: parakeet, parakeet-cpp",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -18810,7 +18810,7 @@
         "digest": "f3a686de8dd6011d",
         "normalized": {
           "detail": "Journal name cannot be empty",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -18826,7 +18826,7 @@
         "digest": "77ff02770ff2058a",
         "normalized": {
           "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
-          "error": "I couldn't save those settings.",
+          "error": "those settings couldn't be saved.",
           "reason_code": "settings_operation_failed"
         },
         "normalized_paths": [],
@@ -18837,7 +18837,7 @@
         "digest": "cf2a18c2efaf0ac4",
         "normalized": {
           "detail": "No section specified",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "normalized_paths": [],
@@ -18850,7 +18850,7 @@
         "digest": "663a3e6da6b72fce",
         "normalized": {
           "detail": "transcribe.preserve_all must be a boolean",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -18866,7 +18866,7 @@
         "digest": "bd6850e7f1f20d8e",
         "normalized": {
           "detail": "Unknown section: nope",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -18880,7 +18880,7 @@
         "digest": "0f833f5c3b4af298",
         "normalized": {
           "detail": "Title is required",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "normalized_paths": [],
@@ -18893,7 +18893,7 @@
         "digest": "c07406bafc143278",
         "normalized": {
           "detail": "Title must start with a letter.",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "normalized_paths": [],
@@ -18906,7 +18906,7 @@
         "digest": "41b18868ae428a41",
         "normalized": {
           "detail": "new_name is required",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "normalized_paths": [],
@@ -18917,7 +18917,7 @@
         "digest": "452bcbf1394d25bd",
         "normalized": {
           "detail": "tmux.capture_interval must be an integer between 1 and 60",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -18932,7 +18932,7 @@
         "digest": "77ff02770ff2058a",
         "normalized": {
           "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
-          "error": "I couldn't save those settings.",
+          "error": "those settings couldn't be saved.",
           "reason_code": "settings_operation_failed"
         },
         "normalized_paths": [],
@@ -18943,7 +18943,7 @@
         "digest": "acfa390ebd74ab5c",
         "normalized": {
           "detail": "tmux must be an object",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -18956,7 +18956,7 @@
         "digest": "7fb4813ac737cfab",
         "normalized": {
           "detail": "days must be a positive integer",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -18969,7 +18969,7 @@
         "digest": "34d590bbdcf8dddb",
         "normalized": {
           "detail": "Facet not found",
-          "error": "I couldn't find that facet.",
+          "error": "that facet couldn't be found.",
           "reason_code": "facet_not_found"
         },
         "normalized_paths": [],
@@ -18982,7 +18982,7 @@
         "digest": "0aff885ffe9336bf",
         "normalized": {
           "detail": "sol_voice update must be an object",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -18995,7 +18995,7 @@
         "digest": "7fb4813ac737cfab",
         "normalized": {
           "detail": "days must be a positive integer",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -19008,7 +19008,7 @@
         "digest": "80786798720c6818",
         "normalized": {
           "detail": "Invalid mode: sometimes",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -19021,7 +19021,7 @@
         "digest": "7fb4813ac737cfab",
         "normalized": {
           "detail": "days must be a positive integer",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -19036,7 +19036,7 @@
         "digest": "f9cbca0511b8e152",
         "normalized": {
           "detail": "plaud.enabled must be a boolean",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -19051,7 +19051,7 @@
         "digest": "426e5db9c097cedf",
         "normalized": {
           "detail": "plaud must be an object",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -19064,7 +19064,7 @@
         "digest": "17af8fb36b8c677c",
         "normalized": {
           "detail": "Invalid importance for browsing: urgent. Must be one of: high, ignore, low, normal",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -19081,7 +19081,7 @@
         "digest": "4e7078e34b82b7c8",
         "normalized": {
           "detail": "max_extractions must be an integer between 5 and 100",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -19094,7 +19094,7 @@
         "digest": "84f9003e5ce34cfb",
         "normalized": {
           "detail": "redact must be a list of strings",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -19107,7 +19107,7 @@
         "digest": "599bbc470ab1a622",
         "normalized": {
           "detail": "Unknown category: no_such_category",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "normalized_paths": [],
@@ -19135,7 +19135,7 @@
       "method": "POST",
       "normalized": {
         "detail": "could not build the list: solstone-retention is not on PATH. Every removal of the owner's media goes through it, so nothing is deleted without it. Install the core binaries, or set SOLSTONE_RETENTION_BIN to an absolute path.",
-        "error": "I couldn't save those settings.",
+        "error": "those settings couldn't be saved.",
         "reason_code": "settings_operation_failed"
       },
       "normalized_paths": [],
@@ -19164,7 +19164,7 @@
       "method": "POST",
       "normalized": {
         "detail": "could not build the list: solstone-retention is not on PATH. Every removal of the owner's media goes through it, so nothing is deleted without it. Install the core binaries, or set SOLSTONE_RETENTION_BIN to an absolute path.",
-        "error": "I couldn't save those settings.",
+        "error": "those settings couldn't be saved.",
         "reason_code": "settings_operation_failed"
       },
       "normalized_paths": [],
@@ -19193,7 +19193,7 @@
       "method": "POST",
       "normalized": {
         "detail": "request body must be an object",
-        "error": "I couldn't use one of those values.",
+        "error": "one of those values couldn't be used.",
         "reason_code": "invalid_request_value"
       },
       "normalized_paths": [],
@@ -19224,7 +19224,7 @@
       "method": "POST",
       "normalized": {
         "detail": "could not build the list: solstone-retention is not on PATH. Every removal of the owner's media goes through it, so nothing is deleted without it. Install the core binaries, or set SOLSTONE_RETENTION_BIN to an absolute path.",
-        "error": "I couldn't save those settings.",
+        "error": "those settings couldn't be saved.",
         "reason_code": "settings_operation_failed"
       },
       "normalized_paths": [],
@@ -19463,7 +19463,7 @@
       "method": "POST",
       "normalized": {
         "detail": "could not build the list: the retention tool refused without naming an entry.",
-        "error": "I couldn't save those settings.",
+        "error": "those settings couldn't be saved.",
         "reason_code": "settings_operation_failed"
       },
       "normalized_paths": [],
@@ -19499,7 +19499,7 @@
       "method": "POST",
       "normalized": {
         "detail": "could not build the list: the retention tool refused without naming an entry.",
-        "error": "I couldn't save those settings.",
+        "error": "those settings couldn't be saved.",
         "reason_code": "settings_operation_failed"
       },
       "normalized_paths": [],

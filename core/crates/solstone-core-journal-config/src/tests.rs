@@ -505,7 +505,7 @@ fn corrupt_display_preserves_the_owner_voice_message() {
     assert_eq!(
         error.to_string(),
         format!(
-            "I couldn't read your settings file at {}. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "your settings file at {} couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
             path.display()
         )
     );

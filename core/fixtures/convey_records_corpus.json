@@ -1733,7 +1733,7 @@
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "day_from must be a real day",
-            "error": "I couldn't use that day.",
+            "error": "that day couldn't be used.",
             "reason_code": "invalid_day"
           },
           "method": "GET",
@@ -1754,7 +1754,7 @@
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "day_from must be <= day_to",
-            "error": "I couldn't use that day.",
+            "error": "that day couldn't be used.",
             "reason_code": "invalid_day"
           },
           "method": "GET",
@@ -2147,7 +2147,7 @@
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "talent output not found",
-            "error": "I couldn't find that file.",
+            "error": "that file couldn't be found.",
             "reason_code": "file_not_found"
           },
           "method": "GET",
@@ -2168,7 +2168,7 @@
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "rel must not contain empty, '.', or '..' components",
-            "error": "I couldn't use that path.",
+            "error": "that path couldn't be used.",
             "reason_code": "invalid_path"
           },
           "method": "GET",
@@ -2189,7 +2189,7 @@
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "entity results have no file to read",
-            "error": "I couldn't use that path.",
+            "error": "that path couldn't be used.",
             "reason_code": "invalid_path"
           },
           "method": "GET",
@@ -2210,7 +2210,7 @@
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "strip the search-result :idx suffix before reading a path",
-            "error": "I couldn't use that path.",
+            "error": "that path couldn't be used.",
             "reason_code": "invalid_path"
           },
           "method": "GET",
@@ -2231,7 +2231,7 @@
           "body_sha256_basis": "normalized-json",
           "json": {
             "detail": "talent output not found",
-            "error": "I couldn't find that file.",
+            "error": "that file couldn't be found.",
             "reason_code": "file_not_found"
           },
           "method": "GET",

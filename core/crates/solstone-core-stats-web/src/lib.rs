@@ -60,7 +60,7 @@ async fn usage(root: PathBuf, clock: Clock, Query(query): Query<UsageQuery>) -> 
         return api_error(
             StatusCode::BAD_REQUEST,
             "invalid_day",
-            "I couldn't use that day.",
+            "that day couldn't be used.",
             "Invalid day format",
         );
     }
@@ -69,7 +69,7 @@ async fn usage(root: PathBuf, clock: Clock, Query(query): Query<UsageQuery>) -> 
         Err(_) => api_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "file_read_failed",
-            "I couldn't read that file.",
+            "that file couldn't be read.",
             "Failed to read token data",
         ),
     }
@@ -98,7 +98,7 @@ async fn index(root: PathBuf) -> impl IntoResponse {
         Err(_) => api_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "file_read_failed",
-            "I couldn't read that file.",
+            "that file couldn't be read.",
             "Failed to read token data",
         ),
     }
@@ -108,7 +108,7 @@ async fn month_stats(root: PathBuf, month: String) -> impl IntoResponse {
         return api_error(
             StatusCode::BAD_REQUEST,
             "invalid_month",
-            "I couldn't use that month.",
+            "that month couldn't be used.",
             "Invalid month format, expected YYYYMM",
         );
     }
@@ -117,7 +117,7 @@ async fn month_stats(root: PathBuf, month: String) -> impl IntoResponse {
         Err(_) => api_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "file_read_failed",
-            "I couldn't read that file.",
+            "that file couldn't be read.",
             "Failed to read token data",
         ),
     }
@@ -130,7 +130,7 @@ async fn stats_data(root: PathBuf) -> impl IntoResponse {
             return api_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "file_read_failed",
-                "I couldn't read that file.",
+                "that file couldn't be read.",
                 "Failed to read stats data",
             );
         }
@@ -142,7 +142,7 @@ async fn stats_data(root: PathBuf) -> impl IntoResponse {
                 return api_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "file_read_failed",
-                    "I couldn't read that file.",
+                    "that file couldn't be read.",
                     "Failed to read stats data",
                 );
             }
@@ -153,7 +153,7 @@ async fn stats_data(root: PathBuf) -> impl IntoResponse {
                 return api_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "file_read_failed",
-                    "I couldn't read that file.",
+                    "that file couldn't be read.",
                     "Failed to read stats data",
                 );
             }
@@ -182,7 +182,7 @@ async fn stats_data(root: PathBuf) -> impl IntoResponse {
         return api_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "file_read_failed",
-            "I couldn't read that file.",
+            "that file couldn't be read.",
             "Failed to read stats data",
         );
     };
@@ -206,7 +206,7 @@ async fn stats_data(root: PathBuf) -> impl IntoResponse {
             return api_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "file_read_failed",
-                "I couldn't read that file.",
+                "that file couldn't be read.",
                 "Failed to read stats data",
             );
         }

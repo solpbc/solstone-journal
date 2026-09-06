@@ -15,7 +15,7 @@ pub enum SessionState {
 
 pub fn corrupt_config_detail(journal_root: &Path) -> String {
     format!(
-        "I couldn't read your settings file at {}/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "your settings file at {}/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         journal_root.display()
     )
 }

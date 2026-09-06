@@ -2527,7 +2527,7 @@ mod tests {
         assert_eq!(report.rows, 0);
         assert!(report.failed >= 1);
         assert_eq!(report.warnings.len(), 1);
-        assert!(report.warnings[0].starts_with("I couldn't read your settings file"));
+        assert!(report.warnings[0].starts_with("your settings file"));
         assert!(!report.warnings[0].starts_with("Skipping edge extraction for"));
         let conn = Connection::open(db_path(&root)).expect("open index after corrupt rebuild");
         assert_eq!(edge_rows(&conn), before_rows);
@@ -2554,7 +2554,7 @@ mod tests {
         let report = scan_journal(&root, true).expect("corrupt timezone scan is reported");
         assert_eq!(report.failed, 1);
         assert_eq!(report.warnings.len(), 1);
-        assert!(report.warnings[0].starts_with("I couldn't read your settings file"));
+        assert!(report.warnings[0].starts_with("your settings file"));
         assert!(!report.warnings[0].contains("Skipping edge extraction for"));
         fs::remove_dir_all(root).expect("cleanup corrupt scan root");
     }

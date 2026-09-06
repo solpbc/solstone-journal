@@ -40,7 +40,7 @@ impl Drop for TempDir {
     }
 }
 
-const OWNER_PREFIX: &str = "I couldn't read your settings file at ";
+const OWNER_PREFIX: &str = "your settings file at ";
 const CORRUPT_FIX: &str = "repair or restore config/journal.json from a backup";
 const STT_CHECKS: [&str; 2] = ["default_stt_ready", "parakeet_cpp_stt_ready"];
 

@@ -46,7 +46,7 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
         solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid => {
             return err(
                 "speaker_owner_identity_invalid",
-                "I couldn't change that speaker attribution because your configured owner identity needs attention.",
+                "that speaker attribution couldn't be changed because your configured owner identity needs attention.",
                 "configured owner identity is not admitted",
                 StatusCode::BAD_REQUEST,
             );
@@ -73,7 +73,7 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
         SegmentLookup::MalformedLayout => {
             return err(
                 "invalid_segment_or_stream",
-                "I couldn't use that segment or stream.",
+                "that segment or stream couldn't be used.",
                 "Invalid segment key or stream",
                 StatusCode::BAD_REQUEST,
             );
@@ -81,7 +81,7 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
         SegmentLookup::Absent => {
             return err(
                 "speaker_review_unavailable",
-                "I couldn't load that speaker review.",
+                "that speaker review couldn't be loaded.",
                 "No speaker labels found",
                 StatusCode::NOT_FOUND,
             );
@@ -97,7 +97,7 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
         None => {
             return err(
                 "speaker_review_unavailable",
-                "I couldn't load that speaker review.",
+                "that speaker review couldn't be loaded.",
                 "No speaker labels found",
                 StatusCode::NOT_FOUND,
             );
@@ -118,7 +118,7 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
     {
         return err(
             "speaker_attribution_state_invalid",
-            "I couldn't change that speaker attribution.",
+            "that speaker attribution couldn't be changed.",
             "Pick a sentence without a speaker.",
             StatusCode::BAD_REQUEST,
         );
@@ -136,7 +136,7 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
     let Some(embedding) = embedding else {
         return err(
             "speaker_sentence_missing",
-            "I couldn't find that sentence.",
+            "that sentence couldn't be found.",
             "Pick a different sentence with an embedding.",
             StatusCode::NOT_FOUND,
         );
@@ -206,7 +206,7 @@ pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
         solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid => {
             return err(
                 "speaker_owner_identity_invalid",
-                "I couldn't confirm that owner voice because your configured owner identity needs attention.",
+                "that owner voice couldn't be confirmed because your configured owner identity needs attention.",
                 "configured owner identity is not admitted",
                 StatusCode::BAD_REQUEST,
             );
@@ -218,7 +218,7 @@ pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
             Ok(None) => {
                 return err(
                     "speaker_command_failed",
-                    "I couldn't finish that speaker command.",
+                    "that speaker command didn't finish.",
                     "No candidate available",
                     StatusCode::BAD_REQUEST,
                 );
@@ -266,7 +266,7 @@ async fn body(request: Request) -> Result<Value, Response> {
         .map_err(|_| {
             err(
                 "missing_request_body",
-                "I couldn't find any data in that request.",
+                "that request had no data in it.",
                 "Unable to read request body",
                 StatusCode::BAD_REQUEST,
             )
@@ -274,7 +274,7 @@ async fn body(request: Request) -> Result<Value, Response> {
     if bytes.is_empty() {
         return Err(err(
             "missing_request_body",
-            "I couldn't find any data in that request.",
+            "that request had no data in it.",
             "no request body",
             StatusCode::BAD_REQUEST,
         ));
@@ -282,7 +282,7 @@ async fn body(request: Request) -> Result<Value, Response> {
     serde_json::from_slice(&bytes).map_err(|_| {
         err(
             "invalid_json_request",
-            "I couldn't read that JSON request.",
+            "that JSON request couldn't be read.",
             "request body must be a JSON object",
             StatusCode::BAD_REQUEST,
         )
@@ -292,7 +292,7 @@ async fn body(request: Request) -> Result<Value, Response> {
 fn required(field: &str) -> Response {
     err(
         "missing_required_field",
-        "I couldn't find a required field.",
+        "a required field is missing.",
         &format!("{field} is required"),
         StatusCode::BAD_REQUEST,
     )
@@ -304,14 +304,14 @@ fn owner_error(detail: String) -> Response {
     if detail.contains("busy") || detail.contains("lock") {
         err(
             "speaker_voiceprint_busy",
-            "I couldn't update that voice right now because it was busy. Try again in a moment.",
+            "that voice couldn't be updated right now because it was busy. try again in a moment.",
             &detail,
             StatusCode::SERVICE_UNAVAILABLE,
         )
     } else {
         err(
             "speaker_command_failed",
-            "I couldn't finish that speaker command.",
+            "that speaker command didn't finish.",
             &detail,
             StatusCode::BAD_REQUEST,
         )
@@ -321,12 +321,12 @@ fn speaker_write_error(detail: String, labels: bool) -> Response {
     let (code, message) = if labels {
         (
             "speaker_labels_busy",
-            "I couldn't update those speaker attributions right now because they were busy. Try again in a moment.",
+            "those speaker attributions couldn't be updated right now because they were busy. try again in a moment.",
         )
     } else {
         (
             "speaker_voiceprint_busy",
-            "I couldn't update that voice right now because it was busy. Try again in a moment.",
+            "that voice couldn't be updated right now because it was busy. try again in a moment.",
         )
     };
     if detail.contains("busy") || detail.contains("lock") {
@@ -334,7 +334,7 @@ fn speaker_write_error(detail: String, labels: bool) -> Response {
     } else {
         err(
             "speaker_command_failed",
-            "I couldn't finish that speaker command.",
+            "that speaker command didn't finish.",
             &detail,
             StatusCode::BAD_REQUEST,
         )

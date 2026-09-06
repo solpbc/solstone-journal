@@ -420,7 +420,7 @@ fn month_label_positions(weeks: &[Vec<Value>]) -> Vec<Value> {
 fn invalid_day_response() -> Response {
     error_envelope(
         "invalid_day",
-        "I couldn't use that day.",
+        "that day couldn't be used.",
         "",
         StatusCode::BAD_REQUEST,
     )
@@ -429,7 +429,7 @@ fn invalid_day_response() -> Response {
 fn invalid_limit_response(detail: &str) -> Response {
     error_envelope(
         "invalid_request_value",
-        "I couldn't use one of those values.",
+        "one of those values couldn't be used.",
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -802,17 +802,17 @@ mod tests {
         assert_eq!(envelopes.len(), 3);
         assert!(envelopes.contains(&(
             "invalid_day".into(),
-            "I couldn't use that day.".into(),
+            "that day couldn't be used.".into(),
             "".into()
         )));
         assert!(envelopes.contains(&(
             "invalid_request_value".into(),
-            "I couldn't use one of those values.".into(),
+            "one of those values couldn't be used.".into(),
             "limit must be an integer".into()
         )));
         assert!(envelopes.contains(&(
             "invalid_request_value".into(),
-            "I couldn't use one of those values.".into(),
+            "one of those values couldn't be used.".into(),
             "limit must be at least 1".into()
         )));
     }

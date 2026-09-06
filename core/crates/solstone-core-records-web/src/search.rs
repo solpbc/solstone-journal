@@ -533,7 +533,7 @@ fn asset(bytes: &'static [u8]) -> Response {
 fn invalid_day(detail: &str) -> Response {
     error_envelope(
         "invalid_day",
-        "I couldn't use that day.",
+        "that day couldn't be used.",
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -542,7 +542,7 @@ fn invalid_day(detail: &str) -> Response {
 fn invalid_value(detail: &str) -> Response {
     error_envelope(
         "invalid_request_value",
-        "I couldn't use one of those values.",
+        "one of those values couldn't be used.",
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -551,7 +551,7 @@ fn invalid_value(detail: &str) -> Response {
 fn invalid_path(detail: &str) -> Response {
     error_envelope(
         "invalid_path",
-        "I couldn't use that path.",
+        "that path couldn't be used.",
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -560,7 +560,7 @@ fn invalid_path(detail: &str) -> Response {
 fn file_not_found(detail: &str) -> Response {
     error_envelope(
         "file_not_found",
-        "I couldn't find that file.",
+        "that file couldn't be found.",
         detail,
         StatusCode::NOT_FOUND,
     )
@@ -569,7 +569,7 @@ fn file_not_found(detail: &str) -> Response {
 fn file_read_failed(detail: &str) -> Response {
     error_envelope(
         "file_read_failed",
-        "I couldn't read that file.",
+        "that file couldn't be read.",
         detail,
         StatusCode::INTERNAL_SERVER_ERROR,
     )

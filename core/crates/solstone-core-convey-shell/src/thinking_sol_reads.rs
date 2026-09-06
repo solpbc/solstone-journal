@@ -81,7 +81,7 @@ pub(crate) async fn api_talents_day(
     if !day_key(&day) {
         return error(
             "invalid_day",
-            "I couldn't use that day.",
+            "that day couldn't be used.",
             "Invalid day format",
             StatusCode::BAD_REQUEST,
         );
@@ -123,7 +123,7 @@ pub(crate) async fn api_agent_run(
     let Some((path, active)) = find_run_file(&talents, &use_id) else {
         return error(
             "talent_not_found",
-            "I couldn't find that talent run.",
+            "that talent run couldn't be found.",
             format!("talent run {use_id} not found"),
             StatusCode::NOT_FOUND,
         );
@@ -131,7 +131,7 @@ pub(crate) async fn api_agent_run(
     if active {
         return error(
             "talent_run_pending",
-            "I'm still working on that talent run.",
+            "that talent run is still running.",
             "",
             StatusCode::ACCEPTED,
         );
@@ -140,7 +140,7 @@ pub(crate) async fn api_agent_run(
         Ok(run) => Json(run).into_response(),
         Err(RunError::Malformed) => error(
             "talent_run_malformed",
-            "I couldn't read that talent run.",
+            "that talent run couldn't be read.",
             format!("talent run {use_id} is malformed"),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
@@ -155,7 +155,7 @@ pub(crate) async fn api_output_file(
     if !day_key(&day) {
         return error(
             "invalid_day",
-            "I couldn't use that day.",
+            "that day couldn't be used.",
             "Invalid day format",
             StatusCode::BAD_REQUEST,
         );
@@ -229,7 +229,7 @@ pub(crate) async fn api_preview_prompt(
     let Some(config) = config else {
         return error(
             "talent_not_found",
-            "I couldn't find that talent run.",
+            "that talent run couldn't be found.",
             format!("Talent '{name}' not found"),
             StatusCode::NOT_FOUND,
         );
@@ -278,7 +278,7 @@ pub(crate) async fn api_stats(
     if !month_key(&month) {
         return error(
             "invalid_month",
-            "I couldn't use that month.",
+            "that month couldn't be used.",
             "Invalid month format, expected YYYYMM",
             StatusCode::BAD_REQUEST,
         );
@@ -809,7 +809,7 @@ fn error(reason: &str, message: &str, detail: impl Into<String>, status: StatusC
 fn talent_failure(detail: impl Into<String>) -> Response {
     error(
         "talent_operation_failed",
-        "I couldn't load that talent data.",
+        "that talent data couldn't be loaded.",
         detail,
         StatusCode::INTERNAL_SERVER_ERROR,
     )
@@ -819,7 +819,7 @@ fn invalid_path() -> Response {
     // (403), overriding INVALID_PATH's generic 400 status from reasons.py.
     error(
         "invalid_path",
-        "I couldn't use that path.",
+        "that path couldn't be used.",
         "Invalid path",
         StatusCode::FORBIDDEN,
     )
@@ -827,7 +827,7 @@ fn invalid_path() -> Response {
 fn file_not_found() -> Response {
     error(
         "file_not_found",
-        "I couldn't find that file.",
+        "that file couldn't be found.",
         "File not found",
         StatusCode::NOT_FOUND,
     )
@@ -835,7 +835,7 @@ fn file_not_found() -> Response {
 fn file_read_failed(detail: impl Into<String>) -> Response {
     error(
         "file_read_failed",
-        "I couldn't read that file.",
+        "that file couldn't be read.",
         detail,
         StatusCode::INTERNAL_SERVER_ERROR,
     )

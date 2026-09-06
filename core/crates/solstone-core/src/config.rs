@@ -379,7 +379,7 @@ fn active(path: &Path) -> Result<bool, String> {
 }
 fn corrupt(path: &Path) -> String {
     format!(
-        "I couldn't read your settings file at {}. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "your settings file at {} couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         path.display()
     )
 }
@@ -1647,7 +1647,7 @@ mod tests {
         assert!(
             active(&root)
                 .unwrap_err()
-                .starts_with("I couldn't read your settings file at ")
+                .starts_with("your settings file at ")
         );
         let _ = fs::remove_dir_all(root);
     }

@@ -84,7 +84,7 @@
             "Content-Type": "text/plain; charset=utf-8"
           },
           "status": 500,
-          "text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
           "text_bytes": 183,
           "text_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a"
         },
@@ -103,7 +103,7 @@
             "Content-Type": "text/plain; charset=utf-8"
           },
           "status": 500,
-          "text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again."
+          "text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again."
         },
         "sends_idempotency_key": false
       },
@@ -120,7 +120,7 @@
             "Content-Type": "text/plain; charset=utf-8"
           },
           "status": 500,
-          "text_prefix": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again."
+          "text_prefix": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again."
         },
         "sends_idempotency_key": false
       },
@@ -137,7 +137,7 @@
             "Content-Type": "text/plain; charset=utf-8"
           },
           "status": 500,
-          "text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
           "text_bytes": 183,
           "text_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a"
         },
@@ -153,8 +153,8 @@
         "portal_requests": [],
         "response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -174,8 +174,8 @@
         "portal_requests": [],
         "response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -195,8 +195,8 @@
         "portal_requests": [],
         "response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -216,8 +216,8 @@
         "portal_requests": [],
         "response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -237,8 +237,8 @@
         "portal_requests": [],
         "response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -258,8 +258,8 @@
         "portal_requests": [],
         "response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -279,8 +279,8 @@
         "portal_requests": [],
         "response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -300,8 +300,8 @@
         "portal_requests": [],
         "response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -321,8 +321,8 @@
         "portal_requests": [],
         "response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -342,8 +342,8 @@
         "portal_requests": [],
         "response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -362,7 +362,7 @@
         "response": {
           "body": {
             "detail": "",
-            "error": "I couldn't complete that request.",
+            "error": "that request couldn't be completed.",
             "reason_code": "http_error"
           },
           "headers": {
@@ -383,8 +383,8 @@
         "portal_requests": [],
         "repeat_response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -394,8 +394,8 @@
         },
         "response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -416,8 +416,8 @@
         "portal_requests": [],
         "repeat_response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -427,8 +427,8 @@
         },
         "response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -449,8 +449,8 @@
         "portal_requests": [],
         "repeat_response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -460,8 +460,8 @@
         },
         "response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -482,8 +482,8 @@
         "portal_requests": [],
         "repeat_response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -493,8 +493,8 @@
         },
         "response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -515,8 +515,8 @@
         "portal_requests": [],
         "repeat_response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -526,8 +526,8 @@
         },
         "response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -548,8 +548,8 @@
         "portal_requests": [],
         "repeat_response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -559,8 +559,8 @@
         },
         "response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -581,8 +581,8 @@
         "portal_requests": [],
         "repeat_response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -592,8 +592,8 @@
         },
         "response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -614,8 +614,8 @@
         "portal_requests": [],
         "repeat_response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -625,8 +625,8 @@
         },
         "response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -647,8 +647,8 @@
         "portal_requests": [],
         "repeat_response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -658,8 +658,8 @@
         },
         "response": {
           "body": {
-            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-            "error": "I couldn't read your settings.",
+            "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "your settings couldn't be read.",
             "reason_code": "corrupt_config"
           },
           "headers": {
@@ -760,7 +760,7 @@
         "response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -779,7 +779,7 @@
         "response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -798,7 +798,7 @@
         "response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -817,7 +817,7 @@
         "response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -836,7 +836,7 @@
         "response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -855,7 +855,7 @@
         "response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -874,7 +874,7 @@
         "response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -1010,7 +1010,7 @@
         "response": {
           "body": {
             "detail": "Support is not enabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -1029,7 +1029,7 @@
         "response": {
           "body": {
             "detail": "",
-            "error": "I couldn't complete that request.",
+            "error": "that request couldn't be completed.",
             "reason_code": "http_error"
           },
           "headers": {
@@ -1048,7 +1048,7 @@
         "repeat_response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -1059,7 +1059,7 @@
         "response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -1078,7 +1078,7 @@
         "repeat_response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -1089,7 +1089,7 @@
         "response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -1108,7 +1108,7 @@
         "repeat_response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -1119,7 +1119,7 @@
         "response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -1138,7 +1138,7 @@
         "repeat_response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -1149,7 +1149,7 @@
         "response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -1168,7 +1168,7 @@
         "repeat_response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -1179,7 +1179,7 @@
         "response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -1198,7 +1198,7 @@
         "repeat_response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -1209,7 +1209,7 @@
         "response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -1228,7 +1228,7 @@
         "repeat_response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -1239,7 +1239,7 @@
         "response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -1258,7 +1258,7 @@
         "repeat_response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -1269,7 +1269,7 @@
         "response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -1288,7 +1288,7 @@
         "repeat_response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -1299,7 +1299,7 @@
         "response": {
           "body": {
             "detail": "Support is disabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -1326,7 +1326,7 @@
         "response": {
           "body": {
             "detail": "Support is not enabled",
-            "error": "I couldn't use that feature because it isn't enabled.",
+            "error": "that feature couldn't be used because it isn't enabled.",
             "reason_code": "feature_unavailable"
           },
           "headers": {
@@ -1821,7 +1821,7 @@
         "response": {
           "body": {
             "detail": "",
-            "error": "I couldn't complete that request.",
+            "error": "that request couldn't be completed.",
             "reason_code": "http_error"
           },
           "headers": {
@@ -2300,7 +2300,7 @@
         "response": {
           "body": {
             "detail": "Idempotency-Key header is required",
-            "error": "I couldn't find a required field.",
+            "error": "a required field is missing.",
             "reason_code": "missing_required_field"
           },
           "headers": {
@@ -2319,7 +2319,7 @@
         "response": {
           "body": {
             "detail": "Idempotency-Key header is required",
-            "error": "I couldn't find a required field.",
+            "error": "a required field is missing.",
             "reason_code": "missing_required_field"
           },
           "headers": {
@@ -2338,7 +2338,7 @@
         "response": {
           "body": {
             "detail": "Idempotency-Key header is required",
-            "error": "I couldn't find a required field.",
+            "error": "a required field is missing.",
             "reason_code": "missing_required_field"
           },
           "headers": {
@@ -2357,7 +2357,7 @@
         "response": {
           "body": {
             "detail": "Idempotency-Key header is required",
-            "error": "I couldn't find a required field.",
+            "error": "a required field is missing.",
             "reason_code": "missing_required_field"
           },
           "headers": {
@@ -2376,7 +2376,7 @@
         "response": {
           "body": {
             "detail": "Idempotency-Key header is required",
-            "error": "I couldn't find a required field.",
+            "error": "a required field is missing.",
             "reason_code": "missing_required_field"
           },
           "headers": {
@@ -2395,7 +2395,7 @@
         "response": {
           "body": {
             "detail": "Idempotency-Key header is required",
-            "error": "I couldn't find a required field.",
+            "error": "a required field is missing.",
             "reason_code": "missing_required_field"
           },
           "headers": {
@@ -2414,7 +2414,7 @@
         "response": {
           "body": {
             "detail": "Idempotency-Key header is required",
-            "error": "I couldn't find a required field.",
+            "error": "a required field is missing.",
             "reason_code": "missing_required_field"
           },
           "headers": {
@@ -2433,7 +2433,7 @@
         "response": {
           "body": {
             "detail": "verb must be create|feedback|reply|close|resolved|still_need_help and payload must be an object",
-            "error": "I couldn't use one of those values.",
+            "error": "one of those values couldn't be used.",
             "reason_code": "invalid_request_value"
           },
           "headers": {
@@ -2452,7 +2452,7 @@
         "response": {
           "body": {
             "detail": "verb and payload are required",
-            "error": "I couldn't find a required field.",
+            "error": "a required field is missing.",
             "reason_code": "missing_required_field"
           },
           "headers": {
@@ -2471,7 +2471,7 @@
         "response": {
           "body": {
             "detail": "subject and description are required",
-            "error": "I couldn't find a required field.",
+            "error": "a required field is missing.",
             "reason_code": "missing_required_field"
           },
           "headers": {
@@ -2490,7 +2490,7 @@
         "response": {
           "body": {
             "detail": "body is required",
-            "error": "I couldn't find a required field.",
+            "error": "a required field is missing.",
             "reason_code": "missing_required_field"
           },
           "headers": {
@@ -2509,7 +2509,7 @@
         "response": {
           "body": {
             "detail": "Unsupported file type: .exe. Allowed: .csv, .gif, .html, .jpeg, .jpg, .json, .md, .pdf, .png, .svg, .txt, .webp, .xml",
-            "error": "I couldn't use one of those values.",
+            "error": "one of those values couldn't be used.",
             "reason_code": "invalid_request_value"
           },
           "headers": {
@@ -2570,7 +2570,7 @@
         "response": {
           "body": {
             "detail": "Idempotency-Key header is required",
-            "error": "I couldn't find a required field.",
+            "error": "a required field is missing.",
             "reason_code": "missing_required_field"
           },
           "headers": {
@@ -2862,7 +2862,7 @@
         "response": {
           "body": {
             "detail": "",
-            "error": "I couldn't complete that request.",
+            "error": "that request couldn't be completed.",
             "reason_code": "http_error"
           },
           "headers": {
@@ -3693,7 +3693,7 @@
         "response": {
           "body": {
             "detail": "",
-            "error": "I couldn't complete that request.",
+            "error": "that request couldn't be completed.",
             "reason_code": "http_error"
           },
           "headers": {

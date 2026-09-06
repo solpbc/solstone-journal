@@ -77,7 +77,7 @@ pub async fn serve_audio(
     if !is_day(&day) {
         return media_error(
             "invalid_day",
-            "I couldn't use that day.",
+            "that day couldn't be used.",
             "Day not found",
             StatusCode::NOT_FOUND,
         )
@@ -89,7 +89,7 @@ pub async fn serve_audio(
         None => {
             return media_error(
                 "invalid_path",
-                "I couldn't use that path.",
+                "that path couldn't be used.",
                 "",
                 StatusCode::FORBIDDEN,
             )
@@ -99,7 +99,7 @@ pub async fn serve_audio(
     if !path.is_file() {
         return media_error(
             "file_not_found",
-            "I couldn't find that file.",
+            "that file couldn't be found.",
             "File not found",
             StatusCode::NOT_FOUND,
         )
@@ -110,7 +110,7 @@ pub async fn serve_audio(
         // existing file reach a global 500. Refuse cleanly instead of panicking.
         return media_error(
             "invalid_request_value",
-            "I couldn't use one of those values.",
+            "one of those values couldn't be used.",
             "Unregistered media extension",
             StatusCode::BAD_REQUEST,
         )
@@ -121,7 +121,7 @@ pub async fn serve_audio(
         Err(_) => {
             return media_error(
                 "file_not_found",
-                "I couldn't find that file.",
+                "that file couldn't be found.",
                 "File not found",
                 StatusCode::NOT_FOUND,
             )
@@ -148,7 +148,7 @@ pub async fn serve_audio(
         }
         Some(ParsedRange::Unsatisfiable) => media_error(
             "http_error",
-            "I couldn't complete that request.",
+            "that request couldn't be completed.",
             "",
             StatusCode::RANGE_NOT_SATISFIABLE,
         )

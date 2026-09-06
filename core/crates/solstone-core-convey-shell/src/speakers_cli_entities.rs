@@ -248,13 +248,7 @@ fn encoder() -> solstone_core_entity::EncoderIdentity {
     }
 }
 fn err(code: &str, detail: &str, status: StatusCode) -> Response {
-    error_envelope(
-        code,
-        "I couldn't finish that speaker command.",
-        detail,
-        status,
-    )
-    .into_response()
+    error_envelope(code, "that speaker command didn't finish.", detail, status).into_response()
 }
 fn err_value(code: &str, detail: Value, status: StatusCode) -> Response {
     err(code, &detail.to_string(), status)

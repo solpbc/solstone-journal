@@ -17,8 +17,8 @@
         "content_type": "application/json",
         "endpoint": "app:body.api_status",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -36,8 +36,8 @@
         "content_type": "application/json",
         "endpoint": "app:body.api_day",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -55,8 +55,8 @@
         "content_type": "application/json",
         "endpoint": "app:body.api_recent",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -74,8 +74,8 @@
         "content_type": "application/json",
         "endpoint": "app:body.api_index",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -93,8 +93,8 @@
         "content_type": "application/json",
         "endpoint": "app:body.api_month_stats",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -9936,7 +9936,7 @@
         "endpoint": "app:body.api_status",
         "json": {
           "detail": "",
-          "error": "I couldn't complete that request.",
+          "error": "that request couldn't be completed.",
           "reason_code": "internal_error"
         },
         "method": "GET",
@@ -9955,7 +9955,7 @@
         "endpoint": "app:body.api_day",
         "json": {
           "detail": "",
-          "error": "I couldn't complete that request.",
+          "error": "that request couldn't be completed.",
           "reason_code": "internal_error"
         },
         "method": "GET",
@@ -9974,7 +9974,7 @@
         "endpoint": "app:body.api_recent",
         "json": {
           "detail": "",
-          "error": "I couldn't complete that request.",
+          "error": "that request couldn't be completed.",
           "reason_code": "internal_error"
         },
         "method": "GET",
@@ -9993,7 +9993,7 @@
         "endpoint": "app:body.api_index",
         "json": {
           "detail": "",
-          "error": "I couldn't complete that request.",
+          "error": "that request couldn't be completed.",
           "reason_code": "internal_error"
         },
         "method": "GET",
@@ -10012,7 +10012,7 @@
         "endpoint": "app:body.api_month_stats",
         "json": {
           "detail": "",
-          "error": "I couldn't complete that request.",
+          "error": "that request couldn't be completed.",
           "reason_code": "internal_error"
         },
         "method": "GET",
@@ -10901,7 +10901,7 @@
         "endpoint": "app:body.api_status",
         "json": {
           "detail": "",
-          "error": "I couldn't complete that request.",
+          "error": "that request couldn't be completed.",
           "reason_code": "internal_error"
         },
         "method": "GET",
@@ -10920,7 +10920,7 @@
         "endpoint": "app:body.api_day",
         "json": {
           "detail": "",
-          "error": "I couldn't use that day.",
+          "error": "that day couldn't be used.",
           "reason_code": "invalid_day"
         },
         "method": "GET",
@@ -10939,7 +10939,7 @@
         "endpoint": "app:body.api_recent",
         "json": {
           "detail": "",
-          "error": "I couldn't complete that request.",
+          "error": "that request couldn't be completed.",
           "reason_code": "internal_error"
         },
         "method": "GET",

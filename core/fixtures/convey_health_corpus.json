@@ -32,7 +32,7 @@
           "normalized": [],
           "path": "/app/health/",
           "response": {
-            "body": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "body": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
             "headers": {
               "Content-Type": "text/plain; charset=utf-8"
             },
@@ -46,7 +46,7 @@
           "normalized": [],
           "path": "/app/health/workspace",
           "response": {
-            "body": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "body": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
             "headers": {
               "Content-Type": "text/plain; charset=utf-8"
             },
@@ -60,7 +60,7 @@
           "normalized": [],
           "path": "/app/health/background",
           "response": {
-            "body": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "body": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
             "headers": {
               "Content-Type": "text/plain; charset=utf-8"
             },
@@ -74,7 +74,7 @@
           "normalized": [],
           "path": "/app/health/static/health.js",
           "response": {
-            "body": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "body": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
             "headers": {
               "Content-Type": "text/plain; charset=utf-8"
             },
@@ -89,8 +89,8 @@
           "path": "/app/health/api/state",
           "response": {
             "body": {
-              "detail": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-              "error": "I couldn't read your settings.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
             "headers": {
@@ -107,8 +107,8 @@
           "path": "/app/health/api/log?path=chronicle/20260403/health/health.log",
           "response": {
             "body": {
-              "detail": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-              "error": "I couldn't read your settings.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
             "headers": {
@@ -125,8 +125,8 @@
           "path": "/app/health/api/log",
           "response": {
             "body": {
-              "detail": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-              "error": "I couldn't read your settings.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
             "headers": {
@@ -143,8 +143,8 @@
           "path": "/app/health/api/log?path=not-a-valid-log-path",
           "response": {
             "body": {
-              "detail": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-              "error": "I couldn't read your settings.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
             "headers": {
@@ -161,8 +161,8 @@
           "path": "/app/health/api/log?path=chronicle/20260403/health/missing.log",
           "response": {
             "body": {
-              "detail": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-              "error": "I couldn't read your settings.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
             "headers": {
@@ -179,8 +179,8 @@
           "path": "/app/health/api/info",
           "response": {
             "body": {
-              "detail": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-              "error": "I couldn't read your settings.",
+              "detail": "your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+              "error": "your settings couldn't be read.",
               "reason_code": "corrupt_config"
             },
             "headers": {
@@ -295,7 +295,7 @@
           "response": {
             "body": {
               "detail": "Log file not found",
-              "error": "I couldn't find that file.",
+              "error": "that file couldn't be found.",
               "reason_code": "file_not_found"
             },
             "headers": {
@@ -313,7 +313,7 @@
           "response": {
             "body": {
               "detail": "Missing path parameter",
-              "error": "I couldn't find a required field.",
+              "error": "a required field is missing.",
               "reason_code": "missing_required_field"
             },
             "headers": {
@@ -331,7 +331,7 @@
           "response": {
             "body": {
               "detail": "Invalid path",
-              "error": "I couldn't use that path.",
+              "error": "that path couldn't be used.",
               "reason_code": "invalid_path"
             },
             "headers": {
@@ -349,7 +349,7 @@
           "response": {
             "body": {
               "detail": "Log file not found",
-              "error": "I couldn't find that file.",
+              "error": "that file couldn't be found.",
               "reason_code": "file_not_found"
             },
             "headers": {
@@ -551,7 +551,7 @@
           "response": {
             "body": {
               "detail": "Log file not found",
-              "error": "I couldn't find that file.",
+              "error": "that file couldn't be found.",
               "reason_code": "file_not_found"
             },
             "headers": {
@@ -569,7 +569,7 @@
           "response": {
             "body": {
               "detail": "Missing path parameter",
-              "error": "I couldn't find a required field.",
+              "error": "a required field is missing.",
               "reason_code": "missing_required_field"
             },
             "headers": {
@@ -587,7 +587,7 @@
           "response": {
             "body": {
               "detail": "Invalid path",
-              "error": "I couldn't use that path.",
+              "error": "that path couldn't be used.",
               "reason_code": "invalid_path"
             },
             "headers": {
@@ -605,7 +605,7 @@
           "response": {
             "body": {
               "detail": "Log file not found",
-              "error": "I couldn't find that file.",
+              "error": "that file couldn't be found.",
               "reason_code": "file_not_found"
             },
             "headers": {
@@ -785,7 +785,7 @@
           "response": {
             "body": {
               "detail": "Log file not found",
-              "error": "I couldn't find that file.",
+              "error": "that file couldn't be found.",
               "reason_code": "file_not_found"
             },
             "headers": {
@@ -803,7 +803,7 @@
           "response": {
             "body": {
               "detail": "Missing path parameter",
-              "error": "I couldn't find a required field.",
+              "error": "a required field is missing.",
               "reason_code": "missing_required_field"
             },
             "headers": {
@@ -821,7 +821,7 @@
           "response": {
             "body": {
               "detail": "Invalid path",
-              "error": "I couldn't use that path.",
+              "error": "that path couldn't be used.",
               "reason_code": "invalid_path"
             },
             "headers": {
@@ -839,7 +839,7 @@
           "response": {
             "body": {
               "detail": "Log file not found",
-              "error": "I couldn't find that file.",
+              "error": "that file couldn't be found.",
               "reason_code": "file_not_found"
             },
             "headers": {
@@ -1006,7 +1006,7 @@
           "response": {
             "body": {
               "detail": "Log file not found",
-              "error": "I couldn't find that file.",
+              "error": "that file couldn't be found.",
               "reason_code": "file_not_found"
             },
             "headers": {
@@ -1024,7 +1024,7 @@
           "response": {
             "body": {
               "detail": "Missing path parameter",
-              "error": "I couldn't find a required field.",
+              "error": "a required field is missing.",
               "reason_code": "missing_required_field"
             },
             "headers": {
@@ -1042,7 +1042,7 @@
           "response": {
             "body": {
               "detail": "Invalid path",
-              "error": "I couldn't use that path.",
+              "error": "that path couldn't be used.",
               "reason_code": "invalid_path"
             },
             "headers": {
@@ -1060,7 +1060,7 @@
           "response": {
             "body": {
               "detail": "Log file not found",
-              "error": "I couldn't find that file.",
+              "error": "that file couldn't be found.",
               "reason_code": "file_not_found"
             },
             "headers": {
@@ -1227,7 +1227,7 @@
           "response": {
             "body": {
               "detail": "Log file not found",
-              "error": "I couldn't find that file.",
+              "error": "that file couldn't be found.",
               "reason_code": "file_not_found"
             },
             "headers": {
@@ -1245,7 +1245,7 @@
           "response": {
             "body": {
               "detail": "Missing path parameter",
-              "error": "I couldn't find a required field.",
+              "error": "a required field is missing.",
               "reason_code": "missing_required_field"
             },
             "headers": {
@@ -1263,7 +1263,7 @@
           "response": {
             "body": {
               "detail": "Invalid path",
-              "error": "I couldn't use that path.",
+              "error": "that path couldn't be used.",
               "reason_code": "invalid_path"
             },
             "headers": {
@@ -1281,7 +1281,7 @@
           "response": {
             "body": {
               "detail": "Log file not found",
-              "error": "I couldn't find that file.",
+              "error": "that file couldn't be found.",
               "reason_code": "file_not_found"
             },
             "headers": {

@@ -103,7 +103,7 @@ pub async fn cache(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
         Ok(clusters) => Json(json!({"status": "ok", "clusters": clusters})).into_response(),
         Err(detail) => error_envelope(
             "speaker_command_failed",
-            "I couldn't finish that speaker command.",
+            "that speaker command didn't finish.",
             detail,
             StatusCode::INTERNAL_SERVER_ERROR,
         )
@@ -118,7 +118,7 @@ pub async fn presence(
     if cluster_id.is_empty() || !cluster_id.bytes().all(|byte| byte.is_ascii_digit()) {
         return error_envelope(
             "http_error",
-            "I couldn't complete that request.",
+            "that request couldn't be completed.",
             "",
             StatusCode::NOT_FOUND,
         )
@@ -134,7 +134,7 @@ pub async fn presence(
         Ok(None) => cluster_not_found(&cluster_id.to_string()),
         Err(detail) => error_envelope(
             "speaker_command_failed",
-            "I couldn't finish that speaker command.",
+            "that speaker command didn't finish.",
             detail,
             StatusCode::INTERNAL_SERVER_ERROR,
         )
@@ -153,7 +153,7 @@ pub async fn resolve_statement(
         Err(error) => {
             return error_envelope(
                 "invalid_request_value",
-                "I couldn't use one of those values.",
+                "one of those values couldn't be used.",
                 error.to_string(),
                 StatusCode::BAD_REQUEST,
             )
@@ -180,7 +180,7 @@ pub async fn resolve_statement(
     if !missing.is_empty() {
         return error_envelope(
             "missing_required_field",
-            "I couldn't complete that request.",
+            "that request couldn't be completed.",
             format!("Missing required fields: {}", missing.join(", ")),
             StatusCode::BAD_REQUEST,
         )
@@ -197,7 +197,7 @@ pub async fn resolve_statement(
         Err(_) => {
             return error_envelope(
                 "invalid_request_value",
-                "I couldn't use one of those values.",
+                "one of those values couldn't be used.",
                 "voice_sentence_id must be an integer",
                 StatusCode::BAD_REQUEST,
             )
@@ -820,7 +820,7 @@ fn resolve_statement_cluster(
 fn cluster_not_found(cluster_id: &str) -> Response {
     error_envelope(
         "speaker_review_unavailable",
-        "I couldn't load that speaker review.",
+        "that speaker review couldn't be loaded.",
         format!("Cluster {cluster_id} was not found. Run a discovery scan first."),
         StatusCode::NOT_FOUND,
     )

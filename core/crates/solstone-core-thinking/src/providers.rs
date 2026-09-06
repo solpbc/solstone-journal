@@ -1367,10 +1367,7 @@ mod tests {
         .expect("corrupt config writes");
         match resolve_provider_update(&journal, "local", &Map::new()) {
             Err(ProviderRequestError::ConfigUnreadable(detail)) => {
-                assert!(
-                    detail.contains("I couldn't read your settings file"),
-                    "{detail}"
-                );
+                assert!(detail.contains("your settings file at "), "{detail}");
             }
             other => panic!("expected ConfigUnreadable, got {other:?}"),
         }

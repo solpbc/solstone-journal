@@ -32,14 +32,14 @@ pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
         Ok(status) => Json(status).into_response(),
         Err(OwnerStatusError::IdentityInvalid) => error_envelope(
             "speaker_owner_identity_invalid",
-            "I couldn't load your owner voice because your configured owner identity needs attention.",
+            "your owner voice couldn't be loaded because your configured owner identity needs attention.",
             "configured owner identity is not admitted",
             StatusCode::BAD_REQUEST,
         )
         .into_response(),
         Err(OwnerStatusError::Catalog(error)) => error_envelope(
             "speaker_command_failed",
-            "I couldn't finish that speaker command.",
+            "that speaker command didn't finish.",
             error.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
         )

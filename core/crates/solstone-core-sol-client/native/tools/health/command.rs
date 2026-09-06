@@ -507,7 +507,7 @@ mod tests {
             health_error(ClientError::MalformedSuccess { status: Some(200) }),
             CommandOutput {
                 stdout: String::new(),
-                stderr: "I couldn't read the journal response.\n".to_string(),
+                stderr: "the journal response couldn't be read.\n".to_string(),
                 exit: 1,
             }
         );
@@ -541,7 +541,7 @@ mod tests {
             },
             result: Err(ClientError::ReasonRejected {
                 status: 500,
-                error: "I couldn't build your journal health report.".to_string(),
+                error: "your journal health report couldn't be built.".to_string(),
                 reason_code: Some("health_report_failed".to_string()),
                 detail: Some("health report unavailable".to_string()),
                 payload: Box::new(serde_json::Value::Null),

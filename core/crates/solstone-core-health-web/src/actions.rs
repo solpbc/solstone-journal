@@ -97,7 +97,7 @@ pub fn response(day: &str, outcome: DayOutcome) -> axum::response::Response {
         DayOutcome::PastOnly => error_envelope("reprocess_past_only","you can only reprocess past days — today and future days aren't ready yet.","",StatusCode::BAD_REQUEST).into_response(),
         DayOutcome::Unreachable => error_envelope("reprocess_unreachable","your journal's background service isn't running. start it, then try again.","",StatusCode::SERVICE_UNAVAILABLE).into_response(),
         DayOutcome::Failed(cause) => error_envelope("reprocess_failed",format!("reprocess failed: {cause}"),"",StatusCode::INTERNAL_SERVER_ERROR).into_response(),
-        DayOutcome::Malformed | DayOutcome::NoData => error_envelope("invalid_day","I couldn't use that day.","",StatusCode::BAD_REQUEST).into_response(),
+        DayOutcome::Malformed | DayOutcome::NoData => error_envelope("invalid_day","that day couldn't be used.","",StatusCode::BAD_REQUEST).into_response(),
     }
 }
 
@@ -123,7 +123,7 @@ fn send(root: &std::path::Path, envelope: &solstone_core_callosum::CallosumEnvel
 fn missing(detail: &str) -> axum::response::Response {
     error_envelope(
         "missing_required_field",
-        "I couldn't find a required field.",
+        "a required field is missing.",
         detail,
         StatusCode::BAD_REQUEST,
     )
@@ -132,7 +132,7 @@ fn missing(detail: &str) -> axum::response::Response {
 fn invalid(detail: &str) -> axum::response::Response {
     error_envelope(
         "invalid_request_value",
-        "I couldn't use one of those values.",
+        "one of those values couldn't be used.",
         detail,
         StatusCode::BAD_REQUEST,
     )

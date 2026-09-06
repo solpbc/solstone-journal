@@ -121,7 +121,7 @@ fn corrupt_response(path: &str, detail: String) -> Response {
     {
         return error_envelope(
             "corrupt_config",
-            "I couldn't read your settings.",
+            "your settings couldn't be read.",
             detail,
             StatusCode::INTERNAL_SERVER_ERROR,
         )

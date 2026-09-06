@@ -694,7 +694,7 @@ async fn ac5_run_output_path_and_fetch_containment_asymmetry() {
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(
         fetch,
-        json!({"error":"I couldn't use that path.","reason_code":"invalid_path","detail":"Invalid path"})
+        json!({"error":"that path couldn't be used.","reason_code":"invalid_path","detail":"Invalid path"})
     );
     let _ = fs::remove_file(outside);
 }

@@ -31,14 +31,14 @@ pub async fn quality(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
         Ok(status) => Json(status).into_response(),
         Err(QualityError::IdentityInvalid) => error_envelope(
             "speaker_owner_identity_invalid",
-            "I couldn't load speaker quality because your configured owner identity needs attention.",
+            "speaker quality couldn't be loaded because your configured owner identity needs attention.",
             "configured owner identity is not admitted",
             StatusCode::BAD_REQUEST,
         )
         .into_response(),
         Err(QualityError::Catalog(error)) => error_envelope(
             "speaker_command_failed",
-            "I couldn't finish that speaker command.",
+            "that speaker command didn't finish.",
             error.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
         )

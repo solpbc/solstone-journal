@@ -34,7 +34,7 @@ pub(crate) async fn delete_source(
     if source != "location" {
         return error_envelope(
             "invalid_segment_or_stream",
-            "I couldn't use that segment or stream.",
+            "that segment or stream couldn't be used.",
             "Only known source streams can be deleted.",
             StatusCode::BAD_REQUEST,
         )

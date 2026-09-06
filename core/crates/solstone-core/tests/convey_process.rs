@@ -50,7 +50,7 @@ impl TempJournal {
 
     fn owner_sentence(&self) -> String {
         format!(
-            "I couldn't read your settings file at {}/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "your settings file at {}/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
             self.0.display()
         )
     }

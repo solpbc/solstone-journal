@@ -412,7 +412,7 @@ async fn changed_config_write_under_lock_returns_identity_busy() {
     assert_eq!(
         value["error"],
         json!(
-            "I couldn't update my identity right now because it was busy. Try again in a moment."
+            "your journal's identity couldn't be updated right now because it was busy. try again in a moment."
         )
     );
     assert_eq!(value["detail"], json!("identity is busy; try again"));

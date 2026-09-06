@@ -17,7 +17,7 @@ pub fn facet_not_found() -> Response {
     (
         axum::http::StatusCode::NOT_FOUND,
         Json(json!({
-            "error": "I couldn't find that facet.",
+            "error": "that facet couldn't be found.",
             "reason_code": "facet_not_found",
             "detail": "Facet not found",
         })),
@@ -34,7 +34,7 @@ pub fn settings_operation_failed() -> Response {
 pub fn settings_operation_failed_with_detail(detail: impl Into<String>) -> Response {
     error_envelope(
         "settings_operation_failed",
-        "I couldn't save those settings.",
+        "those settings couldn't be saved.",
         detail.into(),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
@@ -44,7 +44,7 @@ pub fn settings_operation_failed_with_detail(detail: impl Into<String>) -> Respo
 pub fn plaud_validation_unavailable() -> Response {
     error_envelope(
         "plaud_validation_unavailable",
-        "I couldn't validate that Plaud token in this version.",
+        "that Plaud token can't be validated in this version.",
         "live Plaud validation is not available in the native settings surface",
         StatusCode::NOT_IMPLEMENTED,
     )
@@ -54,7 +54,7 @@ pub fn plaud_validation_unavailable() -> Response {
 pub fn invalid_config_value(detail: impl Into<String>) -> Response {
     error_envelope(
         "invalid_config_value",
-        "I couldn't save that setting because one value was invalid.",
+        "that setting couldn't be saved because one value was invalid.",
         detail.into(),
         StatusCode::BAD_REQUEST,
     )
@@ -64,7 +64,7 @@ pub fn invalid_config_value(detail: impl Into<String>) -> Response {
 pub fn invalid_request_value(detail: impl Into<String>) -> Response {
     error_envelope(
         "invalid_request_value",
-        "I couldn't use one of those values.",
+        "one of those values couldn't be used.",
         detail.into(),
         StatusCode::BAD_REQUEST,
     )
@@ -74,7 +74,7 @@ pub fn invalid_request_value(detail: impl Into<String>) -> Response {
 pub fn missing_request_body() -> Response {
     error_envelope(
         "missing_request_body",
-        "I couldn't find any data in that request.",
+        "that request had no data in it.",
         "No data provided",
         StatusCode::BAD_REQUEST,
     )
@@ -84,7 +84,7 @@ pub fn missing_request_body() -> Response {
 pub fn missing_required_field(detail: impl Into<String>) -> Response {
     error_envelope(
         "missing_required_field",
-        "I couldn't find a required field.",
+        "a required field is missing.",
         detail.into(),
         StatusCode::BAD_REQUEST,
     )
@@ -94,7 +94,7 @@ pub fn missing_required_field(detail: impl Into<String>) -> Response {
 pub fn config_busy() -> Response {
     error_envelope(
         "config_busy",
-        "I couldn't save those settings right now because they were busy. Try again in a moment.",
+        "those settings couldn't be saved right now because they were busy. try again in a moment.",
         "settings configuration is busy",
         StatusCode::SERVICE_UNAVAILABLE,
     )
@@ -104,7 +104,7 @@ pub fn config_busy() -> Response {
 pub fn activity_protected() -> Response {
     error_envelope(
         "activity_protected",
-        "I couldn't remove that activity.",
+        "that activity couldn't be removed.",
         "Cannot remove always-on activity",
         StatusCode::BAD_REQUEST,
     )
@@ -115,7 +115,7 @@ pub fn activity_not_found() -> Response {
     (
         StatusCode::NOT_FOUND,
         Json(json!({
-            "error": "I couldn't find that activity in the facet.",
+            "error": "that activity isn't in the facet.",
             "reason_code": "activity_not_found",
             "detail": "Activity not found in facet",
         })),

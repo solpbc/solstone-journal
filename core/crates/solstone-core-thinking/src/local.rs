@@ -39,7 +39,7 @@ pub fn accepted_model(model: Option<&str>) -> Option<&'static str> {
 }
 
 pub fn invalid_model(model: &str) -> Value {
-    json!({"error":"I couldn't use one of those values.","reason_code":"invalid_request_value","detail":format!("Unknown local model: {model}. Must be one of: {}", default_model())})
+    json!({"error":"one of those values couldn't be used.","reason_code":"invalid_request_value","detail":format!("Unknown local model: {model}. Must be one of: {}", default_model())})
 }
 
 pub fn models() -> Value {

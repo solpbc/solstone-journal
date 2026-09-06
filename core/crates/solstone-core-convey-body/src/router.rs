@@ -57,7 +57,7 @@ async fn stats_route(
     if !is_month(&month) {
         return error_envelope(
             "invalid_request_value",
-            "I couldn't use one of those values.",
+            "one of those values couldn't be used.",
             "Invalid month",
             StatusCode::BAD_REQUEST,
         )
@@ -107,7 +107,7 @@ pub(crate) fn unavailable_response(error: StoreError) -> Response {
     };
     error_envelope(
         reason_code,
-        "I couldn't read the body store.",
+        "the body store couldn't be read.",
         detail,
         StatusCode::SERVICE_UNAVAILABLE,
     )
@@ -291,7 +291,7 @@ mod tests {
             (
                 StatusCode::BAD_REQUEST,
                 json!({
-                    "error": "I couldn't use one of those values.",
+                    "error": "one of those values couldn't be used.",
                     "reason_code": "invalid_request_value",
                     "detail": "Invalid month"
                 })

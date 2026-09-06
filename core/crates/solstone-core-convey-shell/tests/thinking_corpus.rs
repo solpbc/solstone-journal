@@ -456,7 +456,7 @@ fn assert_generators_missing_body_deviation(
     assert_eq!(
         actual,
         json!({
-            "error": "I couldn't find any data in that request.",
+            "error": "that request had no data in it.",
             "reason_code": "missing_request_body",
             "detail": "No data provided",
         })
@@ -726,7 +726,7 @@ fn assert_no_slash_deviation(
             assert_eq!(location, &None);
             assert_eq!(
                 body,
-                &format!("I couldn't read your settings file at {}/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.", journal.display()).into_bytes()
+                &format!("your settings file at {}/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.", journal.display()).into_bytes()
             );
         }
         other => panic!("unexpected no-slash deviation phase {other}"),
@@ -1466,7 +1466,7 @@ async fn confidential_enable_refuses_missing_identity_without_starting_an_operat
     assert_eq!(response.0, StatusCode::INTERNAL_SERVER_ERROR);
     let body: Value = serde_json::from_slice(&response.3).expect("refusal JSON");
     assert_top_level_keys(&body, vec!["detail", "error", "reason_code"]);
-    assert_eq!(body["error"], "I couldn't save those settings.");
+    assert_eq!(body["error"], "those settings couldn't be saved.");
     assert_eq!(body["reason_code"], "settings_operation_failed");
     assert_eq!(
         body["detail"],
@@ -1644,7 +1644,7 @@ async fn confidential_disable_config_lock_refusal_has_the_exact_envelope() {
     assert_eq!(body["reason_code"], "config_busy");
     assert_eq!(
         body["error"],
-        "I couldn't save those settings right now because they were busy. Try again in a moment."
+        "those settings couldn't be saved right now because they were busy. try again in a moment."
     );
     assert_eq!(body["detail"], "settings are busy; try again");
 }

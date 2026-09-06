@@ -116,7 +116,7 @@ impl OperationError {
             Self::OperationInputInvalid { .. }
             | Self::OperationLockUnavailable { .. }
             | Self::OperationStateUnavailable { .. }
-            | Self::OperationSuperseded => Some("I couldn't reach support right now."),
+            | Self::OperationSuperseded => Some("support couldn't be reached right now."),
             Self::OperationInProgress => Some("That operation is already in progress."),
             Self::IdempotencyConflict => Some("That operation conflicts with an earlier attempt."),
             Self::OperationInvalidState => {

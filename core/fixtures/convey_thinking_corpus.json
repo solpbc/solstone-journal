@@ -1064,7 +1064,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown local model: nope. Must be one of: local/qwen3.5-4b",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "GET",
@@ -1378,7 +1378,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown local model: nope. Must be one of: local/qwen3.5-4b",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "GET",
@@ -1414,7 +1414,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown local model: nope. Must be one of: local/qwen3.5-4b",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "GET",
@@ -1577,7 +1577,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "PUT",
@@ -1593,7 +1593,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid env var: NOPE_API_KEY. Must be one of: GOOGLE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "PUT",
@@ -1613,7 +1613,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "value must be a string",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "PUT",
@@ -1633,7 +1633,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -1649,7 +1649,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "value must not be empty",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -1669,7 +1669,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid env var: bogus. Must be one of: GOOGLE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -1689,7 +1689,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -1705,7 +1705,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid provider: local. Must be one of: anthropic, google, openai",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -1725,7 +1725,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "model must be a non-empty string.",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -1744,7 +1744,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "model must be a non-empty string.",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -1764,7 +1764,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -1780,7 +1780,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "lane",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -1799,7 +1799,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid lane: nope. Must be one of: byo, confidential, local",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -1818,7 +1818,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid provider for BYO lane. Must be one of: anthropic, google, local, openai",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -1838,7 +1838,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No BYO provider selected. Must be one of: anthropic, google, local, openai",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -1857,7 +1857,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown provider fields: bogus",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -1878,7 +1878,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "model is only valid with cloud BYO providers: anthropic, google, openai.",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -1898,7 +1898,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "confidential lane activation must use the confidential enable flow.",
-          "error": "I couldn't take that action in the current state.",
+          "error": "that action couldn't be taken in the current state.",
           "reason_code": "invalid_operation_for_state"
         },
         "method": "POST",
@@ -1917,7 +1917,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid Google model resolution targets: nope. Must be one of: active, confidential_prior, remembered",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -1941,7 +1941,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "google_model_resolution_targets is only valid with Google BYO model saves.",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -1965,7 +1965,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -1981,7 +1981,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "endpoint_url",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -2000,7 +2000,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "endpoint_url must be an http or https URL with a host",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -2020,7 +2020,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "endpoint_url must be an http or https URL with a host",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -2040,7 +2040,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "served_model_id",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -2059,7 +2059,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "credential",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -2080,7 +2080,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -2096,7 +2096,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "runtime retry requires the current recovery state",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -2115,7 +2115,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "runtime retry requires the current recovery state",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -2136,7 +2136,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "runtime retry requires the current recovery state",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -2157,7 +2157,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "something went wrong - try again, and if it persists, check the health dashboard",
-          "error": "I couldn't save those settings.",
+          "error": "those settings couldn't be saved.",
           "reason_code": "settings_operation_failed"
         },
         "method": "PUT",
@@ -2173,7 +2173,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "disabled must be boolean for k",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "PUT",
@@ -2194,7 +2194,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "extract must be boolean for k",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "PUT",
@@ -2248,7 +2248,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "PUT",
@@ -3291,7 +3291,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown local model: nope. Must be one of: local/qwen3.5-4b",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "GET",
@@ -3604,7 +3604,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown local model: nope. Must be one of: local/qwen3.5-4b",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "GET",
@@ -3640,7 +3640,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown local model: nope. Must be one of: local/qwen3.5-4b",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "GET",
@@ -3803,7 +3803,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "PUT",
@@ -3819,7 +3819,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid env var: NOPE_API_KEY. Must be one of: GOOGLE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "PUT",
@@ -3839,7 +3839,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "value must be a string",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "PUT",
@@ -3859,7 +3859,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -3875,7 +3875,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "value must not be empty",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -3895,7 +3895,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid env var: bogus. Must be one of: GOOGLE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -3915,7 +3915,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -3931,7 +3931,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid provider: local. Must be one of: anthropic, google, openai",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -3951,7 +3951,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "model must be a non-empty string.",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -3970,7 +3970,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "model must be a non-empty string.",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -3990,7 +3990,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -4006,7 +4006,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "lane",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -4025,7 +4025,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid lane: nope. Must be one of: byo, confidential, local",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -4044,7 +4044,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid provider for BYO lane. Must be one of: anthropic, google, local, openai",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -4064,7 +4064,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No BYO provider selected. Must be one of: anthropic, google, local, openai",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -4083,7 +4083,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown provider fields: bogus",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -4104,7 +4104,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "model is only valid with cloud BYO providers: anthropic, google, openai.",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -4124,7 +4124,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "confidential lane activation must use the confidential enable flow.",
-          "error": "I couldn't take that action in the current state.",
+          "error": "that action couldn't be taken in the current state.",
           "reason_code": "invalid_operation_for_state"
         },
         "method": "POST",
@@ -4143,7 +4143,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid Google model resolution targets: nope. Must be one of: active, confidential_prior, remembered",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -4167,7 +4167,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "google_model_resolution_targets is only valid with Google BYO model saves.",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -4191,7 +4191,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -4207,7 +4207,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "endpoint_url",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -4226,7 +4226,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "endpoint_url must be an http or https URL with a host",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -4246,7 +4246,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "endpoint_url must be an http or https URL with a host",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -4266,7 +4266,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "served_model_id",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -4285,7 +4285,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "credential",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -4306,7 +4306,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -4322,7 +4322,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "runtime retry requires the current recovery state",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -4341,7 +4341,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "runtime retry requires the current recovery state",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -4362,7 +4362,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "runtime retry requires the current recovery state",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -4383,7 +4383,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "something went wrong - try again, and if it persists, check the health dashboard",
-          "error": "I couldn't save those settings.",
+          "error": "those settings couldn't be saved.",
           "reason_code": "settings_operation_failed"
         },
         "method": "PUT",
@@ -4399,7 +4399,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "disabled must be boolean for k",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "PUT",
@@ -4420,7 +4420,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "extract must be boolean for k",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "PUT",
@@ -4474,7 +4474,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "PUT",
@@ -5503,7 +5503,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown local model: nope. Must be one of: local/qwen3.5-4b",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "GET",
@@ -5810,7 +5810,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown local model: nope. Must be one of: local/qwen3.5-4b",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "GET",
@@ -5846,7 +5846,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown local model: nope. Must be one of: local/qwen3.5-4b",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "GET",
@@ -6009,7 +6009,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "PUT",
@@ -6025,7 +6025,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid env var: NOPE_API_KEY. Must be one of: GOOGLE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "PUT",
@@ -6045,7 +6045,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "value must be a string",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "PUT",
@@ -6065,7 +6065,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -6081,7 +6081,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "value must not be empty",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -6101,7 +6101,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid env var: bogus. Must be one of: GOOGLE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -6121,7 +6121,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -6137,7 +6137,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid provider: local. Must be one of: anthropic, google, openai",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -6157,7 +6157,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "model must be a non-empty string.",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -6176,7 +6176,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "model must be a non-empty string.",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -6196,7 +6196,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -6212,7 +6212,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "lane",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -6231,7 +6231,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid lane: nope. Must be one of: byo, confidential, local",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -6250,7 +6250,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid provider for BYO lane. Must be one of: anthropic, google, local, openai",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -6270,7 +6270,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No BYO provider selected. Must be one of: anthropic, google, local, openai",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -6289,7 +6289,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown provider fields: bogus",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -6310,7 +6310,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "clear your endpoint URL first to run the bundled local model.",
-          "error": "I couldn't take that action in the current state.",
+          "error": "that action couldn't be taken in the current state.",
           "reason_code": "invalid_operation_for_state"
         },
         "method": "POST",
@@ -6330,7 +6330,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "confidential lane activation must use the confidential enable flow.",
-          "error": "I couldn't take that action in the current state.",
+          "error": "that action couldn't be taken in the current state.",
           "reason_code": "invalid_operation_for_state"
         },
         "method": "POST",
@@ -6349,7 +6349,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid Google model resolution targets: nope. Must be one of: active, confidential_prior, remembered",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -6373,7 +6373,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "google_model_resolution_targets is only valid with Google BYO model saves.",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -6397,7 +6397,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -6413,7 +6413,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "endpoint_url",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -6432,7 +6432,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "endpoint_url must be an http or https URL with a host",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -6452,7 +6452,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "endpoint_url must be an http or https URL with a host",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -6472,7 +6472,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "served_model_id",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -6491,7 +6491,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "credential",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -6512,7 +6512,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -6528,7 +6528,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "runtime retry requires the current recovery state",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -6547,7 +6547,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "runtime retry requires the current recovery state",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -6568,7 +6568,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "runtime retry requires the current recovery state",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -6589,7 +6589,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "something went wrong - try again, and if it persists, check the health dashboard",
-          "error": "I couldn't save those settings.",
+          "error": "those settings couldn't be saved.",
           "reason_code": "settings_operation_failed"
         },
         "method": "PUT",
@@ -6605,7 +6605,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "disabled must be boolean for k",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "PUT",
@@ -6626,7 +6626,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "extract must be boolean for k",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "PUT",
@@ -6680,7 +6680,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "PUT",
@@ -7703,7 +7703,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown local model: nope. Must be one of: local/qwen3.5-4b",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "GET",
@@ -8006,7 +8006,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown local model: nope. Must be one of: local/qwen3.5-4b",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "GET",
@@ -8042,7 +8042,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown local model: nope. Must be one of: local/qwen3.5-4b",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "GET",
@@ -8205,7 +8205,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "PUT",
@@ -8221,7 +8221,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid env var: NOPE_API_KEY. Must be one of: GOOGLE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "PUT",
@@ -8241,7 +8241,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "value must be a string",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "PUT",
@@ -8261,7 +8261,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -8277,7 +8277,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "value must not be empty",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -8297,7 +8297,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid env var: bogus. Must be one of: GOOGLE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -8317,7 +8317,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -8333,7 +8333,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid provider: local. Must be one of: anthropic, google, openai",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -8353,7 +8353,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "model must be a non-empty string.",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -8372,7 +8372,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "model must be a non-empty string.",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -8392,7 +8392,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -8408,7 +8408,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "lane",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -8427,7 +8427,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid lane: nope. Must be one of: byo, confidential, local",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -8446,7 +8446,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid provider for BYO lane. Must be one of: anthropic, google, local, openai",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -8466,7 +8466,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No BYO provider selected. Must be one of: anthropic, google, local, openai",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -8485,7 +8485,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown provider fields: bogus",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -8506,7 +8506,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Turn off confidential thinking first, then switch to the bundled local model.",
-          "error": "I couldn't take that action in the current state.",
+          "error": "that action couldn't be taken in the current state.",
           "reason_code": "invalid_operation_for_state"
         },
         "method": "POST",
@@ -8743,7 +8743,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid Google model resolution targets: nope. Must be one of: active, confidential_prior, remembered",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -8767,7 +8767,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "google_model_resolution_targets is only valid with Google BYO model saves.",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -8791,7 +8791,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -8807,7 +8807,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "endpoint_url",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -8826,7 +8826,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "endpoint_url must be an http or https URL with a host",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -8846,7 +8846,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "endpoint_url must be an http or https URL with a host",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -8866,7 +8866,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "served_model_id",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -8885,7 +8885,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "credential",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -8906,7 +8906,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -8922,7 +8922,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "runtime retry requires the current recovery state",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -8941,7 +8941,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "runtime retry requires the current recovery state",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -8962,7 +8962,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "runtime retry requires the current recovery state",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -8983,7 +8983,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "something went wrong - try again, and if it persists, check the health dashboard",
-          "error": "I couldn't save those settings.",
+          "error": "those settings couldn't be saved.",
           "reason_code": "settings_operation_failed"
         },
         "method": "PUT",
@@ -8999,7 +8999,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "disabled must be boolean for k",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "PUT",
@@ -9020,7 +9020,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "extract must be boolean for k",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "PUT",
@@ -9074,7 +9074,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "PUT",
@@ -9090,7 +9090,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Turn off confidential thinking first, then clear your local endpoint.",
-          "error": "I couldn't take that action in the current state.",
+          "error": "that action couldn't be taken in the current state.",
           "reason_code": "invalid_operation_for_state"
         },
         "method": "DELETE",
@@ -10093,7 +10093,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown local model: nope. Must be one of: local/qwen3.5-4b",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "GET",
@@ -10398,7 +10398,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown local model: nope. Must be one of: local/qwen3.5-4b",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "GET",
@@ -10434,7 +10434,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown local model: nope. Must be one of: local/qwen3.5-4b",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "GET",
@@ -10597,7 +10597,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "PUT",
@@ -10613,7 +10613,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid env var: NOPE_API_KEY. Must be one of: GOOGLE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "PUT",
@@ -10633,7 +10633,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "value must be a string",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "PUT",
@@ -10653,7 +10653,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -10669,7 +10669,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "value must not be empty",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -10689,7 +10689,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid env var: bogus. Must be one of: GOOGLE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -10709,7 +10709,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -10725,7 +10725,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid provider: local. Must be one of: anthropic, google, openai",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -10745,7 +10745,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "model must be a non-empty string.",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -10764,7 +10764,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "model must be a non-empty string.",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -10784,7 +10784,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -10800,7 +10800,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "lane",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -10819,7 +10819,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid lane: nope. Must be one of: byo, confidential, local",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -10838,7 +10838,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid provider for BYO lane. Must be one of: anthropic, google, local, openai",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -10858,7 +10858,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No BYO provider selected. Must be one of: anthropic, google, local, openai",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -10877,7 +10877,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown provider fields: bogus",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -10898,7 +10898,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Turn off confidential thinking first, then switch to the bundled local model.",
-          "error": "I couldn't take that action in the current state.",
+          "error": "that action couldn't be taken in the current state.",
           "reason_code": "invalid_operation_for_state"
         },
         "method": "POST",
@@ -11138,7 +11138,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid Google model resolution targets: nope. Must be one of: active, confidential_prior, remembered",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -11162,7 +11162,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "google_model_resolution_targets is only valid with Google BYO model saves.",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -11186,7 +11186,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -11202,7 +11202,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "endpoint_url",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -11221,7 +11221,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "endpoint_url must be an http or https URL with a host",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -11241,7 +11241,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "endpoint_url must be an http or https URL with a host",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -11261,7 +11261,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "served_model_id",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -11280,7 +11280,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "credential",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -11301,7 +11301,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -11317,7 +11317,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "runtime retry requires the current recovery state",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -11336,7 +11336,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "runtime retry requires the current recovery state",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -11357,7 +11357,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "runtime retry requires the current recovery state",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -11378,7 +11378,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "something went wrong - try again, and if it persists, check the health dashboard",
-          "error": "I couldn't save those settings.",
+          "error": "those settings couldn't be saved.",
           "reason_code": "settings_operation_failed"
         },
         "method": "PUT",
@@ -11394,7 +11394,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "disabled must be boolean for k",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "PUT",
@@ -11415,7 +11415,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "extract must be boolean for k",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "PUT",
@@ -11469,7 +11469,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "PUT",
@@ -11485,7 +11485,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Turn off confidential thinking first, then clear your local endpoint.",
-          "error": "I couldn't take that action in the current state.",
+          "error": "that action couldn't be taken in the current state.",
           "reason_code": "invalid_operation_for_state"
         },
         "method": "DELETE",
@@ -11503,7 +11503,7 @@
         ],
         "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "GET",
         "path": "/app/thinking/",
@@ -11528,7 +11528,7 @@
         ],
         "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "GET",
         "path": "/app/thinking/workspace",
@@ -11542,7 +11542,7 @@
         ],
         "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "GET",
         "path": "/app/thinking/static/thinking.js",
@@ -11558,8 +11558,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -11577,8 +11577,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -11596,8 +11596,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -11615,8 +11615,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -11634,8 +11634,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -11653,8 +11653,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -11672,8 +11672,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -11691,8 +11691,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -11710,8 +11710,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -11729,8 +11729,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -11748,8 +11748,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -11767,8 +11767,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -11786,8 +11786,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -11805,8 +11805,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "GET",
@@ -11824,8 +11824,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "PUT",
@@ -11843,8 +11843,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "PUT",
@@ -11866,8 +11866,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "PUT",
@@ -11889,8 +11889,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -11908,8 +11908,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -11931,8 +11931,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -11954,8 +11954,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -11973,8 +11973,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -11996,8 +11996,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -12018,8 +12018,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -12041,8 +12041,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -12060,8 +12060,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -12082,8 +12082,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -12104,8 +12104,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -12127,8 +12127,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -12149,8 +12149,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -12173,8 +12173,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -12196,8 +12196,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -12218,8 +12218,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -12245,8 +12245,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -12272,8 +12272,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -12291,8 +12291,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -12313,8 +12313,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -12336,8 +12336,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -12359,8 +12359,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -12381,8 +12381,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -12405,8 +12405,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -12424,8 +12424,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -12446,8 +12446,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -12470,8 +12470,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "POST",
@@ -12494,8 +12494,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "PUT",
@@ -12513,8 +12513,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "PUT",
@@ -12537,8 +12537,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "PUT",
@@ -12559,7 +12559,7 @@
         ],
         "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "GET",
         "path": "/app/thinking/background",
@@ -12573,7 +12573,7 @@
         ],
         "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "GET",
         "path": "/app/thinking/static/nope.js",
@@ -12587,7 +12587,7 @@
         ],
         "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
         "body_sha256_basis": "raw-body",
-        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "body_text": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "GET",
         "path": "/app/thinking/static/../../../etc/passwd",
@@ -12603,8 +12603,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "PUT",
@@ -12622,8 +12622,8 @@
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
+          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were NOT changed. repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "your settings couldn't be read.",
           "reason_code": "corrupt_config"
         },
         "method": "DELETE",
@@ -13635,7 +13635,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown local model: nope. Must be one of: local/qwen3.5-4b",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "GET",
@@ -13941,7 +13941,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown local model: nope. Must be one of: local/qwen3.5-4b",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "GET",
@@ -13977,7 +13977,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown local model: nope. Must be one of: local/qwen3.5-4b",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "GET",
@@ -14140,7 +14140,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "PUT",
@@ -14156,7 +14156,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid env var: NOPE_API_KEY. Must be one of: GOOGLE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "PUT",
@@ -14176,7 +14176,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "value must be a string",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "PUT",
@@ -14196,7 +14196,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -14212,7 +14212,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "value must not be empty",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -14232,7 +14232,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid env var: bogus. Must be one of: GOOGLE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -14252,7 +14252,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -14268,7 +14268,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid provider: local. Must be one of: anthropic, google, openai",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -14288,7 +14288,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "model must be a non-empty string.",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -14307,7 +14307,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "model must be a non-empty string.",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -14327,7 +14327,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -14343,7 +14343,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "lane",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -14362,7 +14362,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid lane: nope. Must be one of: byo, confidential, local",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -14381,7 +14381,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid provider for BYO lane. Must be one of: anthropic, google, local, openai",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -14401,7 +14401,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No BYO provider selected. Must be one of: anthropic, google, local, openai",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -14420,7 +14420,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Unknown provider fields: bogus",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -14441,7 +14441,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "model is only valid with cloud BYO providers: anthropic, google, openai.",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -14461,7 +14461,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "confidential lane activation must use the confidential enable flow.",
-          "error": "I couldn't take that action in the current state.",
+          "error": "that action couldn't be taken in the current state.",
           "reason_code": "invalid_operation_for_state"
         },
         "method": "POST",
@@ -14480,7 +14480,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "Invalid Google model resolution targets: nope. Must be one of: active, confidential_prior, remembered",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -14504,7 +14504,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "google_model_resolution_targets is only valid with Google BYO model saves.",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -14528,7 +14528,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -14544,7 +14544,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "endpoint_url",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -14563,7 +14563,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "endpoint_url must be an http or https URL with a host",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -14583,7 +14583,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "endpoint_url must be an http or https URL with a host",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "POST",
@@ -14603,7 +14603,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "served_model_id",
-          "error": "I couldn't find a required field.",
+          "error": "a required field is missing.",
           "reason_code": "missing_required_field"
         },
         "method": "POST",
@@ -14622,7 +14622,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "credential",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -14643,7 +14643,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "POST",
@@ -14659,7 +14659,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "runtime retry requires the current recovery state",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -14678,7 +14678,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "runtime retry requires the current recovery state",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -14699,7 +14699,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "runtime retry requires the current recovery state",
-          "error": "I couldn't use one of those values.",
+          "error": "one of those values couldn't be used.",
           "reason_code": "invalid_request_value"
         },
         "method": "POST",
@@ -14720,7 +14720,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "something went wrong - try again, and if it persists, check the health dashboard",
-          "error": "I couldn't save those settings.",
+          "error": "those settings couldn't be saved.",
           "reason_code": "settings_operation_failed"
         },
         "method": "PUT",
@@ -14736,7 +14736,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "disabled must be boolean for k",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "PUT",
@@ -14757,7 +14757,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "extract must be boolean for k",
-          "error": "I couldn't save that setting because one value was invalid.",
+          "error": "that setting couldn't be saved because one value was invalid.",
           "reason_code": "invalid_config_value"
         },
         "method": "PUT",
@@ -14811,7 +14811,7 @@
         "content_type": "application/json",
         "json": {
           "detail": "No data provided",
-          "error": "I couldn't find any data in that request.",
+          "error": "that request had no data in it.",
           "reason_code": "missing_request_body"
         },
         "method": "PUT",
