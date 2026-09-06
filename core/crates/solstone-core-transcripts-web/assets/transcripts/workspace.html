@@ -153,8 +153,8 @@
   left: 0;
   right: -4px;
   height: 100%;
-  background: rgba(239, 246, 255, 0.7);
-  border: 1px solid #c7d2fe;
+  background: var(--orange-wash);
+  border: 1px solid var(--orange);
   border-radius: 12px;
   box-shadow: 0 1px 2px rgba(0,0,0,.06);
   pointer-events: auto;
@@ -167,12 +167,12 @@
 }
 
 .tr-sel:hover {
-  background: rgba(239, 246, 255, 0.85);
-  border-color: #a5b4fc;
+  background: var(--orange-wash);
+  border-color: var(--orange-ink);
 }
 
 .tr-sel:focus-visible {
-  outline: 2px solid var(--accent, #4a9eff);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -182,9 +182,9 @@
   right: 28px;
   margin: auto;
   height: 14px;
-  border: 1px solid #60a5fa;
+  border: 1px solid var(--orange);
   border-radius: 999px;
-  background: #dbeafe;
+  background: var(--orange-wash);
   cursor: ns-resize;
   touch-action: none;
   transition: background 0.15s ease, border-color 0.15s ease;
@@ -199,13 +199,13 @@
 }
 
 .tr-bumper:hover {
-  background: #bfdbfe;
-  border-color: #3b82f6;
+  background: var(--orange-wash);
+  border-color: var(--orange-ink);
 }
 
 .tr-bumper:active {
-  background: #93c5fd;
-  border-color: #2563eb;
+  background: var(--orange-wash);
+  border-color: var(--orange-ink);
 }
 
 /* Segments lane (audio/screen indicators) */
@@ -279,8 +279,8 @@
 }
 
 .tr-seg-markdown {
-  background: rgba(147, 197, 253, 0.6);
-  border: 1px solid #3b82f6;
+  background: rgba(232, 145, 58, 0.32);
+  border: 1px solid var(--orange);
 }
 
 .tr-body-events {
@@ -319,13 +319,13 @@
 }
 
 .tr-body-event-sleep {
-  background: rgba(96, 165, 250, 0.48);
-  border: 1px solid #2563eb;
+  background: rgba(110, 100, 83, 0.4);
+  border: 1px solid var(--ink-soft);
 }
 
 .tr-body-event-workout {
-  background: rgba(45, 212, 191, 0.48);
-  border: 1px solid #0f766e;
+  background: rgba(201, 154, 46, 0.4);
+  border: 1px solid var(--warn-ink);
 }
 
 .tr-seg-pending {
@@ -2263,9 +2263,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       <div class="tr-timeline-legend">
         <span><span class="tr-legend-dot" style="background: #86efac;"></span>audio</span>
         <span><span class="tr-legend-dot" style="background: #facc15;"></span>screen</span>
-        <span><span class="tr-legend-dot" style="background: #2563eb;"></span>import</span>
-        <span><span class="tr-legend-dot" style="background: #60a5fa;"></span>sleep</span>
-        <span><span class="tr-legend-dot" style="background: #2dd4bf;"></span>workout</span>
+        <span><span class="tr-legend-dot" style="background: var(--orange);"></span>import</span>
+        <span><span class="tr-legend-dot" style="background: var(--ink-faint);"></span>sleep</span>
+        <span><span class="tr-legend-dot" style="background: var(--warn);"></span>workout</span>
       </div>
     </div>
 
@@ -2304,7 +2304,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         <div class="surface-state surface-state--empty">
           <div class="surface-state-icon" id="trInitialEmptyIcon" aria-hidden="true"></div>
           <h2 class="surface-state-heading">your day at a glance</h2>
-          <p class="surface-state-desc">select a segment from the timeline to view its transcript</p>
+          <p class="surface-state-desc">pick a stretch of the day on the left, then a block in detail to read it</p>
         </div>
       </div>
     </div>
@@ -2361,6 +2361,22 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
   const { day } = window.solPathContext();
   let TR_COPY = {};
+
+  // The shared date-nav.js heading renders "Today"/"Yesterday" title-cased;
+  // canon here is lowercase sentence case. date-nav.js is shared (health-shell
+  // owned), so normalize just these two words at this app's own heading node
+  // rather than changing the shared component. The heading re-renders on
+  // every day navigation, so watch it rather than fixing it once at mount.
+  const dayHeading = document.querySelector('[data-date-nav-heading]');
+  if (dayHeading) {
+    const LOWERCASE_DAY_LABELS = new Set(['Today', 'Yesterday']);
+    const lowercaseDayHeading = () => {
+      const text = dayHeading.textContent;
+      if (LOWERCASE_DAY_LABELS.has(text)) dayHeading.textContent = text.toLowerCase();
+    };
+    lowercaseDayHeading();
+    new MutationObserver(lowercaseDayHeading).observe(dayHeading, { childList: true, characterData: true, subtree: true });
+  }
 
   // Elements - main timeline
   const timeline = document.getElementById('trTimeline');
@@ -3393,8 +3409,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     el.setAttribute('tabindex', '0');
     el.setAttribute('aria-label', _label);
     const sortedStreams = [...streams].sort();
-    const streamHead = sortedStreams.slice(0, 3).join(' + ');
-    const streamToken = sortedStreams.length > 3 ? streamHead + ' +' + (sortedStreams.length - 3) : streamHead;
+    const humanizedStreams = sortedStreams.map(humanizeStreamName);
+    const streamHead = humanizedStreams.slice(0, 3).join(' + ');
+    const streamToken = humanizedStreams.length > 3 ? streamHead + ' +' + (humanizedStreams.length - 3) : streamHead;
     const streamSuffix = sortedStreams.length ? ' · ' + streamToken : '';
     const stateSuffix = state === 'pending' ? ' · pending' : state === 'analyzing' ? ' · analyzing' : (think === 'awaiting' ? ' · ' + AWAITING_THINKING_LABEL : '');
     el.title = hhmm(startMin) + ' – ' + hhmm(endMin) + ' (' + (endMin - startMin) + ' min, ' + type + streamSuffix + stateSuffix + ')';
@@ -6083,7 +6100,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     panel.innerHTML = window.SurfaceState.empty({
       icon: window.ConveyIcons.svg('clock'),
       heading: 'your day at a glance',
-      desc: 'select a segment from the timeline to view its transcript'
+      desc: 'pick a stretch of the day on the left, then a block in detail to read it'
     });
 
     // Clear active state in zoom view
