@@ -123,15 +123,15 @@ fn reason(day: &Map<String, Value>) -> &'static str {
         _ => {}
     }
     if marker == Some("corrupt_raw") {
-        return "original raw media is missing or damaged — re-import it";
+        return "original raw media is missing or damaged. re-import it";
     }
     match backlog_reasons::category(marker) {
-        "setup" => "a setting's missing — check your journal's setup",
+        "setup" => "a setting's missing. check your journal's setup",
         "provider" | "startup" => "the AI provider was unreachable. try again",
         "request" => {
             "the AI provider refused a request. retrying won't help; this is a defect to report."
         }
-        _ => "a processing step keeps failing — try again",
+        _ => "a processing step keeps failing. try again",
     }
 }
 
@@ -305,11 +305,11 @@ mod tests {
         );
         assert_eq!(
             generic[0]["reason"],
-            "a processing step keeps failing — try again"
+            "a processing step keeps failing. try again"
         );
         assert_eq!(
             generic[1]["reason"],
-            "a processing step keeps failing — try again"
+            "a processing step keeps failing. try again"
         );
     }
 

@@ -401,13 +401,13 @@
   const SERVICE_NAMES = {
     supervisor: 'system manager',
     convey: 'web interface',
-    cortex: 'ai engine',
+    cortex: 'AI engine',
     sense: 'media processor',
     observe: 'screen & audio',
     think: 'background analysis',
     importer: 'file importer',
     schedule: 'task scheduler',
-    spl: 'private link',
+    spl: 'private network',
     parakeet: 'transcription',
   };
 
@@ -1210,7 +1210,7 @@
       btn.setAttribute('data-action', 'view-logs');
       btn.setAttribute('data-service', 'cortex');
       btn.className = 'error-advice-link';
-      btn.textContent = 'view ai engine logs';
+      btn.textContent = 'view AI engine logs';
       advice.appendChild(btn);
       advice.appendChild(document.createTextNode(' for details.'));
       container.appendChild(advice);
@@ -2163,7 +2163,7 @@
         card.appendChild(providerEl);
         container.appendChild(card);
       }
-      const stateLabel = agent.event === 'thinking' ? 'thinking…' :
+      const stateLabel = agent.event === 'thinking' ? 'working…' :
                         (agent.event === 'tool_start' || agent.event === 'tool_end') ? 'working…' : 'running…';
       const elapsed = agent.elapsed_seconds ? formatElapsed(agent.elapsed_seconds) : '0s';
       card.children[0].querySelector('.activity-card-id-value').textContent = '…' + getAgentId(agent.use_id);
