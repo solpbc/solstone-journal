@@ -285,10 +285,13 @@
 
   function renderMeta(data) {
     const importJson = asObject(data?.import_json) || {};
+    const importedJson = asObject(data?.imported_json) || {};
     const derived = deriveStatus(data);
     const fileName = hasValue(importJson.original_filename)
       ? String(importJson.original_filename)
-      : strings.unknown;
+      : importedJson.source_type === 'generic'
+        ? strings.file
+        : strings.unknown;
     const fileSize = formatFileSize(importJson.file_size);
     const uploadTime = formatDateTime(importJson.upload_datetime);
     const fileText = fileSize ? `${fileName} (${fileSize})` : fileName;
