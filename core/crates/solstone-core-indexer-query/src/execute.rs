@@ -479,15 +479,16 @@ impl QueryConnection {
                     row.get::<_, Option<String>>(3)?,
                 ))
             })
-            .map_err(|error| self.classify(error))?
-            .collect::<Result<Vec<_>, _>>()
             .map_err(|error| self.classify(error))?;
         let mut counts = CountsResponse {
-            total: rows.len() as u64,
             relaxed,
             ..CountsResponse::default()
         };
-        for (facet, agent, day, stream) in rows {
+        // Counts retain only distinct keys, never one owned tuple per match.
+        // Large journals otherwise allocate hundreds of MiB just to count rows.
+        for row in rows {
+            let (facet, agent, day, stream) = row.map_err(|error| self.classify(error))?;
+            counts.total += 1;
             increment_nonempty(&mut counts.facets, facet);
             increment_nonempty(&mut counts.agents, agent);
             increment_nonempty(&mut counts.days, day);

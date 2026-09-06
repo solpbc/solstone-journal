@@ -76,6 +76,13 @@ struct SearchQuery {
 }
 
 async fn search_api(journal_root: PathBuf, Query(query): Query<SearchQuery>) -> Response {
+    match tokio::task::spawn_blocking(move || search_response(journal_root, query)).await {
+        Ok(response) => response,
+        Err(_) => file_read_failed("the search index couldn't be read. try again."),
+    }
+}
+
+fn search_response(journal_root: PathBuf, query: SearchQuery) -> Response {
     let (day_from, day_to) = match day_range(query.day_from.as_deref(), query.day_to.as_deref()) {
         Ok(range) => range,
         Err(detail) => return invalid_day(&detail),
