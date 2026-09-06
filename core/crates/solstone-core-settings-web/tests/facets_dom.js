@@ -617,6 +617,27 @@ async function testCase(name, fn) {
     assert.ok(/1\).*2\).*3\)/.test(apiKeyHint.textContent), 'the mechanics survive as a numbered step list');
   });
 
+  await testCase('G3-21 transcription/observer/vision/sync show an explicit loading state', async () => {
+    const harness = createHarness();
+    for (const id of ['transcriptionLoadState', 'observerLoadState', 'visionLoadState', 'syncLoadState']) {
+      assert.strictEqual(
+        harness.document.getElementById(id).textContent,
+        'loading settings…',
+        id + ' must not be a blank pane while its read is in flight'
+      );
+    }
+    // Isolate the vision load-state wiring from the shared shell's Drawer
+    // helper (not loaded by this harness) by stubbing the renderer.
+    await run(harness, 'populateVision = () => {}');
+    harness.context.fetch = async () => response({ max_extractions: 20 });
+    await run(harness, 'loadVision()');
+    assert.strictEqual(
+      harness.document.getElementById('visionLoadState').textContent,
+      '',
+      'a resolved read clears the loading state'
+    );
+  });
+
   process.stdout.write('DOM CASES: ' + cases + ' passed\n', () => process.exit(0));
 })().catch((error) => {
   console.error(error.stack || error);

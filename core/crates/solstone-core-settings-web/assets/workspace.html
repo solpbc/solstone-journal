@@ -2309,7 +2309,7 @@ button:focus:not(:focus-visible) {
     <section class="settings-section" id="section-transcription" role="tabpanel" aria-labelledby="tab-transcription">
       <h2>transcription</h2>
       <p class="settings-section-desc">speech-to-text backend and processing settings.</p>
-      <div id="transcriptionLoadState" class="settings-load-state" aria-live="polite"></div>
+      <div id="transcriptionLoadState" class="settings-load-state" aria-live="polite">loading settings…</div>
 
       <form class="settings-form" onsubmit="return false;">
 
@@ -2396,7 +2396,7 @@ button:focus:not(:focus-visible) {
     <section class="settings-section" id="section-observer" role="tabpanel" aria-labelledby="tab-observer">
       <h2>devices</h2>
       <p class="settings-section-desc">what the solstone app takes in from your screen and terminal, and how it reaches your journal.</p>
-      <div id="observerLoadState" class="settings-load-state" aria-live="polite"></div>
+      <div id="observerLoadState" class="settings-load-state" aria-live="polite">loading settings…</div>
 
       <form class="settings-form" onsubmit="return false;">
 
@@ -2432,6 +2432,7 @@ button:focus:not(:focus-visible) {
     <section class="settings-section" id="section-vision" role="tabpanel" aria-labelledby="tab-vision">
       <h2>vision</h2>
       <p class="settings-section-desc">settings for understanding what’s on your screen.</p>
+      <div id="visionLoadState" class="settings-load-state" aria-live="polite">loading settings…</div>
 
       <form class="settings-form" onsubmit="return false;">
 
@@ -2482,7 +2483,7 @@ button:focus:not(:focus-visible) {
     <section class="settings-section" id="section-sync" role="tabpanel" aria-labelledby="tab-sync">
       <h2>sync</h2>
       <p class="settings-section-desc">configure automatic syncing of material from external devices.</p>
-      <div id="syncLoadState" class="settings-load-state" aria-live="polite"></div>
+      <div id="syncLoadState" class="settings-load-state" aria-live="polite">loading settings…</div>
 
       <form class="settings-form" onsubmit="return false;">
 
@@ -4725,9 +4726,16 @@ async function loadVision() {
     const response = await fetch('api/vision');
     visionData = await response.json();
     if (visionData.error) throw new Error(visionData.error);
+    setLoadState('visionLoadState');
     populateVision(visionData);
   } catch (err) {
     console.error('Error loading vision:', err);
+    setLoadState('visionLoadState', window.SurfaceState.error({
+      heading: "couldn't load vision settings",
+      desc: window.CONVEY_COPY.RELOAD_HINT,
+      serverMessage: err?.serverMessage,
+      detail: err,
+    }));
     setDrawerLine('visionCategoriesLine', '');
     document.getElementById('visionCategoryGroups').textContent = 'error loading categories';
   }
