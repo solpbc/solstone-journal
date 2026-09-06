@@ -1697,6 +1697,7 @@
 
 .tr-entry-desc {
   flex: 1;
+  min-width: 0;
   font-size: 13px;
   color: #374151;
   line-height: 1.5;
@@ -2036,7 +2037,31 @@
   padding: 8px 12px;
   margin: 8px 0;
   overflow-x: auto;
+  overflow-y: auto;
+  max-height: 16rem;
   font-size: 12px;
+}
+
+.tr-entry-desc pre.tr-pre-expanded {
+  max-height: none;
+}
+
+.tr-pre-toggle {
+  display: inline-block;
+  margin: -4px 0 8px;
+  padding: 3px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  border: 1px solid var(--hairline, #e5e7eb);
+  border-radius: 6px;
+  background: var(--cream, #fff);
+  color: var(--ink-soft, #374151);
+  cursor: pointer;
+}
+
+.tr-pre-toggle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .tr-entry-desc code {
@@ -5073,6 +5098,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     targetEl.innerHTML = html;
     attachBodyWindowButtons(targetEl);
     attachSpeakerPickerHandlers(targetEl);
+    collapseLongPreBlocks(targetEl);
 
     // Get audio element reference
     const paneAudioEl = targetEl.querySelector('audio[data-role="segment-audio"]');
@@ -5408,6 +5434,28 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
     html += '</div></div>';
     return html;
+  }
+
+  const TR_PRE_COLLAPSE_MAX_HEIGHT = 256; // 16rem at the default 16px root size
+
+  function collapseLongPreBlocks(root) {
+    root.querySelectorAll('.tr-entry-desc pre').forEach(pre => {
+      if (pre.dataset.trPreChecked) return;
+      pre.dataset.trPreChecked = '1';
+      if (pre.scrollHeight <= TR_PRE_COLLAPSE_MAX_HEIGHT + 2) return;
+
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'tr-pre-toggle';
+      toggle.textContent = 'show full output';
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.addEventListener('click', () => {
+        const expanded = pre.classList.toggle('tr-pre-expanded');
+        toggle.textContent = expanded ? 'show less' : 'show full output';
+        toggle.setAttribute('aria-expanded', String(expanded));
+      });
+      pre.insertAdjacentElement('afterend', toggle);
+    });
   }
 
   function openImageModal(frameIndex) {
