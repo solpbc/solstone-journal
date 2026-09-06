@@ -1031,13 +1031,7 @@
         list.innerHTML = window.SurfaceState.empty({
           icon: window.ConveyIcons.svg('life-buoy'),
           heading: 'no tickets yet. that\'s a good thing',
-          desc: 'start a support request on this tab if something comes up',
-          action: '<button type="button" class="surface-state-secondary" id="empty-create-btn">start a request</button>'
-        });
-        const createBtn = document.getElementById('empty-create-btn');
-        if (createBtn) createBtn.addEventListener('click', function() {
-          const subject = document.getElementById('create-subject');
-          if (subject) subject.focus();
+          desc: 'start a support request on this tab if something comes up'
         });
         return;
       }
