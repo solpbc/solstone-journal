@@ -601,10 +601,12 @@ mod tests {
         }
         let payload =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../payload/solstone/talent");
-        for name in ["weekly_reflection", "partner"] {
+        // These are the actual scheduler request coordinates: reflection gets
+        // the Sunday anchor, while partner gets the completed as-of day.
+        for (name, day) in [("weekly_reflection", "20260830"), ("partner", "20260905")] {
             let body = fs::read_to_string(payload.join(format!("{name}.md"))).unwrap();
             fs::write(paths.talent_root.join(format!("{name}.md")), body).unwrap();
-            let request = json!({"name":name, "day":"20260830"});
+            let request = json!({"name":name, "day":day});
             let prepared = prepare(
                 request.as_object().unwrap().clone(),
                 &paths,

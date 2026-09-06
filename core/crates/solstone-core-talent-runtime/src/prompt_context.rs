@@ -25,16 +25,24 @@ pub(crate) fn build(journal: &Path, config: &Map<String, Value>) -> BTreeMap<Str
     context.insert("day".to_owned(), format_day(day));
     context.insert("day_YYYYMMDD".to_owned(), day.to_owned());
     if config.get("schedule").and_then(Value::as_str) == Some("weekly") {
-        // The weekly orchestrator supplies the Sunday under review. Keep date
-        // arithmetic in the runtime so tool examples contain executable dates.
-        if let Some(end) = NaiveDate::parse_from_str(day, "%Y%m%d")
-            .ok()
-            .and_then(|start| start.checked_add_days(Days::new(6)))
-        {
-            context.insert(
-                "week_end_YYYYMMDD".to_owned(),
-                end.format("%Y%m%d").to_string(),
-            );
+        // Reflection receives a week-start anchor; partner receives an as-of
+        // day. Expose the two calendar bounds without treating every weekly
+        // request day as a start date.
+        if let Ok(reference_day) = NaiveDate::parse_from_str(day, "%Y%m%d") {
+            for (key, bound) in [
+                (
+                    "week_end_YYYYMMDD",
+                    reference_day.checked_add_days(Days::new(6)),
+                ),
+                (
+                    "lookback_start_YYYYMMDD",
+                    reference_day.checked_sub_days(Days::new(6)),
+                ),
+            ] {
+                if let Some(bound) = bound {
+                    context.insert(key.to_owned(), bound.format("%Y%m%d").to_string());
+                }
+            }
         }
     }
 
@@ -412,6 +420,10 @@ mod tests {
             let context = build(root.path(), config.as_object().unwrap());
             assert_eq!(context["day_YYYYMMDD"], start);
             assert_eq!(context["week_end_YYYYMMDD"], end);
+            let end_config = json!({"day":end, "schedule":"weekly"});
+            let end_context = build(root.path(), end_config.as_object().unwrap());
+            assert_eq!(end_context["lookback_start_YYYYMMDD"], start);
+            assert_eq!(end_context["day_YYYYMMDD"], end);
         }
     }
 

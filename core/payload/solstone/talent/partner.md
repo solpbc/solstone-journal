@@ -26,18 +26,18 @@ Note which sections have source-backed entries and which still have placeholders
 
 ## Step 2: Gather recent data
 
-Collect evidence for the completed week from `$day_YYYYMMDD` through
-`$week_end_YYYYMMDD`, inclusive. These dates come from this scheduled request; query
+Collect evidence for the seven days from `$lookback_start_YYYYMMDD` through
+`$day_YYYYMMDD`, inclusive. These dates come from this scheduled request; query
 each source for that range. Keep a gap list. Add every empty or failed read and every failed
 profile update to that list. For results omitted because of a stated bound, record one
 aggregate omitted count per source rather than enumerating every result.
 
-1. `solstone call activities list --source anticipated --from $day_YYYYMMDD --to $week_end_YYYYMMDD`: scheduled entries for the inclusive window
-2. `solstone call journal search "" --day-from $day_YYYYMMDD --day-to $week_end_YYYYMMDD -a pulse -n 2`: up to two pulse narratives per day, 14 for the window
-3. `solstone call journal search "" --day-from $day_YYYYMMDD --day-to $week_end_YYYYMMDD -a news -n 2`: up to two work-theme entries per day, 14 for the window
-4. `solstone call journal search "" --day-from $day_YYYYMMDD --day-to $week_end_YYYYMMDD -a action -n 2`: up to two recorded actions per day, 14 for the window
-5. `solstone call journal search "" --day-from $day_YYYYMMDD --day-to $week_end_YYYYMMDD --stream archon -n 2`: up to two journal passages per day, 14 for the window. Treat a passage as owner-authored only when the source explicitly attributes it to the owner.
-6. `solstone call entities overview --day-from $day_YYYYMMDD --day-to $week_end_YYYYMMDD --limit 25`: recorded connections for the window
+1. `solstone call activities list --source anticipated --from $lookback_start_YYYYMMDD --to $day_YYYYMMDD`: scheduled entries for the inclusive window
+2. `solstone call journal search "" --day-from $lookback_start_YYYYMMDD --day-to $day_YYYYMMDD -a pulse -n 2`: up to two pulse narratives per day, 14 for the window
+3. `solstone call journal search "" --day-from $lookback_start_YYYYMMDD --day-to $day_YYYYMMDD -a news -n 2`: up to two work-theme entries per day, 14 for the window
+4. `solstone call journal search "" --day-from $lookback_start_YYYYMMDD --day-to $day_YYYYMMDD -a action -n 2`: up to two recorded actions per day, 14 for the window
+5. `solstone call journal search "" --day-from $lookback_start_YYYYMMDD --day-to $day_YYYYMMDD --stream archon -n 2`: up to two journal passages per day, 14 for the window. Treat a passage as owner-authored only when the source explicitly attributes it to the owner.
+6. `solstone call entities overview --day-from $lookback_start_YYYYMMDD --day-to $day_YYYYMMDD --limit 25`: recorded connections for the window
 
 When a search result will support a profile entry, read its full content with
 `solstone call journal read --path PATH` using the exact path returned by search, removing only its trailing `:idx` suffix.
