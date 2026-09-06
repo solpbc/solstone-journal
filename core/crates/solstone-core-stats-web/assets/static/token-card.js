@@ -59,12 +59,56 @@
   }
 
   function dayLabel(day) {
-    return window.JournalFormat.day(day);
+    const label = window.JournalFormat.day(day);
+    // Owner-facing copy is lowercase sentence case (X-12); JournalFormat's
+    // shared "Today" is capitalized for contexts stats doesn't own, so
+    // lowercase it here rather than editing the shared helper.
+    return label === 'Today' ? 'today' : label;
+  }
+
+  // A handful of local models self-report a raw wire id that differs from
+  // the id we install and label them under. Both name the same physical
+  // model; give the reader a readable name and keep the exact raw id(s)
+  // behind a disclosure rather than showing either raw form on the surface
+  // (G2-31). Unrecognized ids fall back to the raw id itself — this never
+  // invents a name.
+  const MODEL_LABELS = {
+    'local/qwen3.5-4b': 'qwen 3.5 4B (local)'
+  };
+
+  function readableModelLabel(id) {
+    return MODEL_LABELS[String(id || '').toLowerCase()] || id;
+  }
+
+  // The provider is genuinely unrecorded for some rows; say so in plain
+  // words instead of echoing the internal null-name "unknown" (G2-31).
+  function providerLabel(value) {
+    return value === 'unknown' ? 'not recorded' : value;
   }
 
   function cell(value) {
     const node = document.createElement('td');
     node.textContent = String(value);
+    return node;
+  }
+
+  // The model column shows a readable name; the exact raw id(s) this row
+  // folded together live behind a disclosure, not on the surface (G2-31).
+  function modelCell(item) {
+    const node = document.createElement('td');
+    node.className = 'token-model-cell';
+    const ids = Array.isArray(item.models_used) && item.models_used.length
+      ? item.models_used
+      : [item.model];
+    const details = document.createElement('details');
+    const summary = document.createElement('summary');
+    summary.textContent = readableModelLabel(item.model);
+    details.appendChild(summary);
+    const idList = document.createElement('p');
+    idList.className = 'token-model-ids';
+    idList.textContent = ids.join(', ');
+    details.appendChild(idList);
+    node.appendChild(details);
     return node;
   }
 
@@ -83,12 +127,16 @@
     body.replaceChildren();
     [...tableData[name]].sort((left, right) => compareRows(left, right, key, direction)).forEach(item => {
       const row = document.createElement('tr');
-      const values = name === 'providers'
-        ? [item.provider, item.requests, number(item.tokens), number(item.cached_tokens), `${Number(item.percent || 0).toFixed(1)}%`]
-        : [item.model, item.provider, item.requests, number(item.tokens), item.cached_tokens === null ? '—' : number(item.cached_tokens), `${Number(item.percent || 0).toFixed(1)}%`];
-      row.append(...values.map(cell));
+      if (name === 'providers') {
+        const values = [providerLabel(item.provider), item.requests, number(item.tokens), number(item.cached_tokens), `${Number(item.percent || 0).toFixed(1)}%`];
+        row.append(...values.map(cell));
+      } else {
+        const values = [item.requests, number(item.tokens), item.cached_tokens === null ? '—' : number(item.cached_tokens), `${Number(item.percent || 0).toFixed(1)}%`];
+        row.append(modelCell(item), cell(providerLabel(item.provider)), ...values.map(cell));
+      }
       body.append(row);
     });
+    bindScrollFade(scrollHostFor(name));
   }
 
   function renderComparison(byType) {
@@ -185,6 +233,36 @@
       button.addEventListener('click', () => select(day, { push: true, focus: true }));
       rollup.append(button);
     });
+    // Days sort oldest-first; when the 30 bars don't fit the viewport, start
+    // scrolled to the newest (rightmost) day rather than the oldest one, so
+    // the visible window is the one most likely to matter (G2-34). A no-op
+    // when everything already fits.
+    rollup.scrollLeft = rollup.scrollWidth;
+    bindScrollFade(rollup);
+  }
+
+  // Right-edge fade for a horizontally scrollable element with more content
+  // off to the right; removed once scrolled to the end (G2-34). The CSS
+  // rule lives in workspace.html; this only tracks scroll position.
+  function updateScrollFade(el) {
+    const overflowing = el.scrollWidth > el.clientWidth + 1;
+    const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 1;
+    el.classList.toggle('has-scroll-fade', overflowing && !atEnd);
+  }
+
+  function bindScrollFade(el) {
+    if (!el) return;
+    if (!el.dataset.scrollFadeBound) {
+      el.dataset.scrollFadeBound = 'true';
+      el.addEventListener('scroll', () => updateScrollFade(el), {passive: true});
+      addEventListener('resize', () => updateScrollFade(el));
+    }
+    updateScrollFade(el);
+  }
+
+  function scrollHostFor(name) {
+    const body = tableBodies[name];
+    return body && body.closest('.token-table-scroll');
   }
 
   document.querySelectorAll('.token-sort').forEach(button => {
