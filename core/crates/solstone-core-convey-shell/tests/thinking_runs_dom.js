@@ -25,6 +25,40 @@ const assert = new Proxy(nodeAssert, {
   },
 });
 
+class ClassList {
+  constructor(element) {
+    this.element = element;
+    this.values = new Set();
+  }
+
+  setFromString(value) {
+    this.values = new Set(String(value || '').split(/\s+/).filter(Boolean));
+  }
+
+  add(...names) {
+    names.forEach((name) => this.values.add(name));
+  }
+
+  remove(...names) {
+    names.forEach((name) => this.values.delete(name));
+  }
+
+  toggle(name, force) {
+    const present = force === undefined ? !this.values.has(name) : force;
+    if (present) this.values.add(name);
+    else this.values.delete(name);
+    return present;
+  }
+
+  contains(name) {
+    return this.values.has(name);
+  }
+
+  toString() {
+    return Array.from(this.values).join(' ');
+  }
+}
+
 class Element {
   constructor(id = '', dataset = {}) {
     this.id = id;
@@ -33,12 +67,20 @@ class Element {
     this.isConnected = true;
     this.tabIndex = 0;
     this.textContent = '';
-    this.className = '';
+    this.classList = new ClassList(this);
     this.children = [];
     this.listeners = {};
     this.attributes = {};
     this.style = {};
     this.parent = null;
+  }
+
+  get className() {
+    return this.classList.toString();
+  }
+
+  set className(value) {
+    this.classList.setFromString(value);
   }
 
   append(...children) {
@@ -307,10 +349,28 @@ async function main() {
   assert.strictEqual(heterogeneousRows.length, 4, 'heterogeneous run table renders every row');
   heterogeneousRows.forEach((row) => {
     const control = row.children[row.children.length - 1].children[0];
-    assert.strictEqual(control.className, 'thinking-runs-run-control', 'every run row exposes an explicit control');
+    assert.ok(control.classList.contains('thinking-runs-run-control'), 'every run row exposes an explicit control');
   });
   heterogeneousRuns.children[1].children.forEach((card) => {
-    assert.strictEqual(card.children[card.children.length - 1].className, 'thinking-runs-run-control', 'every run card exposes an explicit control');
+    assert.ok(card.children[card.children.length - 1].classList.contains('thinking-runs-run-control'), 'every run card exposes an explicit control');
+  });
+
+  // G2-38: a run whose log can only ever be empty is dimmed before the click.
+  const eventCountRuns = make('eventCountRuns');
+  thinking.renderThinkingRunList(eventCountRuns, [
+    {id: 'silent-run', name: 'silent run', thinking_count: 0, tool_count: 0},
+    {id: 'thinking-run', name: 'thinking run', thinking_count: 3, tool_count: 0},
+    {id: 'tool-run', name: 'tool run', thinking_count: 0, tool_count: 2},
+  ]);
+  const eventCountControls = eventCountRuns.children[0].children[1].children.map(
+    (row) => row.children[row.children.length - 1].children[0],
+  );
+  assert.ok(eventCountControls[0].classList.contains('thinking-runs-run-control-empty'), 'a run with no thinking events and no tool calls is dimmed');
+  assert.strictEqual(eventCountControls[0].title, 'no thinking events or tool calls were recorded for this run', 'the dimmed control explains itself');
+  assert.strictEqual(eventCountControls[1].classList.contains('thinking-runs-run-control-empty'), false, 'a run with thinking events is not dimmed');
+  assert.strictEqual(eventCountControls[2].classList.contains('thinking-runs-run-control-empty'), false, 'a run with tool calls is not dimmed');
+  eventCountControls.forEach((control) => {
+    assert.ok(control.classList.contains('thinking-runs-run-control'), 'the base control class survives the empty-run marker');
   });
 
   const setupHashes = ['#main', '#byo-setup', '#confidential-setup', '#local-setup', '#lane-switch'];
