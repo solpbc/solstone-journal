@@ -27,12 +27,12 @@
     border-bottom-color: rgba(0, 0, 0, 0.15);
   }
   .support-nav button:focus-visible {
-    outline: 2px solid var(--facet-color, #3b82f6);
+    outline: 2px solid var(--facet-color, var(--orange-ink));
     outline-offset: -2px;
   }
   .support-nav button.active {
     color: var(--text, #222);
-    border-bottom-color: var(--facet-color, #3b82f6);
+    border-bottom-color: var(--facet-color, var(--orange-ink));
     font-weight: 600;
   }
   .support-section { display: none; }
@@ -49,7 +49,7 @@
   }
   .support-ticket:hover { background: rgba(0, 0, 0, 0.03); }
   .support-ticket:active { background: rgba(0, 0, 0, 0.06); }
-  .support-ticket:focus-visible { outline: 2px solid var(--facet-color, #3b82f6); outline-offset: 2px; }
+  .support-ticket:focus-visible { outline: 2px solid var(--facet-color, var(--orange-ink)); outline-offset: 2px; }
   .support-ticket-header {
     display: flex;
     justify-content: space-between;
@@ -84,7 +84,7 @@
   }
   .support-detail-back:hover { color: var(--text, #222); }
   .support-detail-back:active { color: #111; }
-  .support-detail-back:focus-visible { outline: 2px solid var(--facet-color, #3b82f6); outline-offset: 2px; }
+  .support-detail-back:focus-visible { outline: 2px solid var(--facet-color, var(--orange-ink)); outline-offset: 2px; }
   .support-message {
     border-left: 3px solid var(--facet-border, #e5e0db);
     padding: 0.75rem 1rem;
@@ -106,7 +106,7 @@
   .support-reply-form textarea:hover { border-color: #bbb; }
   .support-reply-form textarea:focus {
     outline: none;
-    border-color: var(--facet-color, #3b82f6);
+    border-color: var(--facet-color, var(--orange-ink));
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
   }
   .support-reply-form label, .support-feedback-form label, .support-create-form label { display: block; margin-bottom: 0.35rem; }
@@ -127,7 +127,7 @@
   .support-feedback-form textarea:hover { border-color: #bbb; }
   .support-feedback-form textarea:focus {
     outline: none;
-    border-color: var(--facet-color, #3b82f6);
+    border-color: var(--facet-color, var(--orange-ink));
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
   }
   .support-feedback-options {
@@ -152,7 +152,7 @@
   .support-feedback-email-row input:hover { border-color: #bbb; }
   .support-feedback-email-row input:focus {
     outline: none;
-    border-color: var(--facet-color, #3b82f6);
+    border-color: var(--facet-color, var(--orange-ink));
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
   }
   .support-feedback-email-row .support-field-error:not(:empty) { display: block; }
@@ -236,9 +236,15 @@
     display: none;
   }
   .support-keyboard-hint {
+    display: none;
     font-size: 0.8rem;
     color: #666;
     margin-left: 0.5rem;
+  }
+  @media (pointer: fine) {
+    .support-keyboard-hint {
+      display: inline;
+    }
   }
 
   /* Attachments */
@@ -272,11 +278,11 @@
     background: rgba(0, 0, 0, 0.03);
   }
   .support-drop-zone.dragover {
-    border-color: var(--facet-color, #3b82f6);
+    border-color: var(--facet-color, var(--orange-ink));
     background: rgba(59, 130, 246, 0.04);
     color: var(--text, #222);
   }
-  .support-drop-zone:focus-visible { outline: 2px solid var(--facet-color, #3b82f6); outline-offset: 2px; }
+  .support-drop-zone:focus-visible { outline: 2px solid var(--facet-color, var(--orange-ink)); outline-offset: 2px; }
   .support-drop-zone input[type="file"] { display: none; }
   .support-file-list {
     margin-top: 0.5rem;
@@ -297,7 +303,7 @@
     padding: 0 0.25rem;
   }
   .support-file-entry .remove-file:hover { color: #c62828; }
-  .support-file-entry .remove-file:focus-visible { outline: 2px solid var(--facet-color, #3b82f6); outline-offset: 2px; border-radius: 2px; }
+  .support-file-entry .remove-file:focus-visible { outline: 2px solid var(--facet-color, var(--orange-ink)); outline-offset: 2px; border-radius: 2px; }
 
   /* Announcements banner */
   .support-announcements {
@@ -434,12 +440,15 @@
   /* ── Responsive: Phone, above the ≤375 stacked-tab breakpoint (376–480px) ──
      three tabs no longer fit on one row here, but this width is too wide for
      the full column stack below; scroll the row instead of letting the last
-     tab wrap onto its own line (G3-18). */
+     tab wrap onto its own line (G3-18). The mask fades the right edge so a
+     scrollable row reads as scrollable instead of clipped (G3-112). */
   @media (min-width: 376px) and (max-width: 480px) {
     .support-nav {
       flex-wrap: nowrap;
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
+      mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent 100%);
+      -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent 100%);
     }
     .support-nav button {
       flex: 0 0 auto;
@@ -485,11 +494,6 @@
     .support-drop-zone {
       padding: 1.5rem 1rem;
     }
-    .support-keyboard-hint {
-      display: block;
-      margin-left: 0;
-      margin-top: 0.25rem;
-    }
     .support-feedback-options {
       flex-wrap: wrap;
     }
@@ -530,7 +534,7 @@
   .support-create-form input:focus,
   .support-create-form select:focus {
     outline: none;
-    border-color: var(--facet-color, #3b82f6);
+    border-color: var(--facet-color, var(--orange-ink));
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
   }
   .support-create-options {
@@ -588,7 +592,7 @@
   }
   #support-review-send:focus-visible,
   #support-review-discard:focus-visible {
-    outline: 2px solid var(--facet-color, #3b82f6);
+    outline: 2px solid var(--facet-color, var(--orange-ink));
     outline-offset: 2px;
   }
   .support-review-floor { font-size: 0.85rem; color: #666; }
@@ -622,7 +626,7 @@
     font-size: 0.85rem;
   }
   .support-review-diagnostic-toggle:focus-visible {
-    outline: 2px solid var(--facet-color, #3b82f6);
+    outline: 2px solid var(--facet-color, var(--orange-ink));
     outline-offset: 2px;
   }
   .support-review-diagnostic-array-item { padding: 0.15rem 0; }
@@ -642,7 +646,7 @@
     <nav class="support-nav" role="tablist" aria-label="support sections">
       <button type="button" role="tab" id="tab-tickets" class="active" data-section="tickets" aria-selected="true" aria-controls="section-tickets" tabindex="0">active tickets</button>
       <button type="button" role="tab" id="tab-feedback" data-section="feedback" aria-selected="false" aria-controls="section-feedback" tabindex="-1">feedback</button>
-      <button type="button" role="tab" id="tab-help" data-section="help" aria-selected="false" aria-controls="section-help" tabindex="-1">help &amp; guidance</button>
+      <button type="button" role="tab" id="tab-help" data-section="help" aria-selected="false" aria-controls="section-help" tabindex="-1">help</button>
     </nav>
 
     <div id="support-review" class="support-review" hidden>
