@@ -75,6 +75,7 @@
     indexError: null,
     monthCache: new Map(),
     monthInflight: new Map(),
+    monthError: new Map(),
     warningVisible: false,
     facet: null,
     currentMax: 0
@@ -346,10 +347,12 @@
         const data = await window.apiJson(`${apiBase()}api/stats/${month}`);
         const result = { data: data || {}, error: null };
         state.monthCache.set(month, result);
+        state.monthError.delete(month);
         state.warningVisible = false;
         updateLabels();
         return result;
       } catch (error) {
+        state.monthError.set(month, error);
         state.warningVisible = true;
         updateLabels();
         const stale = state.monthCache.get(month) || null;
@@ -429,6 +432,7 @@
     state.indexError = null;
     state.monthCache = new Map();
     state.monthInflight = new Map();
+    state.monthError = new Map();
     state.warningVisible = false;
     state.facet = null;
     state.currentMax = 0;
@@ -620,6 +624,54 @@
     state.grid.innerHTML = '';
   }
 
+  // The grid is honest about not knowing yet: while a month's counts or the
+  // coverage index are still loading it says so, and a failed read offers a
+  // retry — never a month of disabled days that reads as "nothing here".
+  function renderGridNote(text, retry) {
+    clearGrid();
+    state.grid.className = 'date-nav-content__grid date-nav-content__grid--note';
+    delete state.grid.dataset.cols;
+    const note = document.createElement('div');
+    note.className = 'date-nav-content__note';
+    note.setAttribute('role', 'status');
+    note.textContent = text;
+    state.grid.appendChild(note);
+    if (retry) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'date-nav-content__retry';
+      button.textContent = 'try again';
+      button.addEventListener('click', retry);
+      state.grid.appendChild(button);
+    }
+  }
+
+  function renderIndexPending() {
+    if (state.indexLoaded) return false;
+    if (state.indexInflight) {
+      renderGridNote('loading months…');
+      state.indexInflight.then(() => {
+        if (state.open) renderPanel();
+      });
+      return true;
+    }
+    if (state.indexError) {
+      renderGridNote("couldn't load which months have material.", () => {
+        state.indexError = null;
+        fetchIndex(true).then(() => {
+          if (state.open) renderPanel();
+        });
+        renderGridNote('loading months…');
+      });
+      return true;
+    }
+    fetchIndex(true).then(() => {
+      if (state.open) renderPanel();
+    });
+    renderGridNote('loading months…');
+    return true;
+  }
+
   function renderCell({ value, label, count, selected = false, disabled = false, kind }) {
     const normalized = coerceCount(count);
     const button = document.createElement('button');
@@ -664,6 +716,7 @@
   }
 
   function renderYears() {
+    if (renderIndexPending()) return;
     const totals = yearTotals(state.months);
     const years = Object.keys(totals).sort();
     if (years.length === 0) years.push(String(new Date().getFullYear()));
@@ -687,6 +740,7 @@
   }
 
   function renderMonths() {
+    if (renderIndexPending()) return;
     const cells = [];
     const counts = [];
     for (let month = 1; month <= 12; month += 1) {
@@ -718,15 +772,26 @@
     state.year = Number(month.slice(0, 4));
     const cached = state.monthCache.get(month);
     if (!cached) {
+      if (state.monthError.has(month)) {
+        renderGridNote("couldn't load which days have material.", () => {
+          state.monthError.delete(month);
+          renderGridNote('loading days…');
+          fetchMonth(month, true).then(() => {
+            if (state.open && state.zoom === 'days' && state.month === month) renderPanel();
+          });
+        });
+        return;
+      }
       fetchMonth(month).then(() => {
         if (state.open && state.zoom === 'days' && state.month === month) {
           renderPanel();
           prefetchAdjacentMonths(month);
         }
       });
-    } else {
-      prefetchAdjacentMonths(month);
+      renderGridNote('loading days…');
+      return;
     }
+    prefetchAdjacentMonths(month);
 
     const data = cached?.data || {};
     const year = Number(month.slice(0, 4));

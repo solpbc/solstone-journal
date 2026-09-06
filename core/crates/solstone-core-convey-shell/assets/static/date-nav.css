@@ -220,3 +220,29 @@
 .date-nav-content__cell--empty .date-nav-content__cell-count {
   color: var(--ink-faint);
 }
+
+/* the grid's honest "not yet" states: a loading note, or a failed read with a retry */
+.date-nav-content__grid--note {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 12px;
+}
+
+.date-nav-content__note {
+  color: var(--ink-soft);
+  font-size: var(--text-sm, 14px);
+  text-align: center;
+}
+
+.date-nav-content__retry {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--cream-bright);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}

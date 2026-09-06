@@ -148,6 +148,37 @@
     equal('dayless heading emptied', document.querySelector('[data-date-nav-heading]')?.textContent, '');
 
     await mount(
+      'timeline',
+      '/app/timeline/20260714',
+      { mount: 'content', unit, allow_future: true },
+      {
+        index: { coverage: { start: '20260701', end: '20260714' }, months: { 202607: 9 } },
+        stats: { 202607: new Promise(() => {}) }
+      }
+    );
+    document.querySelector('[data-date-nav-trigger]')?.click();
+    await tick();
+    await tick();
+    assert('pending month stats render a loading note, not disabled days', document.querySelector('.date-nav-content__note')?.textContent === 'loading days…');
+    assert('pending month stats render no day cells', document.querySelectorAll('[data-date-nav-cell="day"]').length === 0);
+
+    await mount(
+      'timeline',
+      '/app/timeline/20260714',
+      { mount: 'content', unit, allow_future: true },
+      {
+        index: { coverage: { start: '20260701', end: '20260714' }, months: { 202607: 9 } },
+        stats: { 202607: (() => { const rejected = Promise.reject(new Error('index busy')); rejected.catch(() => {}); return rejected; })() }
+      }
+    );
+    document.querySelector('[data-date-nav-trigger]')?.click();
+    await tick();
+    await tick();
+    await tick();
+    assert('failed month stats render a failure note', (document.querySelector('.date-nav-content__note')?.textContent || '').startsWith("couldn't load which days"));
+    assert('failed month stats offer a retry', document.querySelector('.date-nav-content__retry')?.textContent === 'try again');
+
+    await mount(
       'activities',
       '/app/activities/20991230',
       { mount: 'content', unit: activityUnit, allow_future: true },
