@@ -85,6 +85,16 @@ key is a named entry with `cmd` and `every`, plus optional `enabled` and
 hourly boundary. Existing configurations are not backfilled with those metadata
 values. Writes go through `solstone-core-system`.
 
+At every start, before the scheduler loads, the supervisor brings the file up
+to date with what the journal ships: the built-in entries (`heartbeat`,
+`weekly-agents`, `cadence`, `brain`, `facet-candidates`, `rebuild-edges`) are
+added when absent, and the `maintenance:<routine>` entries generated from the
+maintenance routine registry are reconciled, retired names removed and missing
+routines added with their default cadence. Any entry an operator edited or
+added is left as it is, and an entry first added at a start waits for its next
+cadence mark rather than running in the boot catch-up. `journal maintenance
+sync` performs the maintenance half on demand.
+
 ## Related
 
 - [PROVIDERS.md](PROVIDERS.md) — one active brain, no fallback

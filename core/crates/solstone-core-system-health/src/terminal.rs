@@ -195,8 +195,8 @@ pub fn read_completed_since<S: HealthLogSource>(
     let current = NaiveDate::parse_from_str(day, "%Y%m%d")
         .map_err(|_| HealthError::InvalidDay(day.to_owned()))?;
     let previous = (current - Duration::days(1)).format("%Y%m%d").to_string();
-    let mut segments: BTreeMap<(Option<String>, String), i64> = BTreeMap::new();
-    let mut activities: BTreeMap<(Option<String>, String), i64> = BTreeMap::new();
+    let mut segments: BTreeMap<(String, Option<String>, String), i64> = BTreeMap::new();
+    let mut activities: BTreeMap<(String, Option<String>, String), i64> = BTreeMap::new();
     let mut malformed_line_count = 0;
     for scan_day in [day, previous.as_str()] {
         let states = read_terminal_states(source, scan_day, false)?;
@@ -210,12 +210,12 @@ pub fn read_completed_since<S: HealthLogSource>(
             }
             if let Some(segment) = unit.segment.filter(|value| !value.is_empty()) {
                 segments
-                    .entry((unit.stream, segment))
+                    .entry((scan_day.to_owned(), unit.stream, segment))
                     .and_modify(|current| *current = (*current).max(ts))
                     .or_insert(ts);
             } else if let Some(activity) = unit.activity.filter(|value| !value.is_empty()) {
                 activities
-                    .entry((unit.facet, activity))
+                    .entry((scan_day.to_owned(), unit.facet, activity))
                     .and_modify(|current| *current = (*current).max(ts))
                     .or_insert(ts);
             }
@@ -223,7 +223,8 @@ pub fn read_completed_since<S: HealthLogSource>(
     }
     let mut segment_values = segments
         .into_iter()
-        .map(|((stream, segment), ts)| CompletionSegment {
+        .map(|((day, stream, segment), ts)| CompletionSegment {
+            day,
             stream,
             segment,
             ts,
@@ -232,13 +233,15 @@ pub fn read_completed_since<S: HealthLogSource>(
     segment_values.sort_by_key(|item| {
         (
             item.ts,
+            item.day.clone(),
             item.stream.clone().unwrap_or_default(),
             item.segment.clone(),
         )
     });
     let mut activity_values = activities
         .into_iter()
-        .map(|((facet, activity), ts)| CompletionActivity {
+        .map(|((day, facet, activity), ts)| CompletionActivity {
+            day,
             facet,
             activity,
             ts,
@@ -247,6 +250,7 @@ pub fn read_completed_since<S: HealthLogSource>(
     activity_values.sort_by_key(|item| {
         (
             item.ts,
+            item.day.clone(),
             item.facet.clone().unwrap_or_default(),
             item.activity.clone(),
         )

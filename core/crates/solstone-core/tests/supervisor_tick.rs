@@ -949,7 +949,9 @@ async fn batch_observed_message_does_not_run_the_journal_stub() {
     let journal = TempJournal::new();
     journal.enable_thinking();
     let stub_marker = journal.install_journal_stub();
-    let mut child = start(&journal, None, &[]);
+    // The scheduler is off so a built-in cadence entry crossing a minute
+    // boundary cannot run the stub; only the observe path is under test.
+    let mut child = start(&journal, None, &["--no-schedule"]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
     let (_reader, mut write) = connect(&socket).await;

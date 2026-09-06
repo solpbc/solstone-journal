@@ -145,7 +145,7 @@ entry_type="http"
 method="GET"
 route="/app/search/api/read"
 handler="read"
-params=[{name="agent",kind="argument",type="text",required=false,nargs=1,multiple=false,options=["agent"],secondary=[],hidden=false,is_flag=false,count=false},{name="day",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--day","-d"],secondary=[],hidden=false,is_flag=false,count=false},{name="segment",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--segment","-s"],secondary=[],hidden=false,is_flag=false,count=false},{name="max_bytes",kind="option",type="integer",required=false,nargs=1,multiple=false,default=16384,options=["--max"],secondary=[],hidden=false,is_flag=false,count=false},{name="path",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--path"],secondary=[],hidden=false,is_flag=false,count=false}]
+params=[{name="agent",kind="argument",type="text",required=false,nargs=1,multiple=false,options=["agent"],secondary=[],hidden=false,is_flag=false,count=false},{name="day",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--day","-d"],secondary=[],hidden=false,is_flag=false,count=false},{name="segment",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--segment","-s"],secondary=[],hidden=false,is_flag=false,count=false},{name="max_bytes",kind="option",type="integer",required=false,nargs=1,multiple=false,default=16384,options=["--max"],secondary=[],hidden=false,is_flag=false,count=false},{name="path",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--path"],secondary=[],hidden=false,is_flag=false,count=false},{name="idx",kind="option",type="integer",required=false,nargs=1,multiple=false,options=["--idx"],secondary=[],hidden=false,is_flag=false,count=false},{name="entry_id",kind="option",type="integer",required=false,nargs=1,multiple=false,options=["--entry-id"],secondary=[],hidden=false,is_flag=false,count=false}]
 
 [[entries]]
 path=["journal","retention","config"]
@@ -172,7 +172,7 @@ params=[{name="stream",kind="option",type="text",required=false,nargs=1,multiple
 [[entries]]
 path=["journal","search"]
 kind="command"
-help="Search the journal index.\n\nUse 2-4 content terms instead of natural-language questions; question words\nlike what/how/did/when add noise in this keyword/BM25 index. Syntax: OR for\nany term, quoted phrases for exact text, and * for prefix matches. Zero\nresults means zero: broaden by dropping terms, using OR, then adding *.\nCounts help drill down with --facet, --agent, --day, and --time-bucket.\nResult ids are path:idx; read a hit with `solstone call journal read --path\n<path>` after stripping the :idx suffix."
+help="Search the journal index.\n\nUse 2-4 content terms instead of natural-language questions; question words\nlike what/how/did/when add noise in this keyword/BM25 index. Syntax: OR for\nany term, quoted phrases for exact text, and * for prefix matches. Zero\nresults means zero: broaden by dropping terms, using OR, then adding *.\nCounts help drill down with --facet, --agent, --day, and --time-bucket.\nRead one result as last indexed with `solstone call journal read --path PATH --idx IDX --entry-id ENTRY_ID`. Copy all three fields from the same result; do not use its display id as a file path."
 operation_id="journal.search"
 entry_type="http"
 method="GET"

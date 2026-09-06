@@ -46,7 +46,9 @@ use solstone_core_system::provider_runtime::{
     ProviderRuntimeState, ReasonCode, RuntimePhase, SystemRuntimeClock, WedgeState,
 };
 use solstone_core_system::queue::{SystemProcessStateProbe, TaskQueue, TaskQueueOptions};
-use solstone_core_system::schedule::{ScheduleEngine, ScheduleNow, initialize_schedule_config};
+use solstone_core_system::schedule::{
+    ScheduleEngine, ScheduleNow, initialize_schedule_config, register_default_entries,
+};
 use solstone_core_system::status_wire::CrashedServiceCandidate;
 
 use super::bus::{SupervisorProcessSink, SupervisorScheduleSink, SupervisorTaskQueueSink};
@@ -723,6 +725,54 @@ fn ready_sleep_marker_path(argv: &[String]) -> Option<&str> {
         Some("ready-sleep") | Some("ready-sleep-crash-once") => argv.get(2).map(String::as_str),
         _ => None,
     }
+}
+
+/// Bring `config/schedules.json` up to date with what the journal ships before
+/// the scheduler loads it: the built-in entries are registered when absent, and
+/// the maintenance entries are reconciled with the routine registry, retired
+/// names pruned and missing routines added. Entries an operator added or edited
+/// survive untouched. A failure leaves the file as it was and never blocks the
+/// boot; the scheduler then runs whatever the file already holds.
+/// Returns the schedule names added by this reconciliation, so the boot
+/// catch-up can leave them to start at their next mark.
+fn reconcile_schedules(schedule_config_path: &Path) -> BTreeSet<String> {
+    let mut fresh = BTreeSet::new();
+    match register_default_entries(schedule_config_path) {
+        Ok(added) if added.is_empty() => {}
+        Ok(added) => {
+            eprintln!(
+                "supervisor: built-in schedules registered: [{}]",
+                added.join(", ")
+            );
+            fresh.extend(added);
+        }
+        Err(error) => eprintln!(
+            "supervisor: built-in schedule registration skipped; scheduler runs the file as is: {error}"
+        ),
+    }
+    match solstone_core_maintenance::schedule_sync::sync(
+        schedule_config_path,
+        solstone_core_maintenance::registry::routines(),
+    ) {
+        Ok(summary) if summary.removed.is_empty() && summary.added.is_empty() => {}
+        Ok(summary) => {
+            eprintln!(
+                "supervisor: maintenance schedules reconciled (removed: [{}]; added: [{}])",
+                summary.removed.join(", "),
+                summary.added.join(", ")
+            );
+            fresh.extend(
+                summary
+                    .added
+                    .iter()
+                    .map(|id| solstone_core_maintenance::schedule_sync::schedule_name(id)),
+            );
+        }
+        Err(error) => eprintln!(
+            "supervisor: maintenance schedule reconciliation skipped; scheduler runs the file as is: {error}"
+        ),
+    }
+    fresh
 }
 
 fn resolve_journal_binary_from(exe_dir: &Path) -> PathBuf {
@@ -1409,6 +1459,7 @@ pub(crate) async fn boot_and_tick(
                 abort_published_setup(&lifecycle, &queue, &mut connection, &server, error).await,
             );
         }
+        let fresh_schedules = reconcile_schedules(&schedule_config_path);
         let mut scheduler = match ScheduleEngine::init(
             schedule_config_path,
             journal.join("health/scheduler.json"),
@@ -1430,7 +1481,7 @@ pub(crate) async fn boot_and_tick(
             queue: queue.clone(),
             server: server.clone(),
         };
-        let _ = scheduler.catch_up(now, &schedule_sink);
+        let _ = scheduler.catch_up(now, &schedule_sink, &fresh_schedules);
         Some(scheduler)
     };
     let fixture_binary = app_fixture_binary();

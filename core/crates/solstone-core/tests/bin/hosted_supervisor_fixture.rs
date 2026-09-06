@@ -104,7 +104,7 @@ fn run_launcher(journal: PathBuf, child_pid: PathBuf, outcome: PathBuf, nonce: S
         .arg(nonce)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::inherit())
         .spawn()
     {
         Ok(child) => child,

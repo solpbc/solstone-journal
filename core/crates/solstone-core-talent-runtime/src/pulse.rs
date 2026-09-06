@@ -11,10 +11,7 @@ use serde_json::{Map, Value, json};
 use solstone_core_facets::{
     load_activity_records, load_current, load_imports, load_recent_entity_names,
 };
-use solstone_core_home::{
-    HomeContext,
-    readers::{collect_anticipated_activities, read_latest},
-};
+use solstone_core_home::{HomeContext, readers::collect_anticipated_activities};
 use solstone_core_system_health::find_segment_dir;
 
 use crate::contract::{CommitPlan, GateDecision, ParsedOutput, PrePostState};
@@ -53,7 +50,6 @@ pub struct PulseWindowNote {
 pub struct PulsePreState {
     default: PulseSummary,
     window: PulseWindowNote,
-    previous_pulse: String,
     completed_since: String,
     awareness: String,
     anticipated: String,
@@ -98,10 +94,6 @@ pub fn apply_prompt_override(
     apply_template_vars(
         &mut prepared.config,
         &Map::from_iter([
-            (
-                "previous_pulse".to_owned(),
-                Value::String(state.previous_pulse.clone()),
-            ),
             (
                 "completed_since".to_owned(),
                 Value::String(state.completed_since.clone()),
@@ -204,8 +196,7 @@ fn build_packet(
     let home = HomeContext::new(&context.journal, now);
     let mut gaps = Vec::new();
     let default = default_pulse();
-    let previous = read_latest(&home, &day, "pulse", 7);
-    let (completed, window) = completed_since(&day, &prepared.config, context, &mut gaps);
+    let (completed, window) = completed_since(&prepared.config, context, &mut gaps);
     let awareness = awareness_context(&context.journal, &mut gaps);
     // This reader already owns the declared-facet activity scan used by the reference.
     let anticipated = collect_anticipated_activities(&home, &day);
@@ -221,7 +212,6 @@ fn build_packet(
     Ok(PulsePreState {
         default,
         window,
-        previous_pulse: previous.map_or_else(|| "(none - first run)".to_owned(), compact_json),
         completed_since: compact_json(completed),
         awareness: compact_json(awareness),
         anticipated: compact_json(Value::Array(anticipated)),
@@ -249,7 +239,6 @@ fn configured_day(prepared: &PreparedTalent) -> String {
 }
 
 fn completed_since(
-    day: &str,
     config: &Map<String, Value>,
     context: &ExecutionContext,
     gaps: &mut Vec<String>,
@@ -286,6 +275,10 @@ fn completed_since(
     let mut segments = Vec::new();
     let mut activities = Vec::new();
     for (_, kind, unit) in units.into_iter().take(MAX_UNITS) {
+        let Some(day) = unit.get("day").and_then(Value::as_str) else {
+            gaps.push("completed unit missing source day".to_owned());
+            continue;
+        };
         if kind == "segment" {
             if let Some(value) = read_segment_activity(day, &unit, context, gaps) {
                 segments.push(value);
@@ -347,7 +340,7 @@ fn read_segment_activity(
         }
     };
     Some(
-        json!({"segment": segment, "stream": stream, "ts": unit.get("ts").cloned().unwrap_or(Value::Null), "activity": activity}),
+        json!({"day": day, "segment": segment, "stream": stream, "ts": unit.get("ts").cloned().unwrap_or(Value::Null), "activity": activity}),
     )
 }
 
@@ -385,7 +378,7 @@ fn read_activity(
         return None;
     };
     Some(
-        json!({"facet": facet, "activity": activity, "ts": unit.get("ts").cloned().unwrap_or(Value::Null), "title": string_or(record.get("title"), &activity.replace('_', " ")), "description": string_or(record.get("description"), ""), "details": string_or(record.get("details"), ""), "source": record.get("source").cloned().unwrap_or(Value::Null), "segments": record.get("segments").cloned().unwrap_or_else(|| json!([]))}),
+        json!({"day": day, "facet": facet, "activity": activity, "ts": unit.get("ts").cloned().unwrap_or(Value::Null), "title": string_or(record.get("title"), &activity.replace('_', " ")), "description": string_or(record.get("description"), ""), "details": string_or(record.get("details"), ""), "source": record.get("source").cloned().unwrap_or(Value::Null), "segments": record.get("segments").cloned().unwrap_or_else(|| json!([]))}),
     )
 }
 
@@ -570,7 +563,6 @@ mod tests {
                 since_ms: Value::Null,
                 gaps: Vec::new(),
             },
-            previous_pulse: String::new(),
             completed_since: String::new(),
             awareness: String::new(),
             anticipated: String::new(),

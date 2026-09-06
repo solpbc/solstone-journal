@@ -99,7 +99,7 @@ pub(crate) fn run(
                             completed
                                 .segments
                                 .into_iter()
-                                .map(|item| Value::String(item.segment))
+                                .map(|item| serde_json::json!({"day": item.day, "segment": item.segment, "stream": item.stream, "ts": item.ts}))
                                 .collect(),
                         ),
                     ),
@@ -109,7 +109,7 @@ pub(crate) fn run(
                             completed
                                 .activities
                                 .into_iter()
-                                .map(|item| Value::String(item.activity))
+                                .map(|item| serde_json::json!({"day": item.day, "activity": item.activity, "facet": item.facet, "ts": item.ts}))
                                 .collect(),
                         ),
                     ),

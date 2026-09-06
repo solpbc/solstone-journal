@@ -314,17 +314,22 @@ mod tests {
     }
 
     #[test]
-    fn criterion_6_preview_pulse_reads_previous_without_writes() {
+    fn criterion_6_preview_pulse_prepares_current_window_without_writes() {
         let root = root();
         write_talent(
             &root,
             "pulse",
-            "{\n\"type\": \"generate\",\n\"hook\": {\"pre\": \"pulse\"}\n}\n$previous_pulse",
+            "{\n\"type\": \"generate\",\n\"hook\": {\"pre\": \"pulse\"}\n}\n$completed_since",
         );
         let before = snapshot(root.path());
         let output = run(&root, &["show", "pulse", "--prompt"]);
         assert_eq!(output.exit_code, 0, "{}", output.stderr);
-        assert!(output.stdout.contains("(none - first run)"));
+        assert!(
+            output.stdout.contains("\"input_segments\": 0"),
+            "{}",
+            output.stdout
+        );
+        assert!(!output.stdout.contains("$completed_since"));
         let after = snapshot(root.path());
         assert_eq!(before, after);
     }
