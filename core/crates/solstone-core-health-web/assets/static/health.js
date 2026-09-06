@@ -519,10 +519,6 @@
     return `${minutes}m ${secs}s`;
   }
 
-  function formatDuration(ms) {
-    return formatElapsed(Math.floor(ms / 1000));
-  }
-
   // One relative-time ladder for the whole page: the shared helper in
   // /static/relative-time.js (loaded by the shell), never a compact shadow.
   function relativeTime(ms) {
@@ -538,6 +534,15 @@
     const value = Number.isFinite(ms) && ms > 0 ? ms : 0;
     if (value < 60000) return 'just now';
     return relativeTime(value) + ' ago';
+  }
+
+  // A duration that is still running is not an age, so it gets the ladder
+  // without the "ago" and with the floor said as a length of time rather than
+  // "just now". A bare "8s" is the same defect as "0 seconds ago" (G3-104).
+  function runningFor(ms) {
+    const value = Number.isFinite(ms) && ms > 0 ? ms : 0;
+    if (value < 60000) return 'under a minute';
+    return relativeTime(value);
   }
 
 	  function truncate(str, len) {
@@ -1200,7 +1205,7 @@
       const strong = document.createElement('strong');
       strong.textContent = recentErrorName(e);
       summaryBtn.appendChild(strong);
-      summaryBtn.appendChild(document.createTextNode(' — ' + recentErrorOwnerPhrase(e) + ' '));
+      summaryBtn.appendChild(document.createTextNode(': ' + recentErrorOwnerPhrase(e) + ' '));
       if (count > 1) {
         const countSpan = document.createElement('span');
         countSpan.style.cssText = 'color: var(--ink-faint); font-size: 0.85em; font-weight: 600;';
@@ -1759,8 +1764,8 @@
     const confirmedLocal = Boolean(state.localHost && confirmedPrimary && displayedStream === state.localHost);
     if (!confirmedLocal && displayedStream) {
       elements.observeSourceNote.textContent = state.localHost
-        ? `this host's stream isn't reporting yet — showing ${displayedStream}`
-        : `this host is unknown — showing ${displayedStream}`;
+        ? `this host's stream isn't reporting yet. showing ${displayedStream}`
+        : `this host is unknown. showing ${displayedStream}`;
       elements.observeSourceNote.classList.remove('hidden');
     } else {
       elements.observeSourceNote.textContent = '';
@@ -1962,7 +1967,7 @@
         if (stale) {
           const badgeEl = document.createElement('span');
           badgeEl.className = 'stale-badge';
-          badgeEl.setAttribute('aria-label', 'stale — not responding');
+          badgeEl.setAttribute('aria-label', 'stale, not responding');
           badgeEl.textContent = 'stale';
           row.appendChild(badgeEl);
         }
@@ -2233,7 +2238,7 @@
       }
       const stateLabel = agent.event === 'thinking' ? 'working…' :
                         (agent.event === 'tool_start' || agent.event === 'tool_end') ? 'working…' : 'running…';
-      const elapsed = agent.elapsed_seconds ? formatElapsed(agent.elapsed_seconds) : '0s';
+      const elapsed = runningFor(Number(agent.elapsed_seconds) * 1000);
       card.children[0].querySelector('.activity-card-id-value').textContent = '…' + getAgentId(agent.use_id);
       card.children[1].textContent = talentName(agent.name) || 'default';
       card.children[2].textContent = stateLabel;
@@ -2314,7 +2319,7 @@
       const progress = imp.stage === 'initialization' ? 25 :
                       imp.stage === 'transcribing' ? 50 :
                       imp.stage === 'segmenting' ? 75 : 90;
-      const elapsed = imp.elapsed_ms ? formatDuration(imp.elapsed_ms) : '0s';
+      const elapsed = runningFor(Number(imp.elapsed_ms));
       const humanStage = imp.stage === 'initialization' ? 'starting…' :
                          imp.stage === 'transcribing' ? 'transcribing audio…' :
                          imp.stage === 'segmenting' ? 'organizing segments…' : 'processing…';
