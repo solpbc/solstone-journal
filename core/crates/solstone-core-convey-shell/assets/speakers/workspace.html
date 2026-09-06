@@ -3851,6 +3851,7 @@
       <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_KNOWN_VOICES_HEADER"></h2>
       <select id="spkKnownSort" class="spk-overview-select" aria-label="sort voices"></select>
     </div>
+    <p class="spk-overview-muted" data-copy="SPK_OVERVIEW_KNOWN_VOICES_QUALITY_HINT"></p>
     <div id="spkKnownVoices"></div>
   </section>
 
@@ -4064,7 +4065,7 @@
     ownerPanel.innerHTML = `
       <strong>${escapeHtml(COPY.SPK_OVERVIEW_YOUR_VOICE_CONFIRMED)}</strong>
       <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_SAMPLES_LABEL)}: ${escapeHtml(ownerSamplesText(meta))}</p>
-      <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_STREAMS_LABEL)}: ${escapeHtml(streams.length ? streams.join(' · ') : '—')}</p>
+      <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_STREAMS_LABEL)}: ${escapeHtml(streams.length ? streams.join(' · ') : COPY.SPK_OVERVIEW_OWNER_STREAMS_UNKNOWN)}</p>
       <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_COHESION_LABEL)}: ${cohesion(meta.intra_cosine_p25)}</p>
       <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_BUILT_PREFIX)}: ${absoluteDate(meta.created_at)}</p>
       <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_REFRESHED_PREFIX)}: ${absoluteDate(meta.last_refreshed_at)}</p>
@@ -4077,7 +4078,7 @@
   }
 
   function qualityLine(label, value) {
-    return `<p class="spk-card-line">${escapeHtml(label)}: ${escapeHtml(String(qualityCount(value)))}</p>`;
+    return `<p class="spk-card-line">${escapeHtml(label)}: ${escapeHtml(qualityCount(value).toLocaleString())}</p>`;
   }
 
   function qualityRows(data) {
@@ -4646,7 +4647,7 @@
     const context = window.SPEAKERS_CONTEXT || {};
     if (context.isDay) return;
     document.getElementById('speakersOverviewView').hidden = false;
-    ownerPanel.innerHTML = window.SurfaceState.loading({ text: 'loading speakers…' });
+    ownerPanel.innerHTML = window.SurfaceState.loading({ text: 'loading your voice…' });
     // These two panels otherwise sit blank (not a labeled loading state) for
     // as long as their own reads take, which can be well over ten seconds.
     qualityPanel.innerHTML = window.SurfaceState.loading({ text: 'loading voice quality…' });

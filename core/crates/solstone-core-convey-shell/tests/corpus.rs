@@ -691,7 +691,11 @@ async fn speakers_state_uses_the_python_local_date_semantics() {
     // 120 + 2: G1-40 added SPK_OVERVIEW_COHESION_UNMEASURED and
     // SPK_OVERVIEW_OWNER_SAMPLES_CAP_SUFFIX (the QUALITY_READY -> QUALITY_READY_TEMPLATE
     // rename is a same-key-count edit).
-    assert_eq!(state["speaker_copy"].as_object().unwrap().len(), 122);
+    // 122 + 2: G1-111 added SPK_OVERVIEW_KNOWN_VOICES_QUALITY_HINT (a legend
+    // sentence for the voice-quality words) and G1-114 added
+    // SPK_OVERVIEW_OWNER_STREAMS_UNKNOWN (the "where heard" empty-value copy,
+    // replacing a bare em-dash).
+    assert_eq!(state["speaker_copy"].as_object().unwrap().len(), 124);
 }
 
 #[tokio::test]
