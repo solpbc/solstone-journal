@@ -3450,6 +3450,16 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       range = { start, end: start + DEFAULT_LEN };
       renderTimeline();
       updateZoom();
+      // Picking a stretch on the DAY column narrows the DETAIL rail but
+      // does not itself select a block — acknowledge step one is done so
+      // the instructions don't read as if the click had no effect.
+      if (!selectedSegment) {
+        panel.innerHTML = window.SurfaceState.empty({
+          icon: window.ConveyIcons.svg('clock'),
+          heading: 'your day at a glance',
+          desc: 'now pick a block in detail to read it'
+        });
+      }
     };
     el.addEventListener('click', e => {
       e.stopPropagation();
