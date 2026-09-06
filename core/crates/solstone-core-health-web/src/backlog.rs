@@ -4,7 +4,7 @@
 use crate::backlog_reasons;
 use serde_json::{Map, Value, json};
 
-const CANT_TELL: &str = "still checking — give me a moment to see where your journal stands.";
+const CANT_TELL: &str = "still checking where your journal stands.";
 const CAUGHT_UP: &str = "your journal's all caught up.";
 
 pub fn load(root: &std::path::Path) -> Option<Map<String, Value>> {
@@ -76,6 +76,34 @@ pub fn verdict(backlog: Option<&Map<String, Value>>) -> String {
         format!("{} more days are still catching up", number(pending))
     };
     format!("{stuck}. {pending}.")
+}
+
+/// How many days are still catching up, so the surface can name the one day
+/// rather than saying "1 day".
+pub fn pending_days(backlog: Option<&Map<String, Value>>) -> f64 {
+    let Some(backlog) = backlog else {
+        return 0.0;
+    };
+    if backlog.get("degraded") == Some(&Value::Bool(true)) {
+        return 0.0;
+    }
+    count(backlog.get("pending_days"))
+}
+
+/// The oldest day still catching up, as its `YYYYMMDD` key. The surface formats
+/// it through the shared date helper; this never returns a rendered label.
+pub fn oldest_pending_day(backlog: Option<&Map<String, Value>>) -> Value {
+    let Some(backlog) = backlog else {
+        return Value::Null;
+    };
+    if backlog.get("degraded") == Some(&Value::Bool(true)) {
+        return Value::Null;
+    }
+    backlog
+        .get("oldest_pending_day")
+        .filter(|value| value.as_str().is_some_and(|day| !day.is_empty()))
+        .cloned()
+        .unwrap_or(Value::Null)
 }
 
 fn reason(day: &Map<String, Value>) -> &'static str {
@@ -175,8 +203,26 @@ pub fn copy() -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{count, stuck_rows, verdict};
-    use serde_json::json;
+    use super::{count, oldest_pending_day, pending_days, stuck_rows, verdict};
+    use serde_json::{Value, json};
+
+    #[test]
+    fn the_pending_day_is_carried_as_a_key_and_withheld_when_undecided() {
+        let backlog = json!({"pending_days":1,"stuck_days":0,"oldest_pending_day":"20260904"});
+        assert_eq!(pending_days(backlog.as_object()), 1.0);
+        assert_eq!(oldest_pending_day(backlog.as_object()), json!("20260904"));
+
+        // A degraded read knows nothing, so it names no day and counts no days.
+        let degraded = json!({"pending_days":3,"oldest_pending_day":"20260904","degraded":true});
+        assert_eq!(pending_days(degraded.as_object()), 0.0);
+        assert_eq!(oldest_pending_day(degraded.as_object()), Value::Null);
+
+        for absent in [json!({"pending_days":2}), json!({"oldest_pending_day":""})] {
+            assert_eq!(oldest_pending_day(absent.as_object()), Value::Null);
+        }
+        assert_eq!(oldest_pending_day(None), Value::Null);
+        assert_eq!(pending_days(None), 0.0);
+    }
 
     #[test]
     fn retry_and_repair_states_keep_their_distinct_recovery_guidance() {
@@ -220,10 +266,7 @@ mod tests {
 
     #[test]
     fn verdict_covers_each_numeric_arm_and_degraded() {
-        assert_eq!(
-            verdict(None),
-            "still checking — give me a moment to see where your journal stands."
-        );
+        assert_eq!(verdict(None), "still checking where your journal stands.");
         assert_eq!(
             verdict(json!({"pending_days":1,"stuck_days":0}).as_object()),
             "1 day is still catching up."
@@ -238,7 +281,7 @@ mod tests {
         );
         assert_eq!(
             verdict(json!({"pending_days":2,"stuck_days":3,"degraded":true}).as_object()),
-            "still checking — give me a moment to see where your journal stands."
+            "still checking where your journal stands."
         );
     }
 

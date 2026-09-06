@@ -13,13 +13,26 @@
     "LOGS_STREAM_FILTER_LABEL": "stream"
   };
   const HEALTH_GLANCE_COPY = {
-    "HEALTH_GLANCE_CATCHING_UP": "i'm catching up on {n} task(s) in the background. last update {age} ago.",
+    "HEALTH_GLANCE_CATCHING_UP": "catching up on {n} {tasks} in the background. last update {age} ago.",
+    "HEALTH_GLANCE_CHECKING": "checking where your journal stands…",
     "HEALTH_GLANCE_CLIENT_SILENT": "one of your devices hasn't reached your journal recently.",
+    "HEALTH_GLANCE_DEVICE_FAILING": "{device} isn't reaching your journal.",
+    "HEALTH_GLANCE_DEVICES_FAILING": "{n} devices aren't reaching your journal: {devices}.",
+    "HEALTH_GLANCE_DEVICE_SILENT": "{device} hasn't added to your journal in {age}.",
+    "HEALTH_GLANCE_DEVICE_SILENT_NO_AGE": "{device} hasn't added to your journal recently.",
+    "HEALTH_GLANCE_DEVICES_SILENT": "{n} devices haven't added to your journal recently: {devices}.",
+    "HEALTH_GLANCE_DEVICES_UNAVAILABLE": "your devices' delivery status is unavailable right now.",
     "HEALTH_GLANCE_OK": "everything's working. the solstone app last added to your journal {age} ago.",
     "HEALTH_GLANCE_BRAIN_ATTENTION": "{headline}",
-    "HEALTH_GLANCE_SERVICES_ATTENTION": "{n} service(s) need attention: {service_names}.",
-    "HEALTH_GLANCE_SERVICES_UNREACHABLE": "i couldn't reach my own services. check that your journal is running."
+    "HEALTH_GLANCE_SERVICE_ATTENTION": "1 service needs attention: {service_names}.",
+    "HEALTH_GLANCE_SERVICES_ATTENTION": "{n} services need attention: {service_names}.",
+    "HEALTH_GLANCE_SERVICES_UNREACHABLE": "the journal's services couldn't be reached. check that your journal is running."
   };
+  // Worst signal wins, and green is earned: a verdict may not read "everything's
+  // working" while the device rows below it say a device has gone quiet, and a
+  // failure to derive device delivery renders unavailable, never green.
+  // vpx/design-system/health-verdict-glance.md
+  const GLANCE_DEVICES_ACTION = { href: '#registeredClientsCard', label: 'view devices' };
 
   let brainSnapshot = null;
   let backlogCopy = {};
@@ -107,6 +120,7 @@
 
   // DOM elements
   const elements = {
+    healthGlance: document.getElementById('healthGlance'),
     healthGlanceSentence: document.getElementById('healthGlanceSentence'),
     glanceTokensValue: document.getElementById('glanceTokensValue'),
     glanceActivityValue: document.getElementById('glanceActivityValue'),
@@ -233,17 +247,42 @@
     logHealthError(error, 'health state fetch failed');
   }
 
+  // "1 day is still catching up" named no day and went nowhere. When the day is
+  // known and it is the only thing outstanding, name it through the shared date
+  // helper and link it; otherwise keep the sentence and point at the oldest.
+  function renderBacklogVerdict(line, data, stuckCount) {
+    const day = typeof data.oldest_pending_day === 'string' ? data.oldest_pending_day : '';
+    const pending = Number(data.pending_days) || 0;
+    const label = day ? window.JournalFormat.day(day) : '';
+    if (!day || !label) {
+      line.textContent = data.verdict || '';
+      return;
+    }
+    const link = document.createElement('a');
+    link.className = 'backlog-verdict-day';
+    link.href = `/app/timeline/${encodeURIComponent(day)}`;
+    if (pending === 1 && stuckCount === 0) {
+      line.textContent = '';
+      link.textContent = `${label} is still catching up →`;
+      line.appendChild(link);
+      return;
+    }
+    line.textContent = `${data.verdict || ''} `;
+    link.textContent = `oldest: ${label} →`;
+    line.appendChild(link);
+  }
+
   function renderBacklogState(backlogState) {
     const data = backlogState || {};
     backlogCopy = data.copy || {};
+    const host = document.querySelector('[data-backlog-stuck-rows]');
+    const rowsHost = host && host.querySelector('[data-backlog-rows]');
+    const rows = Array.isArray(data.stuck_rows) ? data.stuck_rows : [];
     const verdictLine = document.querySelector('#backlogVerdict .backlog-verdict-line');
-    if (verdictLine) verdictLine.textContent = data.verdict || '';
+    if (verdictLine) renderBacklogVerdict(verdictLine, data, rows.length);
     clearHealthStateError();
 
-    const host = document.querySelector('[data-backlog-stuck-rows]');
     if (!host) return;
-    const rowsHost = host.querySelector('[data-backlog-rows]');
-    const rows = Array.isArray(data.stuck_rows) ? data.stuck_rows : [];
     if (!rowsHost || rows.length === 0) {
       host.hidden = true;
       if (rowsHost) rowsHost.replaceChildren();
@@ -459,7 +498,7 @@
   function formatNextRun(epochMs) {
     if (!epochMs) return '';
     const delta = epochMs - Date.now();
-    if (delta < 0) return 'overdue';
+    if (delta < 0) return 'due now';
     const mins = Math.floor(delta / 60000);
     if (mins < 60) return `in ${mins}m`;
     const hours = Math.floor(mins / 60);
@@ -489,6 +528,72 @@
     });
   }
 
+  function registeredClientName(client) {
+    return client.display_label || client.device_label || client.cid_short || client.cid || 'an unnamed device';
+  }
+
+  function registeredClientAge(client) {
+    return Number.isFinite(client.capture_elapsed_ms) ? relativeTime(client.capture_elapsed_ms) : null;
+  }
+
+  function describeRegisteredClient(client) {
+    const age = registeredClientAge(client);
+    return age ? `${registeredClientName(client)} (${age})` : registeredClientName(client);
+  }
+
+  function byQuietestFirst(a, b) {
+    return (Number.isFinite(b.capture_elapsed_ms) ? b.capture_elapsed_ms : -1)
+      - (Number.isFinite(a.capture_elapsed_ms) ? a.capture_elapsed_ms : -1);
+  }
+
+  // The device-delivery half of the verdict. Returns null when device delivery
+  // has nothing to say, so the caller falls through to the other signals.
+  function selectDeviceVerdict() {
+    const clients = state.registeredClients;
+    if (!Array.isArray(clients)) {
+      // No derived status is its own honest state — it is never an upgrade to green.
+      return {
+        key: state.registeredClientsFailed ? 'HEALTH_GLANCE_DEVICES_UNAVAILABLE' : 'HEALTH_GLANCE_CHECKING',
+        vars: {},
+        action: state.registeredClientsFailed ? GLANCE_DEVICES_ACTION : null,
+      };
+    }
+    const failing = clients.filter(client => client.failing === true).sort(byQuietestFirst);
+    if (failing.length === 1) {
+      return {
+        key: 'HEALTH_GLANCE_DEVICE_FAILING',
+        vars: { device: registeredClientName(failing[0]) },
+        action: GLANCE_DEVICES_ACTION,
+      };
+    }
+    if (failing.length > 1) {
+      return {
+        key: 'HEALTH_GLANCE_DEVICES_FAILING',
+        vars: { n: String(failing.length), devices: failing.map(registeredClientName).join(', ') },
+        action: GLANCE_DEVICES_ACTION,
+      };
+    }
+    const silent = clients
+      .filter(client => client.capture_state === 'offline' || client.capture_state === 'stale')
+      .sort(byQuietestFirst);
+    if (silent.length === 1) {
+      const age = registeredClientAge(silent[0]);
+      return {
+        key: age ? 'HEALTH_GLANCE_DEVICE_SILENT' : 'HEALTH_GLANCE_DEVICE_SILENT_NO_AGE',
+        vars: { device: registeredClientName(silent[0]), age: age || '' },
+        action: GLANCE_DEVICES_ACTION,
+      };
+    }
+    if (silent.length > 1) {
+      return {
+        key: 'HEALTH_GLANCE_DEVICES_SILENT',
+        vars: { n: String(silent.length), devices: silent.map(describeRegisteredClient).join(', ') },
+        action: GLANCE_DEVICES_ACTION,
+      };
+    }
+    return null;
+  }
+
 	  function selectGlanceSentence(state, now) {
     const activeAgents = Array.from(state.agents.values()).filter(agent => agent.event !== 'finish' && agent.event !== 'error').length;
     const activeImports = Array.from(state.imports.values()).filter(imp => imp.event !== 'completed' && imp.event !== 'error').length;
@@ -504,7 +609,7 @@
         ...staleHeartbeats,
       ])).sort();
       return {
-        key: 'HEALTH_GLANCE_SERVICES_ATTENTION',
+        key: names.length === 1 ? 'HEALTH_GLANCE_SERVICE_ATTENTION' : 'HEALTH_GLANCE_SERVICES_ATTENTION',
         vars: {
           n: String(names.length),
           service_names: names.map(serviceName).join(', '),
@@ -519,20 +624,27 @@
       };
     }
 
+    // Device delivery is part of the verdict, not only of the rows below it.
+    const deviceVerdict = selectDeviceVerdict();
+    if (deviceVerdict) return deviceVerdict;
+
     const clients = Array.from(state.clients.values());
     if (clients.length > 0 && clients.every(client => (now - client.lastSeen) >= STALE_MS)) {
       const ageMs = Math.min(...clients.map(client => now - client.lastSeen));
       return {
         key: 'HEALTH_GLANCE_CLIENT_SILENT',
         vars: { age: relativeTime(ageMs) },
+        action: GLANCE_DEVICES_ACTION,
       };
     }
 
 	    if (activeAgents > 0 || activeImports > 0) {
+      const catchingUp = activeAgents + activeImports;
       return {
         key: 'HEALTH_GLANCE_CATCHING_UP',
         vars: {
-          n: String(activeAgents + activeImports),
+          n: String(catchingUp),
+          tasks: catchingUp === 1 ? 'task' : 'tasks',
           age: relativeTime(now - (state.lastEventTs || now)),
         },
       };
@@ -557,10 +669,43 @@
     return text;
   }
 
+  const GLANCE_ATTENTION_KEYS = new Set([
+    'HEALTH_GLANCE_SERVICES_UNREACHABLE',
+    'HEALTH_GLANCE_SERVICE_ATTENTION',
+    'HEALTH_GLANCE_SERVICES_ATTENTION',
+    'HEALTH_GLANCE_BRAIN_ATTENTION',
+    'HEALTH_GLANCE_DEVICE_FAILING',
+    'HEALTH_GLANCE_DEVICES_FAILING',
+    'HEALTH_GLANCE_DEVICE_SILENT',
+    'HEALTH_GLANCE_DEVICE_SILENT_NO_AGE',
+    'HEALTH_GLANCE_DEVICES_SILENT',
+    'HEALTH_GLANCE_DEVICES_UNAVAILABLE',
+    'HEALTH_GLANCE_CLIENT_SILENT',
+  ]);
+
+  // Anything the verdict calls out has to be somewhere the owner can go.
+  function renderGlanceVerdict(selection) {
+    const line = elements.healthGlanceSentence;
+    line.textContent = formatGlanceSentence(selection);
+    const action = selection && selection.action;
+    if (action) {
+      line.appendChild(document.createTextNode(' '));
+      const link = document.createElement('a');
+      link.className = 'glance-action';
+      link.href = action.href;
+      link.textContent = `${action.label} →`;
+      line.appendChild(link);
+    }
+    elements.healthGlance?.classList.toggle(
+      'glance-attention',
+      Boolean(selection && GLANCE_ATTENTION_KEYS.has(selection.key))
+    );
+  }
+
   function updateStatusSummary() {
     const now = Date.now();
     const selection = selectGlanceSentence(state, now);
-    elements.healthGlanceSentence.textContent = formatGlanceSentence(selection);
+    renderGlanceVerdict(selection);
 
     elements.glanceTokensValue.textContent = Number.isFinite(state.todayTokens)
       ? window.JournalFormat.compactTokens(state.todayTokens)
@@ -1337,8 +1482,17 @@
         elements.schedulesValue.replaceChildren(details);
       }
       const schedules = [...state.schedules].sort((a, b) => Number(a.next_run || Infinity) - Number(b.next_run || Infinity));
+      // "next overdue" is not a sentence: when something is already due, say so
+      // and count it; otherwise say when the soonest one runs.
+      const dueNow = schedules.filter(schedule => schedule.due
+        || (schedule.next_run && Number(schedule.next_run) <= Date.now())).length;
       const next = formatNextRun(schedules[0].next_run);
-      details.querySelector('summary').textContent = `${schedules.length} scheduled${next ? ' · next ' + next : ''}`;
+      const tail = dueNow === 1
+        ? ' · one is due now'
+        : dueNow > 1
+          ? ` · ${dueNow} are due now`
+          : next ? ' · next ' + next : '';
+      details.querySelector('summary').textContent = `${schedules.length} scheduled${tail}`;
       const labels = {brain: 'processing check', cadence: 'processing schedule', heartbeat: 'journal review', 'facet-candidates': 'facet suggestions'};
       details.querySelector('ul').innerHTML = schedules.map(schedule => {
         const name = schedule.name || 'unnamed';
@@ -1401,11 +1555,41 @@
     }
   }
 
+  // What the observe card can honestly say when no stream is reporting live.
+  // The registered-device list is a separate population from the observe
+  // stream, so "unavailable" is only true when that list is unreadable too.
+  function observeQuietState() {
+    if (!Array.isArray(state.registeredClients)) {
+      return state.registeredClientsFailed
+        ? { badge: 'unavailable', unavailable: true, heading: 'device activity is unavailable right now.' }
+        : { badge: 'checking', unavailable: false, heading: 'checking device activity…' };
+    }
+    if (state.registeredClients.length === 0) {
+      return { badge: 'no devices', unavailable: false, heading: 'no devices are linked to your journal yet.' };
+    }
+    const adding = state.registeredClients
+      .filter(client => client.capture_state === 'active')
+      .sort((a, b) => (Number.isFinite(a.capture_elapsed_ms) ? a.capture_elapsed_ms : Infinity)
+        - (Number.isFinite(b.capture_elapsed_ms) ? b.capture_elapsed_ms : Infinity));
+    if (adding.length > 0) {
+      const age = registeredClientAge(adding[0]);
+      const name = registeredClientName(adding[0]);
+      return {
+        badge: 'adding',
+        unavailable: false,
+        heading: age
+          ? `${name} added to your journal ${age} ago. live detail isn't being reported right now.`
+          : `${name} is adding to your journal. live detail isn't being reported right now.`,
+      };
+    }
+    return { badge: 'quiet', unavailable: false, heading: 'no device is reporting live activity right now.' };
+  }
+
   // Update observe mode badge
   function updateObserveMode(displayedClient = null) {
     if (state.clients.size === 0) {
       elements.observeModeBadge.className = 'health-badge idle';
-      elements.observeModeLabel.textContent = 'unavailable';
+      elements.observeModeLabel.textContent = observeQuietState().badge;
       return;
     }
 
@@ -1430,17 +1614,12 @@
 
   // Update observe card
   function updateObserve() {
-    document.querySelector('.observe-card').dataset.unavailable = String(state.clients.size === 0);
-    if (state.clients.size === 0) {
+    const quiet = state.clients.size === 0 ? observeQuietState() : null;
+    document.querySelector('.observe-card').dataset.unavailable = String(Boolean(quiet && quiet.unavailable));
+    if (quiet) {
       elements.observeEmpty.classList.remove('hidden');
       const heading = elements.observeEmpty.querySelector('.surface-state-heading');
-      heading.textContent = state.registeredClientsFailed && state.registeredClients === null
-        ? 'device activity is unavailable right now'
-        : state.registeredClients === null
-        ? 'checking device activity…'
-        : state.registeredClients.length === 0
-          ? 'no devices are linked to your journal yet.'
-          : "live activity isn't available yet. your devices are listed below.";
+      heading.textContent = quiet.heading;
       elements.observeContent.classList.add('hidden');
       elements.observeSourceNote.classList.add('hidden');
       elements.observeSourceNote.textContent = '';
@@ -1472,11 +1651,11 @@
       {
         statusEl: elements.screencastStatus,
         detailEl: elements.screencastDetail,
-        idleText: 'Not recording',
+        idleText: 'idle',
         extract: () => {
           if (!primary?.screencast) return null;
           const recording = primary.screencast.recording;
-          if (!recording) return { status: 'Not recording' };
+          if (!recording) return { status: 'idle' };
           const streams = primary.screencast.streams || [];
           const elapsed = primary.screencast.window_elapsed_seconds || 0;
           const streamCount = streams.length;
@@ -1493,16 +1672,16 @@
       {
         statusEl: elements.tmuxStatus,
         detailEl: elements.tmuxDetail,
-        idleText: 'Not capturing',
+        idleText: 'idle',
         extract: () => {
           if (!tmux?.tmux) return null;
-          if (!tmux.tmux.capturing) return { status: 'Not capturing' };
+          if (!tmux.tmux.capturing) return { status: 'idle' };
           const captures = tmux.tmux.captures || 0;
           const sessions = tmux.tmux.sessions || [];
           const elapsed = tmux.tmux.window_elapsed_seconds || 0;
           const mins = Math.max(1, Math.round(elapsed / 60));
           return {
-            status: `observing (${captures} snapshots, ~${mins} min)`,
+            status: `adding ${captures} ${captures === 1 ? 'snapshot' : 'snapshots'}, ~${mins} min`,
             detail: sessions.length > 0 ? sessions.join(', ') : '',
           };
         },
@@ -1510,15 +1689,15 @@
       {
         statusEl: elements.audioStatus,
         detailEl: elements.audioDetail,
-        idleText: 'Listening (quiet)',
+        idleText: 'quiet',
         extract: () => {
           if (!primary?.audio) return null;
           const hits = primary.audio.threshold_hits || 0;
           const willSave = primary.audio.will_save ? ' · saving' : '';
           return {
             status: hits > 0
-              ? `Listening (${hits} sound${hits === 1 ? '' : 's'} detected)${willSave}`
-              : 'Listening (quiet)',
+              ? `${hits} sound${hits === 1 ? '' : 's'} noticed${willSave}`
+              : 'quiet',
           };
         },
       },
@@ -1529,9 +1708,9 @@
         extract: () => {
           if (!primary?.activity) return null;
           const idleMs = primary.activity.idle_time_ms || 0;
-          if (primary.activity.power_save) return { status: 'Power saving' };
-          if (primary.activity.screen_locked) return { status: 'Screen locked' };
-          if (primary.activity.sink_muted) return { status: 'Audio muted' };
+          if (primary.activity.power_save) return { status: 'power saving' };
+          if (primary.activity.screen_locked) return { status: 'screen locked' };
+          if (primary.activity.sink_muted) return { status: 'audio muted' };
           return { status: `idle: ${Math.floor(idleMs/1000)}s` };
         },
       },
@@ -1688,7 +1867,7 @@
 	      return `last added ${relativeTime(deltaMs)} ago`;
 	    }
 	    const lastSeen = client.last_seen_at && Date.parse(client.last_seen_at);
-	    if (!Number.isFinite(lastSeen)) return 'no capture yet';
+	    if (!Number.isFinite(lastSeen)) return 'no material yet';
 	    const deltaMs = Date.now() - lastSeen;
 	    if (deltaMs < 0) return 'last seen from future';
 	    return `last reported ${relativeTime(deltaMs)} ago`;
@@ -1770,9 +1949,9 @@
         stateClass = 'failing';
         labelText = 'failing';
       } else if (client.capture_state === 'no_capture') {
-        labelText = 'no capture yet';
+        labelText = 'no material yet';
       } else if (client.capture_state === 'unknown') {
-        labelText = 'capture unknown';
+        labelText = 'delivery unknown';
       }
       const row = document.createElement('div');
       row.className = 'registered-client-row';
@@ -1807,10 +1986,15 @@
         row.appendChild(recoveryEl);
       }
 
-      const metaEl = document.createElement('span');
-      metaEl.className = 'registered-client-meta';
-      metaEl.textContent = registeredClientMeta(client);
-      row.appendChild(metaEl);
+      // The chip already carries this state for a device with no delivery yet;
+      // printing it again on the right of the same row said nothing new.
+      const metaText = registeredClientMeta(client);
+      if (metaText && metaText !== labelText) {
+        const metaEl = document.createElement('span');
+        metaEl.className = 'registered-client-meta';
+        metaEl.textContent = metaText;
+        row.appendChild(metaEl);
+      }
 
       const skewEl = document.createElement('span');
       skewEl.className = 'registered-client-skew' + (client.clock_skew ? '' : ' hidden');
