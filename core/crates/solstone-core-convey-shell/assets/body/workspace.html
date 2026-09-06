@@ -7,6 +7,12 @@
   max-width: 1180px;
 }
 
+/* No import yet: the day picker has nothing to navigate to, so it stays
+   out of the way until renderOverview finds coverage to show. */
+.body-shell[data-body-empty] [data-date-nav] {
+  display: none;
+}
+
 .body-title {
   margin: 0;
   font-family: var(--font-display);
@@ -1113,23 +1119,24 @@ a.body-day-cell:focus-visible {
   }
 
   function renderArchiveHero(archive) {
-    const coverage = archive?.coverage;
+    // Only called once there is coverage to show — the no-data case is
+    // handled by renderOverview's own empty-state branch, which skips this
+    // card entirely rather than rendering it around an empty message.
+    const coverage = archive.coverage;
     return html([
       '<section class="body-card body-archive-hero" aria-labelledby="body-archive-title">',
       '<div class="body-hero-icon" aria-hidden="true">♡</div>',
       '<div>',
       '<h2 id="body-archive-title" class="body-section-title">your body\'s record</h2>',
       '<p class="body-hero-kicker">what your journal holds about your body over time.</p>',
-      coverage ? html([
-        '<p class="body-hero-coverage body-num">',
-        `${escapeHtml(coverage.range_label)} &middot; ${escapeHtml(archive.months_observed)} months held`,
-        '</p>',
-        '<p class="body-hero-stats">',
-        `<span class="body-num">${escapeHtml(archive.entry_total_label)}</span> entries kept`,
-        ` &middot; <span class="body-num">${escapeHtml(archive.import_count)}</span> body `,
-        Number(archive.import_count) === 1 ? "import" : "imports",
-        '</p>',
-      ]) : '<p class="body-subtitle">no body data yet. body imports will appear here. <a class="body-link" href="/app/import/">import body data &rarr;</a></p>',
+      '<p class="body-hero-coverage body-num">',
+      `${escapeHtml(coverage.range_label)} &middot; ${escapeHtml(archive.months_observed)} months held`,
+      '</p>',
+      '<p class="body-hero-stats">',
+      `<span class="body-num">${escapeHtml(archive.entry_total_label)}</span> entries kept`,
+      ` &middot; <span class="body-num">${escapeHtml(archive.import_count)}</span> body `,
+      Number(archive.import_count) === 1 ? "import" : "imports",
+      '</p>',
       '</div>',
       '</section>',
     ]);
@@ -1478,6 +1485,15 @@ a.body-day-cell:focus-visible {
 
   function renderOverview(status) {
     const archive = asObject(status.archive);
+    if (!archive.coverage) {
+      // Nothing imported yet: the hero plus the one action is the whole
+      // page — no record card, quick actions, day grid or coverage lists
+      // to render around a message that says there's nothing here.
+      return html([
+        renderHeader("body", "your body, brought into your journal.", false),
+        '<p class="body-subtitle">no body data yet. body imports will appear here. <a class="body-link" href="/app/import/">import body data &rarr;</a></p>',
+      ]);
+    }
     return html([
       renderHeader("body", "your body, brought into your journal.", false),
       renderFreshnessStrip(status.freshness),
@@ -1498,6 +1514,8 @@ a.body-day-cell:focus-visible {
     setLoading("loading body data…");
     try {
       const status = await window.apiJson("/app/body/api/status");
+      const hasData = Boolean(asObject(status.archive).coverage);
+      document.querySelector(".body-shell")?.toggleAttribute("data-body-empty", !hasData);
       reveal(renderOverview(status));
       initRecentCarousel();
     } catch (err) {
