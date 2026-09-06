@@ -1939,6 +1939,7 @@ body.presentation-mode .entity-desc { color: #4b5563; }
 .entity-card-legend{margin:0 0 12px;font-size:0.85em;color:var(--ink-soft)}
 .entity-card-legend .entity-facet-dot,.entity-card-legend .entity-card-type-indicator{display:inline-block;vertical-align:middle;margin-right:4px;background:var(--ink-faint)}
 #journal-entity-cards-content[aria-busy="true"]{opacity:.55}
+.journal-entity-cards-error[hidden]{display:none}
 .journal-entity-cards-error{margin:12px 0;padding:12px 14px;border:1px solid var(--danger);border-radius:8px;background:var(--danger-wash);color:var(--ink);display:flex;flex-wrap:wrap;gap:12px;align-items:center}
 .journal-entity-cards-error-detail{font-size:0.85em;color:var(--ink-soft)}
 .journal-entity-cards-error button{font:inherit;min-height:44px;padding:10px 14px;border:1px solid var(--hairline);border-radius:8px;background:white;color:inherit;cursor:pointer}
@@ -5438,7 +5439,9 @@ function renderJournalEntities() {
   container.replaceChildren();
   container.removeAttribute('aria-busy');
   noEntities.style.display = entityTotal ? 'none' : 'block';
-  noMatchEl.style.display = entityTotal && !total ? '' : 'none';
+  // `.no-card-matches` carries `display:none` in the stylesheet, so the
+  // visible state has to name its own display value.
+  noMatchEl.style.display = entityTotal && !total ? 'block' : 'none';
   countEl.style.display = '';
   countEl.textContent = total
     ? `${start + 1}–${start + items.length} of ${entityCountLabel(total)}`
