@@ -463,6 +463,11 @@ pub fn compute_briefing_phase(
         "morning"
     } else if briefing_exists && segment_count > 0 {
         "active"
+    } else if !briefing_exists {
+        // Between the morning end and the evening a briefing that was never
+        // prepared used to fall through to "eod", which renders no card at all.
+        // Silence is the worst failure mode: name the gap instead.
+        "missing"
     } else {
         "eod"
     }
@@ -477,8 +482,9 @@ pub fn briefing_lateness_state(now: DateTime<FixedOffset>, phase: &str) -> Value
         .and_then(|time| time.with_second(0))
         .and_then(|time| time.with_nanosecond(0))
         .expect("valid briefing due time");
-    let late = phase == "pending"
-        && now.hour() > BRIEFING_MORNING_END_HOUR + BRIEFING_LATENESS_THRESHOLD_HOURS;
+    let late = phase == "missing"
+        || (phase == "pending"
+            && now.hour() > BRIEFING_MORNING_END_HOUR + BRIEFING_LATENESS_THRESHOLD_HOURS);
     json!({"late": late, "late_hours": if late { ((now - due).num_seconds() / 3600).max(0) } else { 0 }})
 }
 

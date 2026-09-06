@@ -6,7 +6,7 @@
 use chrono::{DateTime, Duration, Utc};
 use serde_json::{Value, json};
 
-use crate::formatting::join_phrases;
+use crate::formatting::relative_time;
 use crate::model::{BacklogSource, BacklogValidity};
 use crate::needs_you::format_degraded_capture_line;
 
@@ -20,19 +20,11 @@ const AWAITING_FIRST_HEADLINE: &str =
 const RESIDUE_HEADLINE: &str = "nothing needs your attention right now.";
 const NO_ELIGIBLE_HEADLINE: &str =
     "none of your devices have the solstone app set up to add to your journal right now.";
-const RUNNING_REACH_SENTENCE: &str =
-    "the app is still running, but it isn't adding to your journal.";
-const RUNNING_REACH_SENTENCE_PLURAL: &str =
-    "the app is still running on them, but it isn't adding to your journal.";
-const ASLEEP_REACH_SENTENCE: &str =
-    "the device hasn't been reachable. it could be asleep, off, or having trouble connecting.";
-const ASLEEP_REACH_SENTENCE_PLURAL: &str =
-    "they haven't been reachable. they could be asleep, off, or having trouble connecting.";
-const STALE_ISSUE: &str =
+// An idle device is a device with no new material. Reachability is a heartbeat
+// window, not something the journal measures for its own host, so the line says
+// what is known — nothing was added, and when the last thing was — and stops.
+const UNNAMED_IDLE_ISSUE: &str =
     "the solstone app on one of your devices hasn't added anything to your journal recently.";
-const STALE_ISSUE_PLURAL: &str =
-    "the solstone app on those devices hasn't added anything to your journal recently.";
-const OFFLINE_ISSUE: &str = "the solstone app hasn't added anything to your journal recently.";
 
 #[derive(Clone, Copy)]
 enum CalmKind {
@@ -58,7 +50,7 @@ pub fn build_health_glance(
     now: DateTime<Utc>,
 ) -> Value {
     let mut issues = backlog_issues(backlog, now);
-    if let Some(issue) = capture_issue(capture) {
+    if let Some(issue) = capture_issue(capture, now) {
         issues.push(issue);
     }
     if let Some(issue) = pipeline_issue(pipeline) {
@@ -164,40 +156,6 @@ fn assessed_empty_or_all_active(capture: &Value) -> bool {
             .all(|row| row.get("status").and_then(Value::as_str) == Some("active"))
 }
 
-fn affected_reach_sentence(capture: &Value, plural: bool) -> Option<&'static str> {
-    let clients = capture.get("clients").and_then(Value::as_array)?;
-    let affected: Vec<&Value> = clients
-        .iter()
-        .filter(|row| {
-            matches!(
-                row.get("status").and_then(Value::as_str),
-                Some("stale" | "offline")
-            )
-        })
-        .collect();
-    if affected.is_empty() {
-        return None;
-    }
-    if affected.iter().any(|row| {
-        matches!(
-            row.get("reach").and_then(Value::as_str),
-            Some("active" | "stale")
-        )
-    }) {
-        Some(if plural {
-            RUNNING_REACH_SENTENCE_PLURAL
-        } else {
-            RUNNING_REACH_SENTENCE
-        })
-    } else {
-        Some(if plural {
-            ASLEEP_REACH_SENTENCE_PLURAL
-        } else {
-            ASLEEP_REACH_SENTENCE
-        })
-    }
-}
-
 fn unavailable_json() -> Value {
     json!({"verdict":"unavailable","severity":"amber","headline":UNAVAILABLE_HEADLINE,"last_observation":null,"cta":null,"issues":[]})
 }
@@ -273,64 +231,86 @@ fn backlog_issues(source: &BacklogSource, now: DateTime<Utc>) -> Vec<Value> {
 fn unknown_backlog() -> Value {
     json!({"text":"it's unclear whether your journal is caught up right now.","severity":"amber","href":"/app/health"})
 }
-fn capture_issue(capture: &Value) -> Option<Value> {
-    let status = capture.get("status").and_then(Value::as_str);
-    let (base, plural_base, severity) = match status {
-        Some("degraded") => (
-            format_degraded_capture_line(capture).expect("degraded"),
-            None,
-            "red",
-        ),
-        Some("offline") => (OFFLINE_ISSUE.to_owned(), None, "red"),
-        Some("stale") => (STALE_ISSUE.to_owned(), Some(STALE_ISSUE_PLURAL), "amber"),
+fn capture_issue(capture: &Value, now: DateTime<Utc>) -> Option<Value> {
+    match capture.get("status").and_then(Value::as_str) {
+        Some("degraded") => Some(json!({
+            "text": format_degraded_capture_line(capture).expect("degraded"),
+            "severity": "red",
+            "href": "/app/health",
+        })),
+        // Idle devices are the state health itself rates amber. Red is reserved
+        // for a delivery that was refused or a service that failed.
+        Some("stale" | "offline") => Some(idle_capture_issue(capture, now)),
         _ => {
             let sources = crate::needs_you::named_attention_sources(capture)?;
-            return Some(json!({
+            Some(json!({
                 "text": format!(
                     "the solstone app on one of your devices is having trouble adding {sources} to your journal."
                 ),
                 "severity": "amber",
                 "href": "/app/health",
-            }));
+            }))
         }
+    }
+}
+fn idle_capture_issue(capture: &Value, now: DateTime<Utc>) -> Value {
+    let idle = idle_clients(capture, now);
+    let text = match idle.as_slice() {
+        [] => UNNAMED_IDLE_ISSUE.to_owned(),
+        [(name, Some(age))] => {
+            format!("{name} hasn't added anything to your journal in {age}.")
+        }
+        [(name, None)] => format!("{name} hasn't added anything to your journal recently."),
+        rows => format!(
+            "{} devices haven't added anything to your journal recently: {}.",
+            rows.len(),
+            rows.iter()
+                .map(|(name, age)| match age {
+                    Some(age) => format!("{name} ({age})"),
+                    None => name.clone(),
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
     };
-    // Several devices in one row read as a single device with a comma in its
-    // name, and every following pronoun was singular. The names the owner sees
-    // decide the number the sentence is written in.
-    let names = capture
+    let href = if idle.is_empty() {
+        "/app/health"
+    } else {
+        "/app/network/#devices"
+    };
+    json!({"text": text, "severity": "amber", "href": href})
+}
+// The names the owner sees decide the number the sentence is written in, so the
+// devices are collected before the line is composed rather than after.
+fn idle_clients(capture: &Value, now: DateTime<Utc>) -> Vec<(String, Option<String>)> {
+    capture
         .get("clients")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
         .filter(|client| {
-            matches!(status, Some("stale" | "offline"))
-                && matches!(
-                    client.get("status").and_then(Value::as_str),
-                    Some("stale" | "offline")
-                )
+            matches!(
+                client.get("status").and_then(Value::as_str),
+                Some("stale" | "offline")
+            )
         })
-        .filter_map(|client| client.get("name").and_then(Value::as_str))
-        .filter(|name| !name.trim().is_empty())
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
-    let plural = names.len() > 1;
-    let base = match (plural, plural_base) {
-        (true, Some(plural_base)) => plural_base.to_owned(),
-        _ => base,
-    };
-    let text = match status {
-        Some("stale" | "offline") => match affected_reach_sentence(capture, plural) {
-            Some(sentence) => format!("{base} {sentence}"),
-            None => base,
-        },
-        _ => base,
-    };
-    if names.is_empty() {
-        return Some(json!({"text":text,"severity":severity,"href":"/app/health"}));
-    }
-    Some(
-        json!({"text":format!("{}: {text}", join_phrases(&names)),"severity":severity,"href":"/app/network/#devices"}),
-    )
+        .filter_map(|client| {
+            let name = client
+                .get("name")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|name| !name.is_empty())?;
+            Some((name.to_owned(), last_added_age(client, now)))
+        })
+        .collect()
+}
+fn last_added_age(client: &Value, now: DateTime<Utc>) -> Option<String> {
+    let last = client
+        .get("last_accepted_ingest_at")
+        .and_then(Value::as_str)
+        .and_then(parse_time)?;
+    let seconds = (now - last).num_seconds();
+    (seconds >= 0).then(|| relative_time(seconds as f64))
 }
 fn pipeline_issue(pipeline: &Value) -> Option<Value> {
     if !pipeline.is_object() || pipeline.as_object().is_some_and(|row| row.is_empty()) {
@@ -613,7 +593,8 @@ mod tests {
         }
 
         // Two offline devices in one row previously read as one device called
-        // "iPhone's iPhone, suze", followed by singular pronouns.
+        // "iPhone's iPhone, suze", followed by singular pronouns, and the line
+        // asserted a reachability failure the journal never measured.
         let two_offline = json!({
             "status": "offline",
             "clients": [
@@ -625,8 +606,9 @@ mod tests {
         });
         assert_eq!(
             glance(&two_offline)["issues"][0]["text"],
-            "iPhone's iPhone and suze: the solstone app hasn't added anything to your journal recently. they haven't been reachable. they could be asleep, off, or having trouble connecting."
+            "2 devices haven't added anything to your journal recently: iPhone's iPhone, suze."
         );
+        assert_eq!(glance(&two_offline)["severity"], "amber");
         let three_stale_running = json!({
             "status": "stale",
             "clients": [
@@ -639,9 +621,10 @@ mod tests {
         });
         assert_eq!(
             glance(&three_stale_running)["issues"][0]["text"],
-            "desk, laptop, and suze: the solstone app on those devices hasn't added anything to your journal recently. the app is still running on them, but it isn't adding to your journal."
+            "3 devices haven't added anything to your journal recently: desk, laptop, suze."
         );
-        // One device keeps the singular sentence it already had.
+        // One device is named on its own, with the age of the last thing it
+        // added when the record carries one.
         let one_offline = json!({
             "status": "offline",
             "clients": [client("suze", "offline", "offline")],
@@ -650,8 +633,27 @@ mod tests {
         });
         assert_eq!(
             glance(&one_offline)["issues"][0]["text"],
-            "suze: the solstone app hasn't added anything to your journal recently. the device hasn't been reachable. it could be asleep, off, or having trouble connecting."
+            "suze hasn't added anything to your journal recently."
         );
+        let mut one_offline_timed = one_offline.clone();
+        one_offline_timed["clients"][0]["last_accepted_ingest_at"] = json!("2026-05-13T15:30:00Z");
+        let timed = glance(&one_offline_timed);
+        assert_eq!(
+            timed["issues"][0]["text"],
+            "suze hasn't added anything to your journal in 1 day."
+        );
+        assert_eq!(timed["severity"], "amber");
+        assert_eq!(timed["issues"][0]["href"], "/app/network/#devices");
+        // The journal never measures reachability for its own host, so the line
+        // may not claim it for any device.
+        for capture in [&two_offline, &three_stale_running, &one_offline] {
+            let text = glance(capture)["issues"][0]["text"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            assert!(!text.contains("reachable"), "{text}");
+            assert!(!text.contains("asleep"), "{text}");
+        }
 
         let stale_with_invalid = json!({
             "status": "stale",
@@ -679,13 +681,13 @@ mod tests {
         });
         let offline_g = glance(&offline_partial);
         assert_eq!(offline_g["verdict"], "attention");
-        assert_eq!(offline_g["severity"], "red");
+        // An idle device is what health itself rates amber; red stays for a
+        // refused delivery or a failed service.
+        assert_eq!(offline_g["severity"], "amber");
         assert_eq!(offline_g["issues"].as_array().unwrap().len(), 1);
-        assert!(
-            offline_g["issues"][0]["text"]
-                .as_str()
-                .unwrap()
-                .contains(OFFLINE_ISSUE)
+        assert_eq!(
+            offline_g["issues"][0]["text"],
+            "phone hasn't added anything to your journal recently."
         );
 
         let degraded_invalid = json!({
@@ -778,23 +780,20 @@ mod tests {
         assert_eq!(running_g["verdict"], "attention");
         assert_eq!(running_g["severity"], "amber");
         assert_eq!(running_g["headline"], "1 thing needs your attention");
+        // Reach is a heartbeat window, not delivery. It no longer changes a
+        // word of the line either way.
         let running_text = running_g["issues"][0]["text"].as_str().unwrap();
         let asleep_text = asleep_g["issues"][0]["text"].as_str().unwrap();
-        assert!(running_text.contains("still running"));
-        assert!(running_text.contains("isn't adding"));
-        assert!(asleep_text.contains("asleep"));
+        assert_eq!(running_text, asleep_text);
+        assert_eq!(
+            running_text,
+            "phone hasn't added anything to your journal recently."
+        );
         assert!(!running_text.contains("reach"));
-        assert!(!asleep_text.contains("contact"));
         assert!(!running_text.contains("heartbeat"));
 
         running["clients"][0]["reach"] = json!("stale");
-        let stale_reach_g = glance(&running);
-        assert!(
-            stale_reach_g["issues"][0]["text"]
-                .as_str()
-                .unwrap()
-                .contains("still running")
-        );
+        assert_eq!(glance(&running)["issues"][0]["text"], running_text);
 
         let mixed = json!({
             "status": "stale",
@@ -805,15 +804,17 @@ mod tests {
             "unassessed": [],
             "registry": "registry_complete",
         });
-        assert!(
-            glance(&mixed)["issues"][0]["text"]
-                .as_str()
-                .unwrap()
-                .contains("still running")
+        assert_eq!(
+            glance(&mixed)["issues"][0]["text"],
+            "2 devices haven't added anything to your journal recently: alpha, bravo."
         );
 
         let corpus_shaped = json!({"status": "stale", "clients": [{"name": "laptop"}]});
-        assert_eq!(glance(&corpus_shaped)["issues"][0]["text"], STALE_ISSUE);
+        assert_eq!(
+            glance(&corpus_shaped)["issues"][0]["text"],
+            UNNAMED_IDLE_ISSUE
+        );
+        assert_eq!(glance(&corpus_shaped)["issues"][0]["href"], "/app/health");
 
         let checking = glance_at(
             &empty,

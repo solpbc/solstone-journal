@@ -52,9 +52,20 @@ pub fn build_connections_card(
     if neighbors.is_empty() {
         return json!({"state":"empty"});
     }
+    // The shelf's job is to summarize who is in the owner's life. An unnamed
+    // voice cluster is a speakers task, not a connection, so it is dropped here
+    // the way the speakers surface drops it. X-02.
+    let named = neighbors
+        .iter()
+        .filter_map(Value::as_object)
+        .filter(|row| !is_placeholder_speaker(row))
+        .collect::<Vec<_>>();
+    if named.is_empty() {
+        return json!({"state":"unnamed"});
+    }
     let mut attendance_kinds = ATTENDANCE_KINDS.to_vec();
     attendance_kinds.sort_unstable();
-    let mut card = json!({"state":"ok","neighbors":neighbors.iter().filter_map(Value::as_object).map(trim_neighbor).collect::<Vec<_>>(),"total":network.get("total_neighbors").and_then(Value::as_i64).unwrap_or(0),"kind_words":kind_words(),"attendance_kinds":attendance_kinds});
+    let mut card = json!({"state":"ok","neighbors":named.iter().copied().map(trim_neighbor).collect::<Vec<_>>(),"total":network.get("total_neighbors").and_then(Value::as_i64).unwrap_or(0),"kind_words":kind_words(),"attendance_kinds":attendance_kinds});
     if let Some(horizon) = horizon {
         let object = card.as_object_mut().expect("ok card is an object");
         object.insert("horizon_day".to_owned(), Value::String(horizon.day));
@@ -85,6 +96,28 @@ fn kind_words() -> Value {
             .collect(),
     )
 }
+/// The speakers surface hides a voice it has no name for; the same cluster
+/// arriving here as `Speaker 1` is the same non-answer. Mirrors the
+/// `PLACEHOLDER_SPEAKER_NAME` rule in `convey-shell/assets/speakers/workspace.html`.
+fn is_placeholder_speaker(row: &serde_json::Map<String, Value>) -> bool {
+    let name = row.get("name").and_then(Value::as_str).unwrap_or("").trim();
+    let id = row
+        .get("entity_id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
+    is_placeholder_speaker_token(name, ' ') || is_placeholder_speaker_token(id, '_')
+}
+
+fn is_placeholder_speaker_token(value: &str, separator: char) -> bool {
+    let lower = value.to_lowercase();
+    let Some(rest) = lower.strip_prefix("speaker") else {
+        return false;
+    };
+    let rest = rest.trim_start_matches(separator);
+    !rest.is_empty() && rest.bytes().all(|byte| byte.is_ascii_digit())
+}
+
 fn trim_neighbor(row: &serde_json::Map<String, Value>) -> Value {
     let evidence = row
         .get("evidence")
@@ -277,5 +310,38 @@ mod tests {
                 compose_connections_horizon_note(earlier_days)
             );
         }
+    }
+    #[test]
+    fn unnamed_voice_clusters_never_reach_the_shelf() {
+        let network = json!({"total_neighbors":3,"neighbors":[
+            {"entity_id":"speaker_1","name":"Speaker 1","evidence_class":"semantic","count":2591,"last_seen":"20260905","kinds":{}},
+            {"entity_id":"speaker_2","name":"SPEAKER 2","evidence_class":"mixed","count":1276,"last_seen":"20260905","kinds":{}},
+            {"entity_id":"person:ada","name":"Ada","evidence_class":"direct","count":4,"last_seen":"20260602","kinds":{}}
+        ]});
+        let card = build_connections_card(Ok(Some(json!({"id":"owner"}))), Ok(network), None);
+        let names = card["neighbors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["name"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["Ada".to_owned()]);
+
+        // A shelf with nothing but unnamed clusters says so; it does not show
+        // them and it does not read as a journal with nobody in it.
+        let only_placeholders = json!({"total_neighbors":1,"neighbors":[
+            {"entity_id":"speaker_1","name":"Speaker 1","evidence_class":"semantic","count":2591,"last_seen":"20260905","kinds":{}}
+        ]});
+        assert_eq!(
+            build_connections_card(Ok(Some(json!({"id":"owner"}))), Ok(only_placeholders), None),
+            json!({"state":"unnamed"})
+        );
+
+        // A real name that merely begins with the word is not a placeholder.
+        assert!(!is_placeholder_speaker(
+            json!({"entity_id":"person:speakerbox","name":"Speaker Deck"})
+                .as_object()
+                .unwrap()
+        ));
     }
 }

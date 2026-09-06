@@ -1332,7 +1332,7 @@
           "hour": 10,
           "segment_count": 0
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -1348,7 +1348,7 @@
           "hour": 11,
           "segment_count": 0
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -1364,7 +1364,7 @@
           "hour": 12,
           "segment_count": 0
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -1380,7 +1380,7 @@
           "hour": 13,
           "segment_count": 0
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -1396,7 +1396,7 @@
           "hour": 14,
           "segment_count": 0
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -1412,7 +1412,7 @@
           "hour": 15,
           "segment_count": 0
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -1428,7 +1428,7 @@
           "hour": 16,
           "segment_count": 0
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -1444,7 +1444,7 @@
           "hour": 17,
           "segment_count": 0
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -1460,7 +1460,7 @@
           "hour": 18,
           "segment_count": 0
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -1476,7 +1476,7 @@
           "hour": 19,
           "segment_count": 0
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -1716,7 +1716,7 @@
           "hour": 10,
           "segment_count": 1
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -1732,7 +1732,7 @@
           "hour": 11,
           "segment_count": 1
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -1748,7 +1748,7 @@
           "hour": 12,
           "segment_count": 1
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -1764,7 +1764,7 @@
           "hour": 13,
           "segment_count": 1
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -1780,7 +1780,7 @@
           "hour": 14,
           "segment_count": 1
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -1796,7 +1796,7 @@
           "hour": 15,
           "segment_count": 1
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -1812,7 +1812,7 @@
           "hour": 16,
           "segment_count": 1
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -1828,7 +1828,7 @@
           "hour": 17,
           "segment_count": 1
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -1844,7 +1844,7 @@
           "hour": 18,
           "segment_count": 1
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -1860,7 +1860,7 @@
           "hour": 19,
           "segment_count": 1
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -2100,7 +2100,7 @@
           "hour": 10,
           "segment_count": 7
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -2116,7 +2116,7 @@
           "hour": 11,
           "segment_count": 7
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -2132,7 +2132,7 @@
           "hour": 12,
           "segment_count": 7
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -2148,7 +2148,7 @@
           "hour": 13,
           "segment_count": 7
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -2164,7 +2164,7 @@
           "hour": 14,
           "segment_count": 7
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -2180,7 +2180,7 @@
           "hour": 15,
           "segment_count": 7
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -2196,7 +2196,7 @@
           "hour": 16,
           "segment_count": 7
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -2212,7 +2212,7 @@
           "hour": 17,
           "segment_count": 7
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -2228,7 +2228,7 @@
           "hour": 18,
           "segment_count": 7
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -2244,7 +2244,7 @@
           "hour": 19,
           "segment_count": 7
         },
-        "output": "eod"
+        "output": "missing"
       },
       {
         "input": {
@@ -7203,12 +7203,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7231,12 +7231,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7259,12 +7259,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7287,12 +7287,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7315,8 +7315,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -7325,7 +7325,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7348,8 +7348,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -7358,7 +7358,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7381,8 +7381,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/thinking/",
@@ -7391,7 +7391,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7414,12 +7414,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7442,12 +7442,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7470,12 +7470,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7498,12 +7498,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7526,8 +7526,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -7536,7 +7536,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7559,8 +7559,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -7569,7 +7569,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7592,8 +7592,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/thinking/",
@@ -7602,7 +7602,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7625,8 +7625,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -7635,7 +7635,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7658,8 +7658,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -7668,7 +7668,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7691,8 +7691,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -7701,7 +7701,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7724,8 +7724,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -7734,7 +7734,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7757,8 +7757,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -7772,7 +7772,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7795,8 +7795,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -7810,7 +7810,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7833,8 +7833,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -7848,7 +7848,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7871,8 +7871,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -7881,7 +7881,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7904,8 +7904,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -7914,7 +7914,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7937,8 +7937,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -7947,7 +7947,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -7970,8 +7970,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -7980,7 +7980,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -8003,8 +8003,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -8018,7 +8018,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -8041,8 +8041,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -8056,7 +8056,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -8079,8 +8079,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -8094,7 +8094,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -8117,8 +8117,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -8127,7 +8127,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -8150,8 +8150,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -8160,7 +8160,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -8183,8 +8183,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -8193,7 +8193,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -8216,8 +8216,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -8226,7 +8226,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -8249,8 +8249,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -8264,7 +8264,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -8287,8 +8287,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -8302,7 +8302,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -8325,8 +8325,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -8340,7 +8340,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -14623,12 +14623,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -14651,12 +14651,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -14679,12 +14679,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -14707,12 +14707,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -14735,8 +14735,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -14745,7 +14745,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -14768,8 +14768,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -14778,7 +14778,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -14801,8 +14801,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/thinking/",
@@ -14811,7 +14811,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -14834,12 +14834,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -14862,12 +14862,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -14890,12 +14890,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -14918,12 +14918,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -14946,8 +14946,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -14956,7 +14956,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -14979,8 +14979,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -14989,7 +14989,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -15012,8 +15012,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/thinking/",
@@ -15022,7 +15022,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -15045,8 +15045,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -15055,7 +15055,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -15078,8 +15078,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -15088,7 +15088,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -15111,8 +15111,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -15121,7 +15121,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -15144,8 +15144,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -15154,7 +15154,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -15177,8 +15177,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -15192,7 +15192,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -15215,8 +15215,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -15230,7 +15230,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -15253,8 +15253,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -15268,7 +15268,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -15291,8 +15291,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -15301,7 +15301,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -15324,8 +15324,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -15334,7 +15334,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -15357,8 +15357,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -15367,7 +15367,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -15390,8 +15390,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -15400,7 +15400,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -15423,8 +15423,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -15438,7 +15438,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -15461,8 +15461,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -15476,7 +15476,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -15499,8 +15499,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -15514,7 +15514,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -15537,8 +15537,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -15547,7 +15547,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -15570,8 +15570,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -15580,7 +15580,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -15603,8 +15603,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -15613,7 +15613,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -15636,8 +15636,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -15646,7 +15646,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -15669,8 +15669,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -15684,7 +15684,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -15707,8 +15707,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -15722,7 +15722,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -15745,8 +15745,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -15760,7 +15760,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21326,12 +21326,12 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21349,12 +21349,12 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21372,12 +21372,12 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21395,12 +21395,12 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21418,8 +21418,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -21428,7 +21428,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21446,8 +21446,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -21456,7 +21456,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21474,8 +21474,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/thinking/",
@@ -21484,7 +21484,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21502,12 +21502,12 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21525,12 +21525,12 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21548,12 +21548,12 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21571,12 +21571,12 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21594,8 +21594,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -21604,7 +21604,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21622,8 +21622,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -21632,7 +21632,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21650,8 +21650,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/thinking/",
@@ -21660,7 +21660,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21678,8 +21678,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -21688,7 +21688,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21706,8 +21706,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -21716,7 +21716,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21734,8 +21734,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -21744,7 +21744,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21762,8 +21762,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -21772,7 +21772,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21790,8 +21790,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -21805,7 +21805,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21823,8 +21823,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -21838,7 +21838,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21856,8 +21856,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -21871,7 +21871,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21889,8 +21889,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -21899,7 +21899,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21917,8 +21917,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -21927,7 +21927,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21945,8 +21945,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -21955,7 +21955,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -21973,8 +21973,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -21983,7 +21983,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -22001,8 +22001,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -22016,7 +22016,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -22034,8 +22034,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -22049,7 +22049,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -22067,8 +22067,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -22082,7 +22082,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -22100,8 +22100,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -22110,7 +22110,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -22128,8 +22128,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -22138,7 +22138,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -22156,8 +22156,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -22166,7 +22166,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -22184,8 +22184,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -22194,7 +22194,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -22212,8 +22212,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -22227,7 +22227,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -22245,8 +22245,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -22260,7 +22260,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -22278,8 +22278,8 @@
           "issues": [
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -22293,7 +22293,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28218,12 +28218,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28246,12 +28246,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28274,12 +28274,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28302,12 +28302,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28330,8 +28330,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -28340,7 +28340,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28363,8 +28363,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -28373,7 +28373,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28396,8 +28396,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/thinking/",
@@ -28406,7 +28406,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28429,12 +28429,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28457,12 +28457,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28485,12 +28485,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28513,12 +28513,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28541,8 +28541,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -28551,7 +28551,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28574,8 +28574,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -28584,7 +28584,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28607,8 +28607,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/thinking/",
@@ -28617,7 +28617,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28640,8 +28640,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -28650,7 +28650,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28673,8 +28673,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -28683,7 +28683,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28706,8 +28706,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -28716,7 +28716,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28739,8 +28739,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -28749,7 +28749,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28772,8 +28772,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -28787,7 +28787,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28810,8 +28810,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -28825,7 +28825,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28848,8 +28848,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -28863,7 +28863,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28886,8 +28886,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -28896,7 +28896,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28919,8 +28919,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -28929,7 +28929,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28952,8 +28952,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -28962,7 +28962,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -28985,8 +28985,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -28995,7 +28995,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -29018,8 +29018,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -29033,7 +29033,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -29056,8 +29056,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -29071,7 +29071,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -29094,8 +29094,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -29109,7 +29109,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -29132,8 +29132,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -29142,7 +29142,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -29165,8 +29165,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -29175,7 +29175,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -29198,8 +29198,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -29208,7 +29208,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -29231,8 +29231,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -29241,7 +29241,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -29264,8 +29264,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -29279,7 +29279,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -29302,8 +29302,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -29317,7 +29317,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -29340,8 +29340,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -29355,7 +29355,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -35638,12 +35638,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -35666,12 +35666,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -35694,12 +35694,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -35722,12 +35722,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -35750,8 +35750,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -35760,7 +35760,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -35783,8 +35783,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -35793,7 +35793,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -35816,8 +35816,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/thinking/",
@@ -35826,7 +35826,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -35849,12 +35849,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -35877,12 +35877,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -35905,12 +35905,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -35933,12 +35933,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -35961,8 +35961,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -35971,7 +35971,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -35994,8 +35994,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -36004,7 +36004,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -36027,8 +36027,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/thinking/",
@@ -36037,7 +36037,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -36060,8 +36060,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36070,7 +36070,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -36093,8 +36093,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36103,7 +36103,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -36126,8 +36126,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36136,7 +36136,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -36159,8 +36159,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36169,7 +36169,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -36192,8 +36192,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36207,7 +36207,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -36230,8 +36230,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36245,7 +36245,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -36268,8 +36268,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36283,7 +36283,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -36306,8 +36306,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36316,7 +36316,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -36339,8 +36339,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36349,7 +36349,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -36372,8 +36372,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36382,7 +36382,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -36405,8 +36405,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36415,7 +36415,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -36438,8 +36438,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36453,7 +36453,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -36476,8 +36476,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36491,7 +36491,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -36514,8 +36514,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -36529,7 +36529,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -36552,8 +36552,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -36562,7 +36562,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -36585,8 +36585,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -36595,7 +36595,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -36618,8 +36618,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -36628,7 +36628,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -36651,8 +36651,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -36661,7 +36661,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -36684,8 +36684,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -36699,7 +36699,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -36722,8 +36722,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -36737,7 +36737,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -36760,8 +36760,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -36775,7 +36775,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43058,12 +43058,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43086,12 +43086,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43114,12 +43114,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43142,12 +43142,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43170,8 +43170,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -43180,7 +43180,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43203,8 +43203,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -43213,7 +43213,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43236,8 +43236,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/thinking/",
@@ -43246,7 +43246,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43269,12 +43269,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43297,12 +43297,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43325,12 +43325,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43353,12 +43353,12 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43381,8 +43381,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -43391,7 +43391,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43414,8 +43414,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -43424,7 +43424,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43447,8 +43447,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/thinking/",
@@ -43457,7 +43457,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43480,8 +43480,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -43490,7 +43490,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43513,8 +43513,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -43523,7 +43523,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43546,8 +43546,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -43556,7 +43556,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43579,8 +43579,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -43589,7 +43589,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43612,8 +43612,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -43627,7 +43627,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43650,8 +43650,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -43665,7 +43665,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43688,8 +43688,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -43703,7 +43703,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43726,8 +43726,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -43736,7 +43736,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43759,8 +43759,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -43769,7 +43769,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43792,8 +43792,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -43802,7 +43802,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43825,8 +43825,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -43835,7 +43835,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43858,8 +43858,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -43873,7 +43873,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43896,8 +43896,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -43911,7 +43911,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43934,8 +43934,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -43949,7 +43949,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -43972,8 +43972,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -43982,7 +43982,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -44005,8 +44005,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -44015,7 +44015,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -44038,8 +44038,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -44048,7 +44048,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -44071,8 +44071,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -44081,7 +44081,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -44104,8 +44104,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -44119,7 +44119,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -44142,8 +44142,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -44157,7 +44157,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -44180,8 +44180,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -44195,7 +44195,7 @@
             }
           ],
           "last_observation": null,
-          "severity": "red",
+          "severity": "amber",
           "verdict": "attention"
         }
       },
@@ -50478,8 +50478,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
@@ -50506,8 +50506,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
@@ -50534,8 +50534,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
@@ -50562,8 +50562,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
@@ -50590,8 +50590,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -50623,8 +50623,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -50656,8 +50656,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/thinking/",
@@ -50689,8 +50689,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
@@ -50717,8 +50717,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
@@ -50745,8 +50745,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
@@ -50773,8 +50773,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             }
           ],
           "last_observation": null,
@@ -50801,8 +50801,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -50834,8 +50834,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health/#brain",
@@ -50867,8 +50867,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/thinking/",
@@ -50900,8 +50900,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -50933,8 +50933,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -50966,8 +50966,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -50999,8 +50999,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -51032,8 +51032,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -51070,8 +51070,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -51108,8 +51108,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -51146,8 +51146,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -51179,8 +51179,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -51212,8 +51212,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -51245,8 +51245,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -51278,8 +51278,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -51316,8 +51316,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -51354,8 +51354,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -51392,8 +51392,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -51425,8 +51425,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -51458,8 +51458,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -51491,8 +51491,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -51524,8 +51524,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -51562,8 +51562,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",
@@ -51600,8 +51600,8 @@
             },
             {
               "href": "/app/health",
-              "severity": "red",
-              "text": "the solstone app hasn't added anything to your journal recently."
+              "severity": "amber",
+              "text": "the solstone app on one of your devices hasn't added anything to your journal recently."
             },
             {
               "href": "/app/support",

@@ -15,14 +15,18 @@ pub fn compute_phase(segment_count: i64, hour: u32, exists: bool) -> &'static st
         "morning"
     } else if exists && segment_count > 0 {
         "active"
+    } else if !exists {
+        // A briefing that was never prepared between the morning end and the
+        // evening: the card says so rather than disappearing.
+        "missing"
     } else {
         "eod"
     }
 }
 
 pub fn lateness_state(now: DateTime<Utc>, phase: &str) -> Value {
-    let late = phase == "pending" && now.hour() > 12;
-    json!({"late":late,"late_hours":if late { i64::from(now.hour()) - 10 } else { 0 }})
+    let late = phase == "missing" || (phase == "pending" && now.hour() > 12);
+    json!({"late":late,"late_hours":if late { (i64::from(now.hour()) - 10).max(0) } else { 0 }})
 }
 
 pub fn summary(briefing: Option<&Value>, sections: &Value, needs_count: i64) -> String {

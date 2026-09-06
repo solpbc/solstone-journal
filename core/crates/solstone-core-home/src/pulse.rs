@@ -694,13 +694,21 @@ mod tests {
                 root.path(),
                 Utc.with_ymd_and_hms(2026, 8, 14, hour, 0, 0).unwrap(),
             );
+            // A briefing that was never prepared is late from the morning end
+            // until the evening, and the card that says so is rendered there.
+            let missing = (10..20).contains(&hour);
             assert_eq!(
                 pulse_payload(&context)["briefing_lateness"],
-                json!({"late":false,"late_hours":0}),
+                json!({"late":missing,"late_hours":if missing { i64::from(hour) - 10 } else { 0 }}),
                 "hour {hour}"
             );
         }
-        for (hour, expected) in [(9, "pending"), (22, "eod")] {
+        for (hour, expected) in [
+            (9, "pending"),
+            (10, "missing"),
+            (19, "missing"),
+            (22, "eod"),
+        ] {
             let context = utc_context(
                 root.path(),
                 Utc.with_ymd_and_hms(2026, 8, 14, hour, 0, 0).unwrap(),
