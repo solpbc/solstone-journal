@@ -33,7 +33,7 @@ const COPY: [(&str, &str); 52] = [
         // what clearing the visible batch gets the owner rather than the
         // full count owed.
         "CUR_ENTITY_GROUP_LEDE",
-        "{count} names look like duplicates. clearing them tidies your whole journal.",
+        "{count} names look like duplicates. clearing them keeps your names straight.",
     ),
     ("CUR_ENTITY_SHOW_REST_ACTION", "show the rest ({count})"),
     (

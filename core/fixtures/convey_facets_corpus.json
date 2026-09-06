@@ -1141,7 +1141,7 @@
     },
     {
       "body_bytes": 4857,
-      "body_sha256": "481787f21844f11d868194abe76b8d9c5bec771e53f2a7e45b12bd6d85d0cd7d",
+      "body_sha256": "670b3999e65d6e45f0916c34face42e904d7e698736e764c8f84f829728eca1c",
       "body_sha256_basis": "normalized-json",
       "content_type": "application/json",
       "json": {
@@ -1206,7 +1206,7 @@
           "CUR_ENTITY_DISMISS_ACTION": "keep separate",
           "CUR_ENTITY_DONE_FOR_NOW_ACTION": "done for now",
           "CUR_ENTITY_FACETS_LABEL": "in {facets}",
-          "CUR_ENTITY_GROUP_LEDE": "{count} names look like duplicates. clearing them tidies your whole journal.",
+          "CUR_ENTITY_GROUP_LEDE": "{count} names look like duplicates. clearing them keeps your names straight.",
           "CUR_ENTITY_MERGE_ACTION": "merge",
           "CUR_ENTITY_PREVIEW_EMPTY": "no journal changes are needed for this merge.",
           "CUR_ENTITY_PREVIEW_ERRORS": "some segment updates may need attention.",
@@ -2702,7 +2702,7 @@
       },
       {
         "body_bytes": 3064,
-        "body_sha256": "5ce6863ee1dba225959d876f87112707943b5090889f951e499d1af50351a290",
+        "body_sha256": "405139230bdc109820c9bae0f7801d2a31686e69f7e7f6f8bba256443fa3bf11",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -2727,7 +2727,7 @@
             "CUR_ENTITY_DISMISS_ACTION": "keep separate",
             "CUR_ENTITY_DONE_FOR_NOW_ACTION": "done for now",
             "CUR_ENTITY_FACETS_LABEL": "in {facets}",
-            "CUR_ENTITY_GROUP_LEDE": "{count} names look like duplicates. clearing them tidies your whole journal.",
+            "CUR_ENTITY_GROUP_LEDE": "{count} names look like duplicates. clearing them keeps your names straight.",
             "CUR_ENTITY_MERGE_ACTION": "merge",
             "CUR_ENTITY_PREVIEW_EMPTY": "no journal changes are needed for this merge.",
             "CUR_ENTITY_PREVIEW_ERRORS": "some segment updates may need attention.",
@@ -3582,7 +3582,7 @@
       },
       {
         "body_bytes": 5453,
-        "body_sha256": "7b8bda89b2828980c7746b66ca16486bcfcaa8999c3df36840bf11641b8158e9",
+        "body_sha256": "2f4177975c8ff694a79618aaf17774e8ee9f08a63250c1e2e4350f9bba75e444",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -3647,7 +3647,7 @@
             "CUR_ENTITY_DISMISS_ACTION": "keep separate",
             "CUR_ENTITY_DONE_FOR_NOW_ACTION": "done for now",
             "CUR_ENTITY_FACETS_LABEL": "in {facets}",
-            "CUR_ENTITY_GROUP_LEDE": "{count} names look like duplicates. clearing them tidies your whole journal.",
+            "CUR_ENTITY_GROUP_LEDE": "{count} names look like duplicates. clearing them keeps your names straight.",
             "CUR_ENTITY_MERGE_ACTION": "merge",
             "CUR_ENTITY_PREVIEW_EMPTY": "no journal changes are needed for this merge.",
             "CUR_ENTITY_PREVIEW_ERRORS": "some segment updates may need attention.",
