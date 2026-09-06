@@ -578,8 +578,12 @@ h1 {
    the 30-day verdict is caught up, --danger only when it isn't. */
 
 .alert-repair .stats-grid {
+  /* G2-36 dropped one of the two repair tiles, so this section usually
+     renders a single tile now; auto-fit avoids leaving it stranded in a
+     half-empty 2-column grid while still adapting if a second tile
+     returns. */
   margin-bottom: 0;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 /* Model selector */
