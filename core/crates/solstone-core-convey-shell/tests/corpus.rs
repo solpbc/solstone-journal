@@ -688,7 +688,10 @@ async fn speakers_state_uses_the_python_local_date_semantics() {
         state["today"],
         Value::String(Local::now().format("%Y%m%d").to_string())
     );
-    assert_eq!(state["speaker_copy"].as_object().unwrap().len(), 120);
+    // 120 + 2: G1-40 added SPK_OVERVIEW_COHESION_UNMEASURED and
+    // SPK_OVERVIEW_OWNER_SAMPLES_CAP_SUFFIX (the QUALITY_READY -> QUALITY_READY_TEMPLATE
+    // rename is a same-key-count edit).
+    assert_eq!(state["speaker_copy"].as_object().unwrap().len(), 122);
 }
 
 #[tokio::test]
