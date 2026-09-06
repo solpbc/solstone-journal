@@ -174,7 +174,10 @@ fn label_item(root: &std::path::Path, row: &store::NewsRow) -> Value {
 // Best-effort only — a missing or unreadable file yields no preview, not an error.
 fn preview_line(root: &std::path::Path, facet: &str, day: &str) -> Option<String> {
     let (_, content) = load(root, facet, day).ok().flatten()?;
-    preview_from_content(&content)
+    // G1-116: a letter that never gets past its own metadata header (or is
+    // otherwise all header/heading/blank lines) has no prose to preview --
+    // fall back to the row's own facet name rather than showing nothing.
+    Some(preview_from_content(&content).unwrap_or_else(|| facet.to_owned()))
 }
 
 /// The longest a preview may run before it is cut with an ellipsis.
@@ -199,11 +202,16 @@ const _: () = assert!(PREVIEW_CHARS > MIN_PREVIEW_CHARS);
 fn preview_from_content(content: &str) -> Option<String> {
     let mut fallback: Option<String> = None;
     let mut chosen: Option<String> = None;
+    let mut past_metadata = false;
     for raw in content.lines() {
         let trimmed = raw.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
+        if !past_metadata && is_metadata_line(trimmed) {
+            continue;
+        }
+        past_metadata = true;
         let cleaned = trimmed.trim_matches('*').replace("**", "");
         let candidate = strip_preview_label(cleaned.trim()).trim().to_owned();
         if candidate.is_empty() {
@@ -223,6 +231,26 @@ fn preview_from_content(content: &str) -> Option<String> {
         Some(format!("{}…", head.trim_end()))
     } else {
         Some(line)
+    }
+}
+
+/// A leading `Label: value` metadata line ("Date: Saturday, September 05,
+/// 2026") is the letter's own header scaffolding, not something to preview --
+/// skip it like a heading. `TL;DR` gets its own handling below (its sentence
+/// is kept, not dropped); this catches everything else in that "word colon
+/// space" shape, and only before the first real paragraph.
+fn is_metadata_line(line: &str) -> bool {
+    match line.find(':') {
+        Some(idx) if idx > 0 => {
+            let label = &line[..idx];
+            let after = &line[idx + 1..];
+            // `TLDR:`/`TL;DR:` keep their own handling below (the sentence
+            // after the label is the preview, not scaffolding to discard).
+            !label.eq_ignore_ascii_case("tldr")
+                && label.chars().all(|c| c.is_ascii_alphanumeric())
+                && after.starts_with(' ')
+        }
+        _ => false,
     }
 }
 
@@ -551,6 +579,17 @@ mod tests {
                 "Summary\n\nThe quarter closed with two launches and one postponed.\n",
                 Some("The quarter closed with two launches and one postponed."),
             ),
+            // G1-116: a leading metadata header is scaffolding, not a preview --
+            // skip it and keep reading for the letter's own first sentence.
+            (
+                "Date: Saturday, September 05, 2026\n\nThe roundup covers the week's three launches.\n",
+                Some("The roundup covers the week's three launches."),
+            ),
+            // A letter that never gets past its own header has nothing to
+            // preview; the caller (preview_line) falls back to the facet name,
+            // not this function -- here it stays None.
+            ("Date: Saturday, September 05, 2026\n", None),
+            ("From: the team\nSubject: weekly notes\n", None),
             // Every line short: the owner still gets the first one.
             ("a quiet week.\nnothing else.\n", Some("a quiet week.")),
             // Nothing to show at all.
