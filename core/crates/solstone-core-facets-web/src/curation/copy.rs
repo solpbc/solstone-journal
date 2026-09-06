@@ -13,7 +13,7 @@ pub fn payload() -> Value {
     )
 }
 
-const COPY: [(&str, &str); 47] = [
+const COPY: [(&str, &str); 48] = [
     ("CUR_HEADING", "suggestions"),
     (
         "CUR_FACET_BODY",
@@ -27,6 +27,7 @@ const COPY: [(&str, &str); 47] = [
     ),
     ("CUR_ENTITY_MERGE_ACTION", "merge"),
     ("CUR_ENTITY_DISMISS_ACTION", "keep separate"),
+    ("CUR_ENTITY_FACETS_LABEL", "in {facets}"),
     (
         "CUR_SPEAKER_BODY",
         "solstone noticed \"{source}\" and \"{target}\" may be the same speaker. merge them?",
@@ -35,7 +36,7 @@ const COPY: [(&str, &str); 47] = [
     ("CUR_SPEAKER_DISMISS_ACTION", "keep separate"),
     (
         "CUR_SPEAKER_CANDIDATE_PAIR_BODY",
-        "solstone found two speaker candidates that sound alike. merge them?",
+        "two voices in your journal sound alike. merge them?",
     ),
     (
         "CUR_SPEAKER_CANDIDATE_PAIR_MERGE_ACTION",
