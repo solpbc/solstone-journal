@@ -1057,18 +1057,20 @@
       '</div>';
     const label = local.host.querySelector('[data-date-nav-label]');
     const render = () => { label.textContent = controlLabel(local.day); };
-    const requestJson = path => window.apiJson
-      ? window.apiJson(path)
-      : fetch(path).then(response => response.ok ? response.json() : Promise.reject(new Error('date-nav request failed')));
-    const refreshMonth = () => requestJson(`${local.apiBase}api/index`)
-      .then(() => requestJson(`${local.apiBase}api/stats/${local.day.slice(0, 6)}`))
-      .catch(() => {});
+    // Scoped mode has no calendar grid to populate — unlike
+    // mountContentDateNav's fetchIndex/fetchMonth above, there is nothing
+    // here to render coverage or month totals into. A prior version of this
+    // controller still issued an api/index + api/stats/{month} request pair
+    // on every mount and every day change and discarded both responses;
+    // that redundant round trip was contributing to api/index being
+    // requested twice per stats page open (X-07). Removed rather than kept
+    // "for later" — a scoped consumer that needs coverage data again should
+    // ask for it explicitly, not inherit an unused calendar fetch.
     const setDay = day => {
       const normalized = parseDayString(day);
       if (!normalized) return null;
       local.day = normalized;
       render();
-      refreshMonth();
       return normalized;
     };
     const select = day => {
@@ -1079,7 +1081,6 @@
     local.host.querySelector('[data-date-nav-prev]').addEventListener('click', () => select(addDays(local.day, -1)), { signal: local.abort.signal });
     local.host.querySelector('[data-date-nav-next]').addEventListener('click', () => select(addDays(local.day, 1)), { signal: local.abort.signal });
     render();
-    refreshMonth();
     return { setDay, unmount: () => { local.abort.abort(); local.host.replaceChildren(); } };
   }
 

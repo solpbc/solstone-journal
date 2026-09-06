@@ -62,11 +62,18 @@ h1 {
 }
 
 .stats-refresh {
+  /* Now a real <button> (G2-10). Padding + a matching negative margin grow
+     the hit target to >=44px tall without pushing the freshness line's
+     surrounding layout around it. */
+  background: transparent;
+  border: 0;
   color: var(--facet-color, #b06a1a);
-  text-decoration: none;
-  margin-left: 0.5em;
-  font-size: inherit;
   cursor: pointer;
+  display: inline-block;
+  font: inherit;
+  margin: -14px 0 -14px 0.5em;
+  padding: 14px 4px;
+  text-decoration: none;
 }
 
 .stats-refresh:hover {
@@ -189,6 +196,14 @@ h1 {
   border: 1px solid rgba(0,0,0,0.06);
 }
 
+.backlog-hero-scope {
+  color: #675f58;
+  font-size: 0.8em;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  margin: 0 0 0.25em;
+}
+
 .backlog-hero-line {
   color: #2f2a24;
   font-size: 1.35em;
@@ -251,6 +266,11 @@ h1 {
 .backlog-row-copy {
   color: #675f58;
   font-size: 0.9em;
+}
+
+.backlog-row-reason {
+  color: #675f58;
+  font-size: 0.85em;
 }
 
 .backlog-badge {
@@ -613,7 +633,8 @@ h1 {
 }
 
 .stack-segment.input {
-  background: #2171b5;
+  /* Was a cool blue (#2171b5); gold (--gold) keeps the brand warm (X-12). */
+  background: var(--gold, #FFCF33);
 }
 
 .stack-segment.reasoning {
@@ -628,7 +649,8 @@ h1 {
 }
 
 .stack-segment.audio {
-  background: #2171b5;
+  /* Was a cool blue (#2171b5); gold (--gold) keeps the brand warm (X-12). */
+  background: var(--gold, #FFCF33);
 }
 
 .stack-segment.screen {
@@ -638,6 +660,7 @@ h1 {
 
 .token-legend {
   display: flex;
+  flex-wrap: wrap;
   gap: 1.5em;
   margin-top: 0;
   font-size: 0.85em;
@@ -663,6 +686,33 @@ h1 {
   padding: 0.65rem 0.85rem;
 }
 
+/* Scoped mini day switcher (‹ label ›) mounted by the shared DateNav's
+   scoped controller, which ships no sizing of its own for these plain
+   buttons — give the prev/next day arrows a real touch target (G2-10). */
+#statsDateNav .date-nav-content {
+  align-items: center;
+  display: flex;
+  gap: 0.5em;
+  margin: 0.5rem 0 1rem;
+}
+
+#statsDateNav [data-date-nav-prev],
+#statsDateNav [data-date-nav-next] {
+  background: transparent;
+  border: 1px solid var(--hairline, #ece3d0);
+  border-radius: 6px;
+  color: var(--ink, #1a1a1a);
+  cursor: pointer;
+  font-size: 1.1em;
+  min-height: var(--touch-min, 44px);
+  min-width: var(--touch-min, 44px);
+}
+
+#statsDateNav [data-date-nav-prev]:hover,
+#statsDateNav [data-date-nav-next]:hover {
+  border-color: var(--orange-ink, #b06a1a);
+}
+
 .token-rollup {
   align-items: end;
   display: flex;
@@ -673,11 +723,22 @@ h1 {
 }
 
 .token-rollup__bar {
-  background: var(--facet-color, #b06a1a);
+  /* The button itself stays full-height (a real hit target, G2-10); the
+     visible "bar" is a hard-stop gradient fill up to --bar-fill (set per
+     button in JS), so the magnitude still reads the same as a resized box
+     did before. */
+  background: linear-gradient(
+    to top,
+    var(--facet-color, #b06a1a) 0%,
+    var(--facet-color, #b06a1a) var(--bar-fill, 0%),
+    transparent var(--bar-fill, 0%),
+    transparent 100%
+  );
   border: 0;
   border-radius: 3px 3px 0 0;
   cursor: pointer;
   flex: 1 1 12px;
+  height: 100%;
   max-width: 2.25rem;
   min-width: 12px;
 }
@@ -855,7 +916,7 @@ h1 {
 
   <div id="loading">
     <div class="spinner"></div>
-    <p>Loading dashboard data...</p>
+    <p>loading dashboard data…</p>
   </div>
 
   <div id="mainContent" style="display: none;">
