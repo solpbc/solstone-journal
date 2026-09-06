@@ -66,4 +66,26 @@ assert(late.includes("your briefing is usually ready by 10 am; it's 3h late."), 
 assert(late.includes('/app/thinking/#runs/20260905/morning_briefing'), late);
 assert.strictEqual(/\bI\b|I'm|\bmy\b/.test(late), false, late);
 
+// A briefing that was never prepared says so instead of disappearing. X-04.
+const missing = briefingPlaceholderHtml(
+  { phase: 'missing', exists: false },
+  { briefing_lateness: { late: true, late_hours: 1 }, today: '20260906' },
+);
+assert(missing.includes("your morning briefing wasn't prepared."), missing);
+assert(missing.includes('/app/thinking/#runs/20260906/morning_briefing'), missing);
+assert(missing.includes('see the run'), missing);
+assert.strictEqual(/\bI\b|I'm|\bmy\b/.test(missing), false, missing);
+assert.strictEqual(briefingPlaceholderHtml({ phase: 'missing', exists: true }, {}), '');
+
+// The narrative card is named for what it holds, not for the run that wrote it.
+// X-03.
+const live = renderNarrativeHtml({
+  narrative_content: 'the morning remains steady.',
+  narrative_header: 'pulse',
+  segment_count: 4,
+  today: '20260906',
+});
+assert(live.includes('today so far'), live);
+assert.strictEqual(live.toLowerCase().includes('>pulse<'), false, live);
+
 console.log('narrative and briefing render contract passed');

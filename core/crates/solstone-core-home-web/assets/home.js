@@ -6,9 +6,17 @@
   const BRIEFING_URL = '/app/home/api/briefing';
   const SECTION_STATE_KEY = 'pulse-section-state';
   const SECTION_IDS = ['pulse-narrative', 'pulse-today', 'pulse-needs'];
-  const SECTION_DEFAULTS = {
+  // Collapsed-by-default is right on a day with nothing in it. On a day with
+  // material the two sections that describe the day are the two the owner came
+  // for, so they open and they lead. X-03.
+  const SECTION_DEFAULTS_QUIET = {
     'pulse-narrative': 'true',
     'pulse-today': 'true',
+    'pulse-needs': 'false'
+  };
+  const SECTION_DEFAULTS_LIVE = {
+    'pulse-narrative': 'false',
+    'pulse-today': 'false',
     'pulse-needs': 'false'
   };
   const briefingSectionOrder = ['your_day', 'yesterday', 'forward_look', 'reading'];
@@ -190,7 +198,7 @@
 
   function loadPulse() {
     if (!surface) return;
-    surface.innerHTML = surfaceLoading('loading pulse...');
+    surface.innerHTML = surfaceLoading('loading your day…');
     apiJson(PULSE_URL)
       .then(function (data) {
         renderPulse(data);
@@ -200,6 +208,25 @@
         surface.innerHTML = surfaceError(error, "Couldn't load pulse");
         bindSurfaceRetry();
       });
+  }
+
+  function dayHasMaterial(pulse) {
+    if (Number(pulse?.segment_count || 0) > 0) return true;
+    return Array.isArray(pulse?.activities) && pulse.activities.length > 0;
+  }
+
+  // One list decides both the first paint and where a live refresh reinserts a
+  // card that was not on the page before.
+  function cardOrder(pulse) {
+    return dayHasMaterial(pulse)
+      ? ['vitals', 'narrative', 'today', 'yesterday', 'briefing', 'reflection', 'needs', 'connections']
+      : ['vitals', 'yesterday', 'briefing', 'narrative', 'reflection', 'today', 'needs', 'connections'];
+  }
+
+  function predecessors(name) {
+    const order = cardOrder(lastPulse);
+    const index = order.indexOf(name);
+    return index > 0 ? order.slice(0, index) : [];
   }
 
   function renderPulse(data) {
@@ -212,13 +239,9 @@
       setSurfaceHtml(cards.join(''));
       return;
     }
-    cards.push(renderYesterdayProcessingHtml(data));
-    cards.push(renderBriefingShellHtml(data));
-    cards.push(renderNarrativeHtml(data));
-    cards.push(renderWeeklyReflectionHtml(data));
-    cards.push(renderTodayHtml(data));
-    cards.push(renderNeedsYouHtml(data));
-    cards.push(renderConnectionsHtml(data));
+    cardOrder(data).slice(1).forEach(function (name) {
+      cards.push(CARD_RENDERERS[name](data));
+    });
     setSurfaceHtml(cards.join(''));
     restoreSectionState();
     refreshBriefing();
@@ -244,7 +267,7 @@
           + esc(g.cta.text || '') + '</a>';
       }
     }
-    html += '<a class="pulse-vitals-health-link" href="/app/health">health →</a></div>';
+    html += '<a class="pulse-vitals-health-link" href="/app/health/#registeredClientsCard">health →</a></div>';
     return html;
   }
 
@@ -257,8 +280,15 @@
     return '<div class="pulse-welcome" data-home-surface="welcome">'
       + '<h2>welcome to your journal</h2>'
       + '<p>this is where your day comes together: narrative summaries, calendar events, and tasks. as the solstone app takes in what you share with it, and all of it goes into your journal, sections will appear automatically.</p>'
-      + '<a href="/app/health">check system health →</a>'
       + '</div>';
+  }
+
+  // "pulse" is the name of the run that wrote this, not a thing the owner has
+  // a word for. The card says what it holds. X-03.
+  function narrativeHeading(pulse) {
+    const raw = String(pulse?.narrative_header || '').trim();
+    if (!raw || raw === 'pulse') return 'today so far';
+    return raw;
   }
 
   function renderNarrativeHtml(pulse) {
@@ -266,8 +296,8 @@
       const updated = pulse.narrative_updated_at ? '<div class="pulse-narrative-meta">updated at ' + esc(window.JournalFormat.timestamp(pulse.narrative_updated_at)) + '</div>' : '';
       return '<div class="pulse-narrative" id="pulse-narrative" data-home-surface="narrative" data-section-collapsed="true">'
         + '<div class="pulse-section-toggle" role="button" tabindex="0" aria-expanded="false">'
-        + '<h2 class="pulse-section-header">' + esc(pulse.narrative_header || "today's flow") + '</h2>'
-        + '<span class="pulse-section-summary">' + esc(pulse.narrative_updated_at ? 'updated ' + window.JournalFormat.timestamp(pulse.narrative_updated_at) : pulse.narrative_header || '') + '</span>'
+        + '<h2 class="pulse-section-header">' + esc(narrativeHeading(pulse)) + '</h2>'
+        + '<span class="pulse-section-summary">' + esc(pulse.narrative_updated_at ? 'updated ' + window.JournalFormat.timestamp(pulse.narrative_updated_at) : narrativeHeading(pulse)) + '</span>'
         + '</div>'
         + '<div class="pulse-section-body">'
         + '<div class="pulse-narrative-content" id="pulse-narrative-content">' + markdown(pulse.narrative_content || '') + '</div>'
@@ -278,7 +308,7 @@
     }
     if (Number(pulse.segment_count || 0) > 0) {
       return '<div class="pulse-narrative" id="pulse-narrative" data-home-surface="narrative">'
-        + '<h2 class="pulse-section-header">' + esc(pulse.narrative_header || "today's flow") + '</h2>'
+        + '<h2 class="pulse-section-header">' + esc(narrativeHeading(pulse)) + '</h2>'
         + '<div class="pulse-narrative-empty">analysis will be available after the next processing cycle.</div>'
         + '</div>';
     }
@@ -289,7 +319,7 @@
   }
 
   function renderNarrative(pulse) {
-    replaceHomeSurface('narrative', renderNarrativeHtml(pulse), ['vitals', 'yesterday', 'briefing']);
+    replaceHomeSurface('narrative', renderNarrativeHtml(pulse), predecessors('narrative'));
   }
 
   function renderWeeklyReflectionHtml(pulse) {
@@ -302,7 +332,7 @@
   }
 
   function renderWeeklyReflection(pulse) {
-    replaceHomeSurface('reflection', renderWeeklyReflectionHtml(pulse), ['vitals', 'yesterday', 'briefing', 'narrative']);
+    replaceHomeSurface('reflection', renderWeeklyReflectionHtml(pulse), predecessors('reflection'));
   }
 
   function currentTimeString(now) {
@@ -365,13 +395,18 @@
   }
 
   function renderToday(pulse) {
-    replaceHomeSurface('today', renderTodayHtml(pulse), ['vitals', 'yesterday', 'briefing', 'narrative', 'reflection']);
+    replaceHomeSurface('today', renderTodayHtml(pulse), predecessors('today'));
   }
 
   function renderYesterdayProcessingHtml(pulse) {
     const yesterday = pulse.yesterday_processing;
     if (!yesterday) return '';
-    const collapsed = yesterday.default_collapsed ? 'true' : 'false';
+    // Overnight trouble still opens itself when a run actually failed. When the
+    // day is live and nothing failed, it stays folded to its one line and the
+    // day leads instead. X-03.
+    const foldForLiveDay = dayHasMaterial(pulse)
+      && Number(yesterday.failed_run_count || 0) === 0;
+    const collapsed = (yesterday.default_collapsed && !foldForLiveDay) ? 'true' : 'false';
     let html = '<section class="pulse-yesterday" id="pulse-yesterday" data-home-surface="yesterday" data-collapsed="' + collapsed + '">'
       + '<div class="pulse-yesterday-header" role="button" tabindex="0" aria-expanded="' + (collapsed === 'true' ? 'false' : 'true') + '">'
       + '<h2 class="pulse-section-header">' + esc(yesterday.title || "Yesterday's processing") + '</h2>'
@@ -412,7 +447,7 @@
   }
 
   function renderYesterdayProcessing(pulse) {
-    replaceHomeSurface('yesterday', renderYesterdayProcessingHtml(pulse), ['vitals']);
+    replaceHomeSurface('yesterday', renderYesterdayProcessingHtml(pulse), predecessors('yesterday'));
   }
 
   function needsYouItemHtml(item) {
@@ -453,7 +488,7 @@
   }
 
   function renderNeedsYou(pulse) {
-    replaceHomeSurface('needs', renderNeedsYouHtml(pulse), ['vitals', 'yesterday', 'briefing', 'narrative', 'reflection', 'today']);
+    replaceHomeSurface('needs', renderNeedsYouHtml(pulse), predecessors('needs'));
   }
 
   function formatConnectionDay(day, referenceDay) {
@@ -499,6 +534,14 @@
     return day ? moments + ' · ' + day : moments;
   }
 
+  // The evidence line repeated the name back under itself on every row but one,
+  // and the one row where it differed read like a truncation bug. G1-27.
+  function connectionEvidenceHtml(neighbor, name) {
+    const label = typeof neighbor.latest_label === 'string' ? neighbor.latest_label.trim() : '';
+    if (!label || label.toLowerCase() === String(name || '').trim().toLowerCase()) return '';
+    return '<span class="pulse-connections-evidence">heard as “' + esc(label) + '”</span>';
+  }
+
   function connectionRowHtml(neighbor, connections, referenceDay) {
     const entityId = typeof neighbor.entity_id === 'string' ? neighbor.entity_id : '';
     const name = typeof neighbor.name === 'string' && neighbor.name ? neighbor.name : entityId;
@@ -507,7 +550,7 @@
       + '<a class="pulse-connections-name" href="' + esc(connectionEntityHref(entityId)) + '">' + esc(name) + '</a>'
       + connectionKindChipsHtml(neighbor, connections)
       + '<span class="pulse-connections-meta">' + esc(connectionRowMeta(neighbor, referenceDay)) + '</span>'
-      + (neighbor.latest_label ? '<span class="pulse-connections-evidence">' + esc(neighbor.latest_label) + '</span>' : '')
+      + connectionEvidenceHtml(neighbor, name)
       + '</div>';
   }
 
@@ -528,6 +571,15 @@
       return '<div class="pulse-empty-state" data-home-surface="connections">'
         + '<h2 class="pulse-section-header">connections</h2>'
         + '<div class="pulse-empty-message">no connections yet. this is built from the people and things your days involve.</div>'
+        + '</div>';
+    }
+    if (connections.state === 'unnamed') {
+      // Every neighbor the index had was an unnamed voice cluster. Say that,
+      // and point at the one place it can be fixed. X-02.
+      return '<div class="pulse-empty-state" data-home-surface="connections">'
+        + '<h2 class="pulse-section-header">connections</h2>'
+        + '<div class="pulse-empty-message">no named connections yet. '
+        + '<a href="/app/speakers/">name voices in speakers →</a></div>'
         + '</div>';
     }
     if (connections.state === 'unavailable') {
@@ -557,8 +609,13 @@
       + '<h2 class="pulse-section-header">connections</h2>';
 
     if (relationshipItems.length) {
+      // The shelf label only tells the owner anything when a second shelf is
+      // there to tell it apart from. Alone it is the card heading again. G1-28.
+      const shelfLabel = attendanceItems.length
+        ? '<div class="pulse-connections-shelf-label">connections found in your journal</div>'
+        : '';
       html += '<div class="pulse-connections-shelf">'
-        + '<div class="pulse-connections-shelf-label">connections found in your journal</div>'
+        + shelfLabel
         + '<div class="pulse-connections-list">'
         + relationshipItems.join('')
         + '</div></div>';
@@ -591,8 +648,19 @@
   }
 
   function renderConnections(pulse) {
-    replaceHomeSurface('connections', renderConnectionsHtml(pulse), ['vitals', 'yesterday', 'briefing', 'narrative', 'reflection', 'today', 'needs']);
+    replaceHomeSurface('connections', renderConnectionsHtml(pulse), predecessors('connections'));
   }
+
+  const CARD_RENDERERS = {
+    vitals: renderVitalsHtml,
+    yesterday: renderYesterdayProcessingHtml,
+    briefing: renderBriefingShellHtml,
+    narrative: renderNarrativeHtml,
+    reflection: renderWeeklyReflectionHtml,
+    today: renderTodayHtml,
+    needs: renderNeedsYouHtml,
+    connections: renderConnectionsHtml
+  };
 
   function normalizeBriefingFromPulse(pulse) {
     return {
@@ -621,7 +689,16 @@
   }
 
   function briefingPlaceholderHtml(data, pulseContext) {
-    if (data.phase !== 'pending' || data.exists) return '';
+    if (data.exists) return '';
+    // A briefing that was never prepared used to render nothing at all from ten
+    // in the morning onward. Silence is the worst failure mode. X-04.
+    if (data.phase === 'missing') {
+      return '<div class="pulse-briefing-placeholder">'
+        + "your morning briefing wasn't prepared."
+        + '<a class="pulse-briefing-status-link" href="/app/thinking/#runs/' + esc(pulseContext?.today || '') + '/morning_briefing">see the run →</a>'
+        + '</div>';
+    }
+    if (data.phase !== 'pending') return '';
     const lateness = pulseContext?.briefing_lateness || {};
     if (lateness.late) {
       return '<div class="pulse-briefing-placeholder">'
@@ -633,7 +710,7 @@
   }
 
   function renderBriefingCardHtml(data, pulseContext) {
-    if (!data.exists && data.phase !== 'pending') return '';
+    if (!data.exists && data.phase !== 'pending' && data.phase !== 'missing') return '';
     const existing = document.getElementById('pulse-briefing');
     const collapsed = data.phase === 'morning' ? 'false' : (existing?.dataset?.collapsed || (data.phase === 'morning' ? 'false' : 'true'));
     const metaText = data.meta && data.meta.generated ? formatBriefingTime(data.meta.generated) : '';
@@ -701,14 +778,14 @@
     validateBriefing(data);
     briefingSections = isPlainObject(data.sections) ? data.sections : {};
     const html = renderBriefingCardHtml(data, pulseContext);
-    replaceHomeSurface('briefing', html, ['vitals', 'yesterday']);
+    replaceHomeSurface('briefing', html, predecessors('briefing'));
   }
 
   function renderBriefingError(error) {
     const html = '<div class="pulse-briefing-card" id="pulse-briefing" data-home-surface="briefing" data-phase="error" data-collapsed="false">'
       + surfaceError(error, "Couldn't refresh briefing")
       + '</div>';
-    replaceHomeSurface('briefing', html, ['vitals', 'yesterday']);
+    replaceHomeSurface('briefing', html, predecessors('briefing'));
     const retry = document.querySelector('#pulse-briefing .surface-state-retry');
     if (retry) {
       retry.addEventListener('click', function () {
@@ -818,12 +895,15 @@
   }
 
   function restoreSectionState() {
+    // A stored choice always wins; the defaults only decide what a browser that
+    // has never been told anything shows.
+    const defaults = dayHasMaterial(lastPulse) ? SECTION_DEFAULTS_LIVE : SECTION_DEFAULTS_QUIET;
     try {
       const saved = JSON.parse(sessionStorage.getItem(SECTION_STATE_KEY) || '{}');
       SECTION_IDS.forEach(function (id) {
         const el = document.getElementById(id);
         if (!el || !el.hasAttribute('data-section-collapsed')) return;
-        const collapsed = Object.prototype.hasOwnProperty.call(saved, id) ? saved[id] : SECTION_DEFAULTS[id];
+        const collapsed = Object.prototype.hasOwnProperty.call(saved, id) ? saved[id] : defaults[id];
         el.dataset.sectionCollapsed = collapsed;
         const toggle = el.querySelector('.pulse-section-toggle');
         if (toggle) toggle.setAttribute('aria-expanded', collapsed === 'false' ? 'true' : 'false');

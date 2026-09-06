@@ -636,8 +636,7 @@ mod tests {
             "suze hasn't added anything to your journal recently."
         );
         let mut one_offline_timed = one_offline.clone();
-        one_offline_timed["clients"][0]["last_accepted_ingest_at"] =
-            json!("2026-05-13T15:30:00Z");
+        one_offline_timed["clients"][0]["last_accepted_ingest_at"] = json!("2026-05-13T15:30:00Z");
         let timed = glance(&one_offline_timed);
         assert_eq!(
             timed["issues"][0]["text"],
@@ -648,7 +647,10 @@ mod tests {
         // The journal never measures reachability for its own host, so the line
         // may not claim it for any device.
         for capture in [&two_offline, &three_stale_running, &one_offline] {
-            let text = glance(capture)["issues"][0]["text"].as_str().unwrap().to_owned();
+            let text = glance(capture)["issues"][0]["text"]
+                .as_str()
+                .unwrap()
+                .to_owned();
             assert!(!text.contains("reachable"), "{text}");
             assert!(!text.contains("asleep"), "{text}");
         }
