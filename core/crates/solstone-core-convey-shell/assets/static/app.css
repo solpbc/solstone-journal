@@ -264,7 +264,7 @@ body.has-managed-dialog .workspace {
   border: 1px solid #d1d5db;
   border-radius: 4px;
   background: #fff;
-  color: #374151;
+  color: var(--ink);
   cursor: pointer;
   font: inherit;
   font-size: 12px;
@@ -300,7 +300,7 @@ body.has-managed-dialog .workspace {
   border: 1px solid #d1d5db;
   border-radius: 4px;
   background: #fff;
-  color: #374151;
+  color: var(--ink);
   cursor: pointer;
   font: inherit;
   font-size: 12px;
@@ -409,7 +409,7 @@ body.has-managed-dialog .workspace {
 }
 
 .diagnostic-console-entry-detail span {
-  color: #374151;
+  color: var(--ink);
   font-weight: 600;
 }
 
@@ -919,7 +919,7 @@ a.notification-card:active {
 
 .notification-close:hover {
   background: #f3f4f6;
-  color: #374151;
+  color: var(--ink);
 }
 
 .notification-close:active {
@@ -990,7 +990,7 @@ a.notification-card:active {
   border: 1px solid #d1d5db;
   border-radius: 999px;
   background: #f9fafb;
-  color: #374151;
+  color: var(--ink);
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
@@ -1257,7 +1257,7 @@ a:focus-visible {
   border: 1px solid #d1d5db;
   border-radius: 6px;
   background: #fff;
-  color: #374151;
+  color: var(--ink);
   font: inherit;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
@@ -1310,7 +1310,7 @@ a:focus-visible {
   border: 1px solid #d1d5db;
   border-radius: 6px;
   background: #fff;
-  color: #374151;
+  color: var(--ink);
   font: inherit;
   text-decoration: none;
   cursor: pointer;
