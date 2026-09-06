@@ -1369,9 +1369,13 @@
     const avgSeconds = durations.length
       ? Math.round(durations.reduce((sum, seconds) => sum + seconds, 0) / durations.length)
       : null;
-    const runWord = group.length === 1 ? 'run' : 'runs';
     const durationText = avgSeconds !== null ? `, about ${window.JournalFormat.duration(avgSeconds)} each` : '';
-    return `all ${group.length} ${label} ${runWord} ${[...statuses][0]} on ${[...models][0]}${durationText}.`;
+    // A real plural branch: "1 pulse run completed" reads as English, where
+    // "all 1 pulse run" does not.
+    const runCount = group.length === 1
+      ? `1 ${label} run`
+      : `all ${group.length} ${label} runs`;
+    return `${runCount} ${[...statuses][0]} on ${[...models][0]}${durationText}.`;
   }
 
   function renderThinkingRunList(host, runs, hiddenColumns = new Set()) {
@@ -1538,6 +1542,14 @@
         details.appendChild(note);
       }
       const hiddenColumns = thinkingRunHiddenColumns(group);
+      // status/model/provider are hidden because the group note lifts them out
+      // of the table. When the note isn't shown (the group isn't uniform on all
+      // three), nothing carries them, so keep the columns.
+      if (!groupNote) {
+        hiddenColumns.delete('status');
+        hiddenColumns.delete('model');
+        hiddenColumns.delete('provider');
+      }
       const shown = state.runsGroupShown.get(name) || thinkingRunsPageSize;
       renderThinkingRunList(details, group.slice(0, shown), hiddenColumns);
       if (group.length > shown) {
