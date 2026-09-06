@@ -81,7 +81,6 @@ JOURNAL_DATA_ANCHORS: frozenset[str] = frozenset(
         "skills",
         "streams",
         "talents",
-        "timeline.json",
     }
 )
 

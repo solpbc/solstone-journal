@@ -123,7 +123,7 @@
       data,
       unit,
       mode: 'navigate',
-      appPath: '/app/timeline',
+      appPath: '/app/speakers',
       ...opts
     });
     return { host, root };
@@ -134,7 +134,7 @@
       data,
       unit,
       mode: 'navigate',
-      appPath: '/app/timeline',
+      appPath: '/app/speakers',
       ...opts
     });
   }
@@ -247,7 +247,7 @@
 
     const labels = Array.from(root.querySelectorAll('.daygrid-months a'));
     assert('month labels are bare months', labels.every((label) => /^[A-Z][a-z]{2}$/.test(label.textContent)));
-    equal('month href keeps YYYYMM', labels[0].getAttribute('href'), '/app/timeline/202601');
+    equal('month href keeps YYYYMM', labels[0].getAttribute('href'), '/app/speakers/202601');
 
     // Consecutive months share the week column that straddles them, so placing a
     // label across its own first..last day makes neighbours overlap and grid wraps
@@ -501,8 +501,8 @@
       pending: {}
     }, { today: '20260101', monthLinks: true });
     root = mounted.root;
-    equal('active day href', root.querySelector('[data-daygrid-date="20260101"]').getAttribute('href'), '/app/timeline/20260101');
-    equal('month label href', root.querySelector('.daygrid-months a').getAttribute('href'), '/app/timeline/202601');
+    equal('active day href', root.querySelector('[data-daygrid-date="20260101"]').getAttribute('href'), '/app/speakers/20260101');
+    equal('month label href', root.querySelector('.daygrid-months a').getAttribute('href'), '/app/speakers/202601');
 
     setPointer(false);
     let selected = mountSelect(selectData(), { today: '20260304', monthLinks: true });

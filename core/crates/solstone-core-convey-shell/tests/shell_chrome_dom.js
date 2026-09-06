@@ -376,7 +376,6 @@ function shellFixture(options = {}) {
   const groups = [
     ['your_journal', [
       ['home', 'home', 'primary', 0],
-      ['timeline', 'timeline', 'primary', 1],
       ['transcripts', 'transcripts', null, 0],
       ['speakers', 'speakers', null, 0],
       ['body', 'body', null, 0],
@@ -401,7 +400,7 @@ function shellFixture(options = {}) {
   ];
   const apps = groups.flatMap(([launcherGroup, rows]) => rows.map(([name, label, railGroup, railRank], launcherRank) => ({
     app_bar: '',
-    background_url: options.boot && (name === 'support' || name === 'timeline')
+    background_url: options.boot && name === 'support'
       ? '/app/' + name + '/background'
       : null,
     date_nav: false,
@@ -603,13 +602,13 @@ testCase('rail composition', () => {
   const harness = createHarness();
   renderChrome(harness, 'home');
   const rail = harness.document.querySelector('#app-rail');
-  assert.strictEqual(rail.children.length, 11);
+  assert.strictEqual(rail.children.length, 10);
   assert.ok(rail.children[0].hasAttribute('data-app-launcher-toggle'));
-  assert.deepStrictEqual(appNames(rail.children.slice(1, 6)), ['home', 'timeline', 'search', 'entities', 'thinking']);
-  assert.ok(rail.children[6].classList.contains('app-rail-spacer'));
-  assert.strictEqual(rail.children[7].id, 'status-instrument');
-  assert.ok(rail.children[8].classList.contains('app-rail-divider'));
-  assert.deepStrictEqual(appNames(rail.children.slice(9)), ['import', 'settings']);
+  assert.deepStrictEqual(appNames(rail.children.slice(1, 5)), ['home', 'search', 'entities', 'thinking']);
+  assert.ok(rail.children[5].classList.contains('app-rail-spacer'));
+  assert.strictEqual(rail.children[6].id, 'status-instrument');
+  assert.ok(rail.children[7].classList.contains('app-rail-divider'));
+  assert.deepStrictEqual(appNames(rail.children.slice(8)), ['import', 'settings']);
 });
 
 testCase('launcher completeness and order', () => {
@@ -617,12 +616,12 @@ testCase('launcher completeness and order', () => {
   renderChrome(harness, 'home');
   const groups = harness.document.querySelectorAll('[data-launcher-group]');
   assert.deepStrictEqual(groups.map((group) => group.getAttribute('data-launcher-group')), ['your_journal', 'understand', 'manage']);
-  assert.deepStrictEqual(appNames(groups[0].querySelectorAll('[data-launcher-app]')), ['home', 'timeline', 'transcripts', 'speakers', 'body', 'news']);
+  assert.deepStrictEqual(appNames(groups[0].querySelectorAll('[data-launcher-app]')), ['home', 'transcripts', 'speakers', 'body', 'news']);
   assert.deepStrictEqual(appNames(groups[1].querySelectorAll('[data-launcher-app]')), ['search', 'entities', 'thinking', 'stats', 'curation', 'activities']);
   assert.deepStrictEqual(appNames(groups[2].querySelectorAll('[data-launcher-app]')), ['import', 'network', 'backup', 'health', 'support', 'settings']);
   const allApps = harness.document.querySelectorAll('[data-launcher-app]');
-  assert.strictEqual(allApps.length, 18);
-  assert.strictEqual(new Set(appNames(allApps)).size, 18);
+  assert.strictEqual(allApps.length, 17);
+  assert.strictEqual(new Set(appNames(allApps)).size, 17);
 });
 
 testCase('dock composition', () => {
@@ -631,7 +630,7 @@ testCase('dock composition', () => {
   const dock = harness.document.querySelector('#app-dock');
   assert.strictEqual(dock.children.length, 5);
   assert.strictEqual(dock.children[4].id, 'status-instrument');
-  assert.deepStrictEqual(appNames(dock.children.slice(0, 3)), ['home', 'timeline', 'search']);
+  assert.deepStrictEqual(appNames(dock.children.slice(0, 3)), ['home', 'search', 'entities']);
   assert.ok(dock.children[3].hasAttribute('data-app-launcher-toggle'));
 });
 
@@ -659,7 +658,7 @@ testCase('launcher open and close lifecycle', () => {
   harness.document.dispatchEvent(event('keydown', { key: 'Escape' }));
   assert.ok(launcher.hidden && launcher.inert);
   const statusIcon = harness.document.querySelector('#status-instrument .status-icon');
-  renderChrome(harness, 'timeline');
+  renderChrome(harness, 'search');
   assert.strictEqual(harness.document.querySelector('#status-instrument .status-icon'), statusIcon);
   const rerenderedToggle = harness.document.querySelector('#app-rail [data-app-launcher-toggle]');
   rerenderedToggle.dispatchEvent(event('click', { bubbles: true }));
@@ -719,7 +718,6 @@ asyncCase('unconverted workspace keeps its unavailable notice after boot', async
     boot: true,
     pathname: '/app/activities/',
     fetchResponses: {
-      '/app/timeline/background': { status: 200, body: '' },
       '/app/support/background': { status: 200, body: '' },
       '/app/activities/workspace': {
         status: 501,
@@ -734,7 +732,6 @@ asyncCase('unconverted workspace keeps its unavailable notice after boot', async
   await harness.boot();
 
   assert.deepStrictEqual(harness.fetchCalls, [
-    '/app/timeline/background',
     '/app/support/background',
     '/app/activities/workspace',
   ]);
@@ -760,7 +757,6 @@ asyncCase('generic workspace failures still reach the shell error state', async 
   const harness = createHarness({
     boot: true,
     fetchResponses: {
-      '/app/timeline/background': { status: 200, body: '' },
       '/app/support/background': { status: 200, body: '' },
       '/app/home/workspace': { status: 500, body: '<h1>server error</h1>' },
     },
@@ -779,7 +775,6 @@ asyncCase('converted workspace mounts normally', async () => {
   const harness = createHarness({
     boot: true,
     fetchResponses: {
-      '/app/timeline/background': { status: 200, body: '' },
       '/app/support/background': { status: 200, body: '' },
       '/app/home/workspace': { status: 200, body: workspace },
     },

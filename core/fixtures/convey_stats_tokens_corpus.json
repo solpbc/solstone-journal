@@ -330,8 +330,6 @@
             "response.body.generators.speaker_attribution.path",
             "response.body.generators.steward.mtime",
             "response.body.generators.steward.path",
-            "response.body.generators.timeline:segment_summary.mtime",
-            "response.body.generators.timeline:segment_summary.path",
             "response.body.generators.work.mtime",
             "response.body.generators.work.path"
           ],
@@ -741,31 +739,6 @@
                   "title": "Steward",
                   "type": "generate"
                 },
-                "timeline:segment_summary": {
-                  "app": "timeline",
-                  "color": "#6c757d",
-                  "description": "Names the single most important event in each segment for the timeline.",
-                  "hook": {
-                    "post": "timeline:segment_summary",
-                    "pre": "timeline:segment_summary"
-                  },
-                  "load": {
-                    "percepts": false,
-                    "talents": false,
-                    "transcripts": false
-                  },
-                  "max_output_tokens": 1024,
-                  "mtime": "<TALENT_MTIME>",
-                  "output": "json",
-                  "path": "<TALENT_PATH>",
-                  "priority": 41,
-                  "schedule": "segment",
-                  "schema": "segment_summary.schema.json",
-                  "source": "app",
-                  "thinking_budget": 0,
-                  "title": "Segment Summary",
-                  "type": "generate"
-                },
                 "work": {
                   "activities": [
                     "coding",
@@ -1084,8 +1057,6 @@
             "response.body.generators.speaker_attribution.path",
             "response.body.generators.steward.mtime",
             "response.body.generators.steward.path",
-            "response.body.generators.timeline:segment_summary.mtime",
-            "response.body.generators.timeline:segment_summary.path",
             "response.body.generators.work.mtime",
             "response.body.generators.work.path"
           ],
@@ -1494,31 +1465,6 @@
                   "source": "system",
                   "thinking_budget": 1024,
                   "title": "Steward",
-                  "type": "generate"
-                },
-                "timeline:segment_summary": {
-                  "app": "timeline",
-                  "color": "#6c757d",
-                  "description": "Names the single most important event in each segment for the timeline.",
-                  "hook": {
-                    "post": "timeline:segment_summary",
-                    "pre": "timeline:segment_summary"
-                  },
-                  "load": {
-                    "percepts": false,
-                    "talents": false,
-                    "transcripts": false
-                  },
-                  "max_output_tokens": 1024,
-                  "mtime": "<TALENT_MTIME>",
-                  "output": "json",
-                  "path": "<TALENT_PATH>",
-                  "priority": 41,
-                  "schedule": "segment",
-                  "schema": "segment_summary.schema.json",
-                  "source": "app",
-                  "thinking_budget": 0,
-                  "title": "Segment Summary",
                   "type": "generate"
                 },
                 "work": {
@@ -1957,8 +1903,6 @@
             "response.body.generators.speaker_attribution.path",
             "response.body.generators.steward.mtime",
             "response.body.generators.steward.path",
-            "response.body.generators.timeline:segment_summary.mtime",
-            "response.body.generators.timeline:segment_summary.path",
             "response.body.generators.work.mtime",
             "response.body.generators.work.path"
           ],
@@ -2367,31 +2311,6 @@
                   "source": "system",
                   "thinking_budget": 1024,
                   "title": "Steward",
-                  "type": "generate"
-                },
-                "timeline:segment_summary": {
-                  "app": "timeline",
-                  "color": "#6c757d",
-                  "description": "Names the single most important event in each segment for the timeline.",
-                  "hook": {
-                    "post": "timeline:segment_summary",
-                    "pre": "timeline:segment_summary"
-                  },
-                  "load": {
-                    "percepts": false,
-                    "talents": false,
-                    "transcripts": false
-                  },
-                  "max_output_tokens": 1024,
-                  "mtime": "<TALENT_MTIME>",
-                  "output": "json",
-                  "path": "<TALENT_PATH>",
-                  "priority": 41,
-                  "schedule": "segment",
-                  "schema": "segment_summary.schema.json",
-                  "source": "app",
-                  "thinking_budget": 0,
-                  "title": "Segment Summary",
                   "type": "generate"
                 },
                 "work": {
@@ -2831,8 +2750,6 @@
             "response.body.generators.speaker_attribution.path",
             "response.body.generators.steward.mtime",
             "response.body.generators.steward.path",
-            "response.body.generators.timeline:segment_summary.mtime",
-            "response.body.generators.timeline:segment_summary.path",
             "response.body.generators.work.mtime",
             "response.body.generators.work.path"
           ],
@@ -3240,31 +3157,6 @@
                   "source": "system",
                   "thinking_budget": 1024,
                   "title": "Steward",
-                  "type": "generate"
-                },
-                "timeline:segment_summary": {
-                  "app": "timeline",
-                  "color": "#6c757d",
-                  "description": "Names the single most important event in each segment for the timeline.",
-                  "hook": {
-                    "post": "timeline:segment_summary",
-                    "pre": "timeline:segment_summary"
-                  },
-                  "load": {
-                    "percepts": false,
-                    "talents": false,
-                    "transcripts": false
-                  },
-                  "max_output_tokens": 1024,
-                  "mtime": "<TALENT_MTIME>",
-                  "output": "json",
-                  "path": "<TALENT_PATH>",
-                  "priority": 41,
-                  "schedule": "segment",
-                  "schema": "segment_summary.schema.json",
-                  "source": "app",
-                  "thinking_budget": 0,
-                  "title": "Segment Summary",
                   "type": "generate"
                 },
                 "work": {

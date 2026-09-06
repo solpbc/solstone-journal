@@ -10,7 +10,7 @@
     drawer_label: 'bookkeeping',
     leads_title: 'where this landed',
     activities: 'activities',
-    timeline: 'timeline',
+    view_day: 'view that day',
     upload_facts: 'upload facts',
     processing_facts: 'processing facts',
     merge_summary: 'merge summary',
@@ -269,7 +269,7 @@
 
   function createdFileHref(path) {
     const match = String(path ?? '').match(/(?:^|\/)chronicle\/(\d{8})\//);
-    return match ? `/app/timeline/${encodeURIComponent(match[1])}` : null;
+    return match ? `/app/transcripts/${encodeURIComponent(match[1])}` : null;
   }
 
   function kvRow(label, value) {
@@ -317,7 +317,7 @@
     ].filter(hasValue);
     const encodedDay = day ? encodeURIComponent(day) : '';
     const links = day
-      ? `<div class="import-leads-links"><a href="#content">view imported content</a><a href="/app/timeline/${escapeHtml(encodedDay)}">${escapeHtml(strings.timeline)}</a></div>`
+      ? `<div class="import-leads-links"><a href="#content">view imported content</a><a href="/app/transcripts/${escapeHtml(encodedDay)}">${escapeHtml(strings.view_day)}</a></div>`
       : '';
 
     return `<section class="import-leads-card"><h2>${escapeHtml(strings.leads_title)}</h2><div class="import-leads-facts">${facts.map((fact) => `<span>${escapeHtml(fact)}</span>`).join('')}</div>${links}</section>`;

@@ -761,11 +761,11 @@ async function main() {
   assert.strictEqual(nodes.get('thinkingRunsNext').disabled, false, 'next day is available again on an earlier day');
 
   runResponses.push(Promise.resolve({
-    id: 'quiet-run', day: '20260204', name: 'timeline:segment_summary', status: 'completed',
+    id: 'quiet-run', day: '20260204', name: 'entities:detection', status: 'completed',
     failed: false, provider: 'local', model: 'local/qwen3.5-4b',
     events: [{event: 'tool_start'}, {event: 'thinking'}],
   }));
-  window.location.hash = '#runs/20260204/timeline%3Asegment_summary/quiet-run';
+  window.location.hash = '#runs/20260204/entities%3Adetection/quiet-run';
   thinking.routeThinkingHash('history');
   await settle();
   await settle();
@@ -774,10 +774,10 @@ async function main() {
     'no detail was recorded for this step',
     "a completed run's empty step is not reported as a failure",
   );
-  assert.strictEqual(nodes.get('thinkingRunsDetailHeading').textContent, 'timeline segment summary', 'the run detail heading reads a label');
+  assert.strictEqual(nodes.get('thinkingRunsDetailHeading').textContent, 'entity detection', 'the run detail heading reads a label');
   assert.strictEqual(
     nodes.get('thinkingRunsDetailIdsText').textContent,
-    'timeline:segment_summary \u00b7 local \u00b7 local/qwen3.5-4b',
+    'entities:detection \u00b7 local \u00b7 local/qwen3.5-4b',
     'the exact run ids stay in the disclosure',
   );
   assert.strictEqual(detailIds.hidden, false, 'the exact-ids disclosure is present for a selected run');

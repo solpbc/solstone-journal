@@ -15,7 +15,7 @@ use tower::ServiceExt;
 
 use crate::{
     routes,
-    test_support::{corpus, fixed_clock, later_clock, phase_root, write},
+    test_support::{corpus, fixed_clock, phase_root, write},
 };
 
 const CORPUS_SOURCE: &str = include_str!(concat!(
@@ -422,90 +422,6 @@ async fn ac1_replay_all_20_activities_phase_records_and_14_mutations() {
                 && record["status"].as_u64() == Some(status)
         }));
     }
-}
-
-#[tokio::test]
-async fn ac2_ac3_replay_all_108_timeline_records() {
-    let fixture = corpus();
-    let mut executed = 0;
-    for (phase, records) in fixture["phases"].as_object().expect("phases") {
-        let root = phase_root(phase);
-        let router = gated(root.path());
-        for expected in records
-            .as_array()
-            .expect("records")
-            .iter()
-            .filter(|record| {
-                record["path"]
-                    .as_str()
-                    .is_some_and(|path| path.starts_with("/app/timeline/"))
-            })
-        {
-            executed += 1;
-            let response = router
-                .clone()
-                .oneshot(
-                    Request::get(expected["path"].as_str().expect("path"))
-                        .body(Body::empty())
-                        .expect("request"),
-                )
-                .await
-                .expect("response");
-            assert_eq!(
-                response.status().as_u16(),
-                expected["status"].as_u64().expect("status") as u16,
-                "{phase} {}",
-                expected["path"]
-            );
-            // Deliberately exclude Content-Disposition: Flask's static sender records it on
-            // 16 cases, while converted native assets set Content-Type only, as do
-            // convey-shell and settings-web.
-            assert_eq!(
-                response
-                    .headers()
-                    .get(header::CONTENT_TYPE)
-                    .and_then(|value| value.to_str().ok()),
-                expected["content_type"].as_str(),
-                "{phase} {}",
-                expected["path"]
-            );
-            assert_eq!(
-                response
-                    .headers()
-                    .get(header::LOCATION)
-                    .and_then(|value| value.to_str().ok()),
-                expected.get("location").and_then(Value::as_str),
-                "{phase} {}",
-                expected["path"]
-            );
-            let body = to_bytes(response.into_body(), usize::MAX)
-                .await
-                .expect("body");
-            let digest = if expected["body_sha256_basis"] == "raw-body" {
-                Sha256::digest(
-                    substitute(std::str::from_utf8(&body).expect("UTF-8"), root.path()).as_bytes(),
-                )
-            } else {
-                let mut value: Value = serde_json::from_slice(&body).expect("JSON body");
-                normalize(&mut value, root.path());
-                Sha256::digest(canonical(&value))
-            };
-            if let Some(recorded_digest) = expected.get("body_sha256").and_then(Value::as_str) {
-                assert_eq!(
-                    format!("{digest:x}"),
-                    recorded_digest,
-                    "{phase} {}",
-                    expected["path"]
-                );
-            }
-            if expected["body_sha256_basis"] == "normalized-json" {
-                assert_eq!(expected["normalized_fields"], serde_json::json!([]));
-            } else {
-                assert!(expected.get("normalized_fields").is_none());
-            }
-        }
-    }
-    assert_eq!(executed, 108);
 }
 
 #[tokio::test]
@@ -1030,108 +946,6 @@ async fn ac1e_convey_shell_uses_converted_curation_registry_row() {
     );
 }
 
-#[tokio::test]
-async fn ac4_clock_grows_populated_coverage_by_one_month() {
-    let root = phase_root("populated");
-    let first = routes(root.path().to_path_buf(), fixed_clock())
-        .oneshot(
-            Request::get("/app/timeline/api/overview")
-                .body(Body::empty())
-                .expect("request"),
-        )
-        .await
-        .expect("response");
-    let first: Value =
-        serde_json::from_slice(&to_bytes(first.into_body(), usize::MAX).await.expect("body"))
-            .expect("JSON");
-    assert_eq!(first["now"], "2026-05-15T12:00:00");
-    let second = routes(root.path().to_path_buf(), later_clock())
-        .oneshot(
-            Request::get("/app/timeline/api/overview")
-                .body(Body::empty())
-                .expect("request"),
-        )
-        .await
-        .expect("response");
-    let second: Value = serde_json::from_slice(
-        &to_bytes(second.into_body(), usize::MAX)
-            .await
-            .expect("body"),
-    )
-    .expect("JSON");
-    assert_eq!(
-        first["months"].as_array().expect("months").len() + 1,
-        second["months"].as_array().expect("months").len()
-    );
-    assert_eq!(second["months"][2]["ym"], "202606");
-}
-
-#[tokio::test]
-async fn ac17_unparseable_master_rollup_is_a_named_stale_outcome() {
-    let root = phase_root("established_empty");
-    write(&root.path().join("timeline.json"), "{");
-    let router = routes(root.path().to_path_buf(), fixed_clock());
-    for (path, status, outcome) in [
-        ("/app/timeline/api/overview", "stale", "malformed"),
-        ("/app/timeline/api/grid", "stale", "malformed"),
-        ("/app/timeline/api/month/202605", "stale", "malformed"),
-        ("/app/timeline/api/day/20260510", "missing", "missing"),
-    ] {
-        let response = router
-            .clone()
-            .oneshot(Request::get(path).body(Body::empty()).expect("request"))
-            .await
-            .expect("response");
-        assert_eq!(response.status(), axum::http::StatusCode::OK);
-        assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");
-        let payload: Value = serde_json::from_slice(
-            &to_bytes(response.into_body(), usize::MAX)
-                .await
-                .expect("body"),
-        )
-        .expect("JSON");
-        let status_field = if path.ends_with("grid") {
-            &payload["timeline_status"]
-        } else {
-            &payload["status"]
-        };
-        let outcome_field = if path.ends_with("grid") {
-            &payload["timeline_artifact_outcome"]
-        } else {
-            &payload["artifact_outcome"]
-        };
-        assert_eq!(status_field, status, "{path}");
-        assert_eq!(outcome_field, outcome, "{path}");
-    }
-}
-
-#[tokio::test]
-async fn ac17_semantically_invalid_master_rollup_is_a_named_stale_outcome() {
-    let root = phase_root("established_empty");
-    write(
-        &root.path().join("timeline.json"),
-        r#"{"schema_version":1,"kind":"day","source_digest":"input","generated_at_ms":1,"top_n":1,"months":{},"year_top":[],"year_curation":{"input_digest":"input","candidate_count":0,"picks":[],"rationale":"","error":null,"provenance":null}}"#,
-    );
-    let response = routes(root.path().to_path_buf(), fixed_clock())
-        .oneshot(
-            Request::get("/app/timeline/api/overview")
-                .body(Body::empty())
-                .expect("request"),
-        )
-        .await
-        .expect("response");
-    assert_eq!(response.status(), axum::http::StatusCode::OK);
-    assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");
-    let payload: Value = serde_json::from_slice(
-        &to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("body"),
-    )
-    .expect("JSON");
-    assert_eq!(payload["status"], "stale");
-    assert_eq!(payload["artifact_outcome"], "invalid");
-}
-
 #[test]
 fn ac19_canonicalizer_matches_python_compact_ascii_and_surrogate_pairs() {
     let value = serde_json::json!({"z": "é", "a": "😀"});
@@ -1144,25 +958,7 @@ fn ac19_canonicalizer_matches_python_compact_ascii_and_surrogate_pairs() {
 #[tokio::test]
 async fn ac5_ac6_ac11_shell_gate_and_fallback_contracts() {
     let established = phase_root("established_empty");
-    let shell = solstone_core_convey_shell::router(established.path().to_path_buf());
-    let timeline_404 = shell
-        .clone()
-        .oneshot(
-            Request::get("/app/timeline/notaday")
-                .body(Body::empty())
-                .expect("request"),
-        )
-        .await
-        .expect("response");
-    assert_eq!(timeline_404.status(), axum::http::StatusCode::NOT_FOUND);
-    assert_eq!(
-        to_bytes(timeline_404.into_body(), usize::MAX)
-            .await
-            .expect("body")
-            .len(),
-        0
-    );
-    // Unknown apps are exempt because known_app == None, unlike the gated timeline path.
+    // Unknown apps are exempt because known_app == None, unlike a gated known-app path below.
     let unknown = solstone_core_convey_shell::router(established.path().to_path_buf())
         .oneshot(
             Request::get("/app/nonexistent/")
@@ -1178,25 +974,10 @@ async fn ac5_ac6_ac11_shell_gate_and_fallback_contracts() {
             .expect("body")
             .is_empty()
     );
-    let nested = shell
-        .oneshot(
-            Request::get("/app/timeline/nosuch/deep/path")
-                .body(Body::empty())
-                .expect("request"),
-        )
-        .await
-        .expect("response");
-    assert_eq!(nested.status(), axum::http::StatusCode::NOT_FOUND);
-    assert!(
-        to_bytes(nested.into_body(), usize::MAX)
-            .await
-            .expect("body")
-            .starts_with(b"<!doctype html>")
-    );
     for path in [
-        "/app/timeline/",
-        "/app/timeline/workspace",
-        "/app/timeline/api/grid",
+        "/app/curation/",
+        "/app/curation/workspace",
+        "/app/curation/api/state",
     ] {
         for phase in ["unestablished", "corrupt", "established_empty"] {
             let root = phase_root(phase);
@@ -1243,9 +1024,6 @@ async fn ac5_ac6_ac11_shell_gate_and_fallback_contracts() {
                     detail.to_owned()
                 };
                 assert_eq!(actual, expected);
-            } else if path == "/app/timeline/" {
-                assert_eq!(status, axum::http::StatusCode::FOUND);
-                assert_eq!(body.len(), 231);
             } else {
                 assert_eq!(status, axum::http::StatusCode::OK);
             }

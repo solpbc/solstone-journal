@@ -260,7 +260,7 @@
     }
     const link = document.createElement('a');
     link.className = 'backlog-verdict-day';
-    link.href = `/app/timeline/${encodeURIComponent(day)}`;
+    link.href = `/app/transcripts/${encodeURIComponent(day)}`;
     if (pending === 1 && stuckCount === 0) {
       line.textContent = '';
       link.textContent = `${label.replace(/^(Today|Yesterday|Tomorrow)$/, (word) => word.toLowerCase())} is still catching up →`;

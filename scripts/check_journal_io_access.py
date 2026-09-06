@@ -115,8 +115,6 @@ OWNER_FILES: frozenset[str] = frozenset(
         "solstone/convey/config.py",
         "solstone/apps/speakers/attribution.py",
         "solstone/apps/speakers/candidate_tracker.py",
-        "solstone/apps/timeline/maintenance.py",
-        "solstone/apps/timeline/talent/segment_summary.py",
         "solstone/apps/import/journal_sources.py",
         "solstone/apps/observer/utils.py",
         "solstone/think/activities.py",

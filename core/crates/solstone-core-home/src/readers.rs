@@ -702,7 +702,7 @@ pub fn parse_sol_sources(text: &str) -> Vec<Value> {
                 _ => None,
             }
         } else if parts.first().is_some_and(|part| is_day(part)) {
-            Some(format!("/app/timeline/{}", parts[0]))
+            Some(format!("/app/transcripts/{}", parts[0]))
         } else {
             None
         };

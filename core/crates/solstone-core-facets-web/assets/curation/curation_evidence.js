@@ -61,7 +61,7 @@
   }
 
   function linkedRow(fields) {
-    const dayHref = `/app/timeline/${fields.day}`;
+    const dayHref = `/app/transcripts/${fields.day}`;
     const segmentHref = `/app/transcripts/${fields.day}#${fields.segment}`;
     const streamHtml = fields.stream
       ? `<span class="ev-meta">${escapeHtml(global.JournalFormat.stream(fields.stream))}</span>`

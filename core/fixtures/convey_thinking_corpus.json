@@ -1467,7 +1467,7 @@
       },
       {
         "body_bytes": 2703,
-        "body_sha256": "dc17d959673dd36bca376b156b4b46c467cd199318d088b79c26027db142f8dd",
+        "body_sha256": "642be2be9e9f20e2898564bd09df709a543339556d33e6ef1bdd43566cdd460a",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -1561,14 +1561,6 @@
               "key": "entities:detection",
               "source": "app",
               "title": "Entity Detection"
-            },
-            {
-              "app": "timeline",
-              "description": "Names the single most important event in each segment for the timeline.",
-              "disabled": false,
-              "key": "timeline:segment_summary",
-              "source": "app",
-              "title": "Segment Summary"
             }
           ]
         },
@@ -3701,7 +3693,7 @@
       },
       {
         "body_bytes": 2703,
-        "body_sha256": "dc17d959673dd36bca376b156b4b46c467cd199318d088b79c26027db142f8dd",
+        "body_sha256": "642be2be9e9f20e2898564bd09df709a543339556d33e6ef1bdd43566cdd460a",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -3795,14 +3787,6 @@
               "key": "entities:detection",
               "source": "app",
               "title": "Entity Detection"
-            },
-            {
-              "app": "timeline",
-              "description": "Names the single most important event in each segment for the timeline.",
-              "disabled": false,
-              "key": "timeline:segment_summary",
-              "source": "app",
-              "title": "Segment Summary"
             }
           ]
         },
@@ -5915,7 +5899,7 @@
       },
       {
         "body_bytes": 2703,
-        "body_sha256": "dc17d959673dd36bca376b156b4b46c467cd199318d088b79c26027db142f8dd",
+        "body_sha256": "642be2be9e9f20e2898564bd09df709a543339556d33e6ef1bdd43566cdd460a",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -6009,14 +5993,6 @@
               "key": "entities:detection",
               "source": "app",
               "title": "Entity Detection"
-            },
-            {
-              "app": "timeline",
-              "description": "Names the single most important event in each segment for the timeline.",
-              "disabled": false,
-              "key": "timeline:segment_summary",
-              "source": "app",
-              "title": "Segment Summary"
             }
           ]
         },
@@ -8119,7 +8095,7 @@
       },
       {
         "body_bytes": 2703,
-        "body_sha256": "dc17d959673dd36bca376b156b4b46c467cd199318d088b79c26027db142f8dd",
+        "body_sha256": "642be2be9e9f20e2898564bd09df709a543339556d33e6ef1bdd43566cdd460a",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -8213,14 +8189,6 @@
               "key": "entities:detection",
               "source": "app",
               "title": "Entity Detection"
-            },
-            {
-              "app": "timeline",
-              "description": "Names the single most important event in each segment for the timeline.",
-              "disabled": false,
-              "key": "timeline:segment_summary",
-              "source": "app",
-              "title": "Segment Summary"
             }
           ]
         },
@@ -10519,7 +10487,7 @@
       },
       {
         "body_bytes": 2703,
-        "body_sha256": "dc17d959673dd36bca376b156b4b46c467cd199318d088b79c26027db142f8dd",
+        "body_sha256": "642be2be9e9f20e2898564bd09df709a543339556d33e6ef1bdd43566cdd460a",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -10613,14 +10581,6 @@
               "key": "entities:detection",
               "source": "app",
               "title": "Entity Detection"
-            },
-            {
-              "app": "timeline",
-              "description": "Names the single most important event in each segment for the timeline.",
-              "disabled": false,
-              "key": "timeline:segment_summary",
-              "source": "app",
-              "title": "Segment Summary"
             }
           ]
         },
@@ -14070,7 +14030,7 @@
       },
       {
         "body_bytes": 2703,
-        "body_sha256": "dc17d959673dd36bca376b156b4b46c467cd199318d088b79c26027db142f8dd",
+        "body_sha256": "642be2be9e9f20e2898564bd09df709a543339556d33e6ef1bdd43566cdd460a",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -14164,14 +14124,6 @@
               "key": "entities:detection",
               "source": "app",
               "title": "Entity Detection"
-            },
-            {
-              "app": "timeline",
-              "description": "Names the single most important event in each segment for the timeline.",
-              "disabled": false,
-              "key": "timeline:segment_summary",
-              "source": "app",
-              "title": "Segment Summary"
             }
           ]
         },

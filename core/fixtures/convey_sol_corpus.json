@@ -653,17 +653,6 @@
                   "title": "Support",
                   "type": "cogitate"
                 },
-                "timeline:segment_summary": {
-                  "app": "timeline",
-                  "color": "#6c757d",
-                  "description": "Names the single most important event in each segment for the timeline.",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "segment",
-                  "source": "app",
-                  "title": "Segment Summary",
-                  "type": "generate"
-                },
                 "weekly_reflection": {
                   "app": null,
                   "color": "#6c757d",
@@ -958,17 +947,6 @@
                   "source": "app",
                   "title": "Support",
                   "type": "cogitate"
-                },
-                "timeline:segment_summary": {
-                  "app": "timeline",
-                  "color": "#6c757d",
-                  "description": "Names the single most important event in each segment for the timeline.",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "segment",
-                  "source": "app",
-                  "title": "Segment Summary",
-                  "type": "generate"
                 },
                 "weekly_reflection": {
                   "app": null,
@@ -1516,17 +1494,6 @@
                   "title": "Support",
                   "type": "cogitate"
                 },
-                "timeline:segment_summary": {
-                  "app": "timeline",
-                  "color": "#6c757d",
-                  "description": "Names the single most important event in each segment for the timeline.",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "segment",
-                  "source": "app",
-                  "title": "Segment Summary",
-                  "type": "generate"
-                },
                 "weekly_reflection": {
                   "app": null,
                   "color": "#6c757d",
@@ -1856,17 +1823,6 @@
                   "source": "app",
                   "title": "Support",
                   "type": "cogitate"
-                },
-                "timeline:segment_summary": {
-                  "app": "timeline",
-                  "color": "#6c757d",
-                  "description": "Names the single most important event in each segment for the timeline.",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "segment",
-                  "source": "app",
-                  "title": "Segment Summary",
-                  "type": "generate"
                 },
                 "weekly_reflection": {
                   "app": null,
@@ -2493,17 +2449,6 @@
                   "title": "Support",
                   "type": "cogitate"
                 },
-                "timeline:segment_summary": {
-                  "app": "timeline",
-                  "color": "#6c757d",
-                  "description": "Names the single most important event in each segment for the timeline.",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "segment",
-                  "source": "app",
-                  "title": "Segment Summary",
-                  "type": "generate"
-                },
                 "weekly_reflection": {
                   "app": null,
                   "color": "#6c757d",
@@ -2833,17 +2778,6 @@
                   "source": "app",
                   "title": "Support",
                   "type": "cogitate"
-                },
-                "timeline:segment_summary": {
-                  "app": "timeline",
-                  "color": "#6c757d",
-                  "description": "Names the single most important event in each segment for the timeline.",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "segment",
-                  "source": "app",
-                  "title": "Segment Summary",
-                  "type": "generate"
                 },
                 "weekly_reflection": {
                   "app": null,
@@ -3470,17 +3404,6 @@
                   "title": "Support",
                   "type": "cogitate"
                 },
-                "timeline:segment_summary": {
-                  "app": "timeline",
-                  "color": "#6c757d",
-                  "description": "Names the single most important event in each segment for the timeline.",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "segment",
-                  "source": "app",
-                  "title": "Segment Summary",
-                  "type": "generate"
-                },
                 "weekly_reflection": {
                   "app": null,
                   "color": "#6c757d",
@@ -3810,17 +3733,6 @@
                   "source": "app",
                   "title": "Support",
                   "type": "cogitate"
-                },
-                "timeline:segment_summary": {
-                  "app": "timeline",
-                  "color": "#6c757d",
-                  "description": "Names the single most important event in each segment for the timeline.",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "segment",
-                  "source": "app",
-                  "title": "Segment Summary",
-                  "type": "generate"
                 },
                 "weekly_reflection": {
                   "app": null,
@@ -4446,17 +4358,6 @@
                   "title": "Support",
                   "type": "cogitate"
                 },
-                "timeline:segment_summary": {
-                  "app": "timeline",
-                  "color": "#6c757d",
-                  "description": "Names the single most important event in each segment for the timeline.",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "segment",
-                  "source": "app",
-                  "title": "Segment Summary",
-                  "type": "generate"
-                },
                 "weekly_reflection": {
                   "app": null,
                   "color": "#6c757d",
@@ -4786,17 +4687,6 @@
                   "source": "app",
                   "title": "Support",
                   "type": "cogitate"
-                },
-                "timeline:segment_summary": {
-                  "app": "timeline",
-                  "color": "#6c757d",
-                  "description": "Names the single most important event in each segment for the timeline.",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": "segment",
-                  "source": "app",
-                  "title": "Segment Summary",
-                  "type": "generate"
                 },
                 "weekly_reflection": {
                   "app": null,

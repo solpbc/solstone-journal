@@ -330,7 +330,7 @@
       },
       {
         "body_bytes": 15456,
-        "body_sha256": "41db46204541819b408ba95fa97495c3035f893368097b8d61324a15e8790f82",
+        "body_sha256": "4e4aefe50cf72f288da76e634346471da309ee3336a572af1b43e416777dced6",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -630,26 +630,6 @@
               "name": "thinking",
               "starred": false,
               "workspace_url": "/app/thinking/workspace"
-            },
-            {
-              "app_bar": true,
-              "background_url": "/app/timeline/background",
-              "date_nav": {
-                "allow_future": false,
-                "step": null,
-                "unit": {
-                  "none": "no segments",
-                  "one": "segment",
-                  "other": "segments"
-                }
-              },
-              "facets_enabled": false,
-              "icon": "\ud83d\udd70\ufe0f",
-              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <rect width=\"18\" height=\"18\" x=\"3\" y=\"4\" rx=\"2\" /> <path d=\"M16 2v4\" /> <path d=\"M3 10h18\" /> <path d=\"M8 2v4\" /> <path d=\"M17 14h-6\" /> <path d=\"M13 18H7\" /> <path d=\"M7 14h.01\" /> <path d=\"M17 18h.01\" /> </svg>",
-              "label": "timeline",
-              "name": "timeline",
-              "starred": false,
-              "workspace_url": "/app/timeline/workspace"
             },
             {
               "app_bar": true,

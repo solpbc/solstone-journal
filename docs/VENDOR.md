@@ -46,7 +46,7 @@ const html = marked.parse(markdown, {
 ```
 
 **Currently Used By**:
-- `AppServices.renderMarkdown` at `core/crates/solstone-core-convey-shell/assets/static/app.js` — part of the shared client runtime used across apps (home, transcripts, import, news/timeline)
+- `AppServices.renderMarkdown` at `core/crates/solstone-core-convey-shell/assets/static/app.js` — part of the shared client runtime used across apps (home, transcripts, import, news)
 
 ### DOMPurify (v3.4.0)
 

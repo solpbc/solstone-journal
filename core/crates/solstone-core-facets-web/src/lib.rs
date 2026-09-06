@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Native read routes for the Timeline Convey surface.
+//! Native read routes for the activities, news, curation, awareness, and PDF Convey surfaces.
 
 use std::path::PathBuf;
 
@@ -17,14 +17,12 @@ mod http;
 mod news;
 mod pdf;
 pub mod segments;
-mod timeline;
 
 pub use clock::Clock;
 pub use date_nav::date_nav_index;
 
 pub fn routes(journal_root: PathBuf, clock: Clock) -> Router {
-    timeline::routes(journal_root.clone(), clock.clone())
-        .merge(activities::routes(journal_root.clone(), clock.clone()))
+    activities::routes(journal_root.clone(), clock.clone())
         .merge(news::routes(journal_root.clone(), clock.clone()))
         .merge(curation::routes(journal_root.clone()))
         .merge(awareness::routes(journal_root, clock))

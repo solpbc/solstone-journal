@@ -110,17 +110,8 @@ pub fn origin(day: &str, stream: &str, key: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use axum::{
-        body::{Body, to_bytes},
-        http::Request,
-    };
-    use tower::ServiceExt;
-
-    use super::{is_exact_segment_key, segment_key};
-    use crate::{
-        routes,
-        test_support::{fixed_clock, phase_root, write},
-    };
+    use super::{day_segment_counts, is_exact_segment_key, iter_segments, segment_key};
+    use crate::test_support::{phase_root, write};
 
     #[test]
     fn segment_key_retains_search_and_exact_match_semantics() {
@@ -132,35 +123,12 @@ mod tests {
         assert!(!is_exact_segment_key("foo_100000_300_bar"));
     }
 
-    async fn response_body(router: axum::Router, path: &str) -> Vec<u8> {
-        let response = router
-            .oneshot(Request::get(path).body(Body::empty()).expect("request"))
-            .await
-            .expect("response");
-        assert_eq!(response.status(), axum::http::StatusCode::OK);
-        to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("body")
-            .to_vec()
-    }
-
-    #[tokio::test]
-    async fn ac18_health_children_do_not_become_segments() {
+    #[test]
+    fn ac18_health_children_do_not_become_segments() {
         let root = phase_root("populated");
-        let paths = [
-            "/app/timeline/api/grid",
-            "/app/timeline/api/index",
-            "/app/timeline/api/stats/202605",
-            "/app/timeline/api/day/20260510",
-        ];
-        let before = {
-            let router = routes(root.path().to_path_buf(), fixed_clock());
-            let mut responses = Vec::new();
-            for path in paths {
-                responses.push(response_body(router.clone(), path).await);
-            }
-            responses
-        };
+        let day_dir = root.path().join("chronicle/20260510");
+        let before_segments = iter_segments(&day_dir);
+        let before_counts = day_segment_counts(root.path(), Some("202605"));
 
         write(
             &root
@@ -169,13 +137,10 @@ mod tests {
             "health must not be a stream\n",
         );
 
-        let router = routes(root.path().to_path_buf(), fixed_clock());
-        for (path, expected) in paths.into_iter().zip(before) {
-            assert_eq!(
-                response_body(router.clone(), path).await,
-                expected,
-                "{path}"
-            );
-        }
+        assert_eq!(iter_segments(&day_dir), before_segments);
+        assert_eq!(
+            day_segment_counts(root.path(), Some("202605")),
+            before_counts
+        );
     }
 }

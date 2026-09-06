@@ -4036,13 +4036,9 @@ dependencies = [
  "solstone-core-entity",
  "solstone-core-facets",
  "solstone-core-format",
- "solstone-core-generate",
  "solstone-core-journal-io",
- "solstone-core-maintenance",
  "solstone-core-speaker-resolve",
  "solstone-core-system",
- "solstone-core-system-health",
- "solstone-core-timeline",
  "tempfile",
  "tokio",
  "tower",
@@ -4073,7 +4069,6 @@ dependencies = [
  "nix",
  "serde",
  "serde_json",
- "solstone-core-system",
 ]
 
 [[package]]
@@ -4546,14 +4541,12 @@ dependencies = [
  "solstone-core-backup",
  "solstone-core-backup-runtime",
  "solstone-core-brain",
- "solstone-core-generate",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-offload",
  "solstone-core-retention",
  "solstone-core-speaker-resolve",
  "solstone-core-system",
- "solstone-core-timeline",
  "tempfile",
 ]
 
@@ -5274,7 +5267,6 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-processing-record",
  "solstone-core-system",
- "solstone-core-timeline",
  "tempfile",
  "thiserror 2.0.20",
  "unicode-general-category",
@@ -5337,7 +5329,6 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-local",
- "solstone-core-maintenance",
  "solstone-core-npy",
  "solstone-core-speaker-id",
  "solstone-core-speaker-resolve",
@@ -5345,7 +5336,6 @@ dependencies = [
  "solstone-core-system-health",
  "solstone-core-talent-cli",
  "solstone-core-talent-config",
- "solstone-core-timeline",
  "solstone-core-transcripts",
  "tempfile",
  "zip",
@@ -5391,7 +5381,6 @@ dependencies = [
  "solstone-core-system-health",
  "solstone-core-talent-config",
  "solstone-core-talent-runtime",
- "solstone-core-timeline",
  "solstone-core-transcripts-web",
  "tempfile",
  "tokio",
@@ -5424,20 +5413,6 @@ name = "solstone-core-thinking-copy"
 version = "2.0.0"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "solstone-core-timeline"
-version = "2.0.0"
-dependencies = [
- "nix",
- "serde",
- "serde_json",
- "solstone-core-brain",
- "solstone-core-journal-io",
- "tempfile",
- "thiserror 2.0.20",
- "uuid",
 ]
 
 [[package]]

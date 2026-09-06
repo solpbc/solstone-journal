@@ -698,7 +698,7 @@ async fn registry_and_unconverted_refusal_contract_are_stable() {
     let shell: Value = serde_json::from_slice(&shell_body).expect("shell parses");
     let apps = shell["apps"].as_array().expect("apps array");
     assert!(shell.get("chat_bar").is_none());
-    assert_eq!(apps.len(), 18);
+    assert_eq!(apps.len(), 17);
     for app in apps {
         // `starred` and the global facet capability were removed; launcher and rail metadata add four fields.
         assert_eq!(app.as_object().unwrap().len(), 12);
@@ -708,10 +708,7 @@ async fn registry_and_unconverted_refusal_contract_are_stable() {
         .iter()
         .filter_map(|app| app["background_url"].as_str())
         .collect();
-    assert_eq!(
-        backgrounds,
-        ["/app/support/background", "/app/timeline/background"]
-    );
+    assert_eq!(backgrounds, ["/app/support/background"]);
 
     let (status, content_type, _, body) =
         get(router(journal.0.clone()), "/app/activities/workspace").await;

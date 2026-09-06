@@ -27,7 +27,7 @@
  const exactDay=Boolean(from.value&&from.value===to.value);const limit=exactDay?100:5;
  function pageUrl(changes){const p=new URLSearchParams(params);p.delete('offset');Object.entries(changes).forEach(([k,v])=>p.set(k,v));return '/app/search/?'+p.toString();}
  function node(tag,cls,text){const e=document.createElement(tag);e.className=cls||'';if(text!==undefined)e.textContent=text;return e;}
- function dayLink(day){const a=node('a','',window.JournalFormat.day(day));a.href='/app/timeline/'+encodeURIComponent(day);return a;}
+ function dayLink(day){const a=node('a','',window.JournalFormat.day(day));a.href='/app/transcripts/'+encodeURIComponent(day);return a;}
  function sourceLink(hit){
   const path=String(hit.path||'');
   if(path.startsWith('entity_search:'))return '/app/entities/#'+encodeURIComponent(path.slice('entity_search:'.length));
@@ -47,7 +47,7 @@
   card.append(meta);const text=node('p','search-excerpt');text.append(excerpt(hit.text));card.append(text);
   const actions=node('div','search-actions');const destination=sourceLink(hit);
   if(destination){const a=node('a','search-link',String(hit.path).startsWith('entity_search:')?'open entity':'open transcript');a.href=destination;actions.append(a);}
-  else if(hit.day){const a=node('a','search-link','open that day →');a.href='/app/timeline/'+encodeURIComponent(hit.day);actions.append(a);}
+  else if(hit.day){const a=node('a','search-link','open that day →');a.href='/app/transcripts/'+encodeURIComponent(hit.day);actions.append(a);}
   const path=String(hit.path||'');
   if(path&&!path.startsWith('entity_search:')&&hit.entry_id){
    const button=node('button','','read matched entry');button.type='button';button.setAttribute('aria-expanded','false');const content=node('pre','search-source');content.hidden=true;

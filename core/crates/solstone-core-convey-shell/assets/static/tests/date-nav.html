@@ -132,7 +132,7 @@
     equal('bad current path is dayless', window.DateNav.day(), null);
     equal('general app path parses day', window.DateNav.parseDayFromPath('/app/sol/20260714'), '20260714');
     equal('bad app path is dayless', window.DateNav.parseDayFromPath('/app/transcripts/20261332'), null);
-    equal('non-8-digit app path is dayless', window.DateNav.parseDayFromPath('/app/timeline/202607'), null);
+    equal('non-8-digit app path is dayless', window.DateNav.parseDayFromPath('/app/speakers/202607'), null);
     equal('opening month from coverage', window.DateNav.openingMonth({ coverage: { end: '20260520' } }, now), '202605');
     equal('opening month without coverage', window.DateNav.openingMonth({ coverage: null }, now), '202607');
 
@@ -148,8 +148,8 @@
     equal('dayless heading emptied', document.querySelector('[data-date-nav-heading]')?.textContent, '');
 
     await mount(
-      'timeline',
-      '/app/timeline/20260714',
+      'speakers',
+      '/app/speakers/20260714',
       { mount: 'content', unit, allow_future: true },
       {
         index: { coverage: { start: '20260701', end: '20260714' }, months: { 202607: 9 } },
@@ -163,8 +163,8 @@
     assert('pending month stats render no day cells', document.querySelectorAll('[data-date-nav-cell="day"]').length === 0);
 
     await mount(
-      'timeline',
-      '/app/timeline/20260714',
+      'speakers',
+      '/app/speakers/20260714',
       { mount: 'content', unit, allow_future: true },
       {
         index: { coverage: { start: '20260701', end: '20260714' }, months: { 202607: 9 } },
