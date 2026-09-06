@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use axum::{
@@ -140,7 +141,19 @@ async fn grid(root: PathBuf) -> Response {
     json_response(payload)
 }
 async fn index_api(root: PathBuf) -> Response {
-    json_response(date_nav::date_nav_index(&day_segment_counts(&root, None)))
+    json_response(date_nav::date_nav_index(&nav_day_counts(&root, None)))
+}
+
+/// Every day the date picker should let the owner open: days whose segments are
+/// still on disk, plus days the master rollup already covers. A day keeps its
+/// live segment count where it has one, and takes the rollup's own count
+/// otherwise, so the picker never shows a number nothing produced.
+fn nav_day_counts(root: &std::path::Path, month: Option<&str>) -> BTreeMap<String, usize> {
+    let mut counts = day_segment_counts(root, month);
+    for (day, segments) in rollup::rollup_day_counts(root, month) {
+        counts.entry(day).or_insert(segments);
+    }
+    counts
 }
 async fn stats(root: PathBuf, ym: String) -> Response {
     if !is_month(&ym) {
@@ -154,7 +167,7 @@ async fn stats(root: PathBuf, ym: String) -> Response {
         );
     }
     json_response(
-        serde_json::to_value(day_segment_counts(&root, Some(&ym))).unwrap_or_else(|_| json!({})),
+        serde_json::to_value(nav_day_counts(&root, Some(&ym))).unwrap_or_else(|_| json!({})),
     )
 }
 async fn month(root: PathBuf, ym: String) -> Response {
