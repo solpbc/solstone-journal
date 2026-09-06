@@ -27,6 +27,7 @@
  const exactDay=Boolean(from.value&&from.value===to.value);const limit=exactDay?100:5;
  function pageUrl(changes){const p=new URLSearchParams(params);p.delete('offset');Object.entries(changes).forEach(([k,v])=>p.set(k,v));return '/app/search/?'+p.toString();}
  function node(tag,cls,text){const e=document.createElement(tag);e.className=cls||'';if(text!==undefined)e.textContent=text;return e;}
+ function dayLink(day){const a=node('a','',window.JournalFormat.day(day));a.href='/app/timeline/'+encodeURIComponent(day);return a;}
  function sourceLink(hit){
   const path=String(hit.path||'');
   if(path.startsWith('entity_search:'))return '/app/entities/#'+encodeURIComponent(path.slice('entity_search:'.length));
@@ -46,6 +47,7 @@
   card.append(meta);const text=node('p','search-excerpt');text.append(excerpt(hit.text));card.append(text);
   const actions=node('div','search-actions');const destination=sourceLink(hit);
   if(destination){const a=node('a','search-link',String(hit.path).startsWith('entity_search:')?'open entity':'open transcript');a.href=destination;actions.append(a);}
+  else if(hit.day){const a=node('a','search-link','open that day →');a.href='/app/timeline/'+encodeURIComponent(hit.day);actions.append(a);}
   const path=String(hit.path||'');
   if(path&&!path.startsWith('entity_search:')&&hit.entry_id){
    const button=node('button','','read matched entry');button.type='button';button.setAttribute('aria-expanded','false');const content=node('pre','search-source');content.hidden=true;
@@ -60,19 +62,35 @@
   }else card.append(actions);
   return card;
  }
+ let activeController=null;let progressTimeout=null;let progressInterval=null;
+ function stopProgress(){if(progressTimeout){clearTimeout(progressTimeout);progressTimeout=null;}if(progressInterval){clearInterval(progressInterval);progressInterval=null;}}
+ function abortActive(){if(activeController)activeController.abort();}
+ const SEARCH_FAILURE_REASONS={
+  index_locked:'the search index is busy right now.',
+  index_absent:'your journal doesn’t have a search index yet.',
+  index_unreadable:'the search index couldn’t be read.',
+  empty_index:'there’s nothing indexed yet.'
+ };
  async function load(){
   if(!query.value.trim())return;
   if(from.value&&to.value&&from.value>to.value){status.textContent='choose an end date on or after the start date.';status.classList.add('search-error');return;}
+  abortActive();const controller=new AbortController();activeController=controller;
   results.replaceChildren();paging.replaceChildren();
-  status.textContent='searching your journal…';root.setAttribute('aria-busy','true');
+  status.classList.remove('search-error');status.textContent='searching your journal…';root.setAttribute('aria-busy','true');
+  const startedAt=Date.now();stopProgress();
+  const tip=exactDay?'':' a single day is usually much faster.';
+  progressTimeout=setTimeout(()=>{
+   const tick=()=>{status.textContent='still searching… '+Math.round((Date.now()-startedAt)/1000)+' s.'+tip;};
+   tick();progressInterval=setInterval(tick,5000);
+  },3000);
   const p=new URLSearchParams({q:query.value.trim(),limit:String(limit),offset:String(offset)});
   if(from.value)p.set('day_from',from.value.replaceAll('-',''));if(to.value)p.set('day_to',to.value.replaceAll('-',''));
   try{
-   const data=await window.apiJson('/app/search/api/search?'+p);if(!root.isConnected)return;
+   const data=await window.apiJson('/app/search/api/search?'+p,{signal:controller.signal});if(!root.isConnected)return;
    status.textContent=data.total?`${data.total.toLocaleString()} matches across ${data.total_days.toLocaleString()} ${data.total_days===1?'day':'days'}.`:'no matches. try fewer words or a wider date range.';
    if(data.relaxed)status.append(node('p','','showing broader matches because the original search had few results.'));
    for(const day of data.days){
-    const section=node('section','search-day');section.append(node('h2','',window.JournalFormat.day(day.day)));
+    const section=node('section','search-day');const heading=node('h2');heading.append(dayLink(day.day));section.append(heading);
     if(day.total>day.showing)section.append(node('p','search-meta',`showing the top ${day.showing} of ${day.total} matches for this day.`));
     for(const hit of day.results)section.append(renderHit(hit));
     if(day.total>day.showing&&!exactDay){const a=node('a','search-link','more from this day');const date=day.day.replace(/(\d{4})(\d{2})(\d{2})/,'$1-$2-$3');a.href=pageUrl({from:date,to:date});section.append(a);}
@@ -82,9 +100,17 @@
    if(offset>0){const a=node('a','search-link','newer matching days');a.href=pageUrl({offset:String(Math.max(0,offset-20))});paging.append(a);}
    if(offset+data.days.length<data.total_days){const a=node('a','search-link','older matching days');a.href=pageUrl({offset:String(offset+20)});paging.append(a);}
    if(offset>0&&!data.days.length){const a=node('a','search-link','back to first results');a.href=pageUrl({offset:'0'});paging.append(a);}
-  }catch(error){if(!root.isConnected)return;status.classList.add('search-error');status.textContent='couldn’t search your journal. '+String(error.serverMessage||error.message||'try again.');const button=node('button','','try again');button.type='button';button.onclick=()=>{status.classList.remove('search-error');load();};status.append(node('br'),button);}
-  finally{root.removeAttribute('aria-busy');}
+  }catch(error){
+   if(error&&error.name==='AbortError')return;
+   if(!root.isConnected)return;
+   status.classList.add('search-error');
+   const reason=error&&error.reasonCode&&SEARCH_FAILURE_REASONS[error.reasonCode];
+   status.textContent=reason?('couldn’t search your journal: '+reason):('couldn’t search your journal. '+String(error.serverMessage||error.message||'try again.'));
+   if(error&&error.rawDetail){const disclosure=node('details');disclosure.append(node('summary','','details'),node('pre','search-source',String(error.rawDetail)));status.append(disclosure);}
+   const button=node('button','','try again');button.type='button';button.onclick=()=>{status.classList.remove('search-error');load();};status.append(node('br'),button);
+  }finally{stopProgress();if(activeController===controller){root.removeAttribute('aria-busy');activeController=null;}}
  }
+ query.addEventListener('input',abortActive);from.addEventListener('input',abortActive);to.addEventListener('input',abortActive);
  load();
 })();
 </script>
