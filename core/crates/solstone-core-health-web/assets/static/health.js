@@ -105,6 +105,9 @@
     clients: new Map(),       // keyed by stream name
     recentErrors: [],
     agentErrorsOk: true,
+    // G3-202: until /app/health/api/state answers, the error count is unknown.
+    // Neither path below may paint a confident zero from an empty list.
+    agentErrorsLoaded: false,
     recentErrorsFilter: null,
     pendingRecentErrorsFocus: false,
     pendingLogAnchor: null,
@@ -370,9 +373,15 @@
   function renderAgentErrorsState(agentErrors) {
     const data = agentErrors || {};
     state.agentErrorsOk = data.ok !== false;
+    state.agentErrorsLoaded = true;
     seedAgentErrors(Array.isArray(data.items) ? data.items : []);
     if (elements.glanceErrorsValue) {
-      elements.glanceErrorsValue.textContent = state.agentErrorsOk ? String(data.count || 0) : '—';
+      // G3-202: a missing count is not zero. The glance may never paint a
+      // confident '0 errors' before the real number lands.
+      const reported = Number(data.count);
+      elements.glanceErrorsValue.textContent = state.agentErrorsOk && Number.isFinite(reported)
+        ? String(reported)
+        : '—';
     }
     if (elements.glanceErrorsLabel) {
       elements.glanceErrorsLabel.textContent = data.label || 'errors today';
@@ -452,6 +461,31 @@
     return SCHEDULE_NAMES[String(name || '')] || null;
   }
 
+  // G3-201: a vital that has not answered yet is loading, not unavailable.
+  // "unavailable" is a verdict about a service and the worst one to guess, so
+  // every vitals cell keeps the same pulsing placeholder services and health
+  // already use until either its value lands or the sweep below gives up.
+  function vitalPending(el) {
+    return Boolean(el && el.querySelector('.skeleton, .skeleton-dark'));
+  }
+
+  function writeVital(el, seen, value) {
+    if (!el) return;
+    if (seen) {
+      el.replaceChildren(document.createTextNode(value));
+      return;
+    }
+    if (vitalPending(el)) return;
+    el.replaceChildren(document.createTextNode('unavailable'));
+  }
+
+  // The word a vitals group reads out before its value lands. Screen readers
+  // heard "unavailable" permanently because the static aria-label was never
+  // rewritten; it is written from this path now, alongside the value.
+  function pendingVitalLabel() {
+    return timeoutFired ? 'unavailable' : 'loading';
+  }
+
   function sweepUnresolvedSkeletons() {
     if (timeoutFired) return;
     timeoutFired = true;
@@ -459,6 +493,10 @@
       elements.vitalsStatus,
       elements.serviceDots,
       elements.healthValue,
+      elements.agentsValue,
+      elements.tasksValue,
+      elements.queuesValue,
+      elements.schedulesValue,
     ];
     for (const el of targets) {
       if (el && el.querySelector('.skeleton, .skeleton-dark')) {
@@ -481,10 +519,6 @@
     return `${minutes}m ${secs}s`;
   }
 
-  function formatDuration(ms) {
-    return formatElapsed(Math.floor(ms / 1000));
-  }
-
   // One relative-time ladder for the whole page: the shared helper in
   // /static/relative-time.js (loaded by the shell), never a compact shadow.
   function relativeTime(ms) {
@@ -500,6 +534,15 @@
     const value = Number.isFinite(ms) && ms > 0 ? ms : 0;
     if (value < 60000) return 'just now';
     return relativeTime(value) + ' ago';
+  }
+
+  // A duration that is still running is not an age, so it gets the ladder
+  // without the "ago" and with the floor said as a length of time rather than
+  // "just now". A bare "8s" is the same defect as "0 seconds ago" (G3-104).
+  function runningFor(ms) {
+    const value = Number.isFinite(ms) && ms > 0 ? ms : 0;
+    if (value < 60000) return 'under a minute';
+    return relativeTime(value);
   }
 
 	  function truncate(str, len) {
@@ -748,7 +791,7 @@
     renderGlanceVerdict(selection);
 
     const today = todayKey();
-    if (!state.agentErrorsOk) {
+    if (!state.agentErrorsOk || !state.agentErrorsLoaded) {
       elements.glanceErrorsValue.textContent = '—';
       elements.glanceErrorsLabel.textContent = 'errors today';
     } else {
@@ -1120,7 +1163,7 @@
       if (!row) {
         row = document.createElement('div');
         row.setAttribute('data-key', key);
-        row.style.cssText = 'padding: 0.3em 0; font-size: 0.85em; color: #374151; border-bottom: 1px solid #e5e7eb; display: flex; align-items: baseline; gap: 0.4em; flex-wrap: wrap;';
+        row.style.cssText = 'padding: 0.3em 0; font-size: 0.85em; color: var(--ink); border-bottom: 1px solid #e5e7eb; display: flex; align-items: baseline; gap: 0.4em; flex-wrap: wrap;';
 
         const panelId = 'recent-error-panel-' + (++recentErrorPanelSeq);
 
@@ -1150,7 +1193,7 @@
         panel.id = panelId;
         panel.hidden = true;
         panel.setAttribute('data-error-panel', 'true');
-        panel.style.cssText = 'flex-basis: 100%; width: 100%; padding: 0.35em 0 0.1em; color: #374151;';
+        panel.style.cssText = 'flex-basis: 100%; width: 100%; padding: 0.35em 0 0.1em; color: var(--ink);';
         row.appendChild(panel);
       }
 
@@ -1162,7 +1205,7 @@
       const strong = document.createElement('strong');
       strong.textContent = recentErrorName(e);
       summaryBtn.appendChild(strong);
-      summaryBtn.appendChild(document.createTextNode(' — ' + recentErrorOwnerPhrase(e) + ' '));
+      summaryBtn.appendChild(document.createTextNode(': ' + recentErrorOwnerPhrase(e) + ' '));
       if (count > 1) {
         const countSpan = document.createElement('span');
         countSpan.style.cssText = 'color: var(--ink-faint); font-size: 0.85em; font-weight: 600;';
@@ -1371,10 +1414,10 @@
     if (runningCount > 0) serviceParts.push(runningCount + ' active');
     if (retryingCount > 0) serviceParts.push(retryingCount + ' retrying');
     if (crashedCount > 0) serviceParts.push(crashedCount + ' needs attention');
-    sections[0]?.setAttribute('aria-label', 'Services: ' + (state.supervisorSeen ? serviceParts.join(', ') || 'none' : 'unavailable'));
+    sections[0]?.setAttribute('aria-label', 'Services: ' + (state.supervisorSeen ? serviceParts.join(', ') || 'none' : pendingVitalLabel()));
 
-    sections[1]?.setAttribute('aria-label', 'Talents: ' + (state.cortexSeen ? state.agentCount + ' running' : 'unavailable'));
-    sections[2]?.setAttribute('aria-label', 'Tasks: ' + (state.supervisorSeen ? state.tasks.length + ' active' : 'unavailable'));
+    sections[1]?.setAttribute('aria-label', 'Talents: ' + (state.cortexSeen ? state.agentCount + ' running' : pendingVitalLabel()));
+    sections[2]?.setAttribute('aria-label', 'Tasks: ' + (state.supervisorSeen ? state.tasks.length + ' active' : pendingVitalLabel()));
 
     const staleCount = state.health?.stale_heartbeats?.length || 0;
     let healthLabel = timeoutFired ? 'unavailable' : 'loading';
@@ -1392,12 +1435,12 @@
     const queueEntries = Object.entries(state.queues).filter(([, count]) => count > 0);
     sections[4]?.setAttribute(
       'aria-label',
-      'Queues: ' + (queueEntries.map(([cmd, count]) => cmd + ' ' + count).join(', ') || (state.supervisorSeen ? 'none' : 'unavailable'))
+      'Queues: ' + (queueEntries.map(([cmd, count]) => cmd + ' ' + count).join(', ') || (state.supervisorSeen ? 'none' : pendingVitalLabel()))
     );
 
     sections[5]?.setAttribute(
       'aria-label',
-      'Schedules: ' + (state.schedules.length ? state.schedules.length + ' scheduled' : state.supervisorSeen ? 'none' : 'unavailable')
+      'Schedules: ' + (state.schedules.length ? state.schedules.length + ' scheduled' : state.supervisorSeen ? 'none' : pendingVitalLabel())
     );
   }
 
@@ -1458,18 +1501,18 @@
       }
     }
 
-    if (!state.supervisorSeen) {
+    if (!state.supervisorSeen && timeoutFired) {
       elements.serviceDots.textContent = 'unavailable';
       elements.healthValue.textContent = 'unavailable';
       updateVitalsStatus('unavailable');
     }
 
     // Agents count
-    elements.agentsValue.firstElementChild.textContent = state.cortexSeen ? state.agentCount + ' running' : 'unavailable';
+    writeVital(elements.agentsValue, state.cortexSeen, state.agentCount + ' running');
 
     // Tasks
     const taskCount = state.tasks.length;
-    elements.tasksValue.firstElementChild.textContent = state.supervisorSeen ? taskCount + ' active' : 'unavailable';
+    writeVital(elements.tasksValue, state.supervisorSeen, taskCount + ' active');
 
     // Health with stale heartbeat names
     if (state.health) {
@@ -1548,7 +1591,7 @@
         chip.textContent = cmd + ': ' + count;
       }
     } else {
-      elements.queuesValue.textContent = state.supervisorSeen ? 'none' : 'unavailable';
+      writeVital(elements.queuesValue, state.supervisorSeen, 'none');
     }
 
     // Keep the inventory available without turning the glance into a long list.
@@ -1578,7 +1621,7 @@
         return `<li>${escapeHtml(label)}${next ? ' · ' + escapeHtml(next) : ''}<code>${escapeHtml(name)}</code></li>`;
       }).join('');
     } else {
-      elements.schedulesValue.textContent = state.supervisorSeen ? 'none' : 'unavailable';
+      writeVital(elements.schedulesValue, state.supervisorSeen, 'none');
     }
 
     updateVitalsA11y();
@@ -1721,8 +1764,8 @@
     const confirmedLocal = Boolean(state.localHost && confirmedPrimary && displayedStream === state.localHost);
     if (!confirmedLocal && displayedStream) {
       elements.observeSourceNote.textContent = state.localHost
-        ? `this host's stream isn't reporting yet — showing ${displayedStream}`
-        : `this host is unknown — showing ${displayedStream}`;
+        ? `this host's stream isn't reporting yet. showing ${displayedStream}`
+        : `this host is unknown. showing ${displayedStream}`;
       elements.observeSourceNote.classList.remove('hidden');
     } else {
       elements.observeSourceNote.textContent = '';
@@ -1924,7 +1967,7 @@
         if (stale) {
           const badgeEl = document.createElement('span');
           badgeEl.className = 'stale-badge';
-          badgeEl.setAttribute('aria-label', 'stale — not responding');
+          badgeEl.setAttribute('aria-label', 'stale, not responding');
           badgeEl.textContent = 'stale';
           row.appendChild(badgeEl);
         }
@@ -1948,10 +1991,21 @@
 	      return `last added ${ageAgo(deltaMs)}`;
 	    }
 	    const lastSeen = client.last_seen_at && Date.parse(client.last_seen_at);
-	    if (!Number.isFinite(lastSeen)) return 'no material yet';
-	    const deltaMs = Date.now() - lastSeen;
-	    if (deltaMs < 0) return 'last seen from future';
-	    return `last reported ${ageAgo(deltaMs)}`;
+	    if (Number.isFinite(lastSeen)) {
+	      const seenDelta = Date.now() - lastSeen;
+	      if (seenDelta < 0) return 'last seen from future';
+	      return `last reported ${ageAgo(seenDelta)}`;
+	    }
+	    // G3-208: a device that has never reported still has an age the owner can
+	    // judge staleness by — the day it was paired. Blank was the least useful
+	    // answer on a row whose whole question is "can I get rid of this?".
+	    const paired = client.paired_at && Date.parse(client.paired_at);
+	    if (Number.isFinite(paired)) {
+	      const pairedDelta = Date.now() - paired;
+	      if (pairedDelta < 0) return 'never reported';
+	      return `paired ${ageAgo(pairedDelta)}`;
+	    }
+	    return 'never reported';
 	  }
 
 	  function requestBacklogReprocess(button) {
@@ -2026,6 +2080,14 @@
     const unused = clients.filter(client => client.capture_state === 'no_capture' && !client.failing);
     summary.textContent = `devices with no material yet (${unused.length})`;
     unstarted.appendChild(summary);
+    // G3-208: opening the group used to be a dead end. The action the owner
+    // wants lives one app over, so the group points at it rather than growing
+    // a second copy of it here.
+    const manage = document.createElement('a');
+    manage.className = 'registered-clients-manage';
+    manage.href = '/app/network/#devices';
+    manage.textContent = 'manage in network →';
+    unstarted.appendChild(manage);
     const activityRank = client => client.failing ? 0 : client.capture_state === 'active' ? 1 : 2;
     const sorted = [...clients].sort((a, b) => activityRank(a) - activityRank(b)
       || (Date.parse(b.last_accepted_ingest_at) || 0) - (Date.parse(a.last_accepted_ingest_at) || 0));
@@ -2176,7 +2238,7 @@
       }
       const stateLabel = agent.event === 'thinking' ? 'working…' :
                         (agent.event === 'tool_start' || agent.event === 'tool_end') ? 'working…' : 'running…';
-      const elapsed = agent.elapsed_seconds ? formatElapsed(agent.elapsed_seconds) : '0s';
+      const elapsed = runningFor(Number(agent.elapsed_seconds) * 1000);
       card.children[0].querySelector('.activity-card-id-value').textContent = '…' + getAgentId(agent.use_id);
       card.children[1].textContent = talentName(agent.name) || 'default';
       card.children[2].textContent = stateLabel;
@@ -2257,7 +2319,7 @@
       const progress = imp.stage === 'initialization' ? 25 :
                       imp.stage === 'transcribing' ? 50 :
                       imp.stage === 'segmenting' ? 75 : 90;
-      const elapsed = imp.elapsed_ms ? formatDuration(imp.elapsed_ms) : '0s';
+      const elapsed = runningFor(Number(imp.elapsed_ms));
       const humanStage = imp.stage === 'initialization' ? 'starting…' :
                          imp.stage === 'transcribing' ? 'transcribing audio…' :
                          imp.stage === 'segmenting' ? 'organizing segments…' : 'processing…';

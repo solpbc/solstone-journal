@@ -192,7 +192,7 @@ body.has-managed-dialog .workspace {
 .status-pane-footer-link {
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
+  min-height: 44px;
   padding: 3px 8px;
   margin: 0 -8px;
   border-radius: 4px;
@@ -463,13 +463,20 @@ body.has-managed-dialog .workspace {
   background: rgba(0, 0, 0, 0.08);
 }
 
+/* X-09: 12x15 on a phone. The one control in this block gets a real target. */
 #notif-bell {
   background: none;
   border: none;
-  padding: 0;
+  padding: 0 10px;
   font: inherit;
-  margin-left: 6px;
+  margin-left: 0;
   font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  vertical-align: middle;
   transition: opacity 0.15s ease, color 0.15s ease;
 }
 
