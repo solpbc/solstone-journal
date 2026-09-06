@@ -167,16 +167,18 @@
     return row.origin === 'offload' ? 'offload' : 'policy';
   }
 
+  // Every row used to restate what marked it and the "nothing else goes with
+  // it" clause, so four rows said the same two sentences four times. Those two
+  // clauses are shared, not per-row: listNoteHtml() states them once above the
+  // list. The row keeps only what actually differs between rows, which is the
+  // date and stream, the count and size, and its own two actions.
   function markedRow(row) {
     const count = rowCount(row);
-    const rowOrigin = origin(row);
     const checked = selected.has(row.id) ? ' checked' : '';
     return '<article class="removals-card-row" data-removal-row data-mark-id="' + escapeHtml(row.id) + '">'
       + identity(identityText(row))
       + '<label class="removals-select"><input type="checkbox" data-removal-select data-mark-id="' + escapeHtml(row.id) + '"' + checked + '> select this item</label>'
-      + '<p class="removals-card-origin">' + copyForCount('row.origin_' + rowOrigin, count) + '</p>'
       + '<p class="removals-card-what">' + copyForCount('row.what', count, { n: count, size: row.size }) + '</p>'
-      + '<p class="removals-card-kept">' + copyForCount('row.kept', count) + '</p>'
       + '<button type="button" data-removal-action="approve" data-mark-id="' + escapeHtml(row.id) + '">'
       + copy("row.delete")
       + '</button>'
@@ -220,6 +222,28 @@
       value.bytes += Number(row.bytes) || 0;
       return value;
     }, { count: 0, bytes: 0 });
+  }
+
+  // The clauses every marked row shares, stated once above the list: one
+  // sentence per origin actually present, then the promise that deleting an
+  // original takes nothing else with it. Counted over every marked row in the
+  // list rather than the current page, so it agrees with the totals line and
+  // with the selection, which also span every page.
+  function listNoteHtml() {
+    const marked = markedRows();
+    if (marked.length === 0) return '';
+    const present = { policy: false, offload: false };
+    const originals = { policy: 0, offload: 0 };
+    marked.forEach(function (row) {
+      const key = origin(row);
+      present[key] = true;
+      originals[key] += rowCount(row);
+    });
+    const notes = [];
+    if (present.policy) notes.push(copyForCount('row.origin_policy', originals.policy));
+    if (present.offload) notes.push(copyForCount('row.origin_offload', originals.offload));
+    notes.push(copyForCount('row.kept', originals.policy + originals.offload));
+    return '<p class="removals-card-origin" data-removals-note>' + notes.join(' ') + '</p>';
   }
 
   function toolbarHtml() {
@@ -292,7 +316,7 @@
         + '<p class="removals-card-total">'
         + copyForCount('card.total', totals.count, { n: totals.count, size: formatBytes(totals.bytes) })
         + '</p><details class="removals-review"' + (expanded ? ' open' : '') + '><summary>review originals' + (rows.some(row => row.state === 'failed') ? ' · unfinished deletions need review' : '') + '</summary>'
-        + toolbarHtml() + '<p class="removals-card-scope">selection applies across every page. choose up to ' + MAX_SELECTED_MARKS + ' items per action.</p>' + cardRows()
+        + listNoteHtml() + toolbarHtml() + '<p class="removals-card-scope">selection applies across every page. choose up to ' + MAX_SELECTED_MARKS + ' items per action.</p>' + cardRows()
         + '<nav class="removals-card-pages" aria-label="originals pages"><button type="button" data-removal-action="previous"' + (pageIndex === 0 ? ' disabled' : '') + '>previous</button><span>page ' + (pageIndex + 1) + ' of ' + Math.max(1, Math.ceil(rows.length / PAGE_SIZE)) + '</span><button type="button" data-removal-action="next"' + ((pageIndex + 1) * PAGE_SIZE >= rows.length ? ' disabled' : '') + '>next</button></nav>'
         + finishHtml() + '</details>' + confirmationHtml() + outcomeHtml + '</section>';
     } else {

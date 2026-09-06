@@ -610,6 +610,116 @@ async function main() {
   assert.strictEqual(posts(selectCard, '/app/home/api/approve').length, 0);
   assert.strictEqual(posts(selectCard, '/app/home/api/decline').length, 0);
   assert.strictEqual(confirmSection(selectCard), '');
+
+  // G1-30. Four identical rows used to repeat the same two shared sentences
+  // four times. They are stated once above the list now; the row keeps only
+  // what differs between rows -- its date and stream, its count and size, and
+  // its own actions -- and none of the selection behaviour moves.
+  const occurrences = (haystack, needle) => haystack.split(needle).length - 1;
+  const sharedNote = (card) => (
+    card.innerHTML.match(/<p class="removals-card-origin" data-removals-note>([\s\S]*?)<\/p>/)?.[1] || ''
+  );
+  const identical = Array.from(
+    { length: 4 },
+    (_, index) => marked(`same-${index}`, 'policy', 2, 'kitchen-mic')
+  );
+  const noteCard = await boot(
+    source,
+    { state: 'list.ready', removals: identical },
+    { approve: { state: 'approve.deleted' }, decline: { state: 'declined.done' } }
+  );
+
+  for (const key of ['row.origin_policy_many', 'row.kept_many']) {
+    assert.strictEqual(
+      occurrences(noteCard.innerHTML, copy[key]),
+      1,
+      `${key} is stated once for the list, not once per row`
+    );
+    assert(sharedNote(noteCard).includes(copy[key]), `the shared note carries ${key}`);
+  }
+  assert(
+    noteCard.innerHTML.indexOf('</summary>') < noteCard.innerHTML.indexOf('data-removals-note'),
+    'the shared note sits inside the review disclosure'
+  );
+  assert(
+    noteCard.innerHTML.indexOf('data-removals-note') < noteCard.innerHTML.indexOf('data-removal-row'),
+    'the shared note sits above the first row'
+  );
+
+  const articles = Array.from(noteCard.innerHTML.matchAll(
+    /<article[^>]*data-removal-row[^>]*>[\s\S]*?<\/article>/g
+  )).map((match) => match[0]);
+  assert.strictEqual(articles.length, identical.length, 'every marked record still renders its own row');
+  articles.forEach((article, index) => {
+    const id = `same-${index}`;
+    assert(article.includes(`data-mark-id="${id}"`), `row ${id} keeps its mark id`);
+    for (const key of ['row.origin_policy_one', 'row.origin_policy_many', 'row.kept_one', 'row.kept_many']) {
+      assert(!article.includes(copy[key]), `row ${id} must not repeat ${key}`);
+    }
+    assert(article.includes('data-removal-identity>'), `row ${id} still states its date and stream`);
+    assert(
+      article.includes(rendered(copy, 'row.what_many', { n: 2, size: '2 B' })),
+      `row ${id} still states its count and size`
+    );
+    assert(article.includes('data-removal-select'), `row ${id} is still individually selectable`);
+    for (const action of ['approve', 'decline']) {
+      assert(
+        noteCard.controls.some((control) => (
+          control.dataset.removalAction === action && control.dataset.markId === id
+        )),
+        `row ${id} still exposes its ${action} action`
+      );
+    }
+  });
+
+  // Selection still spans the whole list and a bulk action still means "every
+  // selected record", counted in originals rather than rows.
+  click(noteCard, 'select-all');
+  await settle();
+  assert(noteCard.innerHTML.includes(rendered(copy, 'bulk.selected_many', { n: 4 })));
+  click(noteCard, 'delete-selected');
+  await settle();
+  assert(
+    confirmSection(noteCard).includes(rendered(copy, 'confirm.body_policy_selected', { n: 8 })),
+    'the bulk confirmation still counts originals across the selection'
+  );
+  click(noteCard, 'confirm');
+  await settle();
+  assert.deepStrictEqual(
+    JSON.parse(posts(noteCard, '/app/home/api/approve')[0].options.body).mark_ids,
+    ['same-0', 'same-1', 'same-2', 'same-3']
+  );
+
+  // A mixed list keeps both origins distinguishable, still once each.
+  const mixedCard = await boot(
+    source,
+    {
+      state: 'list.ready',
+      removals: [
+        marked('mix-policy', 'policy', 1, 'kitchen-mic'),
+        marked('mix-offload', 'offload', 3, 'kitchen-mic')
+      ]
+    },
+    { approve: { state: 'approve.refused_before_start', refusals: [] } }
+  );
+  for (const key of ['row.origin_policy_one', 'row.origin_offload_many', 'row.kept_many']) {
+    assert(sharedNote(mixedCard).includes(copy[key]), `the mixed note carries ${key}`);
+    assert.strictEqual(occurrences(mixedCard.innerHTML, copy[key]), 1, `${key} is stated once`);
+  }
+  for (const key of ['row.origin_policy_many', 'row.origin_offload_one', 'row.kept_one']) {
+    assert(!sharedNote(mixedCard).includes(copy[key]), `the mixed note must not carry ${key}`);
+  }
+
+  // Nothing marked means no shared note, and the unfinished row still explains
+  // itself: "nothing is waiting on you" and "a deletion stopped" stay distinct.
+  const failedOnlyCard = await boot(
+    source,
+    { state: 'list.ready', removals: [failedOnly] },
+    { recover: { state: 'recover.done', finished_count: 1 } }
+  );
+  assert(!failedOnlyCard.innerHTML.includes('data-removals-note'), 'no shared note when nothing is marked');
+  assert(failedOnlyCard.innerHTML.includes(copy['failed.body']), 'the unfinished row still explains itself');
+  assert(!failedOnlyCard.innerHTML.includes(copy['card.empty']), 'unfinished is not the empty state');
 }
 
 main().catch((error) => {
