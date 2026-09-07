@@ -190,17 +190,11 @@ fn split_frontmatter(source: &str) -> (&str, &str) {
     (&source[..end], &source[end..])
 }
 
+/// The owner-facing name of a category, read only by the settings vision pane.
+/// It stays lowercase: Title Case appeared nowhere else in the app and made the
+/// pane read as a config file rather than as a setting (G3-311).
 fn default_label(name: &str) -> String {
-    name.split('_')
-        .map(|word| {
-            let mut characters = word.chars();
-            let Some(first) = characters.next() else {
-                return String::new();
-            };
-            format!("{}{}", first.to_ascii_uppercase(), characters.as_str())
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+    name.replace('_', " ")
 }
 
 #[cfg(test)]
@@ -218,6 +212,9 @@ mod tests {
         assert_eq!(gaming.max_output_tokens, 4096);
         assert!(gaming.instruction.starts_with("# Game Text Extraction"));
         assert!(gaming.extraction.is_none());
+        // G3-311: the owner-facing label is lowercase, like every other name in
+        // the settings surface that reads it.
+        assert_eq!(gaming.label, "gaming");
     }
 
     #[test]
