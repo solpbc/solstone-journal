@@ -23,6 +23,10 @@ powershell -NoProfile -Command "if ($env:EXPECTED_JOURNAL_COMMIT -notmatch '^[0-
 
 call :verify_source_binding || exit /b 1
 
+if not defined JOURNAL_WIN_CI_RUN_BACKUP set "JOURNAL_WIN_CI_RUN_BACKUP=0"
+powershell -NoProfile -Command "if ($env:JOURNAL_WIN_CI_RUN_BACKUP -cnotmatch '^[01]$') { exit 1 }" || ( echo ERROR: JOURNAL_WIN_CI_RUN_BACKUP must be 0 or 1 & exit /b 1 )
+set "JOURNAL_WIN_CI_BACKUP_EVIDENCE=not-run"
+
 if not defined JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST set "JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=0"
 powershell -NoProfile -Command "if ($env:JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST -notmatch '^[01]$') { exit 1 }" || ( echo ERROR: JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST must be 0 or 1; rerun through win-host-ci & exit /b 1 )
 if not defined SOLSTONE_JOURNAL_WIN_REFS_ROOT ( echo ERROR: SOLSTONE_JOURNAL_WIN_REFS_ROOT is required for mandatory ReFS receipts; rerun through win-host-ci & exit /b 1 )
@@ -140,6 +144,11 @@ call :require_journal_test tests::ensure_journal_dir_reports_non_directory_paren
 echo === cargo test --locked (journal library) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib || exit /b 1
 
+if "%JOURNAL_WIN_CI_RUN_BACKUP%"=="1" (
+  call :run_native_backup || exit /b 1
+  set "JOURNAL_WIN_CI_BACKUP_EVIDENCE=executed/pass"
+)
+
 :: Detect another operator replacing the persistent checkout while Cargo ran.
 :: The driver-side lock normally serializes this rail; this second check keeps
 :: an out-of-band checkout from earning a source-bound success marker.
@@ -147,6 +156,7 @@ call :verify_source_binding || exit /b 1
 
 echo JOURNAL_WIN_CI_HEAD=%JOURNAL_WIN_CI_HEAD%
 echo JOURNAL_WIN_CI_CARGO_LOCK_SHA256=%JOURNAL_WIN_CI_CARGO_LOCK_SHA256%
+echo JOURNAL_WIN_CI_BACKUP_EVIDENCE=%JOURNAL_WIN_CI_BACKUP_EVIDENCE%
 echo JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE%
 echo JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=%JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE%
 echo === JOURNAL_WIN_CI_OK: source-bound native Windows MSVC journal gate passed; launch preparation, Job ownership, and mandatory NTFS and ReFS receipt markers were emitted and validated from their child logs ===
@@ -246,4 +256,23 @@ set "JOURNAL_WIN_CI_CARGO_LOCK_SHA256="
 for /f "usebackq tokens=*" %%i in (`powershell -NoProfile -Command "(Get-FileHash -LiteralPath 'core/Cargo.lock' -Algorithm SHA256).Hash.ToLowerInvariant()"`) do set "JOURNAL_WIN_CI_CARGO_LOCK_SHA256=%%i"
 if not defined JOURNAL_WIN_CI_CARGO_LOCK_SHA256 ( echo ERROR: core/Cargo.lock SHA-256 could not be computed; restore the tracked lockfile and retry & exit /b 1 )
 if not "%JOURNAL_WIN_CI_CARGO_LOCK_SHA256%"=="%EXPECTED_JOURNAL_CARGO_LOCK_SHA256%" ( echo ERROR: core/Cargo.lock SHA-256 does not match the transferred binding; restore the exact lockfile and retry & exit /b 1 )
+exit /b 0
+
+:run_native_backup
+set "SOLSTONE_NATIVE_SOURCE_COMMIT=%EXPECTED_JOURNAL_COMMIT%"
+set "SOLSTONE_NATIVE_LOCK_SHA256=%EXPECTED_JOURNAL_CARGO_LOCK_SHA256%"
+powershell -NoProfile -Command "$ErrorActionPreference='Stop'; foreach ($name in @('SOLSTONE_NATIVE_RESTIC','SOLSTONE_NATIVE_RCLONE')) { $path=[Environment]::GetEnvironmentVariable($name); if ($path -notmatch '^[A-Za-z]:[\\/]' -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { throw ($name + ' must name an existing absolute Windows file') }; Write-Output ($name + '=' + $path); Write-Output ($name + '_SHA256=' + (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()) }" || exit /b 1
+call :run_backup_test "backup_native_round_trip" || exit /b 1
+call :run_backup_test "process::backup_native_job_cleanup" || exit /b 1
+exit /b 0
+
+:run_backup_test
+set "JOURNAL_WIN_BACKUP_TEST=%~1"
+set "JOURNAL_WIN_BACKUP_LOG=core\target\journal-win-backup-%RANDOM%%RANDOM%.log"
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-offload --test backup_native -- --exact "%JOURNAL_WIN_BACKUP_TEST%" --ignored --show-output > "%JOURNAL_WIN_BACKUP_LOG%" 2>&1
+set "JOURNAL_WIN_BACKUP_EXIT=%ERRORLEVEL%"
+type "%JOURNAL_WIN_BACKUP_LOG%"
+echo JOURNAL_WIN_BACKUP_TEST_EXIT=%JOURNAL_WIN_BACKUP_EXIT%
+echo JOURNAL_WIN_BACKUP_TEST_LOG=%JOURNAL_WIN_BACKUP_LOG%
+powershell -NoProfile -File scripts\check-win-backup-result.ps1 -LogPath "%JOURNAL_WIN_BACKUP_LOG%" -TestName "%JOURNAL_WIN_BACKUP_TEST%" -TestExitCode %JOURNAL_WIN_BACKUP_EXIT% || exit /b 1
 exit /b 0

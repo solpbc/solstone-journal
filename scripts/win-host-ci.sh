@@ -9,9 +9,35 @@ SCP=${SCP:-scp}
 SSH=${SSH:-ssh}
 ssh_output_file=
 cloud_sync_test=${JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST:-}
+backup_test=${JOURNAL_WIN_CI_RUN_BACKUP:-0}
+backup_restic=${SOLSTONE_NATIVE_RESTIC:-}
+backup_rclone=${SOLSTONE_NATIVE_RCLONE:-}
 refs_root=${SOLSTONE_JOURNAL_WIN_REFS_ROOT:-}
 owner_account=${SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT:-}
 refs_publication=1
+
+case "$backup_test" in
+  '') backup_test=0 ;;
+  0|1) ;;
+  *) echo "ERROR: win-host-ci: JOURNAL_WIN_CI_RUN_BACKUP must be 0 or 1" >&2; exit 1 ;;
+esac
+backup_environment="\$env:JOURNAL_WIN_CI_RUN_BACKUP = '$backup_test'"
+if [ "$backup_test" -eq 1 ]; then
+  for backup_path in "$backup_restic" "$backup_rclone"; do
+    case "$backup_path" in
+      *'
+'*|*"$(printf '\r')"*) echo "ERROR: win-host-ci: backup tool paths must be single-line" >&2; exit 1 ;;
+      [A-Za-z]:[\\/]*) ;;
+      *) echo "ERROR: win-host-ci: backup tool paths must be absolute Windows paths" >&2; exit 1 ;;
+    esac
+  done
+  # PowerShell single-quoted literals preserve spaces, Unicode and metacharacters.
+  backup_restic_literal=$(printf '%s' "$backup_restic" | sed "s/'/''/g")
+  backup_rclone_literal=$(printf '%s' "$backup_rclone" | sed "s/'/''/g")
+  backup_environment="$backup_environment
+\$env:SOLSTONE_NATIVE_RESTIC = '$backup_restic_literal'
+\$env:SOLSTONE_NATIVE_RCLONE = '$backup_rclone_literal'"
+fi
 
 case "$cloud_sync_test" in
   '') cloud_sync_test=0 ;;
@@ -149,6 +175,7 @@ else
 fi
 remote_command="\$env:EXPECTED_JOURNAL_COMMIT = '$snapshot_sha'
 \$env:EXPECTED_JOURNAL_CARGO_LOCK_SHA256 = '$cargo_lock_sha256'
+$backup_environment
 \$env:JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST = '$cloud_sync_test'
 \$env:SOLSTONE_JOURNAL_WIN_REFS_ROOT = '$refs_root'
 \$env:SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT = '$owner_account'
@@ -225,6 +252,24 @@ require_platform_receipt JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE
 require_platform_receipt JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE_PROTOCOL
 require_platform_receipt JOURNAL_WIN_CI_TARGET_WINDOWS_OPLOG_NAMESPACE
 require_platform_receipt JOURNAL_WIN_CI_TARGET_WINDOWS_OPLOG_LIVENESS
+if [ "$backup_test" -eq 1 ]; then
+  require_platform_receipt JOURNAL_WIN_CI_BACKUP_ROUND_TRIP
+  require_platform_receipt JOURNAL_WIN_CI_BACKUP_JOB_CLEANUP
+  expected_backup_evidence=executed/pass
+else
+  expected_backup_evidence=not-run
+  if printf '%s\n' "$normalized_output" | grep -Eq '^JOURNAL_WIN_CI_BACKUP_(ROUND_TRIP|JOB_CLEANUP)='; then
+    echo "ERROR: win-host-ci: unrequested backup execution receipt" >&2
+    exit 1
+  fi
+fi
+backup_evidence_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_BACKUP_EVIDENCE=/ { count++ } END { print count + 0 }')
+backup_expected_count=$(printf '%s\n' "$normalized_output" | awk -v value="$expected_backup_evidence" '$0 == "JOURNAL_WIN_CI_BACKUP_EVIDENCE=" value { count++ } END { print count + 0 }')
+backup_evidence_line=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_BACKUP_EVIDENCE=/ { print NR }')
+if [ "$backup_evidence_count" -ne 1 ] || [ "$backup_expected_count" -ne 1 ] || [ "$backup_evidence_line" -ge "$ok_line" ]; then
+  echo "ERROR: win-host-ci: expected exactly one JOURNAL_WIN_CI_BACKUP_EVIDENCE=$expected_backup_evidence before JOURNAL_WIN_CI_OK" >&2
+  exit 1
+fi
 require_native_receipt JOURNAL_WIN_CI_NTFS_PUBLICATION NTFS
 require_native_receipt JOURNAL_WIN_CI_REFS_PUBLICATION ReFS
 require_native_receipt JOURNAL_WIN_CI_CORTEX_USE_NTFS NTFS
@@ -324,4 +369,4 @@ if [ "$refs_publication" -eq 1 ]; then
   fi
 fi
 
-echo "JOURNAL_WIN_HOST_CI_VERIFIED commit=$snapshot_sha cargo_lock_sha256=$cargo_lock_sha256 cloud_sync_evidence=$expected_cloud_evidence ordinary_owner_evidence=passed launch_environment_preparation=executed/pass launch_path_preparation=executed/pass job_list_no_handle_inheritance=executed/pass job_process_owner=executed/pass job_last_handle_negative=executed/pass managed_process_facade=executed/pass windows_payload=executed/pass windows_create_only=executed/pass windows_create_only_protocol=executed/pass windows_install_file=executed/pass windows_install_file_protocol=executed/pass windows_oplog_namespace=executed/pass windows_oplog_liveness=executed/pass ntfs_publication=executed/pass refs_publication=executed/pass ntfs_cortex_use=executed/pass refs_cortex_use=executed/pass ntfs_operational_log_discovery=executed/pass refs_operational_log_discovery=executed/pass ntfs_stale_heartbeat_cleanup=executed/pass refs_stale_heartbeat_cleanup=executed/pass"
+echo "JOURNAL_WIN_HOST_CI_VERIFIED commit=$snapshot_sha cargo_lock_sha256=$cargo_lock_sha256 cloud_sync_evidence=$expected_cloud_evidence backup_evidence=$expected_backup_evidence ordinary_owner_evidence=passed launch_environment_preparation=executed/pass launch_path_preparation=executed/pass job_list_no_handle_inheritance=executed/pass job_process_owner=executed/pass job_last_handle_negative=executed/pass managed_process_facade=executed/pass windows_payload=executed/pass windows_create_only=executed/pass windows_create_only_protocol=executed/pass windows_install_file=executed/pass windows_install_file_protocol=executed/pass windows_oplog_namespace=executed/pass windows_oplog_liveness=executed/pass ntfs_publication=executed/pass refs_publication=executed/pass ntfs_cortex_use=executed/pass refs_cortex_use=executed/pass ntfs_operational_log_discovery=executed/pass refs_operational_log_discovery=executed/pass ntfs_stale_heartbeat_cleanup=executed/pass refs_stale_heartbeat_cleanup=executed/pass"
