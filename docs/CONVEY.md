@@ -64,9 +64,13 @@ plain text.
 **Identity.** The actor is derived from connection access state, never from a
 client-supplied field. Paired-device ingest derives `AccessBasis::LinkedDevice`
 from the paired-device TLS client certificate and takes its CID from that basis,
-rather than from a bearer key, header, URL, or request body. Source deletion
-requires that same linked-device identity; its source path selects an allowed
-source but does not alter authorization or the journal-wide deletion scope.
+rather than from a bearer key, header, URL, or request body. Linked-device
+self-description (`GET`/`PUT` `/app/network/api/clients/self` and its `/app/link` twin)
+admits only `AccessBasis::LinkedDevice` and derives the target CID from the connection.
+Owner label overrides (`PATCH` `/app/network/api/clients/{cid}/label`) require
+localhost owner authority (`AccessBasis::Localhost`). Source deletion requires that
+same linked-device identity; its source path selects an allowed source but does not
+alter authorization or the journal-wide deletion scope.
 
 **Pagination.** Offset/limit (max 100) or a cursor; no list endpoint returns
 an unbounded full array.

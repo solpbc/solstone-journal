@@ -14,11 +14,10 @@
 //!
 //! - `solstone-core-convey-shell::network::pair` + `PairingAdmission::Direct`
 //!   — HTTP POST `/app/network/pair` (aliased `/app/link/pair`). Injects the
-//!   owner journal into `complete_pairing`. Ceremony identity is validated
-//!   before nonce consume. Absent/valid fields are accepted; empty, wrong-type,
-//!   oversize (`client_label` > 253 UTF-8 bytes), and unknown `platform`
-//!   vocabulary are refused `400 pairing_request_invalid`. Exact-name lookalikes
-//!   and unrelated opaque keys are ignored as extensions.
+//!   owner journal into `complete_pairing`. Ceremony identity hints are extracted
+//!   on best-effort basis: valid fields are accepted and persisted; invalid,
+//!   wrong-type, oversize, unknown platform, lookalike, or opaque keys are
+//!   ignored and do not fail or refuse the pairing ceremony.
 //! - `solstone-core-convey-shell::network::pair` + `PairingAdmission::Relay`
 //!   — same handler, same body, same identity rules. Relay only adds the
 //!   nonce-matches-carrier check; it does not change ledger identity.
@@ -149,20 +148,14 @@ impl PairingIdentityFields {
     }
 
     pub fn projection(&self) -> PairingIdentity {
-        if matches!(self.client_label, ClientLabelState::Malformed)
-            || matches!(self.platform, PlatformState::Malformed)
-        {
-            PairingIdentity::Unavailable
-        } else {
-            PairingIdentity::Available {
-                client_label: self.client_label.clone(),
-                platform: self.platform,
-            }
+        PairingIdentity::Available {
+            client_label: self.client_label.clone(),
+            platform: self.platform,
         }
     }
 }
 
-/// Combined pairing-identity view. One malformed member makes the tuple unavailable.
+/// Combined pairing-identity view.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PairingIdentity {
     Available {
@@ -180,27 +173,24 @@ pub struct CeremonyPairingIdentity {
 }
 
 /// Validate pairer-supplied wire fields before nonce consumption.
+/// Invalid optional hints are ignored and treated as absent (`None`).
 pub fn validate_ceremony_pairing_identity(
     additional_fields: &Map<String, Value>,
-) -> Result<CeremonyPairingIdentity, &'static str> {
+) -> CeremonyPairingIdentity {
     let client_label = match additional_fields.get("client_label") {
-        None => None,
         Some(Value::String(value)) if (1..=MAX_CLIENT_LABEL_BYTES).contains(&value.len()) => {
             Some(value.clone())
         }
-        Some(_) => return Err("client_label is invalid"),
+        _ => None,
     };
     let platform = match additional_fields.get("platform") {
-        None => None,
-        Some(Value::String(value)) => {
-            Some(Platform::from_wire(value).ok_or("platform is invalid")?)
-        }
-        Some(_) => return Err("platform is invalid"),
+        Some(Value::String(value)) => Platform::from_wire(value),
+        _ => None,
     };
-    Ok(CeremonyPairingIdentity {
+    CeremonyPairingIdentity {
         client_label,
         platform,
-    })
+    }
 }
 
 fn client_label_state(item: &Map<String, Value>) -> ClientLabelState {
@@ -328,14 +318,23 @@ mod tests {
             "client_label": ["x"],
             "platform": "android",
         })));
-        assert_eq!(malformed_label.projection(), PairingIdentity::Unavailable);
+        assert_eq!(
+            malformed_label.projection(),
+            PairingIdentity::Available {
+                client_label: ClientLabelState::Malformed,
+                platform: PlatformState::Valid(Platform::Android),
+            }
+        );
         let malformed_platform = PairingIdentityFields::from_object(&object(json!({
             "client_label": "ok",
             "platform": "plan9",
         })));
         assert_eq!(
             malformed_platform.projection(),
-            PairingIdentity::Unavailable
+            PairingIdentity::Available {
+                client_label: ClientLabelState::Valid("ok".to_owned()),
+                platform: PlatformState::Malformed,
+            }
         );
     }
 
@@ -346,36 +345,51 @@ mod tests {
         let identity = validate_ceremony_pairing_identity(&object(json!({
             "client_label": accepted,
             "platform": "windows",
-        })))
-        .expect("valid");
+        })));
         assert_eq!(identity.client_label.as_deref().map(str::len), Some(253));
         assert_eq!(identity.platform, Some(Platform::Windows));
-        assert!(validate_ceremony_pairing_identity(&Map::new()).is_ok());
-        assert!(
-            validate_ceremony_pairing_identity(&object(json!({"client_label": "lab"}))).is_ok()
+        assert_eq!(
+            validate_ceremony_pairing_identity(&Map::new()),
+            CeremonyPairingIdentity {
+                client_label: None,
+                platform: None,
+            }
         );
-        assert!(validate_ceremony_pairing_identity(&object(json!({"platform": "linux"}))).is_ok());
+        assert_eq!(
+            validate_ceremony_pairing_identity(&object(json!({"client_label": "lab"}))),
+            CeremonyPairingIdentity {
+                client_label: Some("lab".to_owned()),
+                platform: None,
+            }
+        );
+        assert_eq!(
+            validate_ceremony_pairing_identity(&object(json!({"platform": "linux"}))),
+            CeremonyPairingIdentity {
+                client_label: None,
+                platform: Some(Platform::Linux),
+            }
+        );
     }
 
     #[test]
-    fn ceremony_validation_refuses_invalid_type_empty_oversize_and_unknown_vocab() {
+    fn ceremony_validation_ignores_invalid_type_empty_oversize_and_unknown_vocab() {
         let oversize = "é".repeat(127);
         assert_eq!(oversize.len(), 254);
-        for (fields, detail) in [
-            (json!({"client_label": 1}), "client_label is invalid"),
-            (json!({"client_label": ""}), "client_label is invalid"),
-            (json!({"client_label": oversize}), "client_label is invalid"),
-            (json!({"platform": ""}), "platform is invalid"),
-            (json!({"platform": "plan9"}), "platform is invalid"),
-            (json!({"platform": false}), "platform is invalid"),
-            (
-                json!({"client_label": "", "platform": "plan9"}),
-                "client_label is invalid",
-            ),
+        for fields in [
+            json!({"client_label": 1}),
+            json!({"client_label": ""}),
+            json!({"client_label": oversize}),
+            json!({"platform": ""}),
+            json!({"platform": "plan9"}),
+            json!({"platform": false}),
+            json!({"client_label": "", "platform": "plan9"}),
         ] {
             assert_eq!(
                 validate_ceremony_pairing_identity(&object(fields)),
-                Err(detail)
+                CeremonyPairingIdentity {
+                    client_label: None,
+                    platform: None,
+                }
             );
         }
     }

@@ -16,6 +16,9 @@ use spl_transport::{RelayControlEndpoint, RelayError, TransportError, tls};
 pub mod acceptor;
 #[cfg(feature = "host")]
 pub mod ca;
+pub mod client_description;
+#[cfg(feature = "host")]
+pub mod client_description_store;
 #[cfg(feature = "host")]
 pub mod client_status;
 #[cfg(feature = "host")]
@@ -49,6 +52,19 @@ pub mod service_identity;
 pub use acceptor::{
     DEVICE_DOOR_AUTHORIZATION_REFRESH_INTERVAL, build_device_door_acceptor,
     serve_device_door_connection,
+};
+#[cfg(feature = "host")]
+pub use client_description::current_display_label;
+pub use client_description::{
+    ClientDescriptionResponse, JournalIdentityMeta, PatchClientLabelRequest,
+    PutSelfDescriptionRequest, ReportedDescription, StoredClientDescription, sanitize_reported,
+    sanitize_string,
+};
+#[cfg(feature = "host")]
+pub use client_description_store::{
+    DescriptionMutationError, DescriptionStoreError, client_descriptions_path,
+    get_description_response, patch_owner_label, put_self_description, read_descriptions,
+    remove_description_entry,
 };
 #[cfg(feature = "host")]
 pub use door::{

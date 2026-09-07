@@ -51,8 +51,8 @@ ENTRY_TYPES = {
 }
 COMMAND_KINDS = {"command", "callback", "top-level"}
 HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
-FINAL_ORACLE_TOTAL = 166
-FINAL_HTTP_TOTAL = 161
+FINAL_ORACLE_TOTAL = 167
+FINAL_HTTP_TOTAL = 162
 FINAL_JOURNAL_PYTHON_COMPAT_TOTAL = 2
 FINAL_TOP_LEVEL_IMPORT_TOTAL = 1
 FINAL_TOP_LEVEL_LINK_TOTAL = 3
@@ -67,7 +67,7 @@ FINAL_HTTP_GROUP_COUNTS = {
     "health": 4,
     "import": 5,
     "journal": 17,
-    "link": 8,
+    "link": 9,
     "profile": 4,
     "settings": 14,
     "sol": 2,
@@ -149,6 +149,57 @@ RETIRED_JOURNAL_ORACLE_PATHS = {
     ("sol", "set-name"),
     ("sol", "reset"),
 }
+
+ADDITIONAL_NATIVE_ORACLE_ENTRIES: list[dict[str, Any]] = [
+    {
+        "path": ["link", "set-label"],
+        "kind": "command",
+        "help": "Set or clear the owner label for a paired device.",
+        "params": [
+            {
+                "name": "cid",
+                "kind": "argument",
+                "type": "text",
+                "required": True,
+                "nargs": 1,
+                "multiple": False,
+                "options": ["cid"],
+                "secondary": [],
+                "hidden": False,
+                "is_flag": False,
+                "count": False,
+            },
+            {
+                "name": "label",
+                "kind": "option",
+                "type": "text",
+                "required": False,
+                "nargs": 1,
+                "multiple": False,
+                "options": ["--label"],
+                "secondary": [],
+                "hidden": False,
+                "is_flag": False,
+                "count": False,
+            },
+            {
+                "name": "clear",
+                "kind": "option",
+                "type": "boolean",
+                "required": False,
+                "nargs": 1,
+                "multiple": False,
+                "default": False,
+                "options": ["--clear"],
+                "secondary": [],
+                "hidden": False,
+                "is_flag": True,
+                "count": False,
+                "flag_value": True,
+            },
+        ],
+    }
+]
 
 
 @dataclass(frozen=True)
@@ -536,6 +587,16 @@ def transformed_oracle_entries(
             ]
             entry["params"].extend(copy.deepcopy(transform.get("add_params", [])))
             path = tuple(transform["path"])
+        if path in output:
+            errors.append(f"transformed oracle has duplicate path {list(path)!r}")
+        output[path] = entry
+    for raw_entry in ADDITIONAL_NATIVE_ORACLE_ENTRIES:
+        path = tuple(raw_entry["path"])
+        entry = copy.deepcopy(raw_entry)
+        entry["params"] = [
+            {key: param.get(key) for key in PARAM_KEYS}
+            for param in entry.get("params", [])
+        ]
         if path in output:
             errors.append(f"transformed oracle has duplicate path {list(path)!r}")
         output[path] = entry

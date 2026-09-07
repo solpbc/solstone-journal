@@ -290,7 +290,7 @@ mod tests {
     }
 
     #[test]
-    fn malformed_pairing_identity_refuses_without_writing() {
+    fn malformed_pairing_identity_falls_back_to_device_stream() {
         for extra in [
             json!({"client_label": 1}),
             json!({"platform": "plan9"}),
@@ -298,10 +298,15 @@ mod tests {
         ] {
             let temporary = journal();
             write_clients(temporary.path(), json!([client_object(extra)]));
-            let error = bind(temporary.path()).unwrap_err();
-            assert_eq!(error.0, ReasonCode::PairingIdentityUnavailable);
-            assert_eq!(error.1, StatusCode::CONFLICT);
-            assert!(stream_stems(temporary.path()).is_empty());
+            let bound = bind(temporary.path()).unwrap();
+            assert_eq!(bound.stream, "device");
+            assert!(matches!(
+                load_record(temporary.path(), "device")
+                    .allocation
+                    .unwrap()
+                    .base,
+                solstone_core_segment::StreamAllocationBase::Device
+            ));
         }
     }
 

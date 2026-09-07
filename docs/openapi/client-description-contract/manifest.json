@@ -1,0 +1,84 @@
+{
+  "bundle_format": "solstone.openapi-contract-bundle.v1",
+  "bundle_semver": "1.0.0",
+  "canonical_spec_title": "Linked-device client description contract",
+  "client_protocol_version": 1,
+  "component_closure": [
+    "ClientDescriptionResponse",
+    "Error",
+    "JournalIdentityMeta",
+    "PatchClientLabelRequest",
+    "PatchClientLabelResponse",
+    "PutSelfDescriptionRequest",
+    "ReportedDescription"
+  ],
+  "consumer_identifiers": [],
+  "files": {
+    "consumer-audit.json": {
+      "byte_count": 177,
+      "sha256": "bf23b3651fa73dd6bc02748f162130d0b516e01d6d73ac03b56a51fddc062457"
+    },
+    "fixtures/wire-behavior.json": {
+      "byte_count": 900,
+      "sha256": "ab34a69b3bfa80f9e2687e9f69c515abd1cafdbc7ca5029adfb29a343d5f9186"
+    },
+    "projection.openapi.json": {
+      "byte_count": 10705,
+      "sha256": "ec12f8a0e575e2e11294fe0fc593164035559a278bb2f52e174cbaaee54e335c"
+    },
+    "vectors.json": {
+      "byte_count": 1967,
+      "sha256": "95b9ef8da3ba205f1fabcad4c93d945cebbd219776a8d6423f96589fc8fba22b"
+    }
+  },
+  "generator_identity": "solstone.repository_contracts.client_description_contract_bundle.v1",
+  "generator_inputs": [
+    {
+      "id": "openapi.client_description_contract_authority",
+      "path": "core/crates/solstone-core-repository-contracts/src/contracts/client_description_contract_authority.json",
+      "role": "openapi_source",
+      "sha256": "7fca5e7774d86e8b09317e0a50885c20004ff6d4e14527fbfb55f4c850f8109b"
+    }
+  ],
+  "openapi_document_version": "1.0.0",
+  "openapi_spec_version": "3.1.0",
+  "operation_ids": [
+    "client.getSelfDescription",
+    "client.putSelfDescription",
+    "client.patchClientLabel"
+  ],
+  "projection_path": "projection.openapi.json",
+  "schema_dialect_uri": "https://json-schema.org/draft/2020-12/schema",
+  "scope_rationale": "This client-description bundle projects GET/PUT /app/network/api/clients/self and PATCH /app/network/api/clients/{cid}/label.",
+  "vocabularies": [
+    {
+      "classification": "closed",
+      "id": "ReportedDescription.platform",
+      "source_pointer": "/components/schemas/ReportedDescription/properties/platform",
+      "unknown_value_behavior": "reject",
+      "values": [
+        "linux",
+        "macos",
+        "windows",
+        "ios",
+        "android"
+      ]
+    },
+    {
+      "classification": "closed",
+      "id": "ReportedDescription.device_type",
+      "source_pointer": "/components/schemas/ReportedDescription/properties/device_type",
+      "unknown_value_behavior": "reject",
+      "values": [
+        "phone",
+        "laptop",
+        "desktop",
+        "server",
+        "wearable",
+        "tablet",
+        "other"
+      ]
+    }
+  ],
+  "windows_linux_rollout_targets": []
+}

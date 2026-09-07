@@ -1,0 +1,82 @@
+[
+  {
+    "decision": {
+      "accepted": true,
+      "reason_code": null
+    },
+    "http_status": 200,
+    "id": "client_description.get_self.authenticated",
+    "kind": "declared",
+    "operation": "client.getSelfDescription"
+  },
+  {
+    "decision": {
+      "accepted": false,
+      "reason_code": "client_description_forbidden"
+    },
+    "http_status": 403,
+    "id": "client_description.get_self.forbidden_localhost",
+    "kind": "declared",
+    "operation": "client.getSelfDescription"
+  },
+  {
+    "decision": {
+      "accepted": true,
+      "reason_code": null
+    },
+    "http_status": 200,
+    "id": "client_description.put_self.valid",
+    "kind": "declared",
+    "operation": "client.putSelfDescription"
+  },
+  {
+    "decision": {
+      "accepted": false,
+      "reason_code": "client_description_invalid"
+    },
+    "http_status": 400,
+    "id": "client_description.put_self.unknown_fields",
+    "kind": "declared",
+    "operation": "client.putSelfDescription"
+  },
+  {
+    "decision": {
+      "accepted": false,
+      "reason_code": "revision_conflict"
+    },
+    "http_status": 409,
+    "id": "client_description.put_self.revision_conflict",
+    "kind": "declared",
+    "operation": "client.putSelfDescription"
+  },
+  {
+    "decision": {
+      "accepted": true,
+      "reason_code": null
+    },
+    "http_status": 200,
+    "id": "client_description.patch_label.owner_success",
+    "kind": "declared",
+    "operation": "client.patchClientLabel"
+  },
+  {
+    "decision": {
+      "accepted": false,
+      "reason_code": "client_description_forbidden"
+    },
+    "http_status": 403,
+    "id": "client_description.patch_label.remote_forbidden",
+    "kind": "declared",
+    "operation": "client.patchClientLabel"
+  },
+  {
+    "decision": {
+      "accepted": false,
+      "reason_code": "not_found"
+    },
+    "http_status": 404,
+    "id": "client_description.patch_label.not_found",
+    "kind": "declared",
+    "operation": "client.patchClientLabel"
+  }
+]

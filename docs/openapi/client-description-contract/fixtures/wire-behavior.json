@@ -1,0 +1,40 @@
+{
+  "fixtures": [
+    {
+      "id": "declared.client_description.put_self.sample",
+      "kind": "declared",
+      "payload": {
+        "expected_revision": 0,
+        "protocol_version": 1,
+        "reported": {
+          "app_id": "solstone",
+          "app_version": "2026.07.26",
+          "device_type": "desktop",
+          "name": "Studio Mac",
+          "platform": "macos"
+        }
+      },
+      "provenance": {
+        "http_status": 200,
+        "vocabulary": "client_description"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
+      "id": "declared.client_description.patch_label.sample",
+      "kind": "declared",
+      "payload": {
+        "label": "Jer's Studio Mac"
+      },
+      "provenance": {
+        "http_status": 200,
+        "vocabulary": "client_description"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    }
+  ]
+}

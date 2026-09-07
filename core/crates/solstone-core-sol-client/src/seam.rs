@@ -231,6 +231,8 @@ pub struct LinkJournalMetadata {
     pub ca_fp_prefix: String,
     pub paired_at: String,
     pub journal_version: String,
+    #[serde(default)]
+    pub journal_name: Option<String>,
     pub observed_at: f64,
 }
 

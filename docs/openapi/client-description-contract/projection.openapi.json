@@ -1,0 +1,399 @@
+{
+  "components": {
+    "schemas": {
+      "ClientDescriptionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "display_label": {
+            "type": "string"
+          },
+          "journal": {
+            "$ref": "#/components/schemas/JournalIdentityMeta"
+          },
+          "owner_label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "protocol_version": {
+            "enum": [
+              1
+            ],
+            "type": "integer"
+          },
+          "reported": {
+            "$ref": "#/components/schemas/ReportedDescription"
+          },
+          "revision": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "protocol_version",
+          "revision",
+          "display_label",
+          "journal"
+        ],
+        "type": "object"
+      },
+      "Error": {
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "reason_code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason_code",
+          "detail"
+        ],
+        "type": "object"
+      },
+      "JournalIdentityMeta": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Configured journal name, if any",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "description": "Server package version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "type": "object"
+      },
+      "PatchClientLabelRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "description": "Journal owner override label, or null to clear",
+            "maxLength": 253,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "PatchClientLabelResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "display_label": {
+            "description": "Resulting computed display label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_label"
+        ],
+        "type": "object"
+      },
+      "PutSelfDescriptionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "protocol_version": {
+            "enum": [
+              1
+            ],
+            "type": "integer"
+          },
+          "reported": {
+            "$ref": "#/components/schemas/ReportedDescription"
+          }
+        },
+        "required": [
+          "protocol_version",
+          "expected_revision"
+        ],
+        "type": "object"
+      },
+      "ReportedDescription": {
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "description": "Client application identifier",
+            "maxLength": 128,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "app_version": {
+            "description": "Client application semver or build version",
+            "maxLength": 64,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "device_type": {
+            "description": "Reported device form factor",
+            "enum": [
+              "phone",
+              "laptop",
+              "desktop",
+              "server",
+              "wearable",
+              "tablet",
+              "other",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "description": "Human-readable device name reported by client",
+            "maxLength": 253,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "platform": {
+            "description": "Reported operating system platform",
+            "enum": [
+              "linux",
+              "macos",
+              "windows",
+              "ios",
+              "android",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Generated from client_description_contract_authority.json. Covers GET/PUT /app/network/api/clients/self and PATCH /app/network/api/clients/{cid}/label.",
+    "title": "Linked-device client description contract",
+    "version": "1.0.0",
+    "x-disclaimer": "reported-device-metadata / owner-label-precedence",
+    "x-generated": true,
+    "x-generated-by": "solstone-core-repository-contracts"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/app/network/api/clients/self": {
+      "get": {
+        "description": "Get current description for the authenticated caller linked device.",
+        "operationId": "client.getSelfDescription",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientDescriptionResponse"
+                }
+              }
+            },
+            "description": "Caller description retrieved"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller is not an authenticated linked device"
+          }
+        },
+        "x-aliases": [
+          "/app/link/api/clients/self"
+        ]
+      },
+      "put": {
+        "description": "Update reported description for the caller linked device with optimistic concurrency control.",
+        "operationId": "client.putSelfDescription",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutSelfDescriptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientDescriptionResponse"
+                }
+              }
+            },
+            "description": "Client description updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid description payload or unknown fields"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Caller is not an authenticated linked device"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Revision conflict / optimistic concurrency mismatch"
+          }
+        },
+        "x-aliases": [
+          "/app/link/api/clients/self"
+        ]
+      }
+    },
+    "/app/network/api/clients/{cid}/label": {
+      "patch": {
+        "description": "Set or clear the journal owner override label for a linked device (localhost owner authority only).",
+        "operationId": "client.patchClientLabel",
+        "parameters": [
+          {
+            "description": "Client fingerprint (SHA-256 digest)",
+            "in": "path",
+            "name": "cid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchClientLabelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatchClientLabelResponse"
+                }
+              }
+            },
+            "description": "Owner label updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid label payload or string validation failure"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Localhost owner authority required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Paired device not found in authorization ledger"
+          }
+        },
+        "x-aliases": [
+          "/app/link/api/clients/{cid}/label"
+        ]
+      }
+    }
+  },
+  "x-vocabularies": {
+    "ReportedDescription.device_type": {
+      "classification": "closed",
+      "id": "ReportedDescription.device_type",
+      "source_pointer": "/components/schemas/ReportedDescription/properties/device_type",
+      "unknown_value_behavior": "reject",
+      "values": [
+        "phone",
+        "laptop",
+        "desktop",
+        "server",
+        "wearable",
+        "tablet",
+        "other"
+      ]
+    },
+    "ReportedDescription.platform": {
+      "classification": "closed",
+      "id": "ReportedDescription.platform",
+      "source_pointer": "/components/schemas/ReportedDescription/properties/platform",
+      "unknown_value_behavior": "reject",
+      "values": [
+        "linux",
+        "macos",
+        "windows",
+        "ios",
+        "android"
+      ]
+    }
+  }
+}

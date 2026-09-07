@@ -95,6 +95,7 @@ host = [
     "dep:socket2",
     "dep:spl-core",
     "dep:spl-home",
+    "dep:time",
 ]
 
 [dependencies]
@@ -151,6 +152,7 @@ solstone-core-talent-config.workspace = true
 solstone-core-journal-cli.workspace = true
 solstone-core-system.workspace = true
 tokio = { workspace = true, features = ["net", "rt-multi-thread", "sync", "time"] }
+time = { version = "0.3.54", optional = true }
 tower.workspace = true
 ureq = { workspace = true, features = ["rustls"] }
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
@@ -175,5 +177,4 @@ spl-transport.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring"] }
 tokio-tungstenite = { version = "0.26.2", default-features = false, features = ["connect", "handshake"] }
-time = "0.3.54"
 x509-parser = "0.16.0"

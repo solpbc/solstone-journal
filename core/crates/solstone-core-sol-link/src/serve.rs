@@ -502,7 +502,8 @@ impl StatusTracker {
         {
             let tracker = Arc::clone(self);
             handle.spawn_blocking(move || {
-                refresh_journal_version(tracker, port, target_gen);
+                refresh_journal_version(Arc::clone(&tracker), port, target_gen);
+                publish_device_description(tracker, port, target_gen);
             });
         }
     }
@@ -528,7 +529,8 @@ impl StatusTracker {
         if should_fetch && let (Some(port), Some(handle)) = (port, self.runtime_handle.as_ref()) {
             let tracker = Arc::clone(self);
             handle.spawn_blocking(move || {
-                refresh_journal_version(tracker, port, new_generation);
+                refresh_journal_version(Arc::clone(&tracker), port, new_generation);
+                publish_device_description(tracker, port, new_generation);
             });
         }
     }
@@ -583,6 +585,7 @@ impl StatusTracker {
         &self,
         target_generation: u64,
         parsed: Option<String>,
+        journal_name: Option<String>,
     ) -> ApplyOutcome {
         let mut state = self.inner.lock().expect("status tracker lock");
         if state.generation != target_generation {
@@ -618,6 +621,7 @@ impl StatusTracker {
                 ca_fp_prefix: self.ca_fp_prefix_hex.clone(),
                 paired_at: self.paired_at.clone(),
                 journal_version: version,
+                journal_name,
                 observed_at: self.clock.now_unix_seconds(),
             };
             write_journal_metadata_atomic(&self.bundle_dir, &metadata);
@@ -635,7 +639,6 @@ fn is_valid_journal_version(s: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+'))
 }
 
-#[cfg(feature = "host")]
 fn refresh_journal_version(tracker: Arc<StatusTracker>, port: u16, target_generation: u64) {
     let config = ureq::Agent::config_builder()
         .http_status_as_error(false)
@@ -671,11 +674,109 @@ fn refresh_journal_version(tracker: Arc<StatusTracker>, port: u16, target_genera
             }
         });
 
-    tracker.apply_fetch_result(target_generation, parsed_version);
+    tracker.apply_fetch_result(target_generation, parsed_version, None);
 }
 
-#[cfg(not(feature = "host"))]
-fn refresh_journal_version(_tracker: Arc<StatusTracker>, _port: u16, _target_generation: u64) {}
+fn local_device_description() -> crate::client_description::ReportedDescription {
+    let name = std::env::var("HOSTNAME")
+        .or_else(|_| std::env::var("COMPUTERNAME"))
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| {
+            std::fs::read_to_string("/etc/hostname")
+                .ok()
+                .map(|s| s.trim().to_owned())
+                .filter(|s| !s.is_empty())
+        });
+    let platform = Some(std::env::consts::OS.to_owned());
+    let app_id = Some("solstone".to_owned());
+    let app_version = Some(env!("CARGO_PKG_VERSION").to_owned());
+    crate::client_description::ReportedDescription {
+        name,
+        platform,
+        device_type: None,
+        app_id,
+        app_version,
+    }
+}
+
+fn publish_device_description(tracker: Arc<StatusTracker>, port: u16, target_generation: u64) {
+    let config = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .max_redirects(0)
+        .proxy(None)
+        .timeout_global(Some(Duration::from_secs(5)))
+        .build();
+    let agent = ureq::Agent::new_with_config(config);
+    let self_url = format!("http://127.0.0.1:{port}/app/network/api/clients/self");
+    let local = local_device_description();
+
+    for _ in 0..2 {
+        if tracker
+            .inner
+            .lock()
+            .map(|s| s.generation != target_generation)
+            .unwrap_or(true)
+        {
+            return;
+        }
+        let Ok(get_resp) = agent
+            .get(&self_url)
+            .header("Cache-Control", "no-cache")
+            .header("Pragma", "no-cache")
+            .call()
+        else {
+            return;
+        };
+        if get_resp.status().as_u16() != 200 {
+            return;
+        }
+        use std::io::Read;
+        let mut body = Vec::new();
+        if get_resp
+            .into_body()
+            .into_reader()
+            .take(8192)
+            .read_to_end(&mut body)
+            .is_err()
+        {
+            return;
+        }
+        let Ok(desc_resp) =
+            serde_json::from_slice::<crate::client_description::ClientDescriptionResponse>(&body)
+        else {
+            return;
+        };
+        tracker.apply_fetch_result(
+            target_generation,
+            Some(desc_resp.journal.version.clone()),
+            desc_resp.journal.name.clone(),
+        );
+        if desc_resp.reported == Some(local.clone()) {
+            return;
+        }
+        let put_req = crate::client_description::PutSelfDescriptionRequest {
+            protocol_version: 1,
+            expected_revision: desc_resp.revision,
+            reported: Some(local.clone()),
+        };
+        let Ok(put_body) = serde_json::to_vec(&put_req) else {
+            return;
+        };
+        let Ok(put_resp) = agent
+            .put(&self_url)
+            .header("Content-Type", "application/json")
+            .send(&put_body[..])
+        else {
+            return;
+        };
+        match put_resp.status().as_u16() {
+            200 => return,
+            409 => continue,
+            _ => return,
+        }
+    }
+}
 
 fn atomic_write_file(path: &Path, bytes: &[u8]) {
     #[cfg(feature = "host")]
@@ -1139,6 +1240,7 @@ mod tests {
             ca_fp_prefix: "abcd".to_string(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             journal_version: "2026.07.26".to_string(),
+            journal_name: Some("My Journal".to_string()),
             observed_at: 1234.0,
         };
         let bytes = serde_json::to_vec(&metadata).expect("serialize");
@@ -1208,6 +1310,7 @@ mod tests {
             ca_fp_prefix: "abcd".to_string(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             journal_version: "invalid version\nwith\x1b[31m escape".to_string(),
+            journal_name: None,
             observed_at: 1234.0,
         };
         std::fs::write(
@@ -1240,7 +1343,7 @@ mod tests {
         }
 
         // Apply older generation result
-        let outcome = tracker.apply_fetch_result(2, Some("2026.07.26".to_string()));
+        let outcome = tracker.apply_fetch_result(2, Some("2026.07.26".to_string()), None);
         assert_eq!(outcome, ApplyOutcome::StaleGeneration);
 
         let snap = tracker.snapshot(bridge_status(true, true));
@@ -1271,7 +1374,7 @@ mod tests {
             json!({ "paired_at": "different-paired-at" }).to_string(),
         )
         .expect("write peer.json");
-        let outcome_mismatch = tracker.apply_fetch_result(1, Some("2026.07.26".to_string()));
+        let outcome_mismatch = tracker.apply_fetch_result(1, Some("2026.07.26".to_string()), None);
         assert_eq!(outcome_mismatch, ApplyOutcome::PairingMismatch);
         assert!(!temp_dir.path().join("journal_metadata.json").exists());
         // Memory state must remain untouched
@@ -1285,7 +1388,11 @@ mod tests {
             json!({ "paired_at": "2026-07-26T00:00:00Z" }).to_string(),
         )
         .expect("write peer.json");
-        let outcome_match = tracker.apply_fetch_result(1, Some("2026.07.26".to_string()));
+        let outcome_match = tracker.apply_fetch_result(
+            1,
+            Some("2026.07.26".to_string()),
+            Some("Test Journal".to_string()),
+        );
         assert_eq!(outcome_match, ApplyOutcome::Persisted);
         assert!(temp_dir.path().join("journal_metadata.json").exists());
         let meta: LinkJournalMetadata = serde_json::from_slice(
@@ -1293,12 +1400,23 @@ mod tests {
         )
         .expect("deserialize");
         assert_eq!(meta.journal_version, "2026.07.26");
+        assert_eq!(meta.journal_name.as_deref(), Some("Test Journal"));
         assert_eq!(meta.instance_id, "inst-123");
         assert_eq!(meta.ca_fp_prefix, "abcd");
         assert_eq!(meta.paired_at, "2026-07-26T00:00:00Z");
         let snap_match = tracker.snapshot(bridge_status(true, true));
         assert_eq!(snap_match.journal_version.as_deref(), Some("2026.07.26"));
         assert!(snap_match.journal_version_fresh);
+    }
+
+    #[test]
+    fn publish_device_description_handles_dead_port_without_panic() {
+        let clock = Arc::new(FixedStatusClock::new(100.0));
+        let tracker = Arc::new(StatusTracker::new(clock));
+        // Port 1 is not listening
+        publish_device_description(tracker.clone(), 1, 0);
+        let state = tracker.inner.lock().expect("lock");
+        assert_eq!(state.cached_version, None);
     }
 
     #[test]

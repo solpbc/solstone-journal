@@ -271,9 +271,18 @@ pub(crate) async fn devices(Extension(root): Extension<Arc<JournalRoot>>) -> Res
             None
         }
     };
+    let descriptions = solstone_core_sol_link::client_description_store::read_descriptions(&root.0)
+        .ok()
+        .unwrap_or_default();
     let devices = entries
         .iter()
-        .map(|entry| network_device_json(entry, activity.as_ref()))
+        .map(|entry| {
+            network_device_json(
+                entry,
+                activity.as_ref(),
+                descriptions.get(&entry.fingerprint),
+            )
+        })
         .collect::<Vec<_>>();
     Json(json!({"devices": devices})).into_response()
 }
@@ -340,9 +349,18 @@ fn resolve_unpair_label(
 ) -> Result<Option<String>, UnpairLabelError> {
     match read_authorized_clients(&journal_root.join("link/authorized_clients.json")) {
         AuthorizedClientsRead::Present(entries) => {
+            let descriptions =
+                solstone_core_sol_link::client_description_store::read_descriptions(journal_root)
+                    .ok()
+                    .unwrap_or_default();
             let matches = entries
                 .into_iter()
-                .filter(|entry| entry.display_label() == label)
+                .filter(|entry| {
+                    solstone_core_sol_link::client_description::current_display_label(
+                        entry,
+                        descriptions.get(&entry.fingerprint),
+                    ) == label
+                })
                 .collect::<Vec<_>>();
             match matches.as_slice() {
                 [] => Ok(None),
@@ -416,14 +434,17 @@ pub(crate) fn unpair_mutation_refusal(error: AuthorizedClientsMutationError) -> 
     }
 }
 
-fn network_device_json(
+pub(crate) fn network_device_json(
     entry: &solstone_core_sol_link::ledger::ClientEntry,
     activity: Option<&std::collections::BTreeMap<String, ClientActivity>>,
+    stored_desc: Option<&solstone_core_sol_link::client_description::StoredClientDescription>,
 ) -> Value {
     let last_seen_at = activity
         .and_then(|devices| devices.get(&entry.fingerprint))
         .map(|device| Value::from(device.last_seen_at.clone()))
         .unwrap_or(Value::Null);
+    let display_label =
+        solstone_core_sol_link::client_description::current_display_label(entry, stored_desc);
     let value = Map::from_iter([
         ("fingerprint".to_owned(), json!(entry.fingerprint)),
         (
@@ -439,7 +460,7 @@ fn network_device_json(
             ),
         ),
         ("device_label".to_owned(), json!(entry.device_label)),
-        ("display_label".to_owned(), json!(entry.display_label())),
+        ("display_label".to_owned(), json!(display_label)),
         ("client_label".to_owned(), json!(entry.client_label)),
         ("paired_at".to_owned(), json!(entry.paired_at)),
         ("last_seen_at".to_owned(), last_seen_at),

@@ -773,6 +773,16 @@ impl AuthorizationLedger {
         // last-seen metadata, but that file is never authorization evidence.
         let device_metadata_removed =
             remove_device(&self.devices_path, fingerprint).unwrap_or(false);
+        if let Some(journal_root) = self
+            .authorized_clients_path
+            .parent()
+            .and_then(std::path::Path::parent)
+        {
+            let _ = crate::client_description_store::remove_description_entry(
+                journal_root,
+                fingerprint,
+            );
+        }
         Ok(RemoveOutcome {
             authorized_removed: true,
             device_metadata_removed,

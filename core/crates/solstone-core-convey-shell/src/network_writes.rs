@@ -741,10 +741,18 @@ async fn forget_device(
         );
     }
 
+    let stored_descs =
+        solstone_core_sol_link::client_description_store::read_descriptions(&journal.0)
+            .unwrap_or_default();
+    let display_label = solstone_core_sol_link::client_description::current_display_label(
+        &entry,
+        stored_descs.get(&fingerprint),
+    );
+
     match AuthorizationLedger::new(&journal.0).remove(&fingerprint) {
         Ok(outcome) if outcome.authorized_removed => Json(json!({"forgotten": {
             "fingerprint": entry.fingerprint,
-            "display_label": entry.display_label(),
+            "display_label": display_label,
         }}))
         .into_response(),
         Ok(_) => refusal(

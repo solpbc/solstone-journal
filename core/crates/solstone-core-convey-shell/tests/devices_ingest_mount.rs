@@ -294,3 +294,92 @@ async fn native_ingest_posts_through_the_composed_shell() {
     );
     callosum.stop().await;
 }
+
+#[tokio::test]
+async fn malformed_descriptive_hints_with_valid_auth_succeeds_and_falls_back_to_device_stream() {
+    let dir = tempfile::TempDir::new_in("/var/tmp").expect("journal root");
+    write_config(dir.path(), br#"{"setup":{"completed_at":1767225600}}"#);
+    fs::create_dir_all(dir.path().join("link")).expect("link directory");
+    fs::write(
+        dir.path().join("link/authorized_clients.json"),
+        json!([{
+            "fingerprint": CID_A,
+            "device_label": "fixture device",
+            "client_label": 12345,
+            "platform": "unknown_os",
+            "paired_at": "2026-01-01T00:00:00Z",
+            "instance_id": "fixture-instance",
+            "role": "",
+            "kind": "cert",
+        }])
+        .to_string(),
+    )
+    .expect("pairing identity");
+
+    let callosum = CallosumSocketServer::bind(dir.path().join("health/callosum.sock"))
+        .await
+        .expect("Callosum server");
+    let app = router(dir.path().to_path_buf());
+    let (content_type, body) = fresh_upload();
+    let (status, _, bytes) = call(
+        &app,
+        "POST",
+        "/app/devices/ingest",
+        body,
+        Some(content_type),
+        Some("3"),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "{}",
+        String::from_utf8_lossy(&bytes)
+    );
+    let segment = dir
+        .path()
+        .join("chronicle")
+        .join(DAY)
+        .join("device")
+        .join(FRESH_SEGMENT);
+    assert!(
+        segment.is_dir(),
+        "expected fallback to device stream under {}",
+        segment.display()
+    );
+    assert!(
+        fs::metadata(segment.join("fresh.flac"))
+            .expect("ingested media")
+            .len()
+            > 0,
+        "segment media is empty"
+    );
+    // Ingest never reads or creates client-descriptions.json
+    assert!(!dir.path().join("link/client-descriptions.json").exists());
+    callosum.stop().await;
+}
+
+#[tokio::test]
+async fn missing_or_invalid_auth_refused() {
+    let dir = tempfile::TempDir::new_in("/var/tmp").expect("journal root");
+    write_config(dir.path(), br#"{"setup":{"completed_at":1767225600}}"#);
+    fs::create_dir_all(dir.path().join("link")).expect("link directory");
+    fs::write(
+        dir.path().join("link/authorized_clients.json"),
+        json!([]).to_string(),
+    )
+    .expect("pairing identity");
+
+    let app = router(dir.path().to_path_buf());
+    let (content_type, body) = fresh_upload();
+    let (status, _, _) = call(
+        &app,
+        "POST",
+        "/app/devices/ingest",
+        body,
+        Some(content_type),
+        Some("3"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+}
