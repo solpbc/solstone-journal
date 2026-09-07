@@ -489,6 +489,10 @@
   function sweepUnresolvedSkeletons() {
     if (timeoutFired) return;
     timeoutFired = true;
+    if (elements.vitalsCheckBtn) {
+      elements.vitalsCheckBtn.disabled = false;
+      delete elements.vitalsCheckBtn.dataset.awaitingFirstRead;
+    }
     const targets = [
       elements.vitalsStatus,
       elements.serviceDots,
@@ -804,7 +808,18 @@
   function renderBrainHealth() {
     const box = elements.brainHealthStatus;
     if (!box) return;
-    const brain = brainSnapshot || {};
+    // G3-304: on a cold load every neighbouring card narrates and this one
+    // painted an empty white box, which reads as broken rather than as loading.
+    if (!brainSnapshot) {
+      box.replaceChildren();
+      const pending = document.createElement('p');
+      pending.className = 'brain-health-pending';
+      pending.textContent = 'checking processing…';
+      box.appendChild(pending);
+      if (elements.brainCheckBtn) elements.brainCheckBtn.hidden = true;
+      return;
+    }
+    const brain = brainSnapshot;
     const identity = brain.identity || {};
     const evidence = brain.evidence || {};
     const component = brain.failing_component ? ` (${brain.failing_component})` : '';
@@ -902,7 +917,11 @@
   }
 
   function updateAllQuiet() {
+    // G3-301: the vitals bar read 'TALENTS 1 running' three cards above
+    // 'everything is idle'. The card's claim covers talents, so the talent
+    // count is part of the test that lets it speak.
     const allHidden = state.supervisorSeen && state.cortexSeen && state.tasks.length === 0 &&
+      state.agentCount === 0 &&
       elements.cortexSection.classList.contains('hidden') &&
       elements.importerSection.classList.contains('hidden') &&
       elements.thinkCard.classList.contains('hidden');
@@ -924,7 +943,9 @@
       return el;
     }
 
-    if (state.lastAgentFinishTs) {
+    // A finish time is a claim about the talent read. When that read never
+    // landed, the vital says 'unavailable' and this line may not contradict it.
+    if (state.lastAgentFinishTs && state.cortexSeen) {
       const el = ensureChild(idx++);
       el.textContent = 'last talent finished ' + ageAgo(Date.now() - state.lastAgentFinishTs);
       el.style.color = '';
@@ -1508,6 +1529,14 @@
       updateVitalsStatus('unavailable');
     }
 
+    // G3-304: the button acted on a read that had not landed. It comes alive
+    // when the vitals do, or when the sweep gives up on them.
+    if (elements.vitalsCheckBtn && elements.vitalsCheckBtn.dataset.awaitingFirstRead === 'true'
+        && (state.supervisorSeen || timeoutFired)) {
+      elements.vitalsCheckBtn.disabled = false;
+      delete elements.vitalsCheckBtn.dataset.awaitingFirstRead;
+    }
+
     // Agents count
     writeVital(elements.agentsValue, state.cortexSeen, state.agentCount + ' running');
 
@@ -1980,8 +2009,20 @@
     }
   }
 
-	  function monthDay(ms) {
-	    return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase();
+	  // X-02: the row printed its own lowercase 'sep 6'. Dates on a surface go
+	  // through the shared formatter, which the rest of the page already speaks.
+	  function formatDay(ms) {
+	    const value = new Date(ms);
+	    if (Number.isNaN(value.getTime())) return '';
+	    const key = String(value.getFullYear())
+	      + String(value.getMonth() + 1).padStart(2, '0')
+	      + String(value.getDate()).padStart(2, '0');
+	    return window.JournalFormat ? window.JournalFormat.day(key) : key;
+	  }
+
+	  // Plural forms are real: '1 uploads turned away' was one of them.
+	  function uploadsTurnedAway(count) {
+	    return count === 1 ? '1 upload turned away' : count + ' uploads turned away';
 	  }
 
 	  function registeredClientMeta(client) {
@@ -2123,22 +2164,32 @@
 
       if (client.failing && client.ingest_rejection) {
         const rej = client.ingest_rejection;
-        const parts = [];
-        if (typeof rej.active_count === 'number' && isFinite(rej.active_count)
-            && typeof rej.first === 'string' && Number.isFinite(Date.parse(rej.first))) {
-          parts.push(rej.active_count + ' rejected since ' + monthDay(Date.parse(rej.first)));
-        }
-        if (rej.reason_code) parts.push(rej.reason_code);
-        if (parts.length) {
-          const detailEl = document.createElement('span');
-          detailEl.className = 'registered-client-detail';
-          detailEl.textContent = parts.join(' · ');
-          row.appendChild(detailEl);
-        }
+        const count = typeof rej.active_count === 'number' && isFinite(rej.active_count)
+          ? rej.active_count
+          : null;
+        const firstMs = typeof rej.first === 'string' ? Date.parse(rej.first) : NaN;
+        const since = Number.isFinite(firstMs) ? ' since ' + formatDay(firstMs) : '';
+        const detailEl = document.createElement('span');
+        detailEl.className = 'registered-client-detail';
+        detailEl.textContent = (count === null ? 'an upload was turned away' : uploadsTurnedAway(count)) + since;
+        row.appendChild(detailEl);
         const recoveryEl = document.createElement('span');
         recoveryEl.className = 'registered-client-recovery';
         recoveryEl.textContent = 'update or restart the solstone app on ' + (client.display_label || client.device_label || 'that device');
         row.appendChild(recoveryEl);
+        // X-02: the rejection code is an exact identifier, not a sentence. It
+        // belongs behind a disclosure, next to the row it explains.
+        if (rej.reason_code) {
+          const tech = document.createElement('details');
+          tech.className = 'registered-client-tech';
+          const techSummary = document.createElement('summary');
+          techSummary.textContent = 'technical details';
+          tech.appendChild(techSummary);
+          const code = document.createElement('div');
+          code.textContent = 'reason code: ' + rej.reason_code;
+          tech.appendChild(code);
+          row.appendChild(tech);
+        }
       }
 
       // The chip already carries this state for a device with no delivery yet;

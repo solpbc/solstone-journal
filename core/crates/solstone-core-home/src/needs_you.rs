@@ -48,18 +48,58 @@ pub fn needs_dedup_key(item: &Value) -> String {
     )
 }
 
+/// X-02: health's banner is the single source for this sentence, and it names
+/// the device. Home hid the name behind "one of your devices" while health and
+/// the status pane both said which one, so the same red fact read three ways.
+/// Health's strings are `HEALTH_GLANCE_DEVICE_FAILING` and
+/// `HEALTH_GLANCE_DEVICES_FAILING`; this echoes them.
 pub fn format_degraded_capture_line(capture: &Value) -> Option<String> {
     (capture.is_object() && capture.get("status").and_then(Value::as_str) == Some("degraded")).then(
-        || match named_attention_sources(capture) {
-            Some(sources) => format!(
-                "the solstone app on one of your devices is having trouble adding {sources} to your journal."
-            ),
-            None => {
-                "the solstone app on one of your devices is having trouble adding to your journal."
-                    .to_owned()
+        || {
+            let failing = failing_client_names(capture);
+            match (failing.as_slice(), named_attention_sources(capture)) {
+                ([name], _) => format!("{name} isn't reaching your journal."),
+                (names, _) if names.len() > 1 => format!(
+                    "{} devices aren't reaching your journal: {}.",
+                    names.len(),
+                    names.join(", ")
+                ),
+                // Nothing here names a device. The sources it is refusing are
+                // still more than "something is wrong", so they keep the line.
+                (_, Some(sources)) => format!(
+                    "the solstone app on one of your devices is having trouble adding {sources} to your journal."
+                ),
+                _ => "a device isn't reaching your journal.".to_owned(),
             }
         },
     )
+}
+
+/// The devices whose deliveries are being refused, named the way health names
+/// them. A device with no name of its own is still one of the devices the
+/// sentence is about, so it counts even though it cannot be listed.
+fn failing_client_names(capture: &Value) -> Vec<String> {
+    capture
+        .get("clients")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|client| {
+            client.get("status").and_then(Value::as_str) == Some("degraded")
+                || client
+                    .get("ingest_rejection")
+                    .is_some_and(|value| !value.is_null())
+        })
+        .map(|client| {
+            client
+                .get("name")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .unwrap_or("an unnamed device")
+                .to_owned()
+        })
+        .collect()
 }
 
 pub(crate) fn source_display_name(source: &str) -> &str {
@@ -155,10 +195,47 @@ mod tests {
         );
     }
 
+    /// X-02: a degraded device is named, the way health's banner names it. The
+    /// source-named line survives only for the case that has no device name to
+    /// give, which is the one place it was carrying real information.
+    #[test]
+    fn degraded_capture_line_names_the_device_health_names() {
+        assert_eq!(
+            format_degraded_capture_line(&json!({
+                "status": "degraded",
+                "clients": [{"name": "iPhone's iPhone", "status": "degraded"}]
+            }))
+            .as_deref(),
+            Some("iPhone's iPhone isn't reaching your journal.")
+        );
+        assert_eq!(
+            format_degraded_capture_line(&json!({
+                "status": "degraded",
+                "clients": [
+                    {"name": "suze", "status": "degraded"},
+                    {"name": "iPhone's iPhone", "ingest_rejection": {"active_count": 1}}
+                ]
+            }))
+            .as_deref(),
+            Some("2 devices aren't reaching your journal: suze, iPhone's iPhone.")
+        );
+        assert_eq!(
+            format_degraded_capture_line(&json!({
+                "status": "degraded",
+                "clients": [{"status": "degraded"}]
+            }))
+            .as_deref(),
+            Some("an unnamed device isn't reaching your journal.")
+        );
+        assert_eq!(
+            format_degraded_capture_line(&json!({"status": "active"})),
+            None
+        );
+    }
+
     #[test]
     fn degraded_capture_line_stays_unnamed_for_single_source() {
-        let unnamed =
-            "the solstone app on one of your devices is having trouble adding to your journal.";
+        let unnamed = "a device isn't reaching your journal.";
         for capture in [
             json!({"status": "degraded"}),
             json!({

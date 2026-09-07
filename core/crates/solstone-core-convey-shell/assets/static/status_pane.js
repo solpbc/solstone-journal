@@ -251,8 +251,20 @@ window.whenShellReady(() => {
       });
   }
 
-  function captureMonthDay(ms) {
-    return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase();
+  // X-02: the pane printed its own lowercase 'sep 6'. Dates on a surface go
+  // through the shared formatter, the way the rest of the shell reads them.
+  function captureDay(ms) {
+    const value = new Date(ms);
+    if (Number.isNaN(value.getTime())) return '';
+    const key = String(value.getFullYear())
+      + String(value.getMonth() + 1).padStart(2, '0')
+      + String(value.getDate()).padStart(2, '0');
+    return window.JournalFormat ? window.JournalFormat.day(key) : key;
+  }
+
+  // Plural forms are real: the pane read '1 uploads turned away'.
+  function uploadsTurnedAway(count) {
+    return count === 1 ? '1 upload turned away' : count + ' uploads turned away';
   }
 
 	  function renderCaptureSection(capture) {
@@ -298,15 +310,18 @@ window.whenShellReady(() => {
 		      const hasActiveCount = typeof rej.active_count === 'number' && isFinite(rej.active_count);
 		      appendLine(title, 'color: var(--danger); font-weight: 600;');
 
+		      // X-02: health's sentence is the source for this state. The pane
+		      // echoes it, says what the device adds rather than what it senses,
+		      // and counts in a real plural.
 		      let consequence;
 		      if (hasFirstTs && hasActiveCount) {
-			        consequence = "what it sensed hasn't reached your journal since " + captureMonthDay(rej.first_ts) + ', ' + rej.active_count + ' uploads turned away.';
+			        consequence = "what it adds hasn't reached your journal since " + captureDay(rej.first_ts) + '. ' + uploadsTurnedAway(rej.active_count) + '.';
 		      } else if (hasActiveCount) {
-			        consequence = "what it senses isn't reaching your journal, " + rej.active_count + ' uploads turned away.';
+			        consequence = "what it adds isn't reaching your journal. " + uploadsTurnedAway(rej.active_count) + '.';
 		      } else if (hasFirstTs) {
-			        consequence = "what it sensed hasn't reached your journal since " + captureMonthDay(rej.first_ts) + '.';
+			        consequence = "what it adds hasn't reached your journal since " + captureDay(rej.first_ts) + '.';
 		      } else {
-			        consequence = "what it senses isn't reaching your journal.";
+			        consequence = "what it adds isn't reaching your journal.";
 		      }
 		      appendLine(consequence, 'color: var(--danger); font-size: 12px;');
 
