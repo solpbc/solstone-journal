@@ -55,7 +55,13 @@ pub fn read_descriptions(
     let path = client_descriptions_path(journal_root);
     let bytes = match fs::read(&path) {
         Ok(bytes) => bytes,
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
+        Err(err)
+            if err.kind() == io::ErrorKind::NotFound
+                && fs::symlink_metadata(&path)
+                    .is_err_and(|error| error.kind() == io::ErrorKind::NotFound) =>
+        {
+            return Ok(BTreeMap::new());
+        }
         Err(_) => return Err(DescriptionStoreError::Unreadable(path)),
     };
     serde_json::from_slice(&bytes).map_err(|_| DescriptionStoreError::Unreadable(path))
@@ -173,7 +179,11 @@ pub fn put_self_description(
     }
     let sanitized_reported = match request.reported {
         Some(r) => Some(sanitize_reported(r).map_err(DescriptionMutationError::Invalid)?),
-        None => None,
+        None => {
+            return Err(DescriptionMutationError::Invalid(
+                "reported snapshot required",
+            ));
+        }
     };
 
     let desc_path = client_descriptions_path(journal_root);
@@ -223,7 +233,10 @@ pub fn put_self_description(
             } else {
                 let new_desc = StoredClientDescription {
                     protocol_version: 1,
-                    revision: cur.revision + 1,
+                    revision: cur
+                        .revision
+                        .checked_add(1)
+                        .ok_or(DescriptionMutationError::Invalid("revision exhausted"))?,
                     reported: sanitized_reported,
                     owner_label: cur.owner_label,
                     updated_at: Some(now_str),
@@ -327,7 +340,10 @@ pub fn patch_owner_label(
             } else {
                 let new_desc = StoredClientDescription {
                     protocol_version: 1,
-                    revision: cur.revision + 1,
+                    revision: cur
+                        .revision
+                        .checked_add(1)
+                        .ok_or(DescriptionMutationError::Invalid("revision exhausted"))?,
                     reported: cur.reported,
                     owner_label: sanitized_label,
                     updated_at: Some(now_str),
@@ -586,5 +602,54 @@ mod tests {
 
         let descriptions = read_descriptions(root).unwrap();
         assert!(!descriptions.contains_key(cid));
+    }
+    #[test]
+    fn concurrent_revocation_prevents_late_description_recreation() {
+        let dir = TempDir::new();
+        let root = dir.path().to_path_buf();
+        let cid = "sha256:0000000000000000000000000000000000000000000000000000000000000001";
+        seed_client(&root, cid, "mac");
+        patch_owner_label(
+            &root,
+            cid,
+            Some("Desk".into()),
+            OffsetDateTime::now_utc(),
+            test_meta(),
+        )
+        .unwrap();
+        // Model revocation while it owns the actual authorization lock. The
+        // competing production mutation must re-read after this commit.
+        let auth_path = root.join("link/authorized_clients.json");
+        let auth_lock = lock_authorization(&auth_path).unwrap();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let update_root = root.clone();
+        let worker = std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            put_self_description(
+                &update_root,
+                cid,
+                PutSelfDescriptionRequest {
+                    protocol_version: 1,
+                    expected_revision: 1,
+                    reported: Some(ReportedDescription::default()),
+                },
+                OffsetDateTime::now_utc(),
+                test_meta(),
+            )
+        });
+        started_rx.recv().unwrap();
+        write_json(
+            &auth_path,
+            &serde_json::json!([]),
+            JsonWriteOptions::default(),
+        )
+        .unwrap();
+        remove_description_entry(&root, cid).unwrap();
+        drop(auth_lock);
+        assert!(matches!(
+            worker.join().unwrap(),
+            Err(DescriptionMutationError::NotAuthorized)
+        ));
+        assert!(!read_descriptions(&root).unwrap().contains_key(cid));
     }
 }

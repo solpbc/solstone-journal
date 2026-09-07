@@ -3751,6 +3751,7 @@ dependencies = [
  "filetime",
  "futures-core",
  "futures-util",
+ "jsonschema",
  "log",
  "ndarray",
  "nix",

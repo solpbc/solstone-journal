@@ -23,7 +23,14 @@
             "type": "integer"
           },
           "reported": {
-            "$ref": "#/components/schemas/ReportedDescription"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportedDescription"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "revision": {
             "minimum": 0,
@@ -39,7 +46,10 @@
         "required": [
           "protocol_version",
           "revision",
+          "reported",
+          "owner_label",
           "display_label",
+          "updated_at",
           "journal"
         ],
         "type": "object"
@@ -75,6 +85,7 @@
           }
         },
         "required": [
+          "name",
           "version"
         ],
         "type": "object"
@@ -84,27 +95,20 @@
         "properties": {
           "label": {
             "description": "Journal owner override label, or null to clear",
-            "maxLength": 253,
             "type": [
               "string",
               "null"
-            ]
-          }
-        },
-        "type": "object"
-      },
-      "PatchClientLabelResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "display_label": {
-            "description": "Resulting computed display label",
-            "type": "string"
+            ],
+            "x-max-utf8-bytes": 80
           }
         },
         "required": [
-          "display_label"
+          "label"
         ],
         "type": "object"
+      },
+      "PatchClientLabelResponse": {
+        "$ref": "#/components/schemas/ClientDescriptionResponse"
       },
       "PutSelfDescriptionRequest": {
         "additionalProperties": false,
@@ -125,7 +129,8 @@
         },
         "required": [
           "protocol_version",
-          "expected_revision"
+          "expected_revision",
+          "reported"
         ],
         "type": "object"
       },
@@ -134,61 +139,52 @@
         "properties": {
           "app_id": {
             "description": "Client application identifier",
-            "maxLength": 128,
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "x-max-utf8-bytes": 64
           },
           "app_version": {
             "description": "Client application semver or build version",
-            "maxLength": 64,
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "x-max-utf8-bytes": 64
           },
           "device_type": {
             "description": "Reported device form factor",
-            "enum": [
-              "phone",
-              "laptop",
-              "desktop",
-              "server",
-              "wearable",
-              "tablet",
-              "other",
-              null
-            ],
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "x-max-utf8-bytes": 64
           },
           "name": {
             "description": "Human-readable device name reported by client",
-            "maxLength": 253,
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "x-max-utf8-bytes": 80
           },
           "platform": {
             "description": "Reported operating system platform",
-            "enum": [
-              "linux",
-              "macos",
-              "windows",
-              "ios",
-              "android",
-              null
-            ],
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "x-max-utf8-bytes": 64
           }
         },
+        "required": [
+          "name",
+          "platform",
+          "device_type",
+          "app_id",
+          "app_version"
+        ],
         "type": "object"
       }
     }
@@ -368,10 +364,10 @@
   },
   "x-vocabularies": {
     "ReportedDescription.device_type": {
-      "classification": "closed",
+      "classification": "open",
       "id": "ReportedDescription.device_type",
       "source_pointer": "/components/schemas/ReportedDescription/properties/device_type",
-      "unknown_value_behavior": "reject",
+      "unknown_value_behavior": "accept-within-string-bound",
       "values": [
         "phone",
         "laptop",
@@ -383,10 +379,10 @@
       ]
     },
     "ReportedDescription.platform": {
-      "classification": "closed",
+      "classification": "open",
       "id": "ReportedDescription.platform",
       "source_pointer": "/components/schemas/ReportedDescription/properties/platform",
-      "unknown_value_behavior": "reject",
+      "unknown_value_behavior": "accept-within-string-bound",
       "values": [
         "linux",
         "macos",

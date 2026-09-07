@@ -164,6 +164,7 @@ nix = { workspace = true, features = ["signal"] }
 serde_json.workspace = true
 
 [dev-dependencies]
+jsonschema.workspace = true
 filetime = "0.2.29"
 futures-util = { version = "0.3.33", default-features = false, features = ["sink", "std"] }
 tempfile = "3.24.0"

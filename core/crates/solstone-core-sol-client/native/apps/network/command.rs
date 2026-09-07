@@ -450,10 +450,7 @@ pub fn set_label(ctx: CommandContext<'_>) -> CommandOutput {
             _ => Value::Null,
         }
     };
-    let payload = json!({
-        "protocol_version": 1,
-        "label": label_value,
-    });
+    let payload = json!({"label": label_value});
     let route = format!("/app/network/api/clients/{cid}/label");
     match request_json(ctx, HttpMethod::Patch, &route, vec![], Some(payload)) {
         Ok(response) => {

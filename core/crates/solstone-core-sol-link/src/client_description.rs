@@ -10,10 +10,15 @@ use crate::ledger::ClientEntry;
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReportedDescription {
+    #[serde(deserialize_with = "required_nullable_string")]
     pub name: Option<String>,
+    #[serde(deserialize_with = "required_nullable_string")]
     pub platform: Option<String>,
+    #[serde(deserialize_with = "required_nullable_string")]
     pub device_type: Option<String>,
+    #[serde(deserialize_with = "required_nullable_string")]
     pub app_id: Option<String>,
+    #[serde(deserialize_with = "required_nullable_string")]
     pub app_version: Option<String>,
 }
 
@@ -23,8 +28,11 @@ pub struct ReportedDescription {
 pub struct StoredClientDescription {
     pub protocol_version: u32,
     pub revision: u64,
+    #[serde(deserialize_with = "required_nullable_reported")]
     pub reported: Option<ReportedDescription>,
+    #[serde(deserialize_with = "required_nullable_string")]
     pub owner_label: Option<String>,
+    #[serde(deserialize_with = "required_nullable_string")]
     pub updated_at: Option<String>,
 }
 
@@ -45,6 +53,7 @@ impl StoredClientDescription {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct JournalIdentityMeta {
+    #[serde(deserialize_with = "required_nullable_string")]
     pub name: Option<String>,
     pub version: String,
 }
@@ -55,9 +64,12 @@ pub struct JournalIdentityMeta {
 pub struct ClientDescriptionResponse {
     pub protocol_version: u32,
     pub revision: u64,
+    #[serde(deserialize_with = "required_nullable_reported")]
     pub reported: Option<ReportedDescription>,
+    #[serde(deserialize_with = "required_nullable_string")]
     pub owner_label: Option<String>,
     pub display_label: String,
+    #[serde(deserialize_with = "required_nullable_string")]
     pub updated_at: Option<String>,
     pub journal: JournalIdentityMeta,
 }
@@ -68,6 +80,7 @@ pub struct ClientDescriptionResponse {
 pub struct PutSelfDescriptionRequest {
     pub protocol_version: u32,
     pub expected_revision: u64,
+    #[serde(deserialize_with = "required_reported")]
     pub reported: Option<ReportedDescription>,
 }
 
@@ -75,8 +88,26 @@ pub struct PutSelfDescriptionRequest {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PatchClientLabelRequest {
-    #[serde(default)]
+    #[serde(deserialize_with = "required_nullable_string")]
     pub label: Option<String>,
+}
+
+fn required_nullable_string<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    Option::<String>::deserialize(deserializer)
+}
+
+fn required_nullable_reported<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<ReportedDescription>, D::Error> {
+    Option::<ReportedDescription>::deserialize(deserializer)
+}
+
+fn required_reported<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<ReportedDescription>, D::Error> {
+    ReportedDescription::deserialize(deserializer).map(Some)
 }
 
 /// Validate and sanitize a descriptive string field.
@@ -91,7 +122,7 @@ pub fn sanitize_string(
             if trimmed.is_empty() {
                 return Ok(None);
             }
-            if trimmed.bytes().any(|b| b < 0x20 || b == 0x7f) {
+            if trimmed.chars().any(char::is_control) {
                 return Err("string contains control characters");
             }
             if trimmed.len() > max_bytes {

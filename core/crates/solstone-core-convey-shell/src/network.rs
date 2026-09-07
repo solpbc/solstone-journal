@@ -42,7 +42,7 @@ use crate::{JournalRoot, asset_response, assets};
 
 /// Exact network-device response vocabulary mirrored from
 /// `solstone/apps/network/routes.py::_entry_to_json`.
-pub(crate) const NETWORK_DEVICE_FIELDS: [&str; 10] = [
+pub(crate) const NETWORK_DEVICE_FIELDS: [&str; 14] = [
     "fingerprint",
     "fingerprint_short",
     "device_label",
@@ -53,6 +53,10 @@ pub(crate) const NETWORK_DEVICE_FIELDS: [&str; 10] = [
     "role",
     "network",
     "kind",
+    "reported",
+    "owner_label",
+    "description_revision",
+    "description_updated_at",
 ];
 
 #[derive(Deserialize)]
@@ -271,9 +275,17 @@ pub(crate) async fn devices(Extension(root): Extension<Arc<JournalRoot>>) -> Res
             None
         }
     };
-    let descriptions = solstone_core_sol_link::client_description_store::read_descriptions(&root.0)
-        .ok()
-        .unwrap_or_default();
+    let descriptions =
+        match solstone_core_sol_link::client_description_store::read_descriptions(&root.0) {
+            Ok(descriptions) => descriptions,
+            Err(_) => {
+                return refusal(
+                    "client_description_unreadable",
+                    "client description store could not be read",
+                    StatusCode::SERVICE_UNAVAILABLE,
+                );
+            }
+        };
     let devices = entries
         .iter()
         .map(|entry| {
@@ -337,6 +349,7 @@ pub(crate) async fn unpair(Extension(root): Extension<Arc<JournalRoot>>, body: B
 }
 
 enum UnpairLabelError {
+    DescriptionUnreadable,
     Unreadable,
     Malformed,
     DuplicateCid,
@@ -351,8 +364,7 @@ fn resolve_unpair_label(
         AuthorizedClientsRead::Present(entries) => {
             let descriptions =
                 solstone_core_sol_link::client_description_store::read_descriptions(journal_root)
-                    .ok()
-                    .unwrap_or_default();
+                    .map_err(|_| UnpairLabelError::DescriptionUnreadable)?;
             let matches = entries
                 .into_iter()
                 .filter(|entry| {
@@ -377,6 +389,11 @@ fn resolve_unpair_label(
 
 fn unpair_label_refusal(error: UnpairLabelError) -> Response {
     match error {
+        UnpairLabelError::DescriptionUnreadable => refusal(
+            "client_description_unreadable",
+            "client description store could not be read",
+            StatusCode::SERVICE_UNAVAILABLE,
+        ),
         UnpairLabelError::Unreadable => refusal(
             "authorization_ledger_unreadable",
             "authorized-client ledger could not be read",
@@ -461,6 +478,22 @@ pub(crate) fn network_device_json(
         ),
         ("device_label".to_owned(), json!(entry.device_label)),
         ("display_label".to_owned(), json!(display_label)),
+        (
+            "reported".to_owned(),
+            json!(stored_desc.and_then(|s| s.reported.as_ref())),
+        ),
+        (
+            "owner_label".to_owned(),
+            json!(stored_desc.and_then(|s| s.owner_label.as_ref())),
+        ),
+        (
+            "description_revision".to_owned(),
+            json!(stored_desc.map_or(0, |s| s.revision)),
+        ),
+        (
+            "description_updated_at".to_owned(),
+            json!(stored_desc.and_then(|s| s.updated_at.as_ref())),
+        ),
         ("client_label".to_owned(), json!(entry.client_label)),
         ("paired_at".to_owned(), json!(entry.paired_at)),
         ("last_seen_at".to_owned(), last_seen_at),

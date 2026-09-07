@@ -9,7 +9,6 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
@@ -131,20 +130,20 @@ pub(crate) fn authority_digest() -> String {
 
 fn platform_vocabulary() -> Value {
     json!({
-        "classification": "closed",
+        "classification": "open",
         "id": "ReportedDescription.platform",
         "source_pointer": "/components/schemas/ReportedDescription/properties/platform",
-        "unknown_value_behavior": "reject",
+        "unknown_value_behavior": "accept-within-string-bound",
         "values": PLATFORM_VALUES,
     })
 }
 
 fn device_type_vocabulary() -> Value {
     json!({
-        "classification": "closed",
+        "classification": "open",
         "id": "ReportedDescription.device_type",
         "source_pointer": "/components/schemas/ReportedDescription/properties/device_type",
-        "unknown_value_behavior": "reject",
+        "unknown_value_behavior": "accept-within-string-bound",
         "values": DEVICE_TYPE_VALUES,
     })
 }
@@ -415,50 +414,6 @@ fn artifact_mismatch(path: &str, expected: &[u8], actual: &[u8]) -> Result<(), S
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TestReportedDescription {
-    pub name: Option<String>,
-    pub platform: Option<String>,
-    pub device_type: Option<String>,
-    pub app_id: Option<String>,
-    pub app_version: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TestJournalIdentityMeta {
-    pub name: Option<String>,
-    pub version: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TestClientDescriptionResponse {
-    pub protocol_version: u32,
-    pub revision: u64,
-    pub reported: Option<TestReportedDescription>,
-    pub owner_label: Option<String>,
-    pub display_label: String,
-    pub updated_at: Option<String>,
-    pub journal: TestJournalIdentityMeta,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TestPutSelfDescriptionRequest {
-    pub protocol_version: u32,
-    pub expected_revision: u64,
-    pub reported: Option<TestReportedDescription>,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TestPatchClientLabelRequest {
-    #[serde(default)]
-    pub label: Option<String>,
-}
-
 #[test]
 fn generated_bundle_matches_committed_files() {
     let root = repository_root();
@@ -483,50 +438,6 @@ fn under_bumped_manifest_semver_is_rejected() {
             .expect_err("under-bumped semver must differ from generated bundle");
         assert_eq!(error, "generated artifact differs: manifest.json");
     }
-}
-
-#[test]
-fn payload_models_roundtrip_against_fixtures() {
-    let put_req = TestPutSelfDescriptionRequest {
-        protocol_version: 1,
-        expected_revision: 0,
-        reported: Some(TestReportedDescription {
-            name: Some("Studio Mac".to_owned()),
-            platform: Some("macos".to_owned()),
-            device_type: Some("desktop".to_owned()),
-            app_id: Some("solstone".to_owned()),
-            app_version: Some("2026.07.26".to_owned()),
-        }),
-    };
-    let json_str = serde_json::to_string(&put_req).expect("serialize put request");
-    let deserialized: TestPutSelfDescriptionRequest =
-        serde_json::from_str(&json_str).expect("deserialize put request");
-    assert_eq!(deserialized, put_req);
-
-    let desc_resp = TestClientDescriptionResponse {
-        protocol_version: 1,
-        revision: 1,
-        reported: put_req.reported.clone(),
-        owner_label: Some("Jer's Mac".to_owned()),
-        display_label: "Jer's Mac".to_owned(),
-        updated_at: Some("2026-08-13T00:00:00Z".to_owned()),
-        journal: TestJournalIdentityMeta {
-            name: Some("Main Journal".to_owned()),
-            version: "2.0.0".to_owned(),
-        },
-    };
-    let json_str = serde_json::to_string(&desc_resp).expect("serialize response");
-    let deserialized: TestClientDescriptionResponse =
-        serde_json::from_str(&json_str).expect("deserialize response");
-    assert_eq!(deserialized, desc_resp);
-
-    let patch_req = TestPatchClientLabelRequest {
-        label: Some("Custom Name".to_owned()),
-    };
-    let json_str = serde_json::to_string(&patch_req).expect("serialize patch request");
-    let deserialized: TestPatchClientLabelRequest =
-        serde_json::from_str(&json_str).expect("deserialize patch request");
-    assert_eq!(deserialized, patch_req);
 }
 
 #[test]

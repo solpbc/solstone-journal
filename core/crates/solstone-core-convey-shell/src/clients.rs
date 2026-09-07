@@ -31,7 +31,7 @@ use solstone_core_sol_link::ledger::AuthorizationLedger;
 
 use crate::JournalRoot;
 
-const CLIENT_ENTRY_FIELDS: [&str; 25] = [
+const CLIENT_ENTRY_FIELDS: [&str; 29] = [
     "cid",
     "cid_short",
     "device_label",
@@ -57,6 +57,10 @@ const CLIENT_ENTRY_FIELDS: [&str; 25] = [
     "failing",
     "ingest_rejection",
     "source_delivery",
+    "reported",
+    "owner_label",
+    "description_revision",
+    "description_updated_at",
 ];
 
 pub(crate) fn router(prefix: &str) -> Router {
@@ -87,15 +91,10 @@ pub(crate) async fn redirect_workspace() -> Redirect {
 }
 
 fn journal_identity_meta(journal_root: &std::path::Path) -> JournalIdentityMeta {
-    let config = solstone_core_journal_config::read_journal_config(journal_root).ok();
-    let name = config.and_then(|c| {
-        c.config
-            .as_ref()?
-            .get("identity")?
-            .get("name")?
-            .as_str()
-            .map(|s| s.to_owned())
-    });
+    let name = match solstone_core_spl::load_link_state(journal_root, "solstone") {
+        solstone_core_spl::LinkStateRead::Present(state) => Some(state.home_label),
+        _ => None,
+    };
     JournalIdentityMeta {
         name,
         version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -284,7 +283,16 @@ async fn patch_label(
 }
 
 async fn list(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
-    let descriptions = read_descriptions(&root.0).ok().unwrap_or_default();
+    let descriptions = match read_descriptions(&root.0) {
+        Ok(descriptions) => descriptions,
+        Err(_) => {
+            return crate::network::refusal(
+                "client_description_unreadable",
+                "client description store could not be read",
+                StatusCode::SERVICE_UNAVAILABLE,
+            );
+        }
+    };
     match inspect_clients_at(&root.0, now_ms()) {
         ClientInspection::Empty { clients, activity }
         | ClientInspection::Ready { clients, activity } => Json(json!({
@@ -346,6 +354,22 @@ fn client_json(
         ("client_label".to_owned(), json!(entry.client_label)),
         ("label_ordinal".to_owned(), json!(entry.label_ordinal)),
         ("display_label".to_owned(), json!(display_label)),
+        (
+            "reported".to_owned(),
+            json!(stored_desc.and_then(|s| s.reported.as_ref())),
+        ),
+        (
+            "owner_label".to_owned(),
+            json!(stored_desc.and_then(|s| s.owner_label.as_ref())),
+        ),
+        (
+            "description_revision".to_owned(),
+            json!(stored_desc.map_or(0, |s| s.revision)),
+        ),
+        (
+            "description_updated_at".to_owned(),
+            json!(stored_desc.and_then(|s| s.updated_at.as_ref())),
+        ),
         ("paired_at".to_owned(), json!(entry.paired_at)),
         ("role".to_owned(), json!(entry.role.as_wire())),
         ("network".to_owned(), json!(entry.network)),
@@ -918,7 +942,7 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         let row = body["devices"][0].as_object().expect("raw device row");
-        assert_eq!(row.len(), 10);
+        assert_eq!(row.len(), 14);
         assert!(!row.contains_key("observer_handle"));
         assert_eq!(
             row.keys().map(String::as_str).collect::<BTreeSet<_>>(),
@@ -1068,7 +1092,7 @@ mod tests {
                     "protocol_version": 1,
                     "expected_revision": 0,
                     "cid": cid_str,
-                    "reported": {"name": "Test"}
+                    "reported": {"name": "Test", "platform": null, "device_type": null, "app_id": null, "app_version": null}
                 })
                 .to_string(),
             ))
@@ -1090,7 +1114,7 @@ mod tests {
                 json!({
                     "protocol_version": 1,
                     "expected_revision": 5,
-                    "reported": {"name": "Test"}
+                    "reported": {"name": "Test", "platform": null, "device_type": null, "app_id": null, "app_version": null}
                 })
                 .to_string(),
             ))
@@ -1122,6 +1146,7 @@ mod tests {
                     "reported": {
                         "name": "Jer's Laptop",
                         "platform": "linux",
+                        "device_type": null,
                         "app_id": "solstone",
                         "app_version": "2026.07.26"
                     }
@@ -1219,7 +1244,7 @@ mod tests {
                 json!({
                     "protocol_version": 1,
                     "expected_revision": 1,
-                    "reported": {"name": "Reported Name"}
+                    "reported": {"name": "Reported Name", "platform": null, "device_type": null, "app_id": null, "app_version": null}
                 })
                 .to_string(),
             ))
@@ -1264,5 +1289,120 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["clients"][0]["display_label"], "Reported Name");
+    }
+    fn description_validator() -> jsonschema::Validator {
+        let authority: Value = serde_json::from_str(include_str!("../../solstone-core-repository-contracts/src/contracts/client_description_contract_authority.json")).expect("authority");
+        jsonschema::validator_for(&json!({
+            "$ref": "#/components/schemas/ClientDescriptionResponse",
+            "components": authority["components"].clone()
+        }))
+        .expect("schema")
+    }
+
+    #[tokio::test]
+    async fn metadata_wire_contract_matches_mounted_routes_and_requires_complete_snapshots() {
+        let cid_str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let cid = LinkedDeviceCid::try_from(cid_str).expect("cid");
+        let journal = EstablishedJournal::new();
+        journal.write_ledger(json!([client(cid_str, "phone")]));
+        let app = crate::router(journal.0.path().to_path_buf());
+        let schema = description_validator();
+        let route = "/app/network/api/clients/self";
+        let send = |method: &str, value: Value| {
+            let mut req = Request::builder()
+                .method(method)
+                .uri(route)
+                .header("Content-Type", "application/json")
+                .body(Body::from(value.to_string()))
+                .expect("request");
+            req.extensions_mut().insert(AccessBasis::LinkedDevice {
+                cid: cid.clone(),
+                carrier: Carrier::Direct,
+            });
+            req
+        };
+        let (status, initial) = request(app.clone(), send("GET", Value::Null)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(schema.is_valid(&initial), "{initial}");
+        let reported = json!({"name":"é".repeat(40),"platform":"future-platform","device_type":null,"app_id":"solstone","app_version":"1"});
+        let complete = json!({"protocol_version":1,"expected_revision":0,"reported":reported});
+        let mut invalid = vec![
+            json!({"protocol_version":1,"expected_revision":0}),
+            json!({"protocol_version":1,"expected_revision":0,"reported":null}),
+        ];
+        for field in ["name", "platform", "device_type", "app_id", "app_version"] {
+            let mut partial = complete.clone();
+            partial["reported"]
+                .as_object_mut()
+                .expect("object")
+                .remove(field);
+            invalid.push(partial);
+        }
+        let mut too_long = complete.clone();
+        too_long["reported"]["name"] = json!("é".repeat(41));
+        invalid.push(too_long);
+        for payload in invalid {
+            let (status, _) = request(app.clone(), send("PUT", payload)).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+        }
+        assert!(
+            !journal
+                .0
+                .path()
+                .join("link/client-descriptions.json")
+                .exists()
+        );
+        let (status, published) = request(app.clone(), send("PUT", complete)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(schema.is_valid(&published), "{published}");
+        assert_eq!(published["revision"], 1);
+        let label_route = format!("/app/network/api/clients/{cid_str}/label");
+        for (payload, expected) in [
+            (json!({}), StatusCode::BAD_REQUEST),
+            (json!({"label":"Desk"}), StatusCode::OK),
+            (json!({"label":null}), StatusCode::OK),
+        ] {
+            let mut req = Request::patch(&label_route)
+                .header("Content-Type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .expect("request");
+            req.extensions_mut().insert(AccessBasis::Localhost);
+            let (status, response) = request(app.clone(), req).await;
+            assert_eq!(status, expected);
+            if status == StatusCode::OK {
+                assert!(schema.is_valid(&response), "{response}");
+            }
+        }
+        for (route, key) in [
+            ("/app/network/api/clients", "clients"),
+            ("/app/network/api/devices", "devices"),
+        ] {
+            let (status, response) = request(
+                app.clone(),
+                Request::get(route).body(Body::empty()).expect("request"),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(response[key][0]["reported"]["platform"], "future-platform");
+            assert_eq!(response[key][0]["description_revision"], 3);
+            std::fs::write(
+                journal.0.path().join("link/client-descriptions.json"),
+                "broken",
+            )
+            .expect("corrupt store");
+            let (status, _) = request(
+                app.clone(),
+                Request::get(route).body(Body::empty()).expect("request"),
+            )
+            .await;
+            assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+            // Restore this test's known current description for the second projection.
+            let stored = json!({cid_str:{"protocol_version":1,"revision":3,"reported":reported,"owner_label":null,"updated_at":"2026-09-07T00:00:00Z"}});
+            std::fs::write(
+                journal.0.path().join("link/client-descriptions.json"),
+                stored.to_string(),
+            )
+            .expect("test store");
+        }
     }
 }

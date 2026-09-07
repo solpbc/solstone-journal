@@ -407,6 +407,8 @@ struct StatusTrackerState {
     generation: u64,
     fetching_generation: Option<u64>,
     pending_fetch_generation: Option<u64>,
+    description_running: bool,
+    description_pending: Option<u64>,
     cached_version: Option<String>,
     version_fresh: bool,
 }
@@ -501,10 +503,7 @@ impl StatusTracker {
             && let Some(handle) = self.runtime_handle.as_ref()
         {
             let tracker = Arc::clone(self);
-            handle.spawn_blocking(move || {
-                refresh_journal_version(Arc::clone(&tracker), port, target_gen);
-                publish_device_description(tracker, port, target_gen);
-            });
+            tracker.schedule_description_refresh(handle, port, target_gen);
         }
     }
 
@@ -528,11 +527,66 @@ impl StatusTracker {
         };
         if should_fetch && let (Some(port), Some(handle)) = (port, self.runtime_handle.as_ref()) {
             let tracker = Arc::clone(self);
-            handle.spawn_blocking(move || {
-                refresh_journal_version(Arc::clone(&tracker), port, new_generation);
-                publish_device_description(tracker, port, new_generation);
-            });
+            tracker.schedule_description_refresh(handle, port, new_generation);
         }
+    }
+
+    fn schedule_description_refresh(
+        self: &Arc<Self>,
+        handle: &tokio::runtime::Handle,
+        port: u16,
+        generation: u64,
+    ) {
+        {
+            let mut state = self.inner.lock().expect("status tracker lock");
+            if state.description_running {
+                state.description_pending = Some(generation);
+                return;
+            }
+            state.description_running = true;
+        }
+        let tracker = Arc::clone(self);
+        handle.spawn_blocking(move || tracker.run_description_refresh(port, generation));
+    }
+
+    fn run_description_refresh(self: Arc<Self>, port: u16, mut generation: u64) {
+        // At most one coalesced follow-up: optional requests can themselves
+        // redial. They must not create an endless self-request/redial loop.
+        for attempt in 0..2 {
+            refresh_journal_version(Arc::clone(&self), port, generation);
+            publish_device_description(Arc::clone(&self), port, generation);
+            let mut state = self.inner.lock().expect("status tracker lock");
+            let pending = state.description_pending.take();
+            if attempt == 0
+                && let Some(next) = pending
+            {
+                generation = next;
+                continue;
+            }
+            state.description_running = false;
+            state.fetching_generation = None;
+            break;
+        }
+    }
+
+    fn generation_is_current(&self, generation: u64) -> bool {
+        self.inner
+            .lock()
+            .is_ok_and(|state| state.generation == generation)
+            && self.pairing_is_current()
+    }
+
+    fn pairing_is_current(&self) -> bool {
+        if self.bundle_dir.as_os_str().is_empty() {
+            return true;
+        }
+        std::fs::read(self.bundle_dir.join("peer.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .is_some_and(|peer| {
+                !self.paired_at.is_empty()
+                    && peer.get("paired_at").and_then(Value::as_str) == Some(&self.paired_at)
+            })
     }
 
     fn carrier_open_failed(&self, error: &TransportError) {
@@ -592,7 +646,7 @@ impl StatusTracker {
             return ApplyOutcome::StaleGeneration;
         }
         state.fetching_generation = None;
-        let Some(version) = parsed else {
+        let Some(version) = parsed.filter(|version| is_valid_journal_version(version)) else {
             return ApplyOutcome::FetchFailed;
         };
 
@@ -602,18 +656,7 @@ impl StatusTracker {
             return ApplyOutcome::UpdatedNoPersist;
         }
 
-        let current_paired_at_on_disk = std::fs::read_to_string(self.bundle_dir.join("peer.json"))
-            .ok()
-            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-            .and_then(|v| {
-                v.get("paired_at")
-                    .and_then(Value::as_str)
-                    .map(str::to_string)
-            });
-
-        if !self.paired_at.is_empty()
-            && current_paired_at_on_disk.as_deref() == Some(&self.paired_at)
-        {
+        if self.pairing_is_current() {
             state.cached_version = Some(version.clone());
             state.version_fresh = true;
             let metadata = LinkJournalMetadata {
@@ -621,7 +664,19 @@ impl StatusTracker {
                 ca_fp_prefix: self.ca_fp_prefix_hex.clone(),
                 paired_at: self.paired_at.clone(),
                 journal_version: version,
-                journal_name,
+                journal_name: journal_name.or_else(|| {
+                    std::fs::read(self.bundle_dir.join("journal_metadata.json"))
+                        .ok()
+                        .and_then(|bytes| {
+                            serde_json::from_slice::<LinkJournalMetadata>(&bytes).ok()
+                        })
+                        .filter(|meta| {
+                            meta.instance_id == self.instance_id
+                                && meta.ca_fp_prefix == self.ca_fp_prefix_hex
+                                && meta.paired_at == self.paired_at
+                        })
+                        .and_then(|meta| meta.journal_name)
+                }),
                 observed_at: self.clock.now_unix_seconds(),
             };
             write_journal_metadata_atomic(&self.bundle_dir, &metadata);
@@ -688,6 +743,7 @@ fn local_device_description() -> crate::client_description::ReportedDescription 
                 .map(|s| s.trim().to_owned())
                 .filter(|s| !s.is_empty())
         });
+    let name = crate::client_description::sanitize_string(name, 80).unwrap_or(None);
     let platform = Some(std::env::consts::OS.to_owned());
     let app_id = Some("solstone".to_owned());
     let app_version = Some(env!("CARGO_PKG_VERSION").to_owned());
@@ -701,25 +757,24 @@ fn local_device_description() -> crate::client_description::ReportedDescription 
 }
 
 fn publish_device_description(tracker: Arc<StatusTracker>, port: u16, target_generation: u64) {
-    let config = ureq::Agent::config_builder()
-        .http_status_as_error(false)
-        .max_redirects(0)
-        .proxy(None)
-        .timeout_global(Some(Duration::from_secs(5)))
-        .build();
-    let agent = ureq::Agent::new_with_config(config);
-    let self_url = format!("http://127.0.0.1:{port}/app/network/api/clients/self");
-    let local = local_device_description();
+    publish_device_description_with(tracker, port, target_generation, local_device_description);
+}
 
+fn publish_device_description_with(
+    tracker: Arc<StatusTracker>,
+    port: u16,
+    target_generation: u64,
+    sample: impl Fn() -> crate::client_description::ReportedDescription,
+) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let self_url = format!("http://127.0.0.1:{port}/app/network/api/clients/self");
     for _ in 0..2 {
-        if tracker
-            .inner
-            .lock()
-            .map(|s| s.generation != target_generation)
-            .unwrap_or(true)
-        {
+        if !tracker.generation_is_current(target_generation) {
             return;
         }
+        let Some(agent) = description_agent(deadline) else {
+            return;
+        };
         let Ok(get_resp) = agent
             .get(&self_url)
             .header("Cache-Control", "no-cache")
@@ -736,9 +791,10 @@ fn publish_device_description(tracker: Arc<StatusTracker>, port: u16, target_gen
         if get_resp
             .into_body()
             .into_reader()
-            .take(8192)
+            .take(65537)
             .read_to_end(&mut body)
             .is_err()
+            || body.len() > 65536
         {
             return;
         }
@@ -747,20 +803,38 @@ fn publish_device_description(tracker: Arc<StatusTracker>, port: u16, target_gen
         else {
             return;
         };
-        tracker.apply_fetch_result(
-            target_generation,
-            Some(desc_resp.journal.version.clone()),
-            desc_resp.journal.name.clone(),
-        );
+        if desc_resp.protocol_version != 1 || !is_valid_journal_version(&desc_resp.journal.version)
+        {
+            return;
+        }
+        if !matches!(
+            tracker.apply_fetch_result(
+                target_generation,
+                Some(desc_resp.journal.version),
+                desc_resp.journal.name
+            ),
+            ApplyOutcome::Persisted | ApplyOutcome::UpdatedNoPersist
+        ) {
+            return;
+        }
+        // Sample after each GET, including the conflict retry. A rename that
+        // arrives while the previous request was blocked must win that retry.
+        let local = sample();
         if desc_resp.reported == Some(local.clone()) {
             return;
         }
         let put_req = crate::client_description::PutSelfDescriptionRequest {
             protocol_version: 1,
             expected_revision: desc_resp.revision,
-            reported: Some(local.clone()),
+            reported: Some(local),
         };
         let Ok(put_body) = serde_json::to_vec(&put_req) else {
+            return;
+        };
+        if !tracker.generation_is_current(target_generation) {
+            return;
+        }
+        let Some(agent) = description_agent(deadline) else {
             return;
         };
         let Ok(put_resp) = agent
@@ -771,11 +845,22 @@ fn publish_device_description(tracker: Arc<StatusTracker>, port: u16, target_gen
             return;
         };
         match put_resp.status().as_u16() {
-            200 => return,
             409 => continue,
             _ => return,
         }
     }
+}
+
+fn description_agent(deadline: std::time::Instant) -> Option<ureq::Agent> {
+    let remaining = deadline.checked_duration_since(std::time::Instant::now())?;
+    Some(ureq::Agent::new_with_config(
+        ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .max_redirects(0)
+            .proxy(None)
+            .timeout_global(Some(remaining))
+            .build(),
+    ))
 }
 
 fn atomic_write_file(path: &Path, bytes: &[u8]) {
@@ -1724,5 +1809,177 @@ mod tests {
         ];
         let forwarded = opener.proxy_headers(&incoming).expect("proxy headers");
         assert_eq!(forwarded, incoming);
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+mod metadata_adapter_tests {
+    use super::*;
+    use serde_json::json;
+    fn metadata_reply(revision: u64) -> Value {
+        json!({"protocol_version":1,"revision":revision,"reported":null,"owner_label":"Desk",
+            "display_label":"Desk","updated_at":null,"journal":{"name":"Home","version":"2.0.0"}})
+    }
+
+    fn metadata_http_exchange(
+        listener: &std::net::TcpListener,
+        status: u16,
+        reply: Value,
+        before_reply: impl FnOnce(),
+    ) -> (String, Value) {
+        use std::io::{Read, Write};
+        let (mut stream, _) = listener.accept().expect("accept metadata request");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .expect("read bound");
+        stream
+            .set_write_timeout(Some(Duration::from_secs(3)))
+            .expect("write bound");
+        let mut head = Vec::new();
+        while !head.ends_with(b"\r\n\r\n") {
+            let mut byte = [0];
+            stream.read_exact(&mut byte).expect("request header");
+            head.push(byte[0]);
+            assert!(head.len() < 8192);
+        }
+        let head = String::from_utf8(head).expect("header");
+        let length = head
+            .lines()
+            .find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                name.eq_ignore_ascii_case("content-length")
+                    .then(|| value.trim().parse::<usize>().expect("length"))
+            })
+            .unwrap_or(0);
+        let mut body = vec![0; length];
+        stream.read_exact(&mut body).expect("body");
+        before_reply();
+        let reply = reply.to_string();
+        write!(stream, "HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}", reply.len()).expect("response");
+        (
+            head.lines().next().expect("request line").to_owned(),
+            serde_json::from_slice(&body).unwrap_or(Value::Null),
+        )
+    }
+
+    #[test]
+    fn metadata_conflict_resamples_latest_description_through_actual_http() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listen");
+        let port = listener.local_addr().unwrap().port();
+        let newest = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let server_newest = newest.clone();
+        let server = std::thread::spawn(move || {
+            assert!(
+                metadata_http_exchange(&listener, 200, metadata_reply(1), || {})
+                    .0
+                    .starts_with("GET ")
+            );
+            let first = metadata_http_exchange(&listener, 409, json!({}), || {
+                server_newest.store(1, std::sync::atomic::Ordering::SeqCst);
+            });
+            assert!(first.0.starts_with("PUT "));
+            assert_eq!(first.1["reported"]["name"], "Old");
+            assert_eq!(first.1["expected_revision"], 1);
+            metadata_http_exchange(&listener, 200, metadata_reply(2), || {});
+            let second = metadata_http_exchange(&listener, 200, metadata_reply(3), || {});
+            assert_eq!(second.1["reported"]["name"], "New");
+            assert_eq!(second.1["expected_revision"], 2);
+            assert!(second.1.get("owner_label").is_none());
+        });
+        let tracker = Arc::new(StatusTracker::new(Arc::new(SystemStatusClock)));
+        publish_device_description_with(tracker, port, 0, || {
+            crate::client_description::ReportedDescription {
+                name: Some(
+                    if newest.load(std::sync::atomic::Ordering::SeqCst) == 0 {
+                        "Old"
+                    } else {
+                        "New"
+                    }
+                    .into(),
+                ),
+                ..Default::default()
+            }
+        });
+        server.join().expect("server");
+    }
+
+    #[test]
+    fn metadata_get_cannot_publish_after_generation_change_or_bad_version() {
+        for invalidate_generation in [true, false] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listen");
+            let port = listener.local_addr().unwrap().port();
+            let tracker = Arc::new(StatusTracker::new(Arc::new(SystemStatusClock)));
+            let server_tracker = tracker.clone();
+            let mut reply = metadata_reply(0);
+            if !invalidate_generation {
+                reply["protocol_version"] = json!(2);
+            }
+            let server = std::thread::spawn(move || {
+                metadata_http_exchange(&listener, 200, reply, || {
+                    if invalidate_generation {
+                        server_tracker.inner.lock().unwrap().generation += 1;
+                    }
+                });
+                listener
+            });
+            publish_device_description(tracker.clone(), port, 0);
+            let listener = server.join().expect("server");
+            listener.set_nonblocking(true).unwrap();
+            assert_eq!(
+                listener.accept().unwrap_err().kind(),
+                std::io::ErrorKind::WouldBlock,
+                "no stale PUT"
+            );
+            assert!(tracker.inner.lock().unwrap().cached_version.is_none());
+        }
+    }
+
+    #[test]
+    fn metadata_worker_bounds_self_redials_and_processes_latest_pending() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let tracker = Arc::new(StatusTracker::with_metadata(
+            Arc::new(SystemStatusClock),
+            PathBuf::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            Some(runtime.handle().clone()),
+        ));
+        {
+            let mut state = tracker.inner.lock().unwrap();
+            state.bound_port = Some(port);
+            state.description_running = true;
+        }
+        let server_tracker = tracker.clone();
+        let server = std::thread::spawn(move || {
+            // Every status request opens a new carrier. The two optional passes
+            // must quiesce even though those requests keep generating events.
+            for _ in 0..2 {
+                let (head, _) = metadata_http_exchange(
+                    &listener,
+                    200,
+                    json!({"version":{"current":"2.0.0"}}),
+                    || server_tracker.carrier_open_succeeded(),
+                );
+                assert!(head.contains("/api/system/status"));
+            }
+            listener
+        });
+        tracker.clone().run_description_refresh(port, 0);
+        let listener = server.join().unwrap();
+        listener.set_nonblocking(true).unwrap();
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+        let state = tracker.inner.lock().unwrap();
+        assert_eq!(state.generation, 2);
+        assert!(!state.description_running);
+        assert!(state.description_pending.is_none());
     }
 }

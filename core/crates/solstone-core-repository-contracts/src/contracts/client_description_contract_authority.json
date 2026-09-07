@@ -181,63 +181,55 @@
               "string",
               "null"
             ],
-            "maxLength": 253,
-            "description": "Human-readable device name reported by client"
+            "description": "Human-readable device name reported by client",
+            "x-max-utf8-bytes": 80
           },
           "platform": {
             "type": [
               "string",
               "null"
             ],
-            "enum": [
-              "linux",
-              "macos",
-              "windows",
-              "ios",
-              "android",
-              null
-            ],
-            "description": "Reported operating system platform"
+            "description": "Reported operating system platform",
+            "x-max-utf8-bytes": 64
           },
           "device_type": {
             "type": [
               "string",
               "null"
             ],
-            "enum": [
-              "phone",
-              "laptop",
-              "desktop",
-              "server",
-              "wearable",
-              "tablet",
-              "other",
-              null
-            ],
-            "description": "Reported device form factor"
+            "description": "Reported device form factor",
+            "x-max-utf8-bytes": 64
           },
           "app_id": {
             "type": [
               "string",
               "null"
             ],
-            "maxLength": 128,
-            "description": "Client application identifier"
+            "description": "Client application identifier",
+            "x-max-utf8-bytes": 64
           },
           "app_version": {
             "type": [
               "string",
               "null"
             ],
-            "maxLength": 64,
-            "description": "Client application semver or build version"
+            "description": "Client application semver or build version",
+            "x-max-utf8-bytes": 64
           }
-        }
+        },
+        "required": [
+          "name",
+          "platform",
+          "device_type",
+          "app_id",
+          "app_version"
+        ]
       },
       "JournalIdentityMeta": {
         "type": "object",
         "additionalProperties": false,
         "required": [
+          "name",
           "version"
         ],
         "properties": {
@@ -260,7 +252,10 @@
         "required": [
           "protocol_version",
           "revision",
+          "reported",
+          "owner_label",
           "display_label",
+          "updated_at",
           "journal"
         ],
         "properties": {
@@ -275,7 +270,14 @@
             "minimum": 0
           },
           "reported": {
-            "$ref": "#/components/schemas/ReportedDescription"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportedDescription"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "owner_label": {
             "type": [
@@ -302,7 +304,8 @@
         "additionalProperties": false,
         "required": [
           "protocol_version",
-          "expected_revision"
+          "expected_revision",
+          "reported"
         ],
         "properties": {
           "protocol_version": {
@@ -329,23 +332,16 @@
               "string",
               "null"
             ],
-            "maxLength": 253,
-            "description": "Journal owner override label, or null to clear"
+            "description": "Journal owner override label, or null to clear",
+            "x-max-utf8-bytes": 80
           }
-        }
+        },
+        "required": [
+          "label"
+        ]
       },
       "PatchClientLabelResponse": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "display_label"
-        ],
-        "properties": {
-          "display_label": {
-            "type": "string",
-            "description": "Resulting computed display label"
-          }
-        }
+        "$ref": "#/components/schemas/ClientDescriptionResponse"
       },
       "Error": {
         "type": "object",

@@ -23,8 +23,8 @@
       "sha256": "ab34a69b3bfa80f9e2687e9f69c515abd1cafdbc7ca5029adfb29a343d5f9186"
     },
     "projection.openapi.json": {
-      "byte_count": 10705,
-      "sha256": "ec12f8a0e575e2e11294fe0fc593164035559a278bb2f52e174cbaaee54e335c"
+      "byte_count": 10655,
+      "sha256": "3355aa3d84ff3178f717182b7b9895a7f2474d887ddcdd7a7b925d4a767f9d91"
     },
     "vectors.json": {
       "byte_count": 1967,
@@ -37,7 +37,7 @@
       "id": "openapi.client_description_contract_authority",
       "path": "core/crates/solstone-core-repository-contracts/src/contracts/client_description_contract_authority.json",
       "role": "openapi_source",
-      "sha256": "7fca5e7774d86e8b09317e0a50885c20004ff6d4e14527fbfb55f4c850f8109b"
+      "sha256": "04e52ad848ef4fee61dc872d6f9325143d3c1490b79016d6394ed80af65872f1"
     }
   ],
   "openapi_document_version": "1.0.0",
@@ -52,10 +52,10 @@
   "scope_rationale": "This client-description bundle projects GET/PUT /app/network/api/clients/self and PATCH /app/network/api/clients/{cid}/label.",
   "vocabularies": [
     {
-      "classification": "closed",
+      "classification": "open",
       "id": "ReportedDescription.platform",
       "source_pointer": "/components/schemas/ReportedDescription/properties/platform",
-      "unknown_value_behavior": "reject",
+      "unknown_value_behavior": "accept-within-string-bound",
       "values": [
         "linux",
         "macos",
@@ -65,10 +65,10 @@
       ]
     },
     {
-      "classification": "closed",
+      "classification": "open",
       "id": "ReportedDescription.device_type",
       "source_pointer": "/components/schemas/ReportedDescription/properties/device_type",
-      "unknown_value_behavior": "reject",
+      "unknown_value_behavior": "accept-within-string-bound",
       "values": [
         "phone",
         "laptop",
