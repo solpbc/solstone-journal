@@ -451,6 +451,22 @@ body.has-managed-dialog .workspace {
   color: var(--ink-faint);
 }
 
+/* G3-303: the block carried its layout in an inline `style` attribute, which
+   outranks the user-agent's `[hidden] { display: none }` rule, so hiding the
+   empty history left "no notifications yet" on screen under the combined
+   "nothing held back, nothing new" line. The layout lives in a class, and the
+   class states what `hidden` means for it. */
+.status-pane-history {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.status-pane-history[hidden] {
+  display: none;
+}
+
 .status-pane-history-item {
   transition: background 0.15s ease;
 }

@@ -5,6 +5,7 @@
 <head>
   <meta charset="utf-8">
   <title>quiet notifications disclosure test</title>
+  <link rel="stylesheet" href="../app.css">
   <style>
     body { font-family: sans-serif; margin: 2rem; }
     .pass { color: #0a7a2f; }
@@ -17,6 +18,10 @@
     <p style="margin: 0 0 8px; font-size: 13px;">errors from background services that weren't shown as notifications.</p>
     <div id="quiet-notifs-list" style="display: flex; flex-direction: column; gap: 4px; font-size: 13px;"></div>
   </div>
+  <!-- G3-303: the recent-notifications block is hidden by the `hidden`
+       attribute when both lists are empty. It carried its layout inline, which
+       outranks the user agent's [hidden] rule, so the block stayed on screen. -->
+  <div id="notification-history" class="status-pane-history"><span>no notifications yet</span></div>
   <div id="test-results">RUNNING quiet notifications disclosure</div>
   <ol id="results"></ol>
 
@@ -235,6 +240,19 @@
       assert('empty section keeps its heading', section.querySelector('h3').textContent === 'quiet notifications');
       assert('empty section says what it holds', /errors from background services/.test(section.querySelector('p').textContent));
       assert('empty state is honest', document.getElementById('quiet-notifs-list').textContent === 'no notifications held back');
+
+      // G3-303: `hidden` has to actually hide this block, or the pane says
+      // nothing twice — "nothing held back, nothing new" and then, under it,
+      // "no notifications yet".
+      const history = document.getElementById('notification-history');
+      assert('the history block lays out as a column when it is shown',
+        getComputedStyle(history).display === 'flex');
+      history.hidden = true;
+      assert('hidden actually hides the history block',
+        getComputedStyle(history).display === 'none');
+      history.hidden = false;
+      assert('the history block comes back when it has something to say',
+        getComputedStyle(history).display === 'flex');
 
       summary.textContent = failures ? `FAIL ${failures} failure(s)` : 'PASS quiet notifications disclosure';
       summary.className = failures ? 'fail' : 'pass';

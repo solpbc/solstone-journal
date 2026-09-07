@@ -56,6 +56,33 @@ window.whenShellReady(() => {
 
   let initialDestinationPending = true;
   let initialHealthReady = false;
+
+  // X-10: the pane is the last thing on health, so `block: start` has nothing
+  // left to scroll into and the browser clamps at the end of the page — the
+  // deep link landed the section below the fold. A gutter gives the scroller
+  // the room the destination needs and nothing more. It is measured, not
+  // guessed, and it is removed the moment the page grows enough on its own.
+  const SCROLL_GUTTER_ID = 'deep-link-scroll-gutter';
+  function ensureScrollEndGutter(target) {
+    const existing = document.getElementById(SCROLL_GUTTER_ID);
+    if (existing) existing.style.height = '0px';
+    const scroller = document.scrollingElement || document.documentElement;
+    const top = target.getBoundingClientRect().top + scroller.scrollTop;
+    const margin = parseFloat(window.getComputedStyle(target).scrollMarginTop) || 0;
+    const needed = Math.ceil(top - margin + window.innerHeight - scroller.scrollHeight);
+    if (needed <= 0) {
+      existing?.remove();
+      return;
+    }
+    const gutter = existing || document.createElement('div');
+    if (!existing) {
+      gutter.id = SCROLL_GUTTER_ID;
+      gutter.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(gutter);
+    }
+    gutter.style.height = needed + 'px';
+  }
+
   function revealInitialDestination() {
     if (!statusPaneOpen || !initialDestinationPending || !initialHealthReady) return;
     const id = window.location.hash.slice(1);
@@ -63,7 +90,10 @@ window.whenShellReady(() => {
     const target = document.getElementById(id);
     if (!target || target.getClientRects().length === 0) return;
     initialDestinationPending = false;
-    requestAnimationFrame(() => target.scrollIntoView({block: 'start'}));
+    requestAnimationFrame(() => {
+      ensureScrollEndGutter(target);
+      target.scrollIntoView({block: 'start'});
+    });
   }
   // Initial API renders can change the page height after the workspace mounts.
   document.addEventListener('health:initial-ready', () => {
