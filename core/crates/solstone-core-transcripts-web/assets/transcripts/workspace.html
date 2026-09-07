@@ -1025,6 +1025,22 @@
   height: 16px;
 }
 
+/* X-08 fourth layer: the detail pane's own controls exist only once a block is
+   open, so the sweep never measured them. 32x32 and 79x33 are mouse targets;
+   on a touch width both reach 44px. Width and height only, so .tr-delete-btn
+   stays hidden until .visible puts it back. S-10. */
+@media (max-width: 768px) {
+  .tr-delete-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .tr-tab {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
 .tr-panel {
   flex: 1;
   padding: 16px;
@@ -1083,12 +1099,14 @@
   border-bottom: 1px solid #e5e7eb;
 }
 
+/* 64px, the day rail's width: the detail rail names midnight too now, and 48px
+   clipped it. .tr-zoom-segments clears it at 64 + 4. S-12. */
 .tr-zoom-labels {
   position: absolute;
   left: 0;
   top: 16px;
   bottom: 12px;
-  width: 48px;
+  width: 64px;
   background: #f9fafb;
   border-right: 1px solid #e5e7eb;
   pointer-events: none;
@@ -1114,7 +1132,7 @@
 
 .tr-zoom-segments {
   position: absolute;
-  left: 52px;
+  left: 68px;
   right: 4px;
   top: 16px;
   bottom: 12px;
@@ -2993,8 +3011,10 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   const snap = (m) => Math.round(m / STEP) * STEP;
   const hhmm = (m) => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
   // The day axis can run to minute 1440, which is the end of the day rather
-  // than a 24th hour. "24:00" is not a clock time anyone reads, so name it.
-  const clockLabel = (m) => (m > 0 && m % 1440 === 0 ? 'midnight' : hhmm(m));
+  // than a 24th hour. "24:00" is not a clock time anyone reads, so name it --
+  // and one instant carries one name, so minute 0 is the same midnight and
+  // reads the same at both ends. S-12.
+  const clockLabel = (m) => (m % 1440 === 0 ? 'midnight' : hhmm(m));
 
   // Zoom utilities - map minutes to pixels within the zoomed range
   const zoomY = (m) => (m - range.start) * zoomPpm;
@@ -3636,8 +3656,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         const lab = document.createElement('div');
         lab.className = 'tr-zoom-label';
         lab.style.top = yPos + 'px';
-        // Not clockLabel: this rail's label column is 48px and clips "midnight".
-        lab.textContent = hhmm(m);
+        lab.textContent = clockLabel(m);
         zoomLabels.appendChild(lab);
       }
     }
@@ -5183,7 +5202,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       } else if (item.type === 'screen') {
         if (textOnlyScreen) {
           const timeStr = item.time || '';
-          const markdown = renderScreenChunkMarkdown(item.markdown) || 'Screen activity';
+          const markdown = renderScreenChunkMarkdown(item.markdown) || 'screen activity';
           html += '<div class="tr-entry" role="listitem">';
           html += `<div class="tr-entry-time">${timeStr}</div>`;
           html += '<div class="tr-entry-content">';
@@ -5568,7 +5587,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   function renderRawJsonDisclosure(raw, parsed) {
     const summary = screenJsonSummary(parsed);
     return '<details class="tr-raw-json">'
-      + `<summary>${escapeHtml(summary ? `raw json, ${summary}` : 'raw json')}</summary>`
+      + `<summary>${escapeHtml(summary ? `raw JSON, ${summary}` : 'raw JSON')}</summary>`
       + `<pre>${escapeHtml(raw)}</pre>`
       + '</details>';
   }
