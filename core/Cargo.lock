@@ -4622,14 +4622,18 @@ name = "solstone-core-offload"
 version = "2.0.0"
 dependencies = [
  "chrono",
+ "minisign",
  "nix",
  "serde",
  "serde_json",
  "sha2",
+ "solstone-core-artifact-download",
  "solstone-core-backup",
  "solstone-core-backup-runtime",
+ "solstone-core-distribution",
  "solstone-core-journal-io",
  "solstone-core-retention",
+ "solstone-core-system",
  "tempfile",
 ]
 

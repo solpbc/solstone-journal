@@ -27,3 +27,7 @@ nix = { workspace = true, features = ["fs"] }
 
 [dev-dependencies]
 tempfile = "3.24.0"
+minisign.workspace = true
+solstone-core-distribution = { workspace = true, features = ["test-fixture-pin"] }
+solstone-core-system.workspace = true
+solstone-core-artifact-download.workspace = true

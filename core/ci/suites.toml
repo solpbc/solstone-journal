@@ -2180,6 +2180,20 @@ required_features = ["test-hooks"]
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-offload::backup_native"
+package = "solstone-core-offload"
+target = "backup_native"
+set = "native"
+areas = ["backup", "retention", "system"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache", "host-tools"]
+timeout = "standard"
+serial_group = "host-contention"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-backup-web::backup_web_callosum_transport"
 package = "solstone-core-backup-web"
 target = "backup_web_callosum_transport"
