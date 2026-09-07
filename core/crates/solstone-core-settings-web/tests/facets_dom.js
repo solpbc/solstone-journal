@@ -623,15 +623,19 @@ async function testCase(name, fn) {
     );
 
     const sectionDescs = guideSection.querySelectorAll('.settings-section-desc');
-    assert.strictEqual(sectionDescs.length, 2, 'a second intro paragraph separates the notifications row from the setup list');
     assert.strictEqual(
       sectionDescs[0].textContent,
       'apps that have their own settings. open one to set it up or change how it works.',
       'the original setup promise still covers thinking/network/backup'
     );
     assert.ok(
-      !sectionDescs[1].textContent.includes('set it up'),
-      'the notifications row sits under its own intro, not the setup promise'
+      notifDesc.includes('not a setting to open, just where those errors show up.'),
+      'the notifications row explains its destination in the row itself'
+    );
+    assert.strictEqual(
+      notifRow.querySelector('.sapp-open').textContent,
+      'see in health ›',
+      'the action names the linked destination'
     );
   });
 
