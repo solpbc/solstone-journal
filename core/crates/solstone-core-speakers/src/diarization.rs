@@ -237,7 +237,7 @@ pub fn cluster_embeddings(
 ) -> Result<ClusterEmbeddingResult, DiarizationError> {
     validate_embedding_shape(embeddings, rows, cols)?;
     if rows == 0 {
-        // Python has no rows==0 guard here; its behavior is accidental. The
+        // The retired Python implementation had no rows==0 guard here; its behavior was accidental. The
         // analyzer short-circuits before clustering when no intervals exist, so
         // this path only protects direct callers and tests.
         return Ok(ClusterEmbeddingResult {

@@ -12,10 +12,10 @@ use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpo
 
 /// The `POST /api/brain/check` response. `sent` reports whether the refresh
 /// request itself reached the supervisor over Callosum -- not whether the
-/// check it triggers has completed -- matching
-/// `solstone/think/brain_health.py:568-579`'s `request_brain_refresh`. The
-/// send itself is shell-layer transport (it needs the Callosum client, which
-/// this crate does not depend on); this only shapes the response.
+/// check it triggers has completed -- retaining the retired Python
+/// `request_brain_refresh` contract. The send itself is shell-layer transport
+/// (it needs the Callosum client, which this crate does not depend on); this
+/// only shapes the response.
 pub fn check_response(journal: &Path, config: &Map<String, Value>, sent: bool) -> Value {
     let spp_configured = matches!(
         &resolve_local_endpoint(config),

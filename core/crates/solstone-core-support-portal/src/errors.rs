@@ -88,8 +88,8 @@ impl OperationError {
             Self::OperationTosChanged => Some("tos_changed"),
             Self::OperationRetired => Some("operation_retired"),
             Self::OperationErased => Some("operation_erased"),
-            // Measured at solstone/apps/support/routes.py:_operation_error_response:
-            // Python has no OperationSupersededError branch, so it falls through
+            // Retained from the retired Python support route's error response:
+            // It had no OperationSupersededError branch, so it fell through
             // to the generic support-portal failure response instead.
             Self::OperationSuperseded => Some("support_portal_failed"),
         }

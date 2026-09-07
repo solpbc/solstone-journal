@@ -69,8 +69,8 @@ pub const SEGMENT_REPAIR_STATUS_PROGRESSING: &str = "progressing";
 pub const SEGMENT_REPAIR_STATUS_STUCK: &str = "stuck";
 pub const SEGMENT_REPAIR_STATUS_UNKNOWN: &str = "unknown";
 
-/// Terminal subset (analyzed, purged, empty, failed-final) of Python's
-/// eight-member `DataState` enum in `solstone/think/data_state.py`:
+/// Terminal subset (analyzed, purged, empty, failed-final) retained from the
+/// retired Python implementation's eight-member `DataState` enum:
 /// ANALYZED, EMPTY, PENDING, ANALYZING, FAILED, FAILED_FINAL, PURGED, ABSENT.
 pub const SENSED_TERMINAL_STATES: &[&str] = &["analyzed", "purged", "empty", "failed_final"];
 

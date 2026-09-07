@@ -3,19 +3,17 @@
 
 //! Morning-briefing loading boundary.
 //!
-//! The Python path authority is `morning_briefing_path`
-//! (`solstone/think/talent.py:231`) → `day_path`
-//! (`solstone/think/utils.py:289`) → `get_output_path`
-//! (`solstone/think/talent.py:204`), which composes
-//! `{journal}/chronicle/{day}/talents/morning_briefing.json`.
+//! The native path authority is [`get_output_path`], which composes
+//! `{journal}/chronicle/{day}/talents/morning_briefing.json`. That path retains
+//! the contract of the retired Python `morning_briefing_path` chain.
 //!
 //! The `.json` filename is deliberately pinned: it derives from `output:
-//! "json"` in `solstone/talent/morning_briefing.md:9` through
-//! `_briefing_output_format` (`solstone/think/talent.py:222`). Changing that
-//! frontmatter is a known break, not a silent one.
+//! "json"` in `solstone/talent/morning_briefing.md`. Changing that frontmatter
+//! is a known break, not a silent one.
 //!
-//! The renderer's preamble handling has an accepted line-splitting divergence:
-//! Python `str.splitlines()` also splits on `\x0b`, `\x0c`, `\x1c`–`\x1e`,
+//! The renderer's preamble handling has an accepted line-splitting divergence
+//! from the retired Python implementation: `str.splitlines()` also split on
+//! `\x0b`, `\x0c`, `\x1c`–`\x1e`,
 //! `\x85`, U+2028, U+2029, and a lone `\r`; Rust `str::lines()` splits on
 //! `\n` only while stripping a trailing `\r`. `clean_value`
 //! (`content/mod.rs:547`) trims the preamble before per-line `>` quoting. That
@@ -23,10 +21,10 @@
 //! row.
 //!
 //! Absent, unreadable, unparseable, non-object, and missing-required-key files
-//! all deliberately collapse to `None`, matching
-//! `solstone/think/briefing.py:34-51`. The Python loader logs parse failures;
-//! this path-parameterized library seam intentionally does not, so those cases
-//! remain indistinguishable to callers.
+//! all deliberately collapse to `None`, retaining the retired Python loader's
+//! behavior. That loader logged parse failures; this path-parameterized library
+//! seam intentionally does not, so those cases remain indistinguishable to
+//! callers.
 
 use std::fs;
 use std::path::Path;

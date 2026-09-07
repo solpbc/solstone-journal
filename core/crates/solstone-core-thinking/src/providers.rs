@@ -153,7 +153,7 @@ impl OneShotKeyValidator {
 /// either response proves the provider accepted the credential, even though
 /// the canned request cannot establish that a particular model is available.
 /// Model validation rejects those outcomes because it is the definitive,
-/// model-specific probe. This mirrors `solstone/think/cogitate_client.py`.
+/// model-specific probe. This retains the retired Python probe contract.
 fn classify_key_probe(result: Result<GenerateResponse, ClientError>) -> Value {
     match result {
         Ok(GenerateResponse::Generated(_)) => json!({"valid":true}),
@@ -451,10 +451,9 @@ pub fn resolve_provider_update(
         });
     // `services.confidential` existing means confidential is PROVISIONED,
     // independent of whether it is the currently active lane -- this is
-    // `spp.confidential_provenance()`/`confidential_provenance_block()`'s
-    // exact check (`solstone/think/providers/local_endpoint.py:75-82`), not
-    // `is_confidential_active`'s active-lane check in `update_providers`,
-    // which can still reject after this resolver approves.
+    // the retired Python implementation's exact provisioned-state check, not
+    // its active-lane check. The activation flow can still reject after this
+    // resolver approves.
     let confidential_provisioned = config
         .get("services")
         .and_then(Value::as_object)
@@ -1541,10 +1540,9 @@ mod tests {
         );
     }
 
-    // The prompt, token budget, thinking budget, retry count, and timeout are
-    // pinned by `solstone/think/providers/shared.py:468-476`. The schema,
-    // responsiveness, attempt index, and exclusive admission values mirror
-    // defaults in `solstone/think/generate_client.py:313-319`.
+    // The prompt, token budget, thinking budget, retry count, timeout, schema,
+    // responsiveness, attempt index, and exclusive admission values retain the
+    // retired Python validation request contract.
     fn expected_validation_request() -> GenerateRequest {
         GenerateRequest {
             id: None,

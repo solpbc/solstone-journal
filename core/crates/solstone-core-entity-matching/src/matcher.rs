@@ -892,8 +892,8 @@ mod tests {
             candidate(Some("first"), "Alicia X", &[], &[]),
             candidate(Some("second"), "Alicia Y", &[], &[]),
         ];
-        // Python solstone/think/entities/matching.py keeps the first tied fuzzy
-        // key; native must refuse to choose between distinct entities.
+        // The retired Python matcher kept the first tied fuzzy key; native must
+        // refuse to choose between distinct entities.
         assert_no_match("Alicia", &candidates, 50.0);
         assert_ambiguous("Alicia", &candidates, 50.0, MatchTier::Fuzzy, vec![0, 1]);
     }
@@ -1037,8 +1037,8 @@ mod tests {
             candidate(Some("a"), "Alex Doe", &[], &[]),
             candidate(Some("b"), "Alex Doe", &[], &[]),
         ];
-        // Python solstone/think/entities/matching.py last-writes duplicate exact
-        // keys; native must refuse to choose between distinct entities.
+        // The retired Python matcher last-wrote duplicate exact keys; native
+        // must refuse to choose between distinct entities.
         assert_no_match("Alex Doe", &candidates, 90.0);
         assert_ambiguous("Alex Doe", &candidates, 90.0, MatchTier::Exact, vec![0, 1]);
     }
@@ -1049,8 +1049,8 @@ mod tests {
             candidate(Some("first"), "Alex Doe", &[], &[]),
             candidate(Some("second"), "alex doe", &[], &[]),
         ];
-        // Python solstone/think/entities/matching.py last-writes duplicate
-        // folded keys; native must refuse to choose between distinct entities.
+        // The retired Python matcher last-wrote duplicate folded keys; native
+        // must refuse to choose between distinct entities.
         assert_no_match("ALEX DOE", &candidates, 90.0);
         assert_ambiguous(
             "ALEX DOE",
@@ -1067,8 +1067,8 @@ mod tests {
             candidate(Some("shared_slug"), "First", &[], &[]),
             candidate(Some("shared_slug"), "Second", &[], &[]),
         ];
-        // Python solstone/think/entities/matching.py last-writes duplicate ID
-        // keys; native must refuse to choose between distinct entities.
+        // The retired Python matcher last-wrote duplicate ID keys; native must
+        // refuse to choose between distinct entities.
         assert_no_match("shared slug", &candidates, 90.0);
         assert_ambiguous(
             "shared slug",
@@ -1085,8 +1085,8 @@ mod tests {
             candidate(Some("first"), "First", &[], &["shared@example.com"]),
             candidate(Some("second"), "Second", &[], &["shared@example.com"]),
         ];
-        // Python solstone/think/entities/matching.py last-writes duplicate email
-        // keys; native must refuse to choose between distinct entities.
+        // The retired Python matcher last-wrote duplicate email keys; native
+        // must refuse to choose between distinct entities.
         assert_no_match("SHARED@EXAMPLE.COM", &candidates, 90.0);
         assert_ambiguous(
             "SHARED@EXAMPLE.COM",
@@ -1103,8 +1103,8 @@ mod tests {
             candidate(Some("first"), "Alice Doe", &[], &[]),
             candidate(Some("second"), "Alice Doe", &[], &[]),
         ];
-        // Python solstone/think/entities/matching.py last-writes duplicate fuzzy
-        // keys; native must refuse to choose between distinct entities.
+        // The retired Python matcher last-wrote duplicate fuzzy keys; native
+        // must refuse to choose between distinct entities.
         assert_no_match("Alce Doe", &candidates, 80.0);
         assert_ambiguous("Alce Doe", &candidates, 80.0, MatchTier::Fuzzy, vec![0, 1]);
     }

@@ -40,8 +40,8 @@ use solstone_core_thinking::confidential::OperationRegistry;
 
 use crate::{JournalRoot, asset_response, assets};
 
-/// Exact network-device response vocabulary mirrored from
-/// `solstone/apps/network/routes.py::_entry_to_json`.
+/// Exact network-device response vocabulary retained from the retired Python
+/// `_entry_to_json` route.
 pub(crate) const NETWORK_DEVICE_FIELDS: [&str; 14] = [
     "fingerprint",
     "fingerprint_short",

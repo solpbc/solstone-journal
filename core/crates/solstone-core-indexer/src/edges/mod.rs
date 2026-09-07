@@ -29,13 +29,13 @@ use solstone_core_journal_config::{get_journal_config_path, plain_defaults, read
 
 type JsonObject = Map<String, Value>;
 
-// Native edge extraction mirrors Python's source-row normalization, with one
-// deliberate divergence: container-valued passthrough edge fields fail during
-// extraction. Python can leak earlier rows when sqlite `executemany` later hits
-// a bind error; Rust keeps the store savepoint all-or-nothing and rejects those
-// values before insertion.
+// Native edge extraction retains the retired Python implementation's source-row
+// normalization, with one deliberate divergence: container-valued passthrough
+// edge fields fail during extraction. The old implementation could leak earlier
+// rows when sqlite `executemany` later hit a bind error; Rust keeps the store
+// savepoint all-or-nothing and rejects those values before insertion.
 
-// Source of truth: solstone/think/indexer/edges.py KINDS at lines 36-56.
+// Rust-owned kind vocabulary retained from the retired Python implementation.
 pub const KINDS: &[&str] = &[
     "attended-with",
     "co-present",
@@ -56,7 +56,7 @@ pub const KINDS: &[&str] = &[
     "party-of",
 ];
 
-// Source of truth: solstone/think/indexer/edges.py DIRECTED_KINDS at lines 59-61.
+// Rust-owned directed-kind subset retained from the retired Python implementation.
 pub const DIRECTED_KINDS: &[&str] = &[
     "committed-to",
     "mentioned",

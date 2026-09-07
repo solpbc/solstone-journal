@@ -516,7 +516,8 @@ fn active_config(config: &Map<String, Value>) -> (String, Option<String>) {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
-        // Mirrors solstone/think/models.py:148-156 and :176-180.
+        // Retains the fallback order from the retired Python implementation
+        // (`solstone/think/models.py:148-156,176-180`).
         .unwrap_or_else(|| match provider {
             "google" => "gemini-3.5-flash".to_owned(),
             "openai" => "gpt-5.4-mini".to_owned(),

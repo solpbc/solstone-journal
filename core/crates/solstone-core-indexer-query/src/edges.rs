@@ -14,7 +14,7 @@ use serde::Serialize;
 
 use solstone_core_indexer::edges::KINDS;
 
-// Source of truth: solstone/think/indexer/edges.py:69-87.
+// Rust-owned weights retained from the retired Python implementation.
 const KIND_WEIGHTS: &[(&str, f64)] = &[
     ("committed-to", 5.0),
     ("works-with", 4.0),
@@ -34,7 +34,7 @@ const KIND_WEIGHTS: &[(&str, f64)] = &[
     ("scheduled-with", 2.0),
     ("co-present", 1.0),
 ];
-// Source of truth: solstone/think/indexer/edges.py:91.
+// Rust-owned half-life retained from the retired Python implementation.
 const HALF_LIFE_DAYS: f64 = 90.0;
 
 /// The complete stable ordering for pair evidence.
@@ -424,8 +424,8 @@ pub fn load_network_overview(
         )?;
     }
     let names = load_endpoint_names(&connection, &ranking)?;
-    // Keep dst != src on this second UNION leg only: self-edges count once, deliberately
-    // (solstone/think/indexer/edges.py:925-930).
+    // Keep dst != src on this second UNION leg only: self-edges count once,
+    // deliberately, retaining the retired Python query behavior.
     let cte = format!(
         "WITH endpoint_edges AS (\n  SELECT src AS entity_id, kind, day, weight\n  FROM edges\n  WHERE 1 = 1 {}\n  UNION ALL\n  SELECT dst AS entity_id, kind, day, weight\n  FROM edges\n  WHERE 1 = 1\n    AND dst != src {}\n)\nSELECT entity_id, kind, day, COUNT(*) AS count, SUM(weight) AS weight_sum\nFROM endpoint_edges\nGROUP BY entity_id, kind, day",
         ranking.sql, ranking.sql
@@ -864,8 +864,8 @@ fn load_endpoint_names(
     connection: &Connection,
     filter: &FilterSql,
 ) -> Result<BTreeMap<String, String>, EdgeQueryError> {
-    // Keep dst != src on this second UNION leg only: self-edges count once, deliberately
-    // (solstone/think/indexer/edges.py:522-528).
+    // Keep dst != src on this second UNION leg only: self-edges count once,
+    // deliberately, retaining the retired Python query behavior.
     let sql = format!(
         "WITH endpoint_edges AS ( SELECT src AS entity_id, src_name AS entity_name, day, ts, path, anchor, rowid AS edge_rowid FROM edges WHERE 1 = 1 {} UNION ALL SELECT dst AS entity_id, dst_name AS entity_name, day, ts, path, anchor, rowid AS edge_rowid FROM edges WHERE 1 = 1 AND dst != src {} ) SELECT entity_id, entity_name FROM endpoint_edges WHERE entity_name IS NOT NULL ORDER BY entity_id ASC, day IS NULL ASC, day DESC, ts IS NULL ASC, ts DESC, path ASC, anchor IS NULL ASC, anchor ASC, edge_rowid ASC",
         filter.sql, filter.sql

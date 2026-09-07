@@ -21,6 +21,6 @@ pub const OWNER_REBUILD_MIN_CENTROID_AGREEMENT: f32 = 0.80;
 pub const OWNER_REBUILD_MIN_CLUSTER_SIZE_RATIO: f32 = 0.80;
 pub const OWNER_REBUILD_MAX_COHESION_DROP: f32 = 0.05;
 
-/// Name-resolution threshold from `solstone/think/entities/matching.py`.
+/// Name-resolution threshold retained from the retired Python matcher.
 /// This is not one of the encoder-config values pinned by AC25.
 pub const RESOLUTION_FUZZY_THRESHOLD: f64 = 90.0;
