@@ -467,6 +467,25 @@
   gap: 1em;
 }
 
+/* G2-B01: the whole editable surface lives in one fieldset so a single
+   `disabled` covers the name, the type, the AKAs and save together — the
+   record is either loaded and editable or it is neither. The reset keeps the
+   fieldset from drawing its own box around the grid. */
+.entity-edit-fields {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: grid;
+  gap: 1em;
+}
+
+.entity-edit-note {
+  margin: 0 0 0.75em;
+  font-size: 0.9em;
+  color: var(--ink-soft);
+}
+
 .form-group {
   display: flex;
   flex-direction: column;
@@ -2036,8 +2055,13 @@ body.presentation-mode .entity-desc { color: #4b5563; }
 
     <div class="entity-detail-section">
       <h4>edit entity</h4>
+      <p class="entity-edit-note" id="journal-detail-edit-note">loading this entity…</p>
       <div id="journal-detail-edit-error" class="error-message" style="display: none;"></div>
       <form class="entity-edit-form" id="journal-detail-edit-form">
+        <!-- G2-B01: disabled until the entity resolves. Every control below
+             asserts a value, and before the read lands the app has no values
+             to assert. -->
+        <fieldset class="entity-edit-fields" id="journal-detail-edit-fields" disabled>
         <div class="form-group">
           <label for="journal-detail-edit-name">name</label>
           <input type="text" id="journal-detail-edit-name" required>
@@ -2045,7 +2069,8 @@ body.presentation-mode .entity-desc { color: #4b5563; }
         <div class="form-group">
           <label for="journal-detail-edit-type">type</label>
           <select id="journal-detail-edit-type">
-            <!-- Populated by loadEntityTypes() -->
+            <!-- Populated by loadEntityTypes(); the selected option is set
+                 only once the entity has been read (setJournalEditType). -->
           </select>
         </div>
         <div class="form-group">
@@ -2056,13 +2081,14 @@ body.presentation-mode .entity-desc { color: #4b5563; }
         <div class="form-actions">
           <button type="submit" class="btn btn-primary" id="journal-detail-save-btn">save changes</button>
         </div>
+        </fieldset>
       </form>
     </div>
 
     <div class="entity-action-section entity-detach-section">
       <div style="display: flex; gap: 0.5em; flex-wrap: wrap;">
-        <button class="btn btn-secondary" id="journal-detail-block-btn">block</button>
-        <button class="btn btn-danger" id="journal-detail-delete-btn">delete</button>
+        <button class="btn btn-secondary" id="journal-detail-block-btn" disabled>block</button>
+        <button class="btn btn-danger" id="journal-detail-delete-btn" disabled>delete</button>
       </div>
       <div id="block-action-error" class="error-message" style="display: none;"></div>
       <p style="margin-top: 0.75em; font-size: 0.85em; color: #6c757d;">
@@ -2325,42 +2351,39 @@ function hideInlineError(elementId) {
   }
 }
 
+// Rebuild the edit dropdown from ENTITY_TYPES. A labelled placeholder the
+// detail view put there survives the rebuild: the types can land after an
+// entity detail has already opened, and dropping the placeholder then would
+// leave the select asserting its first option over an unread record (G2-B01).
+function populateEntityTypeSelect() {
+  const select = document.getElementById('journal-detail-edit-type');
+  if (!select) return;
+  const placeholder = select.querySelector('option[data-placeholder]');
+  select.replaceChildren();
+  if (placeholder) select.appendChild(placeholder);
+  ENTITY_TYPES.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.name;
+    opt.textContent = t.name.toLowerCase();
+    select.appendChild(opt);
+  });
+  select.value = placeholder ? '' : select.value;
+}
+
 // Load entity types from server and populate UI elements
 async function loadEntityTypes() {
   try {
     const resp = await fetch('/app/entities/api/types');
     const data = await resp.json();
     ENTITY_TYPES = data.types || [];
-
-    // Populate edit dropdown
-    const select = document.getElementById('journal-detail-edit-type');
-    if (select) {
-      select.innerHTML = '';
-      ENTITY_TYPES.forEach(t => {
-        const opt = document.createElement('option');
-        opt.value = t.name;
-        opt.textContent = t.name.toLowerCase();
-        select.appendChild(opt);
-      });
-    }
   } catch (e) {
     console.error('Failed to load entity types:', e);
     // Fallback to defaults if fetch fails
     ENTITY_TYPES = [
       {name: 'Person'}, {name: 'Company'}, {name: 'Project'}, {name: 'Tool'}
     ];
-    // Populate dropdown with fallback types
-    const select = document.getElementById('journal-detail-edit-type');
-    if (select) {
-      select.innerHTML = '';
-      ENTITY_TYPES.forEach(t => {
-        const opt = document.createElement('option');
-        opt.value = t.name;
-        opt.textContent = t.name.toLowerCase();
-        select.appendChild(opt);
-      });
-    }
   }
+  populateEntityTypeSelect();
 }
 
 // Get type ordering for display (standard types first, then custom)
@@ -3666,10 +3689,99 @@ function showFacetDetailView(entityId) {
     });
 }
 
+// G2-B13: the owner clicked a name off the list that is still in memory, and
+// the detail read returns that same name several seconds later. Carry it into
+// the first paint so the page can say which entity it opened.
+function knownEntityName(entityId) {
+  const id = String(entityId || '');
+  if (!id) return '';
+  const items = (journalSummary && journalSummary.items) || [];
+  const match = items.find(entity => entity && entity.id === id);
+  return match && match.name ? String(match.name) : '';
+}
+
+// G2-B01: the type select is the one control that shows a value whether or not
+// the app has read one — an empty select shows its first option, which read as
+// a claim that this entity is a person before the record arrived. Every write
+// to it goes through these two: it either carries a labelled state of its own
+// or carries the entity's real type, never a default standing in for one.
+function setJournalEditTypeState(label) {
+  const select = document.getElementById('journal-detail-edit-type');
+  if (!select) return;
+  let placeholder = select.querySelector('option[data-placeholder]');
+  if (!placeholder) {
+    placeholder = document.createElement('option');
+    placeholder.dataset.placeholder = 'true';
+    placeholder.value = '';
+    select.insertBefore(placeholder, select.firstChild);
+  }
+  placeholder.textContent = label;
+  select.value = '';
+}
+
+function setJournalEditType(type) {
+  const select = document.getElementById('journal-detail-edit-type');
+  if (!select) return;
+  const value = String(type || '').trim();
+  if (!value) {
+    // A record that carries no type of its own. Saying so is the honest read;
+    // selecting the first option would offer to write that type back.
+    setJournalEditTypeState('not set');
+    return;
+  }
+  // A type the server offers no option for still belongs to this entity. Show
+  // it rather than silently re-typing the record as whatever sorts first.
+  if (![...select.options].some(option => option.value === value)) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = value.toLowerCase();
+    select.appendChild(option);
+  }
+  const placeholder = select.querySelector('option[data-placeholder]');
+  if (placeholder) placeholder.remove();
+  select.value = value;
+}
+
+// G2-B01: save, block and delete all act on a record. Until the read lands
+// there is no record, so they stay closed and `note` is the labelled state
+// standing in for the form.
+function setJournalEditLoading(note, typeLabel) {
+  const fields = document.getElementById('journal-detail-edit-fields');
+  if (fields) fields.disabled = true;
+  ['journal-detail-block-btn', 'journal-detail-delete-btn'].forEach(id => {
+    const button = document.getElementById(id);
+    if (!button) return;
+    button.disabled = true;
+    button.onclick = null;
+    button.title = '';
+  });
+  const nameField = document.getElementById('journal-detail-edit-name');
+  if (nameField) nameField.value = '';
+  const akaField = document.getElementById('journal-detail-edit-akas');
+  if (akaField) akaField.value = '';
+  setJournalEditTypeState(typeLabel);
+  const noteEl = document.getElementById('journal-detail-edit-note');
+  if (noteEl) {
+    noteEl.textContent = note;
+    noteEl.hidden = false;
+  }
+  const errorEl = document.getElementById('journal-detail-edit-error');
+  if (errorEl) errorEl.style.display = 'none';
+}
+
+function setJournalEditReady() {
+  const fields = document.getElementById('journal-detail-edit-fields');
+  if (fields) fields.disabled = false;
+  const noteEl = document.getElementById('journal-detail-edit-note');
+  if (noteEl) noteEl.hidden = true;
+}
+
 function showJournalDetailView(entityId) {
   // Show loading state
   currentDetailEntity = null;
-  document.getElementById('journal-detail-name').textContent = 'loading…';
+  const knownName = knownEntityName(entityId);
+  document.getElementById('journal-detail-name').textContent = knownName || 'loading…';
+  setJournalEditLoading('loading this entity…', 'loading…');
   document.getElementById('journal-detail-type').textContent = '';
   document.getElementById('journal-detail-aka').textContent = '';
   document.getElementById('journal-detail-indicators').innerHTML = '';
@@ -3689,7 +3801,8 @@ function showJournalDetailView(entityId) {
     })
     .catch(error => {
       console.error('Error loading journal entity details:', error);
-      document.getElementById('journal-detail-name').textContent = '';
+      document.getElementById('journal-detail-name').textContent = knownName;
+      setJournalEditLoading("this entity couldn't be loaded, so it can't be edited.", 'unavailable');
       const container = document.getElementById('journal-detail-facets');
       if (container) {
         container.innerHTML = window.SurfaceState.error({
@@ -3919,9 +4032,10 @@ function renderJournalDetailView(entity) {
   renderJournalTrustControls(entity);
   loadJournalTrustDetails(entity.id);
 
-  // Edit form
+  // Edit form — opened only now that there is a record behind it (G2-B01).
+  setJournalEditReady();
   document.getElementById('journal-detail-edit-name').value = entity.name || '';
-  document.getElementById('journal-detail-edit-type').value = entity.type || 'Person';
+  setJournalEditType(entity.type);
   document.getElementById('journal-detail-edit-akas').value = (entity.aka || []).join(', ');
   document.getElementById('journal-detail-edit-error').style.display = 'none';
 }
