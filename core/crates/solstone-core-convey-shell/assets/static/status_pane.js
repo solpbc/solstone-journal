@@ -253,13 +253,19 @@ window.whenShellReady(() => {
 
   // X-02: the pane printed its own lowercase 'sep 6'. Dates on a surface go
   // through the shared formatter, the way the rest of the shell reads them.
-  function captureDay(ms) {
+  // A "since …" sentence needs the day itself. The shared formatter answers
+  // "which day is this" with Today and Yesterday, which read as nonsense after
+  // "since" and stop being true while the sentence is still on screen. So this
+  // one is absolute, lowercase, and carries the year only when it is not this
+  // one (F-15). health.js holds the same helper for the same sentence.
+  const SINCE_MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  function sinceDay(ms) {
     const value = new Date(ms);
     if (Number.isNaN(value.getTime())) return '';
-    const key = String(value.getFullYear())
-      + String(value.getMonth() + 1).padStart(2, '0')
-      + String(value.getDate()).padStart(2, '0');
-    return window.JournalFormat ? window.JournalFormat.day(key) : key;
+    const day = SINCE_MONTHS[value.getMonth()] + ' ' + value.getDate();
+    return value.getFullYear() === new Date().getFullYear()
+      ? day
+      : day + " '" + String(value.getFullYear()).slice(-2);
   }
 
   // Plural forms are real: the pane read '1 uploads turned away'.
@@ -315,11 +321,11 @@ window.whenShellReady(() => {
 		      // and counts in a real plural.
 		      let consequence;
 		      if (hasFirstTs && hasActiveCount) {
-			        consequence = "what it adds hasn't reached your journal since " + captureDay(rej.first_ts) + '. ' + uploadsTurnedAway(rej.active_count) + '.';
+			        consequence = "what it adds hasn't reached your journal since " + sinceDay(rej.first_ts) + '. ' + uploadsTurnedAway(rej.active_count) + '.';
 		      } else if (hasActiveCount) {
 			        consequence = "what it adds isn't reaching your journal. " + uploadsTurnedAway(rej.active_count) + '.';
 		      } else if (hasFirstTs) {
-			        consequence = "what it adds hasn't reached your journal since " + captureDay(rej.first_ts) + '.';
+			        consequence = "what it adds hasn't reached your journal since " + sinceDay(rej.first_ts) + '.';
 		      } else {
 			        consequence = "what it adds isn't reaching your journal.";
 		      }
