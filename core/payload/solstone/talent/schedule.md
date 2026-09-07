@@ -2,7 +2,7 @@
   "type": "generate",
 
   "title": "Upcoming Schedule",
-  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Captures dates, times, participants, and cancellation state.",
+  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
   "hook": {"post": "schedule"},
   "color": "#5e35b1",
   "schedule": "daily",

@@ -1467,8 +1467,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2703,
-        "body_sha256": "642be2be9e9f20e2898564bd09df709a543339556d33e6ef1bdd43566cdd460a",
+        "body_bytes": 2501,
+        "body_sha256": "e44df6e8b64e23257c25192d8ee486a847848007af487c2df59e330faec23818",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -1483,7 +1483,7 @@
             },
             {
               "app": null,
-              "description": "Creates comprehensive daily newsletters for each facet, capturing activities, progress, and insights",
+              "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
               "disabled": false,
               "key": "facet_newsletter",
               "source": "system",
@@ -1499,7 +1499,7 @@
             },
             {
               "app": null,
-              "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Captures dates, times, participants, and cancellation state.",
+              "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
               "disabled": false,
               "key": "schedule",
               "source": "system",
@@ -3694,8 +3694,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2703,
-        "body_sha256": "642be2be9e9f20e2898564bd09df709a543339556d33e6ef1bdd43566cdd460a",
+        "body_bytes": 2501,
+        "body_sha256": "e44df6e8b64e23257c25192d8ee486a847848007af487c2df59e330faec23818",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -3710,7 +3710,7 @@
             },
             {
               "app": null,
-              "description": "Creates comprehensive daily newsletters for each facet, capturing activities, progress, and insights",
+              "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
               "disabled": false,
               "key": "facet_newsletter",
               "source": "system",
@@ -3726,7 +3726,7 @@
             },
             {
               "app": null,
-              "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Captures dates, times, participants, and cancellation state.",
+              "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
               "disabled": false,
               "key": "schedule",
               "source": "system",
@@ -5901,8 +5901,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2703,
-        "body_sha256": "642be2be9e9f20e2898564bd09df709a543339556d33e6ef1bdd43566cdd460a",
+        "body_bytes": 2501,
+        "body_sha256": "e44df6e8b64e23257c25192d8ee486a847848007af487c2df59e330faec23818",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -5917,7 +5917,7 @@
             },
             {
               "app": null,
-              "description": "Creates comprehensive daily newsletters for each facet, capturing activities, progress, and insights",
+              "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
               "disabled": false,
               "key": "facet_newsletter",
               "source": "system",
@@ -5933,7 +5933,7 @@
             },
             {
               "app": null,
-              "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Captures dates, times, participants, and cancellation state.",
+              "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
               "disabled": false,
               "key": "schedule",
               "source": "system",
@@ -8098,8 +8098,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2703,
-        "body_sha256": "642be2be9e9f20e2898564bd09df709a543339556d33e6ef1bdd43566cdd460a",
+        "body_bytes": 2501,
+        "body_sha256": "e44df6e8b64e23257c25192d8ee486a847848007af487c2df59e330faec23818",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -8114,7 +8114,7 @@
             },
             {
               "app": null,
-              "description": "Creates comprehensive daily newsletters for each facet, capturing activities, progress, and insights",
+              "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
               "disabled": false,
               "key": "facet_newsletter",
               "source": "system",
@@ -8130,7 +8130,7 @@
             },
             {
               "app": null,
-              "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Captures dates, times, participants, and cancellation state.",
+              "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
               "disabled": false,
               "key": "schedule",
               "source": "system",
@@ -10491,8 +10491,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2703,
-        "body_sha256": "642be2be9e9f20e2898564bd09df709a543339556d33e6ef1bdd43566cdd460a",
+        "body_bytes": 2501,
+        "body_sha256": "e44df6e8b64e23257c25192d8ee486a847848007af487c2df59e330faec23818",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -10507,7 +10507,7 @@
             },
             {
               "app": null,
-              "description": "Creates comprehensive daily newsletters for each facet, capturing activities, progress, and insights",
+              "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
               "disabled": false,
               "key": "facet_newsletter",
               "source": "system",
@@ -10523,7 +10523,7 @@
             },
             {
               "app": null,
-              "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Captures dates, times, participants, and cancellation state.",
+              "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
               "disabled": false,
               "key": "schedule",
               "source": "system",
@@ -14035,8 +14035,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2703,
-        "body_sha256": "642be2be9e9f20e2898564bd09df709a543339556d33e6ef1bdd43566cdd460a",
+        "body_bytes": 2501,
+        "body_sha256": "e44df6e8b64e23257c25192d8ee486a847848007af487c2df59e330faec23818",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -14051,7 +14051,7 @@
             },
             {
               "app": null,
-              "description": "Creates comprehensive daily newsletters for each facet, capturing activities, progress, and insights",
+              "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
               "disabled": false,
               "key": "facet_newsletter",
               "source": "system",
@@ -14067,7 +14067,7 @@
             },
             {
               "app": null,
-              "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Captures dates, times, participants, and cancellation state.",
+              "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
               "disabled": false,
               "key": "schedule",
               "source": "system",
