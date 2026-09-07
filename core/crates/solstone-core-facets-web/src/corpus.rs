@@ -229,10 +229,24 @@ async fn replay_record(router: Router, root: &Path, expected: &Value) {
                         .into(),
                 );
             }
+            // H-8: the entity and speaker bodies now use straight quotes to
+            // match the facet card beside them; the corpus is frozen on the
+            // curly-quote capture, so assert the live text and substitute the
+            // recorded one back.
+            if let Some(body) = copy.get_mut("CUR_ENTITY_BODY") {
+                assert_eq!(
+                    body,
+                    "\"{a}\" and \"{b}\" look like the same entity. merge them?"
+                );
+                *body = Value::String(
+                    "“{a}” and “{b}” look like the same entity. merge them?"
+                        .into(),
+                );
+            }
             if let Some(body) = copy.get_mut("CUR_SPEAKER_BODY") {
                 assert_eq!(
                     body,
-                    "“{source}” and “{target}” may be the same speaker. merge them?"
+                    "\"{source}\" and \"{target}\" may be the same speaker. merge them?"
                 );
                 *body = Value::String(
                     "solstone noticed “{source}” and “{target}” may be the same speaker. merge them?"
