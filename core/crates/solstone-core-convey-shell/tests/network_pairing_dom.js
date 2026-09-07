@@ -734,6 +734,7 @@ async function main() {
     globalThis.relativeTime = () => '2 months';
     const context = vm.createContext({
       window: { NetworkRender: require(activeAsset), JournalFormat: { timestamp: () => 'Sep 1, 11:52 PM', day: () => 'Jul 2' } },
+      clientsList: { addEventListener() {} },
       escapeHtml: (value) => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'),
     });
     vm.runInContext(workspace.slice(start, end), context);
@@ -772,6 +773,68 @@ async function main() {
       workspace.includes('/app/network/api/devices/${encodeURIComponent(cid)}/forget'),
       'forget posts to the guarded route, not the general unpair route',
     );
+  });
+
+  await testCase('device labels preserve drafts and serialize writes while polls advance metadata', async () => {
+    const { createClientLabels } = require(activeAsset);
+    const requests = [];
+    const pending = deferred();
+    const labels = createClientLabels({ request: (cid, label) => { requests.push({ cid, label }); return pending.promise; }, changed() {} });
+    const row = { cid: 'device-a', owner_label: null, display_label: 'reported', description_revision: 1 };
+    labels.receive([row], true);
+    assert.strictEqual(labels.editor(row.cid).draft, '');
+    labels.input(row.cid, 'chosen');
+    labels.receive([{ ...row, description_revision: 2, reported: { name: 'new report' } }], true);
+    assert.strictEqual(labels.editor(row.cid).draft, 'chosen');
+    const saving = labels.save(row.cid);
+    await labels.save(row.cid, true);
+    assert.deepStrictEqual(requests, [{ cid: 'device-a', label: 'chosen' }]);
+    pending.resolve({ protocol_version: 1, revision: 3, owner_label: 'chosen', display_label: 'chosen', reported: { name: 'new report' } });
+    await saving;
+    const result = labels.receive([row], true);
+    assert.strictEqual(result[0].display_label, 'chosen');
+    assert.strictEqual(result[0].reported.name, 'new report');
+    assert.strictEqual(labels.editor(row.cid).pending, false);
+  });
+
+  await testCase('late saves cannot recreate removed devices or replace newer owner edits', async () => {
+    const { createClientLabels } = require(activeAsset);
+    for (const removed of [false, true]) {
+      const pending = deferred();
+      const labels = createClientLabels({ request: () => pending.promise, changed() {} });
+      const row = { cid: 'a', owner_label: null, display_label: 'reported', description_revision: 1 };
+      labels.receive([row], true); labels.input('a', 'old save');
+      const saving = labels.save('a');
+      labels.receive(removed ? [] : [{ ...row, owner_label: 'newer edit', display_label: 'newer edit', description_revision: 5 }], true);
+      pending.resolve({ protocol_version: 1, revision: 2, owner_label: 'old save', display_label: 'old save' });
+      await saving;
+      if (removed) assert.strictEqual(labels.editor('a'), undefined);
+      else assert.strictEqual(labels.editor('a').row.display_label, 'newer edit');
+    }
+  });
+
+  await testCase('clear writes null; errors preserve drafts; authority and validation prevent writes', async () => {
+    const { createClientLabels } = require(activeAsset);
+    let status = 503;
+    const requests = [];
+    const labels = createClientLabels({ request: async (cid, label) => {
+      requests.push(label);
+      if (status) throw { status };
+      return { protocol_version: 1, revision: 2, owner_label: null, display_label: 'reported' };
+    }, changed() {} });
+    const row = { cid: 'a', owner_label: 'custom', display_label: 'custom', description_revision: 1 };
+    labels.receive([row], false); await labels.save('a'); assert.deepStrictEqual(requests, []);
+    labels.receive([row], true); labels.input('a', '🪨'.repeat(21)); await labels.save('a');
+    assert.deepStrictEqual(requests, []);
+    labels.input('a', 'draft'); await labels.save('a');
+    assert.strictEqual(labels.editor('a').draft, 'draft');
+    assert.strictEqual(labels.editor('a').row.display_label, 'custom');
+    assert.ok(labels.editor('a').message.includes("couldn't confirm"));
+    labels.receive([row], true); assert.strictEqual(labels.editor('a').draft, 'draft');
+    status = 0; await labels.save('a', true); assert.deepStrictEqual(requests, ['draft', null]);
+    assert.strictEqual(labels.editor('a').row.display_label, 'reported');
+    labels.input('a', 'forbidden'); status = 403; await labels.save('a');
+    assert.strictEqual(labels.canEdit(), false);
   });
 
   await testCase('active asset pin distinguishes the network ceremony from retired link init', async () => {

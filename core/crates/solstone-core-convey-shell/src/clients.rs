@@ -282,7 +282,10 @@ async fn patch_label(
     }
 }
 
-async fn list(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
+async fn list(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    basis: Option<Extension<AccessBasis>>,
+) -> Response {
     let descriptions = match read_descriptions(&root.0) {
         Ok(descriptions) => descriptions,
         Err(_) => {
@@ -296,6 +299,7 @@ async fn list(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
     match inspect_clients_at(&root.0, now_ms()) {
         ClientInspection::Empty { clients, activity }
         | ClientInspection::Ready { clients, activity } => Json(json!({
+            "can_edit_labels": matches!(basis, Some(Extension(AccessBasis::Localhost))),
             "clients": clients
                 .iter()
                 .map(|client| client_json(client, activity, descriptions.get(&client.cid)))
@@ -614,6 +618,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn label_editor_capability_comes_from_authenticated_access_basis() {
+        let journal = EstablishedJournal::new();
+        let app = crate::router(journal.0.path().to_path_buf());
+        let cid = LinkedDeviceCid::try_from(
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        )
+        .unwrap();
+        for basis in [
+            None,
+            Some(AccessBasis::Localhost),
+            Some(AccessBasis::PairingPeer {
+                carrier: Carrier::Direct,
+            }),
+            Some(AccessBasis::LinkedDevice {
+                cid,
+                carrier: Carrier::Direct,
+            }),
+        ] {
+            let editable = matches!(basis, Some(AccessBasis::Localhost));
+            let mut req = Request::get("/app/network/api/clients")
+                .body(Body::empty())
+                .unwrap();
+            if let Some(basis) = basis {
+                req.extensions_mut().insert(basis);
+            }
+            let (status, body) = request(app.clone(), req).await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(body["can_edit_labels"], editable);
+        }
+    }
+
+    #[tokio::test]
     async fn api_clients_projects_the_full_client_vocabulary_on_both_prefixes() {
         let cid = "sha256:0123456789abcdef0123456789abcdef";
         let journal = EstablishedJournal::new();
@@ -744,7 +780,7 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(body, json!({"clients": []}));
+        assert_eq!(body, json!({"clients": [], "can_edit_labels": false}));
 
         fs::create_dir_all(journal.0.path().join("link/authorized_clients.json"))
             .expect("unreadable ledger");

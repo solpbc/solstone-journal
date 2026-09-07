@@ -894,6 +894,13 @@
 }
 .client-stat-note{display:block;margin-top:4px;color:var(--ink-faint,#6E6453);font-size:.82rem;line-height:1.35}
 .client-card.neutral{border-left-color:var(--border,#ddd)}.client-status.neutral{background:#f0f0ed;color:#555}.client-status.neutral::before{display:none}.client-details summary,.client-group-collapsed>summary{display:flex;align-items:center;gap:8px;cursor:pointer;min-height:44px;list-style:none}.client-details summary::-webkit-details-marker,.client-group-collapsed>summary::-webkit-details-marker{display:none}.client-details summary::before,.client-group-collapsed>summary::before{content:'\25B8';color:var(--ink-faint,#6E6453);font-size:.9em;line-height:1}.client-details[open] summary::before,.client-group-collapsed[open]>summary::before{content:'\25BE'}.client-details summary:focus-visible,.client-group-collapsed>summary:focus-visible{outline:2px solid var(--orange,#f59e0b);outline-offset:3px}.client-stats dd{overflow-wrap:anywhere}.client-last-material{color:var(--text-secondary,#666);font-size:.9rem;margin:8px 0}.client-paired{color:var(--ink-faint,#6E6453);font-size:.85rem;margin:4px 0 10px}.client-details .client-actions{margin-top:12px}
+.client-label-section { margin: 12px 0; }
+.client-label-section label { display: block; margin-bottom: 6px; }
+.client-label-section input { box-sizing: border-box; width: 100%; min-height: 44px; font: inherit; }
+.client-label-section p { font-size: .9rem; overflow-wrap: anywhere; }
+.client-label-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.client-label-actions button { min-height: 44px; font: inherit; }
+.client-label-section :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 </style>
 
 <script>
@@ -1728,6 +1735,90 @@ function forgetActionHTML(client) {
   `;
 }
 
+let clientsEpoch = 0;
+const clientLabels = window.NetworkRender.createClientLabels({
+  request: async (cid, label) => {
+    ++clientsEpoch;
+    try {
+      return await window.apiJson(`/app/network/api/clients/${encodeURIComponent(cid)}/label`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label }),
+        signal: AbortSignal.timeout(15000), noAuthRedirect: true,
+      });
+    } finally { ++clientsEpoch; }
+  },
+  changed: (cid) => {
+    const card = clientsList.querySelector(`.client-card[data-cid="${CSS.escape(cid)}"]`);
+    const state = clientLabels.editor(cid);
+    if (!state) { card?.remove(); ++clientsEpoch; loadClients(); return; }
+    const section = card?.querySelector('.client-label-section');
+    const activeElement = document.activeElement;
+    const active = section?.contains(activeElement) ? activeElement.dataset.labelAction : null;
+    const selection = active === 'input' ? [activeElement.selectionStart, activeElement.selectionEnd, activeElement.selectionDirection] : null;
+    if (section) section.outerHTML = clientLabelHTML(state.row);
+    if (card) {
+      card.querySelector('.client-name').textContent = state.row.display_label;
+      const render = window.NetworkRender;
+      const connection = render.deliveryGroupFor(state.row) === 'adding' ? '' : render.connectionLineLabel(state.row);
+      card.setAttribute('aria-label', [state.row.display_label, render.deliveryChipLabel(state.row), connection].filter(Boolean).join(', '));
+      const question = card.querySelector('.client-forget-question');
+      if (question) question.textContent = `forget ${state.row.display_label}? it will need to pair again to add anything.`;
+      if (active) {
+        const target = card.querySelector(`[data-label-action="${active}"]`);
+        target?.focus();
+        if (selection && target?.setSelectionRange) target.setSelectionRange(...selection);
+      }
+    }
+    if (!state.pending) loadClients();
+  },
+});
+
+function clientLabelHTML(client) {
+  const state = clientLabels.editor(client.cid);
+  if (!state) return '';
+  const cid = escapeHtml(client.cid);
+  const facts = [['reported name', client.reported?.name], ['platform', client.reported?.platform],
+    ['device type', client.reported?.device_type], ['app', client.reported?.app_id],
+    ['app version', client.reported?.app_version]].filter(([, value]) => typeof value === 'string' && value);
+  const reported = facts.length ? `<dl>${facts.map(([label, value]) =>
+    `<div><dt>${label}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>`
+    : "<p>device details haven't been shared yet.</p>";
+  const editor = clientLabels.canEdit() ? `
+    <form data-label-cid="${cid}" aria-busy="${state.pending}">
+      <label for="client-label-${cid}">your name for this device</label>
+      <input id="client-label-${cid}" data-label-action="input" type="text" value="${escapeHtml(state.draft)}"
+        aria-describedby="client-label-help-${cid}" ${state.pending ? 'readonly' : ''}>
+      <p id="client-label-help-${cid}">leave blank to use the device's reported name when available.</p>
+      <div class="client-label-actions">
+        <button type="submit" data-label-action="save" aria-disabled="${state.pending}">save name</button>
+        <button type="button" data-label-action="clear" aria-disabled="${state.pending}">clear your name</button>
+        <button type="button" data-label-action="cancel" aria-disabled="${state.pending}">cancel edit</button>
+      </div>
+    </form>` : '';
+  return `<div class="client-label-section">${editor}
+    <p role="status" class="client-label-status">${escapeHtml(state.message)}</p>${reported}</div>`;
+}
+
+clientsList.addEventListener('input', (event) => {
+  const form = event.target.closest('form[data-label-cid]');
+  if (form && event.target.matches('[data-label-action="input"]')) {
+    clientLabels.input(form.dataset.labelCid, event.target.value);
+    const status = form.closest('.client-label-section')?.querySelector('.client-label-status');
+    if (status) status.textContent = clientLabels.editor(form.dataset.labelCid)?.message || '';
+  }
+});
+clientsList.addEventListener('submit', (event) => {
+  const form = event.target.closest('form[data-label-cid]');
+  if (!form) return;
+  event.preventDefault(); clientLabels.save(form.dataset.labelCid);
+});
+clientsList.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-label-action]');
+  const form = button?.closest('form[data-label-cid]');
+  if (!form) return;
+  if (button.dataset.labelAction === 'clear') clientLabels.save(form.dataset.labelCid, true);
+  if (button.dataset.labelAction === 'cancel') clientLabels.cancel(form.dataset.labelCid);
+});
+
 function clientCardHTML(client) {
   const render = window.NetworkRender;
   const displayName = client.display_label || client.device_label || client.client_label || client.cid_short;
@@ -1755,6 +1846,7 @@ function clientCardHTML(client) {
       ${deliveryGroup === 'never' ? forgetActionHTML(client) : ''}
       <details class="client-details" data-client-details="${escapeHtml(client.cid)}">
         <summary>device details</summary>
+        ${clientLabelHTML(client)}
         <div class="client-stats">${clientStatsHTML(client, deliveryGroup)}<dl><div><dt>device id</dt><dd>${escapeHtml(client.cid)}</dd></div></dl></div>
       ${deliveryGroup === 'never' ? '' : `<div class="client-actions">
         <button class="danger" data-cid="${escapeHtml(client.cid)}" onclick="unpairClient(this.dataset.cid, this)">unpair</button>
@@ -1781,6 +1873,7 @@ function renderClients(clients) {
 }
 
 async function loadClients() {
+  const epoch = ++clientsEpoch;
   lastPollTime = Date.now();
   if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
   try {
@@ -1794,18 +1887,22 @@ async function loadClients() {
         cause: 'parse',
       });
     }
-    const clients = payload.clients;
+    if (epoch !== clientsEpoch) return;
+    const clients = clientLabels.receive(payload.clients, payload.can_edit_labels);
 
     // Rebuild on every poll so grouped headers stay aligned with server ordering.
     const activeEl = document.activeElement;
     let focusSelector = null;
+    const labelSelection = activeEl?.matches('[data-label-action="input"]')
+      ? [activeEl.selectionStart, activeEl.selectionEnd, activeEl.selectionDirection] : null;
     if (activeEl && clientsList.contains(activeEl)) {
       const card = activeEl.closest('.client-card');
       if (card) {
         const cid = card.getAttribute('data-cid');
+        if (activeEl.dataset.labelAction) focusSelector = `.client-card[data-cid="${CSS.escape(cid)}"] [data-label-action="${activeEl.dataset.labelAction}"]`;
         const buttons = [...card.querySelectorAll('button')];
         const btnIndex = buttons.indexOf(activeEl);
-        if (btnIndex >= 0) {
+        if (btnIndex >= 0 && !focusSelector) {
           focusSelector = `[data-cid="${CSS.escape(cid)}"] button:nth-child(${btnIndex + 1})`;
         }
       }
@@ -1831,9 +1928,13 @@ async function loadClients() {
 
     if (focusSelector) {
       const target = clientsList.querySelector(focusSelector);
-      if (target) target.focus();
+      if (target) {
+        target.focus();
+        if (labelSelection && target.setSelectionRange) target.setSelectionRange(...labelSelection);
+      }
     }
   } catch (err) {
+    if (epoch !== clientsEpoch) return;
     window.SurfaceState.replaceLoading('clientsList', window.SurfaceState.error({
       heading: 'your devices couldn\'t be loaded.',
       desc: window.CONVEY_COPY.RELOAD_HINT,

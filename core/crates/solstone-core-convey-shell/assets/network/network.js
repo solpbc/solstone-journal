@@ -474,7 +474,84 @@
     }));
   }
 
+  function createClientLabels({ request, changed }) {
+    const editors = new Map();
+    let editable = false;
+    function editor(cid) { return editors.get(cid); }
+    function receive(clients, allowed) {
+      editable = allowed === true;
+      const present = new Set(clients.map(row => row.cid));
+      for (const cid of editors.keys()) if (!present.has(cid)) editors.delete(cid);
+      return clients.map(row => {
+        let state = editors.get(row.cid);
+        if (!state) {
+          state = { row, draft: row.owner_label || '', dirty: false, pending: false, message: '' };
+          editors.set(row.cid, state);
+        } else {
+          if ((state.row.description_revision || 0) > (row.description_revision || 0)) {
+            row = { ...row, owner_label: state.row.owner_label, display_label: state.row.display_label,
+              reported: state.row.reported, description_revision: state.row.description_revision,
+              description_updated_at: state.row.description_updated_at };
+          }
+          state.row = row;
+          if (!state.dirty && !state.pending) state.draft = row.owner_label || '';
+        }
+        return row;
+      });
+    }
+    function input(cid, value) {
+      const state = editor(cid);
+      if (!state || state.pending || !editable) return;
+      state.draft = value; state.dirty = true; state.message = '';
+    }
+    function cancel(cid) {
+      const state = editor(cid);
+      if (!state || state.pending) return;
+      state.draft = state.row.owner_label || ''; state.dirty = false; state.message = '';
+      changed(cid);
+    }
+    async function save(cid, clear = false) {
+      const state = editor(cid);
+      if (!state || state.pending || !editable) return;
+      const label = clear ? null : state.draft.trim() || null;
+      if (label !== null && (new TextEncoder().encode(label).length > 80 || /[\p{Cc}]/u.test(label))) {
+        state.message = 'use a shorter name without control characters.'; changed(cid); return;
+      }
+      state.pending = true; state.message = 'saving…'; changed(cid);
+      try {
+        const resource = await request(cid, label);
+        if (editors.get(cid) !== state) return;
+        if (resource?.protocol_version !== 1 || !Number.isSafeInteger(resource.revision)
+            || resource.revision < 0 || typeof resource.display_label !== 'string'
+            || !(resource.owner_label === null || typeof resource.owner_label === 'string')) {
+          throw new Error('invalid response');
+        }
+        if (resource.revision >= (state.row.description_revision || 0)) {
+          state.row = { ...state.row, owner_label: resource.owner_label, display_label: resource.display_label,
+            reported: resource.reported, description_revision: resource.revision,
+            description_updated_at: resource.updated_at };
+        }
+        state.draft = state.row.owner_label || ''; state.dirty = false;
+        state.message = 'saved.';
+      } catch (error) {
+        if (editors.get(cid) !== state) return;
+        if (error?.status === 404) {
+          editors.delete(cid); changed(cid); return;
+        }
+        if (error?.status === 403) editable = false;
+        state.message = error?.status === 400 ? 'use a shorter name without control characters.'
+          : error?.status === 403 ? "change this name from the journal's own device."
+          : "couldn't confirm the save. check the current name before trying again.";
+        state.dirty = true;
+      } finally {
+        if (editors.get(cid) === state) { state.pending = false; changed(cid); }
+      }
+    }
+    return { receive, editor, input, cancel, save, canEdit: () => editable };
+  }
+
   const NetworkRender = {
+    createClientLabels,
     applyCopy,
     resolve,
     initPairingCeremony,
