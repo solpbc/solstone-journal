@@ -11,7 +11,7 @@ use serde_json::{Map, Value, json};
 use super::{JsonObject, ProducedChunks, ScreenTalentRawScreen, json_truthy, recorded_chunk};
 use crate::segment::{is_date_key, segment_parse};
 
-const TMUX_PROJECTION_GUIDE: &str = "## Tmux change encoding\n\nEach Tmux observation advances visible pane state scoped by session, window id, and pane id. `snapshot` sets the complete pane to `lines` joined with newline characters. `splice` replaces `delete_count` lines at zero-based `start_line` with `lines`. `unchanged` preserves the prior pane; `disappeared` removes it. Geometry and active state apply to this observation. Links preserve visible labels and targets as data.";
+const TMUX_PROJECTION_GUIDE: &str = "## Tmux change encoding\n\nEach Tmux change advances visible pane state scoped by session, window id, and pane id. `snapshot` sets the complete pane to `lines` joined with newline characters. `splice` replaces `delete_count` lines at zero-based `start_line` with `lines`. `unchanged` preserves the prior pane; `disappeared` removes it. Geometry and active state apply to this change. Links preserve visible labels and targets as data.";
 
 pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
     let mut skipped = 0usize;

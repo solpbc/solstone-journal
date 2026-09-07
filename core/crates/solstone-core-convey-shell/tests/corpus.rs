@@ -693,7 +693,8 @@ async fn speakers_state_uses_the_python_local_date_semantics() {
     // rename is a same-key-count edit).
     // 122 + 2: G1-111 added SPK_OVERVIEW_KNOWN_VOICES_QUALITY_HINT (a legend
     // sentence for the voice-quality words) and G1-114 added
-    // SPK_OVERVIEW_OWNER_STREAMS_UNKNOWN (the "where heard" empty-value copy,
+    // SPK_OVERVIEW_OWNER_STREAMS_UNKNOWN (the "where this voice appears"
+    // empty-value copy,
     // replacing a bare em-dash).
     assert_eq!(state["speaker_copy"].as_object().unwrap().len(), 124);
 }

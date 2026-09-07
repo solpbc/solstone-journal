@@ -845,7 +845,7 @@ asyncCase('the verification scope reports one slice of the data, never a snapsho
   const subset = harness.root.querySelector('[data-last-verification-subset]');
   assert.ok(subset, 'the verification scope line is mounted');
   assert.ok(!subset.hidden, 'the verification scope line is shown');
-  assert.strictEqual(subset.textContent, 'checked 1 of 52 parts of your backup data');
+  assert.strictEqual(subset.textContent, 'checked 1 of 52 parts of your backup, a different part each week.');
   assert.ok(!/snapshot/.test(subset.textContent), 'the scope line never counts snapshots');
 });
 
@@ -859,7 +859,7 @@ asyncCase('a single-part verification says it covered everything', async () => {
   } });
   await settle();
   const subset = harness.root.querySelector('[data-last-verification-subset]');
-  assert.strictEqual(subset.textContent, 'checked all of your backup data');
+  assert.strictEqual(subset.textContent, 'checked all of your backup this week.');
 });
 
 async function runAsyncCases() {

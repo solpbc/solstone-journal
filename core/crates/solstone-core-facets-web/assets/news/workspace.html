@@ -745,7 +745,7 @@
     content.innerHTML = `
       <header class="news-header">
         <div>
-          <nav class="news-back" aria-label="Newsletter views"><a class="news-back-link" href="${escapeAttr(newsIndexHref(initialContext.day))}">&larr; newsletters</a></nav>
+          <nav class="news-back" aria-label="newsletter views"><a class="news-back-link" href="${escapeAttr(newsIndexHref(initialContext.day))}">&larr; newsletters</a></nav>
           <p class="news-kicker">${escapeHtml(payload.kicker)}</p>
           <h2 class="news-title">${escapeHtml(payload.facet)} · ${escapeHtml(payload.date_label)}</h2>
           <p class="news-subtitle">${escapeHtml(payload.subtitle)}</p>
