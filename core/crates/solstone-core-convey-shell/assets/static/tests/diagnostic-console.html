@@ -428,12 +428,14 @@
     assert('a real Error with a 5 kB message is bounded too',
       diagnostic.list()[0].detail.message.length === 201,
       String(diagnostic.list()[0].detail.message.length));
-    // Fresh-eyes 3 #4: an Error carried across a worker or a structured clone
-    // arrives with the prototype and no own message, and String(undefined)
-    // wrote the word "undefined" into the entry the owner can send.
+    // Fresh-eyes 3 #4: an Error rebuilt from a serialised payload carries the
+    // fields the payload had, so `message` can be present and undefined.
+    // String(undefined) wrote the word "undefined" into the entry the owner
+    // can send.
     diagnostic.clear();
-    window.logError(Object.create(Error.prototype), { context: 'health: pulse failed' });
-    assert('an Error with no message never reads as the word undefined',
+    window.logError(Object.assign(new Error(), { message: undefined }),
+      { context: 'health: pulse failed' });
+    assert('an Error with an absent message never reads as the word undefined',
       diagnostic.list()[0].detail.message === 'Error',
       diagnostic.list()[0].detail.message);
     diagnostic.clear();
