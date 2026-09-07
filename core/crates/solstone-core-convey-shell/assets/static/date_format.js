@@ -88,6 +88,22 @@
     return label;
   }
 
+  // The import catalog's own labels, so a stream reads the source the way the
+  // import screen and its guides write it (`SOURCES` in
+  // solstone-core-import-web/src/imports.rs). A source with no entry here keeps
+  // the parsed lowercase form. S-8.
+  const IMPORT_SOURCE_LABELS = {
+    apple_health: 'Apple Health',
+    chatgpt: 'ChatGPT',
+    claude: 'Claude',
+    gemini: 'Gemini',
+    google: 'Google Takeout',
+    journal_archive: 'journal archive',
+    kindle: 'Kindle',
+    obsidian: 'Obsidian',
+    oura: 'Oura',
+  };
+
   // A stream key is structured, so parse it rather than stripping punctuation:
   // `device.watch.audio` names a watch's audio, not a device called "device
   // watch audio", and `import.chatgpt` is a ChatGPT import, not "import
@@ -101,7 +117,12 @@
     // reduced from its hostname; it reads as itself, dashes and all.
     if (parts.length === 1 && /^[a-z0-9][a-z0-9-]*$/.test(parts[0])) return parts[0];
     if (parts[0] === 'device' && parts.length >= 3) return parts.slice(1).map(words).join(' ').trim();
-    if (parts[0] === 'import' && parts.length === 2) return `${words(parts[1])} import`;
+    if (parts[0] === 'import' && parts.length === 2) {
+      const branded = Object.prototype.hasOwnProperty.call(IMPORT_SOURCE_LABELS, parts[1])
+        ? IMPORT_SOURCE_LABELS[parts[1]]
+        : words(parts[1]);
+      return `${branded} import`;
+    }
     return raw.replace(/[._-]+/g, ' ').trim();
   }
 
@@ -150,9 +171,17 @@
     const value = Math.round(Math.max(0, Number(seconds)));
     if (value < 60) return `${value} sec`;
     // Stats' hour buckets reach thousands of minutes, so the ladder needs an
-    // hours rung or 1,995 minutes reads "1995 min 0 sec". S-3 / G2-B14.
-    if (value < 3600) return `${Math.floor(value / 60)} min ${Math.round(value % 60)} sec`;
-    return `${Math.floor(value / 3600)} hr ${Math.floor((value % 3600) / 60)} min`;
+    // hours rung or 1,995 minutes reads "1995 min 0 sec". S-3 / G2-B14. A zero
+    // remainder is dropped at every rung above seconds, so five minutes reads
+    // "5 min" and an even hour reads "2 hr". S-8.
+    if (value < 3600) {
+      const remainderSeconds = value % 60;
+      const minutes = Math.floor(value / 60);
+      return remainderSeconds ? `${minutes} min ${remainderSeconds} sec` : `${minutes} min`;
+    }
+    const remainderMinutes = Math.floor((value % 3600) / 60);
+    const hours = Math.floor(value / 3600);
+    return remainderMinutes ? `${hours} hr ${remainderMinutes} min` : `${hours} hr`;
   }
 
   function processingLane(lane) {

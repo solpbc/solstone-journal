@@ -473,8 +473,11 @@ const Dashboard = (function() {
       for (let h = 0; h < 24; h++) {
         const intensity = data[d][h] / maxVal;
         // One duration ladder for the whole app; it grew an hours rung for
-        // these buckets, which run to thousands of minutes (G2-B14, S-3).
-        const cellTitle = `${days[d]} ${heatmapHourSpoken(h)} · ${window.JournalFormat.duration((Number(data[d][h]) || 0) * 60)}`;
+        // these buckets, which run to thousands of minutes (G2-B14, S-3). An
+        // empty hour is not a duration, so it says so rather than reading
+        // "0 sec" (S-8).
+        const bucketMinutes = Number(data[d][h]) || 0;
+        const cellTitle = `${days[d]} ${heatmapHourSpoken(h)} · ${bucketMinutes > 0 ? window.JournalFormat.duration(bucketMinutes * 60) : 'no activity'}`;
         row.appendChild(el('div', {
           className: 'heatmap-cell',
           style: {background: `rgba(${WARM_HEATMAP_RGB},${intensity})`},
