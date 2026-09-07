@@ -4932,67 +4932,67 @@
             "extraction": "Extract when visiting distinctly different websites or search results",
             "group": "Screen Analysis",
             "importance": "normal",
-            "label": "Browsing"
+            "label": "browsing"
           },
           "calendar": {
             "extraction": "Extract when the visible date range, event detail, availability grid, booking page, or scheduling workflow changes",
             "group": "Screen Analysis",
             "importance": "high",
-            "label": "Calendar"
+            "label": "calendar"
           },
           "code": {
             "extraction": "Extract when viewing different repositories, files, or switching between editor and browser",
             "group": "Screen Analysis",
             "importance": "low",
-            "label": "Code"
+            "label": "code"
           },
           "gaming": {
             "extraction": "",
             "group": "Screen Analysis",
             "importance": "ignore",
-            "label": "Gaming"
+            "label": "gaming"
           },
           "media": {
             "extraction": "Extract 1 frame only - video playback content does not benefit from text extraction",
             "group": "Screen Analysis",
             "importance": "low",
-            "label": "Media"
+            "label": "media"
           },
           "meeting": {
             "extraction": "Extract when shared content type changes (screen share vs participant grid) or meeting platform differs",
             "group": "Screen Analysis",
             "importance": "high",
-            "label": "Meeting"
+            "label": "meeting"
           },
           "messaging": {
             "extraction": "Extract when conversation partner, channel, or messaging app changes",
             "group": "Screen Analysis",
             "importance": "high",
-            "label": "Messaging"
+            "label": "messaging"
           },
           "productivity": {
             "extraction": "Extract when different application or service is shown (e.g. ChatGPT vs Docs vs issue tracker)",
             "group": "Screen Analysis",
             "importance": "high",
-            "label": "Productivity"
+            "label": "productivity"
           },
           "reading": {
             "extraction": "Extract when viewing a different document, article, or PDF",
             "group": "Screen Analysis",
             "importance": "high",
-            "label": "Reading"
+            "label": "reading"
           },
           "social": {
             "extraction": "Extract when platform, feed context, or visible thread changes",
             "group": "Screen Analysis",
             "importance": "normal",
-            "label": "Social"
+            "label": "social"
           },
           "terminal": {
             "extraction": "Extract when showing distinctly different content (code diffs vs logs vs documentation)",
             "group": "Screen Analysis",
             "importance": "low",
-            "label": "Terminal"
+            "label": "terminal"
           }
         },
         "max_extractions": 33,
@@ -5224,67 +5224,67 @@
             "extraction": "Extract when visiting distinctly different websites or search results",
             "group": "Screen Analysis",
             "importance": "normal",
-            "label": "Browsing"
+            "label": "browsing"
           },
           "calendar": {
             "extraction": "Extract when the visible date range, event detail, availability grid, booking page, or scheduling workflow changes",
             "group": "Screen Analysis",
             "importance": "high",
-            "label": "Calendar"
+            "label": "calendar"
           },
           "code": {
             "extraction": "Extract when viewing different repositories, files, or switching between editor and browser",
             "group": "Screen Analysis",
             "importance": "low",
-            "label": "Code"
+            "label": "code"
           },
           "gaming": {
             "extraction": "",
             "group": "Screen Analysis",
             "importance": "ignore",
-            "label": "Gaming"
+            "label": "gaming"
           },
           "media": {
             "extraction": "Extract 1 frame only - video playback content does not benefit from text extraction",
             "group": "Screen Analysis",
             "importance": "low",
-            "label": "Media"
+            "label": "media"
           },
           "meeting": {
             "extraction": "Extract when shared content type changes (screen share vs participant grid) or meeting platform differs",
             "group": "Screen Analysis",
             "importance": "high",
-            "label": "Meeting"
+            "label": "meeting"
           },
           "messaging": {
             "extraction": "Extract when conversation partner, channel, or messaging app changes",
             "group": "Screen Analysis",
             "importance": "high",
-            "label": "Messaging"
+            "label": "messaging"
           },
           "productivity": {
             "extraction": "Extract when different application or service is shown (e.g. ChatGPT vs Docs vs issue tracker)",
             "group": "Screen Analysis",
             "importance": "high",
-            "label": "Productivity"
+            "label": "productivity"
           },
           "reading": {
             "extraction": "Extract when viewing a different document, article, or PDF",
             "group": "Screen Analysis",
             "importance": "high",
-            "label": "Reading"
+            "label": "reading"
           },
           "social": {
             "extraction": "Extract when platform, feed context, or visible thread changes",
             "group": "Screen Analysis",
             "importance": "normal",
-            "label": "Social"
+            "label": "social"
           },
           "terminal": {
             "extraction": "Extract when showing distinctly different content (code diffs vs logs vs documentation)",
             "group": "Screen Analysis",
             "importance": "low",
-            "label": "Terminal"
+            "label": "terminal"
           }
         },
         "max_extractions": 42,
@@ -10057,67 +10057,67 @@
             "extraction": "Extract when visiting distinctly different websites or search results",
             "group": "Screen Analysis",
             "importance": "normal",
-            "label": "Browsing"
+            "label": "browsing"
           },
           "calendar": {
             "extraction": "Extract when the visible date range, event detail, availability grid, booking page, or scheduling workflow changes",
             "group": "Screen Analysis",
             "importance": "high",
-            "label": "Calendar"
+            "label": "calendar"
           },
           "code": {
             "extraction": "Extract when viewing different repositories, files, or switching between editor and browser",
             "group": "Screen Analysis",
             "importance": "low",
-            "label": "Code"
+            "label": "code"
           },
           "gaming": {
             "extraction": "",
             "group": "Screen Analysis",
             "importance": "ignore",
-            "label": "Gaming"
+            "label": "gaming"
           },
           "media": {
             "extraction": "Extract 1 frame only - video playback content does not benefit from text extraction",
             "group": "Screen Analysis",
             "importance": "low",
-            "label": "Media"
+            "label": "media"
           },
           "meeting": {
             "extraction": "Extract when shared content type changes (screen share vs participant grid) or meeting platform differs",
             "group": "Screen Analysis",
             "importance": "high",
-            "label": "Meeting"
+            "label": "meeting"
           },
           "messaging": {
             "extraction": "Extract when conversation partner, channel, or messaging app changes",
             "group": "Screen Analysis",
             "importance": "high",
-            "label": "Messaging"
+            "label": "messaging"
           },
           "productivity": {
             "extraction": "Extract when different application or service is shown (e.g. ChatGPT vs Docs vs issue tracker)",
             "group": "Screen Analysis",
             "importance": "high",
-            "label": "Productivity"
+            "label": "productivity"
           },
           "reading": {
             "extraction": "Extract when viewing a different document, article, or PDF",
             "group": "Screen Analysis",
             "importance": "high",
-            "label": "Reading"
+            "label": "reading"
           },
           "social": {
             "extraction": "Extract when platform, feed context, or visible thread changes",
             "group": "Screen Analysis",
             "importance": "normal",
-            "label": "Social"
+            "label": "social"
           },
           "terminal": {
             "extraction": "Extract when showing distinctly different content (code diffs vs logs vs documentation)",
             "group": "Screen Analysis",
             "importance": "low",
-            "label": "Terminal"
+            "label": "terminal"
           }
         },
         "max_extractions": 33,
@@ -10341,67 +10341,67 @@
             "extraction": "Extract when visiting distinctly different websites or search results",
             "group": "Screen Analysis",
             "importance": "normal",
-            "label": "Browsing"
+            "label": "browsing"
           },
           "calendar": {
             "extraction": "Extract when the visible date range, event detail, availability grid, booking page, or scheduling workflow changes",
             "group": "Screen Analysis",
             "importance": "high",
-            "label": "Calendar"
+            "label": "calendar"
           },
           "code": {
             "extraction": "Extract when viewing different repositories, files, or switching between editor and browser",
             "group": "Screen Analysis",
             "importance": "low",
-            "label": "Code"
+            "label": "code"
           },
           "gaming": {
             "extraction": "",
             "group": "Screen Analysis",
             "importance": "ignore",
-            "label": "Gaming"
+            "label": "gaming"
           },
           "media": {
             "extraction": "Extract 1 frame only - video playback content does not benefit from text extraction",
             "group": "Screen Analysis",
             "importance": "low",
-            "label": "Media"
+            "label": "media"
           },
           "meeting": {
             "extraction": "Extract when shared content type changes (screen share vs participant grid) or meeting platform differs",
             "group": "Screen Analysis",
             "importance": "high",
-            "label": "Meeting"
+            "label": "meeting"
           },
           "messaging": {
             "extraction": "Extract when conversation partner, channel, or messaging app changes",
             "group": "Screen Analysis",
             "importance": "high",
-            "label": "Messaging"
+            "label": "messaging"
           },
           "productivity": {
             "extraction": "Extract when different application or service is shown (e.g. ChatGPT vs Docs vs issue tracker)",
             "group": "Screen Analysis",
             "importance": "high",
-            "label": "Productivity"
+            "label": "productivity"
           },
           "reading": {
             "extraction": "Extract when viewing a different document, article, or PDF",
             "group": "Screen Analysis",
             "importance": "high",
-            "label": "Reading"
+            "label": "reading"
           },
           "social": {
             "extraction": "Extract when platform, feed context, or visible thread changes",
             "group": "Screen Analysis",
             "importance": "normal",
-            "label": "Social"
+            "label": "social"
           },
           "terminal": {
             "extraction": "Extract when showing distinctly different content (code diffs vs logs vs documentation)",
             "group": "Screen Analysis",
             "importance": "low",
-            "label": "Terminal"
+            "label": "terminal"
           }
         },
         "max_extractions": null,
@@ -11899,67 +11899,67 @@
               "extraction": "Extract when visiting distinctly different websites or search results",
               "group": "Screen Analysis",
               "importance": "normal",
-              "label": "Browsing"
+              "label": "browsing"
             },
             "calendar": {
               "extraction": "Extract when the visible date range, event detail, availability grid, booking page, or scheduling workflow changes",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Calendar"
+              "label": "calendar"
             },
             "code": {
               "extraction": "Extract when viewing different repositories, files, or switching between editor and browser",
               "group": "Screen Analysis",
               "importance": "low",
-              "label": "Code"
+              "label": "code"
             },
             "gaming": {
               "extraction": "",
               "group": "Screen Analysis",
               "importance": "ignore",
-              "label": "Gaming"
+              "label": "gaming"
             },
             "media": {
               "extraction": "Extract 1 frame only - video playback content does not benefit from text extraction",
               "group": "Screen Analysis",
               "importance": "low",
-              "label": "Media"
+              "label": "media"
             },
             "meeting": {
               "extraction": "Extract when shared content type changes (screen share vs participant grid) or meeting platform differs",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Meeting"
+              "label": "meeting"
             },
             "messaging": {
               "extraction": "Extract when conversation partner, channel, or messaging app changes",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Messaging"
+              "label": "messaging"
             },
             "productivity": {
               "extraction": "Extract when different application or service is shown (e.g. ChatGPT vs Docs vs issue tracker)",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Productivity"
+              "label": "productivity"
             },
             "reading": {
               "extraction": "Extract when viewing a different document, article, or PDF",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Reading"
+              "label": "reading"
             },
             "social": {
               "extraction": "Extract when platform, feed context, or visible thread changes",
               "group": "Screen Analysis",
               "importance": "normal",
-              "label": "Social"
+              "label": "social"
             },
             "terminal": {
               "extraction": "Extract when showing distinctly different content (code diffs vs logs vs documentation)",
               "group": "Screen Analysis",
               "importance": "low",
-              "label": "Terminal"
+              "label": "terminal"
             }
           },
           "max_extractions": 20,
@@ -13126,67 +13126,67 @@
               "extraction": "Extract when visiting distinctly different websites or search results",
               "group": "Screen Analysis",
               "importance": "normal",
-              "label": "Browsing"
+              "label": "browsing"
             },
             "calendar": {
               "extraction": "Extract when the visible date range, event detail, availability grid, booking page, or scheduling workflow changes",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Calendar"
+              "label": "calendar"
             },
             "code": {
               "extraction": "Extract when viewing different repositories, files, or switching between editor and browser",
               "group": "Screen Analysis",
               "importance": "low",
-              "label": "Code"
+              "label": "code"
             },
             "gaming": {
               "extraction": "",
               "group": "Screen Analysis",
               "importance": "ignore",
-              "label": "Gaming"
+              "label": "gaming"
             },
             "media": {
               "extraction": "Extract 1 frame only - video playback content does not benefit from text extraction",
               "group": "Screen Analysis",
               "importance": "low",
-              "label": "Media"
+              "label": "media"
             },
             "meeting": {
               "extraction": "Extract when shared content type changes (screen share vs participant grid) or meeting platform differs",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Meeting"
+              "label": "meeting"
             },
             "messaging": {
               "extraction": "Extract when conversation partner, channel, or messaging app changes",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Messaging"
+              "label": "messaging"
             },
             "productivity": {
               "extraction": "Extract when different application or service is shown (e.g. ChatGPT vs Docs vs issue tracker)",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Productivity"
+              "label": "productivity"
             },
             "reading": {
               "extraction": "Extract when viewing a different document, article, or PDF",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Reading"
+              "label": "reading"
             },
             "social": {
               "extraction": "Extract when platform, feed context, or visible thread changes",
               "group": "Screen Analysis",
               "importance": "normal",
-              "label": "Social"
+              "label": "social"
             },
             "terminal": {
               "extraction": "Extract when showing distinctly different content (code diffs vs logs vs documentation)",
               "group": "Screen Analysis",
               "importance": "low",
-              "label": "Terminal"
+              "label": "terminal"
             }
           },
           "max_extractions": null,
@@ -16179,67 +16179,67 @@
               "extraction": "Extract when visiting distinctly different websites or search results",
               "group": "Screen Analysis",
               "importance": "normal",
-              "label": "Browsing"
+              "label": "browsing"
             },
             "calendar": {
               "extraction": "Extract when the visible date range, event detail, availability grid, booking page, or scheduling workflow changes",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Calendar"
+              "label": "calendar"
             },
             "code": {
               "extraction": "Extract when viewing different repositories, files, or switching between editor and browser",
               "group": "Screen Analysis",
               "importance": "low",
-              "label": "Code"
+              "label": "code"
             },
             "gaming": {
               "extraction": "",
               "group": "Screen Analysis",
               "importance": "ignore",
-              "label": "Gaming"
+              "label": "gaming"
             },
             "media": {
               "extraction": "Extract 1 frame only - video playback content does not benefit from text extraction",
               "group": "Screen Analysis",
               "importance": "low",
-              "label": "Media"
+              "label": "media"
             },
             "meeting": {
               "extraction": "Extract when shared content type changes (screen share vs participant grid) or meeting platform differs",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Meeting"
+              "label": "meeting"
             },
             "messaging": {
               "extraction": "Extract when conversation partner, channel, or messaging app changes",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Messaging"
+              "label": "messaging"
             },
             "productivity": {
               "extraction": "Extract when different application or service is shown (e.g. ChatGPT vs Docs vs issue tracker)",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Productivity"
+              "label": "productivity"
             },
             "reading": {
               "extraction": "Extract when viewing a different document, article, or PDF",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Reading"
+              "label": "reading"
             },
             "social": {
               "extraction": "Extract when platform, feed context, or visible thread changes",
               "group": "Screen Analysis",
               "importance": "normal",
-              "label": "Social"
+              "label": "social"
             },
             "terminal": {
               "extraction": "Extract when showing distinctly different content (code diffs vs logs vs documentation)",
               "group": "Screen Analysis",
               "importance": "low",
-              "label": "Terminal"
+              "label": "terminal"
             }
           },
           "max_extractions": 42,
@@ -17493,67 +17493,67 @@
               "extraction": "Extract when visiting distinctly different websites or search results",
               "group": "Screen Analysis",
               "importance": "normal",
-              "label": "Browsing"
+              "label": "browsing"
             },
             "calendar": {
               "extraction": "Extract when the visible date range, event detail, availability grid, booking page, or scheduling workflow changes",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Calendar"
+              "label": "calendar"
             },
             "code": {
               "extraction": "Extract when viewing different repositories, files, or switching between editor and browser",
               "group": "Screen Analysis",
               "importance": "low",
-              "label": "Code"
+              "label": "code"
             },
             "gaming": {
               "extraction": "",
               "group": "Screen Analysis",
               "importance": "ignore",
-              "label": "Gaming"
+              "label": "gaming"
             },
             "media": {
               "extraction": "Extract 1 frame only - video playback content does not benefit from text extraction",
               "group": "Screen Analysis",
               "importance": "low",
-              "label": "Media"
+              "label": "media"
             },
             "meeting": {
               "extraction": "Extract when shared content type changes (screen share vs participant grid) or meeting platform differs",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Meeting"
+              "label": "meeting"
             },
             "messaging": {
               "extraction": "Extract when conversation partner, channel, or messaging app changes",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Messaging"
+              "label": "messaging"
             },
             "productivity": {
               "extraction": "Extract when different application or service is shown (e.g. ChatGPT vs Docs vs issue tracker)",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Productivity"
+              "label": "productivity"
             },
             "reading": {
               "extraction": "Extract when viewing a different document, article, or PDF",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Reading"
+              "label": "reading"
             },
             "social": {
               "extraction": "Extract when platform, feed context, or visible thread changes",
               "group": "Screen Analysis",
               "importance": "normal",
-              "label": "Social"
+              "label": "social"
             },
             "terminal": {
               "extraction": "Extract when showing distinctly different content (code diffs vs logs vs documentation)",
               "group": "Screen Analysis",
               "importance": "low",
-              "label": "Terminal"
+              "label": "terminal"
             }
           },
           "max_extractions": 42,
@@ -18718,67 +18718,67 @@
               "extraction": "Extract when visiting distinctly different websites or search results",
               "group": "Screen Analysis",
               "importance": "normal",
-              "label": "Browsing"
+              "label": "browsing"
             },
             "calendar": {
               "extraction": "Extract when the visible date range, event detail, availability grid, booking page, or scheduling workflow changes",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Calendar"
+              "label": "calendar"
             },
             "code": {
               "extraction": "Extract when viewing different repositories, files, or switching between editor and browser",
               "group": "Screen Analysis",
               "importance": "low",
-              "label": "Code"
+              "label": "code"
             },
             "gaming": {
               "extraction": "",
               "group": "Screen Analysis",
               "importance": "ignore",
-              "label": "Gaming"
+              "label": "gaming"
             },
             "media": {
               "extraction": "Extract 1 frame only - video playback content does not benefit from text extraction",
               "group": "Screen Analysis",
               "importance": "low",
-              "label": "Media"
+              "label": "media"
             },
             "meeting": {
               "extraction": "Extract when shared content type changes (screen share vs participant grid) or meeting platform differs",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Meeting"
+              "label": "meeting"
             },
             "messaging": {
               "extraction": "Extract when conversation partner, channel, or messaging app changes",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Messaging"
+              "label": "messaging"
             },
             "productivity": {
               "extraction": "Extract when different application or service is shown (e.g. ChatGPT vs Docs vs issue tracker)",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Productivity"
+              "label": "productivity"
             },
             "reading": {
               "extraction": "Extract when viewing a different document, article, or PDF",
               "group": "Screen Analysis",
               "importance": "high",
-              "label": "Reading"
+              "label": "reading"
             },
             "social": {
               "extraction": "Extract when platform, feed context, or visible thread changes",
               "group": "Screen Analysis",
               "importance": "normal",
-              "label": "Social"
+              "label": "social"
             },
             "terminal": {
               "extraction": "Extract when showing distinctly different content (code diffs vs logs vs documentation)",
               "group": "Screen Analysis",
               "importance": "low",
-              "label": "Terminal"
+              "label": "terminal"
             }
           },
           "max_extractions": 42,
