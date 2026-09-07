@@ -3941,7 +3941,13 @@
   const DISCOVERY_SCAN_LABEL = 'look for new voices';
   const DISCOVERY_SCAN_RUNNING = 'looking for new voices…';
   const DISCOVERY_EMPTY = 'no new voices are waiting. check again any time.';
+  // X-11 turned the scan into an owner action, which created a state the page
+  // had no sentence for: nothing has looked yet. "found nothing" and "has not
+  // looked" read identically, and only one of them has an action.
+  const DISCOVERY_NEVER_RUN = 'nothing has looked for new voices yet. use "look for new voices" above to start.';
   const DISCOVERY_LOAD_ERROR = "couldn't load new voices right now.";
+  const KNOWN_LOAD_ERROR = "couldn't load known voices";
+  const DISCOVERY_HANDOFF_BUSY = 'looking for new voices waits until you finish with the voice you came here for.';
   let lastKnownData = null;
   let discoveryScanRunning = false;
   let qualityRequestSeq = 0;
@@ -4338,8 +4344,7 @@
     const requestSeq = knownRequestSeq + 1;
     knownRequestSeq = requestSeq;
     const sort = sortSelect.value || COPY.SPK_OVERVIEW_KNOWN_VOICES_SORTS[0];
-    return fetch(`/app/speakers/api/speakers/known?sort=${encodeURIComponent(sort)}`)
-      .then((response) => response.json())
+    return window.apiJson(`/app/speakers/api/speakers/known?sort=${encodeURIComponent(sort)}`)
       .then((data) => {
         if (requestSeq !== knownRequestSeq) return false;
         renderKnown(data);
@@ -4347,7 +4352,19 @@
       })
       .catch((err) => {
         if (requestSeq !== knownRequestSeq) return false;
-        renderKnown({speakers: []});
+        // X-03: a read that failed used to render {speakers: []}, which is the
+        // "no one else's voice has been learned yet" state — the app told the
+        // owner their known voices were gone. A failed read says so, and the
+        // bare fetch above swallowed an HTTP error into that same lie.
+        window.logError?.(err, { context: 'speakers-known' });
+        knownContainer.innerHTML = window.SurfaceState.error({
+          heading: KNOWN_LOAD_ERROR,
+          desc: window.CONVEY_COPY.RELOAD_HINT,
+          serverMessage: err?.serverMessage || err?.message || '',
+          detail: err,
+        });
+        sortSelect.hidden = true;
+        knownFilter.hidden = true;
         if (throwOnError) throw err;
         return false;
       });
@@ -4549,7 +4566,10 @@
     // because it now carries the only control that looks for new voices.
     discoverySection.hidden = false;
     if (!clusters.length) {
-      discoveryContainer.innerHTML = `<p class="spk-overview-muted">${escapeHtml(DISCOVERY_EMPTY)}</p>`;
+      // The cache reports its own absence, and it is not the same answer as an
+      // empty one: no look has run against this journal yet.
+      const neverLooked = data?.status === 'cache_unavailable';
+      discoveryContainer.innerHTML = `<p class="spk-overview-muted">${escapeHtml(neverLooked ? DISCOVERY_NEVER_RUN : DISCOVERY_EMPTY)}</p>`;
       return;
     }
     const renderCluster = (cluster) => `
@@ -4601,6 +4621,19 @@
   // work and a blocked write read as a failure. The scan runs only from here.
   function runOwnerDiscoveryScan() {
     if (discoveryScanRunning) return Promise.resolve(false);
+    // X-11 / L10: the scan is deliberately held while a handoff is open, and
+    // the button used to flicker to "looking…" and back with nothing said, so
+    // the owner's only reading was that the control does not work. Say why.
+    if (overviewHandoffSheetOpen || hasOverviewHandoff()) {
+      overviewDiscoveryNotice = {
+        type: 'info',
+        messages: [DISCOVERY_HANDOFF_BUSY],
+        retry: false,
+      };
+      renderOverviewDiscoveryNotice();
+      discoverySection.hidden = false;
+      return Promise.resolve(false);
+    }
     discoveryScanRunning = true;
     overviewDiscoveryNotice = null;
     renderOverviewDiscoveryNotice();

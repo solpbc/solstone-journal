@@ -1079,11 +1079,124 @@ async function main() {
   );
   const facetReset = byTag(facetHost, 'button').filter((child) => child.textContent === 'show all facets');
   assert.strictEqual(facetReset.length, 1, 'the facet empty state offers a way back instead of stranding the owner');
+  // X-03: 20260208 carries a run still in flight, so it is deliberately not
+  // cached and clearing the facet reads it again.
+  dayResponses.push(Promise.resolve({
+    uses: [
+      {id: 'flight-1', name: 'pulse', start: 1788662697014, status: 'completed', provider: 'local', model: 'local/qwen3.5-4b', runtime_seconds: 20},
+      {id: 'flight-2', name: 'pulse', start: 1788662697014, status: 'completed', provider: 'local', model: 'local/qwen3.5-4b', runtime_seconds: 20},
+      {id: 'flight-3', name: 'pulse', start: 1788662697014, status: 'running', provider: 'local', model: 'local/qwen3.5-4b'},
+      {id: 'partner-1', name: 'partner', start: 1788662697014, status: 'completed'},
+      {id: 'observer-1', name: 'entities:entity_observer', start: 1788662697014, status: 'completed'},
+      {id: 'untitled-1', name: 'untitled_talent', start: 1788662697014, status: 'completed'},
+    ],
+    facets: [{name: 'work', title: 'work life'}],
+    talents: {
+      pulse: {title: 'Pulse'},
+      partner: {title: 'your profile'},
+      'entities:entity_observer': {title: 'Entity Observer'},
+      untitled_talent: {title: 'untitled_talent'},
+    },
+  }));
   facetReset[0].emit('click');
   await settle();
   await settle();
   assert.strictEqual(thinking.state.runsFacet, '', 'showing all facets clears the picked facet');
   assert.strictEqual(runGroups(nodes.get('thinkingRunsContent')).length, 4, 'clearing the facet brings the day back');
+  assert.strictEqual(
+    thinking.state.runsCache.day.has('day:20260208:facet:'),
+    false,
+    'a day holding a run that has not finished is never cached, so "still running" cannot outlive the run',
+  );
+
+  // X-03: the day cache is what made "still running" outlive the run. A day
+  // with nothing in flight caches and is served from the cache; a day with a
+  // run in flight is read again every time the owner comes back to it.
+  dayResponses.push(Promise.resolve({uses: [
+    {id: 'settled-1', name: 'pulse', start: 1788662697014, status: 'completed', runtime_seconds: 12},
+  ], facets: []}));
+  window.location.hash = '#runs/20260209';
+  thinking.routeThinkingHash('history');
+  await settle();
+  await settle();
+  assert.strictEqual(
+    thinking.state.runsCache.day.has('day:20260209:facet:'),
+    true,
+    'a day whose runs have all finished still caches',
+  );
+  const readsBeforeReturn = requests.filter((url) => url.startsWith('/app/thinking/api/talents/20260208')).length;
+  window.location.hash = '#runs/20260208';
+  thinking.routeThinkingHash('history');
+  await settle();
+  await settle();
+  assert.strictEqual(
+    requests.filter((url) => url.startsWith('/app/thinking/api/talents/20260208')).length,
+    readsBeforeReturn + 1,
+    'coming back to a day that held a run in flight reads it again rather than replaying the cache',
+  );
+
+  // X-03: the register is sentence case, and lowercasing a whole authored
+  // title flattened the vendor names inside it too.
+  dayResponses.push(Promise.resolve({
+    uses: [{id: 'brand-1', name: 'summary', start: 1788662697014, status: 'completed'}],
+    facets: [],
+    talents: {summary: {title: 'Gemini Summary'}},
+  }));
+  window.location.hash = '#runs/20260210';
+  thinking.routeThinkingHash('history');
+  await settle();
+  await settle();
+  assert.strictEqual(
+    groupTitle(runGroups(nodes.get('thinkingRunsContent'))[0]),
+    'Gemini summary',
+    "a vendor's own name keeps its case while the rest of the title lowercases",
+  );
+
+  // X-03: both filters on is the one combination that used to strand the
+  // owner — the sentence counted the facet and called it the day, and the
+  // escape that clears the facet was withheld exactly then.
+  thinking.state.runsFailuresOnly = true;
+  dayResponses.push(Promise.resolve({
+    uses: [
+      {id: 'both-1', name: 'pulse', start: 1788662697014, status: 'completed'},
+      {id: 'both-2', name: 'pulse', start: 1788662697014, status: 'completed'},
+      {id: 'both-3', name: 'pulse', start: 1788662697014, status: 'completed'},
+      {id: 'both-4', name: 'pulse', start: 1788662697014, status: 'completed'},
+    ],
+    facets: [{name: 'work', title: 'work life'}],
+  }));
+  window.location.hash = '#runs/20260211';
+  thinking.routeThinkingHash('history');
+  await settle();
+  await settle();
+  dayResponses.push(Promise.resolve({
+    uses: [
+      {id: 'both-1', name: 'pulse', start: 1788662697014, status: 'completed'},
+      {id: 'both-2', name: 'pulse', start: 1788662697014, status: 'completed'},
+      {id: 'both-3', name: 'pulse', start: 1788662697014, status: 'completed'},
+      {id: 'both-4', name: 'pulse', start: 1788662697014, status: 'completed'},
+    ],
+    facets: [{name: 'work', title: 'work life'}],
+  }));
+  nodes.get('thinkingRunsFacet').emit('change', {target: {value: 'work'}});
+  await settle();
+  await settle();
+  const bothFiltersHost = nodes.get('thinkingRunsContent');
+  assert.deepStrictEqual(
+    byTag(bothFiltersHost, 'p').map((child) => child.textContent),
+    ['no failed runs match this view', 'all 4 runs in work life on this day completed.'],
+    'the failures-only sentence names the filter whose runs it counted',
+  );
+  assert.deepStrictEqual(
+    byTag(bothFiltersHost, 'button').map((child) => child.textContent),
+    ['show all facets', 'show all runs'],
+    'with both filters narrowing the view, both ways out are offered',
+  );
+  thinking.state.runsFailuresOnly = false;
+  dayResponses.push(Promise.resolve({uses: [], facets: []}));
+  nodes.get('thinkingRunsFacet').emit('change', {target: {value: ''}});
+  await settle();
+  await settle();
 
   const now = new Date();
   const todayDay = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;

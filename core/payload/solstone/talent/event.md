@@ -51,7 +51,7 @@ Return `[]` if you do not observe a clear commitment / closure / decision / rela
 
 Body requirements:
 - Write one tight paragraph in chronological order.
-- Capture the event context, notable actions, and any decision or outcome.
+- Include the event context, notable actions, and any decision or outcome.
 - Prefer what actually occurred over generic labels from the activity type.
 - If evidence is thin, keep the narrative modest and confidence honest.
 

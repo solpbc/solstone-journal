@@ -12,7 +12,7 @@ use axum::{
 };
 use chrono::{Datelike, Local, NaiveDate};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_indexer_query::{
     IndexAccessError, IndexedEntry, SearchRequest, read_indexed_entry, search, search_counts,
@@ -143,6 +143,7 @@ fn search_response(journal_root: PathBuf, query: SearchQuery) -> Response {
             .results
             .into_iter()
             .map(|hit| {
+                let readable = readable_record(&hit.text);
                 json!({
                     "id": hit.id,
                     "entry_id": hit.row_id,
@@ -151,7 +152,9 @@ fn search_response(journal_root: PathBuf, query: SearchQuery) -> Response {
                     "agent_label": agent_label(&hit.metadata.agent),
                     "facet": hit.metadata.facet,
                     "facet_title": facets.get(&hit.metadata.facet).map_or(&hit.metadata.facet, |facet| &facet.title),
-                    "text": highlight(&hit.text, &request.query),
+                    "text": highlight(readable.as_ref().map_or(hit.text.as_str(), |record| record.text.as_str()), &request.query),
+                    "ts": readable.as_ref().and_then(|record| record.ts),
+                    "record": readable.as_ref().map(|_| cap_words(&hit.text)),
                     "stream": hit.metadata.stream,
                     "path": hit.metadata.path,
                     "idx": hit.metadata.idx,
@@ -451,12 +454,118 @@ fn agent_label(agent: &str) -> String {
         .join(" ")
 }
 
-fn highlight(text: &str, query: &str) -> String {
-    let words = text.split_whitespace().take(50).collect::<Vec<_>>();
-    let mut value = html_escape(&words.join(" "));
+/// The human fields of a stored agent record, in the order a reader wants them.
+///
+/// G2-B04 read these on the client, out of the excerpt the server had already
+/// sent. That excerpt is capped at 50 words with `...` appended, so any record
+/// longer than 50 words no longer parsed as JSON and the whole readable path
+/// silently stopped firing — the owner got braces, keys and a raw model id back
+/// for exactly the records with the most to say. The record is read here, where
+/// it is still whole, and the cap then applies to the sentences.
+const RECORD_TEXT_FIELDS: [&str; 8] = [
+    "headline",
+    "summary_sentence",
+    "summary",
+    "text",
+    "body",
+    "sentence",
+    "message",
+    "note",
+];
+
+/// The readable sentences and timestamp of a stored agent record.
+struct ReadableRecord {
+    text: String,
+    ts: Option<i64>,
+}
+
+/// A stored `ts` is milliseconds on every record the indexer writes, but a
+/// record carried in from an import can hold seconds. No real journal timestamp
+/// in milliseconds is below 1e11 (that is 1973 in seconds, 1970 in
+/// milliseconds), so a value under it is seconds and is read as seconds.
+fn record_millis(value: i64) -> Option<i64> {
+    if value <= 0 {
+        return None;
+    }
+    Some(if value < 100_000_000_000 {
+        value * 1000
+    } else {
+        value
+    })
+}
+
+/// Read a stored agent record's human sentences, or `None` when the text is not
+/// one.
+fn readable_record(text: &str) -> Option<ReadableRecord> {
+    let raw = text.trim();
+    if !raw.starts_with('{') || !raw.ends_with('}') {
+        return None;
+    }
+    let record: Map<String, Value> = serde_json::from_str(raw).ok()?;
+    let mut parts: Vec<String> = Vec::new();
+    for field in RECORD_TEXT_FIELDS {
+        let part = match record.get(field).and_then(Value::as_str) {
+            Some(value) => value.trim(),
+            None => continue,
+        };
+        if part.is_empty() {
+            continue;
+        }
+        // A summary that already opens with the headline would say it twice.
+        // Of two values where one contains the other, the longer one is the one
+        // that carries everything the shorter one said (F-22).
+        if let Some(index) = parts
+            .iter()
+            .position(|seen| seen.contains(part) || part.contains(seen.as_str()))
+        {
+            if part.len() > parts[index].len() {
+                parts[index] = part.to_owned();
+            }
+            continue;
+        }
+        parts.push(part.to_owned());
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    // A headline rarely ends in a full stop, so joining on a bare space runs it
+    // into the sentence that follows it.
+    let mut sentences = String::new();
+    for part in parts {
+        if sentences.is_empty() {
+            sentences.push_str(&part);
+            continue;
+        }
+        if !sentences.ends_with(['.', '!', '?', '\u{2026}']) {
+            sentences.push('.');
+        }
+        sentences.push(' ');
+        sentences.push_str(&part);
+    }
+    Some(ReadableRecord {
+        text: sentences,
+        ts: record
+            .get("ts")
+            .and_then(Value::as_i64)
+            .and_then(record_millis),
+    })
+}
+
+/// The excerpt cap: 50 words, with an ellipsis when there was more.
+fn cap_words(text: &str) -> String {
+    let mut value = text
+        .split_whitespace()
+        .take(50)
+        .collect::<Vec<_>>()
+        .join(" ");
     if text.split_whitespace().count() > 50 {
         value.push_str("...");
     }
+    value
+}
+
+fn highlight(text: &str, query: &str) -> String {
+    let mut value = html_escape(&cap_words(text));
     for term in highlight_terms(query) {
         if term.len() >= 2 {
             value = replace_case_insensitive(&value, &term);
@@ -779,6 +888,80 @@ mod highlight_phrase_tests {
         // Not split into two independent spans.
         assert!(!result.contains("<strong>release</strong>"));
         assert!(!result.contains("<strong>burn</strong>"));
+    }
+
+    // F-5: the readable path used to run on the client, on an excerpt the
+    // server had already capped at 50 words — so a record with more than 50
+    // words in it stopped parsing as JSON and the owner got the raw record
+    // back for exactly the entries with the most to say.
+    #[test]
+    fn a_long_record_still_reads_as_sentences() {
+        let sentence = "the release burn ran again ".repeat(40);
+        let record = json!({
+            "headline": "thursday afternoon",
+            "summary": sentence.trim(),
+            "model": "local/qwen3.5-4b",
+            "ts": 1_788_662_697_014_i64,
+        })
+        .to_string();
+        assert!(record.split_whitespace().count() > 50);
+        let readable = readable_record(&record).expect("a stored record reads");
+        assert!(
+            readable
+                .text
+                .starts_with("thursday afternoon. the release burn ran again"),
+            "{}",
+            readable.text
+        );
+        assert!(!readable.text.contains("qwen3.5-4b"));
+        assert_eq!(readable.ts, Some(1_788_662_697_014));
+        // The readable text is what the excerpt is built from now, so the
+        // matched terms are still bolded on it (L12).
+        let excerpt = highlight(&readable.text, "\"release burn\"");
+        assert!(
+            excerpt.contains("<strong>release burn</strong>"),
+            "{excerpt}"
+        );
+        assert!(excerpt.ends_with("..."), "{excerpt}");
+    }
+
+    #[test]
+    fn a_short_record_reads_as_sentences() {
+        let record = json!({"headline": "release burn", "summary": "it finished.", "ts": 1_788_662_697_014_i64})
+            .to_string();
+        let readable = readable_record(&record).expect("a stored record reads");
+        assert_eq!(readable.text, "release burn. it finished.");
+    }
+
+    // F-22: of two values where one contains the other, the longer one carries
+    // everything the shorter one said. Keeping the shorter one threw away the
+    // sentence and left the fragment.
+    #[test]
+    fn a_containing_value_replaces_the_one_it_contains() {
+        let record = json!({
+            "headline": "release burn",
+            "summary": "release burn finished at noon.",
+        })
+        .to_string();
+        let readable = readable_record(&record).expect("a stored record reads");
+        assert_eq!(readable.text, "release burn finished at noon.");
+    }
+
+    // F-32: an imported record can carry seconds. No millisecond journal
+    // timestamp is below 1e11, so a value under it is read as seconds.
+    #[test]
+    fn a_seconds_timestamp_is_read_as_seconds() {
+        assert_eq!(record_millis(1_788_662_697), Some(1_788_662_697_000));
+        assert_eq!(record_millis(1_788_662_697_014), Some(1_788_662_697_014));
+        assert_eq!(record_millis(0), None);
+        assert_eq!(record_millis(-1), None);
+    }
+
+    #[test]
+    fn text_that_is_not_a_record_is_left_alone() {
+        assert!(readable_record("we discussed the release burn timeline").is_none());
+        assert!(readable_record("{not json}").is_none());
+        assert!(readable_record(r#"{"model": "local/qwen3.5-4b"}"#).is_none());
     }
 
     #[test]

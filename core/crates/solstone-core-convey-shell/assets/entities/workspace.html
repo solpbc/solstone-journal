@@ -2359,6 +2359,12 @@ function populateEntityTypeSelect() {
   const select = document.getElementById('journal-detail-edit-type');
   if (!select) return;
   const placeholder = select.querySelector('option[data-placeholder]');
+  // X-03: the mirror case. When the record landed first the placeholder is
+  // gone and the select is carrying that entity's own type, and rebuilding the
+  // options underneath it dropped the selection to whichever type sorts first
+  // — which the next save would then have written back over the real one.
+  // Read the loaded type before the rebuild and put it back after.
+  const loadedType = placeholder ? '' : select.value;
   select.replaceChildren();
   if (placeholder) select.appendChild(placeholder);
   ENTITY_TYPES.forEach(t => {
@@ -2367,7 +2373,8 @@ function populateEntityTypeSelect() {
     opt.textContent = t.name.toLowerCase();
     select.appendChild(opt);
   });
-  select.value = placeholder ? '' : select.value;
+  if (placeholder) select.value = '';
+  else setJournalEditType(loadedType);
 }
 
 // Load entity types from server and populate UI elements
@@ -3777,6 +3784,11 @@ function setJournalEditReady() {
 }
 
 function showJournalDetailView(entityId) {
+  // X-03: this view had no request guard at all, so opening one entity and
+  // then another raced two reads at the same form: the slower one won and the
+  // owner edited a record they were no longer looking at. Same token the facet
+  // detail view uses, so opening either one retires the other's in-flight read.
+  const openToken = beginDetailObservationOpen();
   // Show loading state
   currentDetailEntity = null;
   const knownName = knownEntityName(entityId);
@@ -3793,6 +3805,7 @@ function showJournalDetailView(entityId) {
   fetch(`api/journal/entity/${encodeURIComponent(entityId)}`)
     .then(response => response.json())
     .then(data => {
+      if (!detailObservationTokenCurrent(openToken)) return;
       if (data.error) {
         throw new Error(data.error);
       }
@@ -3800,6 +3813,7 @@ function showJournalDetailView(entityId) {
       renderJournalDetailView(data.entity);
     })
     .catch(error => {
+      if (!detailObservationTokenCurrent(openToken)) return;
       console.error('Error loading journal entity details:', error);
       document.getElementById('journal-detail-name').textContent = knownName;
       setJournalEditLoading("this entity couldn't be loaded, so it can't be edited.", 'unavailable');

@@ -374,7 +374,8 @@
               "anthropic": "Claude",
               "google": "Gemini",
               "local": "Local",
-              "openai": "GPT"
+              "openai": "GPT",
+              "spp": "confidential processing"
             },
             "state_labels": {
               "active": "active",
@@ -2602,7 +2603,8 @@
               "anthropic": "Claude",
               "google": "Gemini",
               "local": "Local",
-              "openai": "GPT"
+              "openai": "GPT",
+              "spp": "confidential processing"
             },
             "state_labels": {
               "active": "active",
@@ -4828,7 +4830,8 @@
               "anthropic": "Claude",
               "google": "Gemini",
               "local": "Local",
-              "openai": "GPT"
+              "openai": "GPT",
+              "spp": "confidential processing"
             },
             "state_labels": {
               "active": "active",
@@ -7034,7 +7037,8 @@
               "anthropic": "Claude",
               "google": "Gemini",
               "local": "Local",
-              "openai": "GPT"
+              "openai": "GPT",
+              "spp": "confidential processing"
             },
             "state_labels": {
               "active": "active",
@@ -9424,7 +9428,8 @@
               "anthropic": "Claude",
               "google": "Gemini",
               "local": "Local",
-              "openai": "GPT"
+              "openai": "GPT",
+              "spp": "confidential processing"
             },
             "state_labels": {
               "active": "active",
@@ -12957,7 +12962,8 @@
               "anthropic": "Claude",
               "google": "Gemini",
               "local": "Local",
-              "openai": "GPT"
+              "openai": "GPT",
+              "spp": "confidential processing"
             },
             "state_labels": {
               "active": "active",

@@ -79,11 +79,15 @@
     google: 'GOOGLE_API_KEY',
     openai: 'OPENAI_API_KEY',
   };
+  // X-03: the confidential lane is a provider like any other as far as a run
+  // record is concerned, and with no entry here a confidential run rendered
+  // its raw slug ("spp"). It is named the way the lane labels name it.
   const fallbackProviderLabels = {
     anthropic: 'Claude',
     google: 'Gemini',
     openai: 'GPT',
     local: 'Local',
+    spp: 'confidential processing',
   };
   let providerLabels = fallbackProviderLabels;
   // Mirrors stats' MODEL_LABELS (solstone-core-stats-web/assets/static/token-card.js):
@@ -1057,6 +1061,10 @@
     return state.runsCache[kind].get(key) || null;
   }
 
+  function evictThinkingCache(kind, key) {
+    state.runsCache[kind].delete(key);
+  }
+
   function writeThinkingCache(kind, key, value, token) {
     if (!isCurrentThinkingRequest(token)) return false;
     state.runsCache[kind].set(key, value);
@@ -1591,8 +1599,15 @@
       // a day where matchingRuns.length runs plainly did happen — just none of
       // them failed. Say what's true for that case instead.
       if (state.runsFailuresOnly && matchingRuns.length) {
+        // X-03: the server narrows the day payload to the picked facet, so
+        // matchingRuns is the facet's runs, not the day's. Reported as the day
+        // it told the owner nothing failed when the runs it did not fetch may
+        // well have. Name the filter that produced the number.
         const count = matchingRuns.length;
-        detail.textContent = `all ${count} ${count === 1 ? 'run' : 'runs'} on this day completed.`;
+        const runWord = count === 1 ? 'run' : 'runs';
+        detail.textContent = facetFiltered
+          ? `all ${count} ${runWord} in ${facetTitle} on this day completed.`
+          : `all ${count} ${runWord} on this day completed.`;
       } else if (route.talent) {
         detail.textContent = 'this day has no matching run record in the current view. try all talents or another day.';
       } else if (facetFiltered) {
@@ -1608,7 +1623,11 @@
         detail.textContent = 'runs appear here when processing takes place.';
       }
       host.append(heading, detail);
-      if (facetFiltered && !state.runsFailuresOnly && !route.talent) {
+      // X-03: this escape used to be withheld whenever the failures-only box
+      // was ticked, which is the one combination the owner is most likely to
+      // be stuck in — both filters on, nothing showing, and only one of the
+      // two ways out offered. Both buttons appear when both filters apply.
+      if (facetFiltered && !route.talent) {
         const showAll = document.createElement('button');
         showAll.type = 'button';
         showAll.className = 'thinking-runs-control';
@@ -1762,12 +1781,24 @@
     state.runsGroupShown.clear();
   }
 
+  // X-03: a run that was mid-flight when the day was read is the one fact on
+  // this page with a shelf life. Serving it from the day cache meant "still
+  // running" outlived the run — the owner came back an hour later and the
+  // table still said so. A day that holds one is read again, never cached.
+  function thinkingDayHasRunningRun(payload) {
+    return normalizedThinkingRuns(payload).some((run) => run.status === 'running');
+  }
+
   function loadThinkingRuns(route, force = false) {
     if (!route || route.kind !== 'runs') return;
     const key = thinkingCacheKey('day', {day: route.day, facet: state.runsFacet});
     updateThinkingRunsDayControls(route);
     resetThinkingRunGroups(key);
-    const cached = readThinkingCache('day', key);
+    let cached = readThinkingCache('day', key);
+    if (cached && thinkingDayHasRunningRun(cached)) {
+      evictThinkingCache('day', key);
+      cached = null;
+    }
     if (cached && !force) {
       renderThinkingRunsDay(cached, route);
       loadThinkingUpdatedDays();
@@ -1783,6 +1814,7 @@
         loadThinkingUpdatedDays();
       },
       renderThinkingRunsFailure,
+      (payload) => !thinkingDayHasRunningRun(payload),
     );
   }
 
@@ -2055,8 +2087,17 @@
     routeThinkingHash('pointer');
   }
 
+  // X-03: every map below is a plain object literal, and a run record supplies
+  // the key. A model id or provider slug of `constructor` (or `toString`, or
+  // `__proto__`) reached Object.prototype and rendered a function's source as
+  // a fact on the table. Read own properties only.
+  function mapValue(map, key) {
+    if (!map || typeof map !== 'object' || typeof key !== 'string') return undefined;
+    return Object.hasOwn(map, key) ? map[key] : undefined;
+  }
+
   function providerLabel(provider) {
-    return providerLabels[provider] || provider || 'provider';
+    return mapValue(providerLabels, provider) || provider || 'provider';
   }
 
   // Prior partial G2-05: the runs table and cards still showed the raw
@@ -2074,7 +2115,7 @@
     // ("qwen3.5-4b") while stats showed the same run as "Qwen 3.5 4B
     // (local)" — same model, three renderings across the two apps (G2-43).
     const qualifiedId = prefix.length > 1 && modelId.startsWith(prefix) ? modelId : `${prefix}${modelId}`;
-    const knownLabel = LOCAL_MODEL_LABELS[qualifiedId.toLowerCase()];
+    const knownLabel = mapValue(LOCAL_MODEL_LABELS, qualifiedId.toLowerCase());
     if (knownLabel) return knownLabel;
     const tierLabel = byoModelLabel(run.provider, modelId, state.providers);
     if (tierLabel && tierLabel !== modelId) return tierLabel;
@@ -2098,7 +2139,21 @@
     if (!run.provider) return run.provider;
     const key = String(run.provider).toLowerCase();
     if (key === 'local') return 'local';
-    return RUN_PROVIDER_LABELS[key] || providerLabel(run.provider);
+    return mapValue(RUN_PROVIDER_LABELS, key) || providerLabel(run.provider);
+  }
+
+  // X-03: the register is sentence case, and lowercasing the whole title also
+  // flattened the third-party names inside it — "Gemini Summary" arrived as
+  // "gemini summary", which is not what Google calls it. A vendor's own name
+  // keeps the vendor's casing; every other word lowercases as before. A Map,
+  // not an object literal, so a talent titled "constructor" reads as itself.
+  const TITLE_BRANDS = ['AI', 'Anthropic', 'Claude', 'Cloudflare', 'Gemini', 'Google', 'GPT', 'OpenAI', 'Qwen'];
+  const titleBrandByKey = new Map(TITLE_BRANDS.map((name) => [name.toLowerCase(), name]));
+
+  function talentTitleCase(title) {
+    return String(title).replace(/[A-Za-z]+/g, (word) => (
+      titleBrandByKey.get(word.toLowerCase()) || word.toLowerCase()
+    ));
   }
 
   // The day payload already carries every talent's authored title; the runs
@@ -2112,7 +2167,7 @@
       const title = String((metadata && metadata.title) || '').trim();
       // The reads layer defaults a missing title to the talent key, so a title
       // equal to the id is "this talent has no title", not a name anyone chose.
-      if (title && title !== id) titles[id] = title.toLowerCase();
+      if (title && title !== id) titles[id] = talentTitleCase(title);
     });
     talentTitles = titles;
   }
@@ -2120,7 +2175,7 @@
   function talentLabel(name) {
     const id = String(name || '');
     if (!id) return '';
-    return talentLabels[id] || talentTitles[id] || id.replace(/[_:]+/g, ' ');
+    return mapValue(talentLabels, id) || mapValue(talentTitles, id) || id.replace(/[_:]+/g, ' ');
   }
 
   function configuredProviders() {

@@ -105,6 +105,10 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ("google", CopyValue::String("Gemini")),
             ("openai", CopyValue::String("GPT")),
             ("local", CopyValue::String("Local")),
+            // X-03: a run on the confidential lane carries "spp" as its
+            // provider. With no label for it the runs view rendered the raw
+            // slug; the name here matches the lane label above.
+            ("spp", CopyValue::String("confidential processing")),
         ]),
     ),
     (

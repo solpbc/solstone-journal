@@ -62,40 +62,17 @@
  }
  // G2-B04: a stored agent output is a JSON record, and the excerpt used to be
  // that record — braces, keys, the raw model id and a millisecond epoch, with
- // the one readable sentence buried inside it. Read the record's human fields
- // and its timestamp; the whole record still lives behind "read matched entry",
- // where "as last indexed" already sets the right expectation.
- const RECORD_TEXT_FIELDS=['headline','summary_sentence','summary','text','body','sentence','message','note'];
- // The API hands back an escaped excerpt with <strong> around the matched
- // terms, so the record has to be decoded before it can be read as JSON.
- function plainText(value){
-  return new DOMParser().parseFromString(String(value||''),'text/html').body.textContent||'';
- }
- function readableRecord(value){
-  const raw=plainText(value).trim();
-  if(!raw.startsWith('{')||!raw.endsWith('}'))return null;
-  let record;
-  try{record=JSON.parse(raw);}catch(error){return null;}
-  if(!record||typeof record!=='object'||Array.isArray(record))return null;
-  const parts=[];
-  for(const field of RECORD_TEXT_FIELDS){
-   const part=typeof record[field]==='string'?record[field].trim():'';
-   // A summary that already opens with the headline would say it twice.
-   if(part&&!parts.some(seen=>seen.includes(part)||part.includes(seen)))parts.push(part);
-  }
-  if(!parts.length)return null;
-  // A headline rarely ends in a full stop, so joining on a bare space runs it
-  // into the sentence that follows it.
-  const text=parts.reduce((sentence,part)=>sentence?(/[.!?…]$/.test(sentence)?sentence+' '+part:sentence+'. '+part):part,'');
-  const stamp=Number(record.ts);
-  return {text,time:Number.isFinite(stamp)&&stamp>0?window.JournalFormat.time(stamp):''};
- }
+ // the one readable sentence buried inside it. The record is now read on the
+ // server, before the 50-word cap that used to make anything longer than 50
+ // words unparseable here and silently drop the whole readable path; the hit
+ // arrives as readable text with its terms already bolded, its timestamp in
+ // `ts`, and the stored record itself in `record`.
  function renderHit(hit,dayHref){
   const card=node('article','search-result');const meta=node('div','search-meta');
-  const record=readableRecord(hit.text);
-  for(const text of [hit.agent_label,hit.facet_title,window.JournalFormat.stream(hit.stream),record&&record.time])if(text)meta.append(node('span','',text));
+  const recordTime=Number.isFinite(hit.ts)&&hit.ts>0?window.JournalFormat.time(hit.ts):'';
+  for(const text of [hit.agent_label,hit.facet_title,window.JournalFormat.stream(hit.stream),recordTime])if(text)meta.append(node('span','',text));
   card.append(meta);const text=node('p','search-excerpt');
-  if(record)text.textContent=record.text;else text.append(excerpt(hit.text));
+  text.append(excerpt(hit.text));
   card.append(text);
   const actions=node('div','search-actions');const destination=sourceLink(hit);
   if(destination){const a=node('a','search-link',String(hit.path).startsWith('entity_search:')?'open entity':'open transcript');a.href=destination;actions.append(a);}
@@ -119,7 +96,7 @@
    // No entry to open, so the disclosure that normally holds the raw record is
    // not there. Keep the record reachable rather than dropping it (G2-B04).
    if(actions.childNodes.length)card.append(actions);
-   if(record){const disclosure=node('details');disclosure.append(node('summary','','the stored record'),node('pre','search-source',plainText(hit.text)));card.append(disclosure);}
+   if(hit.record){const disclosure=node('details');disclosure.append(node('summary','','the stored record'),node('pre','search-source',String(hit.record)));card.append(disclosure);}
   }
   return card;
  }

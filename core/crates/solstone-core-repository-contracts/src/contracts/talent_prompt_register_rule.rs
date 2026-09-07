@@ -52,7 +52,13 @@ fn talent_prompt_dir() -> PathBuf {
 /// Top-level `*.md` files in the talent directory, sorted by file name.
 ///
 /// Nested directories hold reference bundles and shared patterns rather than
-/// prompts, so the walk is deliberately one level deep.
+/// prompts, so the walk is deliberately one level deep. That is a scope, not an
+/// oversight, and it has a cost worth naming: the docs under `talent/journal/`
+/// are read by prompts that this contract does check, so vocabulary drift can
+/// enter through a file the walk never opens. Those bundles are swept by the
+/// review lane, not by this contract — a vocabulary ban asserted over them
+/// would have to allow every identifier, schema key and example value they
+/// carry, and an allowlist that long fails for reasons unrelated to register.
 fn talent_prompts() -> Vec<PathBuf> {
     let directory = talent_prompt_dir();
     let mut prompts: Vec<PathBuf> = fs::read_dir(&directory)

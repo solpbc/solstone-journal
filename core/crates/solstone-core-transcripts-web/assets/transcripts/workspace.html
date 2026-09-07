@@ -5644,10 +5644,17 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   function boundEntryList(targetEl) {
     const list = targetEl.querySelector('.tr-unified');
     if (!list) return;
-    const rest = Array.from(list.querySelectorAll(':scope > [role="listitem"]')).slice(TR_ENTRY_VISIBLE_MAX);
+    const items = Array.from(list.querySelectorAll(':scope > [role="listitem"]'));
+    const rest = items.slice(TR_ENTRY_VISIBLE_MAX);
     if (rest.length === 0) return;
 
     rest.forEach(entry => { entry.hidden = true; });
+    // X-03: the list label is read aloud, and it counted every entry the pane
+    // built while the bound below was hiding all but the first few — so a
+    // screen reader was told about entries it could not reach. The label says
+    // what is rendered; the button beside it carries the rest.
+    const shown = items.length - rest.length;
+    list.setAttribute('aria-label', `transcript entries, ${shown} of ${items.length} shown`);
 
     const more = document.createElement('button');
     more.type = 'button';
@@ -5658,6 +5665,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       const expanded = more.getAttribute('aria-expanded') !== 'true';
       rest.forEach(entry => { entry.hidden = !expanded; });
       more.setAttribute('aria-expanded', String(expanded));
+      list.setAttribute('aria-label', expanded
+        ? `transcript entries, ${items.length} items`
+        : `transcript entries, ${shown} of ${items.length} shown`);
       more.textContent = expanded
         ? 'show fewer entries'
         : `show the rest of this block (${rest.length} more) →`;
