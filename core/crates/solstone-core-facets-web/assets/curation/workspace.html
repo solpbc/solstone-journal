@@ -479,7 +479,9 @@ window.CUR_COPY = CUR_COPY;
   // Group by the slug the server will create, sum the evidence, and carry
   // every stored key on the one row so an answer retires all of them. When the
   // members are spelled differently the row names each spelling, so a merge is
-  // never silent.
+  // never silent: the prompt's one name slot takes the first spelling and the
+  // rest follow in their own sentence, because the copy asks about one facet
+  // and a two-name slot read as two. S-8.
   function groupFacetItems(items) {
     const groups = [];
     const bySlug = new Map();
@@ -501,7 +503,7 @@ window.CUR_COPY = CUR_COPY;
       }
       if (display && !group.names.includes(display)) {
         group.names.push(display);
-        group.display = group.names.join('" and "');
+        group.display = group.names[0];
       }
       group.keys.push(item.key);
       const count = Math.trunc(Number(item?.evidence?.count));
@@ -512,12 +514,27 @@ window.CUR_COPY = CUR_COPY;
     return groups;
   }
 
+  // The spellings the prompt's name slot did not take, named after it so the
+  // merge stays visible. Each one is escaped on its own; the sentence is
+  // markup by the time it reaches the paragraph.
+  function facetAlsoSeenAsHtml(names) {
+    const others = (Array.isArray(names) ? names : []).slice(1)
+      .map((name) => `\u201c${escapeHtml(name)}\u201d`);
+    if (!others.length) return '';
+    const list = others.length === 1
+      ? others[0]
+      : others.length === 2
+        ? `${others[0]} and ${others[1]}`
+        : `${others.slice(0, -1).join(', ')} and ${others[others.length - 1]}`;
+    return ` also seen as ${list}.`;
+  }
+
   function facetItemHtml(group) {
     const evidenceProps = window.CurationEvidence.buildEvidenceDrawerProps(group);
     const evidenceHtml = evidenceProps ? window.Drawer.render(evidenceProps) : '';
     return `
       <article class="curation-item" data-curation-item data-kind="facet_candidate" data-name-key="${escapeAttr(group.key)}" data-name-keys="${escapeAttr(JSON.stringify(group.keys))}">
-        <p class="curation-body">${escapeHtml(copyFormat(CUR_COPY.CUR_FACET_BODY, {name: group.display}))}</p>
+        <p class="curation-body">${escapeHtml(copyFormat(CUR_COPY.CUR_FACET_BODY, {name: group.display}))}${facetAlsoSeenAsHtml(group.names)}</p>
         <div class="curation-actions">
           <button class="curation-button curation-button-primary" type="button" data-action="facet-accept" data-name-key="${escapeAttr(group.key)}">${escapeHtml(CUR_COPY.CUR_FACET_CREATE_ACTION)}</button>
           <button class="curation-button" type="button" data-action="facet-dismiss" data-name-key="${escapeAttr(group.key)}">${escapeHtml(CUR_COPY.CUR_FACET_DISMISS_ACTION)}</button>
