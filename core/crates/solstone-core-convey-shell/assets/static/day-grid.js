@@ -913,19 +913,42 @@
       root.classList.toggle('daygrid--scrolled', scroller.scrollLeft > 1);
       root.classList.toggle('daygrid--more-right', scroller.scrollLeft < overflow - 1);
     }
-    scroller.addEventListener('scroll', updateOverflowCues, { signal, passive: true });
-    window.addEventListener('resize', updateOverflowCues, { signal });
-    updateOverflowCues();
-
-    const targetElement = targetDay ? root.querySelector(`[${DAY_ATTR}="${targetDay}"]`) : null;
-    requestAnimationFrame(() => {
+    // Keep a date anchor as layout changes. A fully visible year has no
+    // scroll position to preserve; a manually browsed phone grid does.
+    let viewedDay = targetDay;
+    let layoutWidth = scroller.clientWidth;
+    const cells = Array.from(root.querySelectorAll(`[${DAY_ATTR}]`));
+    function rememberViewedDate() {
+      if (scroller.clientWidth !== layoutWidth) return;
+      if (body.offsetWidth - scroller.clientWidth > MIN_AUTOSCROLL_OVERFLOW) {
+        const bounds = scroller.getBoundingClientRect();
+        const center = bounds.left + bounds.width / 2;
+        let nearest = null;
+        let distance = Infinity;
+        for (const cell of cells) {
+          const rect = cell.getBoundingClientRect();
+          const delta = Math.abs(rect.left + rect.width / 2 - center);
+          if (delta < distance) { nearest = cell; distance = delta; }
+        }
+        if (nearest) viewedDay = nearest.getAttribute(DAY_ATTR);
+      }
+      updateOverflowCues();
+    }
+    function restoreViewedDate() {
+      if (signal.aborted) return;
+      layoutWidth = scroller.clientWidth;
+      const target = viewedDay ? root.querySelector(`[${DAY_ATTR}="${viewedDay}"]`) : null;
       const maxScroll = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
-      if (targetElement && maxScroll > MIN_AUTOSCROLL_OVERFLOW) {
-        const rawLeft = targetElement.offsetLeft - (scroller.clientWidth / 2) + (targetElement.clientWidth / 2);
+      if (target && maxScroll > MIN_AUTOSCROLL_OVERFLOW) {
+        const rawLeft = target.offsetLeft - scroller.clientWidth / 2 + target.clientWidth / 2;
         scroller.scrollLeft = clamp(rawLeft, 0, maxScroll);
       }
       updateOverflowCues();
-    });
+    }
+    scroller.addEventListener('scroll', rememberViewedDate, { signal, passive: true });
+    window.addEventListener('resize', restoreViewedDate, { signal });
+    updateOverflowCues();
+    requestAnimationFrame(restoreViewedDate);
 
     stateByHost.set(host, { abort });
     return root;

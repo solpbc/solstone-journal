@@ -158,6 +158,10 @@ pub fn load_pulse_narrative(context: &HomeContext, day: &str) -> PulseNarrative 
         content: Some(content.to_owned()),
         updated_at,
         needs,
+        window: record
+            .get("window")
+            .cloned()
+            .and_then(|value| serde_json::from_value(value).ok()),
     }
 }
 
@@ -1276,6 +1280,7 @@ fn empty_pulse() -> PulseNarrative {
         content: None,
         updated_at: None,
         needs: Vec::new(),
+        window: None,
     }
 }
 fn title_case(value: &str) -> String {
@@ -2250,6 +2255,22 @@ mod tests {
         let pulse = load_pulse_narrative(&context, "20260602");
         assert_eq!(pulse.content.as_deref(), Some("details"));
         assert_eq!(pulse.needs, vec!["follow up"]);
+        assert!(pulse.window.is_none());
+        let window = json!({"segments": 2, "activities": 1, "input_segments": 10, "input_activities": 4, "since_ms": 1780405100000_i64, "gaps": ["missing source"]});
+        write(
+            root.path(),
+            "chronicle/20260602/talents/pulse.jsonl",
+            &json!({"ts":1780405200000_i64,"full_details":"details","window":window}).to_string(),
+        );
+        let projected = load_pulse_narrative(&context, "20260602").window.unwrap();
+        assert_eq!(serde_json::to_value(projected).unwrap(), window);
+        write(
+            root.path(),
+            "chronicle/20260602/talents/pulse.jsonl",
+            &json!({"ts":1780405200000_i64,"full_details":"details","window":{"segments":-1}})
+                .to_string(),
+        );
+        assert!(load_pulse_narrative(&context, "20260602").window.is_none());
     }
 
     #[test]

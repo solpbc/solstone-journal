@@ -3,7 +3,10 @@
 
 use std::path::PathBuf;
 
-use axum::response::Response;
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
 use serde_json::{Map, Value, json};
 
 use crate::http::json_response;
@@ -13,11 +16,49 @@ mod backup_copy {
 }
 
 pub async fn get(journal_root: PathBuf) -> Response {
-    let summary = solstone_core_retention::compute_storage_summary(&journal_root);
-    let config = solstone_core_journal_config::read_journal_config(&journal_root)
-        .expect("session gate handled corrupt config")
-        .config
-        .unwrap_or_default();
+    match tokio::task::spawn_blocking(move || {
+        let summary = solstone_core_retention::compute_storage_summary(&journal_root)
+            .map_err(|error| error.to_string())?;
+        let config = read_config(&journal_root)?;
+        let mut payload = config_payload(&journal_root, &config);
+        payload["summary"] = json!({"raw_media_bytes": summary.raw_media_bytes, "raw_media_human": summary.raw_media_human(), "derived_bytes": summary.derived_bytes, "derived_human": summary.derived_human(), "total_segments": summary.total_segments, "segments_with_raw": summary.segments_with_raw, "segments_purged": summary.segments_purged});
+        payload["warnings"] = json!(storage_warnings(&summary, config.get("retention").and_then(Value::as_object), &config, disk_percent(&journal_root)));
+        Ok::<_, String>(payload)
+    }).await {
+        Ok(Ok(payload)) => json_response(payload),
+        Ok(Err(detail)) => read_failed("storage_measurement_failed", "storage use couldn't be measured. your retention settings are still available.", detail),
+        Err(error) => read_failed("storage_measurement_failed", "storage use couldn't be measured. your retention settings are still available.", error.to_string()),
+    }
+}
+
+pub async fn get_config(journal_root: PathBuf) -> Response {
+    match read_config(&journal_root) {
+        Ok(config) => json_response(config_payload(&journal_root, &config)),
+        Err(detail) => read_failed(
+            "storage_config_failed",
+            "storage settings couldn't be read.",
+            detail,
+        ),
+    }
+}
+
+fn read_config(journal_root: &std::path::Path) -> Result<Map<String, Value>, String> {
+    solstone_core_journal_config::read_journal_config(journal_root)
+        .map(|loaded| loaded.config.unwrap_or_default())
+        .map_err(|error| error.to_string())
+}
+
+fn read_failed(code: &str, message: &str, detail: String) -> Response {
+    solstone_core_convey_http::envelope::error_envelope(
+        code,
+        message,
+        detail,
+        StatusCode::INTERNAL_SERVER_ERROR,
+    )
+    .into_response()
+}
+
+fn config_payload(journal_root: &std::path::Path, config: &Map<String, Value>) -> Value {
     let retention = config.get("retention").and_then(Value::as_object);
     let raw_media = retention
         .and_then(|values| values.get("raw_media"))
@@ -34,12 +75,10 @@ pub async fn get(journal_root: PathBuf) -> Response {
     let logs = retention
         .and_then(|values| values.get("journal_logs"))
         .and_then(Value::as_object);
-    json_response(json!({
-        "summary": {"raw_media_bytes": summary.raw_media_bytes, "raw_media_human": summary.raw_media_human(), "derived_bytes": summary.derived_bytes, "derived_human": summary.derived_human(), "total_segments": summary.total_segments, "segments_with_raw": summary.segments_with_raw, "segments_purged": summary.segments_purged},
+    json!({
         "retention": {"raw_media": raw_media, "raw_media_days": raw_media_days, "per_stream": per_stream, "journal_logs": {"enabled": logs.and_then(|values| values.get("enabled")).cloned().unwrap_or(json!(true)), "days": logs.and_then(|values| values.get("days")).cloned().unwrap_or(json!(30))}},
-        "streams": streams(&journal_root),
-        "warnings": storage_warnings(&summary, retention, &config, disk_percent(&journal_root)),
-    }))
+        "streams": streams(journal_root),
+    })
 }
 
 fn streams(journal_root: &std::path::Path) -> Vec<Value> {
@@ -180,6 +219,56 @@ mod tests {
     use tempfile::TempDir;
 
     use super::{storage_warnings, streams};
+
+    async fn body(response: axum::response::Response) -> Value {
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    #[tokio::test]
+    async fn configuration_does_not_depend_on_accounting_and_matches_full_projection() {
+        let temporary = TempDir::new().unwrap();
+        let root = temporary.path();
+        fs::create_dir(root.join("config")).unwrap();
+        fs::write(root.join("config/journal.json"), r#"{"retention":{"raw_media":"days","raw_media_days":14,"per_stream":{"phone":{"raw_media":"days"}},"journal_logs":{"enabled":false,"days":9}}}"#).unwrap();
+        let before = fs::read(root.join("config/journal.json")).unwrap();
+        let config = body(super::get_config(root.to_owned()).await).await;
+        let full = body(super::get(root.to_owned()).await).await;
+        assert_eq!(config["retention"], full["retention"]);
+        assert_eq!(config["streams"], full["streams"]);
+        assert!(config.get("summary").is_none());
+        assert_eq!(
+            config["retention"]["per_stream"]["phone"]["raw_media_days"],
+            14
+        );
+        fs::write(root.join("chronicle"), "cannot scan").unwrap();
+        assert_eq!(super::get_config(root.to_owned()).await.status(), 200);
+        let failed = super::get(root.to_owned()).await;
+        assert_eq!(failed.status(), 500);
+        assert_eq!(
+            body(failed).await["reason_code"],
+            "storage_measurement_failed"
+        );
+        assert_eq!(fs::read(root.join("config/journal.json")).unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn absent_config_uses_defaults_but_corrupt_config_is_an_error() {
+        let temporary = TempDir::new().unwrap();
+        let root = temporary.path();
+        fs::create_dir(root.join("config")).unwrap();
+        let config = body(super::get_config(root.to_owned()).await).await;
+        assert_eq!(config["retention"]["raw_media"], "keep");
+        assert_eq!(config["retention"]["journal_logs"]["days"], 30);
+        fs::write(root.join("config/journal.json"), "{").unwrap();
+        assert_eq!(super::get_config(root.to_owned()).await.status(), 500);
+        assert_eq!(
+            fs::read_to_string(root.join("config/journal.json")).unwrap(),
+            "{"
+        );
+    }
 
     #[test]
     fn storage_warnings_cover_disk_raw_media_and_stalled_offload() {

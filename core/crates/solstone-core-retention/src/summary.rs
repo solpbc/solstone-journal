@@ -4,6 +4,7 @@
 //! Read-only storage accounting for the Settings surface.
 
 use std::fs;
+use std::io;
 use std::path::Path;
 
 use solstone_core_journal_io::paths::{PathOrDay, iter_segments};
@@ -29,83 +30,66 @@ impl StorageSummary {
     }
 }
 
-pub fn compute_storage_summary(journal_root: &Path) -> StorageSummary {
+pub fn compute_storage_summary(journal_root: &Path) -> io::Result<StorageSummary> {
     let chronicle = journal_root.join("chronicle");
-    let Ok(days) = fs::read_dir(chronicle) else {
-        return StorageSummary::default();
+    let days = match fs::read_dir(chronicle) {
+        Ok(days) => days,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok(StorageSummary::default());
+        }
+        Err(error) => return Err(error),
     };
     let mut summary = StorageSummary::default();
-    for day in days.flatten().filter(|entry| entry.path().is_dir()) {
-        let Ok(segments) = iter_segments(journal_root, PathOrDay::Directory(&day.path())) else {
+    for day in days {
+        let day = day?;
+        if !day.file_type()?.is_dir() {
             continue;
-        };
+        }
+        let segments = iter_segments(journal_root, PathOrDay::Directory(&day.path()))
+            .map_err(io::Error::other)?;
         for segment in segments {
             summary.total_segments = summary.total_segments.saturating_add(1);
-            let raw_bytes = immediate_raw_bytes(segment.path());
+            let (raw_bytes, derived_bytes, has_index) = segment_bytes(segment.path(), true)?;
             summary.raw_media_bytes = summary.raw_media_bytes.saturating_add(raw_bytes);
+            summary.derived_bytes = summary.derived_bytes.saturating_add(derived_bytes);
             if raw_bytes > 0 {
                 summary.segments_with_raw = summary.segments_with_raw.saturating_add(1);
-            } else if segment.path().join("audio.jsonl").is_file()
-                || segment.path().join("screen.jsonl").is_file()
-            {
+            } else if has_index {
                 summary.segments_purged = summary.segments_purged.saturating_add(1);
             }
-            summary.derived_bytes = summary
-                .derived_bytes
-                .saturating_add(derived_bytes(segment.path()));
         }
     }
-    summary
+    Ok(summary)
 }
 
-fn immediate_raw_bytes(segment: &Path) -> u64 {
-    let Ok(entries) = fs::read_dir(segment) else {
-        return 0;
-    };
-    entries
-        .flatten()
-        .filter_map(|entry| {
-            if !entry.path().is_file() {
-                return None;
-            }
-            let name = entry.file_name();
-            let name = name.to_str().and_then(ContentName::new)?;
-            if !JournalMedia.is_owner_media(&name) {
-                return None;
-            }
-            entry.metadata().ok().map(|metadata| metadata.len())
-        })
-        .sum()
-}
-
-fn derived_bytes(path: &Path) -> u64 {
-    let Ok(entries) = fs::read_dir(path) else {
-        return 0;
-    };
-    entries
-        .flatten()
-        .map(|entry| {
-            let path = entry.path();
-            if path.is_dir() {
-                return derived_bytes(&path);
-            }
-            if !path.is_file() {
-                return 0;
-            }
-            let Some(name) = entry.file_name().to_str().and_then(ContentName::new) else {
-                return 0;
+// A single traversal counts both categories and propagates its read errors.
+// Symlink entries encountered within a segment are skipped, avoiding recursive
+// cycles. Segment discovery retains the shared iter_segments contract.
+fn segment_bytes(path: &Path, immediate: bool) -> io::Result<(u64, u64, bool)> {
+    let (mut raw, mut derived, mut has_index) = (0_u64, 0_u64, false);
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            let (_, bytes, _) = segment_bytes(&entry.path(), false)?;
+            derived = derived.saturating_add(bytes);
+        } else if kind.is_file() {
+            let file_name = entry.file_name();
+            let Some(name) = file_name.to_str().and_then(ContentName::new) else {
+                continue;
             };
+            let bytes = entry.metadata()?.len();
             if JournalMedia.is_owner_media(&name) {
-                0
+                if immediate {
+                    raw = raw.saturating_add(bytes);
+                }
             } else {
-                entry
-                    .metadata()
-                    .ok()
-                    .map(|metadata| metadata.len())
-                    .unwrap_or(0)
+                derived = derived.saturating_add(bytes);
             }
-        })
-        .sum()
+            has_index |= immediate && (file_name == "audio.jsonl" || file_name == "screen.jsonl");
+        }
+    }
+    Ok((raw, derived, has_index))
 }
 
 pub fn human_bytes(bytes: u64) -> String {
@@ -136,6 +120,32 @@ mod tests {
     use super::{compute_storage_summary, human_bytes};
     use tempfile::TempDir;
 
+    #[cfg(unix)]
+    #[test]
+    fn recursive_accounting_skips_descendant_symlink_cycles() {
+        let temporary = TempDir::new().unwrap();
+        let segment = temporary.path().join("chronicle/20260810/tmux/090000_300");
+        fs::create_dir_all(&segment).unwrap();
+        fs::write(segment.join("notes.md"), "abc").unwrap();
+        std::os::unix::fs::symlink(&segment, segment.join("cycle")).unwrap();
+        let summary = compute_storage_summary(temporary.path()).unwrap();
+        assert_eq!(summary.derived_bytes, 3);
+        assert_eq!(summary.total_segments, 1);
+    }
+
+    #[test]
+    fn unavailable_chronicle_is_not_reported_as_empty() {
+        let temporary = TempDir::new().unwrap();
+        assert_eq!(
+            compute_storage_summary(temporary.path())
+                .unwrap()
+                .total_segments,
+            0
+        );
+        fs::write(temporary.path().join("chronicle"), "not a directory").unwrap();
+        assert!(compute_storage_summary(temporary.path()).is_err());
+    }
+
     #[test]
     fn populated_storage_arithmetic_matches_the_corpus() -> Result<(), Box<dyn std::error::Error>> {
         let temporary = TempDir::new()?;
@@ -153,7 +163,7 @@ mod tests {
         fs::write(purged.join("audio.jsonl"), b"{\"seeded\": true}\n")?;
         fs::write(bare.join("notes.md"), b"seeded\n")?;
 
-        let summary = compute_storage_summary(temporary.path());
+        let summary = compute_storage_summary(temporary.path())?;
         assert_eq!(summary.total_segments, 3);
         assert_eq!(summary.segments_with_raw, 1);
         assert_eq!(summary.segments_purged, 1);

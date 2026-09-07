@@ -307,8 +307,25 @@
   // a word for. The card says what it holds. X-03.
   function narrativeHeading(pulse) {
     const raw = String(pulse?.narrative_header || '').trim();
-    if (!raw || raw === 'pulse') return 'today so far';
+    if (!raw || raw === 'pulse') return 'recent activity';
     return raw;
+  }
+
+  function narrativeScope(pulse) {
+    if (pulse.narrative_source !== 'pulse') return '';
+    const scope = pulse.narrative_window;
+    const keys = ['segments', 'activities', 'input_segments', 'input_activities'];
+    if (!scope || !keys.every(key => Number.isSafeInteger(scope[key]) && scope[key] >= 0)) {
+      return '<p class="pulse-narrative-meta">the input scope wasn\'t saved with this summary.</p>';
+    }
+    let text = 'based on ' + scope.segments + ' of ' + scope.input_segments + ' processed segments and '
+      + scope.activities + ' of ' + scope.input_activities + ' activity entries in this batch. entries may overlap; this isn\'t a whole-day summary.';
+    if (scope.since_ms > 0 && Number.isFinite(scope.since_ms) && Math.abs(scope.since_ms) <= 8640000000000000) {
+      text += ' processing window starts at ' + window.JournalFormat.timestamp(new Date(scope.since_ms).toISOString()) + '. this is processing time, not when the activity happened.';
+    }
+    const gaps = Array.isArray(scope.gaps) ? scope.gaps : [];
+    return '<details class="pulse-narrative-meta"><summary>what this summary covers</summary><p>' + esc(text) + '</p>'
+      + (gaps.length ? '<p>some source material was unavailable:</p><ul>' + gaps.map(gap => '<li>' + esc(gap) + '</li>').join('') + '</ul>' : '') + '</details>';
   }
 
   function renderNarrativeHtml(pulse) {
@@ -322,6 +339,7 @@
         + '<div class="pulse-section-body">'
         + '<div class="pulse-narrative-content" id="pulse-narrative-content">' + markdown(pulse.narrative_content || '') + '</div>'
         + '<a class="pulse-tell-more" href="/app/thinking/#runs/' + encodeURIComponent(pulse.today) + '/' + encodeURIComponent(pulse.narrative_source || 'pulse') + '">how this was written →</a>'
+        + narrativeScope(pulse)
         + updated
         + '</div>'
         + '</div>';

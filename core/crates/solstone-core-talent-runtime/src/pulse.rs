@@ -26,7 +26,6 @@ const TITLE_MAX: usize = 80;
 const SENTENCE_MAX: usize = 240;
 const DETAILS_MAX: usize = 1800;
 const NEED_MAX: usize = 240;
-const PARTNER_MAX: usize = 4000;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PulseSummary {
@@ -55,7 +54,6 @@ pub struct PulsePreState {
     awareness: String,
     anticipated: String,
     recent_entities: String,
-    partner_profile: String,
     gaps: String,
 }
 
@@ -111,10 +109,6 @@ pub fn apply_prompt_override(
             (
                 "recent_entities".to_owned(),
                 Value::String(state.recent_entities.clone()),
-            ),
-            (
-                "partner_profile".to_owned(),
-                Value::String(state.partner_profile.clone()),
             ),
             ("gaps".to_owned(), Value::String(state.gaps.clone())),
         ]),
@@ -198,7 +192,7 @@ fn build_packet(
     let home = HomeContext::new(&context.journal, now);
     let mut gaps = Vec::new();
     let default = default_pulse();
-    let (completed, window) = completed_since(&prepared.config, context, &mut gaps);
+    let (completed, mut window) = completed_since(&prepared.config, context, &mut gaps);
     let awareness = awareness_context(&context.journal, &mut gaps);
     // This reader already owns the declared-facet activity scan used by the reference.
     let anticipated = collect_anticipated_activities(&home, &day);
@@ -210,7 +204,7 @@ fn build_packet(
             Vec::new()
         }
     };
-    let partner = read_partner_profile(&context.journal, &mut gaps);
+    window.gaps = gaps.clone();
     Ok(PulsePreState {
         default,
         window,
@@ -219,7 +213,6 @@ fn build_packet(
         awareness: compact_json(awareness),
         anticipated: compact_json(Value::Array(anticipated)),
         recent_entities: compact_json(json!(recent)),
-        partner_profile: partner,
         gaps: if gaps.is_empty() {
             "(none)".to_owned()
         } else {
@@ -397,23 +390,13 @@ fn awareness_context(journal: &std::path::Path, gaps: &mut Vec<String>) -> Value
     json!({"current": current, "imports": imports})
 }
 
-fn read_partner_profile(journal: &std::path::Path, gaps: &mut Vec<String>) -> String {
-    match fs::read_to_string(journal.join("identity/partner.md")) {
-        Ok(value) if !value.trim().is_empty() => truncate(value.trim(), PARTNER_MAX),
-        Ok(_) => "(empty)".to_owned(),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            gaps.push("identity/partner.md missing".to_owned());
-            "(missing)".to_owned()
-        }
-        Err(error) => {
-            gaps.push(format!("could not read identity/partner.md: {error}"));
-            "(unavailable)".to_owned()
-        }
-    }
-}
-
 fn default_pulse() -> PulseSummary {
-    PulseSummary { title: "Day in progress".to_owned(), one_sentence: "The day is still taking shape.".to_owned(), full_details: "There is not enough current context to name a clear shape yet. Sol will keep watching for completed segments, anticipated events, and anything that needs the owner's attention.".to_owned(), needs_you: Vec::new() }
+    PulseSummary {
+        title: "summary unavailable".to_owned(),
+        one_sentence: "your recent activity couldn't be summarized.".to_owned(),
+        full_details: "your recent activity couldn't be summarized.".to_owned(),
+        needs_you: Vec::new(),
+    }
 }
 
 fn normalize_pulse(raw: &str, default: &PulseSummary) -> PulseSummary {
@@ -421,21 +404,21 @@ fn normalize_pulse(raw: &str, default: &PulseSummary) -> PulseSummary {
         title: truncate(
             &string_or(
                 Some(&Value::String(default.title.clone())),
-                "Day in progress",
+                "summary unavailable",
             ),
             TITLE_MAX,
         ),
         one_sentence: truncate(
             &string_or(
                 Some(&Value::String(default.one_sentence.clone())),
-                "The day is still taking shape.",
+                "your recent activity couldn't be summarized.",
             ),
             SENTENCE_MAX,
         ),
         full_details: truncate(
             &string_or(
                 Some(&Value::String(default.full_details.clone())),
-                "There is not enough current context to name a clear shape yet.",
+                "your recent activity couldn't be summarized.",
             ),
             DETAILS_MAX,
         ),
@@ -539,6 +522,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn bounded_batch_preserves_input_counts_and_missing_source_gaps() {
+        let root = tempfile::TempDir::new().unwrap();
+        let context = ExecutionContext {
+            journal: root.path().to_owned(),
+        };
+        let path = root
+            .path()
+            .join("chronicle/20260907/device/120000_300/talents");
+        fs::create_dir_all(&path).unwrap();
+        fs::write(path.join("activity.md"), "current evidence").unwrap();
+        let segments: Vec<_> = (0..10)
+            .map(|ts| json!({"day":"20260907","segment":"120000_300","stream":"device","ts":ts}))
+            .collect();
+        let config = json!({"cadence_window":{"since_ms":1,"segments":segments,"activities":[{"day":"20260907","facet":"missing","activity":"missing","ts":20}]}});
+        let mut gaps = Vec::new();
+        let (packet, window) = completed_since(config.as_object().unwrap(), &context, &mut gaps);
+        assert_eq!(window.input_segments, 10);
+        assert_eq!(window.input_activities, 1);
+        assert_eq!(window.segments, 7);
+        assert_eq!(window.activities, 0);
+        assert_eq!(packet["segments"].as_array().unwrap().len(), 7);
+        assert!(!window.gaps.is_empty());
+    }
+
+    #[test]
     fn normalizes_fenced_output_and_uses_reference_defaults() {
         // Derived from solstone/talent/pulse.py:339-423; Python is not runnable here.
         let summary = normalize_pulse(
@@ -549,7 +557,7 @@ mod tests {
         assert_eq!(summary.needs_you, vec!["x"]);
         assert_eq!(
             normalize_pulse("not json", &default_pulse()).title,
-            "Day in progress"
+            "summary unavailable"
         );
     }
 
@@ -571,7 +579,6 @@ mod tests {
             awareness: String::new(),
             anticipated: String::new(),
             recent_entities: String::new(),
-            partner_profile: String::new(),
             gaps: String::new(),
         }));
         let prepared = PreparedTalent {

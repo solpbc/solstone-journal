@@ -85,24 +85,32 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
             .map(|time| time.with_timezone(&Utc).to_rfc3339())
     });
     let narrative = load_pulse_narrative(context, &today);
-    let (narrative_content, narrative_updated_at, narrative_source, narrative_header, pulse_needs) =
-        if let Some(content) = narrative.content {
-            (
-                Some(content),
-                narrative.updated_at.or_else(|| flow_updated_at.clone()),
-                "pulse",
-                "pulse",
-                narrative.needs.into_iter().map(Value::String).collect(),
-            )
-        } else {
-            (
-                flow.content.clone(),
-                flow_updated_at.clone(),
-                "flow",
-                "today's flow",
-                Vec::new(),
-            )
-        };
+    let (
+        narrative_content,
+        narrative_updated_at,
+        narrative_source,
+        narrative_header,
+        pulse_needs,
+        narrative_window,
+    ) = if let Some(content) = narrative.content {
+        (
+            Some(content),
+            narrative.updated_at,
+            "pulse",
+            "pulse",
+            narrative.needs.into_iter().map(Value::String).collect(),
+            serde_json::to_value(narrative.window).unwrap_or(Value::Null),
+        )
+    } else {
+        (
+            flow.content.clone(),
+            flow_updated_at.clone(),
+            "flow",
+            "today's flow",
+            Vec::new(),
+            Value::Null,
+        )
+    };
     let anticipated_activities = collect_anticipated_activities(context, &today);
     let activities = collect_activities(context, &today);
     let latest_weekly_reflection = load_latest_weekly_reflection(context);
@@ -247,6 +255,7 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
         "narrative_updated_at".to_owned(),
         narrative_updated_at.into(),
     );
+    fields.insert("narrative_window".to_owned(), narrative_window);
     fields.insert("narrative_source".to_owned(), narrative_source.into());
     fields.insert("narrative_header".to_owned(), narrative_header.into());
     fields.insert("pulse_needs".to_owned(), Value::Array(pulse_needs));
@@ -308,7 +317,7 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
     fields.insert("narrative_summary".to_owned(), narrative_summary.into());
     fields.insert("today_summary".to_owned(), today_parts.join(", ").into());
     fields.insert("needs_summary".to_owned(), needs_summary.into());
-    debug_assert_eq!(fields.len(), 38);
+    debug_assert_eq!(fields.len(), 39);
     PulseContext {
         fields,
         now: context.now_local(),
@@ -524,7 +533,7 @@ mod tests {
             utc_day(),
         );
         let payload = pulse_payload(&context);
-        assert_eq!(payload.as_object().unwrap().len(), 37);
+        assert_eq!(payload.as_object().unwrap().len(), 38);
         assert_eq!(
             payload
                 .as_object()
@@ -546,6 +555,7 @@ mod tests {
                 "narrative_updated_at",
                 "narrative_source",
                 "narrative_header",
+                "narrative_window",
                 "pulse_needs",
                 "flow_content",
                 "flow_updated_at",
@@ -592,7 +602,8 @@ mod tests {
                 .with_nanosecond(430_840_000)
                 .unwrap(),
         );
-        let reference = reference_payload("reference-pulse-empty-journal.json");
+        let mut reference = reference_payload("reference-pulse-empty-journal.json");
+        reference["pulse"]["narrative_window"] = Value::Null;
         assert_payload_fields(&pulse_payload(&context), &reference["pulse"], &["now"]);
         assert_eq!(briefing_payload(&context), reference["briefing"]);
     }
@@ -609,6 +620,7 @@ mod tests {
         let payload = pulse_payload(&context);
         let reference = reference_payload("reference-pulse-seeded-journal.json");
         let mut expected_pulse = reference["pulse"].clone();
+        expected_pulse["narrative_window"] = Value::Null;
         assert_eq!(
             expected_pulse.pointer("/health_glance/cta/href"),
             Some(&json!("/app/network/"))
