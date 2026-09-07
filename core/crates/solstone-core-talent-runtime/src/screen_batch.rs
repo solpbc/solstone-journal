@@ -637,9 +637,8 @@ mod tests {
 
     #[test]
     fn rendered_marker_text_without_projector_metadata_cannot_enable_batching() {
-        let mut prepared = prepared(
-            "## Tmux change encoding\n### 10:00:00\n**Tmux window:**\n```json\n{}\n```",
-        );
+        let mut prepared =
+            prepared("## Tmux change encoding\n### 10:00:00\n**Tmux window:**\n```json\n{}\n```");
         assert!(screen_cuts(&prepared).unwrap().is_none());
         prepared.config.insert(
             "_screen_batch_cuts".into(),
