@@ -53,7 +53,7 @@ pub const CONFIDENTIAL_LANE_DETAIL: ConfidentialLaneDetail = ConfidentialLaneDet
     egress: "when it's on, the thinking leaves your device: text, images, and (with the audio switch on, its default) your audio for transcription. your journal itself never leaves.",
     claims: "no content is retained · no human reviews it · nothing is used to train",
     attestation: "your journal must verify the service before anything is sent. if it can't verify, it doesn't send.",
-    early_access: "confidential processing is coming. scouts get it first.",
+    early_access: "confidential processing is available to approved scouts.",
 };
 
 #[derive(Clone, Copy)]
@@ -261,7 +261,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "early_access",
                         CopyValue::String(
-                            "confidential processing is coming. scouts get it first.",
+                            "confidential processing is available to approved scouts.",
                         ),
                     ),
                     (
@@ -381,7 +381,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             (
                 "intro",
                 CopyValue::String(
-                    "bring your own AI engine. sol pbc is never in the path. it stays in your journal.",
+                    "bring your own AI engine. sol pbc is never in the path. your key stays in your journal.",
                 ),
             ),
             ("chooser_key", CopyValue::String("a key")),

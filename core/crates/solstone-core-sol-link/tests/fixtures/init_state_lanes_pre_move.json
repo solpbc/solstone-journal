@@ -27,7 +27,7 @@
       "egress": "when it's on, the thinking leaves your device: text, images, and (with the audio switch on, its default) your audio for transcription. your journal itself never leaves.",
       "claims": "no content is retained · no human reviews it · nothing is used to train",
       "attestation": "your journal must verify the service before anything is sent. if it can't verify, it doesn't send.",
-      "early_access": "confidential processing is coming. scouts get it first."
+      "early_access": "confidential processing is available to approved scouts."
     }
   }
 }

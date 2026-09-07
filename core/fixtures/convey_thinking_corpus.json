@@ -126,7 +126,7 @@
               "endpoint_honesty": "processing checks the endpoint works before relying on it. if it can't reach it, you'll see. it never quietly falls back to anyone else.",
               "endpoint_sub": "any OpenAI-compatible URL. your server, your rules.",
               "get_key": "get a key \u2197",
-              "intro": "bring your own AI engine. sol pbc is never in the path. it stays in your journal.",
+              "intro": "bring your own AI engine. sol pbc is never in the path. your key stays in your journal.",
               "key_failed": "this key didn't work: {reason}. paste a different key, or fix it with {provider} and check again.",
               "key_heading": "pick your provider",
               "key_hint": "the key stays in your journal. sol pbc never sets it up or sees it. paste it once; processing uses it from here.",
@@ -179,7 +179,7 @@
               "lane_detail": {
                 "attestation": "your journal must verify the service before anything is sent. if it can't verify, it doesn't send.",
                 "claims": "no content is retained \u00b7 no human reviews it \u00b7 nothing is used to train",
-                "early_access": "confidential processing is coming. scouts get it first.",
+                "early_access": "confidential processing is available to approved scouts.",
                 "egress": "when it's on, the thinking leaves your device: text, images, and (with the audio switch on, its default) your audio for transcription. your journal itself never leaves.",
                 "heading": "confidential processing",
                 "mechanism": "sol pbc runs the model itself on confidential GPUs in Microsoft Azure. the hardware boundary keeps the cloud host excluded from what's processed. no third-party AI provider is in the path.",
@@ -187,7 +187,7 @@
               },
               "more_label": "how it works \u2192",
               "operation_states": {
-                "early_access": "confidential processing is coming. scouts get it first.",
+                "early_access": "confidential processing is available to approved scouts.",
                 "repair_needed": "couldn't verify the service. nothing is being sent.",
                 "starting": "opening your browser to confirm\u2026",
                 "waiting": "finish turning it on in your browser"
@@ -2354,7 +2354,7 @@
               "endpoint_honesty": "processing checks the endpoint works before relying on it. if it can't reach it, you'll see. it never quietly falls back to anyone else.",
               "endpoint_sub": "any OpenAI-compatible URL. your server, your rules.",
               "get_key": "get a key \u2197",
-              "intro": "bring your own AI engine. sol pbc is never in the path. it stays in your journal.",
+              "intro": "bring your own AI engine. sol pbc is never in the path. your key stays in your journal.",
               "key_failed": "this key didn't work: {reason}. paste a different key, or fix it with {provider} and check again.",
               "key_heading": "pick your provider",
               "key_hint": "the key stays in your journal. sol pbc never sets it up or sees it. paste it once; processing uses it from here.",
@@ -2407,7 +2407,7 @@
               "lane_detail": {
                 "attestation": "your journal must verify the service before anything is sent. if it can't verify, it doesn't send.",
                 "claims": "no content is retained \u00b7 no human reviews it \u00b7 nothing is used to train",
-                "early_access": "confidential processing is coming. scouts get it first.",
+                "early_access": "confidential processing is available to approved scouts.",
                 "egress": "when it's on, the thinking leaves your device: text, images, and (with the audio switch on, its default) your audio for transcription. your journal itself never leaves.",
                 "heading": "confidential processing",
                 "mechanism": "sol pbc runs the model itself on confidential GPUs in Microsoft Azure. the hardware boundary keeps the cloud host excluded from what's processed. no third-party AI provider is in the path.",
@@ -2415,7 +2415,7 @@
               },
               "more_label": "how it works \u2192",
               "operation_states": {
-                "early_access": "confidential processing is coming. scouts get it first.",
+                "early_access": "confidential processing is available to approved scouts.",
                 "repair_needed": "couldn't verify the service. nothing is being sent.",
                 "starting": "opening your browser to confirm\u2026",
                 "waiting": "finish turning it on in your browser"
@@ -4580,7 +4580,7 @@
               "endpoint_honesty": "processing checks the endpoint works before relying on it. if it can't reach it, you'll see. it never quietly falls back to anyone else.",
               "endpoint_sub": "any OpenAI-compatible URL. your server, your rules.",
               "get_key": "get a key \u2197",
-              "intro": "bring your own AI engine. sol pbc is never in the path. it stays in your journal.",
+              "intro": "bring your own AI engine. sol pbc is never in the path. your key stays in your journal.",
               "key_failed": "this key didn't work: {reason}. paste a different key, or fix it with {provider} and check again.",
               "key_heading": "pick your provider",
               "key_hint": "the key stays in your journal. sol pbc never sets it up or sees it. paste it once; processing uses it from here.",
@@ -4633,7 +4633,7 @@
               "lane_detail": {
                 "attestation": "your journal must verify the service before anything is sent. if it can't verify, it doesn't send.",
                 "claims": "no content is retained \u00b7 no human reviews it \u00b7 nothing is used to train",
-                "early_access": "confidential processing is coming. scouts get it first.",
+                "early_access": "confidential processing is available to approved scouts.",
                 "egress": "when it's on, the thinking leaves your device: text, images, and (with the audio switch on, its default) your audio for transcription. your journal itself never leaves.",
                 "heading": "confidential processing",
                 "mechanism": "sol pbc runs the model itself on confidential GPUs in Microsoft Azure. the hardware boundary keeps the cloud host excluded from what's processed. no third-party AI provider is in the path.",
@@ -4641,7 +4641,7 @@
               },
               "more_label": "how it works \u2192",
               "operation_states": {
-                "early_access": "confidential processing is coming. scouts get it first.",
+                "early_access": "confidential processing is available to approved scouts.",
                 "repair_needed": "couldn't verify the service. nothing is being sent.",
                 "starting": "opening your browser to confirm\u2026",
                 "waiting": "finish turning it on in your browser"
@@ -6786,7 +6786,7 @@
               "endpoint_honesty": "processing checks the endpoint works before relying on it. if it can't reach it, you'll see. it never quietly falls back to anyone else.",
               "endpoint_sub": "any OpenAI-compatible URL. your server, your rules.",
               "get_key": "get a key \u2197",
-              "intro": "bring your own AI engine. sol pbc is never in the path. it stays in your journal.",
+              "intro": "bring your own AI engine. sol pbc is never in the path. your key stays in your journal.",
               "key_failed": "this key didn't work: {reason}. paste a different key, or fix it with {provider} and check again.",
               "key_heading": "pick your provider",
               "key_hint": "the key stays in your journal. sol pbc never sets it up or sees it. paste it once; processing uses it from here.",
@@ -6839,7 +6839,7 @@
               "lane_detail": {
                 "attestation": "your journal must verify the service before anything is sent. if it can't verify, it doesn't send.",
                 "claims": "no content is retained \u00b7 no human reviews it \u00b7 nothing is used to train",
-                "early_access": "confidential processing is coming. scouts get it first.",
+                "early_access": "confidential processing is available to approved scouts.",
                 "egress": "when it's on, the thinking leaves your device: text, images, and (with the audio switch on, its default) your audio for transcription. your journal itself never leaves.",
                 "heading": "confidential processing",
                 "mechanism": "sol pbc runs the model itself on confidential GPUs in Microsoft Azure. the hardware boundary keeps the cloud host excluded from what's processed. no third-party AI provider is in the path.",
@@ -6847,7 +6847,7 @@
               },
               "more_label": "how it works \u2192",
               "operation_states": {
-                "early_access": "confidential processing is coming. scouts get it first.",
+                "early_access": "confidential processing is available to approved scouts.",
                 "repair_needed": "couldn't verify the service. nothing is being sent.",
                 "starting": "opening your browser to confirm\u2026",
                 "waiting": "finish turning it on in your browser"
@@ -9176,7 +9176,7 @@
               "endpoint_honesty": "processing checks the endpoint works before relying on it. if it can't reach it, you'll see. it never quietly falls back to anyone else.",
               "endpoint_sub": "any OpenAI-compatible URL. your server, your rules.",
               "get_key": "get a key \u2197",
-              "intro": "bring your own AI engine. sol pbc is never in the path. it stays in your journal.",
+              "intro": "bring your own AI engine. sol pbc is never in the path. your key stays in your journal.",
               "key_failed": "this key didn't work: {reason}. paste a different key, or fix it with {provider} and check again.",
               "key_heading": "pick your provider",
               "key_hint": "the key stays in your journal. sol pbc never sets it up or sees it. paste it once; processing uses it from here.",
@@ -9229,7 +9229,7 @@
               "lane_detail": {
                 "attestation": "your journal must verify the service before anything is sent. if it can't verify, it doesn't send.",
                 "claims": "no content is retained \u00b7 no human reviews it \u00b7 nothing is used to train",
-                "early_access": "confidential processing is coming. scouts get it first.",
+                "early_access": "confidential processing is available to approved scouts.",
                 "egress": "when it's on, the thinking leaves your device: text, images, and (with the audio switch on, its default) your audio for transcription. your journal itself never leaves.",
                 "heading": "confidential processing",
                 "mechanism": "sol pbc runs the model itself on confidential GPUs in Microsoft Azure. the hardware boundary keeps the cloud host excluded from what's processed. no third-party AI provider is in the path.",
@@ -9237,7 +9237,7 @@
               },
               "more_label": "how it works \u2192",
               "operation_states": {
-                "early_access": "confidential processing is coming. scouts get it first.",
+                "early_access": "confidential processing is available to approved scouts.",
                 "repair_needed": "couldn't verify the service. nothing is being sent.",
                 "starting": "opening your browser to confirm\u2026",
                 "waiting": "finish turning it on in your browser"
@@ -12709,7 +12709,7 @@
               "endpoint_honesty": "processing checks the endpoint works before relying on it. if it can't reach it, you'll see. it never quietly falls back to anyone else.",
               "endpoint_sub": "any OpenAI-compatible URL. your server, your rules.",
               "get_key": "get a key \u2197",
-              "intro": "bring your own AI engine. sol pbc is never in the path. it stays in your journal.",
+              "intro": "bring your own AI engine. sol pbc is never in the path. your key stays in your journal.",
               "key_failed": "this key didn't work: {reason}. paste a different key, or fix it with {provider} and check again.",
               "key_heading": "pick your provider",
               "key_hint": "the key stays in your journal. sol pbc never sets it up or sees it. paste it once; processing uses it from here.",
@@ -12762,7 +12762,7 @@
               "lane_detail": {
                 "attestation": "your journal must verify the service before anything is sent. if it can't verify, it doesn't send.",
                 "claims": "no content is retained \u00b7 no human reviews it \u00b7 nothing is used to train",
-                "early_access": "confidential processing is coming. scouts get it first.",
+                "early_access": "confidential processing is available to approved scouts.",
                 "egress": "when it's on, the thinking leaves your device: text, images, and (with the audio switch on, its default) your audio for transcription. your journal itself never leaves.",
                 "heading": "confidential processing",
                 "mechanism": "sol pbc runs the model itself on confidential GPUs in Microsoft Azure. the hardware boundary keeps the cloud host excluded from what's processed. no third-party AI provider is in the path.",
@@ -12770,7 +12770,7 @@
               },
               "more_label": "how it works \u2192",
               "operation_states": {
-                "early_access": "confidential processing is coming. scouts get it first.",
+                "early_access": "confidential processing is available to approved scouts.",
                 "repair_needed": "couldn't verify the service. nothing is being sent.",
                 "starting": "opening your browser to confirm\u2026",
                 "waiting": "finish turning it on in your browser"
