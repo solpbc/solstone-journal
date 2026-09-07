@@ -90,8 +90,8 @@
         "last_backup": "last backup",
         "last_prune": "last cleanup",
         "last_verification": "last verification",
-        "verification_subset_one": "checked {checked} of {total} snapshot",
-        "verification_subset": "checked {checked} of {total} snapshots",
+        "verification_subset_one": "checked all of your backup data",
+        "verification_subset": "checked 1 of {total} parts of your backup data",
         "not_available": "not yet available",
         "not_yet": "not yet",
         "ago": "{duration} ago",
@@ -884,20 +884,22 @@
     return { text: template.replace('{duration}', duration), title };
   }
 
-  // 'checked_subset' arrives as '36/52': the snapshots verification actually
-  // opened, out of the snapshots in the backup. Anything else is not reported.
+  // 'checked_subset' is restic's --read-data-subset selector, shaped 'n/m':
+  // the run read one of m equal parts of the pack data, and n only says which
+  // part this week's turn landed on. It is never a count of snapshots, so the
+  // sentence reports one part out of m and nothing else.
   function verificationSubsetLine(value) {
     if (typeof value !== 'string') return '';
     const parts = value.split('/');
     if (parts.length !== 2) return '';
-    const checked = Number(parts[0]);
+    const selected = Number(parts[0]);
     const total = Number(parts[1]);
-    if (!Number.isFinite(checked) || !Number.isFinite(total) || total <= 0) return '';
+    if (!Number.isFinite(selected) || !Number.isFinite(total) || total <= 0) return '';
     const key = total === 1
       ? 'management.status_labels.verification_subset_one'
       : 'management.status_labels.verification_subset';
     const template = resolveCopyPath(copy, key) || '';
-    return template.replace('{checked}', String(checked)).replace('{total}', String(total));
+    return template.replace('{total}', String(total));
   }
 
   function ensureBackupStatusNodes() {
@@ -920,8 +922,8 @@
       section.append(heading, verification);
       grid.append(section);
     }
-    // G3-314: verification samples the snapshots, and the tile that answers
-    // 'when' has to keep the scope of what was checked. The population sits
+    // G3-314: verification reads one slice of the backup data, and the tile
+    // that answers 'when' has to keep the scope of what was read. The scope sits
     // under the age rather than inside it, so the tile keeps its siblings' shape.
     let subset = document.querySelector('[data-last-verification-subset]');
     if (verification && !subset) {
