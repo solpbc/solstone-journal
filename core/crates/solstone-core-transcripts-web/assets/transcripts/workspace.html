@@ -5834,7 +5834,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   }
 
   function updateZoom() {
-    zoom.setAttribute('aria-label', 'Detail timeline (' + clockLabel(range.start) + '\u2013' + clockLabel(range.end) + ')');
+    zoom.setAttribute('aria-label', 'detail timeline (' + clockLabel(range.start) + '\u2013' + clockLabel(range.end) + ')');
     zoomHeight = zoom.clientHeight - ZOOM_PADDING;
     const rangeLen = range.end - range.start;
     if (rangeLen > 0) {
@@ -5878,7 +5878,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       const bounds = computeTimelineBounds(data);
       timelineStart = bounds.start;
       timelineEnd = bounds.end;
-      timeline.setAttribute('aria-label', 'Day timeline (' + clockLabel(timelineStart) + '\u2013' + clockLabel(timelineEnd) + ')');
+      timeline.setAttribute('aria-label', 'day timeline (' + clockLabel(timelineStart) + '\u2013' + clockLabel(timelineEnd) + ')');
 
       // Recalculate pixels-per-minute with new bounds
       height = timeline.clientHeight - DAY_PADDING;
