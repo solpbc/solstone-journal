@@ -65,8 +65,10 @@
  // the one readable sentence buried inside it. The record is now read on the
  // server, before the 50-word cap that used to make anything longer than 50
  // words unparseable here and silently drop the whole readable path; the hit
- // arrives as readable text with its terms already bolded, its timestamp in
- // `ts`, and the stored record itself in `record`.
+ // arrives as readable text with its terms already bolded and its timestamp in
+ // `ts`. The one exception is a row that matches only on a field the readable
+ // sentences never carry: there the excerpt *is* the record, and the server
+ // then sends no `record` so this card never prints it twice (FE3 #3).
  function renderHit(hit,dayHref){
   const card=node('article','search-result');const meta=node('div','search-meta');
   const recordTime=Number.isFinite(hit.ts)&&hit.ts>0?window.JournalFormat.time(hit.ts):'';

@@ -191,7 +191,7 @@ const Dashboard = (function() {
       return;
     }
 
-    const chart = el('div', {className: 'bar-chart', role: 'img', 'aria-label': 'Token activity bar chart showing usage over the last 30 days'});
+    const chart = el('div', {className: 'bar-chart', role: 'img', 'aria-label': 'token activity bar chart showing usage over the last 30 days'});
 
     chartData.forEach((d, i) => {
       const height = (d.total / maxTotal) * 100;

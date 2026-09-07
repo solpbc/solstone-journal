@@ -76,7 +76,7 @@
     },
     "management": {
       "destructive_action": "turn off & delete backup",
-      "destructive_caption": "this deletes all your backup data. no new backups will be created.",
+      "destructive_caption": "this deletes your whole backup. no new backups will be created.",
       "teardown_gate_lead": "{days} days of your journal ({size}) exist only in this backup. deleting the backup deletes them everywhere, forever.",
       "teardown_gate_unavailable_lead": "can't verify what exists only in this backup right now. deleting the backup may destroy days of your journal that exist nowhere else.",
       "teardown_gate_zero_lead": "nothing exists only in this backup right now. every day is still on your device.",

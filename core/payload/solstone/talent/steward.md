@@ -2,7 +2,7 @@
   "type": "generate",
 
   "title": "Steward",
-  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
+  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
   "schedule": "cadence",
   "cadence_minutes": 30,
   "priority": 45,

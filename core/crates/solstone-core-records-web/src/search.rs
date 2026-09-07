@@ -144,6 +144,11 @@ fn search_response(journal_root: PathBuf, query: SearchQuery) -> Response {
             .into_iter()
             .map(|hit| {
                 let readable = readable_record(&hit.text);
+                // Fresh-eyes 3 #3: when the readable sentences hold no match
+                // the stored record becomes the excerpt, and sending it again
+                // as `record` printed the same JSON twice on one card.
+                let (excerpt, excerpt_is_record) =
+                    excerpt_html(&hit.text, readable.as_ref(), &request.query);
                 json!({
                     "id": hit.id,
                     "entry_id": hit.row_id,
@@ -152,9 +157,12 @@ fn search_response(journal_root: PathBuf, query: SearchQuery) -> Response {
                     "agent_label": agent_label(&hit.metadata.agent),
                     "facet": hit.metadata.facet,
                     "facet_title": facets.get(&hit.metadata.facet).map_or(&hit.metadata.facet, |facet| &facet.title),
-                    "text": excerpt_html(&hit.text, readable.as_ref(), &request.query),
+                    "text": excerpt,
                     "ts": readable.as_ref().and_then(|record| record.ts),
-                    "record": readable.as_ref().map(|_| cap_words(&hit.text)),
+                    "record": readable
+                        .as_ref()
+                        .filter(|_| !excerpt_is_record)
+                        .map(|_| cap_words(&hit.text)),
                     "stream": hit.metadata.stream,
                     "path": hit.metadata.path,
                     "idx": hit.metadata.idx,
@@ -600,26 +608,31 @@ fn cap_words(text: &str) -> String {
     value
 }
 
-/// The excerpt the card shows, with the searched terms bolded.
+/// The excerpt the card shows, with the searched terms bolded, and whether
+/// that excerpt is the stored record itself.
 ///
 /// A row can match on a field the readable sentences never carry -- a tag, a
 /// key, the model id -- and the readable excerpt then renders with nothing
 /// bolded and no way to see why the row is there at all. When the readable
 /// sentences hold no match and the stored record does, the record is what the
 /// owner is shown; otherwise the sentences win, which is every ordinary hit.
-fn excerpt_html(raw: &str, readable: Option<&ReadableRecord>, query: &str) -> String {
+///
+/// The flag exists because the card also offers the record behind a "the
+/// stored record" disclosure. On the row where the record *is* the excerpt,
+/// that disclosure printed the same JSON a second time, so the caller drops it.
+fn excerpt_html(raw: &str, readable: Option<&ReadableRecord>, query: &str) -> (String, bool) {
     let Some(record) = readable else {
-        return highlight(raw, query);
+        return (highlight(raw, query), true);
     };
     let readable_excerpt = highlight(&record.text, query);
     if readable_excerpt.contains("<strong>") {
-        return readable_excerpt;
+        return (readable_excerpt, false);
     }
     let raw_excerpt = highlight(raw, query);
     if raw_excerpt.contains("<strong>") {
-        raw_excerpt
+        (raw_excerpt, true)
     } else {
-        readable_excerpt
+        (readable_excerpt, false)
     }
 }
 
@@ -1033,17 +1046,22 @@ mod highlight_phrase_tests {
         })
         .to_string();
         let readable = readable_record(&record).expect("a stored record reads");
-        let excerpt = excerpt_html(&record, Some(&readable), "qwen3.5");
+        let (excerpt, excerpt_is_record) = excerpt_html(&record, Some(&readable), "qwen3.5");
         assert!(excerpt.contains("<strong>qwen3.5</strong>"), "{excerpt}");
+        // Fresh-eyes 3 #3: the card must not then print the same JSON again
+        // under "the stored record".
+        assert!(excerpt_is_record);
         // An ordinary hit still reads as sentences, not as a stored record.
-        let ordinary = excerpt_html(&record, Some(&readable), "thursday");
+        let (ordinary, ordinary_is_record) = excerpt_html(&record, Some(&readable), "thursday");
         assert_eq!(
             ordinary,
             "<strong>thursday</strong> afternoon. it finished."
         );
+        assert!(!ordinary_is_record);
         // No match anywhere leaves the sentences, never the braces.
-        let neither = excerpt_html(&record, Some(&readable), "hopper");
+        let (neither, neither_is_record) = excerpt_html(&record, Some(&readable), "hopper");
         assert_eq!(neither, "thursday afternoon. it finished.");
+        assert!(!neither_is_record);
     }
 
     // Fresh-eyes 2 #13: the old client read `ts` with `Number(record.ts)`, so

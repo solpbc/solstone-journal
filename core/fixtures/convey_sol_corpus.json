@@ -634,7 +634,7 @@
                 "steward": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -929,7 +929,7 @@
                 "steward": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -1475,7 +1475,7 @@
                 "steward": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -1805,7 +1805,7 @@
                 "steward": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -2430,7 +2430,7 @@
                 "steward": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -2760,7 +2760,7 @@
                 "steward": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -3385,7 +3385,7 @@
                 "steward": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -3715,7 +3715,7 @@
                 "steward": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -4339,7 +4339,7 @@
                 "steward": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -4669,7 +4669,7 @@
                 "steward": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",

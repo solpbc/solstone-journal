@@ -1466,6 +1466,9 @@
   let dayDiscoveryClusters = [];
   let dayDiscoveryNotice = null;
   let dayDiscoveryStatus = '';
+  // Whether a cache read has actually landed. A failed read has no answer to
+  // give, and the quiet sentences are answers. Fresh-eyes 3 #1.
+  let dayDiscoveryRead = false;
   let segmentsRequestSeq = 0;
   let segmentSpeakersRequestSeq = 0;
   let reviewRequestSeq = 0;
@@ -1940,7 +1943,7 @@
     if (source === 'manual_tags') return [ownerRevealStatementText(state, copy)];
     const meta = state?.centroid_metadata || {};
     const streams = Array.isArray(meta.streams) ? meta.streams.length : 0;
-    // Plural forms are real: this read "1 places this voice appears".
+    // Plural forms are real: this read "appears in 1 places".
     const streamsTemplate = streams === 1
       ? copy.SPK_OWNER_REVEAL_STREAMS_TEMPLATE_ONE
       : copy.SPK_OWNER_REVEAL_STREAMS_TEMPLATE;
@@ -2479,6 +2482,7 @@
       })
       .catch((err) => {
         if (requestSeq !== dayDiscoveryRequestSeq) return false;
+        dayDiscoveryRead = false;
         dayDiscoveryNotice = dayDiscoveryLoadErrorNotice();
         renderDayDiscoveryBanner();
         if (throwOnError) throw err;
@@ -2491,6 +2495,7 @@
     // The cache reports its own absence, and it is not the same answer as an
     // empty one: no look has run against this journal yet.
     dayDiscoveryStatus = typeof data?.status === 'string' ? data.status : '';
+    dayDiscoveryRead = true;
     renderDayDiscoveryBanner();
   }
 
@@ -2539,7 +2544,13 @@
     return `<p class="spk-discovery-overview"><a class="spk-discovery-overview-link" href="/app/speakers/#spkNewVoicesSection">${escapeHtml(DAY_DISCOVERY_OVERVIEW_LINK)}</a></p>`;
   }
 
+  // Both quiet sentences are claims about the cache, so neither may be made
+  // when the read never landed: "no new voices are waiting." under a failed
+  // read is wrong, and dismissing the error notice used to leave that claim
+  // standing on its own. Until a read lands the banner carries the link and
+  // nothing else. Fresh-eyes 3 #1.
   function dayDiscoveryQuietHtml() {
+    if (!dayDiscoveryRead) return dayDiscoveryOverviewLinkHtml();
     const sentence = dayDiscoveryStatus === 'cache_unavailable'
       ? DAY_DISCOVERY_NEVER_RUN
       : DAY_DISCOVERY_EMPTY;
@@ -2607,6 +2618,7 @@
     dayDiscoveryClusters = [];
     dayDiscoveryNotice = null;
     dayDiscoveryStatus = '';
+    dayDiscoveryRead = false;
     discoveryBanner.style.display = 'none';
     discoveryBanner.innerHTML = '';
   }

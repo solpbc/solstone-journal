@@ -88,20 +88,24 @@
     return label;
   }
 
-  // The import catalog's own labels, so a stream reads the source the way the
-  // import screen and its guides write it (`SOURCES` in
-  // solstone-core-import-web/src/imports.rs). A source with no entry here keeps
-  // the parsed lowercase form. S-8.
+  // How an `import.<source>` stream reads. Six of these are the import
+  // catalog's own `display_name` (`SOURCES` in
+  // solstone-core-import-web/src/imports.rs), so a stream reads the source the
+  // way the import screen and its guides write it. The other two are body
+  // sources, which the import catalog does not carry and which come in through
+  // `solstone-core body`. A source with no entry here keeps the parsed
+  // lowercase form. S-8 / fresh-eyes 3 #7.
   const IMPORT_SOURCE_LABELS = {
+    // body sources
     apple_health: 'Apple Health',
+    oura: 'Oura',
+    // import catalog
     chatgpt: 'ChatGPT',
     claude: 'Claude',
     gemini: 'Gemini',
-    google: 'Google Takeout',
-    journal_archive: 'journal archive',
+    journal_archive: 'journal',
     kindle: 'Kindle',
-    obsidian: 'Obsidian',
-    oura: 'Oura',
+    obsidian: 'notes',
   };
 
   // A stream key is structured, so parse it rather than stripping punctuation:

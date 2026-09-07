@@ -697,7 +697,7 @@ async fn speakers_state_uses_the_python_local_date_semantics() {
     // empty-value copy,
     // replacing a bare em-dash).
     // 124 + 1: fresh-eyes 2 #E-15 added SPK_OWNER_REVEAL_STREAMS_TEMPLATE_ONE
-    // (the singular of "{count} places this voice appears", which read
+    // (the singular of "appears in {count} places", which read
     // "1 places").
     assert_eq!(state["speaker_copy"].as_object().unwrap().len(), 125);
 }

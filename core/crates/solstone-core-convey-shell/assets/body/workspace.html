@@ -1135,10 +1135,10 @@ a.body-day-cell:focus-visible {
       '<div>',
       `<h3 class="body-day-card-date">${escapeHtml(label)}</h3>`,
       '<ul class="body-facts">',
-      recent.sleep_duration ? `<li><span>Sleep</span><strong class="body-num">${escapeHtml(recent.sleep_duration)}${recent.sleep_in_bed ? ` <span class="body-fact-kind">in bed ${escapeHtml(recent.sleep_in_bed)}</span>` : ""}</strong></li>` : "",
-      recent.glucose_label ? `<li><span>Glucose</span><strong class="body-num">${escapeHtml(recent.glucose_label)}</strong></li>` : "",
-      recent.workout_count ? `<li><span>Workouts</span><strong class="body-num">${escapeHtml(recent.workout_count)}</strong></li>` : "",
-      `<li><span>Sources</span><strong class="body-num">${escapeHtml(recent.source_count ?? 0)}</strong></li>`,
+      recent.sleep_duration ? `<li><span>sleep</span><strong class="body-num">${escapeHtml(recent.sleep_duration)}${recent.sleep_in_bed ? ` <span class="body-fact-kind">in bed ${escapeHtml(recent.sleep_in_bed)}</span>` : ""}</strong></li>` : "",
+      recent.glucose_label ? `<li><span>glucose</span><strong class="body-num">${escapeHtml(recent.glucose_label)}</strong></li>` : "",
+      recent.workout_count ? `<li><span>workouts</span><strong class="body-num">${escapeHtml(recent.workout_count)}</strong></li>` : "",
+      `<li><span>sources</span><strong class="body-num">${escapeHtml(recent.source_count ?? 0)}</strong></li>`,
       '</ul>',
       `<p class="body-card-footer"><a class="body-link" href="${bodyDayHref(day)}">open day</a></p>`,
       '</div>',
@@ -1259,7 +1259,7 @@ a.body-day-cell:focus-visible {
       fetching = true;
       const placeholder = document.createElement("article");
       placeholder.className = "body-card body-recent-loading";
-      placeholder.textContent = "Loading earlier days…";
+      placeholder.textContent = "loading earlier days…";
       carousel.appendChild(placeholder);
       window.apiJson(`/app/body/api/recent?before=${encodeURIComponent(cursor)}`)
         .then((batch) => {
@@ -1360,7 +1360,7 @@ a.body-day-cell:focus-visible {
       '<ul class="body-list">',
       sources.map((source) => `<li><span>${escapeHtml(source.name)}</span><strong class="body-num">${escapeHtml(source.detail)}</strong></li>`).join(""),
       '</ul>',
-      '<p class="body-card-footer">Expected sources &middot; last delivered day.</p>',
+      '<p class="body-card-footer">expected sources &middot; last delivered day.</p>',
       '</section>',
     ]);
   }
@@ -1499,14 +1499,14 @@ a.body-day-cell:focus-visible {
         ...latestRows,
       ]),
       '<section class="body-section body-lists" aria-label="entry totals">',
-      `<article class="body-card"><h3 class="body-card-label">By type</h3><ul class="body-list">${renderCountList(status.normalized?.by_type, "No entries.", true)}</ul></article>`,
-      `<article class="body-card"><h3 class="body-card-label">By source${status.sources_month_label ? ` &middot; ${escapeHtml(status.sources_month_label)}` : ""}</h3><ul class="body-list">${renderCountList(status.normalized?.by_source, "No entries.")}</ul></article>`,
-      `<article class="body-card"><h3 class="body-card-label">By month</h3><ul class="body-list">${renderCountList(status.normalized?.by_month, "No entries.")}</ul></article>`,
+      `<article class="body-card"><h3 class="body-card-label">by type</h3><ul class="body-list">${renderCountList(status.normalized?.by_type, "no entries.", true)}</ul></article>`,
+      `<article class="body-card"><h3 class="body-card-label">by source${status.sources_month_label ? ` &middot; ${escapeHtml(status.sources_month_label)}` : ""}</h3><ul class="body-list">${renderCountList(status.normalized?.by_source, "no entries.")}</ul></article>`,
+      `<article class="body-card"><h3 class="body-card-label">by month</h3><ul class="body-list">${renderCountList(status.normalized?.by_month, "no entries.")}</ul></article>`,
       '</section>',
       '<section class="body-section body-lists" aria-label="dedupe totals">',
-      `<article class="body-card"><h3 class="body-card-label">Dedupe by type</h3><ul class="body-list">${renderCountList(status.dedupe?.by_type, "No entries.", true)}</ul></article>`,
-      `<article class="body-card"><h3 class="body-card-label">Dedupe by source</h3><ul class="body-list">${renderCountList(status.dedupe?.by_source, "No entries.")}</ul></article>`,
-      `<article class="body-card"><h3 class="body-card-label">Dedupe by month</h3><ul class="body-list">${renderCountList(status.dedupe?.by_month, "No entries.")}</ul></article>`,
+      `<article class="body-card"><h3 class="body-card-label">dedupe by type</h3><ul class="body-list">${renderCountList(status.dedupe?.by_type, "no entries.", true)}</ul></article>`,
+      `<article class="body-card"><h3 class="body-card-label">dedupe by source</h3><ul class="body-list">${renderCountList(status.dedupe?.by_source, "no entries.")}</ul></article>`,
+      `<article class="body-card"><h3 class="body-card-label">dedupe by month</h3><ul class="body-list">${renderCountList(status.dedupe?.by_month, "no entries.")}</ul></article>`,
       '</section>',
     ]);
     return window.Drawer.render({
@@ -1532,14 +1532,18 @@ a.body-day-cell:focus-visible {
       // ingest arms on both.
       // The line used to end in an "import body data" link to /app/import/,
       // whose catalog has no Apple Health and no Oura card — body ingest is
-      // `solstone-core body apple --source PATH` and `solstone-core body oura
-      // connect` today (`parse_body_apple` / `parse_body_oura` in
-      // solstone-core-cli/src/lib.rs, docs/health_imports.md:52-54),
+      // `solstone-core body apple --source PATH --save --confirm-body-save`
+      // and `solstone-core body oura connect` then `... oura sync --save
+      // --confirm-body-save` today: both writes are gated on the per-run
+      // confirmation (`apple_approval(journal, options.confirm_body_save)` in
+      // body-ingest/src/apple.rs, `if !options.save` in oura_sync.rs, and
+      // `parse_body_apple` / `parse_body_oura` in
+      // solstone-core-cli/src/lib.rs; docs/health_imports.md:52-54),
       // and nothing on that screen can do it. The link is gone and the route
       // that exists is named instead. S-8.
       return html([
         renderHeader("body", "your body, brought into your journal.", false),
-        '<p class="body-subtitle">nothing here yet. bring in sleep, heart rate and activity from Oura or Apple Health. that runs from the command line for now, with <code class="body-code">solstone-core body apple --source PATH</code> or <code class="body-code">solstone-core body oura connect</code>.</p>',
+        '<p class="body-subtitle">nothing here yet. bring in sleep, heart rate and activity from Oura or Apple Health. that runs from the command line for now: <code class="body-code">solstone-core body apple --source PATH --save --confirm-body-save</code>, or <code class="body-code">solstone-core body oura connect</code> and then <code class="body-code">solstone-core body oura sync --save --confirm-body-save</code>.</p>',
       ]);
     }
     return html([
@@ -1624,7 +1628,7 @@ a.body-day-cell:focus-visible {
     }
     const firstGlucose = asArray(bodyDay.glucose_series)[0];
     if (firstGlucose) {
-      parts.push(`<article class="body-card body-highlight body-card--soft"><h2 class="body-highlight-title">glucose</h2><p class="body-highlight-value">${escapeHtml(firstGlucose.range_label)}</p><p class="body-highlight-detail">Avg <span class="body-num">${escapeHtml(firstGlucose.mean_label)}</span> &middot; <span class="body-num">${escapeHtml(firstGlucose.count_label)}</span> readings</p></article>`);
+      parts.push(`<article class="body-card body-highlight body-card--soft"><h2 class="body-highlight-title">glucose</h2><p class="body-highlight-value">${escapeHtml(firstGlucose.range_label)}</p><p class="body-highlight-detail">avg <span class="body-num">${escapeHtml(firstGlucose.mean_label)}</span> &middot; <span class="body-num">${escapeHtml(firstGlucose.count_label)}</span> readings</p></article>`);
     }
     const workouts = asArray(bodyDay.activity?.workouts);
     if (bodyDay.activity && workouts.length) {
@@ -1658,8 +1662,8 @@ a.body-day-cell:focus-visible {
       renderScoreAnatomy("body-sleep-anatomy", sleep.score_contributors),
       `<svg class="body-sleep-bar" viewBox="0 0 1440 34" preserveAspectRatio="none" aria-hidden="true"><rect class="body-sleep-axis" x="0" y="15" width="1440" height="4" rx="2"></rect>${ticks}${segments}</svg>`,
       '<div class="body-sleep-hours body-num" aria-hidden="true"><span>6 PM</span><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span></div>',
-      naps.length ? `<ul class="body-facts">${naps.map((nap) => `<li><span>Nap</span><strong class="body-num">${escapeHtml(nap.window)} &middot; ${escapeHtml(nap.duration)}</strong></li>`).join("")}</ul>` : "",
-      `<p class="body-card-footer">Sleep data from ${escapeHtml(sleep.source)}${asArray(sleep.other_sources).length ? ` &middot; also present: ${escapeHtml(asArray(sleep.other_sources).join(", "))}` : ""}</p>`,
+      naps.length ? `<ul class="body-facts">${naps.map((nap) => `<li><span>nap</span><strong class="body-num">${escapeHtml(nap.window)} &middot; ${escapeHtml(nap.duration)}</strong></li>`).join("")}</ul>` : "",
+      `<p class="body-card-footer">sleep data from ${escapeHtml(sleep.source)}${asArray(sleep.other_sources).length ? ` &middot; also present: ${escapeHtml(asArray(sleep.other_sources).join(", "))}` : ""}</p>`,
       '</section>',
     ]);
   }
@@ -1693,8 +1697,8 @@ a.body-day-cell:focus-visible {
       '<section class="body-card" aria-labelledby="body-activity-title">',
       '<h2 id="body-activity-title" class="body-question-title">how active was I?</h2>',
       workouts.length ? `<ul class="body-workouts">${workouts.map((workout) => `<li><span class="body-workout-name">${escapeHtml(workout.name)}</span><span class="body-num">${workout.start ? escapeHtml(workout.start) : ""}${workout.duration ? ` &middot; ${escapeHtml(workout.duration)}` : ""}${workout.metrics_label ? ` &middot; ${escapeHtml(workout.metrics_label)}` : ""}${workout.source ? ` &middot; ${escapeHtml(workout.source)}` : ""}</span></li>`).join("")}</ul>` : "",
-      running.length ? `<h3 class="body-card-label">Running dynamics</h3><ul class="body-facts">${running.map((item) => `<li><span>${escapeHtml(item.label)}</span>${item.summary ? `<strong class="body-num">${escapeHtml(item.summary)}</strong>` : `<strong><span class="body-num">${escapeHtml(item.count_label)}</span> <span class="body-fact-kind">entries</span></strong>`}</li>`).join("")}</ul>` : "",
-      activity.steps ? (activity.steps.mode === "total" ? `<p class="body-primary-line"><span class="body-num">${escapeHtml(activity.steps.total_label)}</span> steps &middot; ${escapeHtml(activity.steps.source)}${activity.steps.others_label ? ` &mdash; ${escapeHtml(activity.steps.others_label)}` : ""}</p>` : `<p class="body-primary-line">Step-count samples: <span class="body-num">${escapeHtml(activity.steps.samples_label)}</span></p>`) : "",
+      running.length ? `<h3 class="body-card-label">running dynamics</h3><ul class="body-facts">${running.map((item) => `<li><span>${escapeHtml(item.label)}</span>${item.summary ? `<strong class="body-num">${escapeHtml(item.summary)}</strong>` : `<strong><span class="body-num">${escapeHtml(item.count_label)}</span> <span class="body-fact-kind">entries</span></strong>`}</li>`).join("")}</ul>` : "",
+      activity.steps ? (activity.steps.mode === "total" ? `<p class="body-primary-line"><span class="body-num">${escapeHtml(activity.steps.total_label)}</span> steps &middot; ${escapeHtml(activity.steps.source)}${activity.steps.others_label ? ` &mdash; ${escapeHtml(activity.steps.others_label)}` : ""}</p>` : `<p class="body-primary-line">step-count samples: <span class="body-num">${escapeHtml(activity.steps.samples_label)}</span></p>`) : "",
       counters.length ? `<ul class="body-facts">${counters.map((counter) => `<li><span>${escapeHtml(counter.label)}</span>${counter.value ? `<strong class="body-num">${escapeHtml(counter.value)}</strong>` : `<strong><span class="body-num">${escapeHtml(counter.count_label)}</span> <span class="body-fact-kind">${Number(counter.count) === 1 ? "entry" : "entries"}</span></strong>`}</li>`).join("")}</ul>` : "",
       '</section>',
     ]);
@@ -1709,7 +1713,7 @@ a.body-day-cell:focus-visible {
     return html([
       '<section class="body-card" aria-labelledby="body-heart-title">',
       '<h2 id="body-heart-title" class="body-question-title">heart &amp; breathing</h2>',
-      heart.heart_rate ? `<ul class="body-facts"><li><span>Heart rate</span><strong class="body-num">${escapeHtml(heart.heart_rate.summary)}</strong></li></ul>` : "",
+      heart.heart_rate ? `<ul class="body-facts"><li><span>heart rate</span><strong class="body-num">${escapeHtml(heart.heart_rate.summary)}</strong></li></ul>` : "",
       hr ? html([
         '<div class="body-curve-wrap">',
         `<div class="body-curve-y body-num" aria-hidden="true"><span>${escapeHtml(hr.svg?.y_max_label)}</span><span>${escapeHtml(hr.svg?.y_min_label)}</span></div>`,
@@ -1724,7 +1728,7 @@ a.body-day-cell:focus-visible {
       facts.length ? `<ul class="body-facts">${facts.map((fact) => `<li><span>${escapeHtml(fact.label)}</span>${fact.value ? `<strong class="body-num">${escapeHtml(fact.value)}${typicalSpan(fact.typical_label)}</strong>` : `<strong><span class="body-num">${escapeHtml(fact.count_label)}</span> <span class="body-fact-kind">readings</span></strong>`}</li>`).join("")}</ul>` : "",
       heart.resting_comparison_line ? `<p class="body-muted body-num body-device-compare">${escapeHtml(heart.resting_comparison_line)}</p>` : "",
       bp ? html([
-        '<h3 class="body-card-label">Blood pressure</h3>',
+        '<h3 class="body-card-label">blood pressure</h3>',
         bp.mode === "readings" ? `<ul class="body-facts">${asArray(bp.readings).map((reading) => `<li><span class="body-num">${escapeHtml(reading.time)}</span><strong class="body-num">${escapeHtml(reading.label)}</strong></li>`).join("")}</ul>` : `<p class="body-primary-line body-num">${escapeHtml(bp.range_label)}</p><p class="body-card-footer"><span class="body-num">${escapeHtml(bp.count_label)}</span> readings</p>`,
       ]) : "",
       heart.rhythm ? `<ul class="body-facts">${rhythmEvents.map((item) => `<li><span>${escapeHtml(item.label)}</span><strong class="body-num">${escapeHtml(item.detail)}</strong></li>`).join("")}${heart.rhythm.burden ? `<li><span>${escapeHtml(heart.rhythm.burden.label)}</span><strong class="body-num">${escapeHtml(heart.rhythm.burden.detail)}</strong></li>` : ""}</ul>` : "",
@@ -1795,15 +1799,15 @@ a.body-day-cell:focus-visible {
     const appendix = asArray(audit.oura_appendix);
     const bodyHtml = html([
       '<div class="body-lists">',
-      `<article class="body-card"><h3 class="body-card-label">By type</h3><ul class="body-list">${renderCountList(audit.types, "No entries.", true)}</ul></article>`,
-      '<article class="body-card"><h3 class="body-card-label">Imports</h3>',
-      importIds.length ? `<ul class="drawer-evidence">${importIds.map((importId) => `<li class="drawer-evidence-row"><a class="drawer-evidence-title body-code" href="/app/import/${escapeHtml(importId)}">${escapeHtml(importId)}</a></li>`).join("")}</ul>` : '<p class="body-muted">No imports.</p>',
+      `<article class="body-card"><h3 class="body-card-label">by type</h3><ul class="body-list">${renderCountList(audit.types, "no entries.", true)}</ul></article>`,
+      '<article class="body-card"><h3 class="body-card-label">imports</h3>',
+      importIds.length ? `<ul class="drawer-evidence">${importIds.map((importId) => `<li class="drawer-evidence-row"><a class="drawer-evidence-title body-code" href="/app/import/${escapeHtml(importId)}">${escapeHtml(importId)}</a></li>`).join("")}</ul>` : '<p class="body-muted">no imports.</p>',
       '</article>',
-      appendix.length ? `<article class="body-card"><h3 class="body-card-label">Oura details</h3><ul class="body-list">${appendix.map((item) => `<li><span>${escapeHtml(item.label)}</span><strong class="body-num">${escapeHtml(item.detail)}</strong></li>`).join("")}</ul><p class="body-card-footer">Sessions and tags stay here until a day-card use is clear.</p></article>` : "",
+      appendix.length ? `<article class="body-card"><h3 class="body-card-label">Oura details</h3><ul class="body-list">${appendix.map((item) => `<li><span>${escapeHtml(item.label)}</span><strong class="body-num">${escapeHtml(item.detail)}</strong></li>`).join("")}</ul><p class="body-card-footer">sessions and tags stay here until a day-card use is clear.</p></article>` : "",
       '</div>',
       '<section class="body-section" aria-labelledby="body-day-summary-title">',
-      '<h3 id="body-day-summary-title" class="body-card-label">Day summary</h3>',
-      bodyDay.summary_markdown ? `<pre class="body-summary">${escapeHtml(bodyDay.summary_markdown)}</pre>` : `<p class="body-empty">No day summary file for ${escapeHtml(bodyDay.day)}.</p>`,
+      '<h3 id="body-day-summary-title" class="body-card-label">day summary</h3>',
+      bodyDay.summary_markdown ? `<pre class="body-summary">${escapeHtml(bodyDay.summary_markdown)}</pre>` : `<p class="body-empty">no day summary file for ${escapeHtml(bodyDay.day)}.</p>`,
       '</section>',
     ]);
     return window.Drawer.render({
@@ -1842,7 +1846,7 @@ a.body-day-cell:focus-visible {
       const bodyDay = await window.apiJson(`/app/body/api/day/${encodeURIComponent(day)}`);
       reveal(renderDayView(bodyDay));
     } catch (err) {
-      showError("Couldn't load body day", err, () => initBodyDay());
+      showError("couldn't load body day", err, () => initBodyDay());
     }
   }
 
@@ -1855,7 +1859,7 @@ a.body-day-cell:focus-visible {
   function renderTrendsShell() {
     reveal(html([
       renderHeader("body · trends", "", true),
-      '<section class="body-card" id="body-trends-status" aria-live="polite"><p class="body-muted" id="body-trends-status-line">Loading trends&hellip;</p></section>',
+      '<section class="body-card" id="body-trends-status" aria-live="polite"><p class="body-muted" id="body-trends-status-line">loading trends&hellip;</p></section>',
       '<div class="body-trends-stack" id="body-trends-stack" hidden></div>',
     ]));
     startTrendsController();
@@ -2072,11 +2076,11 @@ a.body-day-cell:focus-visible {
         `<div class="body-trends-chips" role="group" aria-label="${escapeHtml(signal.label)} range and annotations">`,
         ["1y", "3y", "all"].map((range) => {
           const on = state.range === range;
-          return `<button type="button" class="body-trends-chip${on ? " body-trends-chip--on" : ""}" data-range="${escapeHtml(range)}" aria-pressed="${on ? "true" : "false"}">${range === "all" ? "All" : escapeHtml(range)}</button>`;
+          return `<button type="button" class="body-trends-chip${on ? " body-trends-chip--on" : ""}" data-range="${escapeHtml(range)}" aria-pressed="${on ? "true" : "false"}">${range === "all" ? "all" : escapeHtml(range)}</button>`;
         }).join(""),
         '<span class="body-trends-chip-gap"></span>',
-        `<button type="button" class="body-trends-chip${state.flags ? " body-trends-chip--on" : ""}" data-flags-toggle aria-pressed="${state.flags ? "true" : "false"}">Annotations · ${state.flags ? "on" : "off"}</button>`,
-        '<button type="button" class="body-trends-chip" data-collapse>Close</button>',
+        `<button type="button" class="body-trends-chip${state.flags ? " body-trends-chip--on" : ""}" data-flags-toggle aria-pressed="${state.flags ? "true" : "false"}">annotations · ${state.flags ? "on" : "off"}</button>`,
+        '<button type="button" class="body-trends-chip" data-collapse>close</button>',
         '</div>',
       ]);
     }
@@ -2087,7 +2091,7 @@ a.body-day-cell:focus-visible {
       const bounds = windowBounds();
       const inWindow = weekly[signal.key].filter((point) => point.week >= bounds.w0 && point.week <= bounds.w1);
       if (!inWindow.length) {
-        canvas.innerHTML = `${chipsMarkup(signal)}<p class="body-muted">Not present in this range.</p>`;
+        canvas.innerHTML = `${chipsMarkup(signal)}<p class="body-muted">not present in this range.</p>`;
         return;
       }
       let vMin = Infinity;
@@ -2198,7 +2202,7 @@ a.body-day-cell:focus-visible {
       statusCard.hidden = false;
       stack.hidden = true;
       statusCard.innerHTML = window.SurfaceState.error({
-        heading: "Couldn't load body trends",
+        heading: "couldn't load body trends",
         desc: window.CONVEY_COPY.RELOAD_HINT,
         serverMessage: err?.serverMessage,
         detail: err,
@@ -2223,7 +2227,7 @@ a.body-day-cell:focus-visible {
         }
       });
       if (wMin > wMax) {
-        statusCard.innerHTML = window.SurfaceState.empty({ heading: "No trend data present yet." });
+        statusCard.innerHTML = window.SurfaceState.empty({ heading: "no trend data present yet." });
         statusCard.hidden = false;
         stack.hidden = true;
         return;
@@ -2234,7 +2238,7 @@ a.body-day-cell:focus-visible {
         if (week > wMax) wMax = week;
       });
       domain = { w0: wMin, w1: wMax };
-      const foot = payload.generated_at_day ? `<p class="body-trends-foot">Weekly medians of daily points · through ${escapeHtml(dayLabel(payload.generated_at_day))}</p>` : "";
+      const foot = payload.generated_at_day ? `<p class="body-trends-foot">weekly medians of daily points · through ${escapeHtml(dayLabel(payload.generated_at_day))}</p>` : "";
       stack.innerHTML = signals.map(ribbonMarkup).join("") + foot;
       statusCard.hidden = true;
       stack.hidden = false;
