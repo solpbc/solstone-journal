@@ -703,7 +703,9 @@ h2.card-title {
 .registered-clients-card { border-left: 4px solid #9ca3af; }
 .registered-clients-card.hidden { display: none; }
 .registered-clients-strip { display: flex; flex-direction: column; gap: 0.5em; }
-.registered-client-row { display: flex; align-items: center; gap: 0.6em; padding: 0.65em 0.75em; background: #f9fafb; border-radius: 8px; }
+/* X-03: a long device-state value pushed the whole document sideways at 390.
+   The row wraps and every child may shrink, so the line breaks instead. */
+.registered-client-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6em; padding: 0.65em 0.75em; background: #f9fafb; border-radius: 8px; min-width: 0; }
 .registered-client-name { font-weight: 600; color: #111827; }
 
 .registered-client-label,
@@ -718,10 +720,12 @@ h2.card-title {
 .registered-client-label.disconnected,
 .registered-client-label.revoked { background: #e5e7eb; color: #4b5563; }
 .registered-client-label.failing { background: #fee2e2; color: #b91c1c; }
-.registered-client-detail { color: #b91c1c; font-size: 0.78em; margin-left: 0.5em; }
-.registered-client-recovery { color: #6b7280; font-size: 0.78em; margin-left: 0.5em; }
+.registered-client-detail { color: #b91c1c; font-size: 0.78em; margin-left: 0.5em; min-width: 0; overflow-wrap: anywhere; }
+.registered-client-recovery { color: #6b7280; font-size: 0.78em; margin-left: 0.5em; min-width: 0; overflow-wrap: anywhere; }
 
-.registered-client-meta { color: #6b7280; font-size: 0.78em; margin-left: auto; }
+.registered-client-meta { color: #6b7280; font-size: 0.78em; margin-left: auto; min-width: 0; overflow-wrap: anywhere; }
+.registered-client-tech { flex-basis: 100%; font-size: 0.78em; color: var(--ink-soft); }
+.registered-client-tech > summary { cursor: pointer; user-select: none; min-height: 44px; display: flex; align-items: center; }
 .registered-clients-manage {
   display: inline-flex;
   align-items: center;
@@ -757,15 +761,21 @@ h2.card-title {
   color: #dc2626;
 }
 
+/* G3-304: the pending line the processing card shows until its read lands. */
+.brain-health-pending { margin: 0; color: var(--ink-soft); }
+
 .idle-card {
   text-align: left;
   padding: 1.5em;
 }
 
+/* G3-302: the one line that answers "is anything running right now" was
+   painted #9ca3af, roughly 2.5:1 on the paper background and the faintest
+   thing on the page. */
 .idle-card-title {
   font-size: 0.9em;
   font-weight: 500;
-  color: #9ca3af;
+  color: var(--ink-soft);
   margin-bottom: 0.75em;
 }
 
@@ -1491,7 +1501,7 @@ h2.card-title {
       <h2 class="card-title">processing</h2>
       <button id="brainCheckBtn" hidden>check again</button>
     </div>
-    <div id="brainHealthStatus" role="status" aria-live="polite"></div>
+    <div id="brainHealthStatus" role="status" aria-live="polite"><p class="brain-health-pending">checking processing&hellip;</p></div>
   </section>
 
   <!-- Vitals Bar -->
@@ -1504,7 +1514,7 @@ h2.card-title {
         <span class="skeleton" style="width: 120px; height: 1em;">&nbsp;</span>
       </div>
       <span class="connection-indicator" id="connectionIndicator"></span>
-      <button id="vitalsCheckBtn">check now</button>
+      <button id="vitalsCheckBtn" data-awaiting-first-read="true" disabled>check now</button>
     </div>
     <div class="vitals-content">
       <div class="vitals-section" role="group" aria-label="Services: loading">
@@ -1646,6 +1656,7 @@ h2.card-title {
 
   <div class="dashboard-card activity-section hidden" id="allQuietCard">
     <div class="idle-card">
+      <h2 class="card-title">right now</h2>
       <div class="idle-card-title">everything is idle</div>
       <div class="idle-card-stats" id="idleCardStats"></div>
     </div>

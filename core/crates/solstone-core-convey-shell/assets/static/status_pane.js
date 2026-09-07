@@ -56,6 +56,33 @@ window.whenShellReady(() => {
 
   let initialDestinationPending = true;
   let initialHealthReady = false;
+
+  // X-10: the pane is the last thing on health, so `block: start` has nothing
+  // left to scroll into and the browser clamps at the end of the page — the
+  // deep link landed the section below the fold. A gutter gives the scroller
+  // the room the destination needs and nothing more. It is measured, not
+  // guessed, and it is removed the moment the page grows enough on its own.
+  const SCROLL_GUTTER_ID = 'deep-link-scroll-gutter';
+  function ensureScrollEndGutter(target) {
+    const existing = document.getElementById(SCROLL_GUTTER_ID);
+    if (existing) existing.style.height = '0px';
+    const scroller = document.scrollingElement || document.documentElement;
+    const top = target.getBoundingClientRect().top + scroller.scrollTop;
+    const margin = parseFloat(window.getComputedStyle(target).scrollMarginTop) || 0;
+    const needed = Math.ceil(top - margin + window.innerHeight - scroller.scrollHeight);
+    if (needed <= 0) {
+      existing?.remove();
+      return;
+    }
+    const gutter = existing || document.createElement('div');
+    if (!existing) {
+      gutter.id = SCROLL_GUTTER_ID;
+      gutter.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(gutter);
+    }
+    gutter.style.height = needed + 'px';
+  }
+
   function revealInitialDestination() {
     if (!statusPaneOpen || !initialDestinationPending || !initialHealthReady) return;
     const id = window.location.hash.slice(1);
@@ -63,7 +90,10 @@ window.whenShellReady(() => {
     const target = document.getElementById(id);
     if (!target || target.getClientRects().length === 0) return;
     initialDestinationPending = false;
-    requestAnimationFrame(() => target.scrollIntoView({block: 'start'}));
+    requestAnimationFrame(() => {
+      ensureScrollEndGutter(target);
+      target.scrollIntoView({block: 'start'});
+    });
   }
   // Initial API renders can change the page height after the workspace mounts.
   document.addEventListener('health:initial-ready', () => {
@@ -221,8 +251,20 @@ window.whenShellReady(() => {
       });
   }
 
-  function captureMonthDay(ms) {
-    return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase();
+  // X-02: the pane printed its own lowercase 'sep 6'. Dates on a surface go
+  // through the shared formatter, the way the rest of the shell reads them.
+  function captureDay(ms) {
+    const value = new Date(ms);
+    if (Number.isNaN(value.getTime())) return '';
+    const key = String(value.getFullYear())
+      + String(value.getMonth() + 1).padStart(2, '0')
+      + String(value.getDate()).padStart(2, '0');
+    return window.JournalFormat ? window.JournalFormat.day(key) : key;
+  }
+
+  // Plural forms are real: the pane read '1 uploads turned away'.
+  function uploadsTurnedAway(count) {
+    return count === 1 ? '1 upload turned away' : count + ' uploads turned away';
   }
 
 	  function renderCaptureSection(capture) {
@@ -268,15 +310,18 @@ window.whenShellReady(() => {
 		      const hasActiveCount = typeof rej.active_count === 'number' && isFinite(rej.active_count);
 		      appendLine(title, 'color: var(--danger); font-weight: 600;');
 
+		      // X-02: health's sentence is the source for this state. The pane
+		      // echoes it, says what the device adds rather than what it senses,
+		      // and counts in a real plural.
 		      let consequence;
 		      if (hasFirstTs && hasActiveCount) {
-			        consequence = "what it sensed hasn't reached your journal since " + captureMonthDay(rej.first_ts) + ', ' + rej.active_count + ' uploads turned away.';
+			        consequence = "what it adds hasn't reached your journal since " + captureDay(rej.first_ts) + '. ' + uploadsTurnedAway(rej.active_count) + '.';
 		      } else if (hasActiveCount) {
-			        consequence = "what it senses isn't reaching your journal, " + rej.active_count + ' uploads turned away.';
+			        consequence = "what it adds isn't reaching your journal. " + uploadsTurnedAway(rej.active_count) + '.';
 		      } else if (hasFirstTs) {
-			        consequence = "what it sensed hasn't reached your journal since " + captureMonthDay(rej.first_ts) + '.';
+			        consequence = "what it adds hasn't reached your journal since " + captureDay(rej.first_ts) + '.';
 		      } else {
-			        consequence = "what it senses isn't reaching your journal.";
+			        consequence = "what it adds isn't reaching your journal.";
 		      }
 		      appendLine(consequence, 'color: var(--danger); font-size: 12px;');
 

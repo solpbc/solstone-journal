@@ -54,6 +54,12 @@
     CONSOLE_DETAIL_LOCATION_LABEL: 'location'
   };
   window.CONVEY_SETTINGS = { reportingEnabled: true };
+  // X-01: a cancelled-fetch-shaped rejection waits out the navigation window
+  // before it is written down. Production waits 1 s; the harness closes the
+  // window to zero, so `settled()` is one macrotask rather than a sleep the
+  // page's time budget cannot afford. The ordering under test is unchanged: a
+  // pagehide dispatched in the same task still lands before the timer.
+  window.CONVEY_NAV_ABORT_WINDOW_MS = 0;
   window.convey = {
     reportError(context) {
       window.reportCalls.push(context);
@@ -97,6 +103,8 @@
     await Promise.resolve();
     await tick();
   }
+
+  const settled = tick;
 
   async function runTests() {
     // the drawer binds and first renders behind whenShellReady; wait for it so
@@ -199,8 +207,36 @@
 
     diagnostic.clear();
     window.logError(new TypeError('Failed to fetch'), { context: 'home: refreshVitals failed' });
+    assert('a cancelled-fetch shape is not written down before the navigation window closes',
+      diagnostic.list().length === 0);
+    await settled();
     assert('a live failed fetch still reaches system messages', diagnostic.list().length === 1
       && diagnostic.list()[0].summary === "couldn't load part of this page.");
+
+    // X-01: an address-bar entry, a bookmark and a back button cancel the reads
+    // first and fire pagehide after, so the rejection arrives while the flag is
+    // still false. The window is what covers them.
+    diagnostic.clear();
+    window.logError(new TypeError('Failed to fetch'), { context: 'health: pulse failed' });
+    window.dispatchEvent(new Event('pagehide'));
+    await settled();
+    assert('a rejection that beats pagehide is still a navigation, not an error',
+      diagnostic.list().length === 0);
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    // A document going hidden is on its way somewhere too.
+    diagnostic.clear();
+    const realVisibility = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState');
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    window.logError(new TypeError('Failed to fetch'), { context: 'health: pulse failed' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await settled();
+    assert('a rejection that beats a hidden visibilitychange is a navigation too',
+      diagnostic.list().length === 0);
+    delete document.visibilityState;
+    assert('the harness restored the real visibility state',
+      document.visibilityState === 'visible' && realVisibility);
+    document.dispatchEvent(new Event('visibilitychange'));
 
     diagnostic.clear();
     window.logError(new Error('Failed to fetch'), { context: 'not-a-fetch' });
@@ -225,6 +261,7 @@
     assert('the document under test is visible when visibilitychange fires',
       document.visibilityState === 'visible');
     window.logError(new TypeError('Failed to fetch'), { context: 'home: refreshVitals failed' });
+    await settled();
     assert('a visible document reports a cancelled fetch again', diagnostic.list().length === 1
       && diagnostic.list()[0].summary === "couldn't load part of this page.");
 
@@ -232,6 +269,7 @@
     // browser's exception text move into the "show details" disclosure.
     diagnostic.clear();
     window.logError(new TypeError('Failed to fetch'), { context: 'date-nav:index', url: '/app/news/api/index' });
+    await settled();
     const dateNav = diagnostic.list()[0];
     assert('a failed read reads as an owner sentence, not a source label',
       dateNav.summary === "couldn't load part of this page.",
@@ -278,24 +316,25 @@
     const clearUnloading = () => {
       document.dispatchEvent(new Event('visibilitychange'));
     };
-    const cancelledAfterClick = (id) => {
+    const cancelledAfterClick = async (id) => {
       clearUnloading();
       diagnostic.clear();
       document.getElementById(id).click();
       window.logError(new TypeError('Failed to fetch'), { context: 'home: refreshVitals failed' });
+      await settled();
       return diagnostic.list().length === 0;
     };
 
     assert('a same-origin link click drops the fetch it cancelled',
-      cancelledAfterClick('nav-same-origin'));
+      await cancelledAfterClick('nav-same-origin'));
     assert('a same-page hash link does not arm the guard',
-      !cancelledAfterClick('nav-hash'));
+      !await cancelledAfterClick('nav-hash'));
     assert('a link opening a new tab does not arm the guard',
-      !cancelledAfterClick('nav-new-tab'));
+      !await cancelledAfterClick('nav-new-tab'));
     assert('a cross-origin link does not arm the guard',
-      !cancelledAfterClick('nav-external'));
+      !await cancelledAfterClick('nav-external'));
     assert('a link whose handler cancels the navigation does not arm the guard',
-      !cancelledAfterClick('nav-handled'));
+      !await cancelledAfterClick('nav-handled'));
 
     clearUnloading();
     diagnostic.clear();
@@ -308,12 +347,30 @@
     document.getElementById('nav-form').dispatchEvent(
       new Event('submit', { bubbles: true, cancelable: true }));
     window.logError(new TypeError('Failed to fetch'), { context: 'settings: loadStorage failed' });
+    await settled();
     assert('a form submit drops the fetch it cancelled', diagnostic.list().length === 0);
 
     diagnostic.clear();
     window.dispatchEvent(new Event('pageshow'));
     window.logError(new TypeError('Failed to fetch'), { context: 'home: refreshVitals failed' });
+    await settled();
     assert('pageshow clears the guard', diagnostic.list().length === 1);
+
+    // X-01: the detail is the whole point of "show details". A rejection reason
+    // that is not an Error used to arrive there as the string "[object Object]".
+    diagnostic.clear();
+    window.logError({ code: 'ERR_PULSE', status: 503 }, { context: 'health: pulse failed' });
+    const plain = diagnostic.list()[0];
+    assert('a plain-object reason never reads as [object Object]',
+      plain.detail.message === '{"code":"ERR_PULSE","status":503}', plain.detail.message);
+    diagnostic.clear();
+    window.logError({ message: 'pulse read refused', stack: 'at pulse (health.js:1)' },
+      { context: 'health: pulse failed' });
+    const errorLike = diagnostic.list()[0];
+    assert('an Error-like object keeps its message and stack',
+      errorLike.detail.message === 'pulse read refused'
+      && errorLike.detail.stack === 'at pulse (health.js:1)',
+      errorLike.detail.message + ' / ' + errorLike.detail.stack);
     window.removeEventListener('click', swallowNavigation);
     window.removeEventListener('submit', swallowNavigation);
     navHost.remove();

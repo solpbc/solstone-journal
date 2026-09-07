@@ -794,7 +794,10 @@ mod tests {
         assert_eq!(degraded_g["verdict"], "attention");
         assert_eq!(degraded_g["severity"], "red");
         let degraded_text = degraded_g["issues"][0]["text"].as_str().unwrap();
-        assert!(degraded_text.contains("having trouble adding"));
+        // X-02: the red device line names the device, the way health's banner
+        // does. "one of your devices" was the only one of the three writers
+        // that hid it.
+        assert_eq!(degraded_text, "rej isn't reaching your journal.");
         assert!(!degraded_text.contains("still running"));
         assert!(!degraded_text.contains("asleep"));
 

@@ -331,7 +331,7 @@ fn build_capture_health(
             None => notes.push(note(
                 "info",
                 "capture",
-                &format!("{facet}: no captures recorded in the last 7 days."),
+                &format!("{facet}: nothing new in the last 7 days."),
                 generated_at,
                 None,
             )),

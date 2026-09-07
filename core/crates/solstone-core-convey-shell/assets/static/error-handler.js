@@ -49,6 +49,10 @@
     return result;
   }
 
+  // X-01: a rejection reason is not always an Error. Coercing a plain object
+  // with String() writes the literal "[object Object]" into the entry the
+  // "show details" disclosure renders, so the owner gets a calm summary with
+  // nothing behind it. Read the message, then serialise, then coerce.
   function messageFromError(error) {
     if (error instanceof Error) {
       return error.message || String(error);
@@ -56,7 +60,24 @@
     if (typeof error === 'string') {
       return error;
     }
+    if (error && typeof error === 'object') {
+      if (typeof error.message === 'string' && error.message) {
+        return error.message;
+      }
+      try {
+        const json = JSON.stringify(error);
+        if (json && json !== '{}' && json !== 'null') {
+          return json;
+        }
+      } catch (_) {
+        // a circular or unserialisable reason falls through to String()
+      }
+    }
     return String(error ?? 'unknown error');
+  }
+
+  function stackFromError(error) {
+    return error && typeof error.stack === 'string' ? error.stack : '';
   }
 
   // A page that is going away cancels its own in-flight GETs. The browser
@@ -68,6 +89,7 @@
   let navigationGuard = null;
   function markUnloading() {
     unloading = true;
+    dropDeferredAborts();
   }
   // pagehide only: a beforeunload listener costs the back/forward cache.
   window.addEventListener('pagehide', markUnloading);
@@ -142,8 +164,22 @@
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       unloading = false;
+      return;
     }
+    // X-01: a document that has just gone hidden is on its way somewhere. The
+    // flag does not latch — the visible branch above and the 2 s guard below
+    // both clear it — so a page that comes back reports its own failures again.
+    markUnloadingForNavigation();
   });
+
+  function looksLikeCancelledFetch(error) {
+    if (!error) {
+      return false;
+    }
+    const message = String(error.message || '');
+    return (error instanceof TypeError || error.name === 'TypeError')
+      && /failed to fetch|networkerror|load failed|network request failed/i.test(message);
+  }
 
   function isNavigationAbort(error) {
     if (!error) {
@@ -152,10 +188,7 @@
     if (error.name === 'AbortError') {
       return true;
     }
-    const message = String(error.message || '');
-    const looksLikeCancelledFetch = (error instanceof TypeError || error.name === 'TypeError')
-      && /failed to fetch|networkerror|load failed|network request failed/i.test(message);
-    if (!looksLikeCancelledFetch) {
+    if (!looksLikeCancelledFetch(error)) {
       return false;
     }
     return unloading;
@@ -174,6 +207,24 @@
       : (copy.CONSOLE_SUMMARY_UNEXPECTED || "something on this page didn't work.");
   }
 
+  // X-01: the guards above all key on a signal that arrives *before* the
+  // rejection. An address-bar entry, a bookmark and a back button cancel this
+  // page's in-flight GETs first and fire pagehide after, so the flag is still
+  // false when the rejection lands and the owner reads a phantom failure on
+  // the page they just left. A cancelled-fetch-shaped rejection therefore
+  // waits out the navigation window before it is written down: if the document
+  // is going away it never fires at all, and a genuine offline failure on a
+  // page that stays is logged a second later, intact.
+  function navigationWindowMs() {
+    const override = Number(window.CONVEY_NAV_ABORT_WINDOW_MS);
+    return Number.isFinite(override) && override >= 0 ? override : 1000;
+  }
+  const deferredAborts = new Set();
+  function dropDeferredAborts() {
+    deferredAborts.forEach(timer => clearTimeout(timer));
+    deferredAborts.clear();
+  }
+
   window.logError = (error, context) => {
     if (isNavigationAbort(error)) {
       // still visible to a developer, but it is not a fault of this session
@@ -182,6 +233,18 @@
       }
       return;
     }
+    if (looksLikeCancelledFetch(error)) {
+      const timer = setTimeout(() => {
+        deferredAborts.delete(timer);
+        recordError(error, context);
+      }, navigationWindowMs());
+      deferredAborts.add(timer);
+      return;
+    }
+    recordError(error, context);
+  };
+
+  function recordError(error, context) {
     markError();
     if (window.console && typeof window.console.error === 'function') {
       window.console.error(error, context || '');
@@ -196,7 +259,7 @@
         summary: ownerSummary(message),
         detail: {
           message,
-          stack: error instanceof Error ? (error.stack || '') : '',
+          stack: stackFromError(error),
           filename: safe.filename,
           lineno: safe.lineno,
           colno: safe.colno,
@@ -205,7 +268,7 @@
         }
       });
     }
-  };
+  }
 
   // Mark status icon as error state (red with glow)
   function markError() {
@@ -228,7 +291,13 @@
 
   // Unhandled promise rejection handler
   window.addEventListener('unhandledrejection', (e) => {
-    const error = e.reason instanceof Error ? e.reason : new Error(String(e.reason ?? 'unknown rejection'));
+    // The reason is handed through as it came: logError reads a message off an
+    // Error, a plain object or a string, and String()-ing it here was what put
+    // "[object Object]" in front of the owner.
+    const reason = e.reason;
+    const error = (reason && typeof reason === 'object') || typeof reason === 'string'
+      ? reason
+      : new Error(String(reason ?? 'unknown rejection'));
     window.logError(error, { kind: 'unhandled-rejection' });
   });
 

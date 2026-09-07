@@ -3021,7 +3021,7 @@
             "status": "degraded"
           }
         },
-        "output": "the solstone app on one of your devices is having trouble adding to your journal."
+        "output": "a device isn't reaching your journal."
       },
       {
         "input": {
@@ -3034,7 +3034,7 @@
             "status": "degraded"
           }
         },
-        "output": "the solstone app on one of your devices is having trouble adding to your journal."
+        "output": "a device isn't reaching your journal."
       }
     ],
     "duration": [
@@ -8628,7 +8628,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -8656,7 +8656,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -8684,7 +8684,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -8712,7 +8712,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -8740,7 +8740,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -8773,7 +8773,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -8806,7 +8806,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/thinking/",
@@ -8839,7 +8839,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -8867,7 +8867,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -8895,7 +8895,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -8923,7 +8923,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -8951,7 +8951,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -8984,7 +8984,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -9017,7 +9017,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/thinking/",
@@ -9050,7 +9050,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -9083,7 +9083,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -9116,7 +9116,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -9149,7 +9149,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -9182,7 +9182,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -9220,7 +9220,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -9258,7 +9258,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -9296,7 +9296,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -9329,7 +9329,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -9362,7 +9362,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -9395,7 +9395,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -9428,7 +9428,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -9466,7 +9466,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -9504,7 +9504,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -9542,7 +9542,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -9575,7 +9575,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -9608,7 +9608,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -9641,7 +9641,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -9674,7 +9674,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -9712,7 +9712,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -9750,7 +9750,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -16048,7 +16048,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -16076,7 +16076,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -16104,7 +16104,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -16132,7 +16132,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -16160,7 +16160,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -16193,7 +16193,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -16226,7 +16226,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/thinking/",
@@ -16259,7 +16259,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -16287,7 +16287,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -16315,7 +16315,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -16343,7 +16343,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -16371,7 +16371,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -16404,7 +16404,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -16437,7 +16437,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/thinking/",
@@ -16470,7 +16470,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -16503,7 +16503,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -16536,7 +16536,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -16569,7 +16569,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -16602,7 +16602,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -16640,7 +16640,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -16678,7 +16678,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -16716,7 +16716,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -16749,7 +16749,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -16782,7 +16782,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -16815,7 +16815,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -16848,7 +16848,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -16886,7 +16886,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -16924,7 +16924,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -16962,7 +16962,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -16995,7 +16995,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -17028,7 +17028,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -17061,7 +17061,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -17094,7 +17094,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -17132,7 +17132,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -17170,7 +17170,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -22576,7 +22576,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -22599,7 +22599,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -22622,7 +22622,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -22645,7 +22645,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -22668,7 +22668,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -22696,7 +22696,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -22724,7 +22724,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/thinking/",
@@ -22752,7 +22752,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -22775,7 +22775,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -22798,7 +22798,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -22821,7 +22821,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -22844,7 +22844,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -22872,7 +22872,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -22900,7 +22900,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/thinking/",
@@ -22928,7 +22928,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -22956,7 +22956,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -22984,7 +22984,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -23012,7 +23012,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -23040,7 +23040,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -23073,7 +23073,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -23106,7 +23106,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -23139,7 +23139,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -23167,7 +23167,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -23195,7 +23195,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -23223,7 +23223,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -23251,7 +23251,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -23284,7 +23284,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -23317,7 +23317,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -23350,7 +23350,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -23378,7 +23378,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -23406,7 +23406,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -23434,7 +23434,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -23462,7 +23462,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -23495,7 +23495,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -23528,7 +23528,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -23550,23 +23550,6 @@
         "input": {
           "backlog": "valid_fresh_clear",
           "brain": "none",
-          "capture": "unknown",
-          "last_observe_relative": "2 minutes ago",
-          "pipeline": "none"
-        },
-        "output": {
-          "cta": null,
-          "headline": "your devices' status is unclear right now.",
-          "issues": [],
-          "last_observation": null,
-          "severity": "amber",
-          "verdict": "unavailable"
-        }
-      },
-      {
-        "input": {
-          "backlog": "valid_fresh_clear",
-          "brain": "ready",
           "capture": "unknown",
           "last_observe_relative": "2 minutes ago",
           "pipeline": "none"
@@ -23583,6 +23566,23 @@
       {
         "input": {
           "backlog": "valid_fresh_clear",
+          "brain": "ready",
+          "capture": "unknown",
+          "last_observe_relative": "2 minutes ago",
+          "pipeline": "none"
+        },
+        "output": {
+          "cta": null,
+          "headline": "your devices' status is unclear right now.",
+          "issues": [],
+          "last_observation": null,
+          "severity": "amber",
+          "verdict": "unavailable"
+        }
+      },
+      {
+        "input": {
+          "backlog": "valid_fresh_clear",
           "brain": "checking",
           "capture": "unknown",
           "last_observe_relative": "2 minutes ago",
@@ -29643,7 +29643,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -29671,7 +29671,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -29699,7 +29699,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -29727,7 +29727,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -29755,7 +29755,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -29788,7 +29788,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -29821,7 +29821,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/thinking/",
@@ -29854,7 +29854,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -29882,7 +29882,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -29910,7 +29910,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -29938,7 +29938,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -29966,7 +29966,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -29999,7 +29999,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -30032,7 +30032,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/thinking/",
@@ -30065,7 +30065,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30098,7 +30098,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30131,7 +30131,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30164,7 +30164,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30197,7 +30197,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30235,7 +30235,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30273,7 +30273,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30311,7 +30311,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30344,7 +30344,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30377,7 +30377,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30410,7 +30410,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30443,7 +30443,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30481,7 +30481,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30519,7 +30519,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -30557,7 +30557,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -30590,7 +30590,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -30623,7 +30623,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -30656,7 +30656,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -30689,7 +30689,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -30727,7 +30727,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -30765,7 +30765,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -37063,7 +37063,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -37091,7 +37091,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -37119,7 +37119,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -37147,7 +37147,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -37175,7 +37175,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -37208,7 +37208,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -37241,7 +37241,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/thinking/",
@@ -37274,7 +37274,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -37302,7 +37302,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -37330,7 +37330,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -37358,7 +37358,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -37386,7 +37386,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -37419,7 +37419,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -37452,7 +37452,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/thinking/",
@@ -37485,7 +37485,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -37518,7 +37518,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -37551,7 +37551,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -37584,7 +37584,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -37617,7 +37617,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -37655,7 +37655,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -37693,7 +37693,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -37731,7 +37731,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -37764,7 +37764,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -37797,7 +37797,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -37830,7 +37830,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -37863,7 +37863,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -37901,7 +37901,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -37939,7 +37939,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -37977,7 +37977,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -38010,7 +38010,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -38043,7 +38043,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -38076,7 +38076,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -38109,7 +38109,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -38147,7 +38147,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -38185,7 +38185,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -44483,7 +44483,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -44511,7 +44511,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -44539,7 +44539,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -44567,7 +44567,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -44595,7 +44595,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -44628,7 +44628,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -44661,7 +44661,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/thinking/",
@@ -44694,7 +44694,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -44722,7 +44722,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -44750,7 +44750,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -44778,7 +44778,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -44806,7 +44806,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -44839,7 +44839,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -44872,7 +44872,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/thinking/",
@@ -44905,7 +44905,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -44938,7 +44938,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -44971,7 +44971,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -45004,7 +45004,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -45037,7 +45037,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -45075,7 +45075,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -45113,7 +45113,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -45151,7 +45151,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -45184,7 +45184,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -45217,7 +45217,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -45250,7 +45250,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -45283,7 +45283,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -45321,7 +45321,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -45359,7 +45359,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -45397,7 +45397,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -45430,7 +45430,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -45463,7 +45463,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -45496,7 +45496,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -45529,7 +45529,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -45567,7 +45567,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -45605,7 +45605,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -51903,7 +51903,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -51931,7 +51931,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -51959,7 +51959,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -51987,7 +51987,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -52015,7 +52015,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -52048,7 +52048,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -52081,7 +52081,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/thinking/",
@@ -52114,7 +52114,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -52142,7 +52142,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -52170,7 +52170,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -52198,7 +52198,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             }
           ],
           "last_observation": null,
@@ -52226,7 +52226,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -52259,7 +52259,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health/#brain",
@@ -52292,7 +52292,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/thinking/",
@@ -52325,7 +52325,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -52358,7 +52358,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -52391,7 +52391,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -52424,7 +52424,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -52457,7 +52457,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -52495,7 +52495,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -52533,7 +52533,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -52571,7 +52571,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -52604,7 +52604,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -52637,7 +52637,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -52670,7 +52670,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -52703,7 +52703,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -52741,7 +52741,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -52779,7 +52779,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/health#focus=recent-errors&day=today",
@@ -52817,7 +52817,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -52850,7 +52850,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -52883,7 +52883,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -52916,7 +52916,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -52949,7 +52949,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -52987,7 +52987,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
@@ -53025,7 +53025,7 @@
             {
               "href": "/app/health",
               "severity": "red",
-              "text": "the solstone app on one of your devices is having trouble adding to your journal."
+              "text": "a device isn't reaching your journal."
             },
             {
               "href": "/app/support",
