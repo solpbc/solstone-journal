@@ -33,7 +33,6 @@ const STATUS_HELP: &str = "usage: solstone link status [-h] [--label LABEL]\n\nS
 const STATUS_USAGE: &str = "usage: solstone link status [-h] [--label LABEL]\n";
 const DEFAULT_CLIENT_LABEL: &str = "linked-system";
 const DEFAULT_SERVE_PORT: u16 = 5015;
-const DEFAULT_RELAY_URL: &str = "https://link.solstone.app";
 const PAIR_LINK_PREFIX: &str = "https://go.solstone.app/p#";
 const LOCAL_ENDPOINTS_MAX_BYTES: usize = 16 * 1024;
 static BUNDLE_STAGING_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -278,20 +277,11 @@ pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, Comman
         });
     let relay_origin = if parsed.direct {
         None
-    } else if let Some(explicit) = explicit_relay_url {
-        Some(
-            crate::link_credentials::parse_relay_origin(explicit)
-                .unwrap_or_else(|_| explicit.trim().trim_end_matches('/').to_string()),
-        )
-    } else if let Some(crate::link_credentials::StoreLoadOutcome::Ready(ref ready)) =
-        selection.bundle.relay_access
-    {
-        ready
-            .relay_origin
-            .clone()
-            .or_else(|| Some(DEFAULT_RELAY_URL.to_string()))
     } else {
-        Some(DEFAULT_RELAY_URL.to_string())
+        explicit_relay_url.map(|explicit| {
+            crate::link_credentials::parse_relay_origin(explicit)
+                .unwrap_or_else(|_| explicit.trim().trim_end_matches('/').to_string())
+        })
     };
     let Some(runner) = ctx.link_serve else {
         return Err(CommandOutput::failure(
@@ -1889,7 +1879,7 @@ mod tests {
                 "beta",
                 5016,
                 LinkServeCarrierPolicy::RelayPermitted,
-                Some(DEFAULT_RELAY_URL),
+                None,
                 beta,
             ),
             result: Ok(ExpectedLinkServeSession {
@@ -1923,7 +1913,7 @@ mod tests {
                 "alpha",
                 DEFAULT_SERVE_PORT,
                 LinkServeCarrierPolicy::RelayPermitted,
-                Some(DEFAULT_RELAY_URL),
+                None,
                 alpha,
             ),
             result: Ok(ExpectedLinkServeSession {
@@ -1958,7 +1948,7 @@ mod tests {
                 "alpha",
                 0,
                 LinkServeCarrierPolicy::RelayPermitted,
-                Some(DEFAULT_RELAY_URL),
+                None,
                 bundle,
             ),
             result: Ok(ExpectedLinkServeSession {
@@ -2048,7 +2038,7 @@ mod tests {
                 "relay-only",
                 6002,
                 LinkServeCarrierPolicy::RelayOnly,
-                Some(DEFAULT_RELAY_URL),
+                None,
                 bundle,
             ),
             result: Ok(ExpectedLinkServeSession {
@@ -2076,10 +2066,7 @@ mod tests {
             recorded[0].request.policy,
             LinkServeCarrierPolicy::RelayOnly
         );
-        assert_eq!(
-            recorded[0].request.relay_origin,
-            Some(DEFAULT_RELAY_URL.to_string())
-        );
+        assert_eq!(recorded[0].request.relay_origin, None);
         assert!(!recorded[0].request.bundle.endpoints.is_empty());
         runner.assert_done();
     }
@@ -2154,7 +2141,7 @@ mod tests {
                 "laptop",
                 DEFAULT_SERVE_PORT,
                 LinkServeCarrierPolicy::RelayPermitted,
-                Some(DEFAULT_RELAY_URL),
+                None,
                 bundle.clone(),
             ),
             result: Err(LinkServeError::new(LinkServeErrorKind::Bind {
@@ -2179,7 +2166,7 @@ mod tests {
                 "laptop",
                 DEFAULT_SERVE_PORT,
                 LinkServeCarrierPolicy::RelayPermitted,
-                Some(DEFAULT_RELAY_URL),
+                None,
                 bundle,
             ),
             result: Err(LinkServeError::new(LinkServeErrorKind::Transport(

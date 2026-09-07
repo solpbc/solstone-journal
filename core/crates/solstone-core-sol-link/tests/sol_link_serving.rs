@@ -491,9 +491,9 @@ fn loopback_get(port: u16, target: &str) -> Option<String> {
     use std::io::{Read as _, Write as _};
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
-    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(5)).ok()?;
+    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(15)).ok()?;
     stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
+        .set_read_timeout(Some(Duration::from_secs(15)))
         .expect("read timeout");
     stream
         .write_all(
@@ -655,7 +655,7 @@ fn resident_serve_request(
     let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("client key");
     let params = CertificateParams::new(vec!["client.test".to_string()]).expect("client params");
     let cert = params.self_signed(&key).expect("client cert");
-    LinkServeRequest {
+    let request = LinkServeRequest {
         label: "laptop".to_string(),
         port,
         policy,
@@ -676,7 +676,24 @@ fn resident_serve_request(
             relay_access: None,
         },
         bundle_dir,
-    }
+    };
+    std::fs::write(
+        request.bundle_dir.join("cert.pem"),
+        &request.bundle.client_cert_pem,
+    )
+    .unwrap();
+    std::fs::write(
+        request.bundle_dir.join("chain.pem"),
+        request.bundle.ca_chain_pem.join("\n"),
+    )
+    .unwrap();
+    std::fs::write(
+        request.bundle_dir.join("peer.json"),
+        json!({"instance_id": request.bundle.instance_id, "paired_at": request.bundle.paired_at})
+            .to_string(),
+    )
+    .unwrap();
+    request
 }
 
 fn declared_body_length(response: &str) -> usize {
@@ -1448,6 +1465,7 @@ fn access_http_exchange(
     head.lines().next().expect("request line").to_owned()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn test_scheduler(
     tracker: Arc<StatusTracker>,
     client_manager: Arc<CurrentClientManager>,
@@ -1969,4 +1987,497 @@ fn combined_lanes_quiesce_with_carrier_close_and_subsequent_trigger_processes_la
     server2.join().expect("server join");
 
     assert!(access_count.load(Ordering::SeqCst) >= 2);
+}
+
+fn access_v2_reply(identity: &PairingIdentity, marker: &str) -> serde_json::Value {
+    use base64::Engine as _;
+    let claims = json!({"iss":"independent-issuer", "sub":format!("instance:{}", identity.instance_id), "aud":"spl-relay", "scope":"session.dial", "ver":2,
+        "instance_id":identity.instance_id, "iat":1700000000i64, "exp":2500000000i64, "jti":marker});
+    let token = format!(
+        "e30.{}.sig",
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims.to_string())
+    );
+    json!({"protocol_version":2,"status":"ready","instance_id":identity.instance_id,"relay_origin":"https://relay.example", "device_token":token,"expires_at":"2049-03-22T04:26:40Z"})
+}
+
+fn access_exchange_with(
+    scheduler: &OptionalJobScheduler,
+    status: u16,
+    reply: serde_json::Value,
+    before_reply: impl FnOnce() + Send + 'static,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = std::thread::spawn(move || {
+        metadata_http_exchange(&listener, status, reply, before_reply);
+    });
+    scheduler.run_access_job(port, 0);
+    server.join().unwrap();
+}
+
+#[test]
+fn access_missing_protocol_disable_and_invalid_origin_preserve_current_revision() {
+    let (path, store, identity, bundle, ca_fp) = test_bundle_and_store("strict-current");
+    store
+        .publish_ready("https://relay.example", "old", 2500000000, &identity)
+        .unwrap();
+    let old = store.load_access();
+    let manager = Arc::new(CurrentClientManager::new(None));
+    let scheduler = test_scheduler(
+        Arc::new(StatusTracker::new(Arc::new(SystemStatusClock))),
+        manager.clone(),
+        store.clone(),
+        identity.clone(),
+        LinkServeCarrierPolicy::RelayOnly,
+        None,
+        bundle,
+        ca_fp,
+    );
+    let mut invalid_origin = access_v2_reply(&identity, "bad-origin");
+    invalid_origin["relay_origin"] = json!("https://user:secret@relay.example/path");
+    for response in [
+        json!({"status":"not_configured"}),
+        json!({"status":"not_configured","protocol_version":null}),
+        json!({"status":"not_configured","protocol_version":1}),
+        invalid_origin,
+    ] {
+        access_exchange_with(&scheduler, 200, response, || {});
+        assert_eq!(store.load_access(), old);
+        assert_eq!(manager.incarnation(), 0);
+    }
+    access_exchange_with(
+        &scheduler,
+        200,
+        json!({"status":"not_configured","protocol_version":2}),
+        || {},
+    );
+    assert!(matches!(store.load_access(), StoreLoadOutcome::Disabled(_)));
+    assert_eq!(manager.incarnation(), 1);
+    std::fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn access_http_completion_cannot_overwrite_successor_or_publish_after_shutdown() {
+    for (label, shutdown, disabled) in [
+        ("ready-successor", false, false),
+        ("disable-successor", false, true),
+        ("shutdown", true, false),
+    ] {
+        let (path, store, identity, bundle, ca_fp) = test_bundle_and_store(label);
+        store
+            .publish_ready("https://relay.example", "old", 2500000000, &identity)
+            .unwrap();
+        let manager = Arc::new(CurrentClientManager::new(None));
+        let scheduler = test_scheduler(
+            Arc::new(StatusTracker::new(Arc::new(SystemStatusClock))),
+            manager.clone(),
+            store.clone(),
+            identity.clone(),
+            LinkServeCarrierPolicy::RelayOnly,
+            None,
+            bundle,
+            ca_fp,
+        );
+        let response = if disabled {
+            json!({"status":"not_configured","protocol_version":2})
+        } else {
+            access_v2_reply(&identity, "late")
+        };
+        let writer = store.clone();
+        let writer_identity = identity.clone();
+        let retiring = manager.clone();
+        access_exchange_with(&scheduler, 200, response, move || {
+            if shutdown {
+                retiring.retire();
+            } else {
+                writer
+                    .publish_ready(
+                        "https://relay.example",
+                        "successor",
+                        2500000000,
+                        &writer_identity,
+                    )
+                    .unwrap();
+            }
+        });
+        let StoreLoadOutcome::Ready(record) = store.load_access() else {
+            panic!("ready preserved");
+        };
+        assert_eq!(
+            record.device_token.as_deref(),
+            Some(if shutdown { "old" } else { "successor" })
+        );
+        assert_eq!(manager.incarnation(), u64::from(shutdown));
+        std::fs::remove_dir_all(path).unwrap();
+    }
+}
+
+#[cfg(feature = "access-test-hooks")]
+#[test]
+fn ready_requires_durability_and_uncertain_commit_reconciles_without_rewrite() {
+    use solstone_core_sol_client::link_credentials::{StoreWriteFault, get_file_dev_ino};
+    for fault in [
+        StoreWriteFault::BeforeRename,
+        StoreWriteFault::BundleSync,
+        StoreWriteFault::ParentSync,
+    ] {
+        let (path, store, identity, bundle, ca_fp) = test_bundle_and_store("ready-durability");
+        store
+            .publish_ready("https://relay.example", "old", 2500000000, &identity)
+            .unwrap();
+        let manager = Arc::new(CurrentClientManager::new(None));
+        let scheduler = test_scheduler(
+            Arc::new(StatusTracker::new(Arc::new(SystemStatusClock))),
+            manager.clone(),
+            store.clone(),
+            identity.clone(),
+            LinkServeCarrierPolicy::RelayOnly,
+            None,
+            bundle,
+            ca_fp,
+        );
+        store.inject_write_fault(fault);
+        access_exchange_with(&scheduler, 200, access_v2_reply(&identity, "new"), || {});
+        assert_eq!(
+            manager.incarnation(),
+            0,
+            "uncommitted access cannot become live"
+        );
+        let StoreLoadOutcome::Ready(record) = store.load_access() else {
+            panic!("ready");
+        };
+        if matches!(fault, StoreWriteFault::BeforeRename) {
+            assert_eq!(record.device_token.as_deref(), Some("old"));
+            assert!(!manager.persistence_uncertain_for_test());
+        } else {
+            assert_ne!(record.device_token.as_deref(), Some("old"));
+            assert!(manager.persistence_uncertain_for_test());
+            let inode = get_file_dev_ino(&path.join("relay_access.json")).unwrap();
+            access_exchange_with(&scheduler, 503, json!({}), || {});
+            assert_eq!(manager.incarnation(), 1);
+            assert!(manager.get().0.is_some());
+            assert!(!manager.persistence_uncertain_for_test());
+            assert_eq!(
+                get_file_dev_ino(&path.join("relay_access.json")).unwrap(),
+                inode
+            );
+        }
+        std::fs::remove_dir_all(path).unwrap();
+    }
+}
+
+#[cfg(feature = "access-test-hooks")]
+#[test]
+fn failed_clear_cannot_erase_later_ready_and_refresh_failure_retires_only_its_incarnation() {
+    use solstone_core_sol_client::link_credentials::StoreWriteFault;
+    let (path, store, identity, bundle, ca_fp) = test_bundle_and_store("clear-refresh-order");
+    store
+        .publish_ready("https://relay.example", "old", 2500000000, &identity)
+        .unwrap();
+    let manager = Arc::new(CurrentClientManager::new(None));
+    let scheduler = test_scheduler(
+        Arc::new(StatusTracker::new(Arc::new(SystemStatusClock))),
+        manager.clone(),
+        store.clone(),
+        identity.clone(),
+        LinkServeCarrierPolicy::RelayOnly,
+        None,
+        bundle,
+        ca_fp,
+    );
+    store.inject_write_fault(StoreWriteFault::BeforeRename);
+    access_exchange_with(
+        &scheduler,
+        200,
+        json!({"status":"not_configured","protocol_version":2}),
+        || {},
+    );
+    assert_eq!(manager.incarnation(), 1);
+    assert!(manager.persistence_uncertain_for_test());
+    store
+        .publish_ready(
+            "https://relay.example",
+            "external-successor",
+            2500000000,
+            &identity,
+        )
+        .unwrap();
+    access_exchange_with(&scheduler, 503, json!({}), || {});
+    let StoreLoadOutcome::Ready(record) = store.load_access() else {
+        panic!("successor");
+    };
+    assert_eq!(record.device_token.as_deref(), Some("external-successor"));
+    access_exchange_with(&scheduler, 200, access_v2_reply(&identity, "live"), || {});
+    let hook = manager.hook_for_test(&store, &identity, "https://relay.example");
+    let token = access_v2_reply(&identity, "refresh")["device_token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let incarnation = manager.incarnation();
+    store.inject_write_fault(StoreWriteFault::BeforeRename);
+    hook(&token, 2500000000);
+    assert_eq!(manager.incarnation(), incarnation + 1);
+    assert!(manager.get().0.is_none());
+    access_exchange_with(
+        &scheduler,
+        200,
+        access_v2_reply(&identity, "replacement"),
+        || {},
+    );
+    let successor = store.load_access();
+    let successor_incarnation = manager.incarnation();
+    hook(&token, 2500000000);
+    assert_eq!(store.load_access(), successor);
+    assert_eq!(manager.incarnation(), successor_incarnation);
+    std::fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn metadata_write_failure_is_honest_and_full_null_clears_only_full_response_name() {
+    use solstone_core_sol_client::seam::LinkJournalMetadata;
+    for fail in [false, true] {
+        let (path, _store, identity, bundle, _ca_fp) =
+            test_bundle_and_store("metadata-real-writer");
+        let ca_prefix = identity
+            .ca_fingerprint
+            .strip_prefix("sha256:")
+            .unwrap()
+            .to_owned();
+        let tracker = Arc::new(StatusTracker::with_metadata(
+            Arc::new(SystemStatusClock),
+            path.clone(),
+            identity.instance_id.clone(),
+            ca_prefix.clone(),
+            bundle.paired_at.clone(),
+            None,
+            false,
+        ));
+        let meta = LinkJournalMetadata {
+            instance_id: identity.instance_id,
+            ca_fp_prefix: ca_prefix,
+            paired_at: bundle.paired_at,
+            journal_version: "1.0.0".into(),
+            journal_name: Some("Old Home".into()),
+            observed_at: 0.0,
+        };
+        if fail {
+            std::fs::create_dir(path.join("journal_metadata.json")).unwrap();
+        } else {
+            std::fs::write(
+                path.join("journal_metadata.json"),
+                serde_json::to_vec(&meta).unwrap(),
+            )
+            .unwrap();
+        }
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let mut response = metadata_reply(1);
+        response["journal"]["name"] = json!(null);
+        if !fail {
+            response["reported"] = serde_json::to_value(ReportedDescription::default()).unwrap();
+        }
+        let server = std::thread::spawn(move || {
+            metadata_http_exchange(&listener, 200, response, || {});
+            listener
+        });
+        publish_device_description_with(tracker.clone(), port, 0, ReportedDescription::default);
+        let listener = server.join().unwrap();
+        listener.set_nonblocking(true).unwrap();
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock,
+            "no PUT after failed write or exact match"
+        );
+        if !fail {
+            let saved: LinkJournalMetadata =
+                serde_json::from_slice(&std::fs::read(path.join("journal_metadata.json")).unwrap())
+                    .unwrap();
+            assert_eq!(saved.journal_name, None);
+            assert_eq!(saved.journal_version, "2.0.0");
+            // A legacy version-only response preserves a name already cached.
+            std::fs::write(
+                path.join("journal_metadata.json"),
+                serde_json::to_vec(&meta).unwrap(),
+            )
+            .unwrap();
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let server = std::thread::spawn(move || {
+                metadata_http_exchange(&listener, 404, json!({}), || {});
+                let request = metadata_http_exchange(
+                    &listener,
+                    200,
+                    json!({"version":{"current":"3.0.0"}}),
+                    || {},
+                );
+                assert!(request.0.contains("/api/system/status"));
+            });
+            publish_device_description(tracker, port, 0);
+            server.join().unwrap();
+            let saved: LinkJournalMetadata =
+                serde_json::from_slice(&std::fs::read(path.join("journal_metadata.json")).unwrap())
+                    .unwrap();
+            assert_eq!(saved.journal_name.as_deref(), Some("Old Home"));
+            assert_eq!(saved.journal_version, "3.0.0");
+        }
+        std::fs::remove_dir_all(path).unwrap();
+    }
+}
+
+#[cfg(feature = "access-test-hooks")]
+#[test]
+fn actual_opener_drops_late_tls_success_and_failure_after_replacement() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        for succeed in [true, false] {
+            let (server_cert, server_key) = self_signed_server();
+            let pin = spl_core::ca::sha256(server_cert.as_ref())[..16].to_vec();
+            let listener = TokioTcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let manager = Arc::new(CurrentClientManager::new(Some(Arc::new(
+                TransportClient::new(transport_credential(pin, port), None).unwrap(),
+            ))));
+            let tracker = Arc::new(StatusTracker::new(Arc::new(SystemStatusClock)));
+            let opener = manager.opener_for_test(tracker.clone());
+            let (entered_tx, entered_rx) = oneshot::channel();
+            let (release_tx, release_rx) = oneshot::channel();
+            let peer = tokio::spawn(async move {
+                let (tcp, _) = listener.accept().await.unwrap();
+                entered_tx.send(()).unwrap();
+                release_rx.await.unwrap();
+                if succeed {
+                    let tls = TlsAcceptor::from(Arc::new(server_config(server_cert, server_key)))
+                        .accept(tcp)
+                        .await
+                        .unwrap();
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    drop(tls);
+                }
+            });
+            let dial = tokio::spawn(async move { opener.dial_carrier().await });
+            entered_rx.await.unwrap();
+            manager.swap(None);
+            let successor = manager.incarnation();
+            release_tx.send(()).unwrap();
+            assert!(matches!(
+                dial.await.unwrap(),
+                Err(TransportError::NotPaired)
+            ));
+            assert_eq!(manager.incarnation(), successor);
+            assert_eq!(
+                tracker.carrier_events_for_test(),
+                (0, 0),
+                "stale completion cannot publish status or trigger work"
+            );
+            peer.await.unwrap();
+        }
+    });
+}
+
+#[cfg(feature = "access-test-hooks")]
+#[test]
+fn actual_access_request_opening_its_carrier_can_publish_ready() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let (path, store, identity, mut bundle, _) = test_bundle_and_store("self-open-progress");
+        let (server_cert, server_key) = self_signed_server();
+        let pin = spl_core::ca::sha256(server_cert.as_ref())[..16].to_vec();
+        let listener = TokioTcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        bundle.endpoints = vec![solstone_core_sol_client::seam::LinkServeEndpoint {
+            host: "127.0.0.1".into(),
+            port,
+        }];
+        let manager = Arc::new(CurrentClientManager::new(Some(Arc::new(
+            TransportClient::new(transport_credential(pin.clone(), port), None).unwrap(),
+        ))));
+        let tracker = Arc::new(StatusTracker::new(Arc::new(SystemStatusClock)));
+        let scheduler = test_scheduler(
+            tracker.clone(),
+            manager.clone(),
+            store.clone(),
+            identity.clone(),
+            LinkServeCarrierPolicy::RelayPermitted,
+            None,
+            bundle,
+            pin,
+        );
+        let response = ScriptedHttpResponse {
+            status: 200,
+            headers: vec![("Content-Type".into(), "application/json".into())],
+            body: serde_json::to_vec(&access_v2_reply(&identity, "own-carrier")).unwrap(),
+        };
+        let peer = tokio::spawn(serve_and_capture_one_request(
+            listener,
+            TlsAcceptor::from(Arc::new(server_config(server_cert, server_key))),
+            response,
+        ));
+        let bridge = journal_bridge::start(JournalBridgeConfig {
+            opener: manager.opener_for_test(tracker.clone()),
+            bridge_names: bridge_names(),
+            endpoint_hosts: vec!["127.0.0.1".into()],
+            policy: bridge_policy_for_port(0, tracker.clone()),
+        })
+        .await
+        .unwrap();
+        let bridge_port = bridge.port();
+        tokio::task::spawn_blocking(move || scheduler.run_access_job(bridge_port, 0))
+            .await
+            .unwrap();
+        assert!(matches!(store.load_access(), StoreLoadOutcome::Ready(_)));
+        assert_eq!(manager.incarnation(), 1);
+        assert_eq!(tracker.carrier_events_for_test().0, 1);
+        assert_eq!(
+            peer.await.unwrap().head.target,
+            "/app/network/api/relay/access"
+        );
+        bridge.shutdown_and_wait().await;
+        std::fs::remove_dir_all(path).unwrap();
+    });
+}
+
+#[test]
+fn changed_origin_ready_is_allowed_only_without_an_explicit_origin_selection() {
+    for explicit in [None, Some("https://relay.example".to_owned())] {
+        let (path, store, identity, bundle, ca_fp) = test_bundle_and_store("origin-intent");
+        let manager = Arc::new(CurrentClientManager::new(None));
+        let scheduler = test_scheduler(
+            Arc::new(StatusTracker::new(Arc::new(SystemStatusClock))),
+            manager.clone(),
+            store.clone(),
+            identity.clone(),
+            LinkServeCarrierPolicy::RelayOnly,
+            explicit.clone(),
+            bundle,
+            ca_fp,
+        );
+        access_exchange_with(&scheduler, 200, access_v2_reply(&identity, "A"), || {});
+        let original = store.load_access();
+        assert_eq!(manager.incarnation(), 1);
+        let mut changed = access_v2_reply(&identity, "B");
+        changed["relay_origin"] = json!("https://successor-relay.example");
+        access_exchange_with(&scheduler, 200, changed, || {});
+        if explicit.is_some() {
+            assert_eq!(store.load_access(), original);
+            assert_eq!(manager.incarnation(), 1);
+        } else {
+            let StoreLoadOutcome::Ready(record) = store.load_access() else {
+                panic!("ready")
+            };
+            assert_eq!(
+                record.relay_origin.as_deref(),
+                Some("https://successor-relay.example")
+            );
+            assert_eq!(manager.incarnation(), 2);
+        }
+        std::fs::remove_dir_all(path).unwrap();
+    }
 }

@@ -5,6 +5,7 @@ use std::future::Future;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -12,8 +13,8 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 use solstone_core_ingest_contract::CONNECTION_BODY_LIMIT;
 use solstone_core_sol_client::link_credentials::{
-    LinkCredentialStore, PairingIdentity, StoreLoadOutcome, StoreMutationError, get_file_dev_ino,
-    same_relay_origin,
+    LinkCredentialStore, PairingIdentity, StoreLoadOutcome, StoreMutationError, StoreVersion,
+    get_file_dev_ino, parse_relay_origin, same_relay_origin,
 };
 use solstone_core_sol_client::resident::ShutdownSignal;
 use solstone_core_sol_client::seam::{
@@ -46,10 +47,7 @@ pub enum WireRelayAccessResponse {
         expires_at: String,
     },
     #[serde(rename = "not_configured")]
-    NotConfigured {
-        #[serde(default)]
-        protocol_version: Option<u32>,
-    },
+    NotConfigured { protocol_version: u32 },
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -66,11 +64,24 @@ impl LinkServeRunner for SplLinkServeRunner {
 
 pub struct CurrentClientManager {
     inner: Mutex<CurrentClientState>,
+    retired: AtomicBool,
+    persist_uncertain: AtomicBool,
+}
+
+struct PendingAccess {
+    version: StoreVersion,
+    client: Option<Arc<TransportClient>>,
+    incarnation: u64,
+    clear: bool,
+    renamed: bool,
 }
 
 struct CurrentClientState {
     client: Option<Arc<TransportClient>>,
+    lan_client: Option<Arc<TransportClient>>,
     incarnation: u64,
+    version: Option<StoreVersion>,
+    pending: Option<PendingAccess>,
 }
 
 impl CurrentClientManager {
@@ -78,8 +89,13 @@ impl CurrentClientManager {
         Self {
             inner: Mutex::new(CurrentClientState {
                 client: initial_client,
+                lan_client: None,
                 incarnation: 0,
+                version: None,
+                pending: None,
             }),
+            retired: AtomicBool::new(false),
+            persist_uncertain: AtomicBool::new(false),
         }
     }
 
@@ -89,21 +105,69 @@ impl CurrentClientManager {
     }
 
     pub fn retire(&self) {
+        self.retired.store(true, Ordering::SeqCst);
         let mut state = self.inner.lock().expect("client manager lock");
         state.client = None;
+        state.pending = None;
         state.incarnation = state.incarnation.wrapping_add(1);
     }
 
     pub fn get(&self) -> (Option<Arc<TransportClient>>, u64) {
         let state = self.inner.lock().expect("client manager lock");
-        (state.client.clone(), state.incarnation)
+        (
+            if self.retired.load(Ordering::SeqCst) {
+                None
+            } else {
+                state.client.clone()
+            },
+            state.incarnation,
+        )
     }
 
     pub fn swap(&self, new_client: Option<Arc<TransportClient>>) -> u64 {
         let mut state = self.inner.lock().expect("client manager lock");
+        if self.retired.load(Ordering::SeqCst) {
+            return state.incarnation;
+        }
+        state.pending = None;
         state.client = new_client;
         state.incarnation = state.incarnation.wrapping_add(1);
         state.incarnation
+    }
+
+    #[cfg(any(test, feature = "access-test-hooks"))]
+    pub fn hook_for_test(
+        self: &Arc<Self>,
+        store: &LinkCredentialStore,
+        identity: &PairingIdentity,
+        origin: &str,
+    ) -> TokenPersistHook {
+        self.inner.lock().expect("client manager lock").version =
+            Some(store.capture_version(identity).expect("test version"));
+        make_token_persist_hook(
+            Some(origin.to_owned()),
+            store,
+            identity,
+            self.incarnation(),
+            Arc::downgrade(self),
+        )
+        .expect("test hook")
+    }
+
+    #[cfg(any(test, feature = "access-test-hooks"))]
+    pub fn persistence_uncertain_for_test(&self) -> bool {
+        self.persist_uncertain.load(Ordering::SeqCst)
+    }
+
+    #[cfg(any(test, feature = "access-test-hooks"))]
+    pub fn opener_for_test(
+        self: &Arc<Self>,
+        tracker: Arc<StatusTracker>,
+    ) -> Arc<dyn CarrierOpener> {
+        Arc::new(SolstoneCarrierOpener {
+            client_manager: self.clone(),
+            tracker,
+        })
     }
 
     pub fn incarnation(&self) -> u64 {
@@ -144,11 +208,27 @@ impl ServeStarter {
         let store = LinkCredentialStore::new(request.bundle_dir.clone(), label);
         let identity = pairing_identity_from_bundle(&request.bundle)?;
 
-        let store_outcome = request
-            .bundle
-            .relay_access
-            .clone()
-            .unwrap_or_else(|| store.load_access());
+        let mut initial_version = if request.bundle_dir.as_os_str().is_empty() {
+            None
+        } else {
+            Some(
+                store
+                    .capture_version(&identity)
+                    .map_err(|_| LinkServeError::new(LinkServeErrorKind::InvalidBundle))?,
+            )
+        };
+        let store_outcome = if initial_version.is_some() {
+            store.load_access()
+        } else {
+            request
+                .bundle
+                .relay_access
+                .clone()
+                .unwrap_or(StoreLoadOutcome::Absent)
+        };
+        if initial_version.is_some() && store.capture_version(&identity).ok() != initial_version {
+            return Err(LinkServeError::new(LinkServeErrorKind::InvalidBundle));
+        }
 
         let (credential, persist_hook_origin, _token_for_hook, initial_persist_uncertain) =
             match request.policy {
@@ -166,14 +246,18 @@ impl ServeStarter {
                     let configured_origin = request.relay_origin.clone();
                     match store_outcome {
                         StoreLoadOutcome::Ready(record)
-                            if configured_origin.as_ref().is_some_and(|orig| {
-                                same_relay_origin(
-                                    record.relay_origin.as_deref().unwrap_or_default(),
-                                    orig,
-                                )
-                            }) =>
+                            if valid_saved_access(&record, &identity)
+                                && configured_origin.as_ref().is_none_or(|orig| {
+                                    same_relay_origin(
+                                        record.relay_origin.as_deref().unwrap_or_default(),
+                                        orig,
+                                    )
+                                }) =>
                         {
-                            let origin = record.relay_origin.clone();
+                            let origin = record
+                                .relay_origin
+                                .as_deref()
+                                .and_then(|origin| parse_relay_origin(origin).ok());
                             let token = record.device_token.clone();
                             let exp = record.expires_at;
                             let cred = credential_base(
@@ -201,13 +285,21 @@ impl ServeStarter {
                     let origin = request
                         .relay_origin
                         .clone()
+                        .or_else(|| match &store_outcome {
+                            StoreLoadOutcome::Ready(record) => record.relay_origin.clone(),
+                            _ => None,
+                        })
                         .unwrap_or_else(|| "https://link.solstone.app".to_string());
+                    let origin = parse_relay_origin(&origin)
+                        .map_err(|_| LinkServeError::new(LinkServeErrorKind::InvalidBundle))?;
                     match store_outcome {
                         StoreLoadOutcome::Ready(record) => {
-                            if !same_relay_origin(
-                                record.relay_origin.as_deref().unwrap_or_default(),
-                                &origin,
-                            ) {
+                            if !valid_saved_access(&record, &identity)
+                                || !same_relay_origin(
+                                    record.relay_origin.as_deref().unwrap_or_default(),
+                                    &origin,
+                                )
+                            {
                                 return Err(LinkServeError::new(LinkServeErrorKind::Transport(
                                     LinkServeTransportErrorKind::NoEndpoint,
                                 )));
@@ -243,7 +335,7 @@ impl ServeStarter {
                                         map_transport_error(error),
                                     ))
                                 })?;
-                            let mut uncertain = false;
+
                             let now = SystemTime::now()
                                 .duration_since(UNIX_EPOCH)
                                 .unwrap_or_default()
@@ -253,13 +345,31 @@ impl ServeStarter {
                                 &request.bundle.instance_id,
                                 now,
                             )
+                            .or_else(|| {
+                                spl_core::relay_access::legacy_claims(
+                                    &token,
+                                    &request.bundle.instance_id,
+                                    now,
+                                )
+                            })
                             .map(|c| c.exp)
-                            .unwrap_or(0);
-                            if store
-                                .publish_ready(&origin, &token, exp, &identity)
-                                .is_err()
-                            {
-                                uncertain = true;
+                            .ok_or_else(|| {
+                                LinkServeError::new(LinkServeErrorKind::InvalidBundle)
+                            })?;
+                            if let Some(version) = &initial_version {
+                                let commit = store
+                                    .publish_ready_if_current(&origin, &token, exp, version, || {
+                                        true
+                                    })
+                                    .map_err(|_| {
+                                        LinkServeError::new(LinkServeErrorKind::InvalidBundle)
+                                    })?;
+                                if !commit.durable {
+                                    return Err(LinkServeError::new(
+                                        LinkServeErrorKind::InvalidBundle,
+                                    ));
+                                }
+                                initial_version = Some(commit.version);
                             }
                             let cred = credential_base(
                                 &request,
@@ -268,13 +378,19 @@ impl ServeStarter {
                                 Some(token.clone()),
                                 Some(exp),
                             )?;
-                            (cred, Some(origin), Some(token), uncertain)
+                            (cred, Some(origin), Some(token), false)
                         }
                     }
                 }
             };
 
         let client_manager = Arc::new(CurrentClientManager::new(None));
+
+        client_manager
+            .inner
+            .lock()
+            .expect("client manager lock")
+            .version = initial_version;
 
         let token_persist_hook = make_token_persist_hook(
             persist_hook_origin,
@@ -296,6 +412,17 @@ impl ServeStarter {
             LinkServeError::new(LinkServeErrorKind::Transport(map_transport_error(error)))
         })?;
 
+        if request.policy != LinkServeCarrierPolicy::RelayOnly {
+            let mut lan = credential.clone();
+            lan.relay_origin = None;
+            lan.device_token = None;
+            lan.device_token_expires_at = None;
+            client_manager
+                .inner
+                .lock()
+                .expect("client manager lock")
+                .lan_client = TransportClient::new(lan, None).ok().map(Arc::new);
+        }
         client_manager.set_initial(Arc::new(initial_client));
 
         let ca_prefix = ca_fp_prefix(&request.bundle)?;
@@ -362,10 +489,34 @@ impl ServeStarter {
             runtime,
             handle: Some(handle),
             bundle_dir: request.bundle_dir,
-            client_manager,
             scheduler,
         }))
     }
+}
+
+fn valid_saved_access(
+    record: &solstone_core_sol_client::link_credentials::RelayAccessRecord,
+    identity: &PairingIdentity,
+) -> bool {
+    let (Some(origin), Some(token), Some(exp)) = (
+        &record.relay_origin,
+        &record.device_token,
+        record.expires_at,
+    ) else {
+        return false;
+    };
+    if parse_relay_origin(origin).is_err() || record.identity != *identity {
+        return false;
+    }
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    spl_core::relay_access::renewal_identity(token, now)
+        .is_some_and(|(instance, _)| instance == identity.instance_id)
+        && spl_core::relay_access::unverified_payload(token)
+            .and_then(|v| v.get("exp").and_then(Value::as_i64))
+            == Some(exp)
 }
 
 fn endpoints_from_bundle(bundle: &LinkServeBundle) -> Vec<EndpointAddr> {
@@ -455,10 +606,52 @@ fn make_token_persist_hook(
         let Some(mgr) = client_manager_weak.upgrade() else {
             return;
         };
-        if mgr.incarnation() != incarnation {
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        let mut state = mgr.inner.lock().expect("client manager lock");
+        if mgr.retired.load(Ordering::SeqCst) || state.incarnation != incarnation {
             return;
         }
-        let _ = store_clone.persist_refreshed_token(token, exp, &identity_clone, &origin);
+        let result = state
+            .version
+            .as_ref()
+            .ok_or(StoreMutationError::StaleGeneration)
+            .and_then(|version| {
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64;
+                let claims = spl_core::relay_access::instance_claims(
+                    token,
+                    &identity_clone.instance_id,
+                    now,
+                )
+                .or_else(|| {
+                    spl_core::relay_access::legacy_claims(token, &identity_clone.instance_id, now)
+                });
+                if claims.is_none_or(|c| c.exp != exp) {
+                    return Err(StoreMutationError::StaleGeneration);
+                }
+                store_clone.publish_ready_if_current(&origin, token, exp, version, || {
+                    !mgr.retired.load(Ordering::SeqCst) && std::time::Instant::now() < deadline
+                })
+            });
+        match result {
+            Ok(commit) if commit.durable && !mgr.retired.load(Ordering::SeqCst) => {
+                state.version = Some(commit.version);
+                state.pending = None;
+                mgr.persist_uncertain.store(false, Ordering::SeqCst);
+            }
+            result => {
+                // The shared hook has no error return. Retire this incarnation so
+                // the opener cannot admit the refreshed carrier after failed durability.
+                if let Ok(commit) = result {
+                    state.version = Some(commit.version);
+                }
+                mgr.persist_uncertain.store(true, Ordering::SeqCst);
+                state.client = state.lan_client.clone();
+                state.incarnation = state.incarnation.wrapping_add(1);
+            }
+        }
     }))
 }
 
@@ -467,7 +660,6 @@ struct SplLinkServeSession {
     runtime: tokio::runtime::Runtime,
     handle: Option<JournalBridgeHandle>,
     bundle_dir: PathBuf,
-    client_manager: Arc<CurrentClientManager>,
     scheduler: Arc<OptionalJobScheduler>,
 }
 
@@ -479,7 +671,6 @@ impl LinkServeSession for SplLinkServeSession {
     fn serve(mut self: Box<Self>, shutdown: &dyn ShutdownSignal) -> Result<(), LinkServeError> {
         shutdown.wait();
         // 1. Retire epoch
-        self.client_manager.retire();
         self.scheduler.retire();
         // 2. Delete runtime record
         if !self.bundle_dir.as_os_str().is_empty() {
@@ -511,13 +702,30 @@ impl CarrierOpener for SolstoneCarrierOpener {
     ) -> Pin<Box<dyn Future<Output = Result<DialedCarrier, TransportError>> + Send + '_>> {
         Box::pin(async move {
             let (client_opt, incarnation) = self.client_manager.get();
-            let Some(client) = client_opt else {
-                self.tracker.carrier_open_failed(&TransportError::NotPaired);
-                return Err(TransportError::NotPaired);
+            let result = match client_opt {
+                Some(client) => client.dial_carrier().await,
+                None => Err(TransportError::NotPaired),
             };
-            let result = client.dial_carrier().await;
-            if self.client_manager.incarnation() != incarnation {
+            let mut state = self
+                .client_manager
+                .inner
+                .lock()
+                .expect("client manager lock");
+            if self.client_manager.retired.load(Ordering::SeqCst)
+                || state.incarnation != incarnation
+            {
                 return Err(TransportError::NotPaired);
+            }
+            if matches!(
+                &result,
+                Err(TransportError::NotPaired
+                    | TransportError::TlsAccessDenied
+                    | TransportError::TlsCertificateUnknown)
+            ) {
+                state.client = None;
+                state.pending = None;
+                state.incarnation = state.incarnation.wrapping_add(1);
+                self.tracker.operation_epoch.fetch_add(1, Ordering::SeqCst);
             }
             match &result {
                 Ok(_) => self.tracker.carrier_open_succeeded(),
@@ -667,6 +875,8 @@ pub struct StatusTracker {
     inner: Mutex<StatusTrackerState>,
     clock: Arc<dyn StatusClock>,
     bundle_dir: PathBuf,
+    operation_epoch: std::sync::atomic::AtomicU64,
+    retired: AtomicBool,
     expected_identity: Option<PairingIdentity>,
     expected_dev_ino: Option<(u64, u64)>,
     instance_id: String,
@@ -751,6 +961,8 @@ impl StatusTracker {
             }),
             clock,
             bundle_dir,
+            operation_epoch: std::sync::atomic::AtomicU64::new(0),
+            retired: AtomicBool::new(false),
             expected_identity,
             expected_dev_ino,
             instance_id,
@@ -822,13 +1034,6 @@ impl StatusTracker {
         }
     }
 
-    fn generation_is_current(&self, generation: u64) -> bool {
-        self.inner
-            .lock()
-            .is_ok_and(|state| state.generation == generation)
-            && self.pairing_is_current()
-    }
-
     fn pairing_is_current(&self) -> bool {
         if self.bundle_dir.as_os_str().is_empty() {
             return true;
@@ -866,8 +1071,15 @@ impl StatusTracker {
         state.version_fresh = false;
     }
 
+    #[cfg(any(test, feature = "access-test-hooks"))]
+    pub fn carrier_events_for_test(&self) -> (u64, u64) {
+        let state = self.inner.lock().expect("status tracker lock");
+        (state.generation, state.reconnect_count)
+    }
+
     #[cfg(any(test, feature = "host"))]
     pub fn bump_generation_for_test(&self) {
+        self.operation_epoch.fetch_add(1, Ordering::SeqCst);
         let mut state = self.inner.lock().expect("status tracker lock");
         state.generation = state.generation.saturating_add(1);
     }
@@ -907,7 +1119,13 @@ impl StatusTracker {
             instance_id: self.instance_id.clone(),
             ca_fp_prefix: self.ca_fp_prefix_hex.clone(),
             paired_at: self.paired_at.clone(),
-            persist_uncertain: state.persist_uncertain,
+            persist_uncertain: state.persist_uncertain
+                || self
+                    .scheduler
+                    .lock()
+                    .expect("scheduler lock")
+                    .as_ref()
+                    .is_some_and(|s| s.client_manager.persist_uncertain.load(Ordering::SeqCst)),
         }
     }
 
@@ -917,48 +1135,106 @@ impl StatusTracker {
         parsed: Option<String>,
         journal_name: Option<String>,
     ) -> ApplyOutcome {
-        let mut state = self.inner.lock().expect("status tracker lock");
-        if state.generation != target_generation {
+        if self.inner.lock().expect("status tracker lock").generation != target_generation {
             return ApplyOutcome::StaleGeneration;
         }
+        let epoch = self.operation_epoch.load(Ordering::SeqCst);
+        let version =
+            self.metadata_store_version(std::time::Instant::now() + Duration::from_secs(15));
+        self.apply_metadata_result(
+            epoch,
+            version.as_ref(),
+            parsed,
+            journal_name,
+            true,
+            std::time::Instant::now() + Duration::from_secs(15),
+        )
+    }
+
+    fn metadata_store_version(&self, deadline: std::time::Instant) -> Option<StoreVersion> {
+        let identity = self.expected_identity.as_ref()?;
+        LinkCredentialStore::new(self.bundle_dir.clone(), "")
+            .capture_version_if_current(identity, || {
+                !self.retired.load(Ordering::SeqCst) && std::time::Instant::now() < deadline
+            })
+            .ok()
+    }
+
+    fn operation_is_current(&self, epoch: u64) -> bool {
+        !self.retired.load(Ordering::SeqCst)
+            && self.operation_epoch.load(Ordering::SeqCst) == epoch
+            && self.pairing_is_current()
+    }
+
+    fn apply_metadata_result(
+        &self,
+        epoch: u64,
+        version: Option<&StoreVersion>,
+        parsed: Option<String>,
+        journal_name: Option<String>,
+        preserve_name: bool,
+        deadline: std::time::Instant,
+    ) -> ApplyOutcome {
+        let mut state = self.inner.lock().expect("status tracker lock");
+        if !self.operation_is_current(epoch) {
+            return ApplyOutcome::PairingMismatch;
+        }
         state.fetching_generation = None;
-        let Some(version) = parsed.filter(|version| is_valid_journal_version(version)) else {
+        let Some(journal_version) = parsed.filter(|v| is_valid_journal_version(v)) else {
             return ApplyOutcome::FetchFailed;
         };
-
         if self.bundle_dir.as_os_str().is_empty() {
-            state.cached_version = Some(version);
+            state.cached_version = Some(journal_version);
             state.version_fresh = true;
             return ApplyOutcome::UpdatedNoPersist;
         }
-
-        if self.pairing_is_current() {
-            state.cached_version = Some(version.clone());
-            state.version_fresh = true;
-            let metadata = LinkJournalMetadata {
-                instance_id: self.instance_id.clone(),
-                ca_fp_prefix: self.ca_fp_prefix_hex.clone(),
-                paired_at: self.paired_at.clone(),
-                journal_version: version,
-                journal_name: journal_name.or_else(|| {
-                    std::fs::read(self.bundle_dir.join("journal_metadata.json"))
-                        .ok()
-                        .and_then(|bytes| {
-                            serde_json::from_slice::<LinkJournalMetadata>(&bytes).ok()
-                        })
-                        .filter(|meta| {
-                            meta.instance_id == self.instance_id
-                                && meta.ca_fp_prefix == self.ca_fp_prefix_hex
-                                && meta.paired_at == self.paired_at
-                        })
-                        .and_then(|meta| meta.journal_name)
-                }),
-                observed_at: self.clock.now_unix_seconds(),
-            };
-            write_journal_metadata_atomic(&self.bundle_dir, &metadata);
-            ApplyOutcome::Persisted
+        let Some(version) = version else {
+            return ApplyOutcome::PairingMismatch;
+        };
+        let journal_name = if preserve_name && journal_name.is_none() {
+            std::fs::read(self.bundle_dir.join("journal_metadata.json"))
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<LinkJournalMetadata>(&bytes).ok())
+                .filter(|meta| {
+                    meta.instance_id == self.instance_id
+                        && meta.ca_fp_prefix == self.ca_fp_prefix_hex
+                        && meta.paired_at == self.paired_at
+                })
+                .and_then(|meta| meta.journal_name)
         } else {
-            ApplyOutcome::PairingMismatch
+            journal_name
+        };
+        let metadata = LinkJournalMetadata {
+            instance_id: self.instance_id.clone(),
+            ca_fp_prefix: self.ca_fp_prefix_hex.clone(),
+            paired_at: self.paired_at.clone(),
+            journal_version: journal_version.clone(),
+            journal_name,
+            observed_at: self.clock.now_unix_seconds(),
+        };
+        let result = LinkCredentialStore::new(self.bundle_dir.clone(), "")
+            .write_journal_metadata_if_current(&metadata, version, || {
+                !self.retired.load(Ordering::SeqCst)
+                    && self.operation_epoch.load(Ordering::SeqCst) == epoch
+                    && std::time::Instant::now() < deadline
+            });
+        match result {
+            Ok(true) => {
+                state.cached_version = Some(journal_version);
+                state.version_fresh = true;
+                ApplyOutcome::Persisted
+            }
+            Ok(false) | Err(StoreMutationError::PersistUncertain(_)) => {
+                state.persist_uncertain = true;
+                ApplyOutcome::FetchFailed
+            }
+            Err(
+                StoreMutationError::IdentityMismatch
+                | StoreMutationError::StaleGeneration
+                | StoreMutationError::BundleNotFound
+                | StoreMutationError::Retired,
+            ) => ApplyOutcome::PairingMismatch,
+            Err(_) => ApplyOutcome::FetchFailed,
         }
     }
 }
@@ -1010,6 +1286,8 @@ impl OptionalJobScheduler {
     }
 
     pub fn retire(&self) {
+        self.tracker.retired.store(true, Ordering::SeqCst);
+        self.client_manager.retire();
         let mut state = self.inner.lock().expect("scheduler lock");
         state.retired = true;
     }
@@ -1064,8 +1342,77 @@ impl OptionalJobScheduler {
         }
     }
 
-    pub fn run_access_job(&self, port: u16, target_generation: u64) {
+    fn reconcile_pending(&self, deadline: std::time::Instant) {
+        let mut state = self
+            .client_manager
+            .inner
+            .lock()
+            .expect("client manager lock");
+        if self.client_manager.retired.load(Ordering::SeqCst) {
+            return;
+        }
+        let Some(pending) = state.pending.take() else {
+            return;
+        };
+        let current = || {
+            !self.client_manager.retired.load(Ordering::SeqCst)
+                && std::time::Instant::now() < deadline
+        };
+        let result = if pending.clear && !pending.renamed {
+            self.store
+                .publish_disabled_if_current(&pending.version, current)
+        } else {
+            self.store.reconcile_if_current(&pending.version, current)
+        };
+        if self.client_manager.retired.load(Ordering::SeqCst) {
+            return;
+        }
+        match result {
+            Ok(commit) if commit.durable => {
+                state.version = Some(commit.version);
+                if !pending.clear && self.policy != LinkServeCarrierPolicy::Direct {
+                    state.client = pending.client;
+                    state.incarnation = pending.incarnation;
+                }
+                self.client_manager
+                    .persist_uncertain
+                    .store(false, Ordering::SeqCst);
+            }
+            Ok(commit) => {
+                state.pending = Some(PendingAccess {
+                    version: commit.version,
+                    renamed: true,
+                    ..pending
+                });
+            }
+            Err(
+                StoreMutationError::StaleGeneration
+                | StoreMutationError::IdentityMismatch
+                | StoreMutationError::BundleNotFound,
+            ) => {}
+            Err(_) => state.pending = Some(pending),
+        }
+    }
+
+    pub fn run_access_job(&self, port: u16, _target_generation: u64) {
+        if self.store.bundle_dir().as_os_str().is_empty() {
+            return;
+        }
         let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        self.reconcile_pending(deadline);
+        let operation_epoch = self.tracker.operation_epoch.load(Ordering::SeqCst);
+        let incarnation = self.client_manager.incarnation();
+        if self.client_manager.retired.load(Ordering::SeqCst) || !self.tracker.pairing_is_current()
+        {
+            return;
+        }
+        // Disk revision is captured before I/O and compared under the real writer lock.
+        let Ok(version) = self.store.capture_version_if_current(&self.identity, || {
+            !self.client_manager.retired.load(Ordering::SeqCst)
+                && std::time::Instant::now() < deadline
+        }) else {
+            return;
+        };
         let Some(agent) = description_agent(deadline) else {
             return;
         };
@@ -1081,26 +1428,17 @@ impl OptionalJobScheduler {
         if resp.status().as_u16() != 200 {
             return;
         }
-        use std::io::Read;
-        let mut body = Vec::new();
-        if resp
-            .into_body()
-            .into_reader()
-            .take(65537)
-            .read_to_end(&mut body)
-            .is_err()
-            || body.len() > 65536
-        {
+        let Some(body) = bounded_response_body(resp) else {
             return;
-        }
+        };
         let Ok(access_resp) = serde_json::from_slice::<WireRelayAccessResponse>(&body) else {
             return;
         };
-        if !self.tracker.generation_is_current(target_generation) {
+        if std::time::Instant::now() >= deadline {
             return;
         }
 
-        match access_resp {
+        let (ready, candidate) = match access_resp {
             WireRelayAccessResponse::Ready {
                 protocol_version,
                 relay_origin,
@@ -1111,8 +1449,13 @@ impl OptionalJobScheduler {
                 if protocol_version != 2 || instance_id != self.identity.instance_id {
                     return;
                 }
-                if let Some(configured) = &self.configured_relay_origin
-                    && !same_relay_origin(&relay_origin, configured)
+                let Ok(relay_origin) = parse_relay_origin(&relay_origin) else {
+                    return;
+                };
+                if self
+                    .configured_relay_origin
+                    .as_ref()
+                    .is_some_and(|configured| !same_relay_origin(&relay_origin, configured))
                 {
                     return;
                 }
@@ -1129,98 +1472,160 @@ impl OptionalJobScheduler {
                 ) else {
                     return;
                 };
-                let exp = claims.exp;
-
-                match self
-                    .store
-                    .publish_ready(&relay_origin, &device_token, exp, &self.identity)
-                {
-                    Ok(_) => {}
-                    Err(StoreMutationError::PersistUncertain(_)) => {
-                        self.tracker.set_persist_uncertain(true);
+                let candidate = if self.policy == LinkServeCarrierPolicy::Direct {
+                    None
+                } else {
+                    let hook = make_token_persist_hook(
+                        Some(relay_origin.clone()),
+                        &self.store,
+                        &self.identity,
+                        incarnation.wrapping_add(1),
+                        Arc::downgrade(&self.client_manager),
+                    );
+                    let Ok(client) = self.make_client(
+                        Some(relay_origin.clone()),
+                        Some(device_token.clone()),
+                        Some(claims.exp),
+                        hook,
+                    ) else {
                         return;
-                    }
-                    Err(_) => {
-                        return;
-                    }
-                }
-
-                if self.policy == LinkServeCarrierPolicy::Direct {
-                    return;
-                }
-
-                let next_incarnation = self.client_manager.incarnation().wrapping_add(1);
-                let hook = make_token_persist_hook(
-                    Some(relay_origin.clone()),
-                    &self.store,
-                    &self.identity,
-                    next_incarnation,
-                    Arc::downgrade(&self.client_manager),
-                );
-
-                let credential = Credential {
-                    client_key_pem: self.bundle.private_key_pem.clone(),
-                    client_cert_pem: self.bundle.client_cert_pem.clone(),
-                    ca_chain_pem: self.bundle.ca_chain_pem.clone(),
-                    ca_fp_prefix: self.ca_fp_prefix.clone(),
-                    instance_id: self.bundle.instance_id.clone(),
-                    home_label: self.bundle.home_label.clone(),
-                    endpoints: match self.policy {
-                        LinkServeCarrierPolicy::RelayOnly => Vec::new(),
-                        LinkServeCarrierPolicy::Direct | LinkServeCarrierPolicy::RelayPermitted => {
-                            endpoints_from_bundle(&self.bundle)
-                        }
-                    },
-                    home_attestation: Some(self.bundle.home_attestation.clone()),
-                    local_endpoints: Some(self.bundle.local_endpoints.clone()),
-                    relay_origin: Some(relay_origin),
-                    device_token: Some(device_token),
-                    device_token_expires_at: Some(exp),
+                    };
+                    Some(Arc::new(client))
                 };
-
-                let new_client = match self.policy {
-                    LinkServeCarrierPolicy::RelayOnly => {
-                        TransportClient::new_relay_only(credential, hook)
-                    }
-                    LinkServeCarrierPolicy::Direct | LinkServeCarrierPolicy::RelayPermitted => {
-                        TransportClient::new(credential, hook)
-                    }
-                };
-                if let Ok(c) = new_client {
-                    self.client_manager.swap(Some(Arc::new(c)));
-                }
+                (Some((relay_origin, device_token, claims.exp)), candidate)
             }
             WireRelayAccessResponse::NotConfigured { protocol_version } => {
-                if let Some(pv) = protocol_version
-                    && pv != 2
-                {
+                if protocol_version != 2 {
                     return;
                 }
-                if self.policy == LinkServeCarrierPolicy::RelayOnly {
-                    self.client_manager.swap(None);
-                } else if self.policy == LinkServeCarrierPolicy::RelayPermitted {
-                    let credential = Credential {
-                        client_key_pem: self.bundle.private_key_pem.clone(),
-                        client_cert_pem: self.bundle.client_cert_pem.clone(),
-                        ca_chain_pem: self.bundle.ca_chain_pem.clone(),
-                        ca_fp_prefix: self.ca_fp_prefix.clone(),
-                        instance_id: self.bundle.instance_id.clone(),
-                        home_label: self.bundle.home_label.clone(),
-                        endpoints: endpoints_from_bundle(&self.bundle),
-                        home_attestation: Some(self.bundle.home_attestation.clone()),
-                        local_endpoints: Some(self.bundle.local_endpoints.clone()),
-                        relay_origin: None,
-                        device_token: None,
-                        device_token_expires_at: None,
+                let candidate = if self.policy == LinkServeCarrierPolicy::RelayPermitted {
+                    let Ok(client) = self.make_client(None, None, None, None) else {
+                        return;
                     };
-                    if let Ok(c) = TransportClient::new(credential, None) {
-                        self.client_manager.swap(Some(Arc::new(c)));
-                    }
-                }
-                let _ = self
-                    .store
-                    .publish_disabled_bounded(&self.identity, Some(target_generation));
+                    Some(Arc::new(client))
+                } else {
+                    None
+                };
+                (None, candidate)
             }
+        };
+        let mut state = self
+            .client_manager
+            .inner
+            .lock()
+            .expect("client manager lock");
+        let current = || {
+            !self.client_manager.retired.load(Ordering::SeqCst)
+                && !self.tracker.retired.load(Ordering::SeqCst)
+                && self.tracker.operation_epoch.load(Ordering::SeqCst) == operation_epoch
+                && ready.as_ref().is_none_or(|(_, _, exp)| {
+                    *exp > SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64
+                })
+                && std::time::Instant::now() < deadline
+        };
+        if state.incarnation != incarnation || !current() {
+            return;
+        }
+        let result = match &ready {
+            Some((origin, token, exp)) => self
+                .store
+                .publish_ready_if_current(origin, token, *exp, &version, current),
+            None => self.store.publish_disabled_if_current(&version, current),
+        };
+        if self.client_manager.retired.load(Ordering::SeqCst) {
+            return;
+        }
+        match result {
+            Ok(commit) if commit.durable => {
+                state.version = Some(commit.version);
+                state.pending = None;
+                if self.policy != LinkServeCarrierPolicy::Direct {
+                    state.client = candidate;
+                    state.incarnation = state.incarnation.wrapping_add(1);
+                }
+                self.client_manager
+                    .persist_uncertain
+                    .store(false, Ordering::SeqCst);
+            }
+            Ok(commit) => {
+                let clear = ready.is_none();
+                if clear && self.policy != LinkServeCarrierPolicy::Direct {
+                    state.client = candidate.clone();
+                    state.incarnation = state.incarnation.wrapping_add(1);
+                }
+                state.pending = Some(PendingAccess {
+                    version: commit.version,
+                    client: candidate,
+                    incarnation: if clear || self.policy == LinkServeCarrierPolicy::Direct {
+                        state.incarnation
+                    } else {
+                        state.incarnation.wrapping_add(1)
+                    },
+                    clear,
+                    renamed: true,
+                });
+                self.client_manager
+                    .persist_uncertain
+                    .store(true, Ordering::SeqCst);
+            }
+            Err(
+                StoreMutationError::StaleGeneration
+                | StoreMutationError::IdentityMismatch
+                | StoreMutationError::Retired
+                | StoreMutationError::BundleNotFound,
+            ) => {}
+            Err(_) if ready.is_none() => {
+                if self.policy != LinkServeCarrierPolicy::Direct {
+                    state.client = candidate.clone();
+                    state.incarnation = state.incarnation.wrapping_add(1);
+                }
+                state.pending = Some(PendingAccess {
+                    version,
+                    client: candidate,
+                    incarnation: state.incarnation,
+                    clear: true,
+                    renamed: false,
+                });
+                self.client_manager
+                    .persist_uncertain
+                    .store(true, Ordering::SeqCst);
+            }
+            Err(_) => {}
+        }
+    }
+
+    fn make_client(
+        &self,
+        relay_origin: Option<String>,
+        device_token: Option<String>,
+        device_token_expires_at: Option<i64>,
+        hook: Option<TokenPersistHook>,
+    ) -> Result<TransportClient, TransportError> {
+        let credential = Credential {
+            client_key_pem: self.bundle.private_key_pem.clone(),
+            client_cert_pem: self.bundle.client_cert_pem.clone(),
+            ca_chain_pem: self.bundle.ca_chain_pem.clone(),
+            ca_fp_prefix: self.ca_fp_prefix.clone(),
+            instance_id: self.bundle.instance_id.clone(),
+            home_label: self.bundle.home_label.clone(),
+            endpoints: if self.policy == LinkServeCarrierPolicy::RelayOnly {
+                Vec::new()
+            } else {
+                endpoints_from_bundle(&self.bundle)
+            },
+            home_attestation: Some(self.bundle.home_attestation.clone()),
+            local_endpoints: Some(self.bundle.local_endpoints.clone()),
+            relay_origin,
+            device_token,
+            device_token_expires_at,
+        };
+        if self.policy == LinkServeCarrierPolicy::RelayOnly {
+            TransportClient::new_relay_only(credential, hook)
+        } else {
+            TransportClient::new(credential, hook)
         }
     }
 
@@ -1267,13 +1672,18 @@ pub fn publish_device_description(tracker: Arc<StatusTracker>, port: u16, target
 pub fn publish_device_description_with(
     tracker: Arc<StatusTracker>,
     port: u16,
-    target_generation: u64,
+    _target_generation: u64,
     sample: impl Fn() -> crate::client_description::ReportedDescription,
 ) {
+    let epoch = tracker.operation_epoch.load(Ordering::SeqCst);
     let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let version = tracker.metadata_store_version(deadline);
+    if !tracker.bundle_dir.as_os_str().is_empty() && version.is_none() {
+        return;
+    }
     let self_url = format!("http://127.0.0.1:{port}/app/network/api/clients/self");
     for _ in 0..2 {
-        if !tracker.generation_is_current(target_generation) {
+        if !tracker.operation_is_current(epoch) {
             return;
         }
         let Some(agent) = description_agent(deadline) else {
@@ -1287,41 +1697,59 @@ pub fn publish_device_description_with(
         else {
             return;
         };
+        if get_resp.status().as_u16() == 404 {
+            // Older homes expose version only. Keep an existing name in that case.
+            let Some(agent) = description_agent(deadline) else {
+                return;
+            };
+            let url = format!("http://127.0.0.1:{port}/api/system/status");
+            let Ok(response) = agent.get(&url).header("Cache-Control", "no-cache").call() else {
+                return;
+            };
+            if response.status().as_u16() != 200 {
+                return;
+            }
+            let Some(body) = bounded_response_body(response) else {
+                return;
+            };
+            if std::time::Instant::now() >= deadline {
+                return;
+            }
+            let parsed = serde_json::from_slice::<Value>(&body).ok().and_then(|v| {
+                v.get("version")
+                    .and_then(|v| v.get("current"))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            });
+            tracker.apply_metadata_result(epoch, version.as_ref(), parsed, None, true, deadline);
+            return;
+        }
         if get_resp.status().as_u16() != 200 {
             return;
         }
-        use std::io::Read;
-        let mut body = Vec::new();
-        if get_resp
-            .into_body()
-            .into_reader()
-            .take(65537)
-            .read_to_end(&mut body)
-            .is_err()
-            || body.len() > 65536
-        {
-            return;
-        }
-        let Ok(desc_resp) =
-            serde_json::from_slice::<crate::client_description::ClientDescriptionResponse>(&body)
-        else {
+        let Some(body) = bounded_response_body(get_resp) else {
             return;
         };
-        if desc_resp.protocol_version != 1 || !is_valid_journal_version(&desc_resp.journal.version)
-        {
+        if std::time::Instant::now() >= deadline {
             return;
         }
+        let Some(desc_resp) = parse_description_response(&body) else {
+            return;
+        };
         if !matches!(
-            tracker.apply_fetch_result(
-                target_generation,
+            tracker.apply_metadata_result(
+                epoch,
+                version.as_ref(),
                 Some(desc_resp.journal.version),
-                desc_resp.journal.name
+                desc_resp.journal.name,
+                false,
+                deadline
             ),
             ApplyOutcome::Persisted | ApplyOutcome::UpdatedNoPersist
         ) {
             return;
         }
-        let local = sample();
+        let local = sanitize_local_description(sample());
         if desc_resp.reported == Some(local.clone()) {
             return;
         }
@@ -1333,7 +1761,7 @@ pub fn publish_device_description_with(
         let Ok(put_body) = serde_json::to_vec(&put_req) else {
             return;
         };
-        if !tracker.generation_is_current(target_generation) {
+        if !tracker.operation_is_current(epoch) {
             return;
         }
         let Some(agent) = description_agent(deadline) else {
@@ -1346,11 +1774,75 @@ pub fn publish_device_description_with(
         else {
             return;
         };
-        match put_resp.status().as_u16() {
-            409 => continue,
-            _ => return,
+        if put_resp.status().as_u16() == 409 {
+            continue;
         }
+        if put_resp.status().as_u16() != 200 {
+            return;
+        }
+        let Some(body) = bounded_response_body(put_resp) else {
+            return;
+        };
+        if std::time::Instant::now() >= deadline {
+            return;
+        }
+        let Some(response) = parse_description_response(&body) else {
+            return;
+        };
+        tracker.apply_metadata_result(
+            epoch,
+            version.as_ref(),
+            Some(response.journal.version),
+            response.journal.name,
+            false,
+            deadline,
+        );
+        return;
     }
+}
+
+fn sanitize_local_description(
+    raw: crate::client_description::ReportedDescription,
+) -> crate::client_description::ReportedDescription {
+    use crate::client_description::{ReportedDescription, sanitize_string};
+    ReportedDescription {
+        name: sanitize_string(raw.name, 80).unwrap_or(None),
+        platform: sanitize_string(raw.platform, 64).unwrap_or(None),
+        device_type: sanitize_string(raw.device_type, 64).unwrap_or(None),
+        app_id: sanitize_string(raw.app_id, 64).unwrap_or(None),
+        app_version: sanitize_string(raw.app_version, 64).unwrap_or(None),
+    }
+}
+
+fn parse_description_response(
+    body: &[u8],
+) -> Option<crate::client_description::ClientDescriptionResponse> {
+    let response: crate::client_description::ClientDescriptionResponse =
+        serde_json::from_slice(body).ok()?;
+    if response.protocol_version != 1 || !is_valid_journal_version(&response.journal.version) {
+        return None;
+    }
+    if let Some(reported) = &response.reported
+        && crate::client_description::sanitize_reported(reported.clone())
+            .ok()
+            .as_ref()
+            != Some(reported)
+    {
+        return None;
+    }
+    Some(response)
+}
+
+fn bounded_response_body(response: ureq::http::Response<ureq::Body>) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let mut body = Vec::new();
+    response
+        .into_body()
+        .into_reader()
+        .take(65537)
+        .read_to_end(&mut body)
+        .ok()?;
+    (body.len() <= 65536).then_some(body)
 }
 
 fn description_agent(deadline: std::time::Instant) -> Option<ureq::Agent> {
@@ -1380,12 +1872,6 @@ fn atomic_write_file(path: &Path, bytes: &[u8]) {
         if std::fs::write(&tmp, bytes).is_ok() {
             let _ = std::fs::rename(&tmp, path);
         }
-    }
-}
-
-fn write_journal_metadata_atomic(bundle_dir: &Path, meta: &LinkJournalMetadata) {
-    if let Ok(json_bytes) = serde_json::to_vec_pretty(meta) {
-        atomic_write_file(&bundle_dir.join("journal_metadata.json"), &json_bytes);
     }
 }
 
@@ -1574,7 +2060,7 @@ mod tests {
     use solstone_core_sol_client::seam::LinkServeEndpoint;
     use spl_core::bridge::RequestHead;
     use std::fs;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::Ordering;
 
     use super::*;
 
@@ -1610,8 +2096,11 @@ mod tests {
                 home_attestation: home_attestation.to_string(),
             };
             Box::pin(async move {
-                calls.lock().expect("enrollment calls lock").push(call);
-                Ok("device-token".to_string())
+                calls
+                    .lock()
+                    .expect("enrollment calls lock")
+                    .push(call.clone());
+                Ok(test_instance_token(&call.instance_id))
             })
         }
     }
@@ -1670,7 +2159,51 @@ mod tests {
                 local_endpoints: json!([{"ip": "192.168.1.10", "port": 7657}]),
                 relay_access: None,
             },
-            bundle_dir: PathBuf::from("/var/tmp/solstone-fake-serve"),
+            bundle_dir: PathBuf::new(),
+        }
+    }
+
+    fn test_instance_token(instance: &str) -> String {
+        use base64::Engine as _;
+        let payload = json!({"iss":"issuer", "sub":format!("instance:{instance}"), "aud":"spl-relay", "scope":"session.dial", "ver":2,
+            "instance_id":instance, "iat":1700000000i64, "exp":2500000000i64, "jti":"test"});
+        format!(
+            "e30.{}.sig",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string())
+        )
+    }
+
+    fn persist_test_request(request: &mut LinkServeRequest) {
+        fs::write(
+            request.bundle_dir.join("cert.pem"),
+            &request.bundle.client_cert_pem,
+        )
+        .unwrap();
+        fs::write(
+            request.bundle_dir.join("chain.pem"),
+            request.bundle.ca_chain_pem.join("\n"),
+        )
+        .unwrap();
+        fs::write(
+            request.bundle_dir.join("peer.json"),
+            json!({"instance_id":request.bundle.instance_id, "paired_at":request.bundle.paired_at})
+                .to_string(),
+        )
+        .unwrap();
+        let identity = pairing_identity_from_bundle(&request.bundle).unwrap();
+        if let Some(StoreLoadOutcome::Ready(record) | StoreLoadOutcome::Disabled(record)) =
+            &mut request.bundle.relay_access
+        {
+            record.identity = identity;
+            if record.state == RelayAccessState::Ready {
+                record.device_token = Some(test_instance_token(&record.identity.instance_id));
+                record.expires_at = Some(2500000000);
+            }
+            fs::write(
+                request.bundle_dir.join("relay_access.json"),
+                serde_json::to_vec(record).unwrap(),
+            )
+            .unwrap();
         }
     }
 
@@ -1777,6 +2310,7 @@ mod tests {
             },
         }));
 
+        persist_test_request(&mut request);
         let starter = ServeStarter::default();
         let session = match starter.start(request) {
             Ok(s) => s,
@@ -1806,6 +2340,7 @@ mod tests {
             },
         }));
 
+        persist_test_request(&mut request);
         let starter = ServeStarter::default();
         let err = match starter.start(request) {
             Err(e) => e,
@@ -1838,6 +2373,7 @@ mod tests {
             },
         }));
 
+        persist_test_request(&mut request);
         let starter = ServeStarter::default();
         let err = match starter.start(request) {
             Err(e) => e,
@@ -2016,6 +2552,17 @@ mod tests {
     #[test]
     fn apply_fetch_result_pairing_revision_fence() {
         let temp_dir = TempDir::new("status-pairing-fence");
+        fs::write(temp_dir.path().join("cert.pem"), "test-client").unwrap();
+        fs::write(
+            temp_dir.path().join("chain.pem"),
+            "-----BEGIN CERTIFICATE-----\nY2E=\n-----END CERTIFICATE-----\n",
+        )
+        .unwrap();
+        fs::write(
+            temp_dir.path().join("peer.json"),
+            json!({"instance_id":"inst-123","paired_at":"2026-07-26T00:00:00Z"}).to_string(),
+        )
+        .unwrap();
         let clock = Arc::new(FixedStatusClock::new(100.0));
         let tracker = StatusTracker::with_metadata(
             clock,
@@ -2033,7 +2580,7 @@ mod tests {
 
         std::fs::write(
             temp_dir.path().join("peer.json"),
-            json!({ "paired_at": "different-paired-at" }).to_string(),
+            json!({ "instance_id":"inst-123", "paired_at": "different-paired-at" }).to_string(),
         )
         .expect("write peer.json");
         let outcome_mismatch = tracker.apply_fetch_result(1, Some("2026.07.26".to_string()), None);
@@ -2045,7 +2592,7 @@ mod tests {
 
         std::fs::write(
             temp_dir.path().join("peer.json"),
-            json!({ "paired_at": "2026-07-26T00:00:00Z" }).to_string(),
+            json!({ "instance_id":"inst-123", "paired_at": "2026-07-26T00:00:00Z" }).to_string(),
         )
         .expect("write peer.json");
         let outcome_match = tracker.apply_fetch_result(
@@ -2347,6 +2894,33 @@ mod tests {
         ];
         let forwarded = opener.proxy_headers(&incoming).expect("proxy headers");
         assert_eq!(forwarded, incoming);
+    }
+
+    #[test]
+    fn shutdown_fences_metadata_before_waiting_for_client_mutation() {
+        let request = serve_request(LinkServeCarrierPolicy::Direct, None);
+        let tracker = Arc::new(StatusTracker::new(Arc::new(SystemStatusClock)));
+        let manager = Arc::new(CurrentClientManager::new(None));
+        let scheduler = Arc::new(OptionalJobScheduler::new_for_test(JobSchedulerTestParams {
+            tracker: tracker.clone(),
+            client_manager: manager.clone(),
+            store: LinkCredentialStore::new(PathBuf::new(), ""),
+            identity: pairing_identity_from_bundle(&request.bundle).unwrap(),
+            policy: LinkServeCarrierPolicy::Direct,
+            configured_relay_origin: None,
+            ca_fp_prefix: ca_fp_prefix(&request.bundle).unwrap(),
+            bundle: request.bundle,
+        }));
+        let owner = manager.inner.lock().unwrap();
+        let retiring = std::thread::spawn(move || scheduler.retire());
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while !tracker.retired.load(Ordering::SeqCst) && std::time::Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        assert!(tracker.retired.load(Ordering::SeqCst));
+        assert!(!tracker.operation_is_current(0));
+        drop(owner);
+        retiring.join().unwrap();
     }
 
     #[test]

@@ -1341,7 +1341,7 @@ mod tests {
                 label: "laptop".to_string(),
                 port: 0,
                 policy: LinkServeCarrierPolicy::RelayPermitted,
-                relay_origin: Some("https://link.solstone.app".to_string()),
+                relay_origin: None,
                 bundle,
                 bundle_dir: config.join("solstone-observer").join("spl").join("laptop"),
             },
