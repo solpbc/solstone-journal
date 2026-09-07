@@ -572,11 +572,11 @@
   // inside today. The connections shelf used to spell its own lowercase
   // 'sep 5' beside the activity list's 'Sep 6, 3:38 PM'. G1-105.
   // `JournalFormat.day` capitalises its relative tokens ("Yesterday",
-  // "Wednesday") because it usually opens a line or a cell. Mid-sentence they
-  // have to be lowercase; an absolute day ("Thu Sep 3") keeps its capitals.
+  // "Wednesday") because it usually opens a line or a cell. Only the three
+  // deictic words go lowercase mid-sentence; a weekday is a proper noun and
+  // keeps its capital, as does an absolute day ("Thu Sep 3").
   const RELATIVE_DAY_WORDS = new Set([
-    'today', 'yesterday', 'tomorrow',
-    'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'
+    'today', 'yesterday', 'tomorrow'
   ]);
 
   function formatConnectionDay(day) {
