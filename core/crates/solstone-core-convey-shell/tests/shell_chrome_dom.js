@@ -598,6 +598,20 @@ function asyncCase(name, fn) {
   });
 }
 
+testCase('app navigation uses full documents, never workspace fragments', () => {
+  const harness = createHarness();
+  renderChrome(harness, 'home');
+  for (const slot of ['#app-rail', '#app-dock', '#app-launcher']) {
+    const links = harness.document.querySelector(slot).querySelectorAll('a');
+    assert(links.length > 0);
+    for (const link of links) {
+      const href = link.getAttribute('href');
+      if (href.includes('/app/health/#')) continue;
+      assert(/^\/app\/[^/]+\/$/.test(href), `${slot}: ${href} must open the full application`);
+    }
+  }
+});
+
 testCase('rail composition', () => {
   const harness = createHarness();
   renderChrome(harness, 'home');

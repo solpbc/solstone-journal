@@ -105,7 +105,7 @@
               "switch": "Use This Lane"
             },
             "active_lane_labels": {
-              "byo": "your own AI engine",
+              "byo": "your own model",
               "confidential": "confidential processing",
               "local": "local",
               "none": "not thinking yet"
@@ -126,7 +126,7 @@
               "endpoint_honesty": "processing checks the endpoint works before relying on it. if it can't reach it, you'll see. it never quietly falls back to anyone else.",
               "endpoint_sub": "any OpenAI-compatible URL. your server, your rules.",
               "get_key": "get a key \u2197",
-              "intro": "bring your own AI engine. sol pbc is never in the path. your key stays in your journal.",
+              "intro": "bring your own model. sol pbc is never in the path. your key stays in your journal.",
               "key_failed": "this key didn't work: {reason}. paste a different key, or fix it with {provider} and check again.",
               "key_heading": "pick your provider",
               "key_hint": "the key stays in your journal. sol pbc never sets it up or sees it. paste it once; processing uses it from here.",
@@ -257,7 +257,7 @@
               "setup_endpoint": "your endpoint",
               "setup_key": "a saved key",
               "target_label": "switch to",
-              "to_byo_note": "processing will use your own engine. {setup} is still here.",
+              "to_byo_note": "processing will use your own model. {setup} is still here.",
               "to_local_note": "processing will run right on this computer. your {current} setup stays saved. switch back anytime."
             },
             "lanes": [
@@ -276,7 +276,7 @@
               {
                 "description": "bring a provider key (Claude, Gemini, or GPT) or point processing at your own endpoint. the key stays in your journal; sol pbc is never in the path.",
                 "id": "byo",
-                "label": "your own AI engine",
+                "label": "your own model",
                 "sub": "your key, or your own endpoint"
               }
             ],
@@ -2334,7 +2334,7 @@
               "switch": "Use This Lane"
             },
             "active_lane_labels": {
-              "byo": "your own AI engine",
+              "byo": "your own model",
               "confidential": "confidential processing",
               "local": "local",
               "none": "not thinking yet"
@@ -2355,7 +2355,7 @@
               "endpoint_honesty": "processing checks the endpoint works before relying on it. if it can't reach it, you'll see. it never quietly falls back to anyone else.",
               "endpoint_sub": "any OpenAI-compatible URL. your server, your rules.",
               "get_key": "get a key \u2197",
-              "intro": "bring your own AI engine. sol pbc is never in the path. your key stays in your journal.",
+              "intro": "bring your own model. sol pbc is never in the path. your key stays in your journal.",
               "key_failed": "this key didn't work: {reason}. paste a different key, or fix it with {provider} and check again.",
               "key_heading": "pick your provider",
               "key_hint": "the key stays in your journal. sol pbc never sets it up or sees it. paste it once; processing uses it from here.",
@@ -2486,7 +2486,7 @@
               "setup_endpoint": "your endpoint",
               "setup_key": "a saved key",
               "target_label": "switch to",
-              "to_byo_note": "processing will use your own engine. {setup} is still here.",
+              "to_byo_note": "processing will use your own model. {setup} is still here.",
               "to_local_note": "processing will run right on this computer. your {current} setup stays saved. switch back anytime."
             },
             "lanes": [
@@ -2505,7 +2505,7 @@
               {
                 "description": "bring a provider key (Claude, Gemini, or GPT) or point processing at your own endpoint. the key stays in your journal; sol pbc is never in the path.",
                 "id": "byo",
-                "label": "your own AI engine",
+                "label": "your own model",
                 "sub": "your key, or your own endpoint"
               }
             ],
@@ -4561,7 +4561,7 @@
               "switch": "Use This Lane"
             },
             "active_lane_labels": {
-              "byo": "your own AI engine",
+              "byo": "your own model",
               "confidential": "confidential processing",
               "local": "local",
               "none": "not thinking yet"
@@ -4582,7 +4582,7 @@
               "endpoint_honesty": "processing checks the endpoint works before relying on it. if it can't reach it, you'll see. it never quietly falls back to anyone else.",
               "endpoint_sub": "any OpenAI-compatible URL. your server, your rules.",
               "get_key": "get a key \u2197",
-              "intro": "bring your own AI engine. sol pbc is never in the path. your key stays in your journal.",
+              "intro": "bring your own model. sol pbc is never in the path. your key stays in your journal.",
               "key_failed": "this key didn't work: {reason}. paste a different key, or fix it with {provider} and check again.",
               "key_heading": "pick your provider",
               "key_hint": "the key stays in your journal. sol pbc never sets it up or sees it. paste it once; processing uses it from here.",
@@ -4713,7 +4713,7 @@
               "setup_endpoint": "your endpoint",
               "setup_key": "a saved key",
               "target_label": "switch to",
-              "to_byo_note": "processing will use your own engine. {setup} is still here.",
+              "to_byo_note": "processing will use your own model. {setup} is still here.",
               "to_local_note": "processing will run right on this computer. your {current} setup stays saved. switch back anytime."
             },
             "lanes": [
@@ -4732,7 +4732,7 @@
               {
                 "description": "bring a provider key (Claude, Gemini, or GPT) or point processing at your own endpoint. the key stays in your journal; sol pbc is never in the path.",
                 "id": "byo",
-                "label": "your own AI engine",
+                "label": "your own model",
                 "sub": "your key, or your own endpoint"
               }
             ],
@@ -6768,7 +6768,7 @@
               "switch": "Use This Lane"
             },
             "active_lane_labels": {
-              "byo": "your own AI engine",
+              "byo": "your own model",
               "confidential": "confidential processing",
               "local": "local",
               "none": "not thinking yet"
@@ -6789,7 +6789,7 @@
               "endpoint_honesty": "processing checks the endpoint works before relying on it. if it can't reach it, you'll see. it never quietly falls back to anyone else.",
               "endpoint_sub": "any OpenAI-compatible URL. your server, your rules.",
               "get_key": "get a key \u2197",
-              "intro": "bring your own AI engine. sol pbc is never in the path. your key stays in your journal.",
+              "intro": "bring your own model. sol pbc is never in the path. your key stays in your journal.",
               "key_failed": "this key didn't work: {reason}. paste a different key, or fix it with {provider} and check again.",
               "key_heading": "pick your provider",
               "key_hint": "the key stays in your journal. sol pbc never sets it up or sees it. paste it once; processing uses it from here.",
@@ -6920,7 +6920,7 @@
               "setup_endpoint": "your endpoint",
               "setup_key": "a saved key",
               "target_label": "switch to",
-              "to_byo_note": "processing will use your own engine. {setup} is still here.",
+              "to_byo_note": "processing will use your own model. {setup} is still here.",
               "to_local_note": "processing will run right on this computer. your {current} setup stays saved. switch back anytime."
             },
             "lanes": [
@@ -6939,7 +6939,7 @@
               {
                 "description": "bring a provider key (Claude, Gemini, or GPT) or point processing at your own endpoint. the key stays in your journal; sol pbc is never in the path.",
                 "id": "byo",
-                "label": "your own AI engine",
+                "label": "your own model",
                 "sub": "your key, or your own endpoint"
               }
             ],
@@ -9159,7 +9159,7 @@
               "switch": "Use This Lane"
             },
             "active_lane_labels": {
-              "byo": "your own AI engine",
+              "byo": "your own model",
               "confidential": "confidential processing",
               "local": "local",
               "none": "not thinking yet"
@@ -9180,7 +9180,7 @@
               "endpoint_honesty": "processing checks the endpoint works before relying on it. if it can't reach it, you'll see. it never quietly falls back to anyone else.",
               "endpoint_sub": "any OpenAI-compatible URL. your server, your rules.",
               "get_key": "get a key \u2197",
-              "intro": "bring your own AI engine. sol pbc is never in the path. your key stays in your journal.",
+              "intro": "bring your own model. sol pbc is never in the path. your key stays in your journal.",
               "key_failed": "this key didn't work: {reason}. paste a different key, or fix it with {provider} and check again.",
               "key_heading": "pick your provider",
               "key_hint": "the key stays in your journal. sol pbc never sets it up or sees it. paste it once; processing uses it from here.",
@@ -9311,7 +9311,7 @@
               "setup_endpoint": "your endpoint",
               "setup_key": "a saved key",
               "target_label": "switch to",
-              "to_byo_note": "processing will use your own engine. {setup} is still here.",
+              "to_byo_note": "processing will use your own model. {setup} is still here.",
               "to_local_note": "processing will run right on this computer. your {current} setup stays saved. switch back anytime."
             },
             "lanes": [
@@ -9330,7 +9330,7 @@
               {
                 "description": "bring a provider key (Claude, Gemini, or GPT) or point processing at your own endpoint. the key stays in your journal; sol pbc is never in the path.",
                 "id": "byo",
-                "label": "your own AI engine",
+                "label": "your own model",
                 "sub": "your key, or your own endpoint"
               }
             ],
@@ -12693,7 +12693,7 @@
               "switch": "Use This Lane"
             },
             "active_lane_labels": {
-              "byo": "your own AI engine",
+              "byo": "your own model",
               "confidential": "confidential processing",
               "local": "local",
               "none": "not thinking yet"
@@ -12714,7 +12714,7 @@
               "endpoint_honesty": "processing checks the endpoint works before relying on it. if it can't reach it, you'll see. it never quietly falls back to anyone else.",
               "endpoint_sub": "any OpenAI-compatible URL. your server, your rules.",
               "get_key": "get a key \u2197",
-              "intro": "bring your own AI engine. sol pbc is never in the path. your key stays in your journal.",
+              "intro": "bring your own model. sol pbc is never in the path. your key stays in your journal.",
               "key_failed": "this key didn't work: {reason}. paste a different key, or fix it with {provider} and check again.",
               "key_heading": "pick your provider",
               "key_hint": "the key stays in your journal. sol pbc never sets it up or sees it. paste it once; processing uses it from here.",
@@ -12845,7 +12845,7 @@
               "setup_endpoint": "your endpoint",
               "setup_key": "a saved key",
               "target_label": "switch to",
-              "to_byo_note": "processing will use your own engine. {setup} is still here.",
+              "to_byo_note": "processing will use your own model. {setup} is still here.",
               "to_local_note": "processing will run right on this computer. your {current} setup stays saved. switch back anytime."
             },
             "lanes": [
@@ -12864,7 +12864,7 @@
               {
                 "description": "bring a provider key (Claude, Gemini, or GPT) or point processing at your own endpoint. the key stays in your journal; sol pbc is never in the path.",
                 "id": "byo",
-                "label": "your own AI engine",
+                "label": "your own model",
                 "sub": "your key, or your own endpoint"
               }
             ],

@@ -21,7 +21,10 @@ The pre-hook has already gathered all context. Do not call tools, do not call
 the CLI, and do not read or write files. Return only the JSON object matching
 the schema.
 
-The date being summarized is $day_YYYYMMDD. Build this Pulse from the dated
+The date being summarized is $day_YYYYMMDD. The current local time is $as_of.
+Planned or anticipated activity is not evidence of completion, even when its
+scheduled time has passed. Never describe later activity as already completed.
+Build this Pulse from the dated
 activity evidence below. The completed entries cover recent work, so describe
 what they show without claiming to cover the whole day. State any gap that
 limits the account.

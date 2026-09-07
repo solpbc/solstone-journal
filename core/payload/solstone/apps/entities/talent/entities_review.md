@@ -1,7 +1,7 @@
 {
   "type": "generate",
-  "title": "Entity Reviewer",
-  "description": "Reviews detected entities and promotes recurring ones to attached status",
+  "title": "entity reviewer",
+  "description": "reviews detected entities and promotes recurring ones to attached status",
   "color": "#00796b",
   "schedule": "daily",
   "priority": 56,

@@ -1,8 +1,8 @@
 {
   "type": "generate",
 
-  "title": "Speaker Attribution",
-  "description": "Identifies who said what in each transcript segment. Layers 1-3 (owner, structural, acoustic) run computationally via hook; Layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
+  "title": "speaker attribution",
+  "description": "identifies who said what in each transcript segment. layers 1-3 (owner, structural, acoustic) run computationally via hook; layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
   "schedule": "segment",
   "priority": 40,
   "output": "json",

@@ -470,9 +470,10 @@ fn agent_label(agent: &str) -> String {
 /// silently stopped firing — the owner got braces, keys and a raw model id back
 /// for exactly the records with the most to say. The record is read here, where
 /// it is still whole, and the cap then applies to the sentences.
-const RECORD_TEXT_FIELDS: [&str; 8] = [
+const RECORD_TEXT_FIELDS: [&str; 9] = [
     "headline",
     "summary_sentence",
+    "full_details",
     "summary",
     "text",
     "body",
@@ -1097,6 +1098,16 @@ mod highlight_phrase_tests {
         assert_eq!(record_millis(1_788_662_697_014), Some(1_788_662_697_014));
         assert_eq!(record_millis(0), None);
         assert_eq!(record_millis(-1), None);
+    }
+
+    #[test]
+    fn pulse_details_are_readable_search_text() {
+        let raw = json!({"title":"a quiet afternoon", "one_sentence":"A plan took shape.",
+            "full_details":"You outlined the orchard planting plan.", "needs_you":[]})
+        .to_string();
+        let record = readable_record(&raw).expect("Pulse text");
+        assert!(record.text.contains("orchard planting plan"));
+        assert!(!record.text.contains("full_details"));
     }
 
     #[test]

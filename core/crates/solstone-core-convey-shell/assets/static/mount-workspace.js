@@ -13,9 +13,9 @@
     } else {
       target.innerHTML =
         '<div class="surface-state surface-state--error" role="alert">' +
-        '<h2 class="surface-state-heading">Couldn\'t load this section</h2>' +
+        '<h2 class="surface-state-heading">couldn\'t load this section</h2>' +
         '<p class="surface-state-desc">reload to try again.</p>' +
-        '<button type="button" class="surface-state-retry">Try again</button>' +
+        '<button type="button" class="surface-state-retry">try again</button>' +
         '</div>';
     }
     const button = target.querySelector('.surface-state-retry');

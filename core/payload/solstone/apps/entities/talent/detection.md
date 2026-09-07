@@ -1,7 +1,7 @@
 {
   "type": "generate",
-  "title": "Entity Detection",
-  "description": "Per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
+  "title": "entity detection",
+  "description": "per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
   "color": "#00695c",
   "schedule": "segment",
   "priority": 15,

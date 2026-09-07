@@ -100,9 +100,9 @@
     } else {
       target.innerHTML =
         '<div class="surface-state surface-state--error" role="alert">' +
-        '<h2 class="surface-state-heading">Couldn\'t load this section</h2>' +
+        '<h2 class="surface-state-heading">couldn\'t load this section</h2>' +
         '<p class="surface-state-desc">reload to try again.</p>' +
-        '<button type="button" class="surface-state-retry">Try again</button>' +
+        '<button type="button" class="surface-state-retry">try again</button>' +
         '</div>';
     }
     const button = target.querySelector('.surface-state-retry');
@@ -126,7 +126,7 @@
     const icon = app.icon_svg || escapeHtml(app.icon);
     const label = escapeHtml(app.label);
     return (
-      `<a class="${className}${isCurrent ? ' is-current' : ''}" href="${escapeHtml(app.workspace_url)}"` +
+      `<a class="${className}${isCurrent ? ' is-current' : ''}" href="${escapeHtml(`/app/${encodeURIComponent(app.name)}/`)}"` +
       ` data-app-name="${escapeHtml(app.name)}"${isCurrent ? ' aria-current="page"' : ''}>` +
       `<span class="app-chrome-icon" aria-hidden="true">${icon}</span>` +
       `<span class="app-chrome-label">${label}</span>` +
@@ -193,7 +193,7 @@
         const isCurrent = app.name === currentAppName;
         return (
           `<li class="app-launcher-app" data-launcher-app data-label="${labelText.toLowerCase()}">` +
-          `<a href="${escapeHtml(app.workspace_url)}"${isCurrent ? ' aria-current="page"' : ''}>${labelText}</a>` +
+          `<a href="${escapeHtml(`/app/${encodeURIComponent(app.name)}/`)}"${isCurrent ? ' aria-current="page"' : ''}>${labelText}</a>` +
           '</li>'
         );
       }).join('');

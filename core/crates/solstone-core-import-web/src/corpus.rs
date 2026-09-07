@@ -28,7 +28,7 @@ pub(crate) const DECLARED_STATUS_ROOT_CREATED_AT_OVERFIRE: JsonPath = &[Segment:
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::{collections::BTreeSet, fs, os::unix::fs::PermissionsExt, path::Path};
+    use std::{collections::BTreeSet, fs, path::Path};
 
     use axum::{
         body::{Body, to_bytes},
@@ -385,7 +385,7 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn ac9_backfill_both_routes_persist_private_seven_key_manifests() {
+    async fn ac9_both_routes_project_seven_key_manifests_without_writing() {
         let root = phase_root("empty");
         let jsonl = "20260103_000000";
         let markdown = "20260104_000000";
@@ -434,15 +434,9 @@ pub(crate) mod tests {
                 .join("imports")
                 .join(timestamp)
                 .join("content_manifest.jsonl");
-            assert_eq!(
-                fs::metadata(&manifest).unwrap().permissions().mode() & 0o777,
-                0o600
-            );
-            let rows: Vec<Value> = fs::read_to_string(&manifest)
-                .unwrap()
-                .lines()
-                .map(|line| serde_json::from_str(line).unwrap())
-                .collect();
+            assert!(!manifest.exists(), "a read must not create a manifest");
+            let body: Value = serde_json::from_slice(&first).unwrap();
+            let rows = body["items"].as_array().unwrap();
             let keys: BTreeSet<_> = ["id", "title", "date", "type", "preview", "meta", "segments"]
                 .into_iter()
                 .collect();
@@ -464,7 +458,7 @@ pub(crate) mod tests {
                 assert_eq!(rows[0]["title"], "One");
             }
             let (_, _, _, second) = request(root.path(), "GET", &uri, None).await;
-            assert_eq!(first, second, "{timestamp} uses persisted manifest");
+            assert_eq!(first, second, "{timestamp} projects the same content");
         }
         let detail = "20260105_000000";
         seed_import(
@@ -493,12 +487,12 @@ pub(crate) mod tests {
             .join("imports")
             .join(detail)
             .join("content_manifest.jsonl");
-        assert_eq!(
-            fs::metadata(&manifest).unwrap().permissions().mode() & 0o777,
-            0o600
+        assert!(
+            !manifest.exists(),
+            "a detail read must not create a manifest"
         );
-        let row: Value =
-            serde_json::from_str(fs::read_to_string(&manifest).unwrap().trim()).unwrap();
+        let body: Value = serde_json::from_slice(&first).unwrap();
+        let row = &body["item"];
         let keys: BTreeSet<_> = ["id", "title", "date", "type", "preview", "meta", "segments"]
             .into_iter()
             .collect();
@@ -512,7 +506,58 @@ pub(crate) mod tests {
         );
         assert_eq!(row["id"], "seg-0");
         let (_, _, _, second) = request(root.path(), "GET", &detail_uri, None).await;
-        assert_eq!(first, second, "detail route uses its persisted manifest");
+        assert_eq!(first, second, "detail route projects the same content");
+    }
+
+    #[tokio::test]
+    async fn note_detail_reads_markdown_and_refuses_an_external_symlink() {
+        let root = phase_root("empty");
+        let stamp = "20260907_090000";
+        let segment = root
+            .path()
+            .join("chronicle/20260907/import.obsidian/note-a");
+        fs::create_dir_all(&segment).unwrap();
+        let transcript = segment.join("note_transcript.md");
+        fs::write(&transcript, "# garden\n\nPlant the orchard in October.").unwrap();
+        seed_import(
+            root.path(),
+            stamp,
+            "note.md",
+            "text/markdown",
+            "markdown",
+            Some(
+                json!({"source_type":"obsidian", "all_created_files":["chronicle/20260907/import.obsidian/note-a/note_transcript.md"]}),
+            ),
+            b"note",
+        );
+        let uri = format!("/app/import/api/{stamp}/content/item-0");
+        let (status, body) = json_request(root.path(), "GET", &uri).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            body["content"][0],
+            json!({"type":"markdown","content":"# garden\n\nPlant the orchard in October."})
+        );
+        assert!(
+            !root
+                .path()
+                .join(format!("imports/{stamp}/content_manifest.jsonl"))
+                .exists()
+        );
+        // Also exercise persisted manifests, so containment is not only in projection.
+        fs::write(
+            root.path()
+                .join(format!("imports/{stamp}/content_manifest.jsonl")),
+            format!("{}\n", body["item"]),
+        )
+        .unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("private.md"), "OUTSIDE_SENTINEL").unwrap();
+        fs::remove_file(&transcript).unwrap();
+        std::os::unix::fs::symlink(outside.path().join("private.md"), &transcript).unwrap();
+        let (status, body) = json_request(root.path(), "GET", &uri).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["reason_code"], "import_content_failed");
+        assert!(!body.to_string().contains("OUTSIDE_SENTINEL"));
     }
 
     #[tokio::test]

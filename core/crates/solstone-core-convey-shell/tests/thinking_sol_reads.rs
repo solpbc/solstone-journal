@@ -591,6 +591,35 @@ async fn ac3_facet_metadata_preserves_explicit_empty_title() {
 }
 
 #[tokio::test]
+async fn weekly_reflection_output_path_round_trips_from_its_run() {
+    let fixture = Fixture::new();
+    fixture.established();
+    let output = fixture.0.join("reflections/20260329.md");
+    fs::create_dir_all(output.parent().unwrap()).unwrap();
+    fs::write(&output, "# a week in the garden\n").unwrap();
+    write_jsonl(
+        &fixture
+            .0
+            .join("talents/weekly_reflection/reflection-run.jsonl"),
+        &[
+            json!({"event":"request", "use_id":"reflection-run", "day":"20260403", "name":"weekly_reflection", "ts":1, "output":"md", "output_path":output}),
+            json!({"event":"finish", "usage":{"input_tokens":1,"output_tokens":1}}),
+        ],
+    );
+    let app = router(fixture.0.clone());
+    let (status, run) = get(app.clone(), "/app/thinking/api/run/reflection-run", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(run["output_file"], "reflections/20260329.md");
+    let path = format!(
+        "/app/thinking/api/output/20260403/{}",
+        run["output_file"].as_str().unwrap()
+    );
+    let (status, body) = get(app, &path, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["content"], "# a week in the garden\n");
+}
+
+#[tokio::test]
 async fn ac5_output_oracle_and_containment() {
     let fixture = Fixture::new();
     seed_populated(&fixture, 3);
@@ -605,7 +634,7 @@ async fn ac5_output_oracle_and_containment() {
     let app = router(fixture.0.clone());
     let (status, body) = get(
         app.clone(),
-        "/app/thinking/api/output/20260403/talents/example-output.md",
+        "/app/thinking/api/output/20260403/chronicle/20260403/talents/example-output.md",
         None,
     )
     .await;
@@ -624,7 +653,7 @@ async fn ac5_output_oracle_and_containment() {
     );
     let (status, body) = get(
         app.clone(),
-        "/app/thinking/api/output/20260403/talents/case.JSON",
+        "/app/thinking/api/output/20260403/chronicle/20260403/talents/case.JSON",
         None,
     )
     .await;
@@ -649,7 +678,7 @@ async fn ac5_output_oracle_and_containment() {
     empty.established();
     let (status, body) = get(
         router(empty.0.clone()),
-        "/app/thinking/api/output/20260403/talents/example-output.md",
+        "/app/thinking/api/output/20260403/chronicle/20260403/talents/example-output.md",
         None,
     )
     .await;
@@ -701,7 +730,7 @@ async fn ac5_run_output_path_and_fetch_containment_asymmetry() {
     let app = router(fixture.0.clone());
     let (status, cross_day) = get(
         app.clone(),
-        "/app/thinking/api/output/20260403/talents/cross-day-link.md",
+        "/app/thinking/api/output/20260403/chronicle/20260403/talents/cross-day-link.md",
         None,
     )
     .await;
@@ -715,7 +744,7 @@ async fn ac5_run_output_path_and_fetch_containment_asymmetry() {
     assert_eq!(run["output_file"], "chronicle/20260403/talents/link.md");
     let (status, fetch) = get(
         app,
-        "/app/thinking/api/output/20260403/talents/link.md",
+        "/app/thinking/api/output/20260403/chronicle/20260403/talents/link.md",
         None,
     )
     .await;
@@ -734,11 +763,13 @@ async fn ac5_derived_output_paths_use_env_stream() {
     let day = "20260403";
     let streamed = fixture
         .0
-        .join("20260403/stream-a/segment-a/talents/streamed.md");
-    let no_env = fixture.0.join("20260403/segment-a/talents/no-env.md");
+        .join("chronicle/20260403/stream-a/segment-a/talents/streamed.md");
+    let no_env = fixture
+        .0
+        .join("chronicle/20260403/segment-a/talents/no-env.md");
     let active = fixture
         .0
-        .join("20260403/stream-a/segment-a/talents/active-stream.md");
+        .join("chronicle/20260403/stream-a/segment-a/talents/active-stream.md");
     for path in [&streamed, &no_env, &active] {
         fs::create_dir_all(path.parent().expect("output parent")).expect("output parent");
         fs::write(path, "output").expect("output");
@@ -779,10 +810,13 @@ async fn ac5_derived_output_paths_use_env_stream() {
     let (_, streamed_run) = get(app.clone(), "/app/thinking/api/run/streamed", None).await;
     assert_eq!(
         streamed_run["output_file"],
-        "stream-a/segment-a/talents/streamed.md"
+        "chronicle/20260403/stream-a/segment-a/talents/streamed.md"
     );
     let (_, no_env_run) = get(app.clone(), "/app/thinking/api/run/no-env", None).await;
-    assert_eq!(no_env_run["output_file"], "segment-a/talents/no-env.md");
+    assert_eq!(
+        no_env_run["output_file"],
+        "chronicle/20260403/segment-a/talents/no-env.md"
+    );
     let (_, uses) = get(app, "/app/thinking/api/talents/20260403", None).await;
     let active_use = uses["uses"]
         .as_array()
@@ -792,7 +826,7 @@ async fn ac5_derived_output_paths_use_env_stream() {
         .expect("active use");
     assert_eq!(
         active_use["output_file"],
-        "stream-a/segment-a/talents/active-stream.md"
+        "chronicle/20260403/stream-a/segment-a/talents/active-stream.md"
     );
 }
 

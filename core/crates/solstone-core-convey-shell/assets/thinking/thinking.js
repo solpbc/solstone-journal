@@ -36,6 +36,7 @@
     runsGroupOpen: new Map(),
     runsGroupShown: new Map(),
     runsFacet: '',
+    runsFacetTitles: new Map(),
     runsFacetExplicit: false,
     // The last unfiltered run count for a day, {day, count}. The server
     // narrows the day payload to the picked facet, so a filtered render has no
@@ -44,7 +45,6 @@
     runsSelectedUseId: '',
     runsDetail: null,
     runsModalFocus: null,
-    runsPromptEscapeHandler: null,
   };
   let copy = {};
   const confidentialTerminalPhases = new Set(['not_verified', 'repair_needed', 'early_access']);
@@ -1262,6 +1262,10 @@
     }
   }
 
+  function runFacetLabel(run) {
+    return state.runsFacetTitles.get(run.facet) || run.facet || '';
+  }
+
   function thinkingRunFacts(run) {
     return [
       ['ran', window.JournalFormat.timestamp(run.start)],
@@ -1271,7 +1275,7 @@
       ['status', run.failed ? 'failed' : (run.status || 'unknown').replaceAll('_', ' ')],
       ['thinking events', run.thinking_count],
       ['tool calls', run.tool_count],
-      ['facet', run.facet],
+      ['facet', runFacetLabel(run)],
     ].filter(([, value]) => value !== null && value !== undefined && value !== '');
   }
 
@@ -1364,7 +1368,7 @@
     {key: 'runtime', label: 'runtime', hideable: false, value: runRuntimeLabel},
     {key: 'thinking_count', label: 'thinking events', hideable: false, value: (run) => run.thinking_count},
     {key: 'tool_count', label: 'tool calls', hideable: false, value: (run) => run.tool_count},
-    {key: 'facet', label: 'facet', hideable: true, value: (run) => run.facet},
+    {key: 'facet', label: 'facet', hideable: true, value: runFacetLabel},
     {key: 'output', label: 'output', hideable: true, value: (run) => (run.output_file ? 'output' : '')},
   ];
 
@@ -1544,6 +1548,17 @@
           ...(metadata && typeof metadata === 'object' ? metadata : {}),
           name,
         }));
+    returnedFacets.forEach((item) => {
+      const name = item?.name ?? item;
+      state.runsFacetTitles.set(name, item?.title || name);
+    });
+    if (state.runsDetail) {
+      const facts = $('thinkingRunsDetailFacts');
+      if (facts) {
+        facts.replaceChildren();
+        appendThinkingRunFacts(facts, state.runsDetail);
+      }
+    }
     const facet = $('thinkingRunsFacet');
     if (facet) {
       facet.replaceChildren();
@@ -2018,28 +2033,19 @@
     if (!run?.name) return;
     const modal = $('thinkingRunsPromptModal');
     state.runsModalFocus = document.activeElement;
-    modal.hidden = false;
-    if (!state.runsPromptEscapeHandler) {
-      state.runsPromptEscapeHandler = (event) => {
-        if (event.key === 'Escape') {
-          event.preventDefault();
-          closeThinkingPrompt();
-        }
-      };
-      document.addEventListener('keydown', state.runsPromptEscapeHandler);
-    }
+    modal.showModal();
     const content = $('thinkingRunsPromptContent');
     content.textContent = 'loading run details…';
     const key = thinkingCacheKey('prompt', {talent: run.name});
     const cached = readThinkingCache('prompt', key);
     if (cached) {
-      content.textContent = cached.content || '';
+      content.textContent = cached.full_prompt || '';
       return;
     }
     loadThinkingRequest(
       'prompt', key,
       () => window.apiJson(`/app/thinking/api/preview/${encodeThinkingSegment(run.name)}`),
-      (payload) => { content.textContent = payload.content || ''; },
+      (payload) => { content.textContent = payload.full_prompt || ''; },
       () => { content.textContent = "couldn't load that prompt"; },
     );
   }
@@ -2056,16 +2062,16 @@
   }
 
   function closeThinkingPrompt() {
-    $('thinkingRunsPromptModal').hidden = true;
-    if (state.runsPromptEscapeHandler) {
-      document.removeEventListener('keydown', state.runsPromptEscapeHandler);
-      state.runsPromptEscapeHandler = null;
-    }
+    $('thinkingRunsPromptModal').close();
     state.runsModalFocus?.focus();
     state.runsModalFocus = null;
   }
 
   function bindThinkingRuns() {
+    $('thinkingRunsPromptModal')?.addEventListener('cancel', (event) => {
+      event.preventDefault();
+      closeThinkingPrompt();
+    });
     bindThinkingTablist('thinkingRunsDetailTabs', (tab, origin) => {
       activateThinkingRunDetailTab(tab.id, origin);
     });

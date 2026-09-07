@@ -164,13 +164,10 @@ pub(crate) async fn api_output_file(
         Ok(root) => root,
         Err(error) => return talent_failure(error.to_string()),
     };
-    let candidate = if path.starts_with("facets/") {
-        journal.0.join(&path)
-    } else {
-        match resolve_journal_path(&journal.0, &format!("{day}/{path}")) {
-            Ok(path) => path,
-            Err(_) => return invalid_path(),
-        }
+    // The run API returns one coordinate: a journal-relative output path.
+    let candidate = match resolve_journal_path(&journal.0, &path) {
+        Ok(path) => path,
+        Err(_) => return invalid_path(),
     };
     let resolved = match fs::canonicalize(&candidate) {
         Ok(path) => path,
@@ -737,7 +734,7 @@ fn output_file(request: &Value, journal: &Path) -> Result<Option<String>, String
             .and_then(Value::as_str)
             .unwrap_or_default();
         get_output_path(
-            &journal.join(day),
+            &resolve_journal_path(journal, day).map_err(|error| error.to_string())?,
             name,
             request.get("segment").and_then(Value::as_str),
             output.as_str(),
@@ -752,18 +749,8 @@ fn output_file(request: &Value, journal: &Path) -> Result<Option<String>, String
     if !path.exists() {
         return Ok(None);
     }
-    let day_dir = request
-        .get("day")
-        .and_then(Value::as_str)
-        .map(|day| journal.join(day));
-    // Run detail intentionally stays lexical: the UI may name an in-day symlink
-    // even when following it would escape the journal; fetch enforces containment.
-    if let Some(day_dir) = day_dir.filter(|day_dir| path.starts_with(day_dir)) {
-        return path
-            .strip_prefix(day_dir)
-            .map(|path| Some(path.display().to_string()))
-            .map_err(|error| error.to_string());
-    }
+    // Keep the named in-journal path; the fetch route resolves symlinks and
+    // enforces containment before reading any bytes.
     path.strip_prefix(journal)
         .map(|path| Some(path.display().to_string()))
         .map_err(|error| error.to_string())

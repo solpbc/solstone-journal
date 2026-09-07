@@ -182,7 +182,6 @@
     logsCollapseIndicator: document.getElementById('logsCollapseIndicator'),
     connectionIndicator: document.getElementById('connectionIndicator'),
     vitalsBar: document.querySelector('.vitals-bar'),
-    vitalsCheckBtn: document.getElementById('vitalsCheckBtn'),
     logExportBtn: document.getElementById('logExportBtn'),
   };
 
@@ -410,7 +409,7 @@
   const SERVICE_NAMES = {
     supervisor: 'system manager',
     convey: 'web interface',
-    cortex: 'AI engine',
+    cortex: 'model runtime',
     sense: 'media processor',
     observe: 'screen & audio',
     think: 'background analysis',
@@ -489,10 +488,7 @@
   function sweepUnresolvedSkeletons() {
     if (timeoutFired) return;
     timeoutFired = true;
-    if (elements.vitalsCheckBtn) {
-      elements.vitalsCheckBtn.disabled = false;
-      delete elements.vitalsCheckBtn.dataset.awaitingFirstRead;
-    }
+
     const targets = [
       elements.vitalsStatus,
       elements.serviceDots,
@@ -1295,7 +1291,7 @@
       btn.setAttribute('data-action', 'view-logs');
       btn.setAttribute('data-service', 'cortex');
       btn.className = 'error-advice-link';
-      btn.textContent = 'view AI engine logs';
+      btn.textContent = 'view model runtime logs';
       advice.appendChild(btn);
       advice.appendChild(document.createTextNode(' for details.'));
       container.appendChild(advice);
@@ -1551,11 +1547,7 @@
 
     // G3-304: the button acted on a read that had not landed. It comes alive
     // when the vitals do, or when the sweep gives up on them.
-    if (elements.vitalsCheckBtn && elements.vitalsCheckBtn.dataset.awaitingFirstRead === 'true'
-        && (state.supervisorSeen || timeoutFired)) {
-      elements.vitalsCheckBtn.disabled = false;
-      delete elements.vitalsCheckBtn.dataset.awaitingFirstRead;
-    }
+
 
     // Agents count
     writeVital(elements.agentsValue, state.cortexSeen, state.agentCount + ' running');
@@ -3020,25 +3012,6 @@
     elements.logServiceFilter.innerHTML = '<option value="all">all services</option>';
     updateLogsBadge();
     renderLogs();
-  });
-  elements.vitalsCheckBtn.addEventListener('click', () => {
-    elements.vitalsCheckBtn.textContent = 'checking…';
-    elements.vitalsCheckBtn.disabled = true;
-    fetch('/app/health/api/info')
-      .then(r => r.json())
-      .then(info => {
-        state.localHost = info.hostname;
-        brainSnapshot = info.brain || brainSnapshot;
-        updateObserve();
-        renderBrainHealth();
-        updateStatusSummary();
-        elements.vitalsCheckBtn.textContent = 'check now';
-        elements.vitalsCheckBtn.disabled = false;
-      })
-      .catch(() => {
-        elements.vitalsCheckBtn.textContent = 'check now';
-        elements.vitalsCheckBtn.disabled = false;
-      });
   });
   elements.logExportBtn.addEventListener('click', () => {
     const content = elements.logsViewport.textContent;

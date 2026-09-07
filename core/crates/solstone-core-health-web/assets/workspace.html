@@ -99,10 +99,6 @@
 
 /* Phone touch targets: the one action button, the empty-state link, and every
    disclosure on this page were all well under 44px. */
-#vitalsCheckBtn {
-  min-height: 44px;
-  min-width: 44px;
-}
 
 .health-dashboard summary {
   min-height: 44px;
@@ -189,8 +185,8 @@
 }
 
 .vitals-status {
-  background: #16a34a;
-  color: #fff;
+  background: var(--success-wash);
+  color: var(--success-ink);
   padding: 0.4em 0.8em;
   border-radius: 20px;
   font-size: 0.9em;
@@ -200,13 +196,13 @@
 }
 
 .vitals-status.warning {
-  background: #d97706;
-  color: #fff;
+  background: var(--warn-wash);
+  color: var(--warn-ink);
 }
 
 .vitals-status.error {
-  background: #dc2626;
-  color: #fff;
+  background: var(--danger-wash);
+  color: var(--danger);
 }
 
 .connection-indicator {
@@ -256,29 +252,6 @@
   font-weight: 600;
 }
 
-#vitalsCheckBtn {
-  margin-left: 0.5em;
-  padding: 0.15em 0.5em;
-  font-size: 0.8em;
-  font-weight: 500;
-  border: 1px solid #e5e7eb;
-  border-radius: 4px;
-  background: white;
-  color: #6b7280;
-  cursor: pointer;
-  transition: background 0.1s ease, border-color 0.1s ease;
-}
-#vitalsCheckBtn:hover:not(:disabled) {
-  background: #f3f4f6;
-  border-color: #d1d5db;
-}
-#vitalsCheckBtn:active:not(:disabled) {
-  background: #e5e7eb;
-}
-#vitalsCheckBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
 
 .vitals-value {
   font-weight: 500;
@@ -1366,7 +1339,7 @@ h2.card-title {
   color: var(--ink);
 }
 
-/* The three recent-errors targets ("view logs", "dismiss", "view AI engine
+/* The three recent-errors targets ("view logs", "dismiss", "view model runtime
    logs") are 0.1em/0.4em chips on desktop, which is well under the 44px touch
    floor. On phone they grow by padding only, so nothing about their wording,
    order or behaviour changes. This block sits after the three base rules it
@@ -1380,7 +1353,7 @@ h2.card-title {
     padding: 0.6em 0.9em;
   }
 
-  /* "view AI engine logs" sits inside a running sentence, so it grows as an
+  /* "view model runtime logs" sits inside a running sentence, so it grows as an
      inline-block with its own hit area rather than as a block button. */
   .error-advice-link {
     display: inline-block;
@@ -1524,7 +1497,6 @@ h2.card-title {
         <span class="skeleton" style="width: 120px; height: 1em;">&nbsp;</span>
       </div>
       <span class="connection-indicator" id="connectionIndicator"></span>
-      <button id="vitalsCheckBtn" data-awaiting-first-read="true" disabled>check now</button>
     </div>
     <div class="vitals-content">
       <div class="vitals-section" role="group" aria-label="services: loading">

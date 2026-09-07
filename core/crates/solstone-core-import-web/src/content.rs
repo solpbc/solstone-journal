@@ -20,9 +20,6 @@ use crate::{
     imports::source_icon,
 };
 
-#[cfg(unix)]
-const PRIVATE_IMPORT_FILE_MODE: u32 = 0o600;
-
 fn read_jsonl(path: &Path) -> Result<Vec<Value>, std::io::Error> {
     let text = fs::read_to_string(path)?;
     Ok(text
@@ -58,31 +55,17 @@ fn backfill_type(source_type: &str) -> &'static str {
     }
 }
 
-fn atomic_private_write(path: &Path, data: &str) -> Result<(), std::io::Error> {
-    #[cfg(unix)]
-    use std::os::unix::fs::OpenOptionsExt;
-    let temporary = path.with_extension(format!("jsonl.{}.tmp", std::process::id()));
-    let mut options = fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    options.mode(PRIVATE_IMPORT_FILE_MODE);
-    use std::io::Write;
-    let mut output = options.open(&temporary)?;
-    output.write_all(data.as_bytes())?;
-    output.sync_all()?;
-    fs::rename(&temporary, path)
-}
-
-/// Backfill only the import-owned manifest; it never mutates imported payloads or chronicle data.
-pub(crate) fn generate_content_manifest(
+/// Project manifest rows from imported metadata without persisting a cache on read.
+fn derive_content_items(
     root: &Path,
     timestamp: &str,
-) -> Result<Option<PathBuf>, std::io::Error> {
+) -> Result<Option<Vec<Value>>, std::io::Error> {
     let directory = root.join("imports").join(timestamp);
     let imported_path = directory.join("imported.json");
     if !imported_path.exists() {
         return Ok(None);
     }
+    let imported_path = contained_file(root, &imported_path)?;
     let imported: Value = serde_json::from_str(&fs::read_to_string(&imported_path)?)
         .map_err(std::io::Error::other)?;
     let source_type = imported
@@ -109,6 +92,7 @@ pub(crate) fn generate_content_manifest(
         if !path.exists() {
             continue;
         }
+        let path = contained_file(root, &path)?;
         let parts: Vec<_> = path
             .components()
             .map(|item| item.as_os_str().to_string_lossy().into_owned())
@@ -184,45 +168,42 @@ pub(crate) fn generate_content_manifest(
     if entries.is_empty() {
         return Ok(None);
     }
-    let manifest = directory.join("content_manifest.jsonl");
-    let data = entries
-        .iter()
-        .map(|entry| serde_json::to_string(entry).expect("manifest item serializes"))
-        .collect::<Vec<_>>()
-        .join("\n")
-        + "\n";
-    atomic_private_write(&manifest, &data)?;
-    Ok(Some(manifest))
+    Ok(Some(entries))
 }
 
 fn content_manifest(root: &Path, timestamp: &str) -> Result<(PathBuf, Vec<Value>), Box<Response>> {
+    if timestamp.is_empty() || timestamp.contains(['/', '\\']) || matches!(timestamp, "." | "..") {
+        return Err(Box::new(import_not_found("Import not found")));
+    }
     let directory = root.join("imports").join(timestamp);
     if !directory.exists() {
         return Err(Box::new(import_not_found("Import not found")));
     }
+    let directory = contained_file(root, &directory)
+        .map_err(|_| Box::new(import_not_found("Import not found")))?;
     let manifest = directory.join("content_manifest.jsonl");
     if !manifest.exists() {
-        match generate_content_manifest(root, timestamp) {
-            Ok(Some(_)) => {}
-            Ok(None) => return Err(Box::new(import_not_found("No content available"))),
-            Err(_) => {
-                return Err(Box::new(error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "that import metadata couldn't be read.",
-                    "import_metadata_failed",
-                    "Failed to read manifest".to_owned(),
-                )));
-            }
-        }
+        return match derive_content_items(root, timestamp) {
+            Ok(Some(items)) => Ok((directory, items)),
+            Ok(None) => Err(Box::new(import_not_found("No content available"))),
+            Err(error_detail) => Err(Box::new(error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "that import metadata couldn't be read.",
+                "import_metadata_failed",
+                error_detail.to_string(),
+            ))),
+        };
     }
-    let items = read_jsonl(&manifest).map_err(|_| {
-        Box::new(error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "that import metadata couldn't be read.",
-            "import_metadata_failed",
-            "Failed to read manifest".to_owned(),
-        ))
-    })?;
+    let items = contained_file(root, &manifest)
+        .and_then(|path| read_jsonl(&path))
+        .map_err(|_| {
+            Box::new(error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "that import metadata couldn't be read.",
+                "import_metadata_failed",
+                "Failed to read manifest".to_owned(),
+            ))
+        })?;
     Ok((directory, items))
 }
 
@@ -308,7 +289,37 @@ pub(crate) async fn detail(
         return import_not_found("Item not found");
     };
     let source_type = source_type(&directory);
-    let mut content = Vec::<Value>::new();
+    let content = match read_item_content(&state.root, &source_type, &item) {
+        Ok(content) => content,
+        Err(detail) => {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "that imported content couldn't be read.",
+                "import_content_failed",
+                detail.to_string(),
+            );
+        }
+    };
+    json_response(StatusCode::OK, json!({"item": item, "content": content}))
+}
+
+fn contained_file(root: &Path, path: &Path) -> Result<PathBuf, std::io::Error> {
+    let resolved = path.canonicalize()?;
+    if !resolved.starts_with(root.canonicalize()?) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "import content is outside the journal",
+        ));
+    }
+    Ok(resolved)
+}
+
+fn read_item_content(
+    root: &Path,
+    source_type: &str,
+    item: &Value,
+) -> Result<Vec<Value>, std::io::Error> {
+    let mut content = Vec::new();
     for segment in item
         .get("segments")
         .and_then(Value::as_array)
@@ -317,26 +328,44 @@ pub(crate) async fn detail(
     {
         let day = segment.get("day").and_then(Value::as_str).unwrap_or("");
         let key = segment.get("key").and_then(Value::as_str).unwrap_or("");
-        if day.is_empty() || key.is_empty() {
-            continue;
+        if day.len() != 8
+            || !day.bytes().all(|b| b.is_ascii_digit())
+            || key.is_empty()
+            || key.contains(['/', '\\'])
+            || matches!(key, "." | "..")
+            || source_type.contains(['/', '\\'])
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "invalid import segment",
+            ));
         }
-        let path = state
-            .root
+        let directory = root
             .join("chronicle")
             .join(day)
             .join(format!("import.{source_type}"))
             .join(key);
-        let transcript = path.join("conversation_transcript.jsonl");
-        if transcript.exists()
-            && let Ok(lines) = fs::read_to_string(transcript)
-        {
-            content.extend(
-                lines
-                    .lines()
-                    .skip(1)
-                    .filter_map(|line| serde_json::from_str(line).ok()),
-            );
+        let directory = contained_file(root, &directory)?;
+        let transcript = directory.join("conversation_transcript.jsonl");
+        if transcript.exists() {
+            let transcript = contained_file(root, &transcript)?;
+            let text = fs::read_to_string(transcript)?;
+            for line in text.lines().skip(1).filter(|line| !line.trim().is_empty()) {
+                content.push(serde_json::from_str(line).map_err(std::io::Error::other)?);
+            }
+        }
+        let mut markdown = fs::read_dir(&directory)?.collect::<Result<Vec<_>, _>>()?;
+        markdown.sort_by_key(|entry| entry.file_name());
+        for entry in markdown {
+            if entry
+                .file_name()
+                .to_string_lossy()
+                .ends_with("_transcript.md")
+            {
+                let path = contained_file(root, &entry.path())?;
+                content.push(json!({"type": "markdown", "content": fs::read_to_string(path)?}));
+            }
         }
     }
-    json_response(StatusCode::OK, json!({"item": item, "content": content}))
+    Ok(content)
 }

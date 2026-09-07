@@ -1,8 +1,8 @@
 {
   "type": "generate",
 
-  "title": "Entity Observer",
-  "description": "Extracts durable factoids about attached entities from journal content",
+  "title": "entity observer",
+  "description": "extracts durable factoids about attached entities from journal content",
   "color": "#004d40",
   "schedule": "daily",
   "priority": 57,

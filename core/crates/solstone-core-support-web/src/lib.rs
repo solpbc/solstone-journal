@@ -181,9 +181,19 @@ async fn drain_before_and_after(
     request: axum::extract::Request,
     next: Next,
 ) -> Response {
-    drain(&root);
+    // Completion acknowledgments belong to explicit write operations. Browsing
+    // tickets or loading a static asset must not mutate the operation ledger.
+    let writes = matches!(
+        request.method().as_str(),
+        "POST" | "PUT" | "PATCH" | "DELETE"
+    );
+    if writes {
+        drain(&root);
+    }
     let response = next.run(request).await;
-    drain(&root);
+    if writes {
+        drain(&root);
+    }
     response
 }
 

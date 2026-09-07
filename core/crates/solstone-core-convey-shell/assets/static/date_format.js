@@ -116,6 +116,8 @@
   function formatStreamLabel(stream) {
     const raw = String(stream || '').trim();
     const parts = raw.split('.').filter(part => part !== '');
+    const device = /^device[._-](.+)[._-](audio|screen)$/.exec(raw);
+    if (device) return `${device[1].replace(/[._-]+/g, ' ')} ${device[2]}`;
     const words = part => part.replace(/[_-]+/g, ' ').trim();
     // A machine's own stream name is one dot-free label the journal already
     // reduced from its hostname; it reads as itself, dashes and all.

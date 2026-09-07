@@ -1,8 +1,8 @@
 {
   "type": "generate",
 
-  "title": "Morning Briefing",
-  "description": "Synthesizes all daily agent outputs into a structured five-section morning briefing",
+  "title": "morning briefing",
+  "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
   "color": "#1565c0",
   "schedule": "daily",
   "priority": 50,

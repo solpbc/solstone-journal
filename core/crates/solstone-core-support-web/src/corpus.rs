@@ -1157,11 +1157,16 @@ async fn replay_case(
             serde_json::json!({"method":request.method,"path":request.path,"had_idempotency_key":request.idempotency_key.is_some(),"had_authorization":request.had_authorization,"had_dpop":request.had_dpop})
         })
         .collect::<Vec<_>>();
-    assert_eq!(
-        actual_requests,
-        case["portal_requests"].as_array().unwrap().clone(),
-        "{name} portal requests"
-    );
+    // The frozen corpus predates the GET acknowledgement boundary. Acknowledgements drain
+    // only at explicit writes; all other recorded requests stay pinned.
+    let expected_requests = case["portal_requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|request| !(probe.method == "GET" && request["path"] == "/api/idempotency/ack"))
+        .cloned()
+        .collect::<Vec<_>>();
+    assert_eq!(actual_requests, expected_requests, "{name} portal requests");
     let records_ticket_list = case["portal_requests"]
         .as_array()
         .expect("portal requests")
@@ -2475,7 +2480,7 @@ async fn support_route_response(root: &Path, path: &str) -> (u16, String, Vec<u8
 }
 
 #[tokio::test]
-async fn drain_acknowledges_before_a_portal_backed_handler() {
+async fn reads_do_not_acknowledge_pending_writes() {
     let portal = corpus_route_portal();
     let root = phase_root("established", Some(&portal));
     let _guard = install_route_portal(&portal);
@@ -2490,8 +2495,48 @@ async fn drain_acknowledges_before_a_portal_backed_handler() {
             .iter()
             .map(|request| (request.method.as_str(), request.path.as_str()))
             .collect::<Vec<_>>(),
-        vec![("POST", "/api/idempotency/ack"), ("GET", "/api/tickets"),]
+        vec![("GET", "/api/tickets")]
     );
+    assert_eq!(
+        Ledger::new(root.path().join("apps/support/portal"))
+            .list_pending_acknowledgements()
+            .unwrap()
+            .len(),
+        1,
+        "opening tickets leaves the pending acknowledgement intact"
+    );
+}
+
+#[tokio::test]
+async fn non_write_methods_do_not_drain_pending_acknowledgements() {
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    let _guard = install_route_portal(&portal);
+    reset_portal_storage(root.path(), "established");
+    seed_pending_acknowledgement(root.path(), "non-write-method");
+    for method in ["HEAD", "OPTIONS", "TRACE"] {
+        portal.clear_log();
+        let request = Request::builder()
+            .method(method)
+            .uri("/app/support/api/config")
+            .body(Body::empty())
+            .unwrap();
+        let _response = super::routes(root.path().to_path_buf())
+            .oneshot(request)
+            .await
+            .unwrap();
+        assert!(
+            portal.log().is_empty(),
+            "{method} must not acknowledge writes"
+        );
+        assert_eq!(
+            Ledger::new(root.path().join("apps/support/portal"))
+                .list_pending_acknowledgements()
+                .unwrap()
+                .len(),
+            1
+        );
+    }
 }
 
 #[tokio::test]

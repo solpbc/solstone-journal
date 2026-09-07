@@ -925,6 +925,16 @@ mod tests {
             "generated summaries must not become source evidence"
         );
         assert!(!text.contains("$completed_since"));
+        assert!(!text.contains("$as_of"));
+        let clock = text
+            .split("The current local time is ")
+            .nth(1)
+            .unwrap()
+            .lines()
+            .next()
+            .unwrap()
+            .trim_end_matches('.');
+        assert!(chrono::DateTime::parse_from_rfc3339(clock).is_ok());
         assert!(!text.contains("$day_YYYYMMDD"));
         assert!(text.contains(day));
         assert_eq!(

@@ -1544,7 +1544,7 @@ a.body-day-cell:focus-visible {
       // S-8, H-4.
       return html([
         renderHeader("body", "your body, brought into your journal.", false),
-        '<p class="body-subtitle">nothing here yet. bring in sleep, heart rate and activity from Oura or Apple Health. that runs from the command line for now, after a one-time setup; the health imports guide in the solstone docs has the steps.</p>',
+        '<p class="body-subtitle">nothing here yet. bring in sleep, heart rate and activity from Oura or Apple Health. imports use the command line for now and require a privacy setup. <a href="https://github.com/solpbc/solstone-journal/blob/main/docs/health_imports.md" target="_blank" rel="noopener noreferrer">read about body imports and setup requirements</a>.</p>',
       ]);
     }
     return html([

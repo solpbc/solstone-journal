@@ -230,10 +230,10 @@ fn preview_from_content(content: &str) -> Option<String> {
             continue;
         }
         seen_content = true;
-        if in_header_region && is_metadata_line(trimmed) {
+        let cleaned = trimmed.trim_matches('*').replace("**", "");
+        if in_header_region && is_metadata_line(cleaned.trim()) {
             continue;
         }
-        let cleaned = trimmed.trim_matches('*').replace("**", "");
         let candidate = strip_preview_label(cleaned.trim()).trim().to_owned();
         if candidate.is_empty() {
             continue;
@@ -580,6 +580,10 @@ mod tests {
     #[test]
     fn the_preview_skips_headings_labels_and_lines_too_short_to_say_anything() {
         for (letter, shown) in [
+            (
+                "# Weekly update\n\n**Date:** Sunday, September 06, 2026\n\nThe roundup covers the week's three launches.\n",
+                Some("The roundup covers the week's three launches."),
+            ),
             // The seeded corpus letters, unchanged by the label and length rules.
             (
                 "# What happened\n\nA **short** newsletter body with a list:\n",

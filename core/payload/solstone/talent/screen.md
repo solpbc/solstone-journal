@@ -1,8 +1,8 @@
 {
   "type": "generate",
 
-  "title": "Screen Record",
-  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
+  "title": "screen record",
+  "description": "creates a detailed documentary record of screen activity. focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
   "color": "#9c27b0",
   "schedule": "segment",
   "priority": 10,

@@ -1046,8 +1046,10 @@ const Dashboard = (function() {
       clearDashboardSections();
       document.getElementById('notice').appendChild(
         el('div', {className: 'alert alert-warning'}, [
-          el('strong', {}, ['No data available. ']),
-          'Run think-journal-stats to generate statistics.'
+          el('strong', {}, ['no statistics yet. ']),
+          'check processing status in ',
+          el('a', {href: '/app/health/'}, ['health']),
+          '.'
         ])
       );
       return;
@@ -1218,14 +1220,19 @@ const Dashboard = (function() {
         .then(data => {
           if (data) render(data);
         })
-        .catch(error => {
+        .catch(() => {
           document.getElementById('loading').style.display = 'none';
-          document.getElementById('notice').appendChild(
-            el('div', {className: 'alert alert-error'}, [
-              'Couldn\'t load dashboard data. the stats file may be corrupt or unreadable. ',
-              'Try regenerating with think-journal-stats.'
-            ])
-          );
+          const notice = document.getElementById('notice');
+          const previous = document.getElementById('stats-read-error');
+          if (previous) previous.remove();
+          const retry = el('button', {type: 'button', className: 'stats-refresh'}, ['try again']);
+          retry.addEventListener('click', () => {
+            retry.disabled = true;
+            Dashboard.load(url);
+          });
+          notice.appendChild(el('div', {id: 'stats-read-error', className: 'alert alert-error', role: 'alert'}, [
+            "couldn't load statistics. try again to refresh this view. ", retry
+          ]));
         });
     }
   };

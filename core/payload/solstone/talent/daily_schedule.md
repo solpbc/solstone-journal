@@ -1,8 +1,8 @@
 {
   "type": "generate",
 
-  "title": "Maintenance Window",
-  "description": "Analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
+  "title": "maintenance window",
+  "description": "analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
   "schedule": "daily",
   "priority": 10,
   "output": "json",

@@ -1,8 +1,8 @@
 {
   "type": "generate",
 
-  "title": "Document Analysis",
-  "description": "Extracts structured details from imported documents",
+  "title": "document analysis",
+  "description": "extracts structured details from imported documents",
   "color": "#5c6bc0",
   "schedule": "segment",
   "priority": 10,

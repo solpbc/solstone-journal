@@ -1,7 +1,7 @@
 {
   "type": "generate",
-  "title": "Facet Newsletter Generator",
-  "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
+  "title": "facet newsletter generator",
+  "description": "creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
   "color": "#0d47a1",
   "schedule": "daily",
   "priority": 40,

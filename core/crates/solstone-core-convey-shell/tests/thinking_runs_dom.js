@@ -303,7 +303,9 @@ async function main() {
   make('thinkingRunsLogPanel');
   make('thinkingRunsOutputPanel');
   const promptModal = make('thinkingRunsPromptModal');
-  promptModal.hidden = true;
+  promptModal.open = false;
+  promptModal.showModal = () => { promptModal.open = true; };
+  promptModal.close = () => { promptModal.open = false; };
   make('thinkingRunsPromptClose');
   make('thinkingRunsPromptContent');
 
@@ -336,7 +338,7 @@ async function main() {
       if (url.startsWith('/app/thinking/api/talents/')) return dayResponses.shift() || Promise.resolve({uses: [], facets: []});
       if (url === '/app/thinking/api/updated-days') return updatedResponses.shift() || Promise.resolve([]);
       if (url.startsWith('/app/thinking/api/run/')) return runResponses.shift() || Promise.resolve({id: 'use-id', name: 'talent', day: '20260815', events: []});
-      if (url.startsWith('/app/thinking/api/preview/')) return promptResponses.shift() || Promise.resolve({content: ''});
+      if (url.startsWith('/app/thinking/api/preview/')) return promptResponses.shift() || Promise.resolve({full_prompt: ''});
       if (url.startsWith('/app/thinking/api/output/')) return outputResponses.shift() || Promise.resolve({content: ''});
       throw new Error(`unexpected URL: ${url}`);
     },
@@ -373,6 +375,8 @@ async function main() {
   assert.strictEqual(format.stream('import.chatgpt'), 'ChatGPT import');
   assert.strictEqual(format.stream('import.granola'), 'granola import');
   assert.strictEqual(format.stream('device.watch.audio'), 'watch audio');
+  assert.strictEqual(format.stream('device_watch-audio'), 'watch audio');
+  assert.strictEqual(format.stream('my-host'), 'my-host');
   assert.strictEqual(format.stream('device.omi.audio'), 'omi audio');
   assert.strictEqual(format.stream('ja1r'), 'ja1r');
   assert.strictEqual(format.stream('_default'), 'default');
@@ -668,12 +672,12 @@ async function main() {
   await settle();
   nodes.get('thinkingRunsPrompt').focus();
   thinking.openThinkingPrompt();
-  assert.strictEqual(promptModal.hidden, false, 'selected run opens its prompt before a selection change');
+  assert.strictEqual(promptModal.open, true, 'selected run opens its prompt before a selection change');
   const runB = deferred();
   runResponses.push(runB.promise);
   window.location.hash = '#runs/20260114/talent-b/run-b';
   thinking.routeThinkingHash('history');
-  assert.strictEqual(promptModal.hidden, true, 'changing runs closes the prior run prompt');
+  assert.strictEqual(promptModal.open, false, 'changing runs closes the prior run prompt');
   assert.strictEqual((documentListeners.keydown || []).length, 0, 'changing runs removes the prompt Escape listener');
   assert.strictEqual(thinking.state.runsDetail, null, 'changing runs clears the prior run detail before loading');
   runB.resolve({id: 'run-b', day: '20260114', name: 'talent-b', events: []});
@@ -703,21 +707,21 @@ async function main() {
   assert.strictEqual(thinking.state.runsCache.run.has('run:active'), false, 'active response is not cached as a completed run');
   assert.strictEqual(thinking.state.runsDetail, null, 'active run clears the prior completed-run selection');
   nodes.get('thinkingRunsPrompt').emit('click');
-  assert.strictEqual(promptModal.hidden, true, 'pending run cannot open the prior run prompt');
+  assert.strictEqual(promptModal.open, false, 'pending run cannot open the prior run prompt');
 
   const promptButton = nodes.get('thinkingRunsPrompt');
   promptButton.focus();
   thinking.state.runsDetail = {name: 'prompt talent'};
   assert.strictEqual((documentListeners.keydown || []).length, 0, 'closed prompt has no document Escape listener');
   thinking.openThinkingPrompt();
-  assert.strictEqual(promptModal.hidden, false, 'prompt modal opens');
-  assert.strictEqual((documentListeners.keydown || []).length, 1, 'open prompt installs one Escape listener');
-  document.emit('keydown', {key: 'Escape'});
-  assert.strictEqual(promptModal.hidden, true, 'Escape closes the prompt modal');
+  assert.strictEqual(promptModal.open, true, 'prompt modal opens');
+  assert.strictEqual((documentListeners.keydown || []).length, 0, 'native modal owns Escape without a document listener');
+  promptModal.emit('cancel');
+  assert.strictEqual(promptModal.open, false, 'Escape closes the prompt modal');
   assert.strictEqual((documentListeners.keydown || []).length, 0, 'closing prompt removes its Escape listener');
   assert.strictEqual(document.activeElement, promptButton, 'closing prompt restores focus to its opener');
   thinking.openThinkingPrompt();
-  assert.strictEqual((documentListeners.keydown || []).length, 1, 'reopening prompt installs a fresh Escape listener');
+  assert.strictEqual(promptModal.open, true, 'native prompt reopens');
   nodes.get('thinkingRunsPromptClose').emit('click');
   assert.strictEqual((documentListeners.keydown || []).length, 0, 'close button removes the Escape listener');
 
@@ -785,13 +789,13 @@ async function main() {
   await settle();
   thinking.state.runsDetail = {name: 'second prompt'};
   thinking.openThinkingPrompt();
-  secondPrompt.resolve({content: 'current prompt'});
+  secondPrompt.resolve({full_prompt: 'current prompt'});
   await settle();
-  firstPrompt.resolve({content: 'stale prompt'});
+  firstPrompt.resolve({full_prompt: 'stale prompt'});
   await settle();
   await settle();
   assert.strictEqual(thinking.state.runsCache.prompt.has('prompt:first prompt'), false, 'stale prompt response is not cached');
-  assert.strictEqual(thinking.state.runsCache.prompt.get('prompt:second prompt').content, 'current prompt', 'current prompt response is cached');
+  assert.strictEqual(thinking.state.runsCache.prompt.get('prompt:second prompt').full_prompt, 'current prompt', 'current prompt response is cached');
   assert.strictEqual(nodes.get('thinkingRunsPromptContent').textContent, 'current prompt', 'stale prompt response does not replace the current render');
 
   const firstOutput = deferred();

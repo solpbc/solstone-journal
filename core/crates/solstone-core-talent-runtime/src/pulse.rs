@@ -51,6 +51,7 @@ pub struct PulsePreState {
     default: PulseSummary,
     window: PulseWindowNote,
     completed_since: String,
+    as_of: String,
     awareness: String,
     anticipated: String,
     recent_entities: String,
@@ -94,6 +95,7 @@ pub fn apply_prompt_override(
     apply_template_vars(
         &mut prepared.config,
         &Map::from_iter([
+            ("as_of".to_owned(), Value::String(state.as_of.clone())),
             (
                 "completed_since".to_owned(),
                 Value::String(state.completed_since.clone()),
@@ -213,6 +215,7 @@ fn build_packet(
         default,
         window,
         completed_since: compact_json(completed),
+        as_of: home.now_local().to_rfc3339_opts(SecondsFormat::Secs, false),
         awareness: compact_json(awareness),
         anticipated: compact_json(Value::Array(anticipated)),
         recent_entities: compact_json(json!(recent)),
@@ -564,6 +567,7 @@ mod tests {
                 gaps: Vec::new(),
             },
             completed_since: String::new(),
+            as_of: "2026-09-07T09:34:00-06:00".to_owned(),
             awareness: String::new(),
             anticipated: String::new(),
             recent_entities: String::new(),

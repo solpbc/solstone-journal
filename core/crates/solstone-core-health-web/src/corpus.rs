@@ -254,7 +254,7 @@ fn burnin_round1_health_speaks_one_scoped_owner_vocabulary() {
 
     // X-18: talents, services and live states use owner words.
     assert!(script.contains("spl: 'private network'"));
-    assert!(script.contains("cortex: 'AI engine'"));
+    assert!(script.contains("cortex: 'model runtime'"));
     assert!(script.contains("parakeet: 'transcription'"));
     assert!(script.contains("function talentName(name)"));
     assert!(script.contains("talentName(agent.name)"));

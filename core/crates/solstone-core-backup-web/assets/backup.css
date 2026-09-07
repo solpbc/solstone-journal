@@ -23,7 +23,7 @@
   align-items: center;
   gap: 0.45rem;
   margin: 0;
-  color: var(--orange-ink);
+  color: var(--orange-text-aa);
   font-size: 0.95rem;
 }
 
@@ -194,7 +194,7 @@
 
 .backup-disclose summary {
   cursor: pointer;
-  color: var(--orange-ink);
+  color: var(--orange-text-aa);
   font-size: 0.9rem;
 }
 
@@ -271,7 +271,7 @@
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  color: var(--orange-ink);
+  color: var(--orange-text-aa);
   font-size: 0.85rem;
 }
 

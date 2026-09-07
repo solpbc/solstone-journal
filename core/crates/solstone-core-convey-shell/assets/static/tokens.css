@@ -18,8 +18,9 @@
  *   --orange (#E8913A) is DECORATION ONLY. It fails WCAG 3:1 against white
  *   (2.44:1), cream-bright (2.38:1), and cream (2.21:1) — it may fill shapes
  *   and sit behind dark ink, never BE text/links on a light surface.
- *   --orange-ink (#B06A1A) is the accessible orange — ALL orange text and
- *   links on light surfaces use it (4.27:1 / 4.16:1 / 3.86:1 ✓).
+ *   --orange-ink (#B06A1A) meets 3:1 for large text and UI boundaries.
+ *   Normal-size text and links use --orange-text-aa (#A15F17), which meets
+ *   4.5:1 on white, cream-bright, and cream.
  *   Primary buttons are dark-ink-on-orange (#1A1A1A on #E8913A → 7.13:1 ✓),
  *   never white-on-orange.
  * ========================================================================== */
@@ -46,7 +47,7 @@
   /* ── brand identity ──────────────────────────────────────────────────── */
   --gold:        #FFCF33; /* sun rays — decoration only */
   --orange:      #E8913A; /* THE sol orange. DECORATION ONLY (see contrast law) */
-  --orange-ink:  #B06A1A; /* accessible orange — ALL orange text + links on light */
+  --orange-ink:  #B06A1A; /* large text / UI boundaries; normal text uses orange-text-aa */
   --orange-wash: #FBEFDD; /* soft orange tint — pill / avatar / badge fills */
   --orange-text-aa: #A15F17; /* orange for NORMAL-size text on white/cream (5.04 / 4.92 / 4.58:1) — the value every var(--orange-text-aa, #a15f17) fallback already names */
 

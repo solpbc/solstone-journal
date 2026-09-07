@@ -91,7 +91,7 @@
     .thinking-workspace .trail {
       border: 0;
       background: transparent;
-      color: var(--orange-ink);
+      color: var(--orange-text-aa);
       cursor: pointer;
       font: inherit;
       padding: 0;
@@ -223,7 +223,7 @@
     .thinking-workspace .pill.hot,
     .thinking-workspace .activetag {
       border-color: var(--orange);
-      color: var(--orange-ink);
+      color: var(--ink);
       background: var(--orange-wash);
     }
 
@@ -297,7 +297,7 @@
     .thinking-workspace .checknow {
       border: 0;
       background: transparent;
-      color: var(--orange-ink);
+      color: var(--orange-text-aa);
       cursor: pointer;
       font: inherit;
       padding: 0;
@@ -393,7 +393,7 @@
     .thinking-workspace .lanemore {
       border: 0;
       background: transparent;
-      color: var(--orange-ink);
+      color: var(--orange-text-aa);
       cursor: pointer;
       font: inherit;
       font-size: 0.86rem;
@@ -488,7 +488,7 @@
     }
 
     .thinking-workspace .arrow {
-      color: var(--orange-ink);
+      color: var(--orange-text-aa);
       font-size: 1.25rem;
     }
 
@@ -672,15 +672,28 @@
       border-color: var(--orange-ink);
     }
 
+    .thinking-workspace .thinking-runs-detail {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
     .thinking-workspace .thinking-runs-modal {
-      align-items: center;
+      border: 0;
+      border-radius: var(--radius-sm);
+      padding: 0;
+      width: min(calc(100% - 32px), 760px);
+      max-height: calc(100dvh - 32px);
+      color: var(--ink);
+    }
+
+    .thinking-workspace .thinking-runs-modal::backdrop {
       background: rgba(26, 26, 26, 0.45);
-      display: grid;
-      inset: 0;
-      justify-items: center;
-      padding: 20px;
-      position: fixed;
-      z-index: 20;
+    }
+
+    #thinkingRunsPromptContent,
+    #thinkingRunsOutputPanel {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
     }
 
     .thinking-workspace .thinking-runs-modal-content {
@@ -688,7 +701,7 @@
       max-height: calc(100vh - 40px);
       max-width: 760px;
       overflow: auto;
-      width: min(100%, 760px);
+      width: 100%;
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -1104,14 +1117,14 @@
       </section>
     </section>
   </div>
-</div>
 
-<div class="thinking-runs-modal" id="thinkingRunsPromptModal" role="dialog" aria-modal="true" aria-labelledby="thinkingRunsPromptHeading" hidden>
+<dialog class="thinking-runs-modal" id="thinkingRunsPromptModal" role="dialog" aria-modal="true" aria-labelledby="thinkingRunsPromptHeading">
   <div class="thinking-runs-modal-content">
     <h2 id="thinkingRunsPromptHeading">prompt</h2>
     <button type="button" class="thinking-runs-modal-close" id="thinkingRunsPromptClose">close</button>
     <div id="thinkingRunsPromptContent" role="status" aria-live="polite"></div>
   </div>
+</dialog>
 </div>
 
 <script src="/app/thinking/static/thinking.js"></script>

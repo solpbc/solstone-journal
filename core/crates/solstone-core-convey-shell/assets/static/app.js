@@ -237,11 +237,11 @@ window.SurfaceState = (() => {
     },
 
     error({
-      heading = 'Couldn\'t load this section',
+      heading = 'couldn\'t load this section',
       desc = window.CONVEY_COPY?.RELOAD_HINT || 'reload to try again.',
       serverMessage = '',
       retry = false,
-      retryLabel = 'Try again',
+      retryLabel = 'try again',
       secondary = null,
       detail = null,
       reportable = true,
@@ -1146,7 +1146,33 @@ window.AppServices = {
    * Throws if `marked` or `DOMPurify` isn't loaded (shell is broken; fail loudly).
    */
   renderMarkdown(raw) {
-    return DOMPurify.sanitize(marked.parse(String(raw || ''), { breaks: true, gfm: true }));
+    const container = document.createElement('div');
+    container.innerHTML = DOMPurify.sanitize(marked.parse(String(raw || ''), { breaks: true, gfm: true }));
+    // Resolve supported journal references after sanitizing. Never rewrite code,
+    // existing links, or unsupported references into guessed destinations.
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    for (const node of nodes) {
+      if (node.parentElement.closest('a, code, pre')) continue;
+      const pattern = /sol:\/\/facets\/([a-zA-Z0-9_-]+)\/news\/(\d{8})(?:\.md)?(?![a-zA-Z0-9_/-]|\.[a-zA-Z0-9])/g;
+      const text = node.textContent;
+      let cursor = 0;
+      const fragment = document.createDocumentFragment();
+      for (const match of text.matchAll(pattern)) {
+        fragment.append(document.createTextNode(text.slice(cursor, match.index)));
+        const link = document.createElement('a');
+        link.href = `/app/news/${encodeURIComponent(match[1])}/${match[2]}`;
+        link.textContent = match[0];
+        fragment.append(link);
+        cursor = match.index + match[0].length;
+      }
+      if (cursor) {
+        fragment.append(document.createTextNode(text.slice(cursor)));
+        node.replaceWith(fragment);
+      }
+    }
+    return container.innerHTML;
   },
 
   /**

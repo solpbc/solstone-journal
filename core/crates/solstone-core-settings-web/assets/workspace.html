@@ -165,7 +165,7 @@
   border-bottom: none;
 }
 .sapp:hover .sapp-title {
-  color: var(--facet-color, #E8923A);
+  color: var(--orange-text-aa);
 }
 .sapp-ic {
   width: 26px;
@@ -187,12 +187,12 @@
 .sapp-desc {
   display: block;
   font-size: 0.84rem;
-  color: #777;
+  color: var(--ink-faint);
   margin-top: 2px;
 }
 .sapp-open {
   font-size: 0.82rem;
-  color: var(--facet-color, #E8923A);
+  color: var(--orange-text-aa);
   font-weight: 600;
   flex: none;
 }
@@ -565,7 +565,7 @@ input:checked + .slider:before {
   border: 2px solid #ddd;
   border-radius: 8px;
   background: #fff;
-  color: var(--facet-color, #E8923A);
+  color: var(--orange-text-aa);
   transition: all 0.2s;
 }
 
@@ -979,7 +979,7 @@ input:checked + .slider:before {
 .log-more-btn {
   background: none;
   border: none;
-  color: var(--facet-color, #E8923A);
+  color: var(--orange-text-aa);
   cursor: pointer;
   font-size: 0.85em;
   padding: 0.5em 1em;
@@ -1141,7 +1141,7 @@ input:checked + .slider:before {
 
 .redact-add-btn:hover {
   border-color: var(--facet-color, #E8923A);
-  color: var(--facet-color, #E8923A);
+  color: var(--orange-text-aa);
   background: var(--facet-bg, rgba(232, 146, 58, 0.05));
 }
 
@@ -1238,7 +1238,8 @@ input:checked + .slider:before {
   transition: opacity 0.15s;
 }
 
-.context-item:hover .context-reset {
+.context-item:hover .context-reset,
+.context-item:focus-within .context-reset {
   opacity: 1;
 }
 
@@ -1381,6 +1382,16 @@ input:checked + .slider:before {
   transform: scale(0.98);
 }
 
+.vision-reset {
+  min-width: 44px;
+  min-height: 44px;
+  opacity: 1;
+}
+
+.vision-category-item .context-action {
+  width: 44px;
+}
+
 .vision-move-buttons {
   display: flex;
   gap: 0.25em;
@@ -1390,8 +1401,9 @@ input:checked + .slider:before {
   background: rgba(255,255,255,0.8);
   border: 1px solid #ccc;
   border-radius: 4px;
-  width: 1.5em;
-  height: 1.5em;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1626,7 +1638,7 @@ input:checked + .slider:before {
 
 .activities-add-custom-btn:hover {
   border-color: var(--facet-color, #E8923A);
-  color: var(--facet-color, #E8923A);
+  color: var(--orange-text-aa);
   background: var(--facet-bg, rgba(232, 146, 58, 0.05));
 }
 
@@ -2089,7 +2101,7 @@ button:focus:not(:focus-visible) {
 <div class="settings-wrap" id="settings-index-view" hidden>
   <!-- Mobile nav dropdown -->
   <div class="settings-nav-mobile">
-    <select class="settings-nav-select" id="navSelect">
+    <select class="settings-nav-select" id="navSelect" aria-label="settings section">
       <optgroup label="overview">
         <option value="guide" selected>guide</option>
       </optgroup>

@@ -1,8 +1,8 @@
 {
   "type": "generate",
 
-  "title": "Segment Sense",
-  "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+  "title": "segment sense",
+  "description": "unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
   "color": "#ff6f00",
   "schedule": "segment",
   "priority": 5,

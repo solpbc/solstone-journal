@@ -40,7 +40,7 @@ pub const LANES: [Lane; 3] = [
     },
     Lane {
         id: "byo",
-        label: "your own AI engine",
+        label: "your own model",
         sub: "your key, or your own endpoint",
         description: "bring a provider key (Claude, Gemini, or GPT) or point processing at your own endpoint. the key stays in your journal; sol pbc is never in the path.",
     },
@@ -94,7 +94,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ("none", CopyValue::String("not thinking yet")),
             ("local", CopyValue::String("local")),
             ("confidential", CopyValue::String("confidential processing")),
-            ("byo", CopyValue::String("your own AI engine")),
+            ("byo", CopyValue::String("your own model")),
         ]),
     ),
     ("lanes", CopyValue::Lanes),
@@ -385,7 +385,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             (
                 "intro",
                 CopyValue::String(
-                    "bring your own AI engine. sol pbc is never in the path. your key stays in your journal.",
+                    "bring your own model. sol pbc is never in the path. your key stays in your journal.",
                 ),
             ),
             ("chooser_key", CopyValue::String("a key")),
@@ -541,7 +541,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ),
             (
                 "to_byo_note",
-                CopyValue::String("processing will use your own engine. {setup} is still here."),
+                CopyValue::String("processing will use your own model. {setup} is still here."),
             ),
             ("setup_key", CopyValue::String("a saved key")),
             ("setup_endpoint", CopyValue::String("your endpoint")),
