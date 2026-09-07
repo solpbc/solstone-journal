@@ -378,14 +378,15 @@
   animation: tr-analyzing-pulse 1.5s ease-in-out infinite;
 }
 
-.tr-seg-audio.tr-seg-analyzing {
-  background: rgba(45, 212, 191, 0.58);
-  border-color: #0d9488;
-}
-
+/* "analysing" is in-progress, and in-progress is not a hue: a neutral warm
+   wash, distinguished from the amber pending/awaiting states by tone, not
+   hue. G1-211 named the screen rule; the audio sibling was teal, which the
+   same token rule excludes, so both say in-progress the same way. Which
+   modality a segment is stays in its own resting colour and in its lane. */
+.tr-seg-audio.tr-seg-analyzing,
 .tr-seg-screen.tr-seg-analyzing {
-  background: rgba(96, 165, 250, 0.58);
-  border-color: var(--warn-ink);
+  background: color-mix(in srgb, var(--ink-faint) 42%, transparent);
+  border-color: var(--ink-faint);
 }
 
 @keyframes tr-analyzing-pulse {
@@ -614,6 +615,18 @@
 .tr-body-panel-close:hover,
 .tr-body-link:hover {
   background: #f9fafb;
+}
+
+/* X-08: 63x31 is a mouse target. On a touch width the close control grows to
+   44px; the inline .tr-body-link sits in running text and keeps its size. */
+@media (max-width: 768px) {
+  .tr-body-panel-close {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    min-width: 44px;
+    justify-content: center;
+  }
 }
 
 .tr-body-strip-button:focus-visible,
@@ -1240,19 +1253,11 @@
   animation: tr-analyzing-pulse 1.5s ease-in-out infinite;
 }
 
-.tr-zoom-pill-audio.tr-zoom-pill-analyzing {
-  background: rgba(45, 212, 191, 0.6);
-  border-color: #0d9488;
-}
-
-.tr-zoom-pill-screen.tr-zoom-pill-analyzing {
-  background: rgba(96, 165, 250, 0.6);
-  border-color: var(--warn-ink);
-}
-
+.tr-zoom-pill-audio.tr-zoom-pill-analyzing,
+.tr-zoom-pill-screen.tr-zoom-pill-analyzing,
 .tr-zoom-pill-both.tr-zoom-pill-analyzing {
-  background: linear-gradient(to right, rgba(45, 212, 191, 0.62), rgba(96, 165, 250, 0.62));
-  border-color: #0891b2;
+  background: color-mix(in srgb, var(--ink-faint) 44%, transparent);
+  border-color: var(--ink-faint);
 }
 
 /* Dragging state */
@@ -1337,8 +1342,8 @@
 }
 
 .tr-modal-badge-category {
-  background: rgba(59, 130, 246, 0.3);
-  color: #93c5fd;
+  background: var(--warn-wash);
+  color: var(--ink-faint);
 }
 
 .tr-modal-close {
@@ -1547,6 +1552,41 @@
   gap: 12px;
 }
 
+/* .tr-entry sets display:flex, which outranks the UA [hidden] rule, so the
+   bound list has to hide its held-back entries itself. */
+.tr-unified > [role="listitem"][hidden] {
+  display: none;
+}
+
+/* Only the first TR_ENTRY_VISIBLE_MAX entries render on open; this control
+   reveals the rest of the block. Full-width and 44px tall so it stays a
+   phone-sized target. */
+.tr-entry-more {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin: 12px 0 0;
+  padding: 12px 16px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  color: var(--orange-text-aa);
+  background: var(--cream-bright);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.tr-entry-more:hover {
+  background: var(--orange-wash);
+}
+
+.tr-entry-more:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
 .tr-audio-players {
   display: flex;
   flex-wrap: wrap;
@@ -1656,7 +1696,7 @@
   flex-wrap: wrap;
   gap: 6px;
   align-items: baseline;
-  color: #1d4ed8;
+  color: var(--ink-faint);
   font-size: 12px;
   font-weight: 600;
 }
@@ -1712,8 +1752,8 @@
   border-radius: 4px;
   font-size: 12px;
   font-weight: 500;
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: var(--warn-wash);
+  color: var(--ink-faint);
   margin-right: 6px;
 }
 
@@ -2064,6 +2104,24 @@
 }
 
 .tr-pre-toggle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Raw payload folded away behind a disclosure (see renderScreenChunkMarkdown). */
+.tr-raw-json {
+  margin: 4px 0;
+}
+
+.tr-raw-json > summary {
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 20px;
+  padding: 12px 0;
+}
+
+.tr-raw-json > summary:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
@@ -2934,6 +2992,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   const mFromY = (py) => Math.max(timelineStart, Math.min(timelineEnd, Math.round(py / ppm) + timelineStart));
   const snap = (m) => Math.round(m / STEP) * STEP;
   const hhmm = (m) => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+  // The day axis can run to minute 1440, which is the end of the day rather
+  // than a 24th hour. "24:00" is not a clock time anyone reads, so name it.
+  const clockLabel = (m) => (m > 0 && m % 1440 === 0 ? 'midnight' : hhmm(m));
 
   // Zoom utilities - map minutes to pixels within the zoomed range
   const zoomY = (m) => (m - range.start) * zoomPpm;
@@ -3527,7 +3588,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       const lab = document.createElement('div');
       lab.className = 'tr-label';
       lab.style.top = y(h * 60) + 'px';
-      lab.textContent = String(h).padStart(2, '0') + ':00';
+      lab.textContent = clockLabel(h * 60);
       labels.appendChild(lab);
 
       if (h < timelineEnd / 60) {
@@ -3575,6 +3636,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         const lab = document.createElement('div');
         lab.className = 'tr-zoom-label';
         lab.style.top = yPos + 'px';
+        // Not clockLabel: this rail's label column is 48px and clips "midnight".
         lab.textContent = hhmm(m);
         zoomLabels.appendChild(lab);
       }
@@ -3722,13 +3784,30 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     });
 
     titleEl.textContent = humanizeStreamName(seg.stream);
-    rangeText.textContent = `${seg.start} - ${seg.end}`;
+    updateSegmentEntryCount(null);
 
     // Show delete button when segment is selected
     deleteBtn.classList.add('visible');
 
     // Load transcript content
     loadSegmentContent(seg, requestedTabId);
+  }
+
+  // The pane header carries the selected block's time range; when a pane knows
+  // how many entries it rendered, that count sits beside the range so the size
+  // of the block is legible before scrolling it.
+  function updateSegmentEntryCount(count) {
+    if (!selectedSegment) return;
+    const rangeLabel = `${selectedSegment.start} - ${selectedSegment.end}`;
+    rangeText.textContent = Number.isFinite(count) && count > 0
+      ? `${rangeLabel} · ${count === 1 ? '1 entry' : `${count} entries`}`
+      : rangeLabel;
+  }
+
+  function setPaneEntryCount(targetEl, count) {
+    const tabId = targetEl?.dataset?.tab;
+    if (tabId) tabEntryCounts[tabId] = count;
+    updateSegmentEntryCount(count);
   }
 
   // Step through segments with [ ] keys
@@ -3753,6 +3832,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   let activeTab = null;
   let currentSegmentAbort = null;
   let tabPanes = {}; // tabId -> pane element
+  let tabEntryCounts = {}; // tabId -> entries rendered in that pane (for the header)
   let screenDecoded = false;
   let analyzePollTimer = null;
   let analyzePollStartedAt = 0;
@@ -3773,6 +3853,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     currentVideoFiles = {};
     currentImageFiles = {};
     tabPanes = {};
+    tabEntryCounts = {};
     activeTab = null;
     screenDecoded = false;
     frameCapture.clear();
@@ -3919,6 +4000,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     tabsContainer.classList.remove('visible');
     panel.innerHTML = '';
     tabPanes = {};
+    tabEntryCounts = {};
     activeTab = null;
     screenDecoded = false;
 
@@ -4031,6 +4113,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
     pane.classList.add('active');
     collapseLongPreBlocks(pane);
+    // A cached pane is not re-rendered, so restore the count it reported.
+    updateSegmentEntryCount(tabEntryCounts[tabId] ?? null);
     activeTab = tabId;
     if (selectedSegment) {
       history.replaceState(null, '', segmentLocation(selectedSegment, tabId));
@@ -4149,6 +4233,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     currentVideoFiles = {};
     currentImageFiles = {};
     tabPanes = {};
+    tabEntryCounts = {};
     activeTab = null;
     screenDecoded = false;
     frameCapture.clear();
@@ -4986,6 +5071,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     const dataState = data.data_state || {};
 
     if (isBodySummarySegment() && showAudio && showScreen) {
+      setPaneEntryCount(targetEl, null);
       targetEl.innerHTML = renderBodyContextCard(data);
       attachBodyWindowButtons(targetEl);
       return;
@@ -5000,6 +5086,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     currentFrameIndex = -1;
 
     if (chunks.length === 0) {
+      setPaneEntryCount(targetEl, 0);
       if (showAudio && !showScreen && dataState.audio && dataState.audio !== 'analyzed') {
         targetEl.innerHTML = renderDataStateAffordance('audio', dataState.audio, data);
         return;
@@ -5033,6 +5120,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     // Group sequential basic screen frames together
     const displayItems = textOnlyScreen ? chunks : groupBasicScreenFrames(chunks);
     groupEntriesByIdx = new Map();
+    setPaneEntryCount(targetEl, displayItems.length);
 
     let html = renderBodyStrip(data.body_window);
     html += `<div class="tr-unified" role="list" aria-label="transcript entries, ${displayItems.length} items">`;
@@ -5095,7 +5183,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       } else if (item.type === 'screen') {
         if (textOnlyScreen) {
           const timeStr = item.time || '';
-          const markdown = window.AppServices.renderMarkdown(item.markdown) || 'Screen activity';
+          const markdown = renderScreenChunkMarkdown(item.markdown) || 'Screen activity';
           html += '<div class="tr-entry" role="listitem">';
           html += `<div class="tr-entry-time">${timeStr}</div>`;
           html += '<div class="tr-entry-content">';
@@ -5113,7 +5201,12 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     targetEl.innerHTML = html;
     attachBodyWindowButtons(targetEl);
     attachSpeakerPickerHandlers(targetEl);
+    trimHeadingMilliseconds(targetEl);
+    boundEntryList(targetEl);
     collapseLongPreBlocks(targetEl);
+    // A pre inside a closed disclosure has no measurable height, so re-check
+    // once one opens. 'toggle' does not bubble; listen in the capture phase.
+    targetEl.addEventListener('toggle', () => collapseLongPreBlocks(targetEl), true);
 
     // Get audio element reference
     const paneAudioEl = targetEl.querySelector('audio[data-role="segment-audio"]');
@@ -5179,6 +5272,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         if (activeEntry) activeEntry.classList.remove('tr-entry-active');
         activeEntry = best;
         if (activeEntry) {
+          revealBoundedEntry(targetEl, activeEntry);
           activeEntry.classList.add('tr-entry-active');
           activeEntry.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
@@ -5443,12 +5537,121 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       if (monitorPos) html += `<span class="tr-entry-badge tr-entry-badge-monitor">${monitorPos}</span>`;
     }
     if (chunk.markdown) {
-      html += window.AppServices.renderMarkdown(chunk.markdown);
+      html += renderScreenChunkMarkdown(chunk.markdown);
     }
     html += '</div>';
 
     html += '</div></div>';
     return html;
+  }
+
+  // A screen chunk's markdown carries its payload in a fenced ```json block
+  // (see core/crates/solstone-core-format/src/content/raw_screen.rs). Rendered
+  // as-is, one five-minute block is dozens of full JSON dumps stacked down the
+  // pane. Fold every block that actually parses behind a disclosure and leave
+  // anything that does not parse exactly as it rendered before.
+  const TR_JSON_FENCE = /```json[^\S\r\n]*\r?\n([\s\S]*?)\r?\n?```/g;
+
+  // Only counts we can read straight off the parsed value. Nothing inferred:
+  // a shape we do not recognise gets no summary rather than a guessed one.
+  function screenJsonSummary(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
+    const parts = [];
+    [['windows', 'window', 'windows'], ['panes', 'pane', 'panes']].forEach(([key, one, many]) => {
+      const list = value[key];
+      if (!Array.isArray(list) || list.length === 0) return;
+      parts.push(`${list.length} ${list.length === 1 ? one : many}`);
+    });
+    return parts.join(', ');
+  }
+
+  function renderRawJsonDisclosure(raw, parsed) {
+    const summary = screenJsonSummary(parsed);
+    return '<details class="tr-raw-json">'
+      + `<summary>${escapeHtml(summary ? `raw json, ${summary}` : 'raw json')}</summary>`
+      + `<pre>${escapeHtml(raw)}</pre>`
+      + '</details>';
+  }
+
+  function renderScreenChunkMarkdown(text) {
+    const source = String(text || '');
+    if (!source.includes('```json')) {
+      return window.AppServices.renderMarkdown(source) || '';
+    }
+
+    let html = '';
+    let cursor = 0;
+    let match;
+    TR_JSON_FENCE.lastIndex = 0;
+    while ((match = TR_JSON_FENCE.exec(source)) !== null) {
+      let parsed;
+      try {
+        parsed = JSON.parse(match[1]);
+      } catch {
+        continue; // not JSON after all, so leave the fence in the markdown run
+      }
+      html += window.AppServices.renderMarkdown(source.slice(cursor, match.index)) || '';
+      html += renderRawJsonDisclosure(match[1], parsed);
+      cursor = match.index + match[0].length;
+    }
+    if (cursor === 0) {
+      return window.AppServices.renderMarkdown(source) || '';
+    }
+    return html + (window.AppServices.renderMarkdown(source.slice(cursor)) || '');
+  }
+
+  // Entry headings arrive as HH:MM:SS.mmm. Milliseconds are not a time anyone
+  // reads, so the heading shows seconds and keeps the exact value in a title
+  // for the case where two entries land in the same second.
+  const TR_HEADING_MS = /^(\d{1,2}:\d{2}:\d{2})\.\d{1,3}$/;
+  const TR_HEADING_SELECTOR = ['.tr-screen-text', '.tr-entry-desc']
+    .flatMap(scope => ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].map(tag => `${scope} ${tag}`))
+    .join(', ');
+
+  function trimHeadingMilliseconds(root) {
+    root.querySelectorAll(TR_HEADING_SELECTOR).forEach(heading => {
+      const text = heading.textContent.trim();
+      const match = TR_HEADING_MS.exec(text);
+      if (!match) return;
+      heading.setAttribute('title', text);
+      heading.textContent = match[1];
+    });
+  }
+
+  // A block can hold dozens of entries; open only the first few and put the
+  // rest behind one control, so the pane opens at a readable height.
+  const TR_ENTRY_VISIBLE_MAX = 8;
+
+  function boundEntryList(targetEl) {
+    const list = targetEl.querySelector('.tr-unified');
+    if (!list) return;
+    const rest = Array.from(list.querySelectorAll(':scope > [role="listitem"]')).slice(TR_ENTRY_VISIBLE_MAX);
+    if (rest.length === 0) return;
+
+    rest.forEach(entry => { entry.hidden = true; });
+
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'tr-entry-more';
+    more.setAttribute('aria-expanded', 'false');
+    more.textContent = `show the rest of this block (${rest.length} more) →`;
+    more.addEventListener('click', () => {
+      const expanded = more.getAttribute('aria-expanded') !== 'true';
+      rest.forEach(entry => { entry.hidden = !expanded; });
+      more.setAttribute('aria-expanded', String(expanded));
+      more.textContent = expanded
+        ? 'show fewer entries'
+        : `show the rest of this block (${rest.length} more) →`;
+      if (expanded) collapseLongPreBlocks(targetEl);
+    });
+    list.insertAdjacentElement('afterend', more);
+  }
+
+  // Playback walks every entry, including the ones the bound above is holding
+  // back; open the rest rather than highlighting something nobody can see.
+  function revealBoundedEntry(targetEl, entry) {
+    if (!entry.hidden) return;
+    targetEl.querySelector('.tr-entry-more[aria-expanded="false"]')?.click();
   }
 
   const TR_PRE_COLLAPSE_MAX_HEIGHT = 256; // fallback only, when the computed max-height is not a usable number
@@ -5602,7 +5805,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   }
 
   function updateZoom() {
-    zoom.setAttribute('aria-label', 'Detail timeline (' + hhmm(range.start) + '\u2013' + hhmm(range.end) + ')');
+    zoom.setAttribute('aria-label', 'Detail timeline (' + clockLabel(range.start) + '\u2013' + clockLabel(range.end) + ')');
     zoomHeight = zoom.clientHeight - ZOOM_PADDING;
     const rangeLen = range.end - range.start;
     if (rangeLen > 0) {
@@ -5646,7 +5849,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       const bounds = computeTimelineBounds(data);
       timelineStart = bounds.start;
       timelineEnd = bounds.end;
-      timeline.setAttribute('aria-label', 'Day timeline (' + hhmm(timelineStart) + '\u2013' + hhmm(timelineEnd) + ')');
+      timeline.setAttribute('aria-label', 'Day timeline (' + clockLabel(timelineStart) + '\u2013' + clockLabel(timelineEnd) + ')');
 
       // Recalculate pixels-per-minute with new bounds
       height = timeline.clientHeight - DAY_PADDING;
@@ -6142,6 +6345,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     currentImageFiles = {};
     activeTab = null;
     tabPanes = {};
+    tabEntryCounts = {};
     screenDecoded = false;
     frameCapture.clear();
     allScreenFrames = [];

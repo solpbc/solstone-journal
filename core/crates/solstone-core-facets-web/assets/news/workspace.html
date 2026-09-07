@@ -243,6 +243,83 @@
   font-style: italic;
 }
 
+/* G1-214: day-level ways in. The index used to offer the four latest cards,
+   a collapsed disclosure and the heatmap cells, so stepping back one day meant
+   hunting a 13px square. These two navs are built from the days already in the
+   state payload. */
+.news-index-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+}
+
+.news-index-head h3 {
+  margin: 0;
+}
+
+.news-prev-day {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 0.25rem;
+  font-size: 0.95rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.news-prev-day:hover,
+.news-prev-day:focus-visible {
+  text-decoration: underline;
+}
+
+.news-day-jump {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  margin: 1rem 0 0;
+}
+
+.news-day-jump-label {
+  color: var(--ink-faint);
+  font-size: 0.85rem;
+}
+
+.news-day-jump-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.5rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.news-day-jump-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  max-width: 100%;
+  padding: 0 0.9rem;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--cream-bright);
+  font-size: 0.9rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.news-day-jump-link:hover,
+.news-day-jump-link:focus-visible {
+  background: var(--orange-wash);
+  border-color: var(--orange-ink);
+}
+
 @media (max-width: 720px) {
   .news-shell {
     padding: 1.25rem 1rem 4rem;
@@ -540,8 +617,35 @@
     const groupHtml = day => `<section class="news-day-group" id="news-day-${escapeHtml(day)}"><h3>${escapeHtml(groups.get(day)[0].label)}</h3><ul class="news-index-list">${groups.get(day).map(item => `<li><a class="news-index-link" href="${escapeAttr(item.url)}"><span class="news-index-facet">${escapeHtml(item.facet)}</span><span class="news-index-preview">${escapeHtml(item.preview || '')}</span><span>read newsletter →</span></a></li>`).join('')}</ul></section>`;
     const targetDay = returnDay();
     const earlierOpen = !!targetDay && days.slice(1).includes(targetDay);
+    // G1-214: day-level ways in, all built from the days already in this
+    // payload. `/app/news/{day}` is an existing route and it is where the
+    // chrome's date-nav arrows come alive, so one step back hands the owner a
+    // way to keep stepping back. There is no per-facet page route, only the
+    // `/app/news/api/facet/{facet}` JSON no page renders, so a facet name stays
+    // the card's own link rather than pointing at a route that does not exist.
+    const dayHref = day => `/app/news/${encodeURIComponent(day)}`;
+    const dayLabel = day => {
+      const shared = window.JournalFormat?.dayFull?.(day);
+      if (shared && shared !== day) return shared;
+      const served = groups.get(day)?.[0]?.label;
+      return served && served !== day ? served : '';
+    };
+    const prevDay = days.length > 1 ? days[1] : '';
+    const prevLabel = prevDay ? dayLabel(prevDay) : '';
+    const prevLinkHtml = prevLabel
+      ? `<a class="news-prev-day" href="${escapeAttr(dayHref(prevDay))}" aria-label="newsletters for ${escapeAttr(prevLabel)}">&larr; ${escapeHtml(prevLabel)}</a>`
+      : '';
+    const jumpDays = days.slice(1, 8).filter(day => dayLabel(day));
+    // One chip would only restate the link beside the heading.
+    const jumpHtml = jumpDays.length > 1
+      ? `<nav class="news-day-jump" aria-label="Recent newsletter days"><span class="news-day-jump-label">recent days</span><ul class="news-day-jump-list">${jumpDays.map(day => `<li><a class="news-day-jump-link" href="${escapeAttr(dayHref(day))}">${escapeHtml(dayLabel(day))}</a></li>`).join('')}</ul></nav>`
+      : '';
+    // The summary counts the day groups this disclosure actually holds. Bare
+    // "earlier newsletters" read as a heading for the heatmap card below it.
+    const earlierCount = days.length - 1;
+    const earlierSummary = `earlier newsletters · ${earlierCount} more ${earlierCount === 1 ? 'day' : 'days'}`;
     const listHtml = newsletters.length
-      ? `<h3>latest newsletters</h3>${groupHtml(days[0])}${days.length > 1 ? `<details class="news-earlier"${earlierOpen ? ' open' : ''}><summary>earlier newsletters</summary>${days.slice(1).map(groupHtml).join('')}</details>` : ''}`
+      ? `<div class="news-index-head"><h3>latest newsletters</h3>${prevLinkHtml}</div>${groupHtml(days[0])}${jumpHtml}${days.length > 1 ? `<details class="news-earlier"${earlierOpen ? ' open' : ''}><summary>${escapeHtml(earlierSummary)}</summary>${days.slice(1).map(groupHtml).join('')}</details>` : ''}`
       : (window.SurfaceState
         ? window.SurfaceState.empty({
             icon: window.ConveyIcons.svg('mailbox'),

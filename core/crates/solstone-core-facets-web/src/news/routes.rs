@@ -203,16 +203,14 @@ const _: () = assert!(PREVIEW_CHARS > MIN_PREVIEW_CHARS);
 fn preview_from_content(content: &str) -> Option<String> {
     let mut fallback: Option<String> = None;
     let mut chosen: Option<String> = None;
-    let mut past_metadata = false;
     for raw in content.lines() {
         let trimmed = raw.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        if !past_metadata && is_metadata_line(trimmed) {
+        if is_metadata_line(trimmed) {
             continue;
         }
-        past_metadata = true;
         let cleaned = trimmed.trim_matches('*').replace("**", "");
         let candidate = strip_preview_label(cleaned.trim()).trim().to_owned();
         if candidate.is_empty() {
@@ -246,7 +244,11 @@ const HEADER_LABELS: [&str; 8] = [
 /// 2026") is the letter's own header scaffolding, not something to preview --
 /// skip it like a heading. `TL;DR` gets its own handling below (its sentence
 /// is kept, not dropped); this catches the rest of that "header colon space"
-/// shape, and only before the first real paragraph.
+/// shape. Only the header region is ever tested: `preview_from_content` stops
+/// at the first line long enough to be the preview, so a `Date:`-shaped line
+/// inside the body is never reached. A short line above the body (G1-212: a
+/// 22-character title) is remembered as a fallback and does not end the header
+/// region, which is what let a letter preview its own `Date:` header.
 fn is_metadata_line(line: &str) -> bool {
     match line.find(':') {
         Some(idx) if idx > 0 => {
@@ -592,6 +594,19 @@ mod tests {
             (
                 "Date: Saturday, September 05, 2026\n\nThe roundup covers the week's three launches.\n",
                 Some("The roundup covers the week's three launches."),
+            ),
+            // G1-212: a title too short to be the preview must not end the
+            // header region -- the `Date:` line under it is still scaffolding,
+            // and the letter's own first sentence is what the card shows.
+            (
+                "Solstone Weekly Update\nDate: Saturday, September 05, 2026\n\nThe week brought two launches and one postponed.\n",
+                Some("The week brought two launches and one postponed."),
+            ),
+            // ...and when that letter has no sentence at all, the short title
+            // is the fallback, never the header it sits above.
+            (
+                "Solstone Weekly Update\nDate: Saturday, September 05, 2026\n",
+                Some("Solstone Weekly Update"),
             ),
             // A letter that never gets past its own header has nothing to
             // preview, and the caller shows no preview rather than repeating

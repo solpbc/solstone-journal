@@ -3802,6 +3802,41 @@
   margin-top: 12px;
 }
 
+.spk-overview-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.spk-overview-filter {
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+}
+
+/* G1-208: the phone page ran 26,832px because all 51 known voices stack one
+   per row. Show the first twelve and let the owner ask for the rest; the
+   desktop grid is two or three across and stays whole. */
+.spk-known-more {
+  display: none;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 12px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+  cursor: pointer;
+}
+
 @media (max-width: 720px) {
   .spk-overview {
     width: min(100vw - 24px, 1120px);
@@ -3815,6 +3850,32 @@
 
   .spk-discovery-clusters {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Every control on this page is thumb-driven from the tablet down, the same
+   reasoning that gave the day grid one cell ladder (G1-213). */
+@media (max-width: 768px) {
+  .spk-overview-btn,
+  .spk-overview-link,
+  .spk-overview-select,
+  .spk-overview-filter {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 480px) {
+  .spk-overview-filter,
+  .spk-overview-select {
+    width: 100%;
+  }
+
+  .spk-known-grid[data-capped] > a.spk-known-card:nth-of-type(n + 13) {
+    display: none;
+  }
+
+  .spk-known-grid[data-capped] + .spk-known-more {
+    display: inline-flex;
   }
 }
 </style>
@@ -3849,7 +3910,10 @@
   <section class="spk-overview-section" data-section="known-voices">
     <div class="spk-overview-header">
       <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_KNOWN_VOICES_HEADER"></h2>
-      <select id="spkKnownSort" class="spk-overview-select" aria-label="sort voices"></select>
+      <div class="spk-overview-controls">
+        <input id="spkKnownFilter" class="spk-overview-filter" type="search" autocomplete="off" placeholder="find a voice by name" aria-label="find a voice by name">
+        <select id="spkKnownSort" class="spk-overview-select" aria-label="sort voices"></select>
+      </div>
     </div>
     <p class="spk-overview-muted" data-copy="SPK_OVERVIEW_KNOWN_VOICES_QUALITY_HINT"></p>
     <div id="spkKnownVoices"></div>
@@ -3858,6 +3922,7 @@
   <section class="spk-overview-section" data-section="new-voices" id="spkNewVoicesSection">
     <div class="spk-overview-header">
       <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_NEW_VOICES_HEADER"></h2>
+      <button id="spkDiscoveryScan" class="spk-overview-btn" type="button">look for new voices</button>
     </div>
     <div id="spkStatementHandoffNotice" class="spk-overview-muted" hidden></div>
     <div id="spkOverviewDiscoveryNotice" class="spk-overview-discovery-notice" hidden></div>
@@ -3881,6 +3946,8 @@
   const qualityPanel = document.getElementById('spkOverviewQuality');
   const knownContainer = document.getElementById('spkKnownVoices');
   const sortSelect = document.getElementById('spkKnownSort');
+  const knownFilter = document.getElementById('spkKnownFilter');
+  const discoveryScanBtn = document.getElementById('spkDiscoveryScan');
   const discoverySection = document.getElementById('spkNewVoicesSection');
   const statementHandoffNotice = document.getElementById('spkStatementHandoffNotice');
   const overviewDiscoveryNoticeNode = document.getElementById('spkOverviewDiscoveryNotice');
@@ -3897,6 +3964,12 @@
   let mountedDayGridKey = null;
   let whoIsThisSheet = null;
   let discoveryClustersById = new Map();
+  const DISCOVERY_SCAN_LABEL = 'look for new voices';
+  const DISCOVERY_SCAN_RUNNING = 'looking for new voices…';
+  const DISCOVERY_EMPTY = 'no new voices are waiting. look for new voices to check again.';
+  const DISCOVERY_LOAD_ERROR = "couldn't load new voices right now.";
+  let lastKnownData = null;
+  let discoveryScanRunning = false;
   let qualityRequestSeq = 0;
   let knownRequestSeq = 0;
   let overviewDiscoveryRequestSeq = 0;
@@ -4062,13 +4135,21 @@
   function ownerConfirmed(data) {
     const meta = data.centroid_metadata || {};
     const streams = meta.streams || [];
+    // G1-207: on a voice that has never been rebuilt, "built" and "refreshed"
+    // render the identical readable time. Two rows saying one thing read as a
+    // discrepancy, so the second only appears once it differs.
+    const built = absoluteDate(meta.created_at);
+    const refreshed = absoluteDate(meta.last_refreshed_at);
+    const refreshedRow = refreshed === built
+      ? ''
+      : `<p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_REFRESHED_PREFIX)}: ${refreshed}</p>`;
     ownerPanel.innerHTML = `
       <strong>${escapeHtml(COPY.SPK_OVERVIEW_YOUR_VOICE_CONFIRMED)}</strong>
       <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_SAMPLES_LABEL)}: ${escapeHtml(ownerSamplesText(meta))}</p>
       <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_STREAMS_LABEL)}: ${escapeHtml(streams.length ? streams.join(' · ') : COPY.SPK_OVERVIEW_OWNER_STREAMS_UNKNOWN)}</p>
       <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_COHESION_LABEL)}: ${cohesion(meta.intra_cosine_p25)}</p>
-      <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_BUILT_PREFIX)}: ${absoluteDate(meta.created_at)}</p>
-      <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_REFRESHED_PREFIX)}: ${absoluteDate(meta.last_refreshed_at)}</p>
+      <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_BUILT_PREFIX)}: ${built}</p>
+      ${refreshedRow}
     `;
   }
 
@@ -4077,20 +4158,51 @@
     return Number.isFinite(count) ? count : 0;
   }
 
-  function qualityLine(label, value) {
-    return `<p class="spk-card-line">${escapeHtml(label)}: ${escapeHtml(qualityCount(value).toLocaleString())}</p>`;
+  function qualityShare(value, total) {
+    if (!total || value === total) return '';
+    const percent = (value / total) * 100;
+    const shown = percent < 1 ? '<1' : String(Math.round(percent));
+    return ` (${shown}%)`;
   }
 
+  function qualityLine(label, value, total) {
+    return `<p class="spk-card-line">${escapeHtml(label)}: ${escapeHtml(value.toLocaleString())}${qualityShare(value, total)}</p>`;
+  }
+
+  // G1-207: the card listed six figures of which two were zero, and none of the
+  // live ones carried a proportion -- "needs a look: 13,643" says nothing
+  // without the population it is part of. The four statement buckets share one
+  // population and get a share of it; the two segment buckets are a different
+  // population and stay bare counts; the empty buckets collapse into one line
+  // that reads as an all-clear rather than as data to scan.
   function qualityRows(data) {
     const buckets = data.tier_histogram || {};
-    return [
-      qualityLine(COPY.SPK_OVERVIEW_QUALITY_HIGH_LABEL, buckets.high_statements),
-      qualityLine(COPY.SPK_OVERVIEW_QUALITY_MEDIUM_LABEL, buckets.medium_statements),
-      qualityLine(COPY.SPK_OVERVIEW_QUALITY_MARGIN_LABEL, buckets.margin_declined_statements),
-      qualityLine(COPY.SPK_OVERVIEW_QUALITY_UNLABELED_LABEL, buckets.unlabeled_sentence_statements),
-      qualityLine(COPY.SPK_OVERVIEW_QUALITY_MISSING_LABEL, buckets.no_labels_file_segments),
-      qualityLine(COPY.SPK_OVERVIEW_QUALITY_SKIPPED_LABEL, buckets.skipped_stub_segments),
-    ].join('');
+    const statements = [
+      [COPY.SPK_OVERVIEW_QUALITY_HIGH_LABEL, qualityCount(buckets.high_statements)],
+      [COPY.SPK_OVERVIEW_QUALITY_MEDIUM_LABEL, qualityCount(buckets.medium_statements)],
+      [COPY.SPK_OVERVIEW_QUALITY_MARGIN_LABEL, qualityCount(buckets.margin_declined_statements)],
+      [COPY.SPK_OVERVIEW_QUALITY_UNLABELED_LABEL, qualityCount(buckets.unlabeled_sentence_statements)],
+    ];
+    const segments = [
+      [COPY.SPK_OVERVIEW_QUALITY_MISSING_LABEL, qualityCount(buckets.no_labels_file_segments)],
+      [COPY.SPK_OVERVIEW_QUALITY_SKIPPED_LABEL, qualityCount(buckets.skipped_stub_segments)],
+    ];
+    const total = statements.reduce((sum, [, value]) => sum + value, 0);
+    const lines = [];
+    if (total > 0) {
+      lines.push(`<p class="spk-overview-muted">across ${escapeHtml(total.toLocaleString())} ${escapeHtml(pluralize(total, 'statement'))}</p>`);
+    }
+    statements.filter(([, value]) => value > 0).forEach(([label, value]) => {
+      lines.push(qualityLine(label, value, total));
+    });
+    segments.filter(([, value]) => value > 0).forEach(([label, value]) => {
+      lines.push(qualityLine(label, value, 0));
+    });
+    const empty = statements.concat(segments).filter(([, value]) => value === 0);
+    if (empty.length) {
+      lines.push(`<p class="spk-card-line spk-overview-muted">none right now: ${escapeHtml(empty.map(([label]) => label).join(', '))}</p>`);
+    }
+    return lines.join('');
   }
 
   function qualityTeachingLine(data) {
@@ -4178,14 +4290,24 @@
       .catch(ownerStatusError);
   }
 
+  // G1-208: at phone width the known-voices list is one card per row, so 51
+  // voices is 32 screens of thumb travel with only a sort control to show for
+  // it. Twelve is what fits before the fold stops meaning anything; the rest
+  // are one tap away, and the desktop grid is unaffected.
+  const KNOWN_PHONE_CAP = 12;
+
   function renderKnown(data) {
+    lastKnownData = data;
     const speakers = data.speakers || [];
     if (speakers.length === 0) {
       knownContainer.innerHTML = `<div class="spk-overview-muted">${escapeHtml(COPY.SPK_OVERVIEW_KNOWN_VOICES_EMPTY)}</div>`;
       sortSelect.hidden = true;
+      knownFilter.hidden = true;
       return;
     }
     sortSelect.hidden = false;
+    knownFilter.hidden = false;
+    const query = knownFilter.value.trim().toLowerCase();
     const renderCard = (speaker) => {
       const href = `/app/speakers/${TODAY}?speaker=${encodeURIComponent(speaker.entity_id)}`;
       return `
@@ -4201,16 +4323,33 @@
     // not yet named — they don't belong under "known voices". Keep them
     // reachable but out of the way, same pattern as the unlabeled discovery
     // clusters below.
-    const named = speakers.filter((speaker) => !isPlaceholderSpeakerName(speaker.name));
-    const unnamed = speakers.filter((speaker) => isPlaceholderSpeakerName(speaker.name));
+    const matches = (speaker) => !query || String(speaker.name || '').toLowerCase().includes(query);
+    const named = speakers.filter((speaker) => !isPlaceholderSpeakerName(speaker.name)).filter(matches);
+    const unnamed = speakers.filter((speaker) => isPlaceholderSpeakerName(speaker.name)).filter(matches);
     const wasOpen = knownContainer.querySelector('details')?.open || false;
-    const emptyNotice = named.length === 0
-      ? `<div class="spk-overview-muted">${escapeHtml(COPY.SPK_OVERVIEW_KNOWN_VOICES_EMPTY)}</div>`
-      : '';
+    let emptyNotice = '';
+    if (named.length === 0) {
+      // A filter that matches nothing is a different state from a journal that
+      // has learned no other voice yet, and the two must not read alike.
+      emptyNotice = query
+        ? `<div class="spk-overview-muted">no known voice matches "${escapeHtml(knownFilter.value.trim())}"</div>`
+        : `<div class="spk-overview-muted">${escapeHtml(COPY.SPK_OVERVIEW_KNOWN_VOICES_EMPTY)}</div>`;
+    }
+    // G1-206: this disclosure and the one under "new voices" both read
+    // "unlabeled voices (N)" one section apart, with counts that differed by a
+    // factor of 48 and nothing to tell them apart. Each now says what it holds.
     const unnamedBlock = unnamed.length
-      ? `<details ${wasOpen ? 'open' : ''}><summary>unlabeled voices (${unnamed.length})</summary>${unnamed.map(renderCard).join('')}</details>`
+      ? `<details ${wasOpen ? 'open' : ''}><summary>voices still using a placeholder name (${unnamed.length})</summary>${unnamed.map(renderCard).join('')}</details>`
       : '';
-    knownContainer.innerHTML = `${emptyNotice}<div class="spk-known-grid">${named.map(renderCard).join('')}${unnamedBlock}</div>`;
+    const capped = !query && named.length > KNOWN_PHONE_CAP;
+    const showAll = capped
+      ? `<button type="button" id="spkKnownShowAll" class="spk-known-more">show all ${named.length} voices →</button>`
+      : '';
+    knownContainer.innerHTML = `${emptyNotice}<div class="spk-known-grid"${capped ? ' data-capped' : ''}>${named.map(renderCard).join('')}${unnamedBlock}</div>${showAll}`;
+    document.getElementById('spkKnownShowAll')?.addEventListener('click', (event) => {
+      knownContainer.querySelector('.spk-known-grid')?.removeAttribute('data-capped');
+      event.currentTarget.remove();
+    });
   }
 
   function loadKnown(options) {
@@ -4238,6 +4377,9 @@
       `<option value="${escapeHtml(sort)}">${escapeHtml(sort)}</option>`
     )).join('');
     sortSelect.addEventListener('change', loadKnown);
+    knownFilter.addEventListener('input', () => {
+      if (lastKnownData) renderKnown(lastKnownData);
+    });
   }
 
   function renderOverviewThisIsMeGuidance() {
@@ -4252,7 +4394,7 @@
     const card = discoveryContainer.querySelector(`[data-cluster-id="${clusterId}"]`);
     if (card) card.remove();
     if (!discoveryContainer.querySelector('.spk-discovery-card')) {
-      discoverySection.hidden = !overviewDiscoveryNotice;
+      discoveryContainer.innerHTML = `<p class="spk-overview-muted">${escapeHtml(DISCOVERY_EMPTY)}</p>`;
     }
   }
 
@@ -4358,11 +4500,25 @@
     };
   }
 
+  // X-11: this is the "couldn't look for new voices right now." line, and it
+  // may only appear once the owner has actually asked to look.
   function overviewDiscoveryErrorNotice() {
     return {
       type: 'error',
       messages: [COPY.SPK_DISCOVERY_ERROR || ''],
       retry: true,
+      retryAction: 'scan',
+    };
+  }
+
+  // Reading the cached result failed, which is a different failure from a scan
+  // that could not run, and its recovery is to read again rather than to look.
+  function overviewDiscoveryLoadErrorNotice() {
+    return {
+      type: 'error',
+      messages: [DISCOVERY_LOAD_ERROR],
+      retry: true,
+      retryAction: 'load',
     };
   }
 
@@ -4389,14 +4545,17 @@
       </div>
     `;
     document.getElementById('spkOverviewDiscoveryRetry')?.addEventListener('click', () => {
-      refreshDiscoveryScan({ requestSeq: overviewDiscoveryRequestSeq + 1, throwOnError: false });
+      if (overviewDiscoveryNotice?.retryAction === 'load') {
+        overviewDiscoveryNotice = null;
+        renderOverviewDiscoveryNotice();
+        loadDiscovery();
+        return;
+      }
+      runOwnerDiscoveryScan();
     });
     document.getElementById('spkOverviewDiscoveryDismiss')?.addEventListener('click', () => {
       overviewDiscoveryNotice = null;
       renderOverviewDiscoveryNotice();
-      if (!discoveryContainer.querySelector('.spk-discovery-card') && statementHandoffNotice.hidden) {
-        discoverySection.hidden = true;
-      }
     });
   }
 
@@ -4405,12 +4564,13 @@
     hideStatementHandoffNotice();
     renderOverviewDiscoveryNotice();
     discoveryClustersById = new Map(clusters.map((cluster) => [String(cluster.cluster_id), cluster]));
+    // X-11: the section stays on the page whether or not anything is waiting,
+    // because it now carries the only control that looks for new voices.
+    discoverySection.hidden = false;
     if (!clusters.length) {
-      discoveryContainer.innerHTML = '';
-      discoverySection.hidden = !overviewDiscoveryNotice;
+      discoveryContainer.innerHTML = `<p class="spk-overview-muted">${escapeHtml(DISCOVERY_EMPTY)}</p>`;
       return;
     }
-    discoverySection.hidden = false;
     const renderCluster = (cluster) => `
       <div class="spk-discovery-card" data-cluster-id="${escapeHtml(cluster.cluster_id)}">
         <h3 class="spk-card-title">${escapeHtml(cluster.suggested_name || 'unlabeled voice')}</h3>
@@ -4423,8 +4583,10 @@
     const named = clusters.filter(cluster => String(cluster.suggested_name || '').trim());
     const unnamed = clusters.filter(cluster => !String(cluster.suggested_name || '').trim());
     const wasOpen = discoveryContainer.querySelector('details')?.open || false;
+    // G1-206: paired with the known-voices disclosure above, which holds the
+    // voices that already carry a placeholder name.
     discoveryContainer.innerHTML = named.map(renderCluster).join('') + (unnamed.length
-      ? `<details ${wasOpen ? 'open' : ''}><summary>unlabeled voices (${unnamed.length})</summary>${unnamed.map(renderCluster).join('')}</details>` : '');
+      ? `<details ${wasOpen ? 'open' : ''}><summary>voices heard but not yet named (${unnamed.length})</summary>${unnamed.map(renderCluster).join('')}</details>` : '');
     discoveryContainer.querySelectorAll('.spk-discovery-card').forEach((card) => {
       const trigger = card.querySelector('.spk-who-trigger');
       const cluster = discoveryClustersById.get(card.dataset.clusterId);
@@ -4446,12 +4608,28 @@
       })
       .catch((err) => {
         if (requestSeq !== overviewDiscoveryRequestSeq) return false;
-        overviewDiscoveryNotice = overviewDiscoveryErrorNotice();
+        overviewDiscoveryNotice = overviewDiscoveryLoadErrorNotice();
         renderOverviewDiscoveryNotice();
         discoverySection.hidden = false;
         if (throwOnError) throw err;
         return false;
       });
+  }
+
+  // X-11: opening the page used to POST a discovery scan, so a read started
+  // work and a blocked write read as a failure. The scan runs only from here.
+  function runOwnerDiscoveryScan() {
+    if (discoveryScanRunning) return Promise.resolve(false);
+    discoveryScanRunning = true;
+    overviewDiscoveryNotice = null;
+    renderOverviewDiscoveryNotice();
+    discoveryScanBtn.disabled = true;
+    discoveryScanBtn.textContent = DISCOVERY_SCAN_RUNNING;
+    return refreshDiscoveryScan({ throwOnError: false }).finally(() => {
+      discoveryScanRunning = false;
+      discoveryScanBtn.disabled = false;
+      discoveryScanBtn.textContent = DISCOVERY_SCAN_LABEL;
+    });
   }
 
   function refreshDiscoveryScan(options) {
@@ -4616,11 +4794,9 @@
     loadOwner();
     loadQuality();
     loadKnown();
-    loadDiscovery().then(() => {
-      return handleOverviewHandoff();
-    }).then(() => {
-      refreshDiscoveryScan();
-    });
+    discoveryScanBtn.textContent = DISCOVERY_SCAN_LABEL;
+    discoveryScanBtn.addEventListener('click', runOwnerDiscoveryScan);
+    loadDiscovery().then(() => handleOverviewHandoff());
   }
 
   function renderOverviewStateError(err) {

@@ -361,26 +361,21 @@ button.daygrid-cell {
   }
 }
 
+/* The cells used to shrink to 12x12 below 768 and only grow back to 24x24
+   below 480, so the tablet, a touch device, got the smallest targets on the
+   whole ladder (G1-213). One ladder now, never shrinking as the viewport
+   narrows: 13px on desktop, 24px from 768 down. The grid already lives in a
+   horizontal scroller, so the cells can grow across that whole range without
+   pushing anything else off the page; the legend swatches keep the base size
+   because they are read, not tapped (X-09). The gap is the base 3px at every
+   width, so no override restates it. */
 @media (max-width: 768px) {
-  .daygrid,
-  .daygrid-legend {
-    --daygrid-cell: 12px;
-    --daygrid-gap: 3px;
+  .daygrid {
+    --daygrid-cell: 24px;
   }
 
   .daygrid-legend {
     align-items: flex-start;
     flex-direction: column;
-  }
-}
-
-/* On a phone the day cells were 12x12, far under a finger. The grid already
-   lives in a horizontal scroller, so the cells can grow there without pushing
-   anything else off the page; the legend swatches stay small because they are
-   read, not tapped (X-09). */
-@media (max-width: 480px) {
-  .daygrid {
-    --daygrid-cell: 24px;
-    --daygrid-gap: 3px;
   }
 }
