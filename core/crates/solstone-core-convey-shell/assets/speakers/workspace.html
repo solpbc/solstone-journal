@@ -3946,6 +3946,7 @@
   // looked" read identically, and only one of them has an action.
   const DISCOVERY_NEVER_RUN = 'nothing has looked for new voices yet. use "look for new voices" above to start.';
   const DISCOVERY_LOAD_ERROR = "couldn't load new voices right now.";
+  const KNOWN_LOAD_ERROR = "couldn't load known voices";
   const DISCOVERY_HANDOFF_BUSY = 'looking for new voices waits until you finish with the voice you came here for.';
   let lastKnownData = null;
   let discoveryScanRunning = false;
@@ -4357,7 +4358,7 @@
         // bare fetch above swallowed an HTTP error into that same lie.
         window.logError?.(err, { context: 'speakers-known' });
         knownContainer.innerHTML = window.SurfaceState.error({
-          heading: COPY.SPK_OVERVIEW_KNOWN_VOICES_ERROR_HEADING,
+          heading: KNOWN_LOAD_ERROR,
           desc: window.CONVEY_COPY.RELOAD_HINT,
           serverMessage: err?.serverMessage || err?.message || '',
           detail: err,
