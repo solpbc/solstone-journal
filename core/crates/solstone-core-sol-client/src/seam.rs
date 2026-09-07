@@ -148,6 +148,7 @@ pub struct LinkJoinCredential {
     pub home_label: String,
     pub home_attestation: Option<String>,
     pub local_endpoints: serde_json::Value,
+    pub relay_origin: Option<String>,
     pub relay_device_token: Option<String>,
     pub relay_device_token_expires_at: Option<i64>,
 }
@@ -181,6 +182,7 @@ pub struct LinkServeBundle {
     pub paired_at: String,
     pub endpoints: Vec<LinkServeEndpoint>,
     pub local_endpoints: serde_json::Value,
+    pub relay_access: Option<crate::link_credentials::StoreLoadOutcome>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -223,6 +225,8 @@ pub struct LinkServeStatusSnapshot {
     pub instance_id: String,
     pub ca_fp_prefix: String,
     pub paired_at: String,
+    #[serde(default)]
+    pub persist_uncertain: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
