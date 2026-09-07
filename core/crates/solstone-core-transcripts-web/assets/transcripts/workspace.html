@@ -617,6 +617,18 @@
   background: #f9fafb;
 }
 
+/* X-08: 63x31 is a mouse target. On a touch width the close control grows to
+   44px; the inline .tr-body-link sits in running text and keeps its size. */
+@media (max-width: 768px) {
+  .tr-body-panel-close {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    min-width: 44px;
+    justify-content: center;
+  }
+}
+
 .tr-body-strip-button:focus-visible,
 .tr-body-context-button:focus-visible,
 .tr-body-panel-close:focus-visible,
