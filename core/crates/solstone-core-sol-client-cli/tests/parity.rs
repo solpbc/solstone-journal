@@ -551,6 +551,7 @@ fn http_method(value: &str) -> HttpMethod {
     match value {
         "DELETE" => HttpMethod::Delete,
         "GET" => HttpMethod::Get,
+        "PATCH" => HttpMethod::Patch,
         "POST" => HttpMethod::Post,
         "PUT" => HttpMethod::Put,
         other => panic!("unsupported method {other}"),
