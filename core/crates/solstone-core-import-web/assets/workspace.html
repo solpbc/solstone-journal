@@ -714,7 +714,7 @@ const startBtn = document.getElementById('startBtn');
 
 const STAGE_NAMES = {
   initialization: 'preparing…',
-  importing: 'reading your data…',
+  importing: 'reading your files…',
   detection: 'detecting content type…',
   audio_segmenting: 'splitting audio…',
   transcription: 'transcribing audio…',
@@ -1192,7 +1192,7 @@ async function loadImports() {
       container.innerHTML = window.SurfaceState.empty({
         icon: window.ConveyIcons.svg('inbox'),
         heading: 'no imports yet',
-        desc: 'import your data from any supported source above.',
+        desc: 'import from any source above.',
         action: '<a href="#" onclick="scrollToGrid(); return false;" style="color: var(--orange-text-aa, #a15f17); font-weight: 600;">choose a source →</a>'
       });
       return;

@@ -1290,7 +1290,7 @@
     if (types.has('agent')) {
       const advice = document.createElement('div');
       advice.style.cssText = 'padding: 0.25em 0; font-size: 0.8em; color: #9ca3af;';
-      advice.appendChild(document.createTextNode('Talent errors usually resolve on the next run. '));
+      advice.appendChild(document.createTextNode('talent errors usually resolve on the next run. '));
       const btn = document.createElement('button');
       btn.setAttribute('data-action', 'view-logs');
       btn.setAttribute('data-service', 'cortex');
@@ -2454,7 +2454,7 @@
       progressItems.push({ label: 'talents: ' + (d.agents_completed || 0) + ' / ' + d.agents_total, pct: Math.round((d.agents_completed || 0) / d.agents_total * 100) });
     }
     if (d.segments_total > 0) {
-      progressItems.push({ label: 'Segments: ' + (d.segments_completed || 0) + ' / ' + d.segments_total, pct: Math.round((d.segments_completed || 0) / d.segments_total * 100) });
+      progressItems.push({ label: 'segments: ' + (d.segments_completed || 0) + ' / ' + d.segments_total, pct: Math.round((d.segments_completed || 0) / d.segments_total * 100) });
     }
     const progContainer = elements.thinkProgress;
     while (progContainer.children.length > progressItems.length) {

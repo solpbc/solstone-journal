@@ -526,7 +526,7 @@ window.CUR_COPY = CUR_COPY;
   // markup by the time it reaches the paragraph.
   function facetAlsoSeenAsHtml(names) {
     const others = (Array.isArray(names) ? names : []).slice(1)
-      .map((name) => `\u201c${escapeHtml(name)}\u201d`);
+      .map((name) => `"${escapeHtml(name)}"`);
     if (!others.length) return '';
     const list = others.length === 1
       ? others[0]
