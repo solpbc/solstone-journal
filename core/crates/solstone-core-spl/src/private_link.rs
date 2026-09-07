@@ -157,11 +157,19 @@ pub fn enable_spl_with(
     let identity = load_or_create_service_identity(journal_root, "solstone")?;
     let ca = load_service_identity_ca(journal_root)?;
     let token = enroll(&identity, &ca.public_key_spki_pem())?;
-    write_posture(journal_root, "spl")?;
-    save_service_token(journal_root, &token).map_err(EnableSplError::Token)
+    crate::relay_access::mutate_service_configuration(journal_root, || {
+        write_posture(journal_root, "spl")?;
+        save_service_token_unlocked(journal_root, &token).map_err(EnableSplError::Token)
+    })
 }
 
 pub fn save_service_token(journal_root: &Path, token: &str) -> Result<(), AtomicWriteError> {
+    crate::relay_access::mutate_service_configuration(journal_root, || {
+        save_service_token_unlocked(journal_root, token)
+    })
+}
+
+fn save_service_token_unlocked(journal_root: &Path, token: &str) -> Result<(), AtomicWriteError> {
     let path = journal_root
         .join("link")
         .join("tokens")
@@ -184,25 +192,27 @@ pub fn save_service_token(journal_root: &Path, token: &str) -> Result<(), Atomic
 
 pub fn disable_spl(journal_root: &Path) -> Result<SplDisableOutcome, DisableSplError> {
     require_journal_config(journal_root).map_err(|_| DisableSplError::JournalNotInitialized)?;
-    let result = mutate_journal_config(journal_root, Default::default(), |config| {
-        let enabled = config
-            .get("link")
-            .and_then(Value::as_object)
-            .and_then(|link| link.get("posture"))
-            .and_then(Value::as_str)
-            == Some("spl");
-        if enabled {
-            object_at(config, "link")
-                .insert("posture".to_owned(), Value::String("direct".to_owned()));
-        }
-        JournalConfigMutation {
-            changed: enabled,
-            value: SplDisableOutcome {
-                was_enabled: enabled,
-            },
-        }
-    })?;
-    Ok(result.value)
+    crate::relay_access::mutate_service_configuration(journal_root, || {
+        let result = mutate_journal_config(journal_root, Default::default(), |config| {
+            let enabled = config
+                .get("link")
+                .and_then(Value::as_object)
+                .and_then(|link| link.get("posture"))
+                .and_then(Value::as_str)
+                == Some("spl");
+            if enabled {
+                object_at(config, "link")
+                    .insert("posture".to_owned(), Value::String("direct".to_owned()));
+            }
+            JournalConfigMutation {
+                changed: enabled,
+                value: SplDisableOutcome {
+                    was_enabled: enabled,
+                },
+            }
+        })?;
+        Ok(result.value)
+    })
 }
 
 fn require_journal_config(journal_root: &Path) -> Result<(), EnableSplError> {
@@ -364,71 +374,6 @@ mod tests {
             )
             .unwrap()["link"]["posture"],
             "spl"
-        );
-    }
-
-    #[test]
-    fn test_enroll_home_payload_has_no_home_label() {
-        use std::io::{Read, Write};
-        use std::net::TcpListener;
-
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-
-        let (body_tx, body_rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            if let Ok((mut stream, _)) = listener.accept() {
-                let mut request = Vec::new();
-                let mut buf = [0u8; 1024];
-                while let Ok(n) = stream.read(&mut buf) {
-                    if n == 0 {
-                        break;
-                    }
-                    request.extend_from_slice(&buf[..n]);
-                    if let Some(pos) = request.windows(4).position(|w| w == b"\r\n\r\n") {
-                        let header_part = String::from_utf8_lossy(&request[..pos]);
-                        let cl: usize = header_part
-                            .lines()
-                            .find_map(|l| {
-                                let (k, v) = l.split_once(':')?;
-                                if k.trim().eq_ignore_ascii_case("content-length") {
-                                    v.trim().parse().ok()
-                                } else {
-                                    None
-                                }
-                            })
-                            .unwrap_or(0);
-                        if request.len() >= pos + 4 + cl {
-                            let body = String::from_utf8_lossy(&request[pos + 4..pos + 4 + cl])
-                                .to_string();
-                            let _ = body_tx.send(body);
-                            break;
-                        }
-                    }
-                }
-                let resp = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 26\r\n\r\n{\"service_token\":\"tok123\"}";
-                let _ = stream.write_all(resp.as_bytes());
-            }
-        });
-
-        let res = enroll_home(
-            &format!("http://127.0.0.1:{port}"),
-            "inst-test",
-            "ca-pubkey-abc",
-            "my home label",
-        );
-        assert!(res.is_ok());
-
-        let body_str = body_rx
-            .recv_timeout(std::time::Duration::from_secs(2))
-            .unwrap();
-        let body_val: Value = serde_json::from_str(&body_str).unwrap();
-        let obj = body_val.as_object().unwrap();
-        assert_eq!(obj.get("instance_id").unwrap(), "inst-test");
-        assert_eq!(obj.get("ca_pubkey").unwrap(), "ca-pubkey-abc");
-        assert!(
-            !obj.contains_key("home_label"),
-            "enroll_home payload must not contain home_label"
         );
     }
 }

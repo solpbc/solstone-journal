@@ -95,6 +95,7 @@ impl RelayAdmissionRegistry {
     }
 
     pub(crate) fn bump_service_epoch(&self) -> u64 {
+        let _door = lock_door(&self.door);
         self.service_epoch.fetch_add(1, Ordering::SeqCst) + 1
     }
 

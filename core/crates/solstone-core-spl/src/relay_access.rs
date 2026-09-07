@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::HashMap;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -185,6 +187,12 @@ pub fn validate_device_token(
         return Err(RelayAccessError::Unavailable("token exp <= iat".into()));
     }
 
+    if iat > now.saturating_add(60) {
+        return Err(RelayAccessError::Unavailable(
+            "token issued in the future".into(),
+        ));
+    }
+
     if exp <= now {
         return Err(RelayAccessError::Unavailable("token expired".into()));
     }
@@ -192,7 +200,7 @@ pub fn validate_device_token(
     // Check body_expires_at parses as RFC3339 and unix timestamp matches exp
     let parsed_dt = OffsetDateTime::parse(body_expires_at, &Rfc3339)
         .map_err(|e| RelayAccessError::Unavailable(format!("invalid expires_at format: {e}")))?;
-    if parsed_dt.unix_timestamp() != exp {
+    if parsed_dt.unix_timestamp() != exp || parsed_dt.nanosecond() != 0 {
         return Err(RelayAccessError::Unavailable(
             "body expires_at does not match token exp claim".into(),
         ));
@@ -209,8 +217,19 @@ pub fn fetch_relay_access(
     now: i64,
     timeout: Duration,
 ) -> Result<RelayAccessSnapshot, RelayAccessError> {
-    let agent = build_isolated_ureq_agent(timeout);
-    let url = format!("{}/token/access", relay_origin.trim_end_matches('/'));
+    let started = Instant::now();
+    let agent = build_isolated_ureq_agent(timeout.min(Duration::from_secs(15)));
+    // Reuse the maintained origin policy, including local transport fixtures.
+    let window_url = crate::pair_window_client::pair_window_registration_url(relay_origin)
+        .map_err(|_| RelayAccessError::Unavailable("invalid relay origin".into()))?;
+    let base = window_url
+        .strip_suffix("/session/pair-window")
+        .ok_or_else(|| RelayAccessError::Unavailable("invalid relay origin".into()))?;
+    let url = format!(
+        "{}/token/access",
+        base.replacen("wss://", "https://", 1)
+            .replacen("ws://", "http://", 1)
+    );
 
     let request_body = serde_json::to_string(&serde_json::json!({
         "service_token": service_token
@@ -294,7 +313,7 @@ pub fn fetch_relay_access(
         current_instance_id,
         expected_issuer,
         &expires_at,
-        now,
+        now.saturating_add(started.elapsed().as_secs() as i64),
     )?;
 
     Ok(RelayAccessSnapshot {
@@ -314,12 +333,6 @@ pub struct CacheIdentity {
     pub token_fingerprint: [u8; 32],
 }
 
-struct CacheEntry {
-    snapshot: RelayAccessSnapshot,
-    exp_unix: i64,
-    identity: CacheIdentity,
-}
-
 pub enum ResolvedServiceState {
     NotConfigured,
     Invalid(String),
@@ -334,7 +347,7 @@ pub enum ResolvedServiceState {
 pub fn resolve_journal_relay_state(journal_root: &Path) -> ResolvedServiceState {
     let config_read = match solstone_core_journal_config::read_journal_config(journal_root) {
         Ok(read) => read,
-        Err(_) => return ResolvedServiceState::NotConfigured,
+        Err(_) => return ResolvedServiceState::Invalid("invalid journal configuration".into()),
     };
     let config_map = match config_read.config {
         Some(map) => map,
@@ -388,10 +401,81 @@ pub fn resolve_journal_relay_state(journal_root: &Path) -> ResolvedServiceState 
     }
 }
 
+// One ordering boundary per journal, shared by service writers, capability
+// publication and protected pairing commitment. Network I/O never holds it.
+fn configuration_boundary(root: &Path) -> Arc<Mutex<u64>> {
+    static BOUNDARIES: OnceLock<Mutex<HashMap<PathBuf, Arc<Mutex<u64>>>>> = OnceLock::new();
+    let key = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    BOUNDARIES
+        .get_or_init(Default::default)
+        .lock()
+        .expect("configuration registry")
+        .entry(key)
+        .or_default()
+        .clone()
+}
+
+pub(crate) fn mutate_service_configuration<T>(root: &Path, operation: impl FnOnce() -> T) -> T {
+    let boundary = configuration_boundary(root);
+    let mut generation = boundary.lock().expect("service configuration");
+    // Invalidate even a partially failed write, and distinguish disable/re-enable.
+    *generation = generation.wrapping_add(1);
+    operation()
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct ServiceConfigurationVersion {
+    generation: u64,
+    identity: CacheIdentity,
+}
+
+fn version_unlocked(
+    root: &Path,
+    generation: u64,
+) -> Result<ServiceConfigurationVersion, RelayAccessError> {
+    match resolve_journal_relay_state(root) {
+        ResolvedServiceState::Configured { identity, .. } => Ok(ServiceConfigurationVersion {
+            generation,
+            identity,
+        }),
+        ResolvedServiceState::NotConfigured => Err(RelayAccessError::NotConfigured),
+        ResolvedServiceState::Invalid(message) => Err(RelayAccessError::Unavailable(message)),
+    }
+}
+
+pub fn current_service_configuration(
+    root: &Path,
+) -> Result<ServiceConfigurationVersion, RelayAccessError> {
+    let boundary = configuration_boundary(root);
+    let generation = boundary.lock().expect("service configuration");
+    version_unlocked(root, *generation)
+}
+
+pub fn while_service_configuration_current<T>(
+    root: &Path,
+    expected: &ServiceConfigurationVersion,
+    operation: impl FnOnce() -> T,
+) -> Option<T> {
+    let boundary = configuration_boundary(root);
+    let generation = boundary.lock().expect("service configuration");
+    (version_unlocked(root, *generation).as_ref().ok() == Some(expected)).then(operation)
+}
+
+#[derive(Clone)]
+pub struct CurrentRelayAccess {
+    pub snapshot: RelayAccessSnapshot,
+    pub configuration: ServiceConfigurationVersion,
+}
+
+struct CacheEntry {
+    access: CurrentRelayAccess,
+    exp_unix: i64,
+}
+
 struct InFlightChannel {
     attempt_id: u64,
-    _tx: tokio::sync::watch::Sender<Option<Result<RelayAccessSnapshot, RelayAccessError>>>,
-    rx: tokio::sync::watch::Receiver<Option<Result<RelayAccessSnapshot, RelayAccessError>>>,
+    configuration: ServiceConfigurationVersion,
+    rx: tokio::sync::watch::Receiver<Option<Result<CurrentRelayAccess, RelayAccessError>>>,
 }
 
 struct CacheState {
@@ -401,15 +485,25 @@ struct CacheState {
 
 #[derive(Clone)]
 pub struct RelayAccessCache {
-    inner: std::sync::Arc<RelayAccessCacheInner>,
+    inner: Arc<RelayAccessCacheInner>,
 }
 
 struct RelayAccessCacheInner {
     epoch: AtomicU64,
     next_attempt_id: AtomicU64,
-    state: std::sync::Mutex<CacheState>,
+    state: Mutex<CacheState>,
     expected_issuer: String,
     request_timeout: Duration,
+}
+
+fn unavailable_change() -> RelayAccessError {
+    RelayAccessError::Unavailable("relay service configuration changed".into())
+}
+
+fn expires(snapshot: &RelayAccessSnapshot) -> Option<i64> {
+    OffsetDateTime::parse(&snapshot.expires_at, &Rfc3339)
+        .ok()
+        .map(|dt| dt.unix_timestamp())
 }
 
 impl RelayAccessCache {
@@ -419,15 +513,15 @@ impl RelayAccessCache {
 
     pub fn with_options(expected_issuer: &str, request_timeout: Duration) -> Self {
         Self {
-            inner: std::sync::Arc::new(RelayAccessCacheInner {
+            inner: Arc::new(RelayAccessCacheInner {
                 epoch: AtomicU64::new(0),
                 next_attempt_id: AtomicU64::new(0),
-                state: std::sync::Mutex::new(CacheState {
+                state: Mutex::new(CacheState {
                     entry: None,
                     in_flight: None,
                 }),
                 expected_issuer: expected_issuer.to_owned(),
-                request_timeout,
+                request_timeout: request_timeout.min(Duration::from_secs(15)),
             }),
         }
     }
@@ -437,663 +531,193 @@ impl RelayAccessCache {
     }
 
     pub fn bump_epoch(&self) -> u64 {
-        let new_epoch = self.inner.epoch.fetch_add(1, Ordering::SeqCst) + 1;
-        let mut lock = self.inner.state.lock().expect("lock not poisoned");
-        lock.entry = None;
-        lock.in_flight = None;
-        new_epoch
+        let mut state = self.inner.state.lock().expect("cache state");
+        let epoch = self.inner.epoch.fetch_add(1, Ordering::SeqCst) + 1;
+        state.entry = None;
+        state.in_flight = None;
+        epoch
     }
 
-    pub fn try_current(&self, journal_root: &Path, now: i64) -> Option<RelayAccessSnapshot> {
-        let resolved = resolve_journal_relay_state(journal_root);
-        let ResolvedServiceState::Configured { identity, .. } = resolved else {
-            return None;
-        };
-        let mut lock = self.inner.state.lock().expect("lock not poisoned");
-        if let Some(entry) = &lock.entry {
-            if entry.exp_unix > now && entry.identity == identity {
-                return Some(entry.snapshot.clone());
+    pub fn try_current(&self, root: &Path, now: i64) -> Option<RelayAccessSnapshot> {
+        let boundary = configuration_boundary(root);
+        let generation = boundary.lock().expect("service configuration");
+        let configuration = version_unlocked(root, *generation).ok()?;
+        let mut state = self.inner.state.lock().expect("cache state");
+        if let Some(entry) = &state.entry {
+            if entry.exp_unix > now && entry.access.configuration == configuration {
+                return Some(entry.access.snapshot.clone());
             }
-            lock.entry = None;
+            state.entry = None;
         }
         None
     }
 
     pub async fn acquire(
         &self,
-        journal_root: &Path,
+        root: &Path,
         now: i64,
     ) -> Result<RelayAccessSnapshot, RelayAccessError> {
-        let resolved = resolve_journal_relay_state(journal_root);
-        let (instance_id, relay_origin, service_token, identity) = match resolved {
-            ResolvedServiceState::NotConfigured => return Err(RelayAccessError::NotConfigured),
-            ResolvedServiceState::Invalid(msg) => return Err(RelayAccessError::Unavailable(msg)),
-            ResolvedServiceState::Configured {
-                instance_id,
-                relay_origin,
-                service_token,
+        self.acquire_current(root, now)
+            .await
+            .map(|access| access.snapshot)
+    }
+
+    pub async fn acquire_current(
+        &self,
+        root: &Path,
+        now: i64,
+    ) -> Result<CurrentRelayAccess, RelayAccessError> {
+        let started = Instant::now();
+        let (mut rx, attempt_id, epoch, configuration) = {
+            let boundary = configuration_boundary(root);
+            let generation = boundary.lock().expect("service configuration");
+            let (instance_id, relay_origin, service_token, identity) =
+                match resolve_journal_relay_state(root) {
+                    ResolvedServiceState::NotConfigured => {
+                        return Err(RelayAccessError::NotConfigured);
+                    }
+                    ResolvedServiceState::Invalid(message) => {
+                        return Err(RelayAccessError::Unavailable(message));
+                    }
+                    ResolvedServiceState::Configured {
+                        instance_id,
+                        relay_origin,
+                        service_token,
+                        identity,
+                    } => (instance_id, relay_origin, service_token, identity),
+                };
+            let configuration = ServiceConfigurationVersion {
+                generation: *generation,
                 identity,
-            } => (instance_id, relay_origin, service_token, identity),
-        };
-
-        let (mut rx, attempt_id) = {
-            let mut lock = self.inner.state.lock().expect("lock not poisoned");
-            if let Some(entry) = &lock.entry {
-                if entry.exp_unix > now && entry.identity == identity {
-                    return Ok(entry.snapshot.clone());
+            };
+            let mut state = self.inner.state.lock().expect("cache state");
+            if let Some(entry) = &state.entry {
+                if entry.exp_unix > now && entry.access.configuration == configuration {
+                    return Ok(entry.access.clone());
                 }
-                lock.entry = None;
+                state.entry = None;
             }
-
-            let cur_epoch = self.inner.epoch.load(Ordering::SeqCst);
-            if let Some(ref in_flight) = lock.in_flight {
-                (in_flight.rx.clone(), in_flight.attempt_id)
+            let epoch = self.epoch();
+            if let Some(in_flight) = &state.in_flight
+                && in_flight.configuration == configuration
+            {
+                (
+                    in_flight.rx.clone(),
+                    in_flight.attempt_id,
+                    epoch,
+                    configuration,
+                )
             } else {
                 let attempt_id = self.inner.next_attempt_id.fetch_add(1, Ordering::SeqCst) + 1;
                 let (tx, rx) = tokio::sync::watch::channel(None);
-                lock.in_flight = Some(InFlightChannel {
+                state.in_flight = Some(InFlightChannel {
                     attempt_id,
-                    _tx: tx.clone(),
+                    configuration: configuration.clone(),
                     rx: rx.clone(),
                 });
-
-                let inner = std::sync::Arc::clone(&self.inner);
+                let inner = self.inner.clone();
                 let expected_issuer = self.inner.expected_issuer.clone();
                 let timeout = self.inner.request_timeout;
-                let origin = relay_origin.clone();
-                let tok = service_token.clone();
-                let i_id = instance_id.clone();
-                let id_copy = identity.clone();
-
+                let version = configuration.clone();
+                let root = root.to_path_buf();
                 tokio::spawn(async move {
                     let result = tokio::task::spawn_blocking(move || {
-                        fetch_relay_access(&origin, &tok, &i_id, &expected_issuer, now, timeout)
+                        fetch_relay_access(
+                            &relay_origin,
+                            &service_token,
+                            &instance_id,
+                            &expected_issuer,
+                            now,
+                            timeout,
+                        )
                     })
                     .await;
-                    let result = match result {
-                        Ok(res) => res,
-                        Err(e) => Err(RelayAccessError::Unavailable(format!(
-                            "task join error: {e}"
-                        ))),
+                    let mut result = match result {
+                        Ok(result) => result.map(|snapshot| CurrentRelayAccess {
+                            snapshot,
+                            configuration: version.clone(),
+                        }),
+                        Err(_) => Err(RelayAccessError::Unavailable(
+                            "relay access worker failed".into(),
+                        )),
                     };
-
                     {
-                        let mut lock = inner.state.lock().expect("lock not poisoned");
-                        let slot_matches = lock
+                        let boundary = configuration_boundary(&root);
+                        let generation = boundary.lock().expect("service configuration");
+                        let current = version_unlocked(&root, *generation);
+                        let mut state = inner.state.lock().expect("cache state");
+                        let owns_slot = state
                             .in_flight
                             .as_ref()
-                            .is_some_and(|inf| inf.attempt_id == attempt_id);
-                        let epoch_matches = inner.epoch.load(Ordering::SeqCst) == cur_epoch;
-
-                        if slot_matches && epoch_matches {
-                            if let Ok(ref snapshot) = result
-                                && let Ok(dt) =
-                                    OffsetDateTime::parse(&snapshot.expires_at, &Rfc3339)
+                            .is_some_and(|flight| flight.attempt_id == attempt_id);
+                        let is_current = inner.epoch.load(Ordering::SeqCst) == epoch
+                            && current.as_ref().ok() == Some(&version);
+                        if !owns_slot || !is_current {
+                            result = Err(unavailable_change());
+                        }
+                        if owns_slot {
+                            if let Ok(access) = &result
+                                && let Some(exp_unix) = expires(&access.snapshot)
                             {
-                                lock.entry = Some(CacheEntry {
-                                    snapshot: snapshot.clone(),
-                                    exp_unix: dt.unix_timestamp(),
-                                    identity: id_copy,
+                                state.entry = Some(CacheEntry {
+                                    access: access.clone(),
+                                    exp_unix,
                                 });
                             }
-                            lock.in_flight = None;
+                            state.in_flight = None;
                         }
                     }
-
                     let _ = tx.send(Some(result));
                 });
-
-                (rx, attempt_id)
+                (rx, attempt_id, epoch, configuration)
             }
         };
-
-        let wait_result = tokio::time::timeout(self.inner.request_timeout, async {
+        let result = tokio::time::timeout(self.inner.request_timeout, async {
             loop {
-                if rx.changed().await.is_err() {
-                    return Err(RelayAccessError::Unavailable(
-                        "in-flight fetch dropped".into(),
-                    ));
+                // A coalescing subscriber may join after a result has arrived.
+                if let Some(result) = rx.borrow_and_update().clone() {
+                    return result;
                 }
-                if let Some(res) = rx.borrow().clone() {
-                    return res;
-                }
+                rx.changed().await.map_err(|_| {
+                    RelayAccessError::Unavailable("relay access worker dropped".into())
+                })?;
             }
         })
         .await;
-
-        match wait_result {
-            Ok(res) => res,
+        let result = match result {
+            Ok(result) => result,
             Err(_) => {
-                let mut lock = self.inner.state.lock().expect("lock not poisoned");
-                if let Some(ref in_flight) = lock.in_flight
-                    && in_flight.attempt_id == attempt_id
+                let mut state = self.inner.state.lock().expect("cache state");
+                if state
+                    .in_flight
+                    .as_ref()
+                    .is_some_and(|flight| flight.attempt_id == attempt_id)
                 {
-                    lock.in_flight = None;
+                    state.in_flight = None;
                 }
-                Err(RelayAccessError::Unavailable(
+                return Err(RelayAccessError::Unavailable(
                     "relay access request timed out".into(),
-                ))
+                ));
             }
+        };
+        let boundary = configuration_boundary(root);
+        let generation = boundary.lock().expect("service configuration");
+        let current = version_unlocked(root, *generation)?;
+        if current != configuration || self.epoch() != epoch {
+            return Err(unavailable_change());
         }
+        let access = result?;
+        if expires(&access.snapshot)
+            .is_none_or(|exp| exp <= now.saturating_add(started.elapsed().as_secs() as i64))
+        {
+            return Err(RelayAccessError::Unavailable("token expired".into()));
+        }
+        Ok(access)
     }
 }
 
 impl Default for RelayAccessCache {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-    use std::io::{Read, Write};
-    use std::net::TcpListener;
-    use std::path::PathBuf;
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    struct TempJournal(PathBuf);
-    impl TempJournal {
-        fn new() -> Self {
-            static NEXT: AtomicU64 = AtomicU64::new(0);
-            let path = std::env::temp_dir().join(format!(
-                "solstone-spl-relay-access-{}-{}",
-                std::process::id(),
-                NEXT.fetch_add(1, Ordering::Relaxed)
-            ));
-            let _ = std::fs::remove_dir_all(&path);
-            std::fs::create_dir_all(&path).unwrap();
-            Self(path)
-        }
-    }
-    impl Drop for TempJournal {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn create_test_jwt(
-        iss: &str,
-        sub: &str,
-        aud: &str,
-        scope: &str,
-        ver: i64,
-        instance_id: &str,
-        iat: i64,
-        exp: i64,
-        jti: &str,
-    ) -> String {
-        let header = "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0";
-        let payload = json!({
-            "iss": iss,
-            "sub": sub,
-            "aud": aud,
-            "scope": scope,
-            "ver": ver,
-            "instance_id": instance_id,
-            "iat": iat,
-            "exp": exp,
-            "jti": jti,
-        });
-        let payload_str = serde_json::to_string(&payload).unwrap();
-        let payload_b64 = base64_url_encode(payload_str.as_bytes());
-        format!("{header}.{payload_b64}.signature")
-    }
-
-    fn base64_url_encode(bytes: &[u8]) -> String {
-        const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-        let mut out = String::new();
-        for chunk in bytes.chunks(3) {
-            let mut b = (chunk[0] as u32) << 16;
-            if chunk.len() > 1 {
-                b |= (chunk[1] as u32) << 8;
-            }
-            if chunk.len() > 2 {
-                b |= chunk[2] as u32;
-            }
-            out.push(CHARS[((b >> 18) & 0x3F) as usize] as char);
-            out.push(CHARS[((b >> 12) & 0x3F) as usize] as char);
-            if chunk.len() > 1 {
-                out.push(CHARS[((b >> 6) & 0x3F) as usize] as char);
-            }
-            if chunk.len() > 2 {
-                out.push(CHARS[(b & 0x3F) as usize] as char);
-            }
-        }
-        out
-    }
-
-    #[test]
-    fn test_jwt_validation_strict() {
-        let now = 1000;
-        let exp = 2000;
-        let exp_rfc3339 = "1970-01-01T00:33:20Z";
-        let inst = "inst-abc";
-        let iss = "my-issuer";
-
-        let valid_token = create_test_jwt(
-            iss,
-            &format!("instance:{inst}"),
-            "spl-relay",
-            "session.dial",
-            2,
-            inst,
-            500,
-            exp,
-            "jti-1",
-        );
-
-        let validated_exp =
-            validate_device_token(&valid_token, inst, iss, exp_rfc3339, now).unwrap();
-        assert_eq!(validated_exp, exp);
-
-        // Mismatched issuer
-        assert!(validate_device_token(&valid_token, inst, "other-iss", exp_rfc3339, now).is_err());
-
-        // Mismatched instance_id
-        assert!(validate_device_token(&valid_token, "other-inst", iss, exp_rfc3339, now).is_err());
-
-        // Wrong sub format
-        let bad_sub = create_test_jwt(
-            iss,
-            "user:123",
-            "spl-relay",
-            "session.dial",
-            2,
-            inst,
-            500,
-            exp,
-            "jti-1",
-        );
-        assert!(validate_device_token(&bad_sub, inst, iss, exp_rfc3339, now).is_err());
-
-        // Wrong aud
-        let bad_aud = create_test_jwt(
-            iss,
-            &format!("instance:{inst}"),
-            "wrong-aud",
-            "session.dial",
-            2,
-            inst,
-            500,
-            exp,
-            "jti-1",
-        );
-        assert!(validate_device_token(&bad_aud, inst, iss, exp_rfc3339, now).is_err());
-
-        // Wrong scope
-        let bad_scope = create_test_jwt(
-            iss,
-            &format!("instance:{inst}"),
-            "spl-relay",
-            "session.admin",
-            2,
-            inst,
-            500,
-            exp,
-            "jti-1",
-        );
-        assert!(validate_device_token(&bad_scope, inst, iss, exp_rfc3339, now).is_err());
-
-        // Empty jti
-        let empty_jti = create_test_jwt(
-            iss,
-            &format!("instance:{inst}"),
-            "spl-relay",
-            "session.dial",
-            2,
-            inst,
-            500,
-            exp,
-            "",
-        );
-        assert!(validate_device_token(&empty_jti, inst, iss, exp_rfc3339, now).is_err());
-
-        // Expired (exp <= now)
-        assert!(validate_device_token(&valid_token, inst, iss, exp_rfc3339, 3000).is_err());
-
-        // exp <= iat
-        let exp_le_iat = create_test_jwt(
-            iss,
-            &format!("instance:{inst}"),
-            "spl-relay",
-            "session.dial",
-            2,
-            inst,
-            2500,
-            2000,
-            "jti-1",
-        );
-        assert!(validate_device_token(&exp_le_iat, inst, iss, exp_rfc3339, now).is_err());
-
-        // Wrong ver
-        let bad_ver_token = create_test_jwt(
-            iss,
-            &format!("instance:{inst}"),
-            "spl-relay",
-            "session.dial",
-            1,
-            inst,
-            500,
-            exp,
-            "jti-1",
-        );
-        assert!(validate_device_token(&bad_ver_token, inst, iss, exp_rfc3339, now).is_err());
-
-        // Extra key rejected
-        let header = "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0";
-        let payload_extra = json!({
-            "iss": iss,
-            "sub": format!("instance:{inst}"),
-            "aud": "spl-relay",
-            "scope": "session.dial",
-            "ver": 2,
-            "instance_id": inst,
-            "iat": 500,
-            "exp": exp,
-            "jti": "jti-1",
-            "extra": "bad",
-        });
-        let payload_b64 =
-            base64_url_encode(serde_json::to_string(&payload_extra).unwrap().as_bytes());
-        let bad_key_token = format!("{header}.{payload_b64}.sig");
-        assert!(validate_device_token(&bad_key_token, inst, iss, exp_rfc3339, now).is_err());
-
-        // Non-integer iat / exp
-        let payload_str_iat = json!({
-            "iss": iss,
-            "sub": format!("instance:{inst}"),
-            "aud": "spl-relay",
-            "scope": "session.dial",
-            "ver": 2,
-            "instance_id": inst,
-            "iat": "500",
-            "exp": exp,
-            "jti": "jti-1",
-        });
-        let bad_iat_token = format!(
-            "{header}.{}.sig",
-            base64_url_encode(serde_json::to_string(&payload_str_iat).unwrap().as_bytes())
-        );
-        assert!(validate_device_token(&bad_iat_token, inst, iss, exp_rfc3339, now).is_err());
-
-        // RFC3339 mismatch
-        assert!(
-            validate_device_token(&valid_token, inst, iss, "1970-01-01T00:33:21Z", now).is_err()
-        );
-    }
-
-    #[test]
-    fn test_fetch_relay_access_refuses_oversized_request_body() {
-        let oversized_token = "a".repeat(17000);
-        let err = fetch_relay_access(
-            "http://127.0.0.1:1",
-            &oversized_token,
-            "inst-1",
-            DEFAULT_RELAY_ISSUER,
-            0,
-            Duration::from_millis(100),
-        )
-        .unwrap_err();
-        assert!(matches!(err, RelayAccessError::Unavailable(_)));
-    }
-
-    #[test]
-    fn test_redirect_location_never_followed() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-
-        std::thread::spawn(move || {
-            if let Ok((mut stream, _)) = listener.accept() {
-                let response = "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:9999/leak\r\nContent-Length: 0\r\n\r\n";
-                let _ = stream.write_all(response.as_bytes());
-            }
-        });
-
-        let err = fetch_relay_access(
-            &format!("http://127.0.0.1:{port}"),
-            "tok-1",
-            "inst-1",
-            DEFAULT_RELAY_ISSUER,
-            0,
-            Duration::from_millis(500),
-        )
-        .unwrap_err();
-        assert!(matches!(err, RelayAccessError::Unavailable(_)));
-    }
-
-    fn setup_test_journal(
-        journal_root: &std::path::Path,
-        instance_id: &str,
-        service_token: &str,
-        relay_origin: &str,
-    ) {
-        std::fs::create_dir_all(journal_root.join("config")).unwrap();
-        std::fs::create_dir_all(journal_root.join("link/tokens")).unwrap();
-
-        std::fs::write(
-            journal_root.join("config/journal.json"),
-            json!({
-                "link": {
-                    "posture": "spl",
-                    "relay_url": relay_origin,
-                }
-            })
-            .to_string(),
-        )
-        .unwrap();
-
-        std::fs::write(
-            journal_root.join("link/tokens/account.json"),
-            json!({
-                "service_token": service_token,
-            })
-            .to_string(),
-        )
-        .unwrap();
-
-        std::fs::write(
-            journal_root.join("link/state.json"),
-            json!({
-                "instance_id": instance_id,
-                "home_label": "test-home",
-            })
-            .to_string(),
-        )
-        .unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_stalling_listener_timeout_and_late_overtake() {
-        let stall_listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let stall_port = stall_listener.local_addr().unwrap().port();
-
-        let (stall_tx, stall_rx) = tokio::sync::oneshot::channel();
-        let (finish_tx, finish_rx) = std::sync::mpsc::channel();
-
-        std::thread::spawn(move || {
-            if let Ok((mut stream, _)) = stall_listener.accept() {
-                let mut buf = [0u8; 1024];
-                let _ = stream.read(&mut buf);
-                let _ = stall_tx.send(());
-                let _ = finish_rx.recv_timeout(Duration::from_secs(2));
-                let exp = 2000;
-                let exp_rfc3339 = "1970-01-01T00:33:20Z";
-                let token_a = create_test_jwt(
-                    DEFAULT_RELAY_ISSUER,
-                    "instance:inst-test",
-                    "spl-relay",
-                    "session.dial",
-                    2,
-                    "inst-test",
-                    500,
-                    exp,
-                    "jti-a",
-                );
-                let body = json!({
-                    "protocol_version": 2,
-                    "device_token": token_a,
-                    "expires_at": exp_rfc3339,
-                })
-                .to_string();
-                let response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                    body.len(),
-                    body
-                );
-                let _ = stream.write_all(response.as_bytes());
-            }
-        });
-
-        let journal = TempJournal::new();
-        let journal_root = &journal.0;
-        setup_test_journal(
-            journal_root,
-            "inst-test",
-            "token-xyz",
-            &format!("http://127.0.0.1:{stall_port}"),
-        );
-
-        let cache = RelayAccessCache::with_options(DEFAULT_RELAY_ISSUER, Duration::from_millis(50));
-
-        // Caller 1 starts acquire and times out after 50ms
-        let res1 = cache.acquire(journal_root, 1000).await;
-        assert!(res1.is_err(), "caller 1 should time out");
-        tokio::time::timeout(Duration::from_secs(2), stall_rx)
-            .await
-            .expect("not timed out")
-            .expect("stall listener got connection");
-
-        // Setup fast server B
-        let fast_listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let fast_port = fast_listener.local_addr().unwrap().port();
-        std::thread::spawn(move || {
-            if let Ok((mut stream, _)) = fast_listener.accept() {
-                let mut buf = [0u8; 1024];
-                let _ = stream.read(&mut buf);
-                let exp = 3000;
-                let exp_rfc3339 = "1970-01-01T00:50:00Z";
-                let token_b = create_test_jwt(
-                    DEFAULT_RELAY_ISSUER,
-                    "instance:inst-test",
-                    "spl-relay",
-                    "session.dial",
-                    2,
-                    "inst-test",
-                    500,
-                    exp,
-                    "jti-b",
-                );
-                let body = json!({
-                    "protocol_version": 2,
-                    "device_token": token_b,
-                    "expires_at": exp_rfc3339,
-                })
-                .to_string();
-                let response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                    body.len(),
-                    body
-                );
-                let _ = stream.write_all(response.as_bytes());
-            }
-        });
-
-        // Update config to point to fast server B
-        std::fs::write(
-            journal_root.join("config/journal.json"),
-            json!({
-                "link": {
-                    "posture": "spl",
-                    "relay_url": format!("http://127.0.0.1:{fast_port}"),
-                }
-            })
-            .to_string(),
-        )
-        .unwrap();
-
-        // Caller 2 starts acquire with successor attempt and succeeds
-        let res2 = cache.acquire(journal_root, 1000).await.unwrap();
-        assert_eq!(res2.expires_at, "1970-01-01T00:50:00Z");
-
-        // Now let stalling worker A finish
-        let _ = finish_tx.send(());
-        tokio::time::sleep(Duration::from_millis(50)).await;
-
-        // Current cache entry must still be snapshot B
-        let current = cache.try_current(journal_root, 1000).unwrap();
-        assert_eq!(current.expires_at, "1970-01-01T00:50:00Z");
-    }
-
-    #[tokio::test]
-    async fn test_epoch_bump_rejects_late_post() {
-        let stall_listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let stall_port = stall_listener.local_addr().unwrap().port();
-
-        let (stall_tx, stall_rx) = tokio::sync::oneshot::channel();
-        let (finish_tx, finish_rx) = std::sync::mpsc::channel();
-
-        std::thread::spawn(move || {
-            if let Ok((mut stream, _)) = stall_listener.accept() {
-                let mut buf = [0u8; 1024];
-                let _ = stream.read(&mut buf);
-                let _ = stall_tx.send(());
-                let _ = finish_rx.recv_timeout(Duration::from_secs(2));
-                let exp = 2000;
-                let exp_rfc3339 = "1970-01-01T00:33:20Z";
-                let token_a = create_test_jwt(
-                    DEFAULT_RELAY_ISSUER,
-                    "instance:inst-test",
-                    "spl-relay",
-                    "session.dial",
-                    2,
-                    "inst-test",
-                    500,
-                    exp,
-                    "jti-a",
-                );
-                let body = json!({
-                    "protocol_version": 2,
-                    "device_token": token_a,
-                    "expires_at": exp_rfc3339,
-                })
-                .to_string();
-                let response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                    body.len(),
-                    body
-                );
-                let _ = stream.write_all(response.as_bytes());
-            }
-        });
-
-        let journal = TempJournal::new();
-        let journal_root = &journal.0;
-        setup_test_journal(
-            journal_root,
-            "inst-test",
-            "token-xyz",
-            &format!("http://127.0.0.1:{stall_port}"),
-        );
-
-        let cache = RelayAccessCache::with_options(DEFAULT_RELAY_ISSUER, Duration::from_millis(50));
-
-        let cache_clone = cache.clone();
-        let root_clone = journal_root.to_path_buf();
-        let handle = tokio::spawn(async move { cache_clone.acquire(&root_clone, 1000).await });
-
-        tokio::time::timeout(Duration::from_secs(2), stall_rx)
-            .await
-            .expect("not timed out")
-            .expect("stall listener got connection");
-        cache.bump_epoch();
-
-        let _ = finish_tx.send(());
-        let _ = handle.await;
-
-        tokio::time::sleep(Duration::from_millis(50)).await;
-        assert!(cache.try_current(journal_root, 1000).is_none());
     }
 }

@@ -55,7 +55,21 @@ pub(crate) async fn get_relay_access(
     };
 
     let cache = pair_windows.relay_access();
-    let result = cache.acquire(&root.0, now()).await;
+    let is_authorized =
+        || match read_authorized_clients(&root.0.join("link/authorized_clients.json")) {
+            AuthorizedClientsRead::Present(entries) => entries
+                .iter()
+                .any(|entry| entry.fingerprint == cid.as_str()),
+            _ => false,
+        };
+    if !is_authorized() {
+        return crate::network::refusal(
+            "relay_access_forbidden",
+            "linked device revoked or unlisted",
+            StatusCode::FORBIDDEN,
+        );
+    }
+    let result = cache.acquire_current(&root.0, now()).await;
 
     // Post-acquire authorization re-check: verify client has not been revoked
     let is_authorized = match read_authorized_clients(&root.0.join("link/authorized_clients.json"))
@@ -75,13 +89,24 @@ pub(crate) async fn get_relay_access(
     }
 
     match result {
-        Ok(snapshot) => Json(snapshot).into_response(),
+        Ok(access) => solstone_core_spl::relay_access::while_service_configuration_current(
+            &root.0,
+            &access.configuration,
+            || Json(access.snapshot).into_response(),
+        )
+        .unwrap_or_else(|| {
+            crate::network::refusal(
+                "relay_access_unavailable",
+                "relay service configuration changed",
+                StatusCode::SERVICE_UNAVAILABLE,
+            )
+        }),
         Err(RelayAccessError::NotConfigured) => {
             Json(json!({ "protocol_version": 2, "status": "not_configured" })).into_response()
         }
-        Err(RelayAccessError::Unavailable(msg)) => crate::network::refusal(
+        Err(RelayAccessError::Unavailable(_)) => crate::network::refusal(
             "relay_access_unavailable",
-            &msg,
+            "relay access is unavailable",
             StatusCode::SERVICE_UNAVAILABLE,
         ),
     }

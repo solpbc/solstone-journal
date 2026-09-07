@@ -586,24 +586,46 @@ pub(crate) async fn pair(
             return pairing_refusal(PairingError::RelayPairingUnavailable);
         };
 
+        #[cfg(test)]
+        pw.run_pair_commit_hook(false);
         let ceremony_now = now();
-        let pair_outcome = pw.relay_admissions().while_current(
-            relay_entry.door,
-            relay_entry.service_epoch,
+        let pair_outcome = solstone_core_spl::relay_access::while_service_configuration_current(
+            &root.0,
+            &relay_entry.configuration,
             || {
-                complete_pairing(
-                    &root.0,
-                    CeremonyRequest {
-                        request: &request,
-                        nonce,
-                        sender_instance_id,
-                        relay_access: Some(relay_entry.snapshot.clone()),
-                        local_endpoints: response_local_endpoints(&snapshot, direct_port),
+                pw.relay_admissions().while_current(
+                    relay_entry.door,
+                    relay_entry.service_epoch,
+                    || {
+                        #[cfg(test)]
+                        pw.run_pair_commit_hook(true);
+                        let ceremony_now = now();
+                        let expires = time::OffsetDateTime::parse(
+                            &relay_entry.snapshot.expires_at,
+                            &time::format_description::well_known::Rfc3339,
+                        )
+                        .ok();
+                        if expires.is_none_or(|expiry| {
+                            expiry.unix_timestamp() <= ceremony_now.saturating_add(60)
+                        }) {
+                            return Err(PairingError::RelayPairingUnavailable);
+                        }
+                        complete_pairing(
+                            &root.0,
+                            CeremonyRequest {
+                                request: &request,
+                                nonce,
+                                sender_instance_id,
+                                relay_access: Some(relay_entry.snapshot.clone()),
+                                local_endpoints: response_local_endpoints(&snapshot, direct_port),
+                            },
+                            ceremony_now,
+                        )
                     },
-                    ceremony_now,
                 )
             },
-        );
+        )
+        .flatten();
 
         let response = match pair_outcome {
             Some(Ok(resp)) => resp,
@@ -621,10 +643,6 @@ pub(crate) async fn pair(
             Err(error) => pairing_refusal(error),
         }
     } else {
-        let relay_access = pair_windows
-            .as_ref()
-            .and_then(|Extension(pw)| pw.relay_access().try_current(&root.0, now()));
-
         let ceremony_now = now();
         match complete_pairing(
             &root.0,
@@ -632,15 +650,18 @@ pub(crate) async fn pair(
                 request: &request,
                 nonce,
                 sender_instance_id,
-                relay_access: relay_access.clone(),
+                relay_access: None,
                 local_endpoints: response_local_endpoints(&snapshot, direct_port),
             },
             ceremony_now,
         ) {
             Ok(response) => {
-                if let Some(Extension(pair_windows)) = pair_windows {
+                if let Some(Extension(pair_windows)) = pair_windows.as_ref() {
                     let _ = pair_windows.retire(&root.0, nonce, ceremony_now).await;
                 }
+                let relay_access = pair_windows
+                    .as_ref()
+                    .and_then(|Extension(pw)| pw.relay_access().try_current(&root.0, now()));
                 match pair_response_json(&response, relay_access.as_ref()) {
                     Ok(value) => {
                         emit_pair_complete(&root.0, &response.fingerprint);

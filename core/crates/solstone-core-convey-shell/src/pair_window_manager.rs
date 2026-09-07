@@ -17,7 +17,9 @@ use solstone_core_sol_link::pairing::{
     MintRequest, MintResponse, PairingError, RelayAccessSnapshot, commit_relay_pairing,
     mint_relay_pairing_draft,
 };
-use solstone_core_spl::relay_access::RelayAccessCache;
+use solstone_core_spl::relay_access::{
+    RelayAccessCache, ServiceConfigurationVersion, while_service_configuration_current,
+};
 use solstone_core_spl::{
     LinkServiceTokenRead, PairWindowClientError, PairWindowRegistration, PairWindowSecret,
     RelayPairKey, ServiceToken, attach_pair_window_tunnel, bridge_pair_window_tunnel,
@@ -32,6 +34,7 @@ pub(crate) struct RelayWindowEntry {
     pub(crate) snapshot: RelayAccessSnapshot,
     pub(crate) door: DoorAvailability,
     pub(crate) service_epoch: u64,
+    pub(crate) configuration: ServiceConfigurationVersion,
 }
 
 /// Process-local relay-window registrations, keyed by their local nonce value.
@@ -40,6 +43,8 @@ pub(crate) struct PairWindowManager {
     relay_admissions: Arc<RelayAdmissionRegistry>,
     relay_access: Arc<RelayAccessCache>,
     entries: Arc<Mutex<HashMap<String, RelayWindowEntry>>>,
+    #[cfg(test)]
+    pair_commit_hook: Mutex<Option<Arc<dyn Fn(bool) + Send + Sync>>>,
 }
 
 struct PairWindowTask {
@@ -64,6 +69,21 @@ impl PairWindowManager {
             relay_admissions,
             relay_access,
             entries: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(test)]
+            pair_commit_hook: Mutex::new(None),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_pair_commit_hook(&self, hook: Arc<dyn Fn(bool) + Send + Sync>) {
+        *self.pair_commit_hook.lock().expect("test hook") = Some(hook);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn run_pair_commit_hook(&self, inside: bool) {
+        let hook = self.pair_commit_hook.lock().expect("test hook").clone();
+        if let Some(hook) = hook {
+            hook(inside);
         }
     }
 
@@ -160,12 +180,14 @@ impl PairWindowManager {
         now: i64,
         door: DoorAvailability,
     ) -> Result<MintResponse, PairingError> {
+        let started = std::time::Instant::now();
         let service_epoch = self.relay_admissions.service_epoch();
-        let relay_access_snapshot = self
+        let access = self
             .relay_access
-            .acquire(journal_root, now)
+            .acquire_current(journal_root, now)
             .await
             .map_err(|_| PairingError::RelayPairingUnavailable)?;
+        let relay_access_snapshot = access.snapshot;
         let exp = match time::OffsetDateTime::parse(
             &relay_access_snapshot.expires_at,
             &time::format_description::well_known::Rfc3339,
@@ -173,13 +195,22 @@ impl PairWindowManager {
             Ok(dt) => dt.unix_timestamp(),
             Err(_) => return Err(PairingError::RelayPairingUnavailable),
         };
-        if exp <= now + solstone_core_sol_link::pairing::nonces::NONCE_TTL_SECONDS {
+        if exp
+            <= now.saturating_add(started.elapsed().as_secs() as i64)
+                + solstone_core_sol_link::pairing::nonces::NONCE_TTL_SECONDS
+                + 60
+        {
             return Err(PairingError::RelayPairingUnavailable);
         }
 
-        let relay_origin = relay_url(journal_root);
-        let service_token = service_token(journal_root)?;
-        let draft = mint_relay_pairing_draft(journal_root, request, &relay_origin)?;
+        let (relay_origin, service_token, draft) =
+            while_service_configuration_current(journal_root, &access.configuration, || {
+                let relay_origin = relay_url(journal_root);
+                let service_token = service_token(journal_root)?;
+                let draft = mint_relay_pairing_draft(journal_root, request, &relay_origin)?;
+                Ok((relay_origin, service_token, draft))
+            })
+            .ok_or(PairingError::RelayPairingUnavailable)??;
         let relay_secret = PairWindowSecret::from(draft.secret_bytes());
         let relay_key = relay_secret.relay_key();
         let registration = self
@@ -197,52 +228,61 @@ impl PairWindowManager {
             )
             .await?;
 
-        let nonce = match self
-            .relay_admissions
-            .while_current(door, service_epoch, || {
-                commit_relay_pairing(
-                    journal_root,
-                    draft.secret_hex(),
-                    draft.device_label(),
-                    draft.role(),
-                    now,
-                )
-            }) {
-            Some(Ok(nonce)) => nonce,
-            Some(Err(_)) => {
-                let _ = registration.close().await;
-                return Err(PairingError::RelayPairingNonceCommit);
-            }
-            None => {
-                let _ = registration.close().await;
-                return Err(PairingError::RelayPairingUnavailable);
-            }
-        };
-        let response = draft.response();
-        let nonce_value = draft.secret_hex().to_owned();
-        self.entries
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .insert(
-                nonce_value.clone(),
-                RelayWindowEntry {
-                    snapshot: relay_access_snapshot,
-                    door,
-                    service_epoch,
-                },
-            );
-        self.spawn_window(PairWindowTask {
-            journal_root: journal_root.to_path_buf(),
-            relay_origin,
-            service_token,
-            relay_key,
-            relay_admissions: Arc::clone(&self.relay_admissions),
-            door,
-            nonce_value,
-            expires_at: nonce.expires_at,
-            registration,
-        });
-        Ok(response)
+        let mut registration = Some(registration);
+        let outcome =
+            while_service_configuration_current(journal_root, &access.configuration, || {
+                self.relay_admissions
+                    .while_current(door, service_epoch, || {
+                        let commit_now = now.saturating_add(started.elapsed().as_secs() as i64);
+                        if exp
+                            <= commit_now
+                                + solstone_core_sol_link::pairing::nonces::NONCE_TTL_SECONDS
+                                + 60
+                        {
+                            return Err(PairingError::RelayPairingUnavailable);
+                        }
+                        let nonce = commit_relay_pairing(
+                            journal_root,
+                            draft.secret_hex(),
+                            draft.device_label(),
+                            draft.role(),
+                            commit_now,
+                        )
+                        .map_err(|_| PairingError::RelayPairingNonceCommit)?;
+                        let nonce_value = draft.secret_hex().to_owned();
+                        self.entries
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner())
+                            .insert(
+                                nonce_value.clone(),
+                                RelayWindowEntry {
+                                    snapshot: relay_access_snapshot,
+                                    door,
+                                    service_epoch,
+                                    configuration: access.configuration.clone(),
+                                },
+                            );
+                        self.spawn_window(PairWindowTask {
+                            journal_root: journal_root.to_path_buf(),
+                            relay_origin,
+                            service_token,
+                            relay_key,
+                            relay_admissions: Arc::clone(&self.relay_admissions),
+                            door,
+                            nonce_value,
+                            expires_at: nonce.expires_at,
+                            registration: registration
+                                .take()
+                                .expect("registration owned until publication"),
+                        });
+                        Ok(draft.response())
+                    })
+            })
+            .flatten();
+        if let Some(registration) = registration {
+            let _ = registration.close().await;
+        }
+        outcome.unwrap_or(Err(PairingError::RelayPairingUnavailable))
     }
 
     /// Cancel every registered window and remove only live relay nonce authority.
@@ -298,6 +338,7 @@ impl PairWindowManager {
 
     fn spawn_window(&self, task: PairWindowTask) {
         let windows = Arc::clone(&self.windows);
+        let entries = Arc::clone(&self.entries);
         let task_nonce = task.nonce_value.clone();
         let windows_key = task_nonce.clone();
         let (start, started) = oneshot::channel();
@@ -305,6 +346,10 @@ impl PairWindowManager {
             if started.await.is_ok() {
                 serve_window(task).await;
                 lock_windows(&windows).remove(&task_nonce);
+                entries
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .remove(&task_nonce);
             }
         });
         lock_windows(&self.windows).insert(windows_key, task);
