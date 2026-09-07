@@ -86,6 +86,26 @@
       shown.length < window.JournalFormat.timestamp(afternoon).length,
       `time "${shown}" vs stamp "${window.JournalFormat.timestamp(afternoon)}"`);
 
+    // JournalFormat.segmentTimeOfDay: the same segment prefix `segmentTime`
+    // reads, on the clock the rest of the page uses. G1-202.
+    assert('JournalFormat.segmentTimeOfDay is exported',
+      typeof window.JournalFormat.segmentTimeOfDay === 'function');
+    for (const bad of [null, undefined, '', 'not a segment', '246099_60', '2026-1000']) {
+      const actual = window.JournalFormat.segmentTimeOfDay(bad);
+      assert(`JournalFormat.segmentTimeOfDay(${JSON.stringify(bad)}) is unavailable`,
+        actual === 'time unavailable', `got "${actual}"`);
+      assert(`JournalFormat.segmentTime(${JSON.stringify(bad)}) agrees`,
+        window.JournalFormat.segmentTime(bad) === 'time unavailable');
+    }
+    const segment = window.JournalFormat.segmentTimeOfDay('200155_300');
+    assert('a segment prefix formats', segment !== 'time unavailable', `got "${segment}"`);
+    assert('the segment reads on the same clock as JournalFormat.time',
+      segment === window.JournalFormat.time(new Date(2000, 0, 1, 20, 1, 55).getTime()),
+      `got "${segment}"`);
+    assert('the segment time carries no seconds',
+      !/55/.test(segment) && window.JournalFormat.segmentTime('200155_300') === '20:01:55',
+      `got "${segment}"`);
+
     assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
   }
 

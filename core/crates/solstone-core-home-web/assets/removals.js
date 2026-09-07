@@ -24,6 +24,7 @@
     "bulk.clear": "clear selection",
     "bulk.selected_one": "1 selected",
     "bulk.selected_many": "{n} selected",
+    "bulk.selected_over_cap": "{n} selected. one action covers up to {max}.",
     "bulk.delete": "delete selected",
     "bulk.keep": "keep selected",
     "confirm.heading_one": "delete this original?",
@@ -139,10 +140,12 @@
   // The list is a deletion decision, so every row carries an anchored date
   // rather than the relative label the rest of the app uses, and the time of
   // the material it covers so two rows from one day and one stream are told
-  // apart before anything is deleted. G1-30.
+  // apart before anything is deleted. G1-30. The clock is the page's own:
+  // seconds are noise on a decision made by the day, and a second convention
+  // made the list read like a log file. G1-202.
   function identityLabel(row) {
     const date = window.JournalFormat.dayFull(row.day);
-    const time = window.JournalFormat.segmentTime(row.dir);
+    const time = window.JournalFormat.segmentTimeOfDay(row.dir);
     return time === 'time unavailable' ? date : date + ' ' + time;
   }
 
@@ -260,7 +263,15 @@
     if (markedRows().length === 0) return '';
     const n = selected.size;
     const disabled = n === 0 ? ' disabled' : '';
-    const count = n === 0 ? '' : '<span>' + copyForCount('bulk.selected', n, { n: n }) + '</span>';
+    // The standing sentence used to promise a 32-item cap beside a 20-row
+    // page, leaving the owner to reconcile two numbers on a screen whose
+    // actions are irreversible. The cap is stated where it can act: on the
+    // live count, at the moment a selection passes it. G1-204.
+    const count = n === 0
+      ? ''
+      : '<span>' + (n > MAX_SELECTED_MARKS
+        ? copy('bulk.selected_over_cap', { n: n, max: MAX_SELECTED_MARKS })
+        : copyForCount('bulk.selected', n, { n: n })) + '</span>';
     return '<div class="removals-card-toolbar">'
       + '<button type="button" data-removal-action="select-all">' + copy("bulk.select_all") + '</button>'
       + '<button type="button" data-removal-action="clear-selection">' + copy("bulk.clear") + '</button>'
@@ -326,7 +337,7 @@
         + '<p class="removals-card-total">'
         + copyForCount('card.total', totals.count, { n: totals.count, size: formatBytes(totals.bytes) })
         + '</p><details class="removals-review"' + (expanded ? ' open' : '') + '><summary>review originals' + (rows.some(row => row.state === 'failed') ? ' · unfinished deletions need review' : '') + '</summary>'
-        + listNoteHtml() + toolbarHtml() + '<p class="removals-card-scope">selection applies across every page. choose up to ' + MAX_SELECTED_MARKS + ' items per action.</p>' + cardRows()
+        + listNoteHtml() + toolbarHtml() + '<p class="removals-card-scope">selection applies across every page.</p>' + cardRows()
         + '<nav class="removals-card-pages" aria-label="originals pages"><button type="button" data-removal-action="previous"' + (pageIndex === 0 ? ' disabled' : '') + '>previous</button><span>page ' + (pageIndex + 1) + ' of ' + Math.max(1, Math.ceil(rows.length / PAGE_SIZE)) + '</span><button type="button" data-removal-action="next"' + ((pageIndex + 1) * PAGE_SIZE >= rows.length ? ' disabled' : '') + '>next</button></nav>'
         + finishHtml() + '</details>' + confirmationHtml() + outcomeHtml + '</section>';
     } else {

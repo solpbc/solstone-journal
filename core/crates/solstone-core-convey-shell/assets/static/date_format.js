@@ -92,10 +92,25 @@
     return String(stream || '').replace(/[._-]+/g, ' ').trim();
   }
 
-  function formatSegmentTime(segment) {
+  function parseSegmentClock(segment) {
     const match = /^(\d{2})(\d{2})(\d{2})(?:_|$)/.exec(String(segment || ''));
-    if (!match || Number(match[1]) > 23 || Number(match[2]) > 59 || Number(match[3]) > 59) return 'time unavailable';
-    return `${match[1]}:${match[2]}:${match[3]}`;
+    if (!match || Number(match[1]) > 23 || Number(match[2]) > 59 || Number(match[3]) > 59) return null;
+    return match;
+  }
+
+  function formatSegmentTime(segment) {
+    const clock = parseSegmentClock(segment);
+    return clock ? `${clock[1]}:${clock[2]}:${clock[3]}` : 'time unavailable';
+  }
+
+  // The same segment prefix on the page's own clock. `formatSegmentTime` is
+  // 24-hour and always carries seconds, which is right inside a disclosure and
+  // wrong on a row that sits under a "10:55 PM". G1-202.
+  function formatSegmentTimeOfDay(segment) {
+    const clock = parseSegmentClock(segment);
+    if (!clock) return 'time unavailable';
+    return new Date(2000, 0, 1, Number(clock[1]), Number(clock[2]), Number(clock[3]))
+      .toLocaleString(undefined, { hour: 'numeric', minute: '2-digit' });
   }
 
   function formatTimestamp(timestamp) {
@@ -128,6 +143,6 @@
       anthropic: 'Anthropic', google: 'Google'})[lane] || 'processing';
   }
 
-  window.JournalFormat = { processingLane, compactTokens: value => value >= 999500 ? `${Math.round(value / 1000000)}M` : value >= 1000 ? `${Math.round(value / 1000)}K` : String(Math.round(value)),  day: formatDateShort, dayFull: formatDateFull, stream: formatStreamLabel, segmentTime: formatSegmentTime, timestamp: formatTimestamp, time: formatTimeOfDay, duration: formatDuration };
+  window.JournalFormat = { processingLane, compactTokens: value => value >= 999500 ? `${Math.round(value / 1000000)}M` : value >= 1000 ? `${Math.round(value / 1000)}K` : String(Math.round(value)),  day: formatDateShort, dayFull: formatDateFull, stream: formatStreamLabel, segmentTime: formatSegmentTime, segmentTimeOfDay: formatSegmentTimeOfDay, timestamp: formatTimestamp, time: formatTimeOfDay, duration: formatDuration };
   window.formatDateShort = formatDateShort;
 })();

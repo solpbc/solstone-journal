@@ -113,6 +113,7 @@ mod tests {
             "bulk.clear",
             "bulk.selected_one",
             "bulk.selected_many",
+            "bulk.selected_over_cap",
             "bulk.delete",
             "bulk.keep",
             "confirm.heading_one",
@@ -159,7 +160,7 @@ mod tests {
             keys, expected,
             "the card has one complete authored copy table"
         );
-        assert_eq!(copy.len(), 60);
+        assert_eq!(copy.len(), 61);
         for (_, value) in &copy {
             assert_eq!(*value, value.to_lowercase(), "authored copy is lowercase");
             assert!(!value.contains('\u{2014}'), "authored copy has no em dash");
