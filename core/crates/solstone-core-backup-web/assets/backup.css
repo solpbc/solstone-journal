@@ -474,6 +474,15 @@
   margin: 0 0 0.3rem;
 }
 
+/* G3-314: the population verification actually checked, under the age that
+   answers 'when'. Quieter than the tile's own value, and it sits inside the
+   same tile so the three tiles keep one shape. */
+.backup-status-subset {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+}
+
 .backup-retention {
   margin-top: 1.1rem;
   padding-top: 1.1rem;
