@@ -11,7 +11,10 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 
-use chrono::{DateTime, Duration, FixedOffset, NaiveDate, Timelike, Utc};
+use chrono::{
+    DateTime, Duration, FixedOffset, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone,
+    Timelike, Utc,
+};
 use serde_json::{Map, Value, json};
 use solstone_core_brain::{inspect_brain_state, present_brain_inspection};
 use solstone_core_entities::{ATTENDANCE_KINDS, ENTITIES_COPY};
@@ -202,41 +205,152 @@ pub fn collect_anticipated_activities(context: &HomeContext, day: &str) -> Vec<V
     }).collect()
 }
 
+/// The local clock time a segment directory name stands for. `HHMMSS_<length>`
+/// is the reference spelling; anything else has no time of its own.
+fn segment_clock(segment: &str) -> Option<NaiveTime> {
+    let (clock, length) = segment.split_once('_')?;
+    if clock.len() != 6
+        || !clock.bytes().all(|byte| byte.is_ascii_digit())
+        || length.is_empty()
+        || !length.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    NaiveTime::parse_from_str(clock, "%H%M%S").ok()
+}
+
+/// When an activity happened: the start of the earliest segment it covers, in
+/// the day's own local clock. `created_at` is when the record was written,
+/// which is a different fact — a talent run that writes an evening's records at
+/// 10:55 PM stamps every one of them 10:55 PM. G1-201.
+fn activity_started_at(day: &str, record: &Map<String, Value>) -> Option<NaiveDateTime> {
+    let date = NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
+    let start = record
+        .get("segments")
+        .and_then(Value::as_array)?
+        .iter()
+        .filter_map(Value::as_str)
+        .filter_map(segment_clock)
+        .min()?;
+    Some(date.and_time(start))
+}
+
+/// An activity that spans two facets is written once per facet under one id, so
+/// the pulse listed it twice and counted it twice. Collapse the copies onto the
+/// first one, keeping every facet it touched and every description written for
+/// it rather than dropping one. G1-205.
+fn merge_faceted_activity(kept: &mut Map<String, Value>, other: &Map<String, Value>) {
+    let mut facets = kept
+        .get("facets")
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .or_else(|| {
+            kept.get("facet")
+                .and_then(Value::as_str)
+                .map(|facet| vec![facet.to_owned()])
+        })
+        .unwrap_or_default();
+    if let Some(facet) = other.get("facet").and_then(Value::as_str)
+        && !facets.iter().any(|known| known == facet)
+    {
+        facets.push(facet.to_owned());
+    }
+    kept.insert("facets".to_owned(), facets.into());
+    for field in ["description", "title"] {
+        let addition = other
+            .get(field)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim();
+        let existing = kept
+            .get(field)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim()
+            .to_owned();
+        if addition.is_empty() || existing.contains(addition) {
+            continue;
+        }
+        let merged = if existing.is_empty() {
+            addition.to_owned()
+        } else {
+            format!("{existing} {addition}")
+        };
+        kept.insert(field.to_owned(), merged.into());
+    }
+}
+
 /// Collect non-anticipated activity records created within four hours of the injected instant.
+///
+/// Each row carries `display_time`: when the activity happened, not when its
+/// record was written, and the list is ordered by the same value.
 pub fn collect_activities(context: &HomeContext, day: &str) -> Vec<Value> {
     let cutoff = context.now_ms() - 4 * 60 * 60 * 1000;
-    let mut rows = all_facet_names(context)
-        .into_iter()
-        .flat_map(|facet| {
-            load_activity_records(context.journal_root(), &facet, day, true)
+    let mut collected: Vec<Map<String, Value>> = Vec::new();
+    let mut positions: BTreeMap<String, usize> = BTreeMap::new();
+    for facet in all_facet_names(context) {
+        for mut record in
+            load_activity_records(context.journal_root(), &facet, day, true).unwrap_or_default()
+        {
+            let created = record
+                .get("created_at")
+                .and_then(Value::as_i64)
+                .unwrap_or(0);
+            if record.get("source").and_then(Value::as_str) == Some("anticipated")
+                || created < cutoff
+            {
+                continue;
+            }
+            record.insert(
+                "display_time".to_owned(),
+                activity_started_at(day, &record)
+                    .map(|start| start.format("%Y-%m-%dT%H:%M:%S").to_string())
+                    .or_else(|| {
+                        DateTime::from_timestamp_millis(created)
+                            .map(|time| time.with_timezone(&Utc).to_rfc3339())
+                    })
+                    .unwrap_or_default()
+                    .into(),
+            );
+            record.insert("facet".to_owned(), facet.clone().into());
+            let id = record
+                .get("id")
+                .and_then(Value::as_str)
                 .unwrap_or_default()
-                .into_iter()
-                .filter_map(move |record| {
-                    let created = record
-                        .get("created_at")
-                        .and_then(Value::as_i64)
-                        .unwrap_or(0);
-                    (record.get("source").and_then(Value::as_str) != Some("anticipated")
-                        && created >= cutoff)
-                        .then(|| {
-                            let mut record = record;
-                            record.insert(
-                                "display_time".to_owned(),
-                                DateTime::from_timestamp_millis(created)
-                                    .map(|time| time.with_timezone(&Utc).to_rfc3339())
-                                    .unwrap_or_default()
-                                    .into(),
-                            );
-                            record.insert("facet".to_owned(), facet.clone().into());
-                            Value::Object(record)
-                        })
-                })
+                .to_owned();
+            match positions.get(&id) {
+                Some(&position) if !id.is_empty() => {
+                    let (kept, merged) = (&mut collected[position], &record);
+                    merge_faceted_activity(kept, merged);
+                }
+                _ => {
+                    if !id.is_empty() {
+                        positions.insert(id, collected.len());
+                    }
+                    collected.push(record);
+                }
+            }
+        }
+    }
+    let mut rows = collected
+        .into_iter()
+        .map(|record| {
+            let ordered = activity_started_at(day, &record)
+                .and_then(|start| Local.from_local_datetime(&start).earliest())
+                .map(|start| start.timestamp_millis())
+                .or_else(|| record.get("created_at").and_then(Value::as_i64))
+                .unwrap_or(0);
+            (ordered, Value::Object(record))
         })
         .collect::<Vec<_>>();
-    rows.sort_by_key(|row| {
-        std::cmp::Reverse(row.get("created_at").and_then(Value::as_i64).unwrap_or(0))
-    });
-    rows
+    rows.sort_by_key(|(ordered, _)| std::cmp::Reverse(*ordered));
+    rows.into_iter().map(|(_, row)| row).collect()
 }
 
 /// Collect enabled-facet activity records and use the native duration estimator.
@@ -1507,6 +1621,74 @@ mod tests {
         assert_eq!(rows[0]["title"], "invalid");
         assert_eq!(rows[0]["display_time"], "");
         assert_eq!(rows[1]["title"], "recent");
+    }
+
+    // Captured from GET /app/home/api/pulse on 2026-09-07: three records whose
+    // segments run 18:25 to 18:40 and whose talent run wrote all of them within
+    // one minute of 21:56, and the two facet copies of one terminal activity.
+    #[test]
+    fn activity_reader_times_rows_by_their_segments_and_collapses_facet_copies() {
+        let root = TempDir::new().unwrap();
+        let context = context(root.path());
+        let recent = context.now_ms() - 1;
+        write(root.path(), "facets/personal/facet.json", "{}");
+        write(root.path(), "facets/solstone/facet.json", "{}");
+        write(
+            root.path(),
+            "facets/personal/activities/20260602.jsonl",
+            &format!(
+                r#"{{"id":"social_183505_302","source":"cogitate","created_at":{recent},"segments":["183505_302"],"description":"Shared observations about local weather."}}
+{{"id":"meeting_182504_302","source":"cogitate","created_at":{recent},"segments":["183005_300","182504_302"],"description":"Discussed switching pickup locations."}}
+{{"id":"terminal_184038_305","source":"cogitate","created_at":{recent},"segments":["184038_305"],"description":"Closed an automated sponsor session."}}"#
+            ),
+        );
+        write(
+            root.path(),
+            "facets/solstone/activities/20260602.jsonl",
+            &format!(
+                r#"{{"id":"terminal_184038_305","source":"cogitate","created_at":{recent},"segments":["184038_305"],"description":"Monitored H100 VM boot progress."}}"#
+            ),
+        );
+        let rows = collect_activities(&context, "20260602");
+        // One activity per id, newest first by when it happened, not by when the
+        // talent run wrote it — every record here shares one created_at.
+        let ids = rows
+            .iter()
+            .map(|row| row["id"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            ids,
+            vec![
+                "terminal_184038_305",
+                "social_183505_302",
+                "meeting_182504_302"
+            ]
+        );
+        assert_eq!(rows[0]["display_time"], "2026-06-02T18:40:38");
+        assert_eq!(rows[1]["display_time"], "2026-06-02T18:35:05");
+        // The earliest segment, not the first one listed.
+        assert_eq!(rows[2]["display_time"], "2026-06-02T18:25:04");
+        // The two facet copies collapse and keep both facets and both sentences.
+        assert_eq!(rows[0]["facets"], json!(["personal", "solstone"]));
+        assert_eq!(
+            rows[0]["description"],
+            "Closed an automated sponsor session. Monitored H100 VM boot progress."
+        );
+        assert!(rows[1].get("facets").is_none());
+    }
+
+    #[test]
+    fn activity_reader_falls_back_to_the_write_time_without_a_parseable_segment() {
+        let root = TempDir::new().unwrap();
+        let context = context(root.path());
+        write(root.path(), "facets/work/facet.json", "{}");
+        write(
+            root.path(),
+            "facets/work/activities/20260602.jsonl",
+            r#"{"source":"user","created_at":1780405200000,"segments":["20260602-1000"],"title":"no segment clock"}"#,
+        );
+        let rows = collect_activities(&context, "20260602");
+        assert_eq!(rows[0]["display_time"], "2026-06-02T13:00:00+00:00");
     }
 
     #[test]
