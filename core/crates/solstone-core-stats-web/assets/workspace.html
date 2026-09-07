@@ -553,6 +553,22 @@ h1 {
   opacity: 1;
 }
 
+/* The tooltip is centred on its cell, so the columns at either end push it
+   past the grid. It now anchors to the near edge there instead, which keeps
+   the last column's tooltip readable and keeps a 24-column grid from
+   scrolling the document sideways at 768. */
+.heatmap-row > .heatmap-cell:nth-last-child(-n+4)::after {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+.heatmap-row > .heatmap-cell:nth-child(-n+5)::after {
+  left: 0;
+  right: auto;
+  transform: none;
+}
+
 .heatmap-cell:focus-visible {
   outline: 2px solid var(--facet-color, #b06a1a);
   outline-offset: 1px;
