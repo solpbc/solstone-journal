@@ -677,7 +677,10 @@ async function main() {
     for (const key of ['row.origin_policy_one', 'row.origin_policy_many', 'row.kept_one', 'row.kept_many']) {
       assert(!article.includes(copy[key]), `row ${id} must not repeat ${key}`);
     }
-    assert(article.includes('data-removal-identity>'), `row ${id} still states its date and stream`);
+    assert(article.includes('data-removal-identity'), `row ${id} still states its date and stream`);
+    // G1-203: the label names the source the way the owner says it, so the
+    // exact stream key rides in the title where the decision can be checked.
+    assert(article.includes('title="kitchen-mic"'), `row ${id} carries its exact stream key`);
     assert(
       article.includes(rendered(copy, 'row.what_many', { n: 2, size: '2 B' })),
       `row ${id} still states its count and size`

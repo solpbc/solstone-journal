@@ -77,6 +77,16 @@
   min-width: 44px;
 }
 
+/* X-08's one unnamed 19px anchor: the token link inside the "processing
+   details" disclosure. The sweep measured it at 186x19 with no class and no
+   name, because the disclosure was closed and innerText reads empty there --
+   open it and it is a real 19px tap target. S-2. */
+.brain-tokens-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
 .health-glance.glance-attention .glance-action {
   color: var(--warn-ink);
   text-decoration: underline;

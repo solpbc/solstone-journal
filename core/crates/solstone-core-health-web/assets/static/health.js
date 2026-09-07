@@ -869,6 +869,7 @@
       if (tokensText) {
         const tokens = document.createElement('p');
         const link = document.createElement('a');
+        link.className = 'brain-tokens-link';
         link.href = '/app/stats/#tokens';
         link.textContent = tokensText;
         tokens.append(link);
