@@ -2631,17 +2631,6 @@ button:focus:not(:focus-visible) {
       <div class="settings-field">
         <div class="toggle-container" style="justify-content: flex-start; gap: 1em;">
           <label class="toggle-switch toggle-positive">
-            <input type="checkbox" id="field-support-proactive" data-section="support" data-key="proactive">
-            <span class="slider"></span>
-          </label>
-          <label for="field-support-proactive" class="toggle-label" style="cursor: pointer;">proactive detection</label>
-        </div>
-        <small>detect repeated errors and suggest filing a support ticket. no data is sent, only a local notification.</small>
-      </div>
-
-      <div class="settings-field">
-        <div class="toggle-container" style="justify-content: flex-start; gap: 1em;">
-          <label class="toggle-switch toggle-positive">
             <input type="checkbox" id="field-support-anonymous" data-section="support" data-key="anonymous_feedback">
             <span class="slider"></span>
           </label>
@@ -3385,7 +3374,6 @@ function populateFields(config) {
   // Support settings
   const support = config.support || {};
   document.getElementById('field-support-enabled').checked = support.enabled !== false;
-  document.getElementById('field-support-proactive').checked = support.proactive !== false;
   document.getElementById('field-support-anonymous').checked = support.anonymous_feedback || false;
   setValue('field-support-portal-url', support.portal_url || 'https://support.solstone.app');
 

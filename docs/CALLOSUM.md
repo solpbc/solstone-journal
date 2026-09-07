@@ -145,11 +145,6 @@ and remote-network boundary, not a defense against malware already running as th
 **Events:** `warning`
 **Purpose:** Surface storage conditions that need attention while retaining a shared notification path for owner-facing alerts.
 
-### `support` - Proactive support suggestions
-**Source:** `solstone-core-support-web`
-**Events:** `proactive_suggestion`
-**Purpose:** Signal a support suggestion when the support event handler identifies a qualifying condition.
-
 ### `notification` - In-app notification display
 **Source:** `core/crates/solstone-core-convey-shell/assets/static/websocket.js` (client-side listener; any service can emit)
 **Events:** any (event name is not interpreted)
