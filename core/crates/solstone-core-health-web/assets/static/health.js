@@ -1456,10 +1456,10 @@
     if (runningCount > 0) serviceParts.push(runningCount + ' active');
     if (retryingCount > 0) serviceParts.push(retryingCount + ' retrying');
     if (crashedCount > 0) serviceParts.push(crashedCount + ' needs attention');
-    sections[0]?.setAttribute('aria-label', 'Services: ' + (state.supervisorSeen ? serviceParts.join(', ') || 'none' : pendingVitalLabel()));
+    sections[0]?.setAttribute('aria-label', 'services: ' + (state.supervisorSeen ? serviceParts.join(', ') || 'none' : pendingVitalLabel()));
 
-    sections[1]?.setAttribute('aria-label', 'Talents: ' + (state.cortexSeen ? state.agentCount + ' running' : pendingVitalLabel()));
-    sections[2]?.setAttribute('aria-label', 'Tasks: ' + (state.supervisorSeen ? state.tasks.length + ' active' : pendingVitalLabel()));
+    sections[1]?.setAttribute('aria-label', 'talents: ' + (state.cortexSeen ? state.agentCount + ' running' : pendingVitalLabel()));
+    sections[2]?.setAttribute('aria-label', 'tasks: ' + (state.supervisorSeen ? state.tasks.length + ' active' : pendingVitalLabel()));
 
     const staleCount = state.health?.stale_heartbeats?.length || 0;
     let healthLabel = timeoutFired ? 'unavailable' : 'loading';
@@ -1472,17 +1472,17 @@
     } else if (state.health) {
       healthLabel = 'ok';
     }
-    sections[3]?.setAttribute('aria-label', 'Health: ' + healthLabel);
+    sections[3]?.setAttribute('aria-label', 'health: ' + healthLabel);
 
     const queueEntries = Object.entries(state.queues).filter(([, count]) => count > 0);
     sections[4]?.setAttribute(
       'aria-label',
-      'Queues: ' + (queueEntries.map(([cmd, count]) => cmd + ' ' + count).join(', ') || (state.supervisorSeen ? 'none' : pendingVitalLabel()))
+      'queues: ' + (queueEntries.map(([cmd, count]) => cmd + ' ' + count).join(', ') || (state.supervisorSeen ? 'none' : pendingVitalLabel()))
     );
 
     sections[5]?.setAttribute(
       'aria-label',
-      'Schedules: ' + (state.schedules.length ? state.schedules.length + ' scheduled' : state.supervisorSeen ? 'none' : pendingVitalLabel())
+      'schedules: ' + (state.schedules.length ? state.schedules.length + ' scheduled' : state.supervisorSeen ? 'none' : pendingVitalLabel())
     );
   }
 

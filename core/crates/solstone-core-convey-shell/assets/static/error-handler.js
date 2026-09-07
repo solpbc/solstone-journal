@@ -107,7 +107,9 @@
   // nothing behind it. Read the message, then describe the shape, then coerce.
   function messageFromError(error) {
     if (error instanceof Error) {
-      return error.message || coerce(error);
+      // An Error's own message is the one branch that used to skip the bound,
+      // and a parser or a fetch wrapper can carry a whole response body in it.
+      return bounded(error.message) || coerce(error);
     }
     if (typeof error === 'string') {
       return bounded(error);

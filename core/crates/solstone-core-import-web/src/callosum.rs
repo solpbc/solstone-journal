@@ -4,7 +4,7 @@
 use std::{path::Path, time::Duration};
 
 #[cfg(test)]
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::cell::Cell;
 
 use serde_json::{Value, json};
 use solstone_core_callosum::{CallosumOneShotError, CallosumOneShotSender};
@@ -15,11 +15,21 @@ pub(crate) enum BusError {
 }
 
 #[cfg(test)]
-static SEND_ATTEMPTS: AtomicUsize = AtomicUsize::new(0);
+thread_local! {
+    /// How many bus sends this thread has attempted since it last took the
+    /// count. It was a process-global counter, and `cargo test` runs the
+    /// ingest tests in parallel threads, so a sibling test's send landed in
+    /// the window the one test that reads this had opened -- it failed three
+    /// of four base runs and passed under `--test-threads=1`. Every
+    /// `#[tokio::test]` here drives its router on its own current-thread
+    /// runtime, so the sends a test causes all happen on the test's own
+    /// thread and nothing else can reach this cell.
+    static SEND_ATTEMPTS: Cell<usize> = const { Cell::new(0) };
+}
 
 fn send(root: &Path, value: Value) -> Result<(), BusError> {
     #[cfg(test)]
-    SEND_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
+    SEND_ATTEMPTS.with(|attempts| attempts.set(attempts.get() + 1));
     let line = format!(
         "{}\n",
         serde_json::to_string(&value).map_err(|_| BusError::Unavailable)?
@@ -50,5 +60,5 @@ pub(crate) fn emit_best_effort(root: &Path, value: Value) {
 
 #[cfg(test)]
 pub(crate) fn take_send_attempts() -> usize {
-    SEND_ATTEMPTS.swap(0, Ordering::Relaxed)
+    SEND_ATTEMPTS.with(|attempts| attempts.replace(0))
 }

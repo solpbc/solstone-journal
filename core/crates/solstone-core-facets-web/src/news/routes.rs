@@ -199,14 +199,20 @@ const _: () = assert!(PREVIEW_CHARS > MIN_PREVIEW_CHARS);
 /// Headings and blank lines are skipped, a leading `TL;DR` label is dropped,
 /// and a line too short to say anything is passed over for the next one. A
 /// letter whose every line is that short still gets its first line rather than
-/// nothing at all.
+/// nothing at all. A heading is scaffolding, so it does not open the body
+/// either: the header region runs to the first blank line that follows real
+/// content, and a `# Title` above a `Subject:`/`Date:` block is not that.
 fn preview_from_content(content: &str) -> Option<String> {
     let mut fallback: Option<String> = None;
     let mut chosen: Option<String> = None;
     // The header region is bounded by position, not only by shape. A letter's
     // scaffolding is the run of lines before its first blank line; past that
     // the reader is in the body, where "To: the whole team, ..." is a sentence
-    // the owner wrote and not a header to skip (F-24).
+    // the owner wrote and not a header to skip (F-24). A heading does not count
+    // as that content: "# Weekly letter" followed by a blank line used to close
+    // the region before the `Subject:` and `Date:` lines under it were ever
+    // tested, and the seeded letters have exactly that shape. A metadata line
+    // still counts, so a plain "To:/From:" block above the body closes it.
     let mut in_header_region = true;
     let mut seen_content = false;
     for raw in content.lines() {
@@ -217,10 +223,10 @@ fn preview_from_content(content: &str) -> Option<String> {
             }
             continue;
         }
-        seen_content = true;
         if trimmed.starts_with('#') {
             continue;
         }
+        seen_content = true;
         if in_header_region && is_metadata_line(trimmed) {
             continue;
         }
@@ -639,6 +645,17 @@ mod tests {
             ),
             // Every line short: the owner still gets the first one.
             ("a quiet week.\nnothing else.\n", Some("a quiet week.")),
+            // A `# Title` is scaffolding too, so the blank line under it does
+            // not open the body: the header block below it is still skipped and
+            // the letter's own first sentence is what the card shows.
+            (
+                "# Weekly letter\n\nSubject: what the week brought us\n\nThe week brought two launches.\n",
+                Some("The week brought two launches."),
+            ),
+            (
+                "# Title\n\nDate: Saturday, September 05, 2026\n\nThe roundup covers the week's three launches.\n",
+                Some("The roundup covers the week's three launches."),
+            ),
             // F-24: past the header region a "To: ..." line is the letter's own
             // body. The header region ends at the first blank line, so this one
             // is a sentence and the short lines above it are only fallbacks.

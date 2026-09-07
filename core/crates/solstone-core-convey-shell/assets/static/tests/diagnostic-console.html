@@ -424,6 +424,11 @@
       diagnostic.list()[0].detail.message.length === 201,
       String(diagnostic.list()[0].detail.message.length));
     diagnostic.clear();
+    window.logError(new Error('z'.repeat(5000)), { context: 'health: pulse failed' });
+    assert('a real Error with a 5 kB message is bounded too',
+      diagnostic.list()[0].detail.message.length === 201,
+      String(diagnostic.list()[0].detail.message.length));
+    diagnostic.clear();
     window.logError({ message: 'pulse read refused', stack: 'at pulse (health.js:1)' },
       { context: 'health: pulse failed' });
     const errorLike = diagnostic.list()[0];
