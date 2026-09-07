@@ -666,7 +666,7 @@ pub fn resolve_attention(context: &HomeContext, awareness: &Value) -> Option<Val
             .collect::<std::collections::BTreeSet<_>>();
         let count = failures.len();
         return Some(
-            json!({"placeholder_text":format!("{count} agent error{} today, ask what happened", if count == 1 { "" } else { "s" }),"context_lines":[format!("System health: {count} unresolved agent error(s) today: {}. If user asks what needs attention, summarize which agents failed.", names.into_iter().take(3).collect::<Vec<_>>().join(", "))]}),
+            json!({"placeholder_text":format!("{count} agent error{} today. ask what happened", if count == 1 { "" } else { "s" }),"context_lines":[format!("System health: {count} unresolved agent error(s) today: {}. If user asks what needs attention, summarize which agents failed.", names.into_iter().take(3).collect::<Vec<_>>().join(", "))]}),
         );
     }
     let imports = awareness.get("imports")?.as_object()?;

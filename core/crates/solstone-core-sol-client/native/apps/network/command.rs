@@ -345,7 +345,7 @@ pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
     };
     let mut lines = Vec::new();
     if state.get("instance_id").is_none_or(Value::is_null) {
-        lines.push("Instance ID:   (not provisioned, pair a device to provision)".to_string());
+        lines.push("Instance ID:   (not provisioned. pair a device to provision)".to_string());
         lines.push("Home label:    (not provisioned)".to_string());
     } else {
         lines.push(format!(
