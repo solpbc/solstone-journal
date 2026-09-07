@@ -1,4 +1,4 @@
-# Exporting Your Claude History
+### export your Claude history
 
 1. Open [Claude](https://claude.ai)
 2. Click your profile icon in the bottom-left corner

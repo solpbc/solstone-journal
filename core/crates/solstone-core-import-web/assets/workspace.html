@@ -510,7 +510,9 @@
   margin-top: 0.3rem;
 }
 .nowrap { white-space: nowrap; }
-.timestamp-link { color: var(--facet-color, var(--orange-text-aa, #a15f17)); text-decoration: none; }
+/* X-08: the history date is the row's own link, so it carries the row's tap
+   target rather than the 16px of its text. */
+.timestamp-link { color: var(--facet-color, var(--orange-text-aa, #a15f17)); text-decoration: none; display: inline-flex; align-items: center; min-height: 44px; }
 .timestamp-link:hover { text-decoration: underline; }
 .no-imports { color: #666; padding: 2em; text-align: center; }
 .import-source-inline {
@@ -1067,6 +1069,12 @@ function renderSourceDisplay(sourceType, sourceDisplay, fallbackText = '-') {
   return `<div class="import-source-inline">${iconSvg ? `<span class="import-source-inline-icon" aria-hidden="true">${iconSvg}</span>` : ''}<span>${escapeHtml(displayText)}</span></div>`;
 }
 
+// The eleven owner-facing source names the history filter offers. A recorded
+// source_display that is not one of them is a filename, not a source (G3-308).
+function ownerFacingSourceNames() {
+  return new Set(cachedSources.map(source => source.display_name).filter(Boolean));
+}
+
 function getImportById(importId) {
   return importsCache.find(item => item.timestamp === importId) || null;
 }
@@ -1123,13 +1131,16 @@ function renderImportRow(imp) {
     statusText = 'pending';
   }
 
-  // The file column holds a file and nothing else. Falling back to the source
-  // display made it a copy of the source column, which then rendered '-'
-  // (G3-113); each column now answers exactly one question.
-  const fileDisplay = imp.original_filename || '-';
-  const sourceDisplayText = imp.source_type
-    ? imp.source_display || sourceMetadataByName[imp.source_type]?.display_name || imp.source_type
-    : '';
+  // The file column holds a file and nothing else, and the source column holds a
+  // name the source filter also offers (G3-113, G3-308). Older imports recorded
+  // the uploaded file's name in source_display, so the source column repeated a
+  // filename while the file column was a dash on every row; anything that is not
+  // one of the app's own source names is that file, and belongs in the file cell.
+  const knownSourceName = sourceMetadataByName[imp.source_type]?.display_name || '';
+  const recordedDisplay = typeof imp.source_display === 'string' ? imp.source_display.trim() : '';
+  const recordedIsSourceName = recordedDisplay !== '' && ownerFacingSourceNames().has(recordedDisplay);
+  const sourceDisplayText = knownSourceName || (recordedIsSourceName ? recordedDisplay : '');
+  const fileDisplay = imp.original_filename || (recordedIsSourceName ? '' : recordedDisplay) || '-';
   const sourceCell = sourceDisplayText
     ? renderSourceDisplay(imp.source_type || '', sourceDisplayText, sourceDisplayText)
     : '-';
@@ -1494,7 +1505,7 @@ async function loadGuidedFlow(sourceName) {
 
   guideSteps.innerHTML = `
     <div>
-      <h3 class="import-guide-title">${escapeHtml(source.display_name)}</h3>
+      <h2 class="import-guide-title">${escapeHtml(source.display_name)}</h2>
       <p class="import-guide-subtitle">${escapeHtml(source.description || '')}</p>
     </div>
     <form id="guidedImportForm" onsubmit="return false;"><ol class="import-steps-list">
@@ -1579,7 +1590,7 @@ function renderQuickImportFlow() {
 
   guideSteps.innerHTML = `
     <div>
-      <h3 class="import-guide-title">quick import</h3>
+      <h2 class="import-guide-title">quick import</h2>
       <p class="import-guide-subtitle">paste text or drop a file. you'll confirm the date before it goes in.</p>
     </div>
     <form id="importForm">

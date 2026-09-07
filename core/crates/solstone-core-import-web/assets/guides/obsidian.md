@@ -1,21 +1,15 @@
-# Exporting Your Notes
+### Obsidian
 
-## Obsidian
+1. open your file manager and find your Obsidian vault folder
+2. copy the folder's full path
 
-1. Open your file manager and navigate to your Obsidian vault folder
-2. Select all files and folders in the vault
-3. Compress them into a .zip file
-4. Upload the .zip file here
+your vault location is shown in **Settings → About → Vault path**.
 
-Your vault location is shown in **Settings → About → Vault path**.
+### Logseq
 
-## Logseq
+1. open your file manager and find your Logseq graph folder
+2. copy the folder's full path
 
-1. Open your file manager and navigate to your Logseq graph folder
-2. Select all files and folders
-3. Compress them into a .zip file
-4. Upload the .zip file here
+### any other markdown notes
 
-## Other Markdown Notes
-
-Any folder of .md files can be imported. Zip the folder and upload it here.
+any folder of .md files can be imported. copy that folder's full path.

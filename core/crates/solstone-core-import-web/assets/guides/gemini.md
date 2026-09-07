@@ -1,4 +1,4 @@
-# Exporting Your Gemini History
+### export your Gemini history
 
 1. Go to [Google Takeout](https://takeout.google.com)
 2. Click **Deselect all**
