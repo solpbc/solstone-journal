@@ -2,7 +2,7 @@
   "type": "generate",
 
   "title": "Upcoming Schedule",
-  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Captures dates, times, participants, and cancellation state.",
+  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Includes dates, times, participants, and cancellation state.",
   "hook": {"post": "schedule"},
   "color": "#5e35b1",
   "schedule": "daily",
@@ -18,11 +18,11 @@ $facets
 
 # Future Schedule Extraction
 
-**Input:** A markdown file containing chronologically ordered transcripts of a workday plus the screen agent's output for the same day. Calendar views, meeting invitations, scheduling UIs, and project-management interfaces are captured in the screen content; verbal mentions of future plans appear in transcripts.
+**Input:** A markdown file containing chronologically ordered transcripts of a workday plus the screen agent's output for the same day. Calendar views, meeting invitations, scheduling UIs, and project-management interfaces are visible in the screen content; verbal mentions of future plans appear in transcripts.
 
 **Your task:** Identify every future scheduled item (dated after today) visible in the day's screen or transcript content and emit a JSON array of anticipated activity objects.
 
-## What to capture
+## What to include
 
 Look for:
 - Calendar applications (Google Calendar, Outlook, Apple Calendar, Fantastical, etc.)
@@ -35,10 +35,10 @@ Look for:
 
 **Include cancelled items too.** Calendar views often show cancelled events with a strikethrough, a "Cancelled" label, a declined-invite indicator, or a greyed-out style. Emit these with `"cancelled": true` — the downstream pipeline needs to know a previously-scheduled item dropped off.
 
-Do NOT capture:
+Do NOT include:
 - Past events (anything on today or earlier — future only)
 - Vague intent without a date ("we should catch up sometime")
-- Recurring-series headers with no specific upcoming instance visible (capture the next specific instance if visible; otherwise skip)
+- Recurring-series headers with no specific upcoming instance visible (include the next specific instance if visible; otherwise skip)
 - Tentative suggestions that haven't been confirmed
 
 ## Output schema
