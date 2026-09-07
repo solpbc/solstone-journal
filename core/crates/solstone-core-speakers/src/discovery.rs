@@ -155,15 +155,15 @@ pub fn cluster_embeddings(
     }
     validate_shape(embeddings, rows, cols)?;
     if rows == 0 {
-        // Python has no direct kernel call for rows==0. The caller normally
+        // The retired Python implementation had no direct kernel call for rows==0. Its caller normally
         // short-circuits before clustering, so this protects direct callers and
         // mirrors diarization.rs:238-248.
         return Ok(Vec::new());
     }
     if rows < min_cluster_size {
-        // Keep solstone/apps/speakers/discovery.py:306-308 reachable: too few
-        // points for a legal cluster is not an error, and this happens before
-        // min_samples is compared with rows.
+        // Retain the retired Python discovery behavior: too few points for a
+        // legal cluster is not an error, and this happens before min_samples is
+        // compared with rows.
         return Ok(vec![None; rows]);
     }
     if min_samples > rows {
@@ -247,11 +247,10 @@ fn validate_unit_rows(
         }
         let norm = norm_squared.sqrt();
         if (norm - 1.0).abs() > UNIT_NORM_TOLERANCE {
-            // solstone/think/entities/voiceprints.py:31 normalize_embedding,
-            // reached through solstone/apps/speakers/discovery.py:271, is the
-            // production normalization point. This assertion catches callers
-            // that silently stop normalizing; in-kernel normalization would be
-            // idempotent and invisible to tests on already-normalized inputs.
+            // The retired Python discovery path normalized embeddings before
+            // this kernel. This assertion catches callers that silently stop
+            // normalizing; in-kernel normalization would be idempotent and
+            // invisible to tests on already-normalized inputs.
             return Err(DiscoveryClusteringError::NonUnitEmbeddingRow { row, norm });
         }
     }

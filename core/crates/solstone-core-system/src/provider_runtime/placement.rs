@@ -12,14 +12,10 @@
 //! [`crate::stt_backend_choice`] is, so unlike that decision this one needs
 //! no cross-language differential -- it is ported directly and completely.
 //!
-//! Deliberately does not port `is_discrete`, `discrete_hardware_gpu_count`,
-//! or `cpu_placement_suffix`: those depend on `local_vulkan` device
-//! enumeration types that are not part of this port, and (`cpu_placement_suffix`
-//! specifically) remain used by Python callers outside the supervisor
-//! (`solstone/think/check.py`, `solstone/think/providers/fit_report.py`) that
-//! this port does not touch. Only the pure arithmetic this module's one
-//! caller needs is ported here; the caller is responsible for classifying
-//! devices and counting discrete GPUs before calling in.
+//! Device enumeration, discrete-GPU classification, and CPU placement suffixes
+//! live in `solstone-core-local`; this module owns only the pure arithmetic its
+//! supervisor caller needs. The caller classifies devices and counts discrete
+//! GPUs before calling in.
 
 /// 2947 MiB is the measured peak ordinary segment residency under
 /// local-128 attention, not full attention. The 1024 MiB margin covers

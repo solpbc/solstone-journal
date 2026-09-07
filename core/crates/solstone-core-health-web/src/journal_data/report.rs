@@ -24,7 +24,7 @@ const FACET_SILENT_INFO_HOURS: i64 = 24;
 const FACET_SILENT_WARN_HOURS: i64 = 72;
 const FACET_SILENT_CRITICAL_HOURS: i64 = 168;
 const INDEXER_STALE_WARN_DAYS: i64 = 7;
-const SPEC_POINTER: &str = "solstone/think/surfaces/health.py";
+const SPEC_POINTER: &str = "core/crates/solstone-core-health-web/src/journal_data/report.rs";
 const NO_ENGINE_ANALYSIS_TEXT: &str =
     "No thinking engine is chosen yet. Choose one in Thinking so observations can be analyzed.";
 

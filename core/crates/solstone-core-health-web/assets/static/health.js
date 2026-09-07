@@ -2485,7 +2485,7 @@
 
   const LOG_BUFFER_SIZE = 50;
 
-  // mirror of solstone/apps/health/log_classifier.py — keep in sync
+  // Browser-side classification for streamed diagnostic lines.
   function classifyLogLevel(stream, line) {
     const normalizedStream = (stream || '').trim().toLowerCase();
     const text = line || '';

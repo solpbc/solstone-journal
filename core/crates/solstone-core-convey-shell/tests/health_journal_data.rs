@@ -408,8 +408,8 @@ async fn rich_fixture_matches_the_complete_report_contract() {
             },
             "notes":[
                 {"severity":"warn","category":"synthesis","message":"indexer database missing at journal/indexer/journal.sqlite; search-backed consumers may be stale.","detail_pointer":null},
-                {"severity":"info","category":"capture","message":"coverage_ratio unavailable in v1 — expected-hours denominator arrives Sprint 5+","detail_pointer":"solstone/think/surfaces/health.py"},
-                {"severity":"info","category":"synthesis","message":"corrections roll-up not available — corrections support arrives Sprint 5+","detail_pointer":"solstone/think/surfaces/health.py"}
+                {"severity":"info","category":"capture","message":"coverage_ratio unavailable in v1 — expected-hours denominator arrives Sprint 5+","detail_pointer":"core/crates/solstone-core-health-web/src/journal_data/report.rs"},
+                {"severity":"info","category":"synthesis","message":"corrections roll-up not available — corrections support arrives Sprint 5+","detail_pointer":"core/crates/solstone-core-health-web/src/journal_data/report.rs"}
             ],
             "brain_health":{
                 "snapshot":{

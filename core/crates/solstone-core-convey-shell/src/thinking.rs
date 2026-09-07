@@ -312,11 +312,10 @@ async fn thinking_static(UrlPath(rest): UrlPath<String>) -> Response {
     }
     asset_response(&format!("/app/thinking/static/{rest}"))
 }
-/// `/background` is a fragment route Flask injects per-app only when that
-/// app ships a background template (`solstone/apps/__init__.py`'s
-/// `_inject_fragment_routes`); Thinking has none, so the reference's own
-/// answer is a plain 404, not the 501 `app_response()` gives every other
-/// unregistered Thinking path.
+/// The retired Flask app injected `/background` only for apps with a background
+/// template. Thinking had none, so this native route preserves the plain 404
+/// rather than the 501 `app_response()` gives every other unregistered Thinking
+/// path.
 async fn background_not_found() -> Response {
     not_found_response()
 }

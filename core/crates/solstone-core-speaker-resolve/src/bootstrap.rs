@@ -25,7 +25,7 @@ use crate::owner_admission::{OwnerAdmission, admitted_owner_id};
 use crate::owner_centroid::{OwnerCentroid, OwnerCentroidError, load_owner_centroid};
 use crate::voiceprint_metadata::VoiceprintMetadata;
 
-/// Kept verbatim from `solstone/apps/speakers/bootstrap.py`; consumed by the
+/// Preserved from the retired Python speaker bootstrap; consumed by the
 /// name-variant scan when identifying merge candidates.
 pub const NAME_MERGE_THRESHOLD: f64 = 0.90;
 const RESOLUTION_FUZZY_THRESHOLD: f64 = 90.0;

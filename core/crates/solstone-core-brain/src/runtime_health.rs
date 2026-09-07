@@ -13,8 +13,8 @@ use solstone_core_journal_io::{JsonWriteOptions, LockOptions, hold_lock, write_j
 
 use crate::fixture::local_contract;
 
-// Mirrors SCHEMA_VERSION in solstone/think/providers/runtime_health.py. The
-// runtime-health schema version is distinct from brain_state.schema_version.
+// Retains SCHEMA_VERSION from the retired Python runtime-health implementation.
+// This version is distinct from brain_state.schema_version.
 const RUNTIME_HEALTH_SCHEMA_VERSION: u64 = 1;
 const RUNTIME_RECORD_MODE: u32 = 0o600;
 const RUNTIME_PROVIDERS: &[&str] = &["local", "parakeet"];

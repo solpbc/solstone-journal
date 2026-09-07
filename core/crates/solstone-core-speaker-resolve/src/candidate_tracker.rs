@@ -16,7 +16,7 @@ use thiserror::Error;
 
 use crate::voiceprint_metadata::VoiceprintMetadata;
 
-// Verbatim from solstone/apps/speakers/encoder_config.py.
+// Preserved from the retired Python speaker encoder configuration.
 pub const SOLO_CLUSTER_MIN_COSINE: f32 = 0.43;
 pub const MERGE_THRESHOLD: f32 = 0.72;
 pub const SPLIT_THRESHOLD: f32 = 0.55;
