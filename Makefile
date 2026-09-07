@@ -1529,9 +1529,12 @@ ci-under-poison:
 	@$(MAKE) check-rust-unit
 	@$(MAKE) --no-print-directory RUST_CODE_EVIDENCE_CONTEXT=ci report-rust-code-evidence
 
+# HOPPER_LID is set by the build orchestrator that runs coding-agent lodes. The
+# name is that tool's contract and cannot be renamed here; the message below is
+# ours, so it does not repeat it.
 ci-full:
 ifneq ($(strip $(HOPPER_LID)),)
-	@echo "ci-full is not supported for Hopper; make ci is the only pass needed." >&2; exit 2
+	@echo "ci-full is not supported in an agent lode; make ci is the only pass needed." >&2; exit 2
 else
 ifneq ($(strip $(SOLSTONE_CI_CLOUD)),)
 ifneq ($(SOLSTONE_CI_CLOUD),1)
