@@ -1,7 +1,7 @@
 {
   "type": "generate",
   "title": "Pulse",
-  "description": "Living situational read of the owner's day — the shape of today, what needs them, and a one-line glance.",
+  "description": "Living situational read of your day. The shape of today, what needs you, and a one-line glance.",
   "schedule": "cadence",
   "cadence_minutes": 5,
   "priority": 50,

@@ -2,7 +2,7 @@
   "type": "generate",
 
   "title": "Document Analysis",
-  "description": "Extracts structured intelligence from imported documents",
+  "description": "Extracts structured details from imported documents",
   "color": "#5c6bc0",
   "schedule": "segment",
   "priority": 10,
