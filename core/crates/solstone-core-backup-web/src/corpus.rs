@@ -497,7 +497,7 @@ fn journal_builder_matches_an_independent_python_healthy_capture() {
       "time": 1769996400
     },
     "last_verification": {
-      "checked_subset": "5%",
+      "checked_subset": "1/52",
       "last_ok_time": 1769990000,
       "reason": null,
       "status": "ok",
@@ -526,6 +526,18 @@ fn journal_builder_matches_an_independent_python_healthy_capture() {
   }
 }
 "#;
+    let healthy: Value = serde_json::from_str(PYTHON_HEALTHY).expect("python healthy json");
+    let pin = &healthy["backup"]["last_verification"]["checked_subset"];
+    assert_eq!(
+        pin.as_str(),
+        Some("1/52"),
+        "healthy checked_subset documenting literal"
+    );
+    assert_eq!(
+        pin.as_str().expect("non-null subset"),
+        solstone_core_backup_runtime::engine::verification_subset_for_week(1),
+        "healthy checked_subset matches verification_subset_for_week(1)",
+    );
     assert_eq!(
         crate::test_support::python_build_journal_bytes("healthy"),
         PYTHON_HEALTHY.as_bytes()
@@ -558,11 +570,11 @@ fn journal_builder_writes_every_phase_or_leaves_unestablished_absent() {
         ),
         (
             "broken",
-            "f237582a3c0b4bc91a9eb9ca31335d90a6a8ee0695418e166f8664b61ad7cbfb",
+            "cd114904a645f1ae8c92f7b1a057a3cee73b1ce59640e2a3aa4aca90b0b0432d",
         ),
         (
             "healthy",
-            "a10583c4037e019ff91b030499689f188957f477c96a0489cb0f1907abf9e21c",
+            "f3068f71269517465d408f9c80e53f3726f1b1c477e416408efad70c360f40a2",
         ),
     ] {
         let root = crate::test_support::root(phase);

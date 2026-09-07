@@ -76,11 +76,11 @@ fn backup(phase: &str) -> Value {
         }
         "broken" => {
             value["last_backup"] = json!({"time":1770003600,"snapshot_id":null,"status":"error","error_reason":"locked"});
-            value["last_verification"] = json!({"time":1770003000,"status":"error","reason":"read_data_mismatch","checked_subset":"5%","last_ok_time":1769990000});
+            value["last_verification"] = json!({"time":1770003000,"status":"error","reason":"read_data_mismatch","checked_subset":null,"last_ok_time":1769990000});
         }
         "healthy" => {
             value["last_backup"] = json!({"time":1770000000,"snapshot_id":"9f2c1ab4","status":"ok","error_reason":null});
-            value["last_verification"] = json!({"time":1769990000,"status":"ok","reason":null,"checked_subset":"5%","last_ok_time":1769990000});
+            value["last_verification"] = json!({"time":1769990000,"status":"ok","reason":null,"checked_subset":"1/52","last_ok_time":1769990000});
         }
         _ => panic!("known phase"),
     };

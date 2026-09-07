@@ -131,7 +131,7 @@
             "time": null
           },
           "last_verification": {
-            "checked_subset": "5%",
+            "checked_subset": null,
             "last_ok_time": 1769990000,
             "reason": "read_data_mismatch",
             "status": "error",
@@ -206,7 +206,7 @@
             "time": null
           },
           "last_verification": {
-            "checked_subset": "5%",
+            "checked_subset": null,
             "last_ok_time": 1769990000,
             "reason": "read_data_mismatch",
             "status": "error",
@@ -1220,7 +1220,7 @@
             "time": null
           },
           "last_verification": {
-            "checked_subset": "5%",
+            "checked_subset": "1/52",
             "last_ok_time": 1769990000,
             "reason": null,
             "status": "ok",
@@ -1295,7 +1295,7 @@
             "time": null
           },
           "last_verification": {
-            "checked_subset": "5%",
+            "checked_subset": "1/52",
             "last_ok_time": 1769990000,
             "reason": null,
             "status": "ok",
