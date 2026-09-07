@@ -555,13 +555,16 @@ fn unlock(services: &BackupServices<'_>, runtime: &Runtime) {
     );
 }
 fn backup_args(resolved_journal: &Path) -> Vec<String> {
-    let mut args = vec!["backup".into(), resolved_journal.display().to_string()];
+    let mut args = vec![
+        "backup".into(),
+        crate::restic_filesystem_path(resolved_journal),
+    ];
     for excluded in BACKUP_EXCLUDES {
         args.extend(["--exclude".into(), excluded.into()]);
     }
     args.extend([
         "--exclude".into(),
-        resolved_journal.join("mcp-endpoint").display().to_string(),
+        crate::restic_filesystem_path(&resolved_journal.join("mcp-endpoint")),
     ]);
     args
 }
@@ -725,7 +728,7 @@ pub(crate) fn run_backup_tool_resolution_started_hook(resolved_journal: &Path) {
     }
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(feature = "test-hooks")]
 fn arm_backup_tool_resolution_started_hook(hook: impl FnOnce(&Path) + 'static) {
     ON_BACKUP_TOOL_RESOLUTION_STARTED.with(|slot| {
         assert!(
@@ -736,7 +739,7 @@ fn arm_backup_tool_resolution_started_hook(hook: impl FnOnce(&Path) + 'static) {
     });
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(feature = "test-hooks")]
 fn clear_backup_tool_resolution_started_hook() {
     ON_BACKUP_TOOL_RESOLUTION_STARTED.with(|slot| {
         slot.borrow_mut().take();
@@ -1288,7 +1291,7 @@ pub fn run_archive_backup(
     };
     unlock(services, &runtime);
     let mut args = vec!["backup".into()];
-    args.extend(paths.iter().map(|path| path.display().to_string()));
+    args.extend(paths.iter().map(|path| crate::restic_filesystem_path(path)));
     args.extend(["--tag".into(), ARCHIVE_TAG.into()]);
     match restic(
         services,
@@ -1407,7 +1410,7 @@ pub fn check_archive_snapshot_files(
             expected
                 .iter()
                 .map(|(path, size)| {
-                    let got = observed.get(&path.display().to_string()).copied();
+                    let got = observed.get(&crate::restic_tree_path(path)).copied();
                     ArchiveFileVerdict {
                         path: path.display().to_string(),
                         confirmed: got == Some(*size),

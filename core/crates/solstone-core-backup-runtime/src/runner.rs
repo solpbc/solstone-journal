@@ -59,6 +59,8 @@ pub struct ToolRequest<'a> {
     pub env: BTreeMap<OsString, OsString>,
     pub timeout: Option<Duration>,
     pub pass_fds: Vec<PassedHandle<'a>>,
+    /// Windows-only protected input. Unix refuses `Some` and retains descriptor transport.
+    pub stdin: Option<Vec<u8>>,
 }
 impl fmt::Debug for ToolRequest<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -69,6 +71,7 @@ impl fmt::Debug for ToolRequest<'_> {
             .field("env", &"<redacted>")
             .field("timeout", &self.timeout)
             .field("pass_fds", &self.pass_fds.len())
+            .field("stdin", &"<redacted>")
             .finish()
     }
 }
@@ -100,6 +103,12 @@ pub struct SystemToolRunner;
 #[cfg(unix)]
 impl ToolRunner for SystemToolRunner {
     fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+        if request.stdin.is_some() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "stdin not supported on unix tool runner",
+            ));
+        }
         let mut restored = Vec::with_capacity(request.pass_fds.len());
         for &fd in &request.pass_fds {
             let flags = fcntl(fd, FcntlArg::F_GETFD).map_err(io::Error::other)?;
@@ -118,7 +127,164 @@ impl ToolRunner for SystemToolRunner {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+impl ToolRunner for SystemToolRunner {
+    fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+        if !request.pass_fds.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "passed file descriptors/handles are unsupported on windows",
+            ));
+        }
+
+        let (bin_dir, package_root) = crate::windows_tool::resolve_package_bin_and_root()?;
+        let payload =
+            solstone_core_distribution::windows_payload::verify_windows_payload(&package_root)
+                .map_err(|error| {
+                    io::Error::new(io::ErrorKind::PermissionDenied, error.to_string())
+                })?;
+
+        let missing_tool = || {
+            io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "backup tool is not declared in the admitted payload",
+            )
+        };
+        let admitted_restic = payload
+            .declared_path("bin/restic.exe")
+            .ok_or_else(missing_tool)?;
+        let admitted_rclone = payload
+            .declared_path("bin/rclone.exe")
+            .ok_or_else(missing_tool)?;
+        let canonical_program = Path::new(&request.program).canonicalize()?;
+        let canonical_restic = admitted_restic.canonicalize()?;
+        let canonical_rclone = admitted_rclone.canonicalize()?;
+        if canonical_program != canonical_restic && canonical_program != canonical_rclone {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "unadmitted backup executable",
+            ));
+        }
+        let arguments = request
+            .argv
+            .iter()
+            .map(|arg| {
+                arg.to_str().map(str::to_owned).ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "backup argument is not Unicode",
+                    )
+                })
+            })
+            .collect::<io::Result<Vec<_>>>()?;
+        let mut program_options = 0;
+        let mut args_options = 0;
+        for arg in &arguments {
+            if let Some(value) = arg.strip_prefix("rclone.program=") {
+                let unquoted = value
+                    .strip_prefix('"')
+                    .and_then(|value| value.strip_suffix('"'))
+                    .filter(|value| !value.contains('"'))
+                    .ok_or_else(|| {
+                        io::Error::new(
+                            io::ErrorKind::PermissionDenied,
+                            "unadmitted rclone program option",
+                        )
+                    })?;
+                if Path::new(unquoted).canonicalize()? != canonical_rclone {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "unadmitted rclone executable",
+                    ));
+                }
+                program_options += 1;
+            } else if let Some(value) = arg.strip_prefix("rclone.args=") {
+                if value != "serve restic --stdio --append-only --config NUL" {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "unadmitted rclone arguments",
+                    ));
+                }
+                args_options += 1;
+            }
+        }
+        let uses_rclone = request
+            .env
+            .get(std::ffi::OsStr::new("RESTIC_REPOSITORY"))
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| value.starts_with("rclone:"));
+        if (uses_rclone && (program_options != 1 || args_options != 1))
+            || program_options > 1
+            || args_options > 1
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "rclone transport requires the declared append-only configuration",
+            ));
+        }
+
+        let timeout = match request.timeout {
+            Some(d) if d.is_zero() => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "timeout must be non-zero",
+                ));
+            }
+            Some(d) => d,
+            None => Duration::from_secs(48 * 60 * 60),
+        };
+
+        let budget = solstone_core_system::process::BoundedHelperBudget {
+            stdin_limit_bytes: 64 * 1024,
+            stdout_limit_bytes: 64 * 1024 * 1024,
+            stderr_limit_bytes: 16 * 1024 * 1024,
+            timeout,
+        };
+
+        let bounded_request = solstone_core_system::process::BoundedHelperRequest {
+            package_root,
+            executable: canonical_program,
+            arguments,
+            current_directory: bin_dir,
+            environment: request.env.clone(),
+            stdin: request.stdin.clone().unwrap_or_default(),
+            budget,
+            resource_limits: None,
+        };
+
+        match solstone_core_system::process::run_bounded_helper(bounded_request) {
+            Ok(output) if output.quiescent => Ok(ToolOutput {
+                returncode: output.exit_code,
+                stdout: output.stdout,
+                stderr: output.stderr,
+            }),
+            Ok(_) => Err(io::Error::other(
+                "backup helper did not establish quiescence",
+            )),
+            Err(solstone_core_system::process::BoundedHelperError::DeadlineExceeded {
+                quiescent: true,
+                ..
+            }) => Ok(ToolOutput {
+                returncode: 124,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            }),
+            Err(solstone_core_system::process::BoundedHelperError::DeadlineExceeded {
+                quiescent: false,
+                ..
+            }) => Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "child process exceeded deadline and failed to quiesce",
+            )),
+            Err(solstone_core_system::process::BoundedHelperError::JobNotQuiescent { .. }) => {
+                Err(io::Error::other("job object processes failed to terminate"))
+            }
+            Err(other) => Err(io::Error::other(other.to_string())),
+        }
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
 impl ToolRunner for SystemToolRunner {
     fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
         let _ = request;
@@ -375,13 +541,25 @@ impl SystemToolRunner {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct ResticResult {
     pub returncode: i32,
     pub stdout: String,
     pub stderr: String,
     pub json: Option<Value>,
     pub argv: Vec<String>,
+}
+impl fmt::Debug for ResticResult {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ResticResult")
+            .field("returncode", &self.returncode)
+            .field("stdout", &"<redacted>")
+            .field("stderr", &"<redacted>")
+            .field("json", &self.json)
+            .field("argv", &self.argv)
+            .finish()
+    }
 }
 
 #[derive(Debug, Error)]
@@ -443,10 +621,46 @@ pub fn run_restic(
     timeout: Option<Duration>,
     pass_fds: &[PassedHandle<'_>],
 ) -> Result<ResticResult, RunnerError> {
+    run_restic_with_stdin(
+        runner,
+        args,
+        repository,
+        password,
+        restic_path,
+        backend_env,
+        json,
+        max_repack_size,
+        timeout,
+        pass_fds,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_restic_with_stdin(
+    runner: &dyn ToolRunner,
+    args: &[String],
+    repository: &str,
+    password: &str,
+    restic_path: &Path,
+    backend_env: Option<&BTreeMap<String, Option<String>>>,
+    json: bool,
+    max_repack_size: Option<&str>,
+    timeout: Option<Duration>,
+    pass_fds: &[PassedHandle<'_>],
+    stdin: Option<Vec<u8>>,
+) -> Result<ResticResult, RunnerError> {
     if !is_explicit_program_path(restic_path) {
         return Err(RunnerError::BareProgram);
     }
-    let (env, secrets) = child_env(repository, password, backend_env);
+    let (env, mut secrets) = child_env(repository, password, backend_env);
+    if let Some(ref stdin_bytes) = stdin {
+        let text = String::from_utf8_lossy(stdin_bytes);
+        let stripped = text.strip_suffix('\n').unwrap_or(&text);
+        if !stripped.is_empty() {
+            secrets.push(stripped.to_owned());
+        }
+    }
     let mut argv = args.to_vec();
     if json {
         argv.push("--json".into());
@@ -462,6 +676,7 @@ pub fn run_restic(
             env,
             timeout,
             pass_fds: pass_fds.to_vec(),
+            stdin,
         })
         .map_err(RunnerError::Process)?;
     let stdout = scrub(&String::from_utf8_lossy(&output.stdout), &secrets);
@@ -486,9 +701,23 @@ pub fn child_env(
     backend_env: Option<&BTreeMap<String, Option<String>>>,
 ) -> (BTreeMap<OsString, OsString>, Vec<String>) {
     let mut env = BTreeMap::new();
-    for key in ["PATH", "HOME", "TMPDIR"] {
-        if let Some(value) = env::var_os(key) {
-            env.insert(key.into(), value);
+    #[cfg(unix)]
+    {
+        for key in ["PATH", "HOME", "TMPDIR"] {
+            if let Some(value) = env::var_os(key) {
+                env.insert(key.into(), value);
+            }
+        }
+    }
+    #[cfg(windows)]
+    {
+        if let Some(value) = env::var_os("SystemRoot").filter(|v| !v.is_empty()) {
+            env.insert("SystemRoot".into(), value);
+        }
+        for key in ["TEMP", "TMP", "USERPROFILE", "LOCALAPPDATA"] {
+            if let Some(value) = env::var_os(key).filter(|v| !v.is_empty()) {
+                env.insert(key.into(), value);
+            }
         }
     }
     env.insert("RESTIC_REPOSITORY".into(), repository.into());
@@ -751,17 +980,90 @@ mod tests {
             env: BTreeMap::from([("RESTIC_PASSWORD".into(), "REQUEST_SECRET".into())]),
             timeout: None,
             pass_fds: vec![],
+            stdin: Some(b"STDIN_SECRET\n".to_vec()),
         };
         let output = ToolOutput {
             returncode: 1,
             stdout: b"OUTPUT_SECRET".to_vec(),
             stderr: b"ERROR_SECRET".to_vec(),
         };
+        let restic_result = ResticResult {
+            returncode: 0,
+            stdout: "RESULT_STDOUT_SECRET".into(),
+            stderr: "RESULT_STDERR_SECRET".into(),
+            json: None,
+            argv: vec!["snapshots".into()],
+        };
 
-        let rendered = format!("{request:?}\n{output:?}");
-        for secret in ["REQUEST_SECRET", "OUTPUT_SECRET", "ERROR_SECRET"] {
+        let rendered = format!("{request:?}\n{output:?}\n{restic_result:?}");
+        for secret in [
+            "REQUEST_SECRET",
+            "STDIN_SECRET",
+            "OUTPUT_SECRET",
+            "ERROR_SECRET",
+            "RESULT_STDOUT_SECRET",
+            "RESULT_STDERR_SECRET",
+        ] {
             assert!(!rendered.contains(secret));
         }
+    }
+
+    #[test]
+    fn run_restic_scrubs_stdin_secret() {
+        struct SecretEchoFixture;
+        impl ToolRunner for SecretEchoFixture {
+            fn run(&self, request: &ToolRequest) -> io::Result<ToolOutput> {
+                assert_eq!(
+                    request.stdin.as_deref(),
+                    Some(b"RECOVERY_SECRET\n".as_slice())
+                );
+                assert_eq!(
+                    request.env.get(std::ffi::OsStr::new("RESTIC_PASSWORD")),
+                    Some(&OsString::from("PASSWORD"))
+                );
+                assert!(request.pass_fds.is_empty());
+                assert!(!format!("{request:?}").contains("RECOVERY_SECRET"));
+                Ok(ToolOutput {
+                    returncode: 0,
+                    stdout: b"hello RECOVERY_SECRET world".to_vec(),
+                    stderr: b"RECOVERY_SECRET diagnostic PASSWORD".to_vec(),
+                })
+            }
+        }
+        let result = run_restic_with_stdin(
+            &SecretEchoFixture,
+            &["key".into(), "add".into()],
+            "repo",
+            "PASSWORD",
+            Path::new("/fixture/bin/restic"),
+            None,
+            false,
+            None,
+            None,
+            &[],
+            Some(b"RECOVERY_SECRET\n".to_vec()),
+        )
+        .unwrap();
+        assert_eq!(result.stdout, "hello [redacted] world");
+        assert_eq!(result.stderr, "[redacted] diagnostic [redacted]");
+        assert!(!format!("{result:?}").contains("RECOVERY_SECRET"));
+        assert!(!format!("{result:?}").contains("PASSWORD"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_system_tool_runner_rejects_stdin() {
+        let runner = SystemToolRunner;
+        let request = ToolRequest {
+            program: "/fixture/bin/restic".into(),
+            argv: vec!["snapshots".into()],
+            env: BTreeMap::new(),
+            timeout: None,
+            pass_fds: vec![],
+            stdin: Some(b"data".to_vec()),
+        };
+        let err = runner.run(&request).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
     }
 
     #[cfg(unix)]

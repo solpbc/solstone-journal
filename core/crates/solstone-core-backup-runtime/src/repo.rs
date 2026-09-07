@@ -11,7 +11,7 @@ use std::time::Duration;
 use solstone_core_backup::{BackupError, Destination, assemble_backend_env};
 
 use crate::destination::validate_destination;
-use crate::runner::{PassedHandle, ToolRunner, run_restic};
+use crate::runner::{PassedHandle, ToolRunner, run_restic, run_restic_with_stdin};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ResticKeyError {
@@ -71,6 +71,7 @@ pub fn init_repository(
             restic_path,
             timeout,
             &[],
+            None,
         )?;
         add_recovery_key(
             runner,
@@ -102,6 +103,14 @@ pub fn init_repository(
     }
     Err(RepoError::Failed)
 }
+#[cfg(any(windows, test))]
+fn windows_add_recovery_key_request_parts(recovery_key: &str) -> (Vec<String>, Vec<u8>) {
+    (
+        vec!["key".into(), "add".into()],
+        format!("{recovery_key}\n").into_bytes(),
+    )
+}
+
 pub fn add_recovery_key(
     runner: &dyn ToolRunner,
     destination: &Destination,
@@ -133,10 +142,26 @@ pub fn add_recovery_key(
             restic_path,
             timeout,
             &[reader.as_fd()],
+            None,
         )?;
         Ok(())
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        let (args, stdin_bytes) = windows_add_recovery_key_request_parts(recovery_key);
+        run(
+            runner,
+            &args,
+            destination,
+            daily_key,
+            restic_path,
+            timeout,
+            &[],
+            Some(stdin_bytes),
+        )?;
+        Ok(())
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = (
             runner,
@@ -206,6 +231,7 @@ pub fn remove_key(
         restic_path,
         timeout,
         &[],
+        None,
     )
 }
 fn verify_recovery_key(
@@ -220,6 +246,7 @@ fn verify_recovery_key(
         .then_some(())
         .ok_or(RepoError::Failed)
 }
+#[allow(clippy::too_many_arguments)]
 fn run(
     runner: &dyn ToolRunner,
     args: &[String],
@@ -228,8 +255,9 @@ fn run(
     restic_path: &Path,
     timeout: Option<Duration>,
     pass_fds: &[PassedHandle<'_>],
+    stdin: Option<Vec<u8>>,
 ) -> Result<(), RepoError> {
-    let result = run_restic(
+    let result = run_restic_with_stdin(
         runner,
         args,
         &destination.repository,
@@ -240,6 +268,7 @@ fn run(
         None,
         timeout,
         pass_fds,
+        stdin,
     )
     .map_err(|_| RepoError::Failed)?;
     if result.returncode == 0 {
@@ -254,7 +283,7 @@ fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runner::{ToolOutput, ToolRequest};
+    use crate::runner::{ToolOutput, ToolRequest, run_restic_with_stdin};
     use serde_json::json;
     use std::cell::RefCell;
     use std::io;
@@ -436,5 +465,12 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["cat", "init", "key", "cat"]
         );
+    }
+
+    #[test]
+    fn windows_add_recovery_key_request_parts_shapes_argv_and_stdin() {
+        let (argv, stdin) = windows_add_recovery_key_request_parts("test-recovery-key-123");
+        assert_eq!(argv, vec!["key", "add"]);
+        assert_eq!(stdin, b"test-recovery-key-123\n");
     }
 }

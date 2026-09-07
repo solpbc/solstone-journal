@@ -90,31 +90,40 @@ pub fn ensure_rclone(
     requested_dir: Option<&Path>,
     downloader: &dyn ByteDownload,
 ) -> Result<PathBuf, String> {
-    let (os, arch) = platform_info()?;
-    let dir = requested_dir
-        .map(Path::to_path_buf)
-        .unwrap_or(rclone_tool_dir(&os)?);
-    if !force && let Some(path) = check_rclone_ready(runner, &dir, &os, &arch) {
-        return Ok(path);
+    #[cfg(windows)]
+    {
+        let _ = (runner, force, requested_dir, downloader);
+        return crate::windows_tool::verify_package_and_get_tool("bin/rclone.exe")
+            .map_err(|e| e.to_string());
     }
-    let (filename, url, expected) = select_rclone_asset(Some(&os), Some(&arch))?;
-    let data = match bundle_path(&filename)? {
-        Some(path) => {
-            let bytes = fs::read(path).map_err(|error| error.to_string())?;
-            verify_sha256_bytes(&bytes, &expected)
-                .map_err(|_| "rclone asset SHA mismatch".to_owned())?;
-            bytes
+    #[cfg(not(windows))]
+    {
+        let (os, arch) = platform_info()?;
+        let dir = requested_dir
+            .map(Path::to_path_buf)
+            .unwrap_or(rclone_tool_dir(&os)?);
+        if !force && let Some(path) = check_rclone_ready(runner, &dir, &os, &arch) {
+            return Ok(path);
         }
-        None => download_verified_bytes(
-            downloader,
-            &url,
-            &expected,
-            DOWNLOAD_ATTEMPTS,
-            RCLONE_DOWNLOAD_TIMEOUT,
-        )
-        .map_err(|_| "rclone download failed".to_owned())?,
-    };
-    install_from_zip(&data, &filename, &expected, &dir, &os, &arch)
+        let (filename, url, expected) = select_rclone_asset(Some(&os), Some(&arch))?;
+        let data = match bundle_path(&filename)? {
+            Some(path) => {
+                let bytes = fs::read(path).map_err(|error| error.to_string())?;
+                verify_sha256_bytes(&bytes, &expected)
+                    .map_err(|_| "rclone asset SHA mismatch".to_owned())?;
+                bytes
+            }
+            None => download_verified_bytes(
+                downloader,
+                &url,
+                &expected,
+                DOWNLOAD_ATTEMPTS,
+                RCLONE_DOWNLOAD_TIMEOUT,
+            )
+            .map_err(|_| "rclone download failed".to_owned())?,
+        };
+        install_from_zip(&data, &filename, &expected, &dir, &os, &arch)
+    }
 }
 pub fn install_from_zip(
     data: &[u8],

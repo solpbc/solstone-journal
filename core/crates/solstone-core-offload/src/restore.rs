@@ -27,9 +27,10 @@ use crate::measurement::device_free_bytes;
 pub const RESTORE_RESERVE_BYTES: u64 = 1_000_000_000;
 pub const OFFLOAD_RESTORE_TIMEOUT_SECONDS: u64 = 6 * 60 * 60;
 pub const OFFLOAD_RESTORE_STATUSES: [&str; 5] = ["ok", "no_op", "refused", "degraded", "error"];
-pub const OFFLOAD_RESTORE_REASONS: [&str; 16] = [
+pub const OFFLOAD_RESTORE_REASONS: [&str; 17] = [
     "auth_failed",
     "backup_not_ready",
+    "destination_admission_failed",
     "failed",
     "insufficient_free_space",
     "ledger_degraded",
@@ -147,7 +148,6 @@ fn restore_segment(
     services: &BackupServices<'_>,
     summary: &SegmentOffloadSummary,
 ) -> (RestoreSegmentResult, bool, Option<String>) {
-    let directory = directory(journal, summary);
     let err = |reason: &str| RestoreSegmentResult {
         status: "error".into(),
         reason: Some(reason.into()),
@@ -160,9 +160,23 @@ fn restore_segment(
         bytes_expected: summary.offloaded_bytes,
         bytes_restored: 0,
     };
+    let admitted_journal = match solstone_core_backup_runtime::AdmittedDestination::admit(journal) {
+        Ok(admitted) => admitted,
+        Err(_) => return (err("destination_admission_failed"), false, None),
+    };
+    let directory = directory(journal, summary);
     if !directory.is_dir() {
         return (err("segment_missing"), true, None);
     }
+    let admitted_directory =
+        match solstone_core_backup_runtime::AdmittedDestination::admit(&directory) {
+            Ok(admitted) => admitted,
+            Err(_) => return (err("destination_admission_failed"), false, None),
+        };
+    let binding_current = || {
+        admitted_journal.revalidate_for_target().is_ok()
+            && admitted_directory.revalidate_for_target().is_ok()
+    };
     let absent = summary
         .files
         .iter()
@@ -187,15 +201,22 @@ fn restore_segment(
             Ok(path) => path,
             Err(reason) => return (err(&reason), true, None),
         };
+        if admitted_journal.revalidate_for_target().is_err() {
+            return (err("destination_admission_failed"), false, None);
+        }
+        let target_directory = match admitted_directory.revalidate_for_target() {
+            Ok(path) => path,
+            Err(_) => return (err("destination_admission_failed"), false, None),
+        };
         let mut args = vec![
             "restore".into(),
             format!(
                 "{}:{}",
                 summary.snapshot_id.as_deref().unwrap_or_default(),
-                directory.display()
+                solstone_core_backup_runtime::restic_tree_path(&directory)
             ),
             "--target".into(),
-            directory.display().to_string(),
+            target_directory.display().to_string(),
         ];
         for file in &absent {
             args.extend(["--include".into(), format!("/{}", file.name)])
@@ -213,16 +234,36 @@ fn restore_segment(
             &[],
         ) {
             Ok(output) => output,
+            Err(_)
+                if admitted_journal.revalidate_for_target().is_err()
+                    || admitted_directory.revalidate_for_target().is_err() =>
+            {
+                return (err("destination_admission_failed"), false, None);
+            }
             Err(_) => return (err("failed"), true, None),
         };
+        if admitted_journal.revalidate_for_target().is_err()
+            || admitted_directory.revalidate_for_target().is_err()
+        {
+            return (err("destination_admission_failed"), false, None);
+        }
         if output.returncode != 0 {
+            if !binding_current() {
+                return (err("destination_admission_failed"), false, None);
+            }
             rollback(&directory, &absent);
             return (err(reason_for_returncode(output.returncode)), true, None);
         }
     }
     if let Some(reason) = verify(&directory, &summary.files) {
+        if !binding_current() {
+            return (err("destination_admission_failed"), false, None);
+        }
         rollback(&directory, &absent);
         return (err(reason), true, None);
+    }
+    if !binding_current() {
+        return (err("destination_admission_failed"), false, None);
     }
     if !absent.is_empty()
         && let Err(error) = bump_stream_marker(journal, &summary.day)
@@ -249,6 +290,9 @@ fn restore_segment(
         .iter()
         .map(|file| file.name.clone())
         .collect::<Vec<_>>();
+    if !binding_current() {
+        return (err("destination_admission_failed"), false, None);
+    }
     if resolve_offload(
         journal,
         &Target {
@@ -262,6 +306,9 @@ fn restore_segment(
     {
         return (err("failed"), true, None);
     };
+    if !binding_current() {
+        return (err("destination_admission_failed"), false, None);
+    }
     if append_restore_event(
         journal,
         &summary.day,
@@ -297,6 +344,14 @@ fn run(
     day: Option<&str>,
     segments: Vec<SegmentOffloadSummary>,
 ) -> RestoreResult {
+    let admitted = match solstone_core_backup_runtime::AdmittedDestination::admit(journal) {
+        Ok(admitted) => admitted,
+        Err(_) => return base("error", Some("destination_admission_failed"), scope, day),
+    };
+    let journal = match admitted.revalidate_for_target() {
+        Ok(path) => path,
+        Err(_) => return base("error", Some("destination_admission_failed"), scope, day),
+    };
     let selected = segments
         .into_iter()
         .filter(|segment| segment.currently_offloaded)
@@ -393,6 +448,12 @@ fn run(
         reason_detail,
         details,
     };
+    if admitted.revalidate_for_target().is_err() {
+        let mut result = result;
+        result.status = "error".into();
+        result.reason = Some("destination_admission_failed".into());
+        return result;
+    }
     if record_result {
         let _ = record_restore_result(
             journal,
@@ -1173,6 +1234,31 @@ mod tests {
 
         assert_eq!(result.status, "error");
         assert_eq!(result.reason.as_deref(), Some("rclone_unavailable"));
+        assert!(runner.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn offload_restore_fails_closed_when_destination_admission_fails() {
+        let journal = tempfile::tempdir().unwrap();
+        marked_segment(journal.path(), "20260115", "150000_015", b"content");
+        let runner = empty_runner();
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance;
+
+        let result = solstone_core_backup_runtime::with_forced_admission_failure(|| {
+            restore_offload_day(
+                journal.path(),
+                &services(&runner, &http, &clock, &maintenance),
+                "20260115",
+            )
+        });
+
+        assert_eq!(result.status, "error");
+        assert_eq!(
+            result.reason.as_deref(),
+            Some("destination_admission_failed")
+        );
         assert!(runner.calls.borrow().is_empty());
     }
 }

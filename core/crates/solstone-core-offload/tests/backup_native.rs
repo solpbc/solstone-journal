@@ -258,6 +258,11 @@ fn backup_native_round_trip() {
     };
     let journal = tmp.path().join("journal café");
     fs::create_dir(&journal).unwrap();
+    fs::write(
+        journal.join("mcp-endpoint"),
+        b"synthetic endpoint excluded from backup",
+    )
+    .unwrap();
     let raw = raw_fixture(&journal, "20260101", b"native original one");
     let original = fs::read(&raw).unwrap();
     let runner = SystemToolRunner;
@@ -322,6 +327,10 @@ fn backup_native_round_trip() {
     assert_eq!(
         fs::read(fresh.join(raw.strip_prefix(&journal).unwrap())).unwrap(),
         original
+    );
+    assert!(
+        !fresh.join("mcp-endpoint").exists(),
+        "endpoint exclusion must survive Windows path normalization"
     );
     println!("NATIVE_BACKUP_BYO_RECOVERY_OK");
     #[cfg(windows)]

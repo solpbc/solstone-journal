@@ -143,6 +143,73 @@ pub(super) fn refused_restore_roots(
     );
     fs::remove_dir(&link).unwrap();
     println!("NATIVE_BACKUP_UNSUPPORTED_ROOT_NO_WRITES_OK");
+
+    struct ReplaceAfterListing<'a> {
+        target: &'a Path,
+        displaced: &'a Path,
+        outside: &'a Path,
+        ran: std::cell::Cell<bool>,
+    }
+    impl ToolRunner for ReplaceAfterListing<'_> {
+        fn run(&self, request: &ToolRequest<'_>) -> std::io::Result<ToolOutput> {
+            assert!(
+                request.argv.iter().any(|arg| arg == "snapshots"),
+                "changed destination reached writer"
+            );
+            assert!(!self.ran.replace(true), "unexpected second external launch");
+            let output = SystemToolRunner.run(request)?;
+            assert_eq!(output.returncode, 0);
+            fs::rename(self.target, self.displaced).unwrap();
+            assert!(
+                Command::new(required_path("SystemRoot").join("System32/cmd.exe"))
+                    .args(["/c", "mklink", "/J"])
+                    .arg(self.target)
+                    .arg(self.outside)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            Ok(output)
+        }
+    }
+    let target = workspace.join("binding replacement target");
+    let displaced = workspace.join("retained original target");
+    fs::create_dir(&target).unwrap();
+    let replacer = ReplaceAfterListing {
+        target: &target,
+        displaced: &displaced,
+        outside: &outside,
+        ran: std::cell::Cell::new(false),
+    };
+    let changed_services = BackupServices {
+        runner: &replacer,
+        ..refused_services
+    };
+    let outcome = restore_journal(
+        &target,
+        &changed_services,
+        &NativeRestoreRecorder,
+        destination.clone(),
+        recovery,
+    );
+    assert!(
+        replacer.ran.get(),
+        "binding replacement control did not run"
+    );
+    assert_eq!(outcome.status, "error", "{outcome:?}");
+    assert_eq!(
+        outcome.reason_code.as_deref(),
+        Some("destination_admission_failed")
+    );
+    assert_eq!(fs::read_dir(&outside).unwrap().count(), 1);
+    assert_eq!(fs::read(outside.join("sentinel")).unwrap(), b"untouched");
+    assert_eq!(
+        fs::read_dir(&displaced).unwrap().count(),
+        0,
+        "refusal wrote an attempt record"
+    );
+    fs::remove_dir(&target).unwrap();
+    println!("NATIVE_BACKUP_REPLACED_ROOT_NO_WRITES_OK");
 }
 
 pub(super) fn refused_selective_root(

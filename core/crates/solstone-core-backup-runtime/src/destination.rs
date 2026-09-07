@@ -112,6 +112,7 @@ mod tests {
                 env: request.env.clone(),
                 timeout: request.timeout,
                 pass_fds: vec![],
+                stdin: request.stdin.clone(),
             });
             Ok(ToolOutput {
                 returncode: self.code,

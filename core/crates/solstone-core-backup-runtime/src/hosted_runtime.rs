@@ -290,6 +290,19 @@ pub fn hosted_session(
         global_options: vec![],
     })
 }
+#[cfg(any(windows, test))]
+fn quote_windows_rclone_program(rclone: &Path) -> Result<String, RunnerError> {
+    let path_str = rclone.to_str().ok_or(RunnerError::BareProgram)?;
+    if path_str.contains('"') {
+        return Err(RunnerError::BareProgram);
+    }
+    Ok(format!("rclone.program=\"{path_str}\""))
+}
+
+fn platform_rclone_no_config() -> &'static str {
+    if cfg!(windows) { "NUL" } else { "/dev/null" }
+}
+
 pub fn hosted_append_only_session(
     binding: &HostedBinding,
     credentials: &HostedCredentials,
@@ -298,6 +311,18 @@ pub fn hosted_append_only_session(
     if !is_explicit_program_path(rclone) {
         return Err(RunnerError::BareProgram);
     }
+    #[cfg(unix)]
+    let program_opt = format!("rclone.program={}", rclone.display());
+    #[cfg(windows)]
+    let program_opt = quote_windows_rclone_program(rclone)?;
+    #[cfg(not(any(unix, windows)))]
+    let program_opt = format!("rclone.program={}", rclone.display());
+
+    let args_opt = format!(
+        "rclone.args=serve restic --stdio --append-only --config {}",
+        platform_rclone_no_config()
+    );
+
     Ok(HostedResticSession {
         destination: Destination {
             repository: format!("rclone:spb:{}/{}", binding.bucket, binding.prefix),
@@ -327,12 +352,7 @@ pub fn hosted_append_only_session(
             ("RCLONE_CONFIG_SPB_REGION".into(), "auto".into()),
             ("RCLONE_CONFIG_SPB_NO_CHECK_BUCKET".into(), "true".into()),
         ]),
-        global_options: vec![
-            "-o".into(),
-            format!("rclone.program={}", rclone.display()),
-            "-o".into(),
-            "rclone.args=serve restic --stdio --append-only --config /dev/null".into(),
-        ],
+        global_options: vec!["-o".into(), program_opt, "-o".into(), args_opt],
     })
 }
 
@@ -425,11 +445,30 @@ mod tests {
             Path::new("/fixture/bin/rclone"),
         )
         .unwrap();
-        assert!(
-            session
-                .global_options
-                .contains(&"rclone.program=/fixture/bin/rclone".into())
-        );
+        #[cfg(not(windows))]
+        {
+            assert!(
+                session
+                    .global_options
+                    .contains(&"rclone.program=/fixture/bin/rclone".into())
+            );
+            assert!(session.global_options.contains(
+                &"rclone.args=serve restic --stdio --append-only --config /dev/null".into()
+            ));
+        }
+        #[cfg(windows)]
+        {
+            assert!(
+                session
+                    .global_options
+                    .contains(&"rclone.program=\"/fixture/bin/rclone\"".into())
+            );
+            assert!(
+                session.global_options.contains(
+                    &"rclone.args=serve restic --stdio --append-only --config NUL".into()
+                )
+            );
+        }
         assert!(
             !session
                 .global_options
@@ -608,6 +647,28 @@ mod tests {
             .unwrap_err();
             assert_eq!(error.reason_code, expected_reason_code);
             assert!(!error.to_string().contains("TOKEN"));
+        }
+    }
+
+    #[test]
+    fn quote_windows_rclone_program_quotes_and_rejects_embedded_quotes() {
+        assert_eq!(
+            quote_windows_rclone_program(Path::new(r"C:\Program Files\solstone\bin\rclone.exe"))
+                .unwrap(),
+            r#"rclone.program="C:\Program Files\solstone\bin\rclone.exe""#
+        );
+        assert!(matches!(
+            quote_windows_rclone_program(Path::new(r#"C:\injected"payload\rclone.exe"#)),
+            Err(RunnerError::BareProgram)
+        ));
+    }
+
+    #[test]
+    fn platform_rclone_no_config_matches_platform() {
+        if cfg!(windows) {
+            assert_eq!(platform_rclone_no_config(), "NUL");
+        } else {
+            assert_eq!(platform_rclone_no_config(), "/dev/null");
         }
     }
 }

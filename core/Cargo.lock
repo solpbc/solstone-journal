@@ -3438,6 +3438,7 @@ dependencies = [
  "solstone-core-backup",
  "solstone-core-backup-runtime",
  "solstone-core-body-rebuild",
+ "solstone-core-distribution",
  "solstone-core-indexer-store",
  "solstone-core-journal-io",
  "solstone-core-system",
