@@ -60,7 +60,8 @@ class ClassList {
 }
 
 class Element {
-  constructor(id = '', dataset = {}) {
+  constructor(id = '', dataset = {}, tag = '') {
+    this.tag = String(tag || '').toLowerCase();
     this.id = id;
     this.dataset = {...dataset};
     this.hidden = false;
@@ -140,6 +141,42 @@ class Element {
   }
 }
 
+// Structure-independent lookups over the rendered runs view. Positional walks
+// (`children[2]` for the note, `children[3]` for the table) broke this harness
+// twice on ordinary render changes -- a column lifted out of the table, a note
+// appearing above it -- because they encode the shape rather than ask for the
+// thing. Everything below finds a node by what it is: its class, its tag, or
+// its column heading.
+const kids = (node) => (node && Array.isArray(node.children) ? node.children : []);
+const byClass = (node, className) => kids(node).filter((child) => child.classList && child.classList.contains(className));
+const oneByClass = (node, className) => byClass(node, className)[0];
+const byTag = (node, tag) => kids(node).filter((child) => child.tag === tag);
+const oneByTag = (node, tag) => byTag(node, tag)[0];
+
+const runGroups = (host) => byClass(host, 'thinking-runs-group');
+const groupTitle = (section) => oneByTag(section, 'h3').textContent;
+const groupBody = (section) => oneByClass(section, 'thinking-runs-group-detail');
+const groupSummary = (section) => oneByTag(groupBody(section), 'summary').textContent;
+const groupExactId = (section) => oneByClass(groupBody(section), 'thinking-runs-group-id').textContent;
+const groupNote = (section) => oneByClass(groupBody(section), 'thinking-runs-group-note');
+const groupNoteText = (section) => {
+  const note = groupNote(section);
+  return note ? note.textContent : null;
+};
+const groupTable = (section) => oneByClass(groupBody(section), 'thinking-runs-table');
+const groupControls = (section) => byClass(groupBody(section), 'thinking-runs-control');
+const tableColumns = (table) => kids(oneByTag(oneByTag(table, 'thead'), 'tr')).map((cell) => cell.textContent);
+const tableRows = (table) => byTag(oneByTag(table, 'tbody'), 'tr');
+const columnValues = (table, label) => {
+  const index = tableColumns(table).indexOf(label);
+  if (index < 0) throw new Error(`the runs table has no ${label} column: ${tableColumns(table).join(', ')}`);
+  return tableRows(table).map((row) => row.children[index].textContent);
+};
+// The run-log control lives in the last cell of every row, which is the one
+// column the renderer guarantees is always present and always last.
+const runControls = (table) => tableRows(table).map((row) => kids(row.children[row.children.length - 1])[0]);
+const runCards = (host) => kids(oneByClass(host, 'thinking-runs-cards'));
+
 function deferred() {
   let resolve;
   let reject;
@@ -187,8 +224,8 @@ async function main() {
     activeElement: null,
     getElementById(id) { return nodes.get(id) || null; },
     createTextNode(text) { const node = new Element(); node.textContent = text; return node; },
-    createElement() {
-      const node = new Element();
+    createElement(tag) {
+      const node = new Element('', {}, tag);
       node.document = document;
       return node;
     },
@@ -345,13 +382,12 @@ async function main() {
     {id: 'failed-run', name: 'failed run', failed: true},
     {id: 'completed-run', name: 'completed run', failed: false},
   ]);
-  const heterogeneousRows = heterogeneousRuns.children[0].children[1].children;
-  assert.strictEqual(heterogeneousRows.length, 4, 'heterogeneous run table renders every row');
-  heterogeneousRows.forEach((row) => {
-    const control = row.children[row.children.length - 1].children[0];
+  const heterogeneousTable = oneByClass(heterogeneousRuns, 'thinking-runs-table');
+  assert.strictEqual(tableRows(heterogeneousTable).length, 4, 'heterogeneous run table renders every row');
+  runControls(heterogeneousTable).forEach((control) => {
     assert.ok(control.classList.contains('thinking-runs-run-control'), 'every run row exposes an explicit control');
   });
-  heterogeneousRuns.children[1].children.forEach((card) => {
+  runCards(heterogeneousRuns).forEach((card) => {
     assert.ok(card.children[card.children.length - 1].classList.contains('thinking-runs-run-control'), 'every run card exposes an explicit control');
   });
 
@@ -362,11 +398,10 @@ async function main() {
     {id: 'thinking-run', name: 'thinking run', thinking_count: 3, tool_count: 0},
     {id: 'tool-run', name: 'tool run', thinking_count: 0, tool_count: 2},
   ]);
-  const eventCountControls = eventCountRuns.children[0].children[1].children.map(
-    (row) => row.children[row.children.length - 1].children[0],
-  );
+  const eventCountControls = runControls(oneByClass(eventCountRuns, 'thinking-runs-table'));
   assert.ok(eventCountControls[0].classList.contains('thinking-runs-run-control-empty'), 'a run with no thinking events and no tool calls is dimmed');
-  assert.strictEqual(eventCountControls[0].title, 'no thinking events or tool calls were recorded for this run', 'the dimmed control explains itself');
+  // X-06: "recorded" is a never-list verb aimed at the owner's own material.
+  assert.strictEqual(eventCountControls[0].title, 'this run left no log', 'the dimmed control explains itself');
   assert.strictEqual(eventCountControls[1].classList.contains('thinking-runs-run-control-empty'), false, 'a run with thinking events is not dimmed');
   assert.strictEqual(eventCountControls[2].classList.contains('thinking-runs-run-control-empty'), false, 'a run with tool calls is not dimmed');
   eventCountControls.forEach((control) => {
@@ -787,14 +822,14 @@ async function main() {
   thinking.routeThinkingHash('history');
   await settle();
   await settle();
-  const blankModelGroup = nodes.get('thinkingRunsContent').children[1].children[1];
+  const blankModelGroup = runGroups(nodes.get('thinkingRunsContent'))[0];
   assert.strictEqual(
-    blankModelGroup.children[2].textContent,
+    groupNoteText(blankModelGroup),
     '2 blank runs completed.',
     'a model id that is only whitespace is not named in the note',
   );
   assert.deepStrictEqual(
-    blankModelGroup.children[3].children[0].children[0].children.map((cell) => cell.textContent),
+    tableColumns(groupTable(blankModelGroup)),
     ['ran', 'model', 'provider', 'runtime', 'thinking events', 'tool calls', 'run log'],
     'a column the note did not speak for is never lifted out of the table',
   );
@@ -811,55 +846,46 @@ async function main() {
   thinking.routeThinkingHash('history');
   await settle();
   await settle();
-  const groupSections = nodes.get('thinkingRunsContent').children.slice(1);
+  const groupSections = runGroups(nodes.get('thinkingRunsContent'));
   assert.strictEqual(groupSections.length, 2, 'a busy day renders one group per talent');
-  assert.strictEqual(groupSections[0].children[0].textContent, 'entity detection', 'a raw talent id renders as a readable label');
-  assert.strictEqual(groupSections[1].children[0].textContent, 'speaker attribution', 'an unmapped talent id humanizes');
-  const busyGroup = groupSections[0].children[1];
-  assert.strictEqual(busyGroup.children[0].textContent, '120 runs \u00b7 1 failed', 'the group summary carries its counts');
-  assert.strictEqual(busyGroup.open, false, 'a busy day collapses each talent group');
-  assert.strictEqual(busyGroup.children[1].textContent, 'exact id: entities:detection', 'the exact talent id stays in the disclosure');
-  // G2-46: one of these 120 runs failed, so the group is not uniform and gets
-  // no note. The status column stays because nothing else is carrying it;
-  // model and provider go because they are blank on every row.
-  assert.strictEqual(
-    busyGroup.children.filter((child) => child.classList.contains('thinking-runs-group-note')).length,
-    0,
-    'a group holding both a failure and completions gets no uniform-group note',
-  );
-  const busyTable = busyGroup.children[2];
-  assert.ok(busyTable.classList.contains('thinking-runs-table'), 'without a note the table follows the exact id directly');
+  assert.strictEqual(groupTitle(groupSections[0]), 'entity detection', 'a raw talent id renders as a readable label');
+  assert.strictEqual(groupTitle(groupSections[1]), 'speaker attribution', 'an unmapped talent id humanizes');
+  const busyGroup = groupSections[0];
+  assert.strictEqual(groupSummary(busyGroup), '120 runs \u00b7 1 failed', 'the group summary carries its counts');
+  assert.strictEqual(groupBody(busyGroup).open, false, 'a busy day collapses each talent group');
+  assert.strictEqual(groupExactId(busyGroup), 'exact id: entities:detection', 'the exact talent id stays in the disclosure');
+  // G2-46 / prior partial: one of these 120 runs failed, so no clause is true
+  // of every run -- the model and provider are blank on every row, so there is
+  // nothing for a note to say. The status column stays because nothing else is
+  // carrying it; model and provider go because they are blank, not because the
+  // note spoke for them.
+  assert.strictEqual(groupNoteText(busyGroup), null, 'a group with nothing true of every run gets no note');
+  const busyTable = groupTable(busyGroup);
   assert.deepStrictEqual(
-    busyTable.children[0].children[0].children.map((cell) => cell.textContent),
+    tableColumns(busyTable),
     ['ran', 'status', 'runtime', 'thinking events', 'tool calls', 'run log'],
     'the run time column says when the run executed and the last column is headed for the control it holds',
   );
-  assert.strictEqual(busyTable.children[1].children.length, 50, 'a group pages its runs 50 at a time');
-  const showMore = busyGroup.children[busyGroup.children.length - 1];
+  assert.strictEqual(tableRows(busyTable).length, 50, 'a group pages its runs 50 at a time');
+  const showMore = groupControls(busyGroup)[groupControls(busyGroup).length - 1];
   assert.strictEqual(showMore.textContent, 'show 50 more runs \u00b7 70 left', 'the group offers the next page');
   showMore.emit('click');
-  const pagedGroup = nodes.get('thinkingRunsContent').children[1].children[1];
-  assert.strictEqual(pagedGroup.children[2].children[1].children.length, 100, 'showing more extends the same group');
-  assert.strictEqual(pagedGroup.open, true, 'showing more keeps the group open');
-  // G2-46: this group is uniform, so its note sits between the exact id and
-  // the table and the walk has to step over it.
-  const smallGroup = nodes.get('thinkingRunsContent').children[2].children[1];
-  assert.strictEqual(smallGroup.children[1].textContent, 'exact id: speaker_attribution', 'the small group keeps its exact id');
-  const smallNote = smallGroup.children[2];
-  assert.ok(smallNote.classList.contains('thinking-runs-group-note'), 'a uniform group says its shape once instead of repeating it per row');
+  const pagedGroup = runGroups(nodes.get('thinkingRunsContent'))[0];
+  assert.strictEqual(tableRows(groupTable(pagedGroup)).length, 100, 'showing more extends the same group');
+  assert.strictEqual(groupBody(pagedGroup).open, true, 'showing more keeps the group open');
+  const smallGroup = runGroups(nodes.get('thinkingRunsContent'))[1];
+  assert.strictEqual(groupExactId(smallGroup), 'exact id: speaker_attribution', 'the small group keeps its exact id');
   assert.strictEqual(
-    smallNote.textContent,
+    groupNoteText(smallGroup),
     '1 speaker attribution run completed.',
     'the group note never names a model the run did not record',
   );
-  const smallTable = smallGroup.children[3];
-  assert.ok(smallTable.classList.contains('thinking-runs-table'), 'the runs table follows the group note');
   assert.deepStrictEqual(
-    smallTable.children[0].children[0].children.map((cell) => cell.textContent),
+    tableColumns(groupTable(smallGroup)),
     ['ran', 'runtime', 'thinking events', 'tool calls', 'run log'],
     'the note lifts out the status column, and the blank model and provider columns are dropped',
   );
-  assert.strictEqual(smallTable.children[1].children.length, 1, 'a small group still renders in full');
+  assert.strictEqual(tableRows(groupTable(smallGroup)).length, 1, 'a small group still renders in full');
 
   // G2-46: a group that is uniform on real values states them once, and only
   // then do those columns leave the table.
@@ -877,14 +903,15 @@ async function main() {
   thinking.routeThinkingHash('history');
   await settle();
   await settle();
-  const uniformGroup = nodes.get('thinkingRunsContent').children[1].children[1];
+  const dayGroups = runGroups(nodes.get('thinkingRunsContent'));
+  const uniformGroup = dayGroups[0];
   assert.strictEqual(
-    uniformGroup.children[2].textContent,
+    groupNoteText(uniformGroup),
     '2 pulse runs completed on Qwen 3.5 4B (local), 20 sec each.',
     'a uniform group states its status, model and typical runtime in one sentence',
   );
   assert.deepStrictEqual(
-    uniformGroup.children[3].children[0].children[0].children.map((cell) => cell.textContent),
+    tableColumns(groupTable(uniformGroup)),
     ['ran', 'provider', 'runtime', 'thinking events', 'tool calls', 'run log'],
     'the note lifts out only what it says, so the provider column it never names stays',
   );
@@ -894,43 +921,43 @@ async function main() {
   // runtime column reads "duration unavailable". With no model recorded the
   // clause names the provider instead, because the note is what lifts the
   // provider column out of the table.
-  const nullRuntimeGroup = nodes.get('thinkingRunsContent').children[2].children[1];
+  const nullRuntimeGroup = dayGroups[1];
   assert.strictEqual(
-    nullRuntimeGroup.children[2].textContent,
+    groupNoteText(nullRuntimeGroup),
     '2 briefing runs completed.',
     'an unknown runtime is left out of the note instead of averaging in as zero',
   );
   assert.deepStrictEqual(
-    nullRuntimeGroup.children[3].children[0].children[0].children.map((cell) => cell.textContent),
+    tableColumns(groupTable(nullRuntimeGroup)),
     ['ran', 'provider', 'runtime', 'thinking events', 'tool calls', 'run log'],
     'with no model to name, the note says nothing about the lane and the provider column stays',
   );
-  assert.strictEqual(
-    nullRuntimeGroup.children[3].children[1].children[0].children[2].textContent,
-    'duration unavailable',
+  assert.deepStrictEqual(
+    columnValues(groupTable(nullRuntimeGroup), 'runtime'),
+    ['duration unavailable', 'duration unavailable'],
     'the runtime column and the group note agree that the runtime is unknown',
   );
 
   // The average is only true of the runs that recorded a runtime, but "each"
   // distributes it across the whole group — so the clause is stated only when
   // the whole group recorded one.
-  const partialRuntimeGroup = nodes.get('thinkingRunsContent').children[3].children[1];
+  const partialRuntimeGroup = dayGroups[2];
   assert.strictEqual(
-    partialRuntimeGroup.children[2].textContent,
+    groupNoteText(partialRuntimeGroup),
     '2 partial runs completed on Qwen 3.5 4B (local).',
     'a runtime known for only part of the group is not reported as the time each run took',
   );
 
   // Recorded on every run, but 2 sec and 38 sec average to a figure true of
   // neither — "each" only holds when every run reads the same.
-  const spreadRuntimeGroup = nodes.get('thinkingRunsContent').children[4].children[1];
+  const spreadRuntimeGroup = dayGroups[3];
   assert.strictEqual(
-    spreadRuntimeGroup.children[2].textContent,
+    groupNoteText(spreadRuntimeGroup),
     '2 spread runs completed on Qwen 3.5 4B (local).',
     'runtimes that disagree are not averaged into a time each run took',
   );
   assert.deepStrictEqual(
-    spreadRuntimeGroup.children[3].children[1].children.map((row) => row.children[2].textContent),
+    columnValues(groupTable(spreadRuntimeGroup), 'runtime'),
     ['2 sec', '38 sec'],
     'the runtime column still carries each run\'s own time',
   );
@@ -952,11 +979,104 @@ async function main() {
   await settle();
   await settle();
   assert.strictEqual(
-    nodes.get('thinkingRunsContent').children[1].children[1].children[2].textContent,
+    groupNoteText(runGroups(nodes.get('thinkingRunsContent'))[0]),
     '2 mixed runs failed on Qwen 3.5 4B (local).',
     'the note counts the runs it stands in front of, never calling a filtered view the whole of a talent',
   );
   thinking.state.runsFailuresOnly = false;
+
+  // G2-B12 / X-05: two columns that were saying more than they knew. A run that
+  // started and has not finished has no runtime to report yet, which is not the
+  // same fact as a runtime the app failed to get; and third-party brands keep
+  // their case in the canon, while the local lane is not a brand.
+  const inFlightRuns = make('inFlightRuns');
+  thinking.renderThinkingRunList(inFlightRuns, [
+    {id: 'running-run', name: 'pulse', status: 'running', provider: 'local'},
+    {id: 'done-run', name: 'pulse', status: 'completed', provider: 'local', runtime_seconds: 30},
+    {id: 'unrecorded-run', name: 'pulse', status: 'completed', provider: 'anthropic'},
+    {id: 'failed-in-flight', name: 'pulse', status: 'running', failed: true, provider: 'openai'},
+  ]);
+  const inFlightTable = oneByClass(inFlightRuns, 'thinking-runs-table');
+  assert.deepStrictEqual(
+    columnValues(inFlightTable, 'runtime'),
+    ['still running', '30 sec', 'duration unavailable', 'duration unavailable'],
+    'a run in flight has no runtime yet, and a finished run that recorded none still says so',
+  );
+  assert.deepStrictEqual(
+    columnValues(inFlightTable, 'provider'),
+    ['local', 'local', 'Claude', 'GPT'],
+    'third-party brands keep their case and the local lane stays lowercase',
+  );
+
+  // Prior G2-46 partial + X-04. One run still in flight is enough to make a
+  // group's statuses differ, which used to suppress the whole note -- so a
+  // group repeating one model down every row kept the column with nothing
+  // saying it once. Each clause now earns its place on its own columns.
+  // The headings come from the talents the payload describes: an authored
+  // title is the owner's name for a talent, an id-shaped title is no title at
+  // all, and a title carrying retired vocabulary loses to the app's own name.
+  dayResponses.push(Promise.resolve({
+    uses: [
+      {id: 'flight-1', name: 'pulse', start: 1788662697014, status: 'completed', provider: 'local', model: 'local/qwen3.5-4b', runtime_seconds: 20},
+      {id: 'flight-2', name: 'pulse', start: 1788662697014, status: 'completed', provider: 'local', model: 'local/qwen3.5-4b', runtime_seconds: 20},
+      {id: 'flight-3', name: 'pulse', start: 1788662697014, status: 'running', provider: 'local', model: 'local/qwen3.5-4b'},
+      {id: 'partner-1', name: 'partner', start: 1788662697014, status: 'completed'},
+      {id: 'observer-1', name: 'entities:entity_observer', start: 1788662697014, status: 'completed'},
+      {id: 'untitled-1', name: 'untitled_talent', start: 1788662697014, status: 'completed'},
+    ],
+    facets: [{name: 'work', title: 'work life'}],
+    talents: {
+      pulse: {title: 'Pulse'},
+      partner: {title: 'your profile'},
+      'entities:entity_observer': {title: 'Entity Observer'},
+      untitled_talent: {title: 'untitled_talent'},
+    },
+  }));
+  window.location.hash = '#runs/20260208';
+  thinking.routeThinkingHash('history');
+  await settle();
+  await settle();
+  const titledGroups = runGroups(nodes.get('thinkingRunsContent'));
+  assert.strictEqual(
+    groupNoteText(titledGroups[0]),
+    '3 pulse runs on Qwen 3.5 4B (local).',
+    'a group whose statuses differ still says the model every run in it shares',
+  );
+  assert.deepStrictEqual(
+    tableColumns(groupTable(titledGroups[0])),
+    ['ran', 'status', 'provider', 'runtime', 'thinking events', 'tool calls', 'run log'],
+    'the model column leaves because the note says it, and status stays because the note cannot',
+  );
+  assert.deepStrictEqual(
+    columnValues(groupTable(titledGroups[0]), 'runtime'),
+    ['20 sec', '20 sec', 'still running'],
+    'the run in flight reads as running beside the runs that finished',
+  );
+  assert.strictEqual(groupTitle(titledGroups[1]), 'your profile', "a talent's authored title is the owner's name for it");
+  assert.strictEqual(groupTitle(titledGroups[2]), 'entity facts', 'a title carrying retired vocabulary never reaches the owner');
+  assert.strictEqual(groupTitle(titledGroups[3]), 'untitled talent', 'a title that is only the id is no title, and the id humanizes');
+
+  // G2-B02: the facet filter's empty state used to fall through to "no talent
+  // runs on this day" on a day that plainly had them. The server narrows the
+  // day payload to the picked facet, so the day's own count is the one carried
+  // over from the last unfiltered read.
+  dayResponses.push(Promise.resolve({uses: [], facets: [{name: 'work', title: 'work life'}]}));
+  nodes.get('thinkingRunsFacet').emit('change', {target: {value: 'work'}});
+  await settle();
+  await settle();
+  const facetHost = nodes.get('thinkingRunsContent');
+  assert.deepStrictEqual(
+    byTag(facetHost, 'p').map((child) => child.textContent),
+    ['no runs in this facet on this day', '6 runs ran on this day, none in work life.'],
+    'picking a facet says what the filter did, not that the day had no runs',
+  );
+  const facetReset = byTag(facetHost, 'button').filter((child) => child.textContent === 'show all facets');
+  assert.strictEqual(facetReset.length, 1, 'the facet empty state offers a way back instead of stranding the owner');
+  facetReset[0].emit('click');
+  await settle();
+  await settle();
+  assert.strictEqual(thinking.state.runsFacet, '', 'showing all facets clears the picked facet');
+  assert.strictEqual(runGroups(nodes.get('thinkingRunsContent')).length, 4, 'clearing the facet brings the day back');
 
   const now = new Date();
   const todayDay = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;

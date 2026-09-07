@@ -81,10 +81,21 @@
     return MODEL_LABELS[String(id || '').toLowerCase()] || id;
   }
 
+  // Third-party brands keep their case in the canon, and these two provider
+  // columns were the one place they did not; the local lane is not a brand, so
+  // it is the one value that stays lowercase. thinking's runs table brand-names
+  // the same values the same way, and the two move together (X-05, G2-43).
+  const PROVIDER_LABELS = {
+    anthropic: 'Claude',
+    google: 'Gemini',
+    openai: 'GPT',
+  };
+
   // The provider is genuinely unrecorded for some rows; say so in plain
   // words instead of echoing the internal null-name "unknown" (G2-31).
   function providerLabel(value) {
-    return value === 'unknown' ? 'not recorded' : value;
+    if (value === 'unknown') return 'not recorded';
+    return PROVIDER_LABELS[String(value || '').toLowerCase()] || value;
   }
 
   function cell(value) {
