@@ -408,7 +408,7 @@ Bare links don't motivate clicking. Each entry below says when you actually need
 | `docs/CONVEY-FRONTEND.md` | Binding client-side conventions for any Convey workspace, shell chrome, or shared client helper — static shell + per-app workspace architecture, the `/api/shell` contract |
 | `docs/OBSERVE.md` | Capture-side work: new modalities, transcription, sensing |
 | `docs/SOLCLI.md` | Adding a new `solstone <cmd>` or `solstone call <app> <verb>` |
-| `docs/PORTING.md` | Rust workspace rules: edition, iOS canary, native-dep proof |
+| `docs/PORTING.md` | Rust workspace rules: edition, iOS canary, native-dep proof, the per-target evidence matrix |
 | `docs/conversion/README.md` | The architectural map (plates, strands, cables) underlying the Rust workspace — read for "why is it shaped this way," not "how do I port X" (there's nothing left to port) |
 | `docs/PROMPT_TEMPLATES.md` | Modifying talent prompt format or frontmatter |
 | `docs/PROVIDERS.md` | The provider architecture: one active-brain resolver, four dispatch lanes (three cloud vendors plus local, where local also covers arbitrary OpenAI-compatible endpoints and confidential processing), and honest no-fallback failure semantics |
