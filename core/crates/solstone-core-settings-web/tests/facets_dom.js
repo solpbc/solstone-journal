@@ -679,9 +679,9 @@ async function testCase(name, fn) {
     );
   });
 
-  await testCase('G3-21 transcription/observer/vision/sync show an explicit loading state', async () => {
+  await testCase('G3-21 transcription/devices/vision/sync show an explicit loading state', async () => {
     const harness = createHarness();
-    for (const id of ['transcriptionLoadState', 'observerLoadState', 'visionLoadState', 'syncLoadState']) {
+    for (const id of ['transcriptionLoadState', 'devicesLoadState', 'visionLoadState', 'syncLoadState']) {
       assert.strictEqual(
         harness.document.getElementById(id).textContent,
         'loading settings…',

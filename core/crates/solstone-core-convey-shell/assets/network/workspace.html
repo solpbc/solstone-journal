@@ -892,6 +892,7 @@
 .ws-error-dismiss {
   transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
+.client-stat-note{display:block;margin-top:4px;color:var(--ink-faint,#6E6453);font-size:.82rem;line-height:1.35}
 .client-card.neutral{border-left-color:var(--border,#ddd)}.client-status.neutral{background:#f0f0ed;color:#555}.client-status.neutral::before{display:none}.client-details summary,.client-group-collapsed>summary{display:flex;align-items:center;gap:8px;cursor:pointer;min-height:44px;list-style:none}.client-details summary::-webkit-details-marker,.client-group-collapsed>summary::-webkit-details-marker{display:none}.client-details summary::before,.client-group-collapsed>summary::before{content:'\25B8';color:var(--ink-faint,#6E6453);font-size:.9em;line-height:1}.client-details[open] summary::before,.client-group-collapsed[open]>summary::before{content:'\25BE'}.client-details summary:focus-visible,.client-group-collapsed>summary:focus-visible{outline:2px solid var(--orange,#f59e0b);outline-offset:3px}.client-stats dd{overflow-wrap:anywhere}.client-last-material{color:var(--text-secondary,#666);font-size:.9rem;margin:8px 0}.client-paired{color:var(--ink-faint,#6E6453);font-size:.85rem;margin:4px 0 10px}.client-details .client-actions{margin-top:12px}
 </style>
 
@@ -1601,9 +1602,12 @@ function emptyStateHTML() {
 
 // 'last check-in' is a per-device fact read from that device's own last_seen_at,
 // not a page-load age (G3-217): three devices on one machine heartbeat within a
-// minute of each other, so they honestly round to the same phrase. The label
-// says so, because the card above answers a different question.
-const CHECK_IN_HINT = 'the last time this device reported in. whether it is adding material is the separate line on the card.';
+// minute of each other, so they honestly round to the same phrase. G3-306: the
+// sentence that separates it from delivery used to be a title= tooltip, which a
+// phone and a keyboard never reach, and 'last added' sat on the card face where
+// the two could not be read against each other. Both values are labelled here,
+// next to each other, and the distinction is visible text.
+const CHECK_IN_NOTE = 'a device can add material without checking in again, so these two can differ.';
 
 function clientStatsHTML(client, deliveryGroup) {
   const segment = window.NetworkRender.segmentDisplay(client.last_accepted_segment);
@@ -1617,8 +1621,12 @@ function clientStatsHTML(client, deliveryGroup) {
   // but for an 'adding' device it says nothing the chip doesn't already say — see
   // clientCardHTML, which omits it there entirely rather than passing it through.
   const connectionLabel = deliveryGroup === 'adding' ? '' : window.NetworkRender.connectionLineLabel(client);
+  const lastAdded = client.last_accepted_ingest_at
+    ? window.JournalFormat.timestamp(client.last_accepted_ingest_at)
+    : 'nothing yet';
   return `<dl>
-    <div><dt title="${escapeHtml(CHECK_IN_HINT)}">last check-in</dt><dd>${escapeHtml(window.NetworkRender.checkInLabel(client))}</dd></div>
+    <div><dt>last added</dt><dd>${escapeHtml(lastAdded)}</dd></div>
+    <div><dt>last check-in</dt><dd>${escapeHtml(window.NetworkRender.checkInLabel(client))}<span class="client-stat-note">${escapeHtml(CHECK_IN_NOTE)}</span></dd></div>
     ${connectionLabel ? `<div><dt>connection</dt><dd>${escapeHtml(connectionLabel)}</dd></div>` : ''}
     <div><dt>last journal segment</dt><dd>${segmentCell}</dd></div>
     ${failure ? `<div><dt>delivery detail</dt><dd>${escapeHtml(failure)}</dd></div>` : ''}
@@ -1699,6 +1707,10 @@ function collapsedGroupHTML(section) {
 // its own disclosure. 'forget this device' sits on the row face, asks in place
 // rather than through a browser dialog, and posts to a route that refuses any
 // device that has ever delivered material and refuses this journal's own host.
+// G3-305 (round 3): a row offers exactly one way to remove a device. A device
+// that never delivered is offered 'forget' and nothing else; a device that has
+// delivered keeps 'unpair' in its disclosure and is never offered 'forget'. Both
+// refusals on the forget route stay as they are.
 function forgetActionHTML(client) {
   const name = client.display_label || client.device_label || client.client_label || client.cid_short;
   return `
@@ -1744,9 +1756,9 @@ function clientCardHTML(client) {
       <details class="client-details" data-client-details="${escapeHtml(client.cid)}">
         <summary>device details</summary>
         <div class="client-stats">${clientStatsHTML(client, deliveryGroup)}<dl><div><dt>device id</dt><dd>${escapeHtml(client.cid)}</dd></div></dl></div>
-      <div class="client-actions">
+      ${deliveryGroup === 'never' ? '' : `<div class="client-actions">
         <button class="danger" data-cid="${escapeHtml(client.cid)}" onclick="unpairClient(this.dataset.cid, this)">unpair</button>
-      </div>
+      </div>`}
       </details>
     </div>
   `;

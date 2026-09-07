@@ -1,4 +1,4 @@
-# Exporting Your Kindle Highlights
+### export your Kindle highlights
 
 1. Connect your Kindle to your computer via USB
 2. Open the Kindle drive in your file manager

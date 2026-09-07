@@ -510,7 +510,9 @@
   margin-top: 0.3rem;
 }
 .nowrap { white-space: nowrap; }
-.timestamp-link { color: var(--facet-color, var(--orange-text-aa, #a15f17)); text-decoration: none; }
+/* X-08: the history date is the row's own link, so it carries the row's tap
+   target rather than the 16px of its text. */
+.timestamp-link { color: var(--facet-color, var(--orange-text-aa, #a15f17)); text-decoration: none; display: inline-flex; align-items: center; min-height: 44px; }
 .timestamp-link:hover { text-decoration: underline; }
 .no-imports { color: #666; padding: 2em; text-align: center; }
 .import-source-inline {
@@ -744,6 +746,10 @@ window._guidedClientItemId = null;
 let importEvents = {};
 let importsCache = [];
 let currentSourceFilter = '';
+// G3-310: 417 imports at 25 a page took sixteen clicks to reach the oldest, and
+// paging was the only way through. 100 is the route's own ceiling; the real fix
+// is a date jump the list route can serve, which needs a server-side filter.
+const IMPORT_PAGE_SIZE = 100;
 let currentPage = 1;
 let totalImports = 0;
 const escapeHtml = (value) => window.AppServices.escapeHtml(value);
@@ -1123,13 +1129,17 @@ function renderImportRow(imp) {
     statusText = 'pending';
   }
 
-  // The file column holds a file and nothing else. Falling back to the source
-  // display made it a copy of the source column, which then rendered '-'
-  // (G3-113); each column now answers exactly one question.
-  const fileDisplay = imp.original_filename || '-';
-  const sourceDisplayText = imp.source_type
-    ? imp.source_display || sourceMetadataByName[imp.source_type]?.display_name || imp.source_type
-    : '';
+  // The file column holds a file and nothing else, and the source column holds a
+  // source (G3-113, G3-308). Older imports recorded the uploaded file's name in
+  // source_display, so the source column repeated a filename while the file
+  // column was a dash on every row. A recorded display that ends in a file
+  // extension is that file and belongs in the file cell; a recorded display that
+  // names a source the app does not carry metadata for is still a source.
+  const knownSourceName = sourceMetadataByName[imp.source_type]?.display_name || '';
+  const recordedDisplay = typeof imp.source_display === 'string' ? imp.source_display.trim() : '';
+  const recordedIsFilename = /\.[a-z0-9]{2,5}$/i.test(recordedDisplay);
+  const sourceDisplayText = knownSourceName || (recordedIsFilename ? '' : recordedDisplay);
+  const fileDisplay = imp.original_filename || (recordedIsFilename ? recordedDisplay : '') || '-';
   const sourceCell = sourceDisplayText
     ? renderSourceDisplay(imp.source_type || '', sourceDisplayText, sourceDisplayText)
     : '-';
@@ -1168,9 +1178,9 @@ async function loadImports() {
   currentPage = 1;
   await loadSourceGrid();
   try {
-    const data = await window.apiJson('/app/import/api/list?page=1&per_page=25');
+    const data = await window.apiJson(`/app/import/api/list?page=1&per_page=${IMPORT_PAGE_SIZE}`);
     if (!Array.isArray(data.imports) || typeof data.total !== 'number' || typeof data.page !== 'number' || typeof data.pages !== 'number') {
-      throw malformedImportHistoryResponse('/app/import/api/list?page=1&per_page=25');
+      throw malformedImportHistoryResponse(`/app/import/api/list?page=1&per_page=${IMPORT_PAGE_SIZE}`);
     }
     const imports = data.imports;
     importsCache = imports;
@@ -1269,9 +1279,9 @@ function renderLoadMoreError(err) {
 async function loadMoreImports() {
   currentPage++;
   try {
-    const data = await window.apiJson(`/app/import/api/list?page=${currentPage}&per_page=25`);
+    const data = await window.apiJson(`/app/import/api/list?page=${currentPage}&per_page=${IMPORT_PAGE_SIZE}`);
     if (!Array.isArray(data.imports) || typeof data.total !== 'number' || typeof data.page !== 'number' || typeof data.pages !== 'number') {
-      throw malformedImportHistoryResponse(`/app/import/api/list?page=${currentPage}&per_page=25`);
+      throw malformedImportHistoryResponse(`/app/import/api/list?page=${currentPage}&per_page=${IMPORT_PAGE_SIZE}`);
     }
 
     importsCache = importsCache.concat(data.imports);
@@ -1494,7 +1504,7 @@ async function loadGuidedFlow(sourceName) {
 
   guideSteps.innerHTML = `
     <div>
-      <h3 class="import-guide-title">${escapeHtml(source.display_name)}</h3>
+      <h2 class="import-guide-title">${escapeHtml(source.display_name)}</h2>
       <p class="import-guide-subtitle">${escapeHtml(source.description || '')}</p>
     </div>
     <form id="guidedImportForm" onsubmit="return false;"><ol class="import-steps-list">
@@ -1579,7 +1589,7 @@ function renderQuickImportFlow() {
 
   guideSteps.innerHTML = `
     <div>
-      <h3 class="import-guide-title">quick import</h3>
+      <h2 class="import-guide-title">quick import</h2>
       <p class="import-guide-subtitle">paste text or drop a file. you'll confirm the date before it goes in.</p>
     </div>
     <form id="importForm">

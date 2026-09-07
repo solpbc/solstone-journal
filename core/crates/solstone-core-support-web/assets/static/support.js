@@ -32,7 +32,7 @@
   const FIELD_LABELS = {
     subject: 'subject',
     description: "what's happening",
-    body: 'your feedback',
+    body: "what's on your mind",
     content: 'your message',
     user_email: 'your email',
     filename: 'file',

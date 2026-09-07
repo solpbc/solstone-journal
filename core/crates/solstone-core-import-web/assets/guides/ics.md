@@ -1,12 +1,10 @@
-# Exporting Your Calendar
-
-## Google Calendar
+### Google Calendar
 
 1. Open [Google Calendar Settings](https://calendar.google.com/calendar/r/settings/export)
 2. Click **Export** — this downloads a .zip file containing .ics files for each calendar
 3. Upload the .zip file here
 
-## Apple Calendar
+### Apple Calendar
 
 1. Open the **Calendar** app on your Mac
 2. Select the calendar you want to export in the sidebar
@@ -14,7 +12,7 @@
 4. Save the .ics file
 5. Upload it here
 
-## Outlook
+### Outlook
 
 1. Open [Outlook Calendar](https://outlook.live.com/calendar)
 2. Go to **Settings → View all Outlook settings**

@@ -2101,7 +2101,7 @@ button:focus:not(:focus-visible) {
         <option value="transcription">transcription</option>
       </optgroup>
       <optgroup label="devices">
-        <option value="observer">devices</option>
+        <option value="devices">devices</option>
         <option value="vision">vision</option>
       </optgroup>
       <optgroup label="data">
@@ -2132,7 +2132,7 @@ button:focus:not(:focus-visible) {
     </div>
     <div class="settings-nav-group">
       <div class="settings-nav-label">devices</div>
-      <button class="settings-nav-item" data-section="observer" id="tab-observer" role="tab" aria-selected="false" aria-controls="section-observer" tabindex="-1">devices</button>
+      <button class="settings-nav-item" data-section="devices" id="tab-devices" role="tab" aria-selected="false" aria-controls="section-devices" tabindex="-1">devices</button>
       <button class="settings-nav-item" data-section="vision" id="tab-vision" role="tab" aria-selected="false" aria-controls="section-vision" tabindex="-1">vision</button>
     </div>
     <div class="settings-nav-group">
@@ -2397,10 +2397,10 @@ button:focus:not(:focus-visible) {
     </section>
 
     <!-- Observer Section -->
-    <section class="settings-section" id="section-observer" role="tabpanel" aria-labelledby="tab-observer">
+    <section class="settings-section" id="section-devices" role="tabpanel" aria-labelledby="tab-devices">
       <h2>devices</h2>
-      <p class="settings-section-desc">what the solstone app takes in from your screen and terminal, and how it reaches your journal.</p>
-      <div id="observerLoadState" class="settings-load-state" aria-live="polite">loading settings…</div>
+      <p class="settings-section-desc">what the solstone app takes in from your terminal.</p>
+      <div id="devicesLoadState" class="settings-load-state" aria-live="polite">loading settings…</div>
 
       <form class="settings-form" onsubmit="return false;">
 
@@ -2435,15 +2435,15 @@ button:focus:not(:focus-visible) {
     <!-- Vision Section -->
     <section class="settings-section" id="section-vision" role="tabpanel" aria-labelledby="tab-vision">
       <h2>vision</h2>
-      <p class="settings-section-desc">settings for understanding what's on your screen.</p>
+      <p class="settings-section-desc">what the solstone app reads from your screen, and how closely.</p>
       <div id="visionLoadState" class="settings-load-state" aria-live="polite">loading settings…</div>
 
       <form class="settings-form" onsubmit="return false;">
 
       <div class="settings-field">
-        <label for="field-max-extractions">max extractions (of 300 possible frames)</label>
+        <label for="field-max-extractions">frames read in detail</label>
         <input type="number" id="field-max-extractions" min="5" max="100" placeholder="20" style="max-width: 100px;">
-        <small>maximum frames to extract detailed content from per 5 minute screen segment (big impact on token usage)</small>
+        <small>out of the 300 frames in each 5 minute screen segment. more frames means more detail and more tokens.</small>
       </div>
 
       <!-- Redaction Rules -->
@@ -2476,7 +2476,7 @@ button:focus:not(:focus-visible) {
           </span>
         </summary>
         <div class="drawer-body" id="visionCategoriesBody">
-          <p style="color:#666;font-size:0.9em;margin:0 0 1em 0">set importance and extraction rules for each screen category. double-click guidance text to edit.</p>
+          <p style="color:#666;font-size:0.9em;margin:0 0 1em 0">how much each kind of screen matters, and the instructions the ai follows when it reads one. double-click an instruction to edit it.</p>
           <div id="visionCategoryGroups">loading…</div>
         </div>
       </details>
@@ -2653,7 +2653,7 @@ button:focus:not(:focus-visible) {
       <div class="settings-field">
         <label for="field-support-portal-url">portal URL</label>
         <input type="text" id="field-support-portal-url" data-section="support" data-key="portal_url" placeholder="https://support.solstone.app">
-        <small>support portal endpoint. change this if you run your own portal.</small>
+        <small>where support requests go. change this if you run your own portal.</small>
       </div>
       </form>
     </section>
@@ -3017,7 +3017,14 @@ setupModalAccessibility('cleanupModal');
 setupModalAccessibility('facetCreateModal');
 
 // ========== NAVIGATION ==========
-const VALID_SECTIONS = ['guide', 'profile', 'apikeys', 'transcription', 'observer', 'vision', 'sync', 'storage', 'support', 'facets'];
+const VALID_SECTIONS = ['guide', 'profile', 'apikeys', 'transcription', 'devices', 'vision', 'sync', 'storage', 'support', 'facets'];
+// G3-312: the devices pane used to answer to #observer, an internal section name
+// in the owner's address bar. Links and bookmarks that still carry the old
+// fragment land on the same pane.
+const RETIRED_SECTION_HASHES = { observer: 'devices' };
+function resolveSectionHash(hash) {
+  return RETIRED_SECTION_HASHES[hash] || hash;
+}
 
 function switchSection(sectionId, updateHash = true, loadSection = true) {
   // Validate section exists
@@ -3288,17 +3295,18 @@ document.getElementById('navSelect').addEventListener('change', (e) => {
 
 // Hash-based navigation
 function initFromHash() {
-  const hash = window.location.hash.slice(1);
+  const hash = resolveSectionHash(window.location.hash.slice(1));
   if (hash && VALID_SECTIONS.includes(hash)) {
-    switchSection(hash, false);
+    switchSection(hash, hash !== window.location.hash.slice(1));
   }
 }
 
 window.addEventListener('hashchange', () => {
-  const hash = window.location.hash.slice(1);
+  const raw = window.location.hash.slice(1);
+  const hash = resolveSectionHash(raw);
   if (hash && VALID_SECTIONS.includes(hash)) {
-    switchSection(hash, false);
-  } else if (!hash) {
+    switchSection(hash, hash !== raw);
+  } else if (!raw) {
     switchSection('guide', false);
   }
 });
@@ -4550,12 +4558,12 @@ let observeData = null;
 async function loadObserve() {
   try {
     observeData = await window.apiJson('api/observe');
-    setLoadState('observerLoadState');
+    setLoadState('devicesLoadState');
     setObserveControlsDisabled(false);
     populateObserve(observeData);
   } catch (err) {
     setObserveControlsDisabled(true);
-    setLoadState('observerLoadState', window.SurfaceState.error({
+    setLoadState('devicesLoadState', window.SurfaceState.error({
       heading: "couldn't load these settings",
       desc: window.CONVEY_COPY.RELOAD_HINT,
       serverMessage: err?.serverMessage,
@@ -4613,7 +4621,7 @@ async function saveObserveSetting(key, value) {
   }
 }
 
-// Event listeners for observer settings
+// Event listeners for the devices pane
 document.getElementById('field-tmux-enabled').addEventListener('change', async function() {
   const enabled = this.checked;
   updateTmuxCaptureIntervalVisibility();
@@ -4813,14 +4821,14 @@ function renderVisionCategories(data) {
 
         // Move buttons
         html += `<div class="vision-move-buttons">`;
-        html += `<button class="vision-move-btn vision-move-up" data-category="${item.name}" title="move up" ${isFirst ? 'disabled' : ''}>↑</button>`;
-        html += `<button class="vision-move-btn vision-move-down" data-category="${item.name}" title="move down" ${isLast ? 'disabled' : ''}>↓</button>`;
+        html += `<button class="vision-move-btn vision-move-up" data-category="${item.name}" aria-label="raise ${item.label}" title="raise ${item.label}" ${isFirst ? 'disabled' : ''}>↑</button>`;
+        html += `<button class="vision-move-btn vision-move-down" data-category="${item.name}" aria-label="lower ${item.label}" title="lower ${item.label}" ${isLast ? 'disabled' : ''}>↓</button>`;
         html += `</div>`;
 
         // Reset button
         html += `<span class="context-action" data-category="${item.name}">`;
         if (override.importance || override.extraction) {
-          html += `<button class="context-reset vision-reset" data-category="${item.name}" title="reset to default">&times;</button>`;
+          html += `<button class="context-reset vision-reset" data-category="${item.name}" aria-label="reset ${item.label} to the default" title="reset ${item.label} to the default">&times;</button>`;
         }
         html += `</span>`;
 

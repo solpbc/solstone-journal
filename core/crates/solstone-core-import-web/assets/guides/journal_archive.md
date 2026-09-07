@@ -1,4 +1,4 @@
-# Moving a journal
+### moving a journal
 
 1. On the journal you want to move, open its Import screen.
 2. Choose **journal** and select **download this journal**.

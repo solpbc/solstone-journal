@@ -1,4 +1,4 @@
-# Exporting Your ChatGPT History
+### export your ChatGPT history
 
 1. Open [ChatGPT](https://chat.openai.com)
 2. Click your profile icon in the bottom-left corner

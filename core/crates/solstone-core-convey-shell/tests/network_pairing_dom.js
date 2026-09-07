@@ -727,7 +727,7 @@ async function main() {
   });
 
   await testCase('G3-208: only a never-delivered row offers forget, and it asks in place', async () => {
-    const start = workspace.indexOf('const CHECK_IN_HINT =');
+    const start = workspace.indexOf('const CHECK_IN_NOTE =');
     const end = workspace.indexOf('\nfunction renderClients', start);
     assert.notStrictEqual(start, -1);
     assert.notStrictEqual(end, -1);
@@ -753,11 +753,20 @@ async function main() {
     );
     assert.ok(neverHtml.includes('class="client-forget-confirm" hidden'), 'the confirm is in-page and starts closed');
     assert.ok(!/confirm\(/.test(neverHtml), 'the confirm is not a browser dialog');
-    assert.ok(neverHtml.includes('unpair'), 'the existing unpair path is preserved');
+    // G3-305: one destructive action per row. The never-delivered row's only way
+    // to remove the device is forget; unpair is not also offered underneath it.
+    assert.ok(!neverHtml.includes('unpairClient('), 'a never-delivered row is not also offered unpair');
 
     const deliveredHtml = vm.runInContext(`clientCardHTML(${JSON.stringify(delivered)})`, context);
     assert.ok(!deliveredHtml.includes('forget this device'), 'a device that has delivered is not offered forget');
     assert.ok(deliveredHtml.includes('unpair'), 'a delivering device keeps its unpair action');
+
+    // G3-306: both times are labelled values in the disclosure, and the sentence
+    // that separates them is visible text rather than a title= tooltip.
+    assert.ok(deliveredHtml.includes('<dt>last added</dt>'), 'the disclosure labels last added');
+    assert.ok(deliveredHtml.includes('<dt>last check-in</dt>'), 'the disclosure labels last check-in');
+    assert.ok(deliveredHtml.includes('class="client-stat-note"'), 'the distinction is visible text');
+    assert.ok(!/<dt title=/.test(deliveredHtml), 'no hover-only term hint remains');
 
     assert.ok(
       workspace.includes('/app/network/api/devices/${encodeURIComponent(cid)}/forget'),

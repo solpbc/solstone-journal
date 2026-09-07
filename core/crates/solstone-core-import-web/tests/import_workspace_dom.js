@@ -247,6 +247,25 @@ function runImportRowColumns() {
     'G3-113: the file column holds a file or a dash, never a copy of the source'
   );
 
+  // G3-308: the .opus imports recorded the uploaded file's name in source_display
+  // and carried no source_type, so the source column repeated a filename while the
+  // file column was a dash on every row. The file goes in the file column, and the
+  // source column shows a source or nothing.
+  const recordedFilenameRow = {
+    timestamp: 't4', status: 'success', imported_at: 1700000000, target_day: '20260706',
+    source_display: '2026-07-06_12_09_03.opus',
+    total_files_created: 60, entries_written: 60, entities_seeded: 0,
+  };
+  const recordedFilenameHtml = vm.runInContext(`renderImportRow(${JSON.stringify(recordedFilenameRow)})`, context);
+  assert.ok(
+    recordedFilenameHtml.includes('<td>2026-07-06_12_09_03.opus</td>'),
+    'G3-308: a recorded filename is shown in the file column'
+  );
+  assert.ok(
+    /<td class="source-cell">-<\/td>/.test(recordedFilenameHtml),
+    'G3-308: the source column does not repeat the filename'
+  );
+
   const distinctRow = {
     timestamp: 't2', status: 'success', imported_at: 1700000000, target_day: '20260706',
     original_filename: 'note.opus', source_type: 'plaud', source_display: 'Plaud recorder',

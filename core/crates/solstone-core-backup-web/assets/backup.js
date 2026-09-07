@@ -90,6 +90,8 @@
         "last_backup": "last backup",
         "last_prune": "last cleanup",
         "last_verification": "last verification",
+        "verification_subset_one": "checked {checked} of {total} snapshot",
+        "verification_subset": "checked {checked} of {total} snapshots",
         "not_available": "not yet available",
         "not_yet": "not yet",
         "ago": "{duration} ago",
@@ -882,6 +884,22 @@
     return { text: template.replace('{duration}', duration), title };
   }
 
+  // 'checked_subset' arrives as '36/52': the snapshots verification actually
+  // opened, out of the snapshots in the backup. Anything else is not reported.
+  function verificationSubsetLine(value) {
+    if (typeof value !== 'string') return '';
+    const parts = value.split('/');
+    if (parts.length !== 2) return '';
+    const checked = Number(parts[0]);
+    const total = Number(parts[1]);
+    if (!Number.isFinite(checked) || !Number.isFinite(total) || total <= 0) return '';
+    const key = total === 1
+      ? 'management.status_labels.verification_subset_one'
+      : 'management.status_labels.verification_subset';
+    const template = resolveCopyPath(copy, key) || '';
+    return template.replace('{checked}', String(checked)).replace('{total}', String(total));
+  }
+
   function ensureBackupStatusNodes() {
     const backup = root.querySelector('[data-last-backup]');
     let reason = document.querySelector('[data-last-backup-reason]');
@@ -902,7 +920,18 @@
       section.append(heading, verification);
       grid.append(section);
     }
-    return { backup, reason, verification };
+    // G3-314: verification samples the snapshots, and the tile that answers
+    // 'when' has to keep the scope of what was checked. The population sits
+    // under the age rather than inside it, so the tile keeps its siblings' shape.
+    let subset = document.querySelector('[data-last-verification-subset]');
+    if (verification && !subset) {
+      subset = document.createElement('p');
+      subset.setAttribute('data-last-verification-subset', '');
+      subset.className = 'backup-status-subset';
+      subset.hidden = true;
+      verification.insertAdjacentElement('afterend', subset);
+    }
+    return { backup, reason, verification, subset };
   }
 
   function formatDay(value) {
@@ -1387,6 +1416,11 @@
       } else {
         nodes.verification.removeAttribute('title');
       }
+    }
+    if (nodes.subset) {
+      const line = verificationSubsetLine(lastVerification.checked_subset);
+      nodes.subset.textContent = line;
+      nodes.subset.hidden = !line;
     }
     setTextWithTitle('[data-last-prune]', timestampDisplay(state.last_prune && state.last_prune.time));
     const retention = state.retention || {};
