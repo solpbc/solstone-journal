@@ -524,7 +524,7 @@
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
-                  "description": "Creates comprehensive daily newsletters for each facet, capturing activities, progress, and insights",
+                  "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
                   "multi_facet": true,
                   "output_format": "md",
                   "schedule": "daily",
@@ -590,7 +590,7 @@
                 "schedule": {
                   "app": null,
                   "color": "#5e35b1",
-                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Captures dates, times, participants, and cancellation state.",
+                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "daily",
@@ -819,7 +819,7 @@
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
-                  "description": "Creates comprehensive daily newsletters for each facet, capturing activities, progress, and insights",
+                  "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
                   "multi_facet": true,
                   "output_format": "md",
                   "schedule": "daily",
@@ -885,7 +885,7 @@
                 "schedule": {
                   "app": null,
                   "color": "#5e35b1",
-                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Captures dates, times, participants, and cancellation state.",
+                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "daily",
@@ -1365,7 +1365,7 @@
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
-                  "description": "Creates comprehensive daily newsletters for each facet, capturing activities, progress, and insights",
+                  "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
                   "multi_facet": true,
                   "output_format": "md",
                   "schedule": "daily",
@@ -1431,7 +1431,7 @@
                 "schedule": {
                   "app": null,
                   "color": "#5e35b1",
-                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Captures dates, times, participants, and cancellation state.",
+                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "daily",
@@ -1695,7 +1695,7 @@
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
-                  "description": "Creates comprehensive daily newsletters for each facet, capturing activities, progress, and insights",
+                  "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
                   "multi_facet": true,
                   "output_format": "md",
                   "schedule": "daily",
@@ -1761,7 +1761,7 @@
                 "schedule": {
                   "app": null,
                   "color": "#5e35b1",
-                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Captures dates, times, participants, and cancellation state.",
+                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "daily",
@@ -2320,7 +2320,7 @@
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
-                  "description": "Creates comprehensive daily newsletters for each facet, capturing activities, progress, and insights",
+                  "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
                   "multi_facet": true,
                   "output_format": "md",
                   "schedule": "daily",
@@ -2386,7 +2386,7 @@
                 "schedule": {
                   "app": null,
                   "color": "#5e35b1",
-                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Captures dates, times, participants, and cancellation state.",
+                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "daily",
@@ -2650,7 +2650,7 @@
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
-                  "description": "Creates comprehensive daily newsletters for each facet, capturing activities, progress, and insights",
+                  "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
                   "multi_facet": true,
                   "output_format": "md",
                   "schedule": "daily",
@@ -2716,7 +2716,7 @@
                 "schedule": {
                   "app": null,
                   "color": "#5e35b1",
-                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Captures dates, times, participants, and cancellation state.",
+                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "daily",
@@ -3275,7 +3275,7 @@
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
-                  "description": "Creates comprehensive daily newsletters for each facet, capturing activities, progress, and insights",
+                  "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
                   "multi_facet": true,
                   "output_format": "md",
                   "schedule": "daily",
@@ -3341,7 +3341,7 @@
                 "schedule": {
                   "app": null,
                   "color": "#5e35b1",
-                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Captures dates, times, participants, and cancellation state.",
+                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "daily",
@@ -3605,7 +3605,7 @@
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
-                  "description": "Creates comprehensive daily newsletters for each facet, capturing activities, progress, and insights",
+                  "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
                   "multi_facet": true,
                   "output_format": "md",
                   "schedule": "daily",
@@ -3671,7 +3671,7 @@
                 "schedule": {
                   "app": null,
                   "color": "#5e35b1",
-                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Captures dates, times, participants, and cancellation state.",
+                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "daily",
@@ -4229,7 +4229,7 @@
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
-                  "description": "Creates comprehensive daily newsletters for each facet, capturing activities, progress, and insights",
+                  "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
                   "multi_facet": true,
                   "output_format": "md",
                   "schedule": "daily",
@@ -4295,7 +4295,7 @@
                 "schedule": {
                   "app": null,
                   "color": "#5e35b1",
-                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Captures dates, times, participants, and cancellation state.",
+                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "daily",
@@ -4559,7 +4559,7 @@
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
-                  "description": "Creates comprehensive daily newsletters for each facet, capturing activities, progress, and insights",
+                  "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
                   "multi_facet": true,
                   "output_format": "md",
                   "schedule": "daily",
@@ -4625,7 +4625,7 @@
                 "schedule": {
                   "app": null,
                   "color": "#5e35b1",
-                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Captures dates, times, participants, and cancellation state.",
+                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "daily",

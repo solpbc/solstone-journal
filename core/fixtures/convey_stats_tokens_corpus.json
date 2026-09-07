@@ -542,7 +542,7 @@
                 "facet_newsletter": {
                   "accumulate": true,
                   "color": "#0d47a1",
-                  "description": "Creates comprehensive daily newsletters for each facet, capturing activities, progress, and insights",
+                  "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
                   "hook": {
                     "post": "facet_newsletter",
                     "pre": "facet_newsletter"
@@ -631,7 +631,7 @@
                 },
                 "schedule": {
                   "color": "#5e35b1",
-                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Captures dates, times, participants, and cancellation state.",
+                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
                   "hook": {
                     "post": "schedule"
                   },
@@ -1271,7 +1271,7 @@
                 "facet_newsletter": {
                   "accumulate": true,
                   "color": "#0d47a1",
-                  "description": "Creates comprehensive daily newsletters for each facet, capturing activities, progress, and insights",
+                  "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
                   "hook": {
                     "post": "facet_newsletter",
                     "pre": "facet_newsletter"
@@ -1360,7 +1360,7 @@
                 },
                 "schedule": {
                   "color": "#5e35b1",
-                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Captures dates, times, participants, and cancellation state.",
+                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
                   "hook": {
                     "post": "schedule"
                   },
@@ -2118,7 +2118,7 @@
                 "facet_newsletter": {
                   "accumulate": true,
                   "color": "#0d47a1",
-                  "description": "Creates comprehensive daily newsletters for each facet, capturing activities, progress, and insights",
+                  "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
                   "hook": {
                     "post": "facet_newsletter",
                     "pre": "facet_newsletter"
@@ -2207,7 +2207,7 @@
                 },
                 "schedule": {
                   "color": "#5e35b1",
-                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Captures dates, times, participants, and cancellation state.",
+                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
                   "hook": {
                     "post": "schedule"
                   },
@@ -2965,7 +2965,7 @@
                 "facet_newsletter": {
                   "accumulate": true,
                   "color": "#0d47a1",
-                  "description": "Creates comprehensive daily newsletters for each facet, capturing activities, progress, and insights",
+                  "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
                   "hook": {
                     "post": "facet_newsletter",
                     "pre": "facet_newsletter"
@@ -3054,7 +3054,7 @@
                 },
                 "schedule": {
                   "color": "#5e35b1",
-                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Captures dates, times, participants, and cancellation state.",
+                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
                   "hook": {
                     "post": "schedule"
                   },
