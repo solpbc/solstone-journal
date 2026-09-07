@@ -155,8 +155,13 @@
     return copy("row.identity", { date: identityLabel(row), stream: stream });
   }
 
-  function identity(text) {
-    return '<p class="removals-card-identity" data-removal-identity>' + text + '</p>';
+  // The label now names the source the way the owner would say it, so the
+  // exact stream key rides along in the title where a deletion decision can
+  // still be checked against it. G1-203.
+  function identity(text, row) {
+    const key = row && typeof row.stream === 'string' && row.stream !== '_default' ? row.stream : null;
+    const title = key ? ' title="' + escapeHtml(key) + '"' : '';
+    return '<p class="removals-card-identity" data-removal-identity' + title + '>' + text + '</p>';
   }
 
   function copyWithoutDefaultStream(key, values) {
@@ -187,7 +192,7 @@
     const count = rowCount(row);
     const checked = selected.has(row.id) ? ' checked' : '';
     return '<article class="removals-card-row" data-removal-row data-mark-id="' + escapeHtml(row.id) + '">'
-      + identity(identityText(row))
+      + identity(identityText(row), row)
       + '<label class="removals-select"><input type="checkbox" data-removal-select data-mark-id="' + escapeHtml(row.id) + '"' + checked + '> select this item</label>'
       + '<p class="removals-card-what">' + copyForCount('row.what', count, { n: count, size: row.size }) + '</p>'
       + '<button type="button" data-removal-action="approve" data-mark-id="' + escapeHtml(row.id) + '">'
@@ -201,7 +206,7 @@
 
   function failedRow(row) {
     return '<article class="removals-card-row" data-removal-row data-mark-id="' + escapeHtml(row.id) + '">'
-      + identity(identityText(row))
+      + identity(identityText(row), row)
       + '<p class="removals-card-failed-badge">' + copy("failed.badge") + '</p>'
       + '<p class="removals-card-failed-body">'
       + copy("failed.body")

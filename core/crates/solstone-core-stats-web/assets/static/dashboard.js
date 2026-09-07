@@ -378,19 +378,6 @@ const Dashboard = (function() {
   // place on the page the owner has to translate a clock (G2-B14).
   const HEATMAP_HOUR_LABELS = {0: '12 am', 6: '6 am', 12: '12 pm', 18: '6 pm'};
 
-  // The heatmap's buckets run to thousands of minutes, and the shared
-  // JournalFormat.duration ladder tops out at "N min M sec" (it takes
-  // seconds and has no hours rung), so 1,995 minutes would read
-  // "1995 min 0 sec" through it. Write hours and minutes here, in the same
-  // register the rest of the app uses ("30 sec", "5 min 3 sec") (G2-B14).
-  function heatmapDuration(minutes) {
-    const total = Math.round(Number(minutes) || 0);
-    if (total < 60) return `${total} min`;
-    const hours = Math.floor(total / 60);
-    const rest = total % 60;
-    return rest ? `${hours} hr ${rest} min` : `${hours} hr`;
-  }
-
   function heatmapHourSpoken(hour) {
     if (hour === 0) return '12 am';
     if (hour === 12) return '12 pm';
@@ -420,7 +407,7 @@ const Dashboard = (function() {
     }
     const parts = [];
     if (weekday !== null) parts.push(`around ${heatmapHourSpoken(weekday)} on weekdays`);
-    if (weekend !== null) parts.push(`around ${heatmapHourSpoken(weekend)} at weekends`);
+    if (weekend !== null) parts.push(`around ${heatmapHourSpoken(weekend)} on weekends`);
     return `your busiest hour is ${parts.join(' and ')}. the hour by hour grid needs a wider screen.`;
   }
 
@@ -485,7 +472,9 @@ const Dashboard = (function() {
 
       for (let h = 0; h < 24; h++) {
         const intensity = data[d][h] / maxVal;
-        const cellTitle = `${days[d]} ${heatmapHourSpoken(h)} · ${heatmapDuration(data[d][h])}`;
+        // One duration ladder for the whole app; it grew an hours rung for
+        // these buckets, which run to thousands of minutes (G2-B14, S-3).
+        const cellTitle = `${days[d]} ${heatmapHourSpoken(h)} · ${window.JournalFormat.duration((Number(data[d][h]) || 0) * 60)}`;
         row.appendChild(el('div', {
           className: 'heatmap-cell',
           style: {background: `rgba(${WARM_HEATMAP_RGB},${intensity})`},

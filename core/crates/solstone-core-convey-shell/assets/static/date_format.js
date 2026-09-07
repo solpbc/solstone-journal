@@ -88,8 +88,21 @@
     return label;
   }
 
+  // A stream key is structured, so parse it rather than stripping punctuation:
+  // `device.watch.audio` names a watch's audio, not a device called "device
+  // watch audio", and `import.chatgpt` is a ChatGPT import, not "import
+  // chatgpt". A dot-free key is the machine's own name and stands as it is.
+  // Anything else falls back to the old separator swap. G1-203.
   function formatStreamLabel(stream) {
-    return String(stream || '').replace(/[._-]+/g, ' ').trim();
+    const raw = String(stream || '').trim();
+    const parts = raw.split('.').filter(part => part !== '');
+    const words = part => part.replace(/[_-]+/g, ' ').trim();
+    // A machine's own stream name is one dot-free label the journal already
+    // reduced from its hostname; it reads as itself, dashes and all.
+    if (parts.length === 1 && /^[a-z0-9][a-z0-9-]*$/.test(parts[0])) return parts[0];
+    if (parts[0] === 'device' && parts.length >= 3) return parts.slice(1).map(words).join(' ').trim();
+    if (parts[0] === 'import' && parts.length === 2) return `${words(parts[1])} import`;
+    return raw.replace(/[._-]+/g, ' ').trim();
   }
 
   function parseSegmentClock(segment) {
@@ -135,7 +148,11 @@
   function formatDuration(seconds) {
     if (seconds === null || seconds === undefined || !Number.isFinite(Number(seconds))) return 'duration unavailable';
     const value = Math.round(Math.max(0, Number(seconds)));
-    return value < 60 ? `${Math.round(value)} sec` : `${Math.floor(value / 60)} min ${Math.round(value % 60)} sec`;
+    if (value < 60) return `${value} sec`;
+    // Stats' hour buckets reach thousands of minutes, so the ladder needs an
+    // hours rung or 1,995 minutes reads "1995 min 0 sec". S-3 / G2-B14.
+    if (value < 3600) return `${Math.floor(value / 60)} min ${Math.round(value % 60)} sec`;
+    return `${Math.floor(value / 3600)} hr ${Math.floor((value % 3600) / 60)} min`;
   }
 
   function processingLane(lane) {

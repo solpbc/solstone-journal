@@ -1067,7 +1067,7 @@ async function main() {
   const facetHost = nodes.get('thinkingRunsContent');
   assert.deepStrictEqual(
     byTag(facetHost, 'p').map((child) => child.textContent),
-    ['no runs in this facet on this day', '6 runs ran on this day, none in work life.'],
+    ['no runs in this facet on this day', '6 runs on this day, none in work life.'],
     'picking a facet says what the filter did, not that the day had no runs',
   );
   const facetReset = byTag(facetHost, 'button').filter((child) => child.textContent === 'show all facets');
