@@ -16,133 +16,133 @@ pub const HEALTH_CARD_STREAM_BY_FAMILY: [(&str, Option<&str>); 4] = [
 ];
 
 pub const FRIENDLY_TYPE_NAMES: [(&str, &str); 51] = [
-    ("HKQuantityTypeIdentifierBloodGlucose", "Glucose"),
-    ("HKQuantityTypeIdentifierHeartRate", "Heart rate"),
+    ("HKQuantityTypeIdentifierBloodGlucose", "glucose"),
+    ("HKQuantityTypeIdentifierHeartRate", "heart rate"),
     (
         "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
-        "Heart rate variability",
+        "heart rate variability",
     ),
     (
         "HKQuantityTypeIdentifierRestingHeartRate",
-        "Resting heart rate",
+        "resting heart rate",
     ),
     (
         "HKQuantityTypeIdentifierWalkingHeartRateAverage",
-        "Walking heart rate average",
+        "walking heart rate average",
     ),
     (
         "HKQuantityTypeIdentifierHeartRateRecoveryOneMinute",
-        "Heart rate recovery",
+        "heart rate recovery",
     ),
-    ("HKQuantityTypeIdentifierOxygenSaturation", "Blood oxygen"),
+    ("HKQuantityTypeIdentifierOxygenSaturation", "blood oxygen"),
     (
         "HKQuantityTypeIdentifierRespiratoryRate",
-        "Respiratory rate",
+        "respiratory rate",
     ),
     (
         "HKQuantityTypeIdentifierBloodPressureSystolic",
-        "Blood pressure (systolic)",
+        "blood pressure (systolic)",
     ),
     (
         "HKQuantityTypeIdentifierBloodPressureDiastolic",
-        "Blood pressure (diastolic)",
+        "blood pressure (diastolic)",
     ),
     (
         "HKCategoryTypeIdentifierIrregularHeartRhythmEvent",
-        "Irregular rhythm notification",
+        "irregular rhythm notification",
     ),
     (
         "HKCategoryTypeIdentifierHighHeartRateEvent",
-        "High heart-rate notification",
+        "high heart-rate notification",
     ),
     (
         "HKCategoryTypeIdentifierLowHeartRateEvent",
-        "Low heart-rate notification",
+        "low heart-rate notification",
     ),
     (
         "HKQuantityTypeIdentifierAtrialFibrillationBurden",
         "AFib burden",
     ),
     ("HKQuantityTypeIdentifierVO2Max", "VO2 max"),
-    ("HKQuantityTypeIdentifierStepCount", "Step count"),
+    ("HKQuantityTypeIdentifierStepCount", "step count"),
     (
         "HKQuantityTypeIdentifierActiveEnergyBurned",
-        "Active energy",
+        "active energy",
     ),
     (
         "HKQuantityTypeIdentifierBasalEnergyBurned",
-        "Resting energy",
+        "resting energy",
     ),
     (
         "HKQuantityTypeIdentifierDistanceWalkingRunning",
-        "Walking + running distance",
+        "walking + running distance",
     ),
     (
         "HKQuantityTypeIdentifierDistanceCycling",
-        "Cycling distance",
+        "cycling distance",
     ),
-    ("HKQuantityTypeIdentifierFlightsClimbed", "Flights climbed"),
+    ("HKQuantityTypeIdentifierFlightsClimbed", "flights climbed"),
     (
         "HKQuantityTypeIdentifierAppleExerciseTime",
-        "Exercise minutes",
+        "exercise minutes",
     ),
-    ("HKQuantityTypeIdentifierAppleStandTime", "Stand time"),
-    ("HKCategoryTypeIdentifierAppleStandHour", "Stand hours"),
-    ("HKQuantityTypeIdentifierPhysicalEffort", "Physical effort"),
-    ("HKCategoryTypeIdentifierSleepAnalysis", "Sleep"),
+    ("HKQuantityTypeIdentifierAppleStandTime", "stand time"),
+    ("HKCategoryTypeIdentifierAppleStandHour", "stand hours"),
+    ("HKQuantityTypeIdentifierPhysicalEffort", "physical effort"),
+    ("HKCategoryTypeIdentifierSleepAnalysis", "sleep"),
     (
         "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
-        "Wrist temperature",
+        "wrist temperature",
     ),
-    ("HKCategoryTypeIdentifierMindfulSession", "Mindful sessions"),
+    ("HKCategoryTypeIdentifierMindfulSession", "mindful sessions"),
     (
         "HKQuantityTypeIdentifierHeadphoneAudioExposure",
-        "Headphone audio level",
+        "headphone audio level",
     ),
     (
         "HKQuantityTypeIdentifierEnvironmentalAudioExposure",
-        "Environmental audio level",
+        "environmental audio level",
     ),
-    ("HKQuantityTypeIdentifierTimeInDaylight", "Time in daylight"),
-    ("HKQuantityTypeIdentifierBodyMass", "Body mass"),
-    ("HKQuantityTypeIdentifierBodyMassIndex", "Body mass index"),
-    ("HKQuantityTypeIdentifierBodyFatPercentage", "Body fat"),
-    ("HKQuantityTypeIdentifierLeanBodyMass", "Lean body mass"),
-    ("HKQuantityTypeIdentifierHeight", "Height"),
-    ("oura.daily_sleep", "Sleep score"),
-    ("oura.daily_readiness", "Readiness"),
-    ("oura.daily_resilience", "Resilience"),
-    ("oura.daily_stress", "Daytime stress"),
-    ("oura.daily_spo2", "Nightly blood oxygen"),
-    ("oura.temperature_deviation", "Temperature deviation"),
-    ("oura.sleep", "Sleep period"),
-    ("oura.daily_activity", "Daily activity"),
-    ("oura.heartrate", "Heart rate"),
-    ("oura.daily_cardiovascular_age", "Cardiovascular age"),
-    ("oura.blood_glucose", "Blood glucose"),
-    ("oura.workout", "Workout"),
-    ("oura.session", "Session"),
-    ("oura.enhanced_tag", "Tag"),
+    ("HKQuantityTypeIdentifierTimeInDaylight", "time in daylight"),
+    ("HKQuantityTypeIdentifierBodyMass", "body mass"),
+    ("HKQuantityTypeIdentifierBodyMassIndex", "body mass index"),
+    ("HKQuantityTypeIdentifierBodyFatPercentage", "body fat"),
+    ("HKQuantityTypeIdentifierLeanBodyMass", "lean body mass"),
+    ("HKQuantityTypeIdentifierHeight", "height"),
+    ("oura.daily_sleep", "sleep score"),
+    ("oura.daily_readiness", "readiness"),
+    ("oura.daily_resilience", "resilience"),
+    ("oura.daily_stress", "daytime stress"),
+    ("oura.daily_spo2", "nightly blood oxygen"),
+    ("oura.temperature_deviation", "temperature deviation"),
+    ("oura.sleep", "sleep period"),
+    ("oura.daily_activity", "daily activity"),
+    ("oura.heartrate", "heart rate"),
+    ("oura.daily_cardiovascular_age", "cardiovascular age"),
+    ("oura.blood_glucose", "blood glucose"),
+    ("oura.workout", "workout"),
+    ("oura.session", "session"),
+    ("oura.enhanced_tag", "tag"),
     ("oura.vo2_max", "VO2 max"),
 ];
 
 pub const FRIENDLY_CONTRIBUTOR_NAMES: [(&str, &str); 16] = [
-    ("activity_balance", "Activity balance"),
-    ("body_temperature", "Body temperature"),
+    ("activity_balance", "activity balance"),
+    ("body_temperature", "body temperature"),
     ("hrv_balance", "HRV balance"),
-    ("previous_day_activity", "Previous day activity"),
-    ("previous_night", "Previous night"),
-    ("recovery_index", "Recovery index"),
-    ("resting_heart_rate", "Resting heart rate"),
-    ("sleep_balance", "Sleep balance"),
-    ("sleep_regularity", "Sleep regularity"),
-    ("deep_sleep", "Deep sleep"),
-    ("efficiency", "Efficiency"),
-    ("latency", "Latency"),
+    ("previous_day_activity", "previous day activity"),
+    ("previous_night", "previous night"),
+    ("recovery_index", "recovery index"),
+    ("resting_heart_rate", "resting heart rate"),
+    ("sleep_balance", "sleep balance"),
+    ("sleep_regularity", "sleep regularity"),
+    ("deep_sleep", "deep sleep"),
+    ("efficiency", "efficiency"),
+    ("latency", "latency"),
     ("rem_sleep", "REM sleep"),
-    ("restfulness", "Restfulness"),
-    ("timing", "Timing"),
-    ("total_sleep", "Total sleep"),
+    ("restfulness", "restfulness"),
+    ("timing", "timing"),
+    ("total_sleep", "total sleep"),
 ];
 
 const FRACTION_PERCENT_FRAGMENTS: [&str; 6] = [
@@ -213,10 +213,10 @@ pub fn friendly_contributor_name(key: &str) -> String {
     }
     let words = key.replace('_', " ");
     let words = words.trim();
-    let Some(first) = words.chars().next() else {
+    if words.is_empty() {
         return key.to_owned();
-    };
-    format!("{}{}", first.to_uppercase(), &words[first.len_utf8()..])
+    }
+    words.to_owned()
 }
 
 pub fn friendly_type_name(record_type: &str) -> String {
@@ -253,11 +253,10 @@ pub fn friendly_type_name(record_type: &str) -> String {
         }
         words.push(*character);
     }
-    let mut lowered = words.to_lowercase();
-    let Some(first) = lowered.chars().next() else {
+    let lowered = words.to_lowercase();
+    if lowered.is_empty() {
         return record_type.to_owned();
-    };
-    lowered.replace_range(..first.len_utf8(), &first.to_uppercase().to_string());
+    }
     lowered
 }
 
@@ -343,11 +342,11 @@ mod tests {
     fn presentation_helpers_match_health_schema_rules() {
         assert_eq!(
             friendly_type_name("HKQuantityTypeIdentifierHeartRate"),
-            "Heart rate"
+            "heart rate"
         );
         assert_eq!(
             friendly_type_name("HKQuantityTypeIdentifierSyntheticVO2Max"),
-            "Synthetic vo2 max"
+            "synthetic vo2 max"
         );
         assert_eq!(
             friendly_unit_label("x", Some("dBASPL")),

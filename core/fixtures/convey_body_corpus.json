@@ -145,7 +145,7 @@
         "body_omitted_fields": [
           "freshness"
         ],
-        "body_sha256": "77f36f945385cc26e68aa7b502319e1866473abb80a54f12d2e4c3c876321277",
+        "body_sha256": "ac312e02e83a7eed4dcc53c63e584a184d572dea8fb79f64c04f5cc7b62abf75",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "endpoint": "app:body.api_status",
@@ -771,56 +771,56 @@
                 "count_label": "182",
                 "name": "Sleep",
                 "range_label": "May 2026 \u2013 Aug 2026",
-                "types_label": "Sleep period, Sleep score"
+                "types_label": "sleep period, sleep score"
               },
               {
                 "count": 4,
                 "count_label": "4",
                 "name": "Glucose",
                 "range_label": "Aug 2026",
-                "types_label": "Glucose"
+                "types_label": "glucose"
               },
               {
                 "count": 91,
                 "count_label": "91",
                 "name": "Recovery",
                 "range_label": "May 2026 \u2013 Aug 2026",
-                "types_label": "Readiness"
+                "types_label": "readiness"
               },
               {
                 "count": 94,
                 "count_label": "94",
                 "name": "Activity",
                 "range_label": "May 2026 \u2013 Aug 2026",
-                "types_label": "Cycling, Daily activity, Step count, Workout"
+                "types_label": "cycling, daily activity, step count, workout"
               },
               {
                 "count": 103,
                 "count_label": "103",
                 "name": "Heart",
                 "range_label": "May 2026 \u2013 Aug 2026",
-                "types_label": "Heart rate, Resting heart rate"
+                "types_label": "heart rate, resting heart rate"
               },
               {
                 "count": 2,
                 "count_label": "2",
                 "name": "Mindfulness",
                 "range_label": "Aug 2026",
-                "types_label": "Mindful sessions"
+                "types_label": "mindful sessions"
               },
               {
                 "count": 2,
                 "count_label": "2",
                 "name": "Hearing & audio",
                 "range_label": "Aug 2026",
-                "types_label": "Headphone audio level"
+                "types_label": "headphone audio level"
               },
               {
                 "count": 92,
                 "count_label": "92",
                 "name": "Body measurements",
                 "range_label": "May 2026 \u2013 Aug 2026",
-                "types_label": "Body fat, Body mass"
+                "types_label": "body fat, body mass"
               }
             ],
             "import_count": 3,
@@ -1704,7 +1704,7 @@
       },
       {
         "body_bytes": 5813,
-        "body_sha256": "7a0aca442aed78aa561c226894355a001fd8d3e56a1f9ce09a0a6beedf226bc8",
+        "body_sha256": "3dc2538540f3046f04e9406c849d2eefe9101b66f414235002a1175ca2c24514",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "endpoint": "app:body.api_day",
@@ -1714,7 +1714,7 @@
               {
                 "count": 1,
                 "count_label": "1",
-                "label": "Daily activity",
+                "label": "daily activity",
                 "value": "88 \u00b7 Oura's score"
               }
             ],
@@ -1728,7 +1728,7 @@
               "total": 11234,
               "total_label": "11,234"
             },
-            "workout_summary": "Cycling \u00b7 Running",
+            "workout_summary": "cycling \u00b7 running",
             "workouts": [
               {
                 "distance": {
@@ -1749,7 +1749,7 @@
                   "510 Cal"
                 ],
                 "metrics_label": "7,200.0 m \u00b7 510 Cal",
-                "name": "Running",
+                "name": "running",
                 "source": "Oura (API)",
                 "start": "4:00 PM"
               },
@@ -1772,7 +1772,7 @@
                   "620 Cal"
                 ],
                 "metrics_label": "18.2 km \u00b7 620 Cal",
-                "name": "Cycling",
+                "name": "cycling",
                 "source": "Synthetic Watch",
                 "start": "5:00 PM"
               }
@@ -1808,13 +1808,13 @@
               {
                 "count": 1,
                 "count_label": "1",
-                "label": "Body fat",
+                "label": "body fat",
                 "value": "18%"
               },
               {
                 "count": 1,
                 "count_label": "1",
-                "label": "Body mass",
+                "label": "body mass",
                 "value": "172.4 lb"
               }
             ]
@@ -1892,7 +1892,7 @@
               {
                 "count": 1,
                 "count_label": "1",
-                "label": "Resting heart rate",
+                "label": "resting heart rate",
                 "value": "58 bpm"
               }
             ],
@@ -2048,13 +2048,13 @@
               {
                 "count": 2,
                 "count_label": "2",
-                "label": "Headphone audio level",
+                "label": "headphone audio level",
                 "value": "2 entries \u00b7 71\u201376 dB"
               },
               {
                 "count": 2,
                 "count_label": "2",
-                "label": "Mindful sessions",
+                "label": "mindful sessions",
                 "value": "25m"
               }
             ]
@@ -2070,7 +2070,7 @@
               {
                 "count": 1,
                 "count_label": "1",
-                "label": "Wrist temperature",
+                "label": "wrist temperature",
                 "value": "36.5 \u00b0C"
               }
             ]
@@ -2083,18 +2083,18 @@
           "recovery": {
             "contributors": [
               {
-                "label": "Activity balance",
+                "label": "activity balance",
                 "value": 78
               },
               {
-                "label": "Sleep balance",
+                "label": "sleep balance",
                 "value": 86
               }
             ],
             "facts": [
               {
                 "detail": "82 \u00b7 Oura's score",
-                "label": "Readiness",
+                "label": "readiness",
                 "line": "Readiness 82 \u00b7 Oura's score"
               }
             ]
@@ -2185,7 +2185,7 @@
       },
       {
         "body_bytes": 22420,
-        "body_sha256": "edb9c194e767add6e01af1fea0bc89d4915771f0a11875b1bebc6f565f125fe3",
+        "body_sha256": "69a0d4ad18bedf1f4fb10182d210f1a470669d4b2241ce519aa0b68f17b86ca7",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "endpoint": "app:body.api_window",
@@ -2203,7 +2203,7 @@
               "end": "2026-08-01T07:00:00+00:00",
               "end_label": "7:00 AM",
               "kind": "sleep",
-              "label": "Sleep",
+              "label": "sleep",
               "overlap_label": "7h 00m",
               "overlap_minutes": 420.0,
               "source": "Oura (API)",
@@ -2226,7 +2226,7 @@
                 "value": 510.0
               },
               "kind": "workout",
-              "label": "Running",
+              "label": "running",
               "metric_labels": [
                 "7,200.0 m",
                 "510 Cal"
@@ -2254,7 +2254,7 @@
                 "value": 620.0
               },
               "kind": "workout",
-              "label": "Cycling",
+              "label": "cycling",
               "metric_labels": [
                 "18.2 km",
                 "620 Cal"
@@ -2388,7 +2388,7 @@
                   "end": "2026-08-01T07:00:00+00:00",
                   "end_label": "7:00 AM",
                   "kind": "sleep",
-                  "label": "Sleep",
+                  "label": "sleep",
                   "overlap_label": "1h 00m",
                   "overlap_minutes": 60.0,
                   "source": "Oura (API)",
@@ -2429,9 +2429,9 @@
                 "samples": 0
               },
               "summary": [
-                "Sleep"
+                "sleep"
               ],
-              "summary_label": "Sleep"
+              "summary_label": "sleep"
             },
             {
               "end": "2026-08-01T02:00:00+00:00",
@@ -2442,7 +2442,7 @@
                   "end": "2026-08-01T07:00:00+00:00",
                   "end_label": "7:00 AM",
                   "kind": "sleep",
-                  "label": "Sleep",
+                  "label": "sleep",
                   "overlap_label": "1h 00m",
                   "overlap_minutes": 60.0,
                   "source": "Oura (API)",
@@ -2483,9 +2483,9 @@
                 "samples": 0
               },
               "summary": [
-                "Sleep"
+                "sleep"
               ],
-              "summary_label": "Sleep"
+              "summary_label": "sleep"
             },
             {
               "end": "2026-08-01T03:00:00+00:00",
@@ -2496,7 +2496,7 @@
                   "end": "2026-08-01T07:00:00+00:00",
                   "end_label": "7:00 AM",
                   "kind": "sleep",
-                  "label": "Sleep",
+                  "label": "sleep",
                   "overlap_label": "1h 00m",
                   "overlap_minutes": 60.0,
                   "source": "Oura (API)",
@@ -2537,9 +2537,9 @@
                 "samples": 0
               },
               "summary": [
-                "Sleep"
+                "sleep"
               ],
-              "summary_label": "Sleep"
+              "summary_label": "sleep"
             },
             {
               "end": "2026-08-01T04:00:00+00:00",
@@ -2550,7 +2550,7 @@
                   "end": "2026-08-01T07:00:00+00:00",
                   "end_label": "7:00 AM",
                   "kind": "sleep",
-                  "label": "Sleep",
+                  "label": "sleep",
                   "overlap_label": "1h 00m",
                   "overlap_minutes": 60.0,
                   "source": "Oura (API)",
@@ -2591,9 +2591,9 @@
                 "samples": 0
               },
               "summary": [
-                "Sleep"
+                "sleep"
               ],
-              "summary_label": "Sleep"
+              "summary_label": "sleep"
             },
             {
               "end": "2026-08-01T05:00:00+00:00",
@@ -2604,7 +2604,7 @@
                   "end": "2026-08-01T07:00:00+00:00",
                   "end_label": "7:00 AM",
                   "kind": "sleep",
-                  "label": "Sleep",
+                  "label": "sleep",
                   "overlap_label": "1h 00m",
                   "overlap_minutes": 60.0,
                   "source": "Oura (API)",
@@ -2655,9 +2655,9 @@
                 "samples": 0
               },
               "summary": [
-                "Sleep"
+                "sleep"
               ],
-              "summary_label": "Sleep"
+              "summary_label": "sleep"
             },
             {
               "end": "2026-08-01T06:00:00+00:00",
@@ -2668,7 +2668,7 @@
                   "end": "2026-08-01T07:00:00+00:00",
                   "end_label": "7:00 AM",
                   "kind": "sleep",
-                  "label": "Sleep",
+                  "label": "sleep",
                   "overlap_label": "1h 00m",
                   "overlap_minutes": 60.0,
                   "source": "Oura (API)",
@@ -2709,9 +2709,9 @@
                 "samples": 0
               },
               "summary": [
-                "Sleep"
+                "sleep"
               ],
-              "summary_label": "Sleep"
+              "summary_label": "sleep"
             },
             {
               "end": "2026-08-01T07:00:00+00:00",
@@ -2722,7 +2722,7 @@
                   "end": "2026-08-01T07:00:00+00:00",
                   "end_label": "7:00 AM",
                   "kind": "sleep",
-                  "label": "Sleep",
+                  "label": "sleep",
                   "overlap_label": "1h 00m",
                   "overlap_minutes": 60.0,
                   "source": "Oura (API)",
@@ -2763,9 +2763,9 @@
                 "samples": 0
               },
               "summary": [
-                "Sleep"
+                "sleep"
               ],
-              "summary_label": "Sleep"
+              "summary_label": "sleep"
             },
             {
               "end": "2026-08-01T08:00:00+00:00",
@@ -3227,7 +3227,7 @@
                     "value": 510.0
                   },
                   "kind": "workout",
-                  "label": "Running",
+                  "label": "running",
                   "metric_labels": [
                     "7,200.0 m",
                     "510 Cal"
@@ -3273,9 +3273,9 @@
                 "samples": 0
               },
               "summary": [
-                "Running"
+                "running"
               ],
-              "summary_label": "Running"
+              "summary_label": "running"
             },
             {
               "end": "2026-08-01T18:00:00+00:00",
@@ -3298,7 +3298,7 @@
                     "value": 620.0
                   },
                   "kind": "workout",
-                  "label": "Cycling",
+                  "label": "cycling",
                   "metric_labels": [
                     "18.2 km",
                     "620 Cal"
@@ -3344,9 +3344,9 @@
                 "samples": 0
               },
               "summary": [
-                "Cycling"
+                "cycling"
               ],
-              "summary_label": "Cycling"
+              "summary_label": "cycling"
             },
             {
               "end": "2026-08-01T19:00:00+00:00",
@@ -3603,72 +3603,72 @@
             {
               "count": 12,
               "count_label": "12",
-              "label": "Heart rate"
+              "label": "heart rate"
             },
             {
               "count": 4,
               "count_label": "4",
-              "label": "Glucose"
+              "label": "glucose"
             },
             {
               "count": 2,
               "count_label": "2",
-              "label": "Headphone audio level"
+              "label": "headphone audio level"
             },
             {
               "count": 2,
               "count_label": "2",
-              "label": "Mindful sessions"
+              "label": "mindful sessions"
             },
             {
               "count": 1,
               "count_label": "1",
-              "label": "Body fat"
+              "label": "body fat"
             },
             {
               "count": 1,
               "count_label": "1",
-              "label": "Body mass"
+              "label": "body mass"
             },
             {
               "count": 1,
               "count_label": "1",
-              "label": "Cycling"
+              "label": "cycling"
             },
             {
               "count": 1,
               "count_label": "1",
-              "label": "Daily activity"
+              "label": "daily activity"
             },
             {
               "count": 1,
               "count_label": "1",
-              "label": "Readiness"
+              "label": "readiness"
             },
             {
               "count": 1,
               "count_label": "1",
-              "label": "Resting heart rate"
+              "label": "resting heart rate"
             },
             {
               "count": 1,
               "count_label": "1",
-              "label": "Sleep period"
+              "label": "sleep period"
             },
             {
               "count": 1,
               "count_label": "1",
-              "label": "Sleep score"
+              "label": "sleep score"
             },
             {
               "count": 1,
               "count_label": "1",
-              "label": "Workout"
+              "label": "workout"
             },
             {
               "count": 1,
               "count_label": "1",
-              "label": "Wrist temperature"
+              "label": "wrist temperature"
             }
           ],
           "sources": {
@@ -3731,7 +3731,7 @@
                 "510 Cal"
               ],
               "metrics_label": "7,200.0 m \u00b7 510 Cal",
-              "name": "Running",
+              "name": "running",
               "overlap_label": "45m",
               "overlap_minutes": 45.0,
               "source": "Oura (API)",
@@ -3759,7 +3759,7 @@
                 "620 Cal"
               ],
               "metrics_label": "18.2 km \u00b7 620 Cal",
-              "name": "Cycling",
+              "name": "cycling",
               "overlap_label": "1h 00m",
               "overlap_minutes": 60.0,
               "source": "Synthetic Watch",
@@ -3900,7 +3900,7 @@
         "body_omitted_fields": [
           "freshness"
         ],
-        "body_sha256": "77f36f945385cc26e68aa7b502319e1866473abb80a54f12d2e4c3c876321277",
+        "body_sha256": "ac312e02e83a7eed4dcc53c63e584a184d572dea8fb79f64c04f5cc7b62abf75",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "endpoint": "app:body.api_status",
@@ -4526,56 +4526,56 @@
                 "count_label": "182",
                 "name": "Sleep",
                 "range_label": "May 2026 \u2013 Aug 2026",
-                "types_label": "Sleep period, Sleep score"
+                "types_label": "sleep period, sleep score"
               },
               {
                 "count": 4,
                 "count_label": "4",
                 "name": "Glucose",
                 "range_label": "Aug 2026",
-                "types_label": "Glucose"
+                "types_label": "glucose"
               },
               {
                 "count": 91,
                 "count_label": "91",
                 "name": "Recovery",
                 "range_label": "May 2026 \u2013 Aug 2026",
-                "types_label": "Readiness"
+                "types_label": "readiness"
               },
               {
                 "count": 94,
                 "count_label": "94",
                 "name": "Activity",
                 "range_label": "May 2026 \u2013 Aug 2026",
-                "types_label": "Cycling, Daily activity, Step count, Workout"
+                "types_label": "cycling, daily activity, step count, workout"
               },
               {
                 "count": 103,
                 "count_label": "103",
                 "name": "Heart",
                 "range_label": "May 2026 \u2013 Aug 2026",
-                "types_label": "Heart rate, Resting heart rate"
+                "types_label": "heart rate, resting heart rate"
               },
               {
                 "count": 2,
                 "count_label": "2",
                 "name": "Mindfulness",
                 "range_label": "Aug 2026",
-                "types_label": "Mindful sessions"
+                "types_label": "mindful sessions"
               },
               {
                 "count": 2,
                 "count_label": "2",
                 "name": "Hearing & audio",
                 "range_label": "Aug 2026",
-                "types_label": "Headphone audio level"
+                "types_label": "headphone audio level"
               },
               {
                 "count": 92,
                 "count_label": "92",
                 "name": "Body measurements",
                 "range_label": "May 2026 \u2013 Aug 2026",
-                "types_label": "Body fat, Body mass"
+                "types_label": "body fat, body mass"
               }
             ],
             "import_count": 3,
@@ -5459,7 +5459,7 @@
       },
       {
         "body_bytes": 6075,
-        "body_sha256": "b2e1dfff7d4672286f96230c2e8b78b2116b33a1d34f76adb7afc3038090158a",
+        "body_sha256": "1637daa21afd1fb9f3aa325918826fae578afa5aae30cd350fc1d37cc79fb389",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "endpoint": "app:body.api_day",
@@ -5469,7 +5469,7 @@
               {
                 "count": 1,
                 "count_label": "1",
-                "label": "Daily activity",
+                "label": "daily activity",
                 "value": "88 \u00b7 Oura's score"
               }
             ],
@@ -5483,7 +5483,7 @@
               "total": 11234,
               "total_label": "11,234"
             },
-            "workout_summary": "Cycling \u00b7 Running",
+            "workout_summary": "cycling \u00b7 running",
             "workouts": [
               {
                 "distance": {
@@ -5504,7 +5504,7 @@
                   "510 Cal"
                 ],
                 "metrics_label": "7,200.0 m \u00b7 510 Cal",
-                "name": "Running",
+                "name": "running",
                 "source": "Oura (API)",
                 "start": "4:00 PM"
               },
@@ -5527,7 +5527,7 @@
                   "620 Cal"
                 ],
                 "metrics_label": "18.2 km \u00b7 620 Cal",
-                "name": "Cycling",
+                "name": "cycling",
                 "source": "Synthetic Watch",
                 "start": "5:00 PM"
               }
@@ -5563,13 +5563,13 @@
               {
                 "count": 1,
                 "count_label": "1",
-                "label": "Body fat",
+                "label": "body fat",
                 "value": "18%"
               },
               {
                 "count": 1,
                 "count_label": "1",
-                "label": "Body mass",
+                "label": "body mass",
                 "value": "172.4 lb"
               }
             ]
@@ -5647,7 +5647,7 @@
               {
                 "count": 1,
                 "count_label": "1",
-                "label": "Resting heart rate",
+                "label": "resting heart rate",
                 "typical": "54 bpm",
                 "typical_label": "your 90-day median 54 bpm",
                 "value": "58 bpm"
@@ -5805,13 +5805,13 @@
               {
                 "count": 2,
                 "count_label": "2",
-                "label": "Headphone audio level",
+                "label": "headphone audio level",
                 "value": "2 entries \u00b7 71\u201376 dB"
               },
               {
                 "count": 2,
                 "count_label": "2",
-                "label": "Mindful sessions",
+                "label": "mindful sessions",
                 "value": "25m"
               }
             ]
@@ -5827,7 +5827,7 @@
               {
                 "count": 1,
                 "count_label": "1",
-                "label": "Wrist temperature",
+                "label": "wrist temperature",
                 "value": "36.5 \u00b0C"
               }
             ]
@@ -5840,18 +5840,18 @@
           "recovery": {
             "contributors": [
               {
-                "label": "Activity balance",
+                "label": "activity balance",
                 "value": 78
               },
               {
-                "label": "Sleep balance",
+                "label": "sleep balance",
                 "value": 86
               }
             ],
             "facts": [
               {
                 "detail": "82 \u00b7 Oura's score",
-                "label": "Readiness",
+                "label": "readiness",
                 "line": "Readiness 82 \u00b7 Oura's score",
                 "typical": "75",
                 "typical_label": "your 90-day median 75"
@@ -5948,7 +5948,7 @@
       },
       {
         "body_bytes": 22420,
-        "body_sha256": "edb9c194e767add6e01af1fea0bc89d4915771f0a11875b1bebc6f565f125fe3",
+        "body_sha256": "69a0d4ad18bedf1f4fb10182d210f1a470669d4b2241ce519aa0b68f17b86ca7",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "endpoint": "app:body.api_window",
@@ -5966,7 +5966,7 @@
               "end": "2026-08-01T07:00:00+00:00",
               "end_label": "7:00 AM",
               "kind": "sleep",
-              "label": "Sleep",
+              "label": "sleep",
               "overlap_label": "7h 00m",
               "overlap_minutes": 420.0,
               "source": "Oura (API)",
@@ -5989,7 +5989,7 @@
                 "value": 510.0
               },
               "kind": "workout",
-              "label": "Running",
+              "label": "running",
               "metric_labels": [
                 "7,200.0 m",
                 "510 Cal"
@@ -6017,7 +6017,7 @@
                 "value": 620.0
               },
               "kind": "workout",
-              "label": "Cycling",
+              "label": "cycling",
               "metric_labels": [
                 "18.2 km",
                 "620 Cal"
@@ -6151,7 +6151,7 @@
                   "end": "2026-08-01T07:00:00+00:00",
                   "end_label": "7:00 AM",
                   "kind": "sleep",
-                  "label": "Sleep",
+                  "label": "sleep",
                   "overlap_label": "1h 00m",
                   "overlap_minutes": 60.0,
                   "source": "Oura (API)",
@@ -6192,9 +6192,9 @@
                 "samples": 0
               },
               "summary": [
-                "Sleep"
+                "sleep"
               ],
-              "summary_label": "Sleep"
+              "summary_label": "sleep"
             },
             {
               "end": "2026-08-01T02:00:00+00:00",
@@ -6205,7 +6205,7 @@
                   "end": "2026-08-01T07:00:00+00:00",
                   "end_label": "7:00 AM",
                   "kind": "sleep",
-                  "label": "Sleep",
+                  "label": "sleep",
                   "overlap_label": "1h 00m",
                   "overlap_minutes": 60.0,
                   "source": "Oura (API)",
@@ -6246,9 +6246,9 @@
                 "samples": 0
               },
               "summary": [
-                "Sleep"
+                "sleep"
               ],
-              "summary_label": "Sleep"
+              "summary_label": "sleep"
             },
             {
               "end": "2026-08-01T03:00:00+00:00",
@@ -6259,7 +6259,7 @@
                   "end": "2026-08-01T07:00:00+00:00",
                   "end_label": "7:00 AM",
                   "kind": "sleep",
-                  "label": "Sleep",
+                  "label": "sleep",
                   "overlap_label": "1h 00m",
                   "overlap_minutes": 60.0,
                   "source": "Oura (API)",
@@ -6300,9 +6300,9 @@
                 "samples": 0
               },
               "summary": [
-                "Sleep"
+                "sleep"
               ],
-              "summary_label": "Sleep"
+              "summary_label": "sleep"
             },
             {
               "end": "2026-08-01T04:00:00+00:00",
@@ -6313,7 +6313,7 @@
                   "end": "2026-08-01T07:00:00+00:00",
                   "end_label": "7:00 AM",
                   "kind": "sleep",
-                  "label": "Sleep",
+                  "label": "sleep",
                   "overlap_label": "1h 00m",
                   "overlap_minutes": 60.0,
                   "source": "Oura (API)",
@@ -6354,9 +6354,9 @@
                 "samples": 0
               },
               "summary": [
-                "Sleep"
+                "sleep"
               ],
-              "summary_label": "Sleep"
+              "summary_label": "sleep"
             },
             {
               "end": "2026-08-01T05:00:00+00:00",
@@ -6367,7 +6367,7 @@
                   "end": "2026-08-01T07:00:00+00:00",
                   "end_label": "7:00 AM",
                   "kind": "sleep",
-                  "label": "Sleep",
+                  "label": "sleep",
                   "overlap_label": "1h 00m",
                   "overlap_minutes": 60.0,
                   "source": "Oura (API)",
@@ -6418,9 +6418,9 @@
                 "samples": 0
               },
               "summary": [
-                "Sleep"
+                "sleep"
               ],
-              "summary_label": "Sleep"
+              "summary_label": "sleep"
             },
             {
               "end": "2026-08-01T06:00:00+00:00",
@@ -6431,7 +6431,7 @@
                   "end": "2026-08-01T07:00:00+00:00",
                   "end_label": "7:00 AM",
                   "kind": "sleep",
-                  "label": "Sleep",
+                  "label": "sleep",
                   "overlap_label": "1h 00m",
                   "overlap_minutes": 60.0,
                   "source": "Oura (API)",
@@ -6472,9 +6472,9 @@
                 "samples": 0
               },
               "summary": [
-                "Sleep"
+                "sleep"
               ],
-              "summary_label": "Sleep"
+              "summary_label": "sleep"
             },
             {
               "end": "2026-08-01T07:00:00+00:00",
@@ -6485,7 +6485,7 @@
                   "end": "2026-08-01T07:00:00+00:00",
                   "end_label": "7:00 AM",
                   "kind": "sleep",
-                  "label": "Sleep",
+                  "label": "sleep",
                   "overlap_label": "1h 00m",
                   "overlap_minutes": 60.0,
                   "source": "Oura (API)",
@@ -6526,9 +6526,9 @@
                 "samples": 0
               },
               "summary": [
-                "Sleep"
+                "sleep"
               ],
-              "summary_label": "Sleep"
+              "summary_label": "sleep"
             },
             {
               "end": "2026-08-01T08:00:00+00:00",
@@ -6990,7 +6990,7 @@
                     "value": 510.0
                   },
                   "kind": "workout",
-                  "label": "Running",
+                  "label": "running",
                   "metric_labels": [
                     "7,200.0 m",
                     "510 Cal"
@@ -7036,9 +7036,9 @@
                 "samples": 0
               },
               "summary": [
-                "Running"
+                "running"
               ],
-              "summary_label": "Running"
+              "summary_label": "running"
             },
             {
               "end": "2026-08-01T18:00:00+00:00",
@@ -7061,7 +7061,7 @@
                     "value": 620.0
                   },
                   "kind": "workout",
-                  "label": "Cycling",
+                  "label": "cycling",
                   "metric_labels": [
                     "18.2 km",
                     "620 Cal"
@@ -7107,9 +7107,9 @@
                 "samples": 0
               },
               "summary": [
-                "Cycling"
+                "cycling"
               ],
-              "summary_label": "Cycling"
+              "summary_label": "cycling"
             },
             {
               "end": "2026-08-01T19:00:00+00:00",
@@ -7366,72 +7366,72 @@
             {
               "count": 12,
               "count_label": "12",
-              "label": "Heart rate"
+              "label": "heart rate"
             },
             {
               "count": 4,
               "count_label": "4",
-              "label": "Glucose"
+              "label": "glucose"
             },
             {
               "count": 2,
               "count_label": "2",
-              "label": "Headphone audio level"
+              "label": "headphone audio level"
             },
             {
               "count": 2,
               "count_label": "2",
-              "label": "Mindful sessions"
+              "label": "mindful sessions"
             },
             {
               "count": 1,
               "count_label": "1",
-              "label": "Body fat"
+              "label": "body fat"
             },
             {
               "count": 1,
               "count_label": "1",
-              "label": "Body mass"
+              "label": "body mass"
             },
             {
               "count": 1,
               "count_label": "1",
-              "label": "Cycling"
+              "label": "cycling"
             },
             {
               "count": 1,
               "count_label": "1",
-              "label": "Daily activity"
+              "label": "daily activity"
             },
             {
               "count": 1,
               "count_label": "1",
-              "label": "Readiness"
+              "label": "readiness"
             },
             {
               "count": 1,
               "count_label": "1",
-              "label": "Resting heart rate"
+              "label": "resting heart rate"
             },
             {
               "count": 1,
               "count_label": "1",
-              "label": "Sleep period"
+              "label": "sleep period"
             },
             {
               "count": 1,
               "count_label": "1",
-              "label": "Sleep score"
+              "label": "sleep score"
             },
             {
               "count": 1,
               "count_label": "1",
-              "label": "Workout"
+              "label": "workout"
             },
             {
               "count": 1,
               "count_label": "1",
-              "label": "Wrist temperature"
+              "label": "wrist temperature"
             }
           ],
           "sources": {
@@ -7494,7 +7494,7 @@
                 "510 Cal"
               ],
               "metrics_label": "7,200.0 m \u00b7 510 Cal",
-              "name": "Running",
+              "name": "running",
               "overlap_label": "45m",
               "overlap_minutes": 45.0,
               "source": "Oura (API)",
@@ -7522,7 +7522,7 @@
                 "620 Cal"
               ],
               "metrics_label": "18.2 km \u00b7 620 Cal",
-              "name": "Cycling",
+              "name": "cycling",
               "overlap_label": "1h 00m",
               "overlap_minutes": 60.0,
               "source": "Synthetic Watch",
@@ -7584,7 +7584,7 @@
       },
       {
         "body_bytes": 11440,
-        "body_sha256": "a5c9724da95eb6f350437924fd5e21f3bc824c42098cc63cb292c794fe71f874",
+        "body_sha256": "98ec993d9f6531595ba2aa832913cc0f154de3c94ed8349fd79e94b7f6e640b2",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "endpoint": "app:body.api_trends",
@@ -7990,7 +7990,7 @@
                 ]
               ],
               "key": "resting_hr",
-              "label": "Resting heart rate",
+              "label": "resting heart rate",
               "unit_label": "bpm"
             },
             {
@@ -8366,7 +8366,7 @@
                 ]
               ],
               "key": "asleep_minutes",
-              "label": "Asleep",
+              "label": "asleep",
               "unit_label": "h"
             },
             {
@@ -8742,7 +8742,7 @@
                 ]
               ],
               "key": "sleep_score",
-              "label": "Sleep score",
+              "label": "sleep score",
               "unit_label": ""
             },
             {
@@ -9118,7 +9118,7 @@
                 ]
               ],
               "key": "readiness",
-              "label": "Readiness",
+              "label": "readiness",
               "unit_label": ""
             },
             {
@@ -9494,7 +9494,7 @@
                 ]
               ],
               "key": "steps",
-              "label": "Steps",
+              "label": "steps",
               "unit_label": "steps"
             },
             {
@@ -9870,7 +9870,7 @@
                 ]
               ],
               "key": "body_mass",
-              "label": "Body mass",
+              "label": "body mass",
               "unit_label": "lb"
             },
             {
@@ -9886,7 +9886,7 @@
                 ]
               ],
               "key": "glucose_avg",
-              "label": "Glucose average",
+              "label": "glucose average",
               "unit_label": "mg/dL"
             }
           ],
@@ -10361,7 +10361,7 @@
       },
       {
         "body_bytes": 5803,
-        "body_sha256": "82acb8e6200465548a33d9ed6bb88d7dd6f76b2f0ebb51f8d0d22b9deb0789ec",
+        "body_sha256": "d2bd4d395802c1a684886747a9e50e2252d7d50e9df45d84b518340bbce91688",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "endpoint": "app:body.api_day",
@@ -10371,7 +10371,7 @@
               {
                 "count": 1,
                 "count_label": "1",
-                "label": "Daily activity",
+                "label": "daily activity",
                 "value": "88 \u00b7 Oura's score"
               }
             ],
@@ -10385,7 +10385,7 @@
               "total": 11234,
               "total_label": "11,234"
             },
-            "workout_summary": "Cycling \u00b7 Running",
+            "workout_summary": "cycling \u00b7 running",
             "workouts": [
               {
                 "distance": {
@@ -10406,7 +10406,7 @@
                   "510 Cal"
                 ],
                 "metrics_label": "7,200.0 m \u00b7 510 Cal",
-                "name": "Running",
+                "name": "running",
                 "source": "Oura (API)",
                 "start": "4:00 PM"
               },
@@ -10429,7 +10429,7 @@
                   "620 Cal"
                 ],
                 "metrics_label": "18.2 km \u00b7 620 Cal",
-                "name": "Cycling",
+                "name": "cycling",
                 "source": "Synthetic Watch",
                 "start": "5:00 PM"
               }
@@ -10465,13 +10465,13 @@
               {
                 "count": 1,
                 "count_label": "1",
-                "label": "Body fat",
+                "label": "body fat",
                 "value": "18%"
               },
               {
                 "count": 1,
                 "count_label": "1",
-                "label": "Body mass",
+                "label": "body mass",
                 "value": "172.4 lb"
               }
             ]
@@ -10549,7 +10549,7 @@
               {
                 "count": 1,
                 "count_label": "1",
-                "label": "Resting heart rate",
+                "label": "resting heart rate",
                 "value": "58 bpm"
               }
             ],
@@ -10705,13 +10705,13 @@
               {
                 "count": 2,
                 "count_label": "2",
-                "label": "Headphone audio level",
+                "label": "headphone audio level",
                 "value": "2 entries \u00b7 71\u201376 dB"
               },
               {
                 "count": 2,
                 "count_label": "2",
-                "label": "Mindful sessions",
+                "label": "mindful sessions",
                 "value": "25m"
               }
             ]
@@ -10727,7 +10727,7 @@
               {
                 "count": 1,
                 "count_label": "1",
-                "label": "Wrist temperature",
+                "label": "wrist temperature",
                 "value": "36.5 \u00b0C"
               }
             ]
@@ -10740,18 +10740,18 @@
           "recovery": {
             "contributors": [
               {
-                "label": "Activity balance",
+                "label": "activity balance",
                 "value": 78
               },
               {
-                "label": "Sleep balance",
+                "label": "sleep balance",
                 "value": 86
               }
             ],
             "facts": [
               {
                 "detail": "82 \u00b7 Oura's score",
-                "label": "Readiness",
+                "label": "readiness",
                 "line": "Readiness 82 \u00b7 Oura's score"
               }
             ]

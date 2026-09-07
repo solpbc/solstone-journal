@@ -23,7 +23,7 @@ const COPY: [(&str, &str); 52] = [
     ("CUR_FACET_DISMISS_ACTION", "not now"),
     (
         "CUR_ENTITY_BODY",
-        "“{a}” and “{b}” look like the same entity. merge them?",
+        "\"{a}\" and \"{b}\" look like the same entity. merge them?",
     ),
     ("CUR_ENTITY_MERGE_ACTION", "merge"),
     ("CUR_ENTITY_DISMISS_ACTION", "keep separate"),
@@ -43,7 +43,7 @@ const COPY: [(&str, &str); 52] = [
     ("CUR_ENTITY_DONE_FOR_NOW_ACTION", "done for now"),
     (
         "CUR_SPEAKER_BODY",
-        "“{source}” and “{target}” may be the same speaker. merge them?",
+        "\"{source}\" and \"{target}\" may be the same speaker. merge them?",
     ),
     ("CUR_SPEAKER_MERGE_ACTION", "review merge"),
     ("CUR_SPEAKER_DISMISS_ACTION", "keep separate"),

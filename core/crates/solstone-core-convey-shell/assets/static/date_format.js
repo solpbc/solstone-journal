@@ -103,7 +103,7 @@
     chatgpt: 'ChatGPT',
     claude: 'Claude',
     gemini: 'Gemini',
-    journal_archive: 'journal',
+    journal_archive: 'another journal',
     kindle: 'Kindle',
     obsidian: 'notes',
   };

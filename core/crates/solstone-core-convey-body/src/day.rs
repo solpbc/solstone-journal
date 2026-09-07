@@ -882,7 +882,7 @@ fn activity_analysis(rows: &[NormalizedRow]) -> Option<Value> {
         .filter(|row| is_running_dynamics_type(string_field(&row.record_type).unwrap_or_default()))
         .copied()
         .collect::<Vec<_>>();
-    let counters=activity.iter().filter(|row|string_field(&row.record_type)!=Some("HKQuantityTypeIdentifierStepCount")).filter(|row|string_field(&row.record_type)!=Some(OURA_WORKOUT)).filter(|row|!is_running_dynamics_type(string_field(&row.record_type).unwrap_or_default())).filter_map(|row|{let kind=string_field(&row.record_type).unwrap_or_default();(kind==OURA_ACTIVITY).then(||value_number(row).map(|value|json!({"label":"Daily activity","count":1,"count_label":"1","value":format!("{} · Oura's score",number(value))}))).flatten()}).collect::<Vec<_>>();
+    let counters=activity.iter().filter(|row|string_field(&row.record_type)!=Some("HKQuantityTypeIdentifierStepCount")).filter(|row|string_field(&row.record_type)!=Some(OURA_WORKOUT)).filter(|row|!is_running_dynamics_type(string_field(&row.record_type).unwrap_or_default())).filter_map(|row|{let kind=string_field(&row.record_type).unwrap_or_default();(kind==OURA_ACTIVITY).then(||value_number(row).map(|value|json!({"label":"daily activity","count":1,"count_label":"1","value":format!("{} · Oura's score",number(value))}))).flatten()}).collect::<Vec<_>>();
     Some(
         json!({"workouts":workout_items,"workout_summary":workout_summary,"steps":steps,"running":if running_rows.is_empty(){None}else{Some(running_dynamics(&running_rows))},"counters":counters}),
     )
@@ -903,7 +903,7 @@ fn is_running_dynamics_type(record_type: &str) -> bool {
 fn running_dynamics(rows: &[&NormalizedRow]) -> Vec<Value> {
     let grouped = group_by_type(rows);
     let mut types = grouped.into_iter().collect::<Vec<_>>();
-    types.sort_by_key(|(record_type, _)| friendly_type_name(record_type));
+    types.sort_by_key(|(record_type, _)| friendly_type_name(record_type).to_lowercase());
     types
         .into_iter()
         .map(|(record_type, rows)| {
@@ -984,7 +984,7 @@ pub(crate) fn workout_item(row: &NormalizedRow) -> Value {
     let name = data
         .and_then(|data| data.get("activity"))
         .and_then(Value::as_str)
-        .map(title)
+        .map(words)
         .unwrap_or_else(|| friendly_type_name(string_field(&row.record_type).unwrap_or("Workout")));
     let metric = |value_key: &str, unit_key: &str, record_type: &str| {
         data.and_then(|data| data.get(value_key))
@@ -1093,10 +1093,10 @@ fn heart_analysis(rows: &[NormalizedRow], typical: &BTreeMap<String, f64>) -> Op
         .max_by_key(|row| record_time(row))
         && let Some(value) = value_number(row)
     {
-        facts.push(json!({"label":"Vascular age","count":1,"count_label":"1","value":format!("{} · Oura's estimate",number(value))}));
+        facts.push(json!({"label":"vascular age","count":1,"count_label":"1","value":format!("{} · Oura's estimate",number(value))}));
     }
     if let Some((row, value)) = resting_row {
-        let mut item = json!({"label":"Resting heart rate","count":1,"count_label":"1","value":format!("{} bpm",number(value))});
+        let mut item = json!({"label":"resting heart rate","count":1,"count_label":"1","value":format!("{} bpm",number(value))});
         if let Some(baseline) = typical.get("resting_hr") {
             item["typical"] = json!(format!("{} bpm", number(*baseline)));
             item["typical_label"] = json!(format!("your 90-day median {} bpm", number(*baseline)));
@@ -1112,7 +1112,7 @@ fn heart_analysis(rows: &[NormalizedRow], typical: &BTreeMap<String, f64>) -> Op
             return finalize_heart(&samples, facts, rows, Some(line));
         }
     } else if let Some(ring) = ring_resting {
-        let mut item = json!({"label":"Resting heart rate","count":1,"count_label":"1","value":format!("{} bpm · Oura's measurement",number(ring))});
+        let mut item = json!({"label":"resting heart rate","count":1,"count_label":"1","value":format!("{} bpm · Oura's measurement",number(ring))});
         if let Some(baseline) = typical.get("resting_hr") {
             item["typical"] = json!(format!("{} bpm", number(*baseline)));
             item["typical_label"] = json!(format!("your 90-day median {} bpm", number(*baseline)));
@@ -1246,7 +1246,7 @@ fn blood_pressure_facts(rows: &[NormalizedRow]) -> Vec<Value> {
     let mut groups = group_by_type(&blood_pressure_rows)
         .into_iter()
         .collect::<Vec<_>>();
-    groups.sort_by_key(|(record_type, _)| friendly_type_name(record_type));
+    groups.sort_by_key(|(record_type, _)| friendly_type_name(record_type).to_lowercase());
     groups
         .into_iter()
         .map(|(record_type, rows)| {
@@ -1290,7 +1290,7 @@ fn rhythm_summary(rows: &[NormalizedRow]) -> Option<Value> {
         return None;
     }
     let mut event_groups = group_by_type(&event_rows).into_iter().collect::<Vec<_>>();
-    event_groups.sort_by_key(|(record_type, _)| friendly_type_name(record_type));
+    event_groups.sort_by_key(|(record_type, _)| friendly_type_name(record_type).to_lowercase());
     let events = event_groups
         .into_iter()
         .map(|(record_type, rows)| {
@@ -1469,7 +1469,7 @@ fn recovery_analysis(rows: &[NormalizedRow], typical: &BTreeMap<String, f64>) ->
         .iter()
         .find(|row| string_field(&row.record_type) == Some(OURA_READINESS))?;
     let value = value_number(row)?;
-    let mut fact = json!({"label":"Readiness","detail":format!("{} · Oura's score",number(value)),"line":format!("Readiness {} · Oura's score",number(value))});
+    let mut fact = json!({"label":"readiness","detail":format!("{} · Oura's score",number(value)),"line":format!("Readiness {} · Oura's score",number(value))});
     if let Some(baseline) = typical.get("readiness") {
         fact["typical"] = json!(number(*baseline));
         fact["typical_label"] = json!(format!("your 90-day median {}", number(*baseline)));
@@ -1508,10 +1508,11 @@ fn fact_items(rows: &[NormalizedRow]) -> Vec<Value> {
     }
     let mut grouped = grouped.into_iter().collect::<Vec<_>>();
     grouped.sort_by(|(left, left_rows), (right, right_rows)| {
-        right_rows
-            .len()
-            .cmp(&left_rows.len())
-            .then_with(|| friendly_type_name(left).cmp(&friendly_type_name(right)))
+        right_rows.len().cmp(&left_rows.len()).then_with(|| {
+            friendly_type_name(left)
+                .to_lowercase()
+                .cmp(&friendly_type_name(right).to_lowercase())
+        })
     });
     grouped.into_iter().map(|(record_type,items)| { let values=items.iter().filter_map(|row|value_number(row)).collect::<Vec<_>>(); let count=items.len(); let value=if record_type.contains("MindfulSession") { let sources=items.iter().map(|row|source_label(row)).collect::<BTreeSet<_>>(); let minutes=items.iter().filter_map(|row|match(record_time(row),end_time(row)){(Some(start),Some(end))if end>start=>Some((end-start).num_seconds()as f64/60.0),_=>None}).sum::<f64>();(sources.len()==1&&minutes>0.0).then(||duration(minutes)) } else if record_type.contains("AudioExposure")&&count>1 { let units=items.iter().filter_map(|row|unit(row)).collect::<BTreeSet<_>>();if !values.is_empty()&&units.len()==1{Some(format!("{count} entries · {}–{} {}",number(values.iter().copied().fold(f64::INFINITY,f64::min)),number(values.iter().copied().fold(f64::NEG_INFINITY,f64::max)),friendly_unit_label(&record_type,units.iter().next().copied()).unwrap_or_else(||units.iter().next().unwrap().to_string())))}else{None} } else if count==1 || record_type.contains("RestingHeartRate") { items.iter().filter_map(|row|value_number(row).map(|value|(row,value))).max_by_key(|(row,_)|record_time(row)).map(|(row,value)|display_value(&record_type,value,unit(row))) } else {None};json!({"label":friendly_type_name(&record_type),"count":count,"count_label":count.to_string(),"value":value}) }).collect()
 }
@@ -1683,7 +1684,7 @@ fn oura_appendix(rows: &[NormalizedRow]) -> Vec<Value> {
                 .and_then(|data| data.get("pulse_wave_velocity"))
                 .and_then(Value::as_f64)
             {
-                output.push(json!({"label":"Pulse-wave velocity","detail":format!("{} m/s · Oura's measurement",number(value))}));
+                output.push(json!({"label":"pulse-wave velocity","detail":format!("{} m/s · Oura's measurement",number(value))}));
             }
         } else if matches!(kind, OURA_SESSION | OURA_TAG) {
             let label = data
@@ -1695,12 +1696,12 @@ fn oura_appendix(rows: &[NormalizedRow]) -> Vec<Value> {
                     })
                 })
                 .and_then(Value::as_str)
-                .map(title)
+                .map(words)
                 .unwrap_or_else(|| {
                     if kind == OURA_SESSION {
-                        "Session".to_owned()
+                        "session".to_owned()
                     } else {
-                        "Tag".to_owned()
+                        "tag".to_owned()
                     }
                 });
             let mut detail = record_time(row).map(clock).unwrap_or_default();
@@ -1713,17 +1714,10 @@ fn oura_appendix(rows: &[NormalizedRow]) -> Vec<Value> {
     }
     output
 }
-fn title(text: &str) -> String {
-    text.split('_')
-        .map(|word| {
-            let mut chars = word.chars();
-            chars
-                .next()
-                .map(|first| first.to_uppercase().to_string() + chars.as_str())
-                .unwrap_or_default()
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+/// Renders an underscore-separated source value as owner-facing words, in the
+/// house lowercase: the source's own case is kept, only the separator changes.
+fn words(text: &str) -> String {
+    text.split('_').collect::<Vec<_>>().join(" ")
 }
 pub(crate) fn mean(values: &[f64]) -> f64 {
     values.iter().sum::<f64>() / values.len() as f64
@@ -2573,7 +2567,7 @@ pub(crate) mod tests {
             assert_eq!(sleep["asleep_duration"], "8h 00m");
             assert_eq!(sleep["has_stage_detail"], true);
             let facts = fact_items(&[null]);
-            assert_eq!(facts[0]["label"], "Wrist temperature");
+            assert_eq!(facts[0]["label"], "wrist temperature");
             assert!(facts[0]["value"].is_null());
         }
 
@@ -3229,7 +3223,7 @@ pub(crate) mod tests {
             )
             .unwrap();
             assert!(unpaired["blood_pressure"].is_null());
-            assert_eq!(unpaired["facts"][0]["label"], "Blood pressure (systolic)");
+            assert_eq!(unpaired["facts"][0]["label"], "blood pressure (systolic)");
             let paired = heart_analysis(
                 &[
                     systolic("2026-01-01T08:30:00+00:00", 122),
@@ -3468,7 +3462,7 @@ pub(crate) mod tests {
             row.metadata = FieldState::Present(json!({"pulse_wave_velocity":8.2}));
             assert_eq!(
                 heart_analysis(&[row.clone()], &BTreeMap::new()).unwrap()["facts"][0]["label"],
-                "Vascular age"
+                "vascular age"
             );
             assert_eq!(oura_appendix(&[row]).len(), 1);
         }
@@ -3513,7 +3507,7 @@ pub(crate) mod tests {
             .unwrap();
             assert_eq!(
                 payload["audit"]["oura_appendix"],
-                json!([{"label":"Pulse-wave velocity","detail":"8.2 m/s · Oura's measurement"}])
+                json!([{"label":"pulse-wave velocity","detail":"8.2 m/s · Oura's measurement"}])
             );
             let mut unparseable = simple_row(
                 OURA_CARDIOVASCULAR_AGE,

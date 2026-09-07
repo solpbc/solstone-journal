@@ -1170,7 +1170,7 @@
     if (state.recentErrorsFilter) {
       const filter = state.recentErrorsFilter;
       const label = document.createElement('div');
-      label.style.cssText = 'padding: 0.2em 0 0.45em; font-size: 0.8em; color: #6b7280; display: flex; gap: 0.5em; align-items: center;';
+      label.style.cssText = 'padding: 0.2em 0 0.45em; font-size: 0.8em; color: var(--ink-soft); display: flex; gap: 0.5em; align-items: center;';
       const dayText = filter.day === 'today' ? "today's" : filter.day;
       label.appendChild(document.createTextNode(`showing ${dayText} errors`));
       if (filter.talent) {
@@ -1187,7 +1187,7 @@
 
     if (entries.length === 0) {
       const empty = document.createElement('div');
-      empty.style.cssText = 'padding: 0.3em 0; font-size: 0.85em; color: #6b7280;';
+      empty.style.cssText = 'padding: 0.3em 0; font-size: 0.85em; color: var(--ink-soft);';
       empty.textContent = !state.agentErrorsOk
         ? "couldn't check talent errors today."
         : (state.recentErrorsFilter ? 'no matching recent errors yet.' : 'no recent errors.');
@@ -1204,7 +1204,7 @@
       if (!row) {
         row = document.createElement('div');
         row.setAttribute('data-key', key);
-        row.style.cssText = 'padding: 0.3em 0; font-size: 0.85em; color: var(--ink); border-bottom: 1px solid #e5e7eb; display: flex; align-items: baseline; gap: 0.4em; flex-wrap: wrap;';
+        row.style.cssText = 'padding: 0.3em 0; font-size: 0.85em; color: var(--ink); border-bottom: 1px solid var(--hairline); display: flex; align-items: baseline; gap: 0.4em; flex-wrap: wrap;';
 
         const panelId = 'recent-error-panel-' + (++recentErrorPanelSeq);
 
@@ -1267,7 +1267,7 @@
       const detailText = recentErrorDetailText(e);
       if (detailText) {
         const tech = document.createElement('div');
-        tech.style.cssText = 'margin-top: 0.3em; font-size: 0.85em; color: #6b7280;';
+        tech.style.cssText = 'margin-top: 0.3em; font-size: 0.85em; color: var(--ink-soft);';
         tech.textContent = detailText;
         panel.appendChild(tech);
       }
@@ -1289,13 +1289,13 @@
     const types = new Set(recent.map(({ e }) => e.type));
     if (types.has('agent')) {
       const advice = document.createElement('div');
-      advice.style.cssText = 'padding: 0.25em 0; font-size: 0.8em; color: #9ca3af;';
+      advice.style.cssText = 'padding: 0.25em 0; font-size: 0.8em; color: var(--ink-faint);';
       advice.appendChild(document.createTextNode('talent errors usually resolve on the next run. '));
       const btn = document.createElement('button');
       btn.setAttribute('data-action', 'view-logs');
       btn.setAttribute('data-service', 'cortex');
       btn.className = 'error-advice-link';
-      btn.textContent = 'view AI engine logs';
+      btn.textContent = 'view model logs';
       advice.appendChild(btn);
       advice.appendChild(document.createTextNode(' for details.'));
       container.appendChild(advice);
@@ -1304,7 +1304,7 @@
       const importErr = recent.find(({ e }) => e.type === 'import')?.e;
       const stageText = importErr?.stage && importErr.stage !== 'unknown' ? ' at ' + importErr.stage : '';
       const advice = document.createElement('div');
-      advice.style.cssText = 'padding: 0.25em 0; font-size: 0.8em; color: #9ca3af;';
+      advice.style.cssText = 'padding: 0.25em 0; font-size: 0.8em; color: var(--ink-faint);';
       advice.appendChild(document.createTextNode('import failed' + stageText + '. check the source file and retry, or '));
       const btn = document.createElement('button');
       btn.setAttribute('data-action', 'view-logs');
@@ -1318,7 +1318,7 @@
     // Default fallback for any unrecognized error types (connection/service errors)
     if (Array.from(types).some(t => t !== 'agent' && t !== 'import')) {
       const advice = document.createElement('div');
-      advice.style.cssText = 'padding: 0.25em 0; font-size: 0.8em; color: #9ca3af;';
+      advice.style.cssText = 'padding: 0.25em 0; font-size: 0.8em; color: var(--ink-faint);';
       advice.appendChild(document.createTextNode('service error detected. '));
       const btn = document.createElement('button');
       btn.setAttribute('data-action', 'view-logs');
@@ -1403,7 +1403,7 @@
     })
       .then(() => {
         btn.textContent = 'retry sent';
-        btn.style.color = '#9ca3af';
+        btn.style.color = 'var(--ink-faint)';
         if (errorEl) {
           errorEl.textContent = '';
         }

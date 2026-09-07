@@ -1531,19 +1531,20 @@ a.body-day-cell:focus-visible {
       // exactly those, and sleep, heart rate and activity all have real
       // ingest arms on both.
       // The line used to end in an "import body data" link to /app/import/,
-      // whose catalog has no Apple Health and no Oura card — body ingest is
-      // `solstone-core body apple --source PATH --save --confirm-body-save`
-      // and `solstone-core body oura connect` then `... oura sync --save
-      // --confirm-body-save` today: both writes are gated on the per-run
-      // confirmation (`apple_approval(journal, options.confirm_body_save)` in
-      // body-ingest/src/apple.rs, `if !options.save` in oura_sync.rs, and
-      // `parse_body_apple` / `parse_body_oura` in
-      // solstone-core-cli/src/lib.rs; docs/health_imports.md:52-54),
-      // and nothing on that screen can do it. The link is gone and the route
-      // that exists is named instead. S-8.
+      // whose catalog has no Apple Health and no Oura card, and then in the
+      // two CLI invocations. Neither is a route an owner can follow: both
+      // writes are gated on a per-run confirmation AND on an operator-authored
+      // preflight approval artifact that no shipped code writes —
+      // `read_approval(journal, APPLE_PATH)` in
+      // body-ingest/src/approval.rs returns the `missing_approval_artifact`
+      // gate when `imports/_approvals/health_import_preflight.json` is absent,
+      // and oura is the same shape through `OURA_PATH`. The only writers of
+      // either file are `#[cfg(test)]` modules. So the copy names the setup
+      // and points at the guide instead of printing argv that cannot work.
+      // S-8, H-4.
       return html([
         renderHeader("body", "your body, brought into your journal.", false),
-        '<p class="body-subtitle">nothing here yet. bring in sleep, heart rate and activity from Oura or Apple Health. that runs from the command line for now: <code class="body-code">solstone-core body apple --source PATH --save --confirm-body-save</code>, or <code class="body-code">solstone-core body oura connect</code> and then <code class="body-code">solstone-core body oura sync --save --confirm-body-save</code>.</p>',
+        '<p class="body-subtitle">nothing here yet. bring in sleep, heart rate and activity from Oura or Apple Health. that runs from the command line for now, after a one-time setup; the health imports guide in the solstone docs has the steps.</p>',
       ]);
     }
     return html([
@@ -1698,7 +1699,7 @@ a.body-day-cell:focus-visible {
       '<h2 id="body-activity-title" class="body-question-title">how active was I?</h2>',
       workouts.length ? `<ul class="body-workouts">${workouts.map((workout) => `<li><span class="body-workout-name">${escapeHtml(workout.name)}</span><span class="body-num">${workout.start ? escapeHtml(workout.start) : ""}${workout.duration ? ` &middot; ${escapeHtml(workout.duration)}` : ""}${workout.metrics_label ? ` &middot; ${escapeHtml(workout.metrics_label)}` : ""}${workout.source ? ` &middot; ${escapeHtml(workout.source)}` : ""}</span></li>`).join("")}</ul>` : "",
       running.length ? `<h3 class="body-card-label">running dynamics</h3><ul class="body-facts">${running.map((item) => `<li><span>${escapeHtml(item.label)}</span>${item.summary ? `<strong class="body-num">${escapeHtml(item.summary)}</strong>` : `<strong><span class="body-num">${escapeHtml(item.count_label)}</span> <span class="body-fact-kind">entries</span></strong>`}</li>`).join("")}</ul>` : "",
-      activity.steps ? (activity.steps.mode === "total" ? `<p class="body-primary-line"><span class="body-num">${escapeHtml(activity.steps.total_label)}</span> steps &middot; ${escapeHtml(activity.steps.source)}${activity.steps.others_label ? ` &mdash; ${escapeHtml(activity.steps.others_label)}` : ""}</p>` : `<p class="body-primary-line">step-count samples: <span class="body-num">${escapeHtml(activity.steps.samples_label)}</span></p>`) : "",
+      activity.steps ? (activity.steps.mode === "total" ? `<p class="body-primary-line"><span class="body-num">${escapeHtml(activity.steps.total_label)}</span> steps &middot; ${escapeHtml(activity.steps.source)}${activity.steps.others_label ? ` &middot; ${escapeHtml(activity.steps.others_label)}` : ""}</p>` : `<p class="body-primary-line">step-count samples: <span class="body-num">${escapeHtml(activity.steps.samples_label)}</span></p>`) : "",
       counters.length ? `<ul class="body-facts">${counters.map((counter) => `<li><span>${escapeHtml(counter.label)}</span>${counter.value ? `<strong class="body-num">${escapeHtml(counter.value)}</strong>` : `<strong><span class="body-num">${escapeHtml(counter.count_label)}</span> <span class="body-fact-kind">${Number(counter.count) === 1 ? "entry" : "entries"}</span></strong>`}</li>`).join("")}</ul>` : "",
       '</section>',
     ]);

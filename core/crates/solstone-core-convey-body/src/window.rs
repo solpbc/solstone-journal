@@ -215,7 +215,7 @@ fn window_signal_items(rows: &[NormalizedRow]) -> Vec<Value> {
     items.sort_by(|(left_name, left_count), (right_name, right_count)| {
         right_count
             .cmp(left_count)
-            .then_with(|| left_name.cmp(right_name))
+            .then_with(|| left_name.to_lowercase().cmp(&right_name.to_lowercase()))
     });
     items
         .into_iter()
@@ -431,7 +431,7 @@ fn window_events(
                 let minutes = overlap_minutes(start, end, window_start, window_end);
                 let key = (sleep.source.clone(), iso(start), iso(end));
                 if minutes > 0.0 && seen.insert(key) {
-                    events.push(json!({"kind":"sleep","label":"Sleep","start":iso(start),"end":iso(end),"start_label":clock(start.naive_local()),"end_label":clock(end.naive_local()),"overlap_minutes":round1(minutes),"overlap_label":duration(minutes),"source":sleep.source}));
+                    events.push(json!({"kind":"sleep","label":"sleep","start":iso(start),"end":iso(end),"start_label":clock(start.naive_local()),"end_label":clock(end.naive_local()),"overlap_minutes":round1(minutes),"overlap_label":duration(minutes),"source":sleep.source}));
                 }
             }
         }

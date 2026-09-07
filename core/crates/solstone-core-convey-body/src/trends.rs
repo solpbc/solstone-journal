@@ -49,16 +49,16 @@ pub const TYPICAL_MIN_VALUES: usize = 14;
 const TYPICAL_SIGNAL_KEYS: [&str; 4] = ["readiness", "sleep_score", "asleep_minutes", "resting_hr"];
 const TREND_ANNOTATION_LIMIT: usize = 6;
 const TREND_SIGNALS: [(&str, &str, &str); 10] = [
-    ("resting_hr", "Resting heart rate", "bpm"),
-    ("vascular_age", "Vascular age", ""),
-    ("asleep_minutes", "Asleep", "h"),
-    ("sleep_score", "Sleep score", ""),
-    ("readiness", "Readiness", ""),
-    ("temp_deviation", "Temperature deviation", "°C"),
-    ("stress_high_minutes", "Daytime stress high", "h"),
-    ("steps", "Steps", "steps"),
-    ("body_mass", "Body mass", "lb"),
-    ("glucose_avg", "Glucose average", "mg/dL"),
+    ("resting_hr", "resting heart rate", "bpm"),
+    ("vascular_age", "vascular age", ""),
+    ("asleep_minutes", "asleep", "h"),
+    ("sleep_score", "sleep score", ""),
+    ("readiness", "readiness", ""),
+    ("temp_deviation", "temperature deviation", "°C"),
+    ("stress_high_minutes", "daytime stress high", "h"),
+    ("steps", "steps", "steps"),
+    ("body_mass", "body mass", "lb"),
+    ("glucose_avg", "glucose average", "mg/dL"),
 ];
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1297,16 +1297,16 @@ mod tests {
         assert_eq!(
             TREND_SIGNALS,
             [
-                ("resting_hr", "Resting heart rate", "bpm"),
-                ("vascular_age", "Vascular age", ""),
-                ("asleep_minutes", "Asleep", "h"),
-                ("sleep_score", "Sleep score", ""),
-                ("readiness", "Readiness", ""),
-                ("temp_deviation", "Temperature deviation", "°C"),
-                ("stress_high_minutes", "Daytime stress high", "h"),
-                ("steps", "Steps", "steps"),
-                ("body_mass", "Body mass", "lb"),
-                ("glucose_avg", "Glucose average", "mg/dL")
+                ("resting_hr", "resting heart rate", "bpm"),
+                ("vascular_age", "vascular age", ""),
+                ("asleep_minutes", "asleep", "h"),
+                ("sleep_score", "sleep score", ""),
+                ("readiness", "readiness", ""),
+                ("temp_deviation", "temperature deviation", "°C"),
+                ("stress_high_minutes", "daytime stress high", "h"),
+                ("steps", "steps", "steps"),
+                ("body_mass", "body mass", "lb"),
+                ("glucose_avg", "glucose average", "mg/dL")
             ]
         );
     }
@@ -1431,7 +1431,7 @@ mod tests {
         assert_python_bytes(
             &normalized(actual),
             11_440,
-            "a5c9724da95eb6f350437924fd5e21f3bc824c42098cc63cb292c794fe71f874",
+            "98ec993d9f6531595ba2aa832913cc0f154de3c94ed8349fd79e94b7f6e640b2",
         );
     }
 
