@@ -746,6 +746,10 @@ window._guidedClientItemId = null;
 let importEvents = {};
 let importsCache = [];
 let currentSourceFilter = '';
+// G3-310: 417 imports at 25 a page took sixteen clicks to reach the oldest, and
+// paging was the only way through. 100 is the route's own ceiling; the real fix
+// is a date jump the list route can serve, which needs a server-side filter.
+const IMPORT_PAGE_SIZE = 100;
 let currentPage = 1;
 let totalImports = 0;
 const escapeHtml = (value) => window.AppServices.escapeHtml(value);
@@ -1179,9 +1183,9 @@ async function loadImports() {
   currentPage = 1;
   await loadSourceGrid();
   try {
-    const data = await window.apiJson('/app/import/api/list?page=1&per_page=25');
+    const data = await window.apiJson(`/app/import/api/list?page=1&per_page=${IMPORT_PAGE_SIZE}`);
     if (!Array.isArray(data.imports) || typeof data.total !== 'number' || typeof data.page !== 'number' || typeof data.pages !== 'number') {
-      throw malformedImportHistoryResponse('/app/import/api/list?page=1&per_page=25');
+      throw malformedImportHistoryResponse(`/app/import/api/list?page=1&per_page=${IMPORT_PAGE_SIZE}`);
     }
     const imports = data.imports;
     importsCache = imports;
@@ -1280,9 +1284,9 @@ function renderLoadMoreError(err) {
 async function loadMoreImports() {
   currentPage++;
   try {
-    const data = await window.apiJson(`/app/import/api/list?page=${currentPage}&per_page=25`);
+    const data = await window.apiJson(`/app/import/api/list?page=${currentPage}&per_page=${IMPORT_PAGE_SIZE}`);
     if (!Array.isArray(data.imports) || typeof data.total !== 'number' || typeof data.page !== 'number' || typeof data.pages !== 'number') {
-      throw malformedImportHistoryResponse(`/app/import/api/list?page=${currentPage}&per_page=25`);
+      throw malformedImportHistoryResponse(`/app/import/api/list?page=${currentPage}&per_page=${IMPORT_PAGE_SIZE}`);
     }
 
     importsCache = importsCache.concat(data.imports);
