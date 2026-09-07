@@ -325,6 +325,11 @@
   }
 }
 .curation-group{border:1px solid #dfd6c9;border-radius:12px;background:#fff}.curation-group>summary{padding:18px;cursor:pointer;font-weight:600;min-height:48px}.curation-group-items{padding:0 18px 18px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.curation-group-more{display:grid;gap:16px}.curation-group-more[hidden]{display:none}.curation-group-items .curation-item{min-width:0;overflow-wrap:anywhere}.curation-group-items .curation-item{content-visibility:auto;contain-intrinsic-block-size:auto 240px}.curation-group:focus-within{outline-color:#b06a1a}.curation-group>summary:focus-visible{outline:2px solid #b06a1a;outline-offset:2px}
+/* Every disclosure inside a curation item is a tap target. The existing
+   min-height only ever reached a group's own summary, so the per-interval
+   and source-evidence disclosures measured 29-33px on phone (G2-B07). The
+   shell drawer brings its own summary chrome and is left alone. */
+.curation-item details:not(.drawer) > summary{box-sizing:border-box;min-height:44px;padding:6px 0}
 .curation-source-dates{display:flex;flex-wrap:wrap;gap:8px 16px}.curation-source-dates a{display:inline-flex;align-items:center;min-height:46px;color:var(--orange-text-aa,#a15f17)}.curation-origin-details summary{cursor:pointer;padding:12px 0}.curation-origin-details li{overflow-wrap:anywhere}
 </style>
 
@@ -451,15 +456,49 @@ window.CUR_COPY = CUR_COPY;
     `;
   }
 
-  function facetItemHtml(item) {
-    const evidenceProps = window.CurationEvidence.buildEvidenceDrawerProps(item);
+  // G2-B08: the same proposed facet reaches the queue more than once when an
+  // older candidate was stored slug-style ("low_light_capture") and a newer
+  // one spaced. Both humanize to the same words, so the owner was asked a
+  // word-for-word identical question twice with only an unlabelled evidence
+  // fraction between them, and creating the facet on one row would leave the
+  // twin asking again (its accept then fails: the facet already exists).
+  // Group by the name the owner actually reads, sum the evidence, and carry
+  // every stored key on the one row so an answer retires all of them.
+  function groupFacetItems(items) {
+    const groups = [];
+    const byName = new Map();
+    items.forEach((item) => {
+      const display = humanizeFacetName(item.name);
+      let group = byName.get(display);
+      if (!group) {
+        group = {
+          kind: 'facet_candidate',
+          key: item.key,
+          keys: [],
+          display,
+          evidence: {samples: [], count: 0}
+        };
+        byName.set(display, group);
+        groups.push(group);
+      }
+      group.keys.push(item.key);
+      const count = Math.trunc(Number(item?.evidence?.count));
+      if (Number.isFinite(count) && count > 0) group.evidence.count += count;
+      const samples = Array.isArray(item?.evidence?.samples) ? item.evidence.samples : [];
+      group.evidence.samples = group.evidence.samples.concat(samples);
+    });
+    return groups;
+  }
+
+  function facetItemHtml(group) {
+    const evidenceProps = window.CurationEvidence.buildEvidenceDrawerProps(group);
     const evidenceHtml = evidenceProps ? window.Drawer.render(evidenceProps) : '';
     return `
-      <article class="curation-item" data-curation-item data-kind="facet_candidate" data-name-key="${escapeHtml(item.key)}">
-        <p class="curation-body">${escapeHtml(copyFormat(CUR_COPY.CUR_FACET_BODY, {name: humanizeFacetName(item.name)}))}</p>
+      <article class="curation-item" data-curation-item data-kind="facet_candidate" data-name-key="${escapeAttr(group.key)}" data-name-keys='${escapeAttr(JSON.stringify(group.keys))}'>
+        <p class="curation-body">${escapeHtml(copyFormat(CUR_COPY.CUR_FACET_BODY, {name: group.display}))}</p>
         <div class="curation-actions">
-          <button class="curation-button curation-button-primary" type="button" data-action="facet-accept" data-name-key="${escapeHtml(item.key)}">${escapeHtml(CUR_COPY.CUR_FACET_CREATE_ACTION)}</button>
-          <button class="curation-button" type="button" data-action="facet-dismiss" data-name-key="${escapeHtml(item.key)}">${escapeHtml(CUR_COPY.CUR_FACET_DISMISS_ACTION)}</button>
+          <button class="curation-button curation-button-primary" type="button" data-action="facet-accept" data-name-key="${escapeAttr(group.key)}">${escapeHtml(CUR_COPY.CUR_FACET_CREATE_ACTION)}</button>
+          <button class="curation-button" type="button" data-action="facet-dismiss" data-name-key="${escapeAttr(group.key)}">${escapeHtml(CUR_COPY.CUR_FACET_DISMISS_ACTION)}</button>
         </div>
         ${evidenceHtml}
         <p class="curation-item-error" hidden></p>
@@ -669,7 +708,7 @@ window.CUR_COPY = CUR_COPY;
     CUR_COPY = payload.copy || {};
     window.CUR_COPY = CUR_COPY;
     curationFacetTitles = payload.facet_titles || {};
-    const facetItems = payload.facet_items || [];
+    const facetItems = groupFacetItems(payload.facet_items || []);
     const entityItems = payload.entity_items || [];
     const entityGroups = groupEntityItems(entityItems);
     const ambiguityItems = payload.ambiguity_items || [];
@@ -1075,11 +1114,22 @@ window.CUR_COPY = CUR_COPY;
 
     if (action === 'facet-accept' || action === 'facet-dismiss') {
       const nameKey = button.dataset.nameKey;
+      // One row can stand for more than one stored candidate key (G2-B08).
+      // Creating the facet happens once, from the row's own key; the rest
+      // are retired so a twin can't come back asking the same question.
+      let keys = [];
+      try {
+        keys = JSON.parse(item?.dataset?.nameKeys || '[]');
+      } catch (err) {
+        keys = [];
+      }
+      const rest = Array.isArray(keys) ? keys.filter((key) => key && key !== nameKey) : [];
       const path = action === 'facet-accept'
         ? '/app/curation/api/facet/accept'
         : '/app/curation/api/facet/dismiss';
       setBusy(button, true);
       postJson(path, { name_key: nameKey })
+        .then(() => Promise.all(rest.map((key) => postJson('/app/curation/api/facet/dismiss', { name_key: key }))))
         .then(() => removeItem(item))
         .catch((err) => {
           setBusy(button, false);
