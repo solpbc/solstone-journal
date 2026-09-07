@@ -286,11 +286,14 @@
   margin-top: 14px;
 }
 
+/* The month labels sit on the day grid's own column ladder: each span takes a
+   week column by `grid-column-start`, so the label pitch has to equal the cell
+   pitch or every label drifts left of its month (D-13). */
 .body-days-months {
   display: grid;
-  grid-auto-columns: 11px;
+  grid-auto-columns: var(--daygrid-cell);
   grid-template-rows: 12px;
-  gap: 2px;
+  gap: var(--daygrid-gap);
   margin-bottom: 2px;
   font-size: 10px;
   line-height: 12px;
@@ -324,8 +327,10 @@
    with the 3px gap at every width. These are the values in
    /static/day-grid.css; this page draws its own grid, so it carries the same
    ladder rather than a fourth size of its own (F-12). The legend swatches take
-   the same size because they sit in the same row of cells. */
+   the same size because they sit in the same row of cells, and the month-label
+   row takes it because its columns are the grid's columns. */
 .body-days-grid,
+.body-days-months,
 .body-days-legend {
   --daygrid-cell: 13px;
   --daygrid-gap: 3px;
@@ -334,6 +339,7 @@
 
 @media (max-width: 768px) {
   .body-days-grid,
+  .body-days-months,
   .body-days-legend {
     --daygrid-cell: 24px;
   }
@@ -1105,7 +1111,7 @@ a.body-day-cell:focus-visible {
       '<header class="body-header">',
       showTitle ? `<h1 class="body-title">${escapeHtml(title)}</h1>` : "",
       subtitle ? `<p class="body-subtitle">${escapeHtml(subtitle)}</p>` : "",
-      backLink ? '<nav class="body-nav" aria-label="Body views"><a class="body-link" href="/app/body/">&larr; body overview</a></nav>' : "",
+      backLink ? '<nav class="body-nav" aria-label="body views"><a class="body-link" href="/app/body/">&larr; body overview</a></nav>' : "",
       '</header>',
     ]);
   }
@@ -1140,7 +1146,7 @@ a.body-day-cell:focus-visible {
   function renderFreshnessStrip(freshness) {
     const lines = asArray(freshness?.quiet_lines);
     if (!lines.length) return "";
-    return `<section class="body-card body-freshness" aria-label="Source freshness"><p class="body-muted body-num">${escapeHtml(lines.join(" · "))}</p></section>`;
+    return `<section class="body-card body-freshness" aria-label="source freshness"><p class="body-muted body-num">${escapeHtml(lines.join(" · "))}</p></section>`;
   }
 
   function renderArchiveHero(archive) {
@@ -1186,8 +1192,8 @@ a.body-day-cell:focus-visible {
       '<div class="body-section-head">',
       '<h2 id="body-recent-title" class="body-section-title">recent body days</h2>',
       '<div class="body-recent-controls" id="body-recent-controls" hidden>',
-      '<button type="button" class="body-recent-nav" id="body-recent-back" aria-label="Newer days">&lsaquo;</button>',
-      '<button type="button" class="body-recent-nav" id="body-recent-fwd" aria-label="Earlier days">&rsaquo;</button>',
+      '<button type="button" class="body-recent-nav" id="body-recent-back" aria-label="newer days">&lsaquo;</button>',
+      '<button type="button" class="body-recent-nav" id="body-recent-fwd" aria-label="earlier days">&rsaquo;</button>',
       '</div></div>',
       `<div class="body-recent-carousel" id="body-recent-carousel" data-has-more="${archive.recent_days_has_more ? "true" : "false"}">`,
       days.map(renderDayCard).join(""),
@@ -1289,7 +1295,7 @@ a.body-day-cell:focus-visible {
     return html([
       '<section class="body-card body-section" aria-labelledby="body-history-title">',
       '<h2 id="body-history-title" class="body-section-title">explore all history</h2>',
-      '<div class="body-days" role="group" aria-label="Entries per day across your body\'s record">',
+      '<div class="body-days" role="group" aria-label="entries per day across your body\'s record">',
       blocks.map((block) => html([
         '<div class="body-days-year">',
         `<span class="body-days-year-label body-num" aria-hidden="true">${escapeHtml(block.year)}</span>`,
@@ -1489,12 +1495,12 @@ a.body-day-cell:focus-visible {
         ["coverage end", status.coverage_window?.end || "—"],
         ...latestRows,
       ]),
-      '<section class="body-section body-lists" aria-label="Entry totals">',
+      '<section class="body-section body-lists" aria-label="entry totals">',
       `<article class="body-card"><h3 class="body-card-label">By type</h3><ul class="body-list">${renderCountList(status.normalized?.by_type, "No entries.", true)}</ul></article>`,
       `<article class="body-card"><h3 class="body-card-label">By source${status.sources_month_label ? ` &middot; ${escapeHtml(status.sources_month_label)}` : ""}</h3><ul class="body-list">${renderCountList(status.normalized?.by_source, "No entries.")}</ul></article>`,
       `<article class="body-card"><h3 class="body-card-label">By month</h3><ul class="body-list">${renderCountList(status.normalized?.by_month, "No entries.")}</ul></article>`,
       '</section>',
-      '<section class="body-section body-lists" aria-label="Dedupe totals">',
+      '<section class="body-section body-lists" aria-label="dedupe totals">',
       `<article class="body-card"><h3 class="body-card-label">Dedupe by type</h3><ul class="body-list">${renderCountList(status.dedupe?.by_type, "No entries.", true)}</ul></article>`,
       `<article class="body-card"><h3 class="body-card-label">Dedupe by source</h3><ul class="body-list">${renderCountList(status.dedupe?.by_source, "No entries.")}</ul></article>`,
       `<article class="body-card"><h3 class="body-card-label">Dedupe by month</h3><ul class="body-list">${renderCountList(status.dedupe?.by_month, "No entries.")}</ul></article>`,
@@ -1523,13 +1529,14 @@ a.body-day-cell:focus-visible {
       // ingest arms on both.
       // The line used to end in an "import body data" link to /app/import/,
       // whose catalog has no Apple Health and no Oura card — body ingest is
-      // `solstone-core body apple` and `solstone-core body oura` today
-      // (solstone-core/src/main.rs `BodyCommand`, docs/health_imports.md),
+      // `solstone-core body apple --source PATH` and `solstone-core body oura
+      // connect` today (`parse_body_apple` / `parse_body_oura` in
+      // solstone-core-cli/src/lib.rs, docs/health_imports.md:52-54),
       // and nothing on that screen can do it. The link is gone and the route
       // that exists is named instead. S-8.
       return html([
         renderHeader("body", "your body, brought into your journal.", false),
-        '<p class="body-subtitle">nothing here yet. bring in sleep, heart rate and activity from Oura or Apple Health. that runs from the command line for now, with <code class="body-code">solstone-core body apple</code> or <code class="body-code">solstone-core body oura</code>.</p>',
+        '<p class="body-subtitle">nothing here yet. bring in sleep, heart rate and activity from Oura or Apple Health. that runs from the command line for now, with <code class="body-code">solstone-core body apple --source PATH</code> or <code class="body-code">solstone-core body oura connect</code>.</p>',
       ]);
     }
     return html([
@@ -1591,8 +1598,8 @@ a.body-day-cell:focus-visible {
   function renderEmptyDay(bodyDay) {
     const nearest = asObject(bodyDay.nearest);
     return html([
-      '<section class="body-card" aria-label="Empty day">',
-      '<p class="body-empty">nothing for this day. bring in sleep, heart rate and activity from Oura or Apple Health.</p>',
+      '<section class="body-card" aria-label="empty day">',
+      '<p class="body-empty">nothing for this day.</p>',
       (nearest.prev || nearest.next) ? html([
         '<p>nearby days with data: ',
         nearest.prev ? `<a class="body-link" href="${bodyDayHref(nearest.prev)}">&larr; ${escapeHtml(nearest.prev_label)}</a> ` : "",
@@ -1624,7 +1631,7 @@ a.body-day-cell:focus-visible {
     if (bodyDay.sources) {
       parts.push(`<article class="body-card body-highlight body-card--soft"><h2 class="body-highlight-title">sources</h2><p class="body-highlight-value">${escapeHtml(sourceNames.length)} source${sourceNames.length === 1 ? "" : "s"}</p><p class="body-highlight-detail">${escapeHtml(sourceNames.join(" · "))}</p></article>`);
     }
-    return `<section class="body-highlights" aria-label="Body day brief">${parts.join("")}</section>`;
+    return `<section class="body-highlights" aria-label="body day brief">${parts.join("")}</section>`;
   }
 
   function renderSleepCard(sleep) {
@@ -1664,7 +1671,7 @@ a.body-day-cell:focus-visible {
         `<p class="body-primary-line"><span class="body-num">${escapeHtml(series.range_label)}</span> &middot; avg <span class="body-num">${escapeHtml(series.mean_label)}</span> &middot; <span class="body-num">${escapeHtml(series.count_label)}</span> readings</p>`,
         '<div class="body-curve-wrap">',
         `<div class="body-curve-y body-num" aria-hidden="true"><span>${escapeHtml(series.svg?.y_max_label)}</span><span>${escapeHtml(series.svg?.y_min_label)}</span></div>`,
-        '<svg class="body-curve" viewBox="0 0 1440 260" preserveAspectRatio="none" role="img" aria-label="Glucose readings through the day">',
+        '<svg class="body-curve" viewBox="0 0 1440 260" preserveAspectRatio="none" role="img" aria-label="glucose readings through the day">',
         asArray(series.svg?.paths).map((path) => `<path d="${escapeHtml(path)}" vector-effect="non-scaling-stroke"></path>`).join(""),
         asArray(series.svg?.dots).map((dot) => `<circle cx="${safeNumber(dot[0])}" cy="${safeNumber(dot[1])}" r="4"></circle>`).join(""),
         '</svg></div>',
@@ -1703,7 +1710,7 @@ a.body-day-cell:focus-visible {
       hr ? html([
         '<div class="body-curve-wrap">',
         `<div class="body-curve-y body-num" aria-hidden="true"><span>${escapeHtml(hr.svg?.y_max_label)}</span><span>${escapeHtml(hr.svg?.y_min_label)}</span></div>`,
-        '<svg class="body-curve" viewBox="0 0 1440 260" preserveAspectRatio="none" role="img" aria-label="Heart rate through the day">',
+        '<svg class="body-curve" viewBox="0 0 1440 260" preserveAspectRatio="none" role="img" aria-label="heart rate through the day">',
         asArray(hr.svg?.band_paths).map((path) => `<path class="body-curve-band" d="${escapeHtml(path)}"></path>`).join(""),
         asArray(hr.svg?.paths).map((path) => `<path d="${escapeHtml(path)}" vector-effect="non-scaling-stroke"></path>`).join(""),
         asArray(hr.svg?.dots).map((dot) => `<circle cx="${safeNumber(dot[0])}" cy="${safeNumber(dot[1])}" r="4"></circle>`).join(""),
