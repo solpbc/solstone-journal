@@ -80,6 +80,10 @@ pub(crate) fn direct_routes(prefix: &str, pair_windows: Arc<PairWindowManager>) 
         )
         .route(&format!("{prefix}/pair"), post(pair))
         .route(&format!("{prefix}/api/devices"), get(devices))
+        .route(
+            &format!("{prefix}/api/relay/access"),
+            get(crate::relay_access::get_relay_access),
+        )
         .layer(Extension(pair_windows))
 }
 
@@ -558,41 +562,95 @@ pub(crate) async fn pair(
             Err(error) => return pairing_refusal(PairingError::Address(error)),
         },
     };
-    match complete_pairing(
-        &root.0,
-        CeremonyRequest {
-            request: &request,
-            nonce,
-            sender_instance_id,
-            local_endpoints: response_local_endpoints(
-                &snapshot,
-                match read_direct_door_port(&root.0) {
-                    Ok(port) => port,
-                    Err(_) => {
-                        return refusal(
-                            "internal_error",
-                            "couldn't read journal config",
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                        );
-                    }
-                },
-            ),
-        },
-        now(),
-    ) {
-        Ok(response) => {
-            if let Some(Extension(pair_windows)) = pair_windows {
-                let _ = pair_windows.retire(&root.0, nonce, now()).await;
-            }
-            match pair_response_json(&response) {
-                Ok(value) => {
-                    emit_pair_complete(&root.0, &response.fingerprint);
-                    Json(value).into_response()
-                }
-                Err(error) => pairing_refusal(error),
-            }
+    let direct_port = match read_direct_door_port(&root.0) {
+        Ok(port) => port,
+        Err(_) => {
+            return refusal(
+                "internal_error",
+                "couldn't read journal config",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
         }
-        Err(error) => pairing_refusal(error),
+    };
+
+    let is_relay_pairing = matches!(
+        pairing_admission.as_ref(),
+        Some(Extension(PairingAdmission::Relay(_)))
+    );
+
+    if is_relay_pairing {
+        let Some(Extension(ref pw)) = pair_windows else {
+            return pairing_refusal(PairingError::RelayPairingUnavailable);
+        };
+        let Some(relay_entry) = pw.get_relay_entry(nonce) else {
+            return pairing_refusal(PairingError::RelayPairingUnavailable);
+        };
+
+        let ceremony_now = now();
+        let pair_outcome = pw.relay_admissions().while_current(
+            relay_entry.door,
+            relay_entry.service_epoch,
+            || {
+                complete_pairing(
+                    &root.0,
+                    CeremonyRequest {
+                        request: &request,
+                        nonce,
+                        sender_instance_id,
+                        relay_access: Some(relay_entry.snapshot.clone()),
+                        local_endpoints: response_local_endpoints(&snapshot, direct_port),
+                    },
+                    ceremony_now,
+                )
+            },
+        );
+
+        let response = match pair_outcome {
+            Some(Ok(resp)) => resp,
+            Some(Err(err)) => return pairing_refusal(err),
+            None => return pairing_refusal(PairingError::RelayPairingUnavailable),
+        };
+
+        pw.remove_relay_entry(nonce);
+        let _ = pw.retire(&root.0, nonce, ceremony_now).await;
+        match pair_response_json(&response, Some(&relay_entry.snapshot)) {
+            Ok(value) => {
+                emit_pair_complete(&root.0, &response.fingerprint);
+                Json(value).into_response()
+            }
+            Err(error) => pairing_refusal(error),
+        }
+    } else {
+        let relay_access = pair_windows
+            .as_ref()
+            .and_then(|Extension(pw)| pw.relay_access().try_current(&root.0, now()));
+
+        let ceremony_now = now();
+        match complete_pairing(
+            &root.0,
+            CeremonyRequest {
+                request: &request,
+                nonce,
+                sender_instance_id,
+                relay_access: relay_access.clone(),
+                local_endpoints: response_local_endpoints(&snapshot, direct_port),
+            },
+            ceremony_now,
+        ) {
+            Ok(response) => {
+                if let Some(Extension(pair_windows)) = pair_windows {
+                    let _ = pair_windows.retire(&root.0, nonce, ceremony_now).await;
+                }
+                match pair_response_json(&response, relay_access.as_ref()) {
+                    Ok(value) => {
+                        emit_pair_complete(&root.0, &response.fingerprint);
+                        Json(value).into_response()
+                    }
+                    Err(error) => pairing_refusal(error),
+                }
+            }
+            Err(error) => pairing_refusal(error),
+        }
     }
 }
 
@@ -1435,9 +1493,10 @@ mod tests {
                 root,
                 "/app/network",
                 Arc::new(OperationRegistry::default()),
-                Arc::new(PairWindowManager::new(Arc::new(
-                    crate::relay_admission::RelayAdmissionRegistry::new(),
-                ))),
+                Arc::new(PairWindowManager::new(
+                    Arc::new(crate::relay_admission::RelayAdmissionRegistry::new()),
+                    Arc::new(solstone_core_spl::relay_access::RelayAccessCache::new()),
+                )),
             ));
         let _shell = crate::router(temporary.path().to_path_buf());
     }

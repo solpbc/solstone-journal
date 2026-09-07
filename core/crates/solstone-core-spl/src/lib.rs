@@ -16,6 +16,7 @@ mod pair_window_client;
 mod posture_gate;
 mod private_link;
 mod reconnect_backoff;
+pub mod relay_access;
 mod relay_client;
 mod relay_control;
 mod relay_health;

@@ -84,26 +84,19 @@ pub fn enroll_home(
     relay_base_url: &str,
     instance_id: &str,
     ca_pubkey: &str,
-    home_label: &str,
+    _home_label: &str,
 ) -> Result<String, EnrollError> {
-    let agent = ureq::Agent::config_builder()
-        .http_status_as_error(false)
-        .timeout_connect(Some(Duration::from_secs(30)))
-        .timeout_recv_response(Some(Duration::from_secs(30)))
-        .timeout_recv_body(Some(Duration::from_secs(30)))
-        .timeout_global(Some(Duration::from_secs(30)))
-        .build()
-        .new_agent();
-    let payload = serde_json::to_string(
-        &json!({"instance_id": instance_id, "ca_pubkey": ca_pubkey, "home_label": home_label}),
-    )
-    .expect("enrollment payload serializes");
+    let agent = crate::relay_access::build_isolated_ureq_agent(Duration::from_secs(30));
+    let payload =
+        serde_json::to_string(&json!({"instance_id": instance_id, "ca_pubkey": ca_pubkey}))
+            .expect("enrollment payload serializes");
     let response = agent
         .post(&format!(
             "{}/enroll/home",
             relay_base_url.trim_end_matches('/')
         ))
         .header("Content-Type", "application/json")
+        .header("User-Agent", "")
         .send(payload);
     let response = match response {
         Ok(response) => response,
@@ -371,6 +364,71 @@ mod tests {
             )
             .unwrap()["link"]["posture"],
             "spl"
+        );
+    }
+
+    #[test]
+    fn test_enroll_home_payload_has_no_home_label() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let (body_tx, body_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut request = Vec::new();
+                let mut buf = [0u8; 1024];
+                while let Ok(n) = stream.read(&mut buf) {
+                    if n == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(&buf[..n]);
+                    if let Some(pos) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let header_part = String::from_utf8_lossy(&request[..pos]);
+                        let cl: usize = header_part
+                            .lines()
+                            .find_map(|l| {
+                                let (k, v) = l.split_once(':')?;
+                                if k.trim().eq_ignore_ascii_case("content-length") {
+                                    v.trim().parse().ok()
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or(0);
+                        if request.len() >= pos + 4 + cl {
+                            let body = String::from_utf8_lossy(&request[pos + 4..pos + 4 + cl])
+                                .to_string();
+                            let _ = body_tx.send(body);
+                            break;
+                        }
+                    }
+                }
+                let resp = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 26\r\n\r\n{\"service_token\":\"tok123\"}";
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        });
+
+        let res = enroll_home(
+            &format!("http://127.0.0.1:{port}"),
+            "inst-test",
+            "ca-pubkey-abc",
+            "my home label",
+        );
+        assert!(res.is_ok());
+
+        let body_str = body_rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap();
+        let body_val: Value = serde_json::from_str(&body_str).unwrap();
+        let obj = body_val.as_object().unwrap();
+        assert_eq!(obj.get("instance_id").unwrap(), "inst-test");
+        assert_eq!(obj.get("ca_pubkey").unwrap(), "ca-pubkey-abc");
+        assert!(
+            !obj.contains_key("home_label"),
+            "enroll_home payload must not contain home_label"
         );
     }
 }

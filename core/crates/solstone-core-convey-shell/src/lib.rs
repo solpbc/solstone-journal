@@ -127,6 +127,7 @@ mod network_writes;
 mod pair_window_manager;
 pub mod refusal;
 pub mod registry;
+mod relay_access;
 mod relay_admission;
 #[cfg(feature = "host")]
 pub mod session;
@@ -637,8 +638,11 @@ fn router_with_hosted_parent(
     let shell = Arc::new(shell_payload());
     let route_journal_root = Arc::new(JournalRoot(journal_root.clone()));
     let operation_registry = Arc::new(OperationRegistry::default());
+    let relay_admissions = relay_admission::admission_registry_for(&journal_root);
+    let relay_access = Arc::new(solstone_core_spl::relay_access::RelayAccessCache::new());
     let pair_windows = Arc::new(pair_window_manager::PairWindowManager::new(
-        relay_admission::admission_registry_for(&journal_root),
+        relay_admissions,
+        relay_access.clone(),
     ));
     let mut routes = Router::new()
         .route("/", get(root))

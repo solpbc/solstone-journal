@@ -12,6 +12,7 @@ use std::net::Ipv4Addr;
 use std::path::Path;
 
 use ring::rand::{SecureRandom, SystemRandom};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
@@ -398,12 +399,36 @@ pub fn commit_relay_pairing(
         .map_err(PairingError::NonceStore)
 }
 
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RelayAccessSnapshot {
+    pub protocol_version: u8,
+    pub status: String,
+    pub relay_origin: String,
+    pub instance_id: String,
+    pub device_token: String,
+    pub expires_at: String,
+}
+
+impl std::fmt::Debug for RelayAccessSnapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RelayAccessSnapshot")
+            .field("protocol_version", &self.protocol_version)
+            .field("status", &self.status)
+            .field("relay_origin", &self.relay_origin)
+            .field("instance_id", &self.instance_id)
+            .field("device_token", &"[REDACTED]")
+            .field("expires_at", &self.expires_at)
+            .finish()
+    }
+}
+
 /// Ceremony input keeps the canonical SPL request type intact.
 pub struct CeremonyRequest<'a> {
     pub request: &'a spl_core::PairRequest,
     pub nonce: &'a str,
     pub sender_instance_id: Option<&'a str>,
     pub local_endpoints: Option<Value>,
+    pub relay_access: Option<RelayAccessSnapshot>,
 }
 
 /// Complete a one-shot pairing ceremony and return SPL's canonical response.
@@ -478,15 +503,25 @@ pub fn complete_pairing(
 }
 
 /// Serialize the canonical response while applying the protocol's absent,
-/// rather than null, empty-endpoint rule. `PairResponse` cannot express it
-/// because its canonical optional field has no `skip_serializing_if`.
-pub fn pair_response_json(response: &spl_core::PairResponse) -> Result<Value, PairingError> {
+/// rather than null, empty-endpoint and relay-access rules. `PairResponse`
+/// cannot express them because its canonical optional field has no
+/// `skip_serializing_if` and no `relay_access` field.
+pub fn pair_response_json(
+    response: &spl_core::PairResponse,
+    relay_access: Option<&RelayAccessSnapshot>,
+) -> Result<Value, PairingError> {
     let mut value = serde_json::to_value(response).map_err(PairingError::Serialization)?;
+    let obj = value
+        .as_object_mut()
+        .expect("PairResponse serializes as an object");
     if response.local_endpoints.is_none() {
-        value
-            .as_object_mut()
-            .expect("PairResponse serializes as an object")
-            .remove("local_endpoints");
+        obj.remove("local_endpoints");
+    }
+    if let Some(relay_access) = relay_access {
+        let access_val = serde_json::to_value(relay_access).map_err(PairingError::Serialization)?;
+        obj.insert("relay_access".to_string(), access_val);
+    } else {
+        obj.remove("relay_access");
     }
     Ok(value)
 }
@@ -995,7 +1030,7 @@ mod tests {
     }
 
     #[test]
-    fn response_json_omits_empty_endpoints_but_preserves_present_endpoints() {
+    fn response_json_omits_empty_endpoints_and_relay_access_but_preserves_present() {
         let response = spl_core::PairResponse {
             client_cert: "cert".into(),
             ca_chain: vec!["ca".into()],
@@ -1005,20 +1040,40 @@ mod tests {
             home_attestation: None,
             local_endpoints: None,
         };
-        assert!(
-            pair_response_json(&response)
-                .expect("json")
-                .get("local_endpoints")
-                .is_none()
-        );
-        let response = spl_core::PairResponse {
+        let empty_json = pair_response_json(&response, None).expect("json");
+        assert!(empty_json.get("local_endpoints").is_none());
+        assert!(empty_json.get("relay_access").is_none());
+        assert_eq!(empty_json["home_label"], "home");
+
+        let with_endpoints = spl_core::PairResponse {
             local_endpoints: Some(json!([])),
-            ..response
+            ..response.clone()
         };
+        let endpoints_json = pair_response_json(&with_endpoints, None).expect("json");
+        assert_eq!(endpoints_json["local_endpoints"], json!([]));
+        assert!(endpoints_json.get("relay_access").is_none());
+
+        let snapshot = RelayAccessSnapshot {
+            protocol_version: 2,
+            status: "ready".to_string(),
+            relay_origin: "https://relay.example".to_string(),
+            instance_id: "inst-123".to_string(),
+            device_token: "tok-abc".to_string(),
+            expires_at: "2026-09-07T12:00:00Z".to_string(),
+        };
+        let snapshot_json = pair_response_json(&response, Some(&snapshot)).expect("json");
+        assert!(snapshot_json.get("local_endpoints").is_none());
+        assert_eq!(snapshot_json["relay_access"]["protocol_version"], 2);
+        assert_eq!(snapshot_json["relay_access"]["status"], "ready");
         assert_eq!(
-            pair_response_json(&response).expect("json")["local_endpoints"],
-            json!([])
+            snapshot_json["relay_access"]["relay_origin"],
+            "https://relay.example"
         );
+        assert_eq!(snapshot_json["relay_access"]["device_token"], "tok-abc");
+
+        let both_json = pair_response_json(&with_endpoints, Some(&snapshot)).expect("json");
+        assert_eq!(both_json["local_endpoints"], json!([]));
+        assert_eq!(both_json["relay_access"]["device_token"], "tok-abc");
     }
 
     #[test]
@@ -1041,6 +1096,7 @@ mod tests {
                     nonce: "absent",
                     sender_instance_id: None,
                     local_endpoints: None,
+                    relay_access: None,
                 },
                 2,
             )
@@ -1053,6 +1109,7 @@ mod tests {
                 nonce: "valid",
                 sender_instance_id: Some("!bad"),
                 local_endpoints: None,
+                relay_access: None,
             },
             2,
         );
@@ -1071,6 +1128,7 @@ mod tests {
                 nonce: "valid",
                 sender_instance_id: Some("sender-1"),
                 local_endpoints: None,
+                relay_access: None,
             },
             2,
         )
@@ -1089,6 +1147,7 @@ mod tests {
                     nonce: "valid",
                     sender_instance_id: Some("sender-1"),
                     local_endpoints: None,
+                    relay_access: None,
                 },
                 2,
             )
@@ -1106,6 +1165,7 @@ mod tests {
                 nonce: "peer",
                 sender_instance_id: Some("sender-2"),
                 local_endpoints: None,
+                relay_access: None,
             },
             2,
         );
@@ -1134,6 +1194,7 @@ mod tests {
                 nonce: "ledger",
                 sender_instance_id: Some("a-different-valid-sender"),
                 local_endpoints: None,
+                relay_access: None,
             },
             2,
         )
@@ -1205,6 +1266,7 @@ mod tests {
                             nonce: &nonce,
                             sender_instance_id: None,
                             local_endpoints: None,
+                            relay_access: None,
                         },
                         2,
                     );
@@ -1260,6 +1322,7 @@ mod tests {
                             nonce: &nonce,
                             sender_instance_id: None,
                             local_endpoints: None,
+                            relay_access: None,
                         },
                         2,
                     )
@@ -1286,6 +1349,7 @@ mod tests {
                 nonce: "len-253",
                 sender_instance_id: None,
                 local_endpoints: None,
+                relay_access: None,
             },
             2,
         )
@@ -1330,6 +1394,7 @@ mod tests {
                 nonce: "write-fail",
                 sender_instance_id: None,
                 local_endpoints: None,
+                relay_access: None,
             },
             2,
         )
@@ -1378,6 +1443,7 @@ mod tests {
                 nonce,
                 sender_instance_id: None,
                 local_endpoints: None,
+                relay_access: None,
             },
             2,
         )

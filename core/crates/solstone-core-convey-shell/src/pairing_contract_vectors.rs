@@ -132,10 +132,33 @@ async fn drive_pair(
 ) -> (StatusCode, Value) {
     committed_identity(root);
     let store = NonceStore::new(root);
+    let admissions = crate::relay_admission::admission_registry_for(root);
+    admissions.set_door_port(7657);
+    let pair_windows = Arc::new(crate::pair_window_manager::PairWindowManager::new(
+        admissions.clone(),
+        Arc::new(solstone_core_spl::relay_access::RelayAccessCache::new()),
+    ));
     if relay {
         store
             .add_relay(nonce.to_owned(), "phone".into(), role.to_owned(), now())
             .expect("relay nonce");
+        if let Some(door) = admissions.door_availability() {
+            pair_windows.insert_relay_entry(
+                nonce.to_owned(),
+                crate::pair_window_manager::RelayWindowEntry {
+                    snapshot: solstone_core_sol_link::pairing::RelayAccessSnapshot {
+                        protocol_version: 2,
+                        status: "active".to_string(),
+                        relay_origin: "https://relay.example.com".to_string(),
+                        instance_id: "test-instance".to_string(),
+                        device_token: "test-device-token".to_string(),
+                        expires_at: "2099-01-01T00:00:00Z".to_string(),
+                    },
+                    door,
+                    service_epoch: admissions.service_epoch(),
+                },
+            );
+        }
     } else {
         store
             .add(
@@ -163,6 +186,7 @@ async fn drive_pair(
         .route("/pair", post(pair))
         .layer(axum::Extension(AccessBasis::PairingPeer { carrier }))
         .layer(axum::Extension(admission))
+        .layer(axum::Extension(pair_windows))
         .layer(axum::Extension(PairingSnapshot::default()))
         .layer(axum::Extension(Arc::new(JournalRoot(root.to_path_buf()))));
     let response = app
