@@ -61,7 +61,7 @@ assert(pending.includes('your morning briefing is being prepared'), pending);
 
 const late = briefingPlaceholderHtml(
   { phase: 'pending', exists: false },
-  { briefing_lateness: { late: true, late_hours: 3 }, today: '20260905' },
+  { briefing_lateness: { late: true, late_hours: 3 }, today: '20260906', briefing_analysis_day: '20260905' },
 );
 assert(late.includes("your briefing is usually ready by 10 am; it's 3h late."), late);
 assert(late.includes('/app/thinking/#runs/20260905/morning_briefing'), late);
@@ -70,7 +70,7 @@ assert.strictEqual(/\bI\b|I'm|\bmy\b/.test(late), false, late);
 // A briefing that was never prepared says so instead of disappearing. X-04.
 const missing = briefingPlaceholderHtml(
   { phase: 'missing', exists: false },
-  { briefing_lateness: { late: true, late_hours: 1 }, today: '20260906' },
+  { briefing_lateness: { late: true, late_hours: 1 }, today: '20260907', briefing_analysis_day: '20260906' },
 );
 assert(missing.includes("your morning briefing wasn't prepared."), missing);
 // The sentence and its link are separate words, not "prepared.see the run".

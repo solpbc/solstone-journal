@@ -231,6 +231,10 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
 
     let mut fields = Map::new();
     fields.insert("today".to_owned(), today.into());
+    fields.insert(
+        "briefing_analysis_day".to_owned(),
+        context.yesterday().into(),
+    );
     fields.insert("now".to_owned(), Value::Null);
     fields.insert("health_glance".to_owned(), health_glance);
     fields.insert("capture_health".to_owned(), capture_health);
@@ -304,7 +308,7 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
     fields.insert("narrative_summary".to_owned(), narrative_summary.into());
     fields.insert("today_summary".to_owned(), today_parts.join(", ").into());
     fields.insert("needs_summary".to_owned(), needs_summary.into());
-    debug_assert_eq!(fields.len(), 37);
+    debug_assert_eq!(fields.len(), 38);
     PulseContext {
         fields,
         now: context.now_local(),
@@ -413,7 +417,10 @@ fn summarize_yesterday_processing(context: &HomeContext, journal_age_days: i64) 
     if attempted > successful {
         reasons.push(Value::String("newsletter_partial".to_owned()));
     }
-    if pipeline.get("status").and_then(Value::as_str) != Some("healthy") {
+    let pipeline_unavailable = pipeline.get("status").and_then(Value::as_str) == Some("unknown");
+    if pipeline_unavailable {
+        reasons.push(Value::String("pipeline_unavailable".to_owned()));
+    } else if pipeline.get("status").and_then(Value::as_str) != Some("healthy") {
         reasons.push(Value::String("pipeline_warning".to_owned()));
     }
     // Before the overnight window has passed for the local day, a briefing that
@@ -463,9 +470,9 @@ fn summarize_yesterday_processing(context: &HomeContext, journal_age_days: i64) 
         "mode": mode,
         "default_collapsed": mode == "healthy" && journal_age_days >= 8,
         "first_week_framing": if journal_age_days <= 7 { Value::String(FIRST_WEEK_FRAMING.to_owned()) } else { Value::Null },
-        "summary_line": format_processing_summary(mode, successful, attempted, briefing_valid),
+        "summary_line": if pipeline_unavailable { "yesterday’s processing status is unavailable.".to_owned() } else { format_processing_summary(mode, successful, attempted, briefing_valid) },
         "details": details,
-        "gap_links": if mode == "degraded" { Value::Array(format_gap_links(&pipeline, briefing_valid, &yesterday, &today, overnight_passed)) } else { Value::Array(Vec::new()) },
+        "gap_links": if mode == "degraded" { Value::Array(format_gap_links(&pipeline, briefing_valid, &yesterday, overnight_passed)) } else { Value::Array(Vec::new()) },
         "failed_run_count": failed_run_count,
         "sparse_lines": Value::Null,
         "status_reasons": reasons,
@@ -517,7 +524,7 @@ mod tests {
             utc_day(),
         );
         let payload = pulse_payload(&context);
-        assert_eq!(payload.as_object().unwrap().len(), 36);
+        assert_eq!(payload.as_object().unwrap().len(), 37);
         assert_eq!(
             payload
                 .as_object()
@@ -527,6 +534,7 @@ mod tests {
                 .collect::<BTreeSet<_>>(),
             [
                 "today",
+                "briefing_analysis_day",
                 "now",
                 "health_glance",
                 "capture_health",
@@ -751,6 +759,29 @@ mod tests {
     }
 
     #[test]
+    fn unavailable_log_census_is_not_reported_as_incomplete_processing() {
+        let root = september_journal();
+        let health = root.path().join("chronicle/20260904/health");
+        fs::create_dir_all(&health).unwrap();
+        fs::write(health.join("oplog--invalid.log"), "bad").unwrap();
+        let context = HomeContext::with_day_offset(
+            root.path(),
+            Utc.with_ymd_and_hms(2026, 9, 6, 3, 30, 0).unwrap(),
+            mountain_day(),
+        );
+        let processing = summarize_yesterday_processing(&context, 2).unwrap();
+        assert_eq!(
+            processing["status_reasons"],
+            json!(["pipeline_unavailable", "briefing_missing"])
+        );
+        assert_eq!(
+            processing["summary_line"],
+            "yesterday’s processing status is unavailable."
+        );
+        assert_eq!(processing["failed_run_count"], 0);
+    }
+
+    #[test]
     fn a_late_evening_pulse_reports_the_local_day_not_the_utc_one() {
         // 2026-09-05 21:30 in Denver is already 2026-09-06 03:30 UTC.
         let root = september_journal();
@@ -778,9 +809,9 @@ mod tests {
             payload.pointer("/yesterday_processing/gap_links"),
             Some(&json!([{
                 "text": "your morning briefing wasn't prepared overnight.",
-                "href": "/app/thinking/#runs/20260905/morning_briefing",
+                "href": "/app/thinking/#runs/20260904/morning_briefing",
             }])),
-            "the briefing gap points at today's local run, not tomorrow's",
+            "the briefing gap points at the local analysis day's run",
         );
     }
 
@@ -816,7 +847,7 @@ mod tests {
             payload.pointer("/yesterday_processing/gap_links"),
             Some(&json!([{
                 "text": "your morning briefing wasn't prepared overnight.",
-                "href": "/app/thinking/#runs/20260905/morning_briefing",
+                "href": "/app/thinking/#runs/20260904/morning_briefing",
             }])),
         );
         assert_eq!(
@@ -922,7 +953,7 @@ mod tests {
         assert_eq!(pipeline["talents"]["outstanding_failed"], 21);
         assert_eq!(pipeline["talents"]["failed_list_truncated"], true);
         assert!(
-            format_gap_links(&pipeline, true, "20260813", "20260814", true)
+            format_gap_links(&pipeline, true, "20260813", true)
                 .iter()
                 .any(|link| link["text"] == "…and 1 more didn't finish.")
         );

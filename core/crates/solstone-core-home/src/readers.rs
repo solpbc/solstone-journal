@@ -9,7 +9,6 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::{Read, Seek, SeekFrom};
 
 use chrono::{
     DateTime, Duration, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc,
@@ -23,7 +22,7 @@ use solstone_core_facets::{
 use solstone_core_indexer_query::{NetworkRequest, load_entity_network};
 use solstone_core_journal_io::{
     JournalRoot,
-    operational_log::{OplogFormat, catalog_oplogs},
+    operational_log::{OplogFormat, fold_oplogs},
 };
 use solstone_core_journal_stats_cli::estimate_duration_minutes;
 use solstone_core_sol_link::client_status::{
@@ -420,14 +419,19 @@ pub fn collect_top_activities_yesterday(context: &HomeContext) -> Vec<Value> {
     rows
 }
 
-/// Canonical morning-briefing JSON path.
-pub fn morning_briefing_path(context: &HomeContext, day: &str) -> std::path::PathBuf {
-    day_root(context, day).join("talents/morning_briefing.json")
+/// Read the daily artifact that supplies the requested presentation day.
+pub fn morning_briefing_path(context: &HomeContext, day: &str) -> Option<std::path::PathBuf> {
+    let presentation = NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
+    let dates = crate::briefing::BriefingDates::for_presentation(presentation)?;
+    Some(
+        day_root(context, &dates.analysis.format("%Y%m%d").to_string())
+            .join("talents/morning_briefing.json"),
+    )
 }
 
 /// Load only a briefing document with the required root keys.
 pub fn load_briefing(context: &HomeContext, day: &str) -> Option<Value> {
-    let briefing = read_json_value(&morning_briefing_path(context, day))?;
+    let briefing = read_json_value(&morning_briefing_path(context, day)?)?;
     let object = briefing.as_object()?;
     [
         "metadata",
@@ -543,7 +547,7 @@ pub fn briefing_meeting_count(briefing: &Value) -> usize {
 
 /// Report briefing existence, validity, and optional generated label.
 pub fn briefing_freshness(context: &HomeContext, day: &str) -> Value {
-    if !morning_briefing_path(context, day).exists() {
+    if !morning_briefing_path(context, day).is_some_and(|path| path.is_file()) {
         return json!({"exists": false, "valid": false, "generated_label": null});
     }
     let Some(briefing) = load_briefing(context, day) else {
@@ -623,6 +627,7 @@ pub fn newsletter_attempts_from_think_logs(context: &HomeContext, day: &str) -> 
         })
         .count();
     let failed = think_oplogs(context, day)
+        .unwrap_or_default()
         .into_iter()
         .filter(|(run, _)| run == "daily")
         .flat_map(|(_, rows)| rows)
@@ -773,6 +778,7 @@ pub fn read_steward_summary(context: &HomeContext, day: Option<&str>) -> Option<
 pub fn resolve_attention(context: &HomeContext, awareness: &Value) -> Option<Value> {
     let day = context.today();
     let failures = think_oplogs(context, &day)
+        .unwrap_or_default()
         .into_iter()
         .filter(|(run, _)| run == "daily")
         .flat_map(|(_, rows)| rows)
@@ -858,7 +864,12 @@ pub fn summarize_pipeline_day(context: &HomeContext, day: &str) -> Value {
         }
         return summary;
     }
-    for (run, rows) in think_oplogs(context, day) {
+    let Ok(logs) = think_oplogs(context, day) else {
+        summary["status"] = "unknown".into();
+        summary["anomalies"] = json!([{"kind":"pipeline_unavailable","error":"scan_failed"}]);
+        return summary;
+    };
+    for (run, rows) in logs {
         let mode = match run.as_str() {
             "daily" => Some("daily"),
             "activity" => Some("activity"),
@@ -965,6 +976,11 @@ pub fn summarize_pipeline_day(context: &HomeContext, day: &str) -> Value {
                 .unwrap()
                 .push(Value::Object(anomaly));
         }
+    } else {
+        summary["status"] = "unknown".into();
+        summary["anomalies"] =
+            json!([{"kind":"pipeline_unavailable","error":"terminal_scan_failed"}]);
+        return summary;
     }
     if summary["anomalies"]
         .as_array()
@@ -1211,38 +1227,33 @@ fn day_root(context: &HomeContext, day: &str) -> std::path::PathBuf {
 
 /// Read validated structured think diagnostics from the canonical oplog namespace.
 ///
-/// Home is an optional projection, so an unavailable journal or malformed payload is
-/// treated as absent input just like the former direct JSONL reads.
-fn think_oplogs(context: &HomeContext, day: &str) -> Vec<(String, Vec<Map<String, Value>>)> {
-    let Ok(day_key) = NaiveDate::parse_from_str(day, "%Y%m%d") else {
-        return Vec::new();
-    };
-    let Ok(root) = JournalRoot::open(context.journal_root()) else {
-        return Vec::new();
-    };
-    let Ok(snapshot) = catalog_oplogs(root, &[day_key]) else {
-        return Vec::new();
-    };
-    snapshot
-        .into_catalogued_entries()
-        .into_iter()
-        .filter_map(|(entry, mut file)| {
+/// Census failures remain distinct from an empty history. Malformed JSON rows
+/// are skipped; callers decide whether missing optional projections are useful.
+type ThinkLogRows = Vec<(String, Vec<Map<String, Value>>)>;
+
+fn think_oplogs(context: &HomeContext, day: &str) -> Result<ThinkLogRows, ()> {
+    let day_key = NaiveDate::parse_from_str(day, "%Y%m%d").map_err(|_| ())?;
+    let root = JournalRoot::open(context.journal_root()).map_err(|_| ())?;
+    fold_oplogs(
+        root,
+        &[day_key],
+        |result: &mut ThinkLogRows, entry, file| {
             let name = entry.name();
             if name.source().display_slug() != "think" || name.format() != OplogFormat::Jsonl {
-                return None;
+                return Ok(());
             }
-            file.seek(SeekFrom::Start(entry.payload_offset() as u64))
-                .ok()?;
             let mut text = String::new();
-            file.read_to_string(&mut text).ok()?;
+            file.read_to_string(&mut text)?;
             let rows = text
                 .lines()
                 .filter_map(|line| serde_json::from_str::<Value>(line).ok())
                 .filter_map(|value| value.as_object().cloned())
                 .collect();
-            Some((name.run().display_slug().to_owned(), rows))
-        })
-        .collect()
+            result.push((name.run().display_slug().to_owned(), rows));
+            Ok(())
+        },
+    )
+    .map_err(|_| ())
 }
 
 fn read_json_value(path: &std::path::Path) -> Option<Value> {
@@ -1485,7 +1496,7 @@ mod tests {
         );
         write(
             root.path(),
-            "chronicle/20260602/talents/morning_briefing.json",
+            "chronicle/20260601/talents/morning_briefing.json",
             "[]",
         );
         assert!(load_briefing(&context, "20260602").is_none());
@@ -1739,13 +1750,37 @@ mod tests {
     }
 
     #[test]
+    fn briefing_day_mapping_handles_year_and_leap_day_without_stale_fallback() {
+        let root = TempDir::new().unwrap();
+        let context = context(root.path());
+        for (presentation, analysis) in [("20270101", "20261231"), ("20240301", "20240229")] {
+            let path = root.path().join(format!(
+                "chronicle/{analysis}/talents/morning_briefing.json"
+            ));
+            assert_eq!(morning_briefing_path(&context, presentation), Some(path));
+        }
+        assert!(morning_briefing_path(&context, "invalid").is_none());
+        write(
+            root.path(),
+            "chronicle/20260531/talents/morning_briefing.json",
+            r#"{"metadata":{},"your_day":[],"yesterday":[],"needs_attention":[],"forward_look":[],"reading":[]}"#,
+        );
+        assert!(
+            load_briefing(&context, "20260602").is_none(),
+            "an older briefing cannot fill a missing day"
+        );
+    }
+
+    #[test]
     fn briefing_readers_cover_required_shape_and_guard_repairs() {
         let root = TempDir::new().unwrap();
         let context = context(root.path());
         assert_eq!(
             morning_briefing_path(&context, "20260602"),
-            root.path()
-                .join("chronicle/20260602/talents/morning_briefing.json")
+            Some(
+                root.path()
+                    .join("chronicle/20260601/talents/morning_briefing.json")
+            )
         );
         assert_eq!(
             briefing_freshness(&context, "20260602"),
@@ -1753,7 +1788,7 @@ mod tests {
         );
         write(
             root.path(),
-            "chronicle/20260602/talents/morning_briefing.json",
+            "chronicle/20260601/talents/morning_briefing.json",
             r#"{"metadata":{"generated":"invalid"},"your_day":[],"yesterday":[],"needs_attention":[],"forward_look":[],"reading":[]}"#,
         );
         assert_eq!(
@@ -2246,13 +2281,13 @@ mod tests {
         assert!(load_briefing(&context, "20260602").is_none());
         write(
             root.path(),
-            "chronicle/20260602/talents/morning_briefing.json",
+            "chronicle/20260601/talents/morning_briefing.json",
             "bad",
         );
         assert!(load_briefing(&context, "20260602").is_none());
         write(
             root.path(),
-            "chronicle/20260602/talents/morning_briefing.json",
+            "chronicle/20260601/talents/morning_briefing.json",
             r#"{"metadata":{}}"#,
         );
         assert!(load_briefing(&context, "20260602").is_none());

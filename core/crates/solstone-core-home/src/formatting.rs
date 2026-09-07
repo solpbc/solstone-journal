@@ -258,7 +258,6 @@ pub fn format_gap_links(
     pipeline: &Value,
     briefing_valid: bool,
     yesterday: &str,
-    today: &str,
     overnight_passed: bool,
 ) -> Vec<Value> {
     let anomalies = pipeline
@@ -359,7 +358,7 @@ pub fn format_gap_links(
         links.push(json!({"text":"some overnight work didn't finish.","href":format!("/app/thinking/#runs/{yesterday}")}));
     }
     if !briefing_valid && overnight_passed {
-        links.push(json!({"text":"your morning briefing wasn't prepared overnight.","href":format!("/app/thinking/#runs/{today}/morning_briefing")}));
+        links.push(json!({"text":"your morning briefing wasn't prepared overnight.","href":format!("/app/thinking/#runs/{yesterday}/morning_briefing")}));
     }
     links
 }
@@ -455,7 +454,6 @@ mod tests {
             &json!({"anomalies":failures,"talents":{"failed_list_truncated":true,"outstanding_failed":21}}),
             true,
             "20260813",
-            "20260814",
             true,
         );
         assert_eq!(links.last().unwrap()["text"], "…and 1 more didn't finish.");
@@ -467,7 +465,6 @@ mod tests {
             ]}),
             true,
             "20260813",
-            "20260814",
             true,
         );
         assert_eq!(links[0]["text"], "2 daily summary runs didn't finish.");
@@ -483,7 +480,6 @@ mod tests {
             ]}),
             true,
             "20260813",
-            "20260814",
             true,
         );
         assert_eq!(
@@ -500,7 +496,6 @@ mod tests {
             ]}),
             true,
             "20260813",
-            "20260814",
             true,
         );
         assert_eq!(
@@ -522,7 +517,6 @@ mod tests {
             ]}),
             true,
             "20260813",
-            "20260814",
             true,
         );
         assert_eq!(links[0]["text"], "2 document runs didn't finish.");

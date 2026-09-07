@@ -3467,6 +3467,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-offload",
+ "solstone-core-system",
  "tempfile",
  "tokio",
  "tower",

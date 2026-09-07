@@ -8,7 +8,7 @@ use std::path::Path;
 use chrono::NaiveDateTime;
 use solstone_core_journal_io::{
     JournalRoot,
-    operational_log::{OplogCatalogEntry, OplogFormat, catalog_oplogs},
+    operational_log::{OplogCatalogEntry, OplogFormat, catalog_oplogs, fold_oplogs},
 };
 use solstone_core_system::operational_log_parse::{ParsedHealthLogRow, parse_health_log_row};
 use solstone_core_system_health::GrepPattern;
@@ -116,38 +116,37 @@ pub fn collect_health_logs(
 ) -> Result<Vec<ParsedHealthLogRow>, CollectError> {
     let root = JournalRoot::open(journal_root).map_err(|_| CollectError::Root)?;
     let day = now.date();
-    let snapshot = catalog_oplogs(root, &[day]).map_err(CollectError::Catalog)?;
     let has_filters = query.since.is_some()
         || query
             .service
             .as_deref()
             .is_some_and(|service| !service.is_empty())
         || query.grep.is_some();
-    let mut rows = Vec::new();
-
-    for (entry, mut file) in snapshot.into_catalogued_entries() {
-        if query
-            .service
-            .as_deref()
-            .is_some_and(|service| !service.is_empty())
-            && query.service.as_deref() != Some(entry.name().source().display_slug())
-        {
-            continue;
-        }
-        file.seek(SeekFrom::Start(entry.payload_offset() as u64))
-            .map_err(|_| CollectError::CatalogIo)?;
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)
-            .map_err(|_| CollectError::CatalogIo)?;
-        let text = String::from_utf8(bytes).map_err(|_| CollectError::CatalogUtf8)?;
-        for raw in tail_slice(splitlines(&text), 0) {
-            if let Some(row) = parse_health_log_row(&raw)
-                && (!has_filters || matches_filters(&row, query))
+    let mut rows = fold_oplogs(
+        root,
+        &[day],
+        |rows: &mut Vec<ParsedHealthLogRow>, entry, input| {
+            if query
+                .service
+                .as_deref()
+                .is_some_and(|service| !service.is_empty())
+                && query.service.as_deref() != Some(entry.name().source().display_slug())
             {
-                rows.push(row);
+                return Ok(());
             }
-        }
-    }
+            let mut text = String::new();
+            input.read_to_string(&mut text)?;
+            for raw in tail_slice(splitlines(&text), 0) {
+                if let Some(row) = parse_health_log_row(&raw)
+                    && (!has_filters || matches_filters(&row, query))
+                {
+                    rows.push(row);
+                }
+            }
+            Ok(())
+        },
+    )
+    .map_err(CollectError::Catalog)?;
 
     // `supervisor.log` is an explicit, non-canonical unfiltered input, not a
     // managed-process alias; retain its historical behaviour unchanged.

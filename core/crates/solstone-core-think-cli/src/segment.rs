@@ -872,6 +872,15 @@ fn persist_ended_activities(
     max_concurrency: i64,
     skip_activity_prompts: bool,
 ) -> Result<(), String> {
+    // An activity can end in a segment from the next day. Its lifecycle events
+    // use the same source day as persistence and talent dispatch; retain the
+    // triggering segment's day separately.
+    let activity_event = |fields| {
+        let mut event = segment_event(context, segment, None, fields);
+        event.insert("day".to_owned(), Value::String(routing_day.to_owned()));
+        event.insert("segment_day".to_owned(), Value::String(context.day.clone()));
+        event
+    };
     for change in changes {
         if change.get("state").and_then(Value::as_str) != Some("ended") {
             continue;
@@ -885,16 +894,11 @@ fn persist_ended_activities(
         log.log(
             "activity.detected",
             context.now_ms,
-            segment_event(
-                context,
-                segment,
-                None,
-                Map::from_iter([
-                    ("activity".to_owned(), Value::String(id.to_owned())),
-                    ("facet".to_owned(), Value::String(facet.to_owned())),
-                    ("state".to_owned(), Value::String("ended".to_owned())),
-                ]),
-            ),
+            activity_event(Map::from_iter([
+                ("activity".to_owned(), Value::String(id.to_owned())),
+                ("facet".to_owned(), Value::String(facet.to_owned())),
+                ("state".to_owned(), Value::String("ended".to_owned())),
+            ])),
         );
         let Some(record) = completed.iter().rev().find_map(|record| {
             (record.get("id").and_then(Value::as_str) == Some(id)
@@ -912,33 +916,23 @@ fn persist_ended_activities(
         log.log(
             "activity.persisted",
             context.now_ms,
-            segment_event(
-                context,
-                segment,
-                None,
-                Map::from_iter([
-                    ("activity".to_owned(), Value::String(id.to_owned())),
-                    ("facet".to_owned(), Value::String(facet.to_owned())),
-                ]),
-            ),
+            activity_event(Map::from_iter([
+                ("activity".to_owned(), Value::String(id.to_owned())),
+                ("facet".to_owned(), Value::String(facet.to_owned())),
+            ])),
         );
         if skip_activity_prompts {
             log.log(
                 "activity.prompts_skipped",
                 context.now_ms,
-                segment_event(
-                    context,
-                    segment,
-                    None,
-                    Map::from_iter([
-                        ("activity".to_owned(), Value::String(id.to_owned())),
-                        ("facet".to_owned(), Value::String(facet.to_owned())),
-                        (
-                            "reason".to_owned(),
-                            Value::String("--no-activity-prompts".to_owned()),
-                        ),
-                    ]),
-                ),
+                activity_event(Map::from_iter([
+                    ("activity".to_owned(), Value::String(id.to_owned())),
+                    ("facet".to_owned(), Value::String(facet.to_owned())),
+                    (
+                        "reason".to_owned(),
+                        Value::String("--no-activity-prompts".to_owned()),
+                    ),
+                ])),
             );
         } else {
             let (changed, input_hash) =
@@ -947,12 +941,10 @@ fn persist_ended_activities(
                 log.log(
                     "activity.unchanged",
                     context.now_ms,
-                    segment_event(
-                        context,
-                        segment,
-                        None,
-                        Map::from_iter([("activity".to_owned(), Value::String(id.to_owned()))]),
-                    ),
+                    activity_event(Map::from_iter([(
+                        "activity".to_owned(),
+                        Value::String(id.to_owned()),
+                    )])),
                 );
                 continue;
             }
@@ -1540,5 +1532,72 @@ fn failed(name: &str) -> ModeResult {
         failed: 1,
         failed_names: vec![name.to_owned()],
         ..ModeResult::default()
+    }
+}
+
+#[cfg(test)]
+mod activity_date_tests {
+    use super::*;
+    use serde_json::json;
+    use solstone_core_journal_io::{JournalRoot, operational_log::fold_oplogs};
+
+    #[test]
+    fn midnight_activity_persistence_and_lifecycle_events_share_the_source_day() {
+        let root = tempfile::tempdir().unwrap();
+        let current = "20260907";
+        let context = ThinkContext::new(
+            root.path(),
+            current.to_owned(),
+            root.path().join("chronicle").join(current),
+            1788758400000,
+        )
+        .unwrap();
+        let mut log = RunLogWriter::open(root.path(), current, "segment");
+        let activity = json!({"id":"terminal_233333_304", "facet":"personal", "source":"cogitate", "state":"ended"});
+        persist_ended_activities(
+            &context,
+            &mut log,
+            "000001_300",
+            "20260906",
+            vec![activity.clone()],
+            &[activity],
+            false,
+            1,
+            true,
+        )
+        .unwrap();
+        log.finish().unwrap();
+        drop(log);
+        assert!(
+            root.path()
+                .join("facets/personal/activities/20260906.jsonl")
+                .is_file()
+        );
+        assert!(
+            !root
+                .path()
+                .join("facets/personal/activities/20260907.jsonl")
+                .exists()
+        );
+        let rows = fold_oplogs(
+            JournalRoot::open(root.path()).unwrap(),
+            &[chrono::NaiveDate::from_ymd_opt(2026, 9, 7).unwrap()],
+            |rows: &mut Vec<Value>, _, input| {
+                let mut text = String::new();
+                input.read_to_string(&mut text)?;
+                rows.extend(
+                    text.lines()
+                        .map(|line| serde_json::from_str::<Value>(line).unwrap()),
+                );
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 3);
+        for row in rows {
+            assert_eq!(row["day"], "20260906");
+            assert_eq!(row["segment_day"], current);
+            assert_eq!(row["activity"], "terminal_233333_304");
+        }
     }
 }

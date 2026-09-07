@@ -3,7 +3,6 @@
 
 //! Ordered day-level pipeline health response for the native Health API.
 
-use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 use chrono::{DateTime, NaiveDate, Timelike, Utc};
@@ -11,7 +10,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use solstone_core_journal_io::{
     JournalRoot,
-    operational_log::{OplogFormat, catalog_oplogs},
+    operational_log::{OplogFormat, fold_oplogs},
 };
 use solstone_core_system_health::{
     FilesystemHealthLogSource, FilesystemSegmentSource, SegmentInput, TerminalEvent,
@@ -30,7 +29,7 @@ const ACTIVITY_WORK_EVENTS: [&str; 6] = [
     "talent.skip",
 ];
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Serialize)]
 pub(crate) struct PipelineReport {
     day: String,
     generated_at: i64,
@@ -247,64 +246,69 @@ fn scan_health_logs(
 ) -> Result<(), HealthError> {
     let root = JournalRoot::open(journal_root)
         .map_err(|error| HealthError::internal(error.to_string()))?;
-    let entries = catalog_oplogs(root, &[date])
-        .map_err(|error| HealthError::internal(error.to_string()))?
-        .into_catalogued_entries();
-    for (entry, mut file) in entries {
-        let name = entry.name();
-        if name.source().display_slug() != "think" || name.format() != OplogFormat::Jsonl {
-            continue;
-        }
-        let Some(mode) = pipeline_mode(name.run().display_slug()) else {
-            continue;
-        };
-        summary.run_mut(mode).count += 1;
-        file.seek(SeekFrom::Start(entry.payload_offset() as u64))
-            .map_err(|error| HealthError::internal(error.to_string()))?;
-        let mut text = String::new();
-        file.read_to_string(&mut text)
-            .map_err(|error| HealthError::internal(error.to_string()))?;
-        for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
-            let Ok(record) = serde_json::from_str::<Value>(line) else {
-                continue;
+    let scanned = fold_oplogs(
+        root,
+        &[date],
+        |summary: &mut PipelineReport, entry, file| {
+            let name = entry.name();
+            if name.source().display_slug() != "think" || name.format() != OplogFormat::Jsonl {
+                return Ok(());
+            }
+            let Some(mode) = pipeline_mode(name.run().display_slug()) else {
+                return Ok(());
             };
-            let Some(record) = record.as_object() else {
-                continue;
-            };
-            if record
-                .get("day")
-                .and_then(Value::as_str)
-                .is_some_and(|value| value != day)
-            {
-                continue;
-            }
-            let event = record
-                .get("event")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            if record.get("mode").and_then(Value::as_str) == Some("activity")
-                && ACTIVITY_WORK_EVENTS.contains(&event)
-            {
-                summary.activities.talents_fired = true;
-            }
-            match event {
-                "talent.dispatch" => summary.talents.dispatched += 1,
-                "talent.complete" => summary.talents.completed += 1,
-                "talent.fail" => summary.talents.failed += 1,
-                "talent.skip" if record.get("reason").and_then(Value::as_str) == Some("capped") => {
-                    summary.talents.capped += 1
+            summary.run_mut(mode).count += 1;
+            let mut text = String::new();
+            file.read_to_string(&mut text)?;
+            for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
+                let Ok(record) = serde_json::from_str::<Value>(line) else {
+                    continue;
+                };
+                let Some(record) = record.as_object() else {
+                    continue;
+                };
+                if record
+                    .get("day")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| value != day)
+                {
+                    continue;
                 }
-                "talent.skip" => summary.talents.skipped += 1,
-                "activity.detected" => summary.activities.detected += 1,
-                "activity.persisted" => summary.activities.persisted += 1,
-                "run.complete" => {
-                    summary.run_mut(mode).duration_ms_total +=
-                        duration_ms(record.get("duration_ms"))
+                let event = record
+                    .get("event")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                if record.get("mode").and_then(Value::as_str) == Some("activity")
+                    && ACTIVITY_WORK_EVENTS.contains(&event)
+                {
+                    summary.activities.talents_fired = true;
                 }
-                _ => {}
+                match event {
+                    "talent.dispatch" => summary.talents.dispatched += 1,
+                    "talent.complete" => summary.talents.completed += 1,
+                    "talent.fail" => summary.talents.failed += 1,
+                    "talent.skip"
+                        if record.get("reason").and_then(Value::as_str) == Some("capped") =>
+                    {
+                        summary.talents.capped += 1
+                    }
+                    "talent.skip" => summary.talents.skipped += 1,
+                    "activity.detected" => summary.activities.detected += 1,
+                    "activity.persisted" => summary.activities.persisted += 1,
+                    "run.complete" => {
+                        summary.run_mut(mode).duration_ms_total +=
+                            duration_ms(record.get("duration_ms"))
+                    }
+                    _ => {}
+                }
             }
-        }
-    }
+            Ok(())
+        },
+    )
+    .map_err(|error| HealthError::internal(error.to_string()))?;
+    summary.runs = scanned.runs;
+    summary.talents = scanned.talents;
+    summary.activities = scanned.activities;
     Ok(())
 }
 
@@ -406,6 +410,30 @@ mod tests {
                 .join("\n")
         )
         .unwrap();
+    }
+
+    #[test]
+    fn pipeline_reads_a_complete_busy_day_above_retained_snapshot_capacity() {
+        let root = temporary();
+        for _ in 0..513 {
+            write_log(
+                root.path(),
+                "20260906",
+                "daily",
+                &[
+                    json!({"event":"talent.complete", "mode":"daily", "name":"daily_summary", "day":"20260906"}),
+                ],
+            );
+        }
+        let report = summarize_pipeline_day(
+            root.path(),
+            NaiveDate::from_ymd_opt(2026, 9, 6).unwrap(),
+            Utc.with_ymd_and_hms(2026, 9, 6, 12, 0, 0).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(report.status, "healthy");
+        assert_eq!(report.runs.daily.count, 513);
+        assert_eq!(report.talents.completed, 513);
     }
 
     fn write_invalid_log(root: &Path, day: &str) {

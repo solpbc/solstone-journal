@@ -419,7 +419,7 @@ fn segment_backlog_units(
                 }
             }
             crate::ThoughtVerdict::Floor(name) => {
-                let unit = terminal_unit_for_segment(&name, &segment.stream, &segment.key);
+                let unit = terminal_unit_for_segment(day, &name, &segment.stream, &segment.key);
                 if let Some(state) = terminal_states
                     .get(&unit)
                     .filter(|state| state.latest_event == TerminalEvent::Fail)
@@ -446,7 +446,7 @@ fn segment_backlog_units(
                 }
             }
             crate::ThoughtVerdict::Dispatched(name) => {
-                let unit = terminal_unit_for_segment(&name, &segment.stream, &segment.key);
+                let unit = terminal_unit_for_segment(day, &name, &segment.stream, &segment.key);
                 if let Some(state) = terminal_states
                     .get(&unit)
                     .filter(|state| state.latest_event == TerminalEvent::Fail)
@@ -491,8 +491,9 @@ fn read_failed_marker(
     Some((reason, failed_at_ms))
 }
 
-fn terminal_unit_for_segment(name: &str, stream: &str, segment: &str) -> TerminalUnit {
+fn terminal_unit_for_segment(day: &str, name: &str, stream: &str, segment: &str) -> TerminalUnit {
     TerminalUnit {
+        day: day.to_owned(),
         mode: "segment".to_owned(),
         name: name.to_owned(),
         facet: None,

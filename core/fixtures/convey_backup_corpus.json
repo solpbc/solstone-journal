@@ -153,8 +153,8 @@
             "weekly": 4
           },
           "schedule": {
-            "enabled": true,
-            "every": "daily"
+            "enabled": false,
+            "every": null
           },
           "success": true
         },
@@ -638,8 +638,8 @@
             "weekly": 4
           },
           "schedule": {
-            "enabled": true,
-            "every": "daily"
+            "enabled": false,
+            "every": null
           },
           "success": true
         },
@@ -941,7 +941,7 @@
           },
           "schedule": {
             "enabled": false,
-            "every": "daily"
+            "every": null
           },
           "success": true
         },
@@ -1242,8 +1242,8 @@
             "weekly": 4
           },
           "schedule": {
-            "enabled": true,
-            "every": "daily"
+            "enabled": false,
+            "every": null
           },
           "success": true
         },

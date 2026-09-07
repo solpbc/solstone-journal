@@ -15,6 +15,8 @@ pub struct FoldRead<T> {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TerminalUnit {
+    /// Semantic source day; independent of the log partition that recorded completion.
+    pub day: String,
     pub mode: String,
     pub name: String,
     pub facet: Option<String>,

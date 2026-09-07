@@ -405,11 +405,18 @@ fn terminate_exact_unix(
         descendant_births: HashMap::new(),
     });
     let guard = SignalGuard::current();
-    signal_tree_exact(&tree, expected, SignalKind::Terminate, &guard, source)?;
+    signal_tree_exact(
+        child,
+        &tree,
+        expected,
+        SignalKind::Terminate,
+        &guard,
+        source,
+    )?;
     let deadline = Instant::now() + timeout;
     let parent_exit = wait_for_child(child, deadline)?;
     let Some(parent_exit) = parent_exit else {
-        signal_tree_exact(&tree, expected, SignalKind::Kill, &guard, source)?;
+        signal_tree_exact(child, &tree, expected, SignalKind::Kill, &guard, source)?;
         let _ = wait_for_child(child, Instant::now() + KILL_REAP_GRACE)?;
         let _ = wait_for_descendants(&tree.descendants, Instant::now() + KILL_REAP_GRACE, source);
         return Err(TerminationError::ParentGraceTimeout);
@@ -475,10 +482,17 @@ fn terminate_exact_unix_until(
         }
     })?;
     let guard = SignalGuard::current();
-    signal_tree_exact(&tree, expected, SignalKind::Terminate, &guard, source)?;
+    signal_tree_exact(
+        child,
+        &tree,
+        expected,
+        SignalKind::Terminate,
+        &guard,
+        source,
+    )?;
     let parent_exit = wait_for_child(child, deadline)?;
     let Some(parent_exit) = parent_exit else {
-        signal_tree_exact(&tree, expected, SignalKind::Kill, &guard, source)?;
+        signal_tree_exact(child, &tree, expected, SignalKind::Kill, &guard, source)?;
         let _ = wait_for_child(child, deadline)?;
         let _ = wait_for_descendants(&tree.descendants, deadline, source);
         return Err(TerminationError::ParentGraceTimeout);
@@ -715,6 +729,7 @@ fn signal_tree(
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn signal_tree_exact(
+    child: &mut Child,
     tree: &ProcessTreeSnapshot,
     expected: ProcessInstance,
     kind: SignalKind,
@@ -730,7 +745,21 @@ fn signal_tree_exact(
         });
     }
     let signal = nix_signal(kind);
-    signal_parent_exact(expected, signal, guard, source)?;
+    if let Err(error) = signal_parent_exact(expected, signal, guard, source) {
+        // Exit can race the census. Only the owned Child's wait status proves
+        // that no parent signal is needed; an absent/unverifiable PID alone
+        // cannot do so. Known descendants still require cleanup below.
+        if !matches!(
+            &error,
+            TerminationError::ProcessTreeNotReaped {
+                reason: "parent_unproven",
+                ..
+            }
+        ) || child.try_wait()?.is_none()
+        {
+            return Err(error);
+        }
+    }
     signal_descendants(&confirmed, kind, guard);
     Ok(())
 }

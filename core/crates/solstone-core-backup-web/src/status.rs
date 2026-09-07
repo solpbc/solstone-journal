@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
 use serde_json::{Map, Value, json};
 use std::path::Path;
 
@@ -35,6 +38,21 @@ fn hosted_view(root: &Path, operation: Option<&Operation>) -> Value {
     }
 }
 
+// The scheduler owns effective cadence. Backup configuration owns retention,
+// credentials and operation history, but cannot report whether a job will run.
+fn backup_schedule(root: &Path) -> Value {
+    match solstone_core_system::schedule::read_enabled_schedule_entry(
+        &root.join("config/schedules.json"),
+        "maintenance:backup:run",
+    ) {
+        Ok((Some(entry), _)) => json!({"enabled": true, "every": entry.every}),
+        Ok((None, diagnostics)) if diagnostics.is_empty() => {
+            json!({"enabled": false, "every": null})
+        }
+        _ => Value::Null,
+    }
+}
+
 pub fn status(root: &Path, operations: &SharedOperationSlot) -> Result<Value, ()> {
     let backup = config::backup(root)?;
     let destination = backup.get("destination").and_then(Value::as_object);
@@ -43,7 +61,7 @@ pub fn status(root: &Path, operations: &SharedOperationSlot) -> Result<Value, ()
         "success": true, "enabled": backup.get("enabled").cloned().unwrap_or(Value::Null), "mode": backup.get("mode").cloned().unwrap_or(Value::Null),
         "destination": {"repository": destination.and_then(|d| d.get("repository")).cloned().unwrap_or(Value::Null), "backend": destination.and_then(|d| d.get("backend")).cloned().unwrap_or(Value::Null), "credentials_set": destination.and_then(|d| d.get("credentials")).is_some_and(|value| value.as_object().is_some_and(|value| !value.is_empty()))},
         "daily_key_set": backup.get("daily_key").is_some_and(|value| !value.is_null()), "recovery_key_set": backup.get("recovery_key").is_some_and(|value| !value.is_null()), "recovery_key_confirmed": backup.get("confirmed_recovery_key").and_then(Value::as_bool).unwrap_or(false),
-        "retention": backup.get("retention").cloned().unwrap_or(Value::Null), "offload": backup.get("offload").cloned().unwrap_or(Value::Null), "schedule": backup.get("schedule").cloned().unwrap_or(Value::Null),
+        "retention": backup.get("retention").cloned().unwrap_or(Value::Null), "offload": backup.get("offload").cloned().unwrap_or(Value::Null), "schedule": backup_schedule(root),
         "last_backup": backup.get("last_backup").cloned().unwrap_or(Value::Null), "last_prune": backup.get("last_prune").cloned().unwrap_or(Value::Null), "last_offload": backup.get("last_offload").cloned().unwrap_or(Value::Null), "last_verification": backup.get("last_verification").cloned().unwrap_or(Value::Null), "last_restore": backup.get("last_restore").cloned().unwrap_or(Value::Null), "hosted": hosted_view(root, operation.as_ref()), "operation": operation_value(operation.as_ref())
     }))
 }
@@ -81,9 +99,39 @@ pub fn offload(
 
 #[cfg(test)]
 mod tests {
-    use super::hosted_view;
+    use super::{backup_schedule, hosted_view};
     use crate::{operation::Operation, test_support::hosted_binding};
     use solstone_core_backup::save_hosted_binding;
+
+    #[test]
+    fn effective_schedule_comes_from_scheduler_and_unknown_is_not_disabled() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(
+            backup_schedule(root.path()),
+            serde_json::json!({"enabled":false,"every":null})
+        );
+        assert!(
+            !root.path().join("config").exists(),
+            "status must not initialize schedules"
+        );
+        std::fs::create_dir(root.path().join("config")).unwrap();
+        let path = root.path().join("config/schedules.json");
+        for (raw, expected) in [
+            (
+                r#"{"maintenance:backup:run":{"cmd":["journal","maintenance","run","backup:run"],"every":"hourly","enabled":true}}"#,
+                serde_json::json!({"enabled":true,"every":"hourly"}),
+            ),
+            (
+                r#"{"maintenance:backup:run":{"cmd":["journal","maintenance","run","backup:run"],"every":"hourly","enabled":false}}"#,
+                serde_json::json!({"enabled":false,"every":null}),
+            ),
+            ("broken", serde_json::Value::Null),
+        ] {
+            std::fs::write(&path, raw).unwrap();
+            assert_eq!(backup_schedule(root.path()), expected);
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), raw);
+        }
+    }
 
     fn operation(kind: &str, phase: &str) -> Operation {
         Operation {

@@ -23,6 +23,7 @@ solstone-core-journal-config.workspace = true
 solstone-core-handoff-nonce.workspace = true
 solstone-core-journal-config-write.workspace = true
 solstone-core-offload.workspace = true
+solstone-core-system.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["fs"] }

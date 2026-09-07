@@ -14,7 +14,10 @@
     "anticipated_activities": [],
     "attention": null,
     "briefing_exists": false,
-    "briefing_lateness": {"late": false, "late_hours": 0},
+    "briefing_lateness": {
+      "late": false,
+      "late_hours": 0
+    },
     "briefing_meta": null,
     "briefing_needs_badge": null,
     "briefing_needs_deduped": [],
@@ -22,12 +25,37 @@
     "briefing_phase": "eod",
     "briefing_sections": {},
     "briefing_summary": null,
-    "connections": {"state": "empty"},
+    "connections": {
+      "state": "empty"
+    },
     "facet_data": {},
     "flow_content": null,
     "flow_updated_at": null,
-    "health_glance": {"cta": null, "headline": "2 things need your attention", "issues": [{"href": "/app/health", "severity": "amber", "text": "it's unclear whether your journal is caught up right now."}, {"href": "/app/health/#brain", "severity": "amber", "text": "thinking status unavailable"}], "last_observation": null, "severity": "amber", "verdict": "attention"},
-    "capture_health": {"status": "no_clients", "clients": [], "unassessed": [], "registry": "registry_empty"},
+    "health_glance": {
+      "cta": null,
+      "headline": "2 things need your attention",
+      "issues": [
+        {
+          "href": "/app/health",
+          "severity": "amber",
+          "text": "it's unclear whether your journal is caught up right now."
+        },
+        {
+          "href": "/app/health/#brain",
+          "severity": "amber",
+          "text": "thinking status unavailable"
+        }
+      ],
+      "last_observation": null,
+      "severity": "amber",
+      "verdict": "attention"
+    },
+    "capture_health": {
+      "status": "no_clients",
+      "clients": [],
+      "unassessed": [],
+      "registry": "registry_empty"
+    },
     "home_state": "welcome",
     "journal_age_days": 0,
     "latest_weekly_reflection": null,
@@ -43,6 +71,7 @@
     "pulse_needs": [],
     "segment_count": 0,
     "today": "20260814",
+    "briefing_analysis_day": "20260813",
     "today_summary": "",
     "welcome_framing": "most of what your journal keeps becomes useful after about a week, once your journal has enough of your days in it to show patterns. for now, here's what's already happening:",
     "yesterday_processing": null

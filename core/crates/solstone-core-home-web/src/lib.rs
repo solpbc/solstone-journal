@@ -433,6 +433,7 @@ mod tests {
             "briefing_phase",
             "briefing_lateness",
             "briefing_exists",
+            "briefing_analysis_day",
             "briefing_summary",
             "briefing_needs_deduped",
             "briefing_needs_shared_count",

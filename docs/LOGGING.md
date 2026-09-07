@@ -41,6 +41,19 @@ Getting this wrong in either direction is a real defect, not a style nit:
   keep it as a raw `eprintln!` right up to `resume_unwind`.
 - A build script's `println!("cargo:...")` — this is the Cargo build-script protocol, not logging, ever.
 
+## Reading historical operational logs
+
+Use journal-io's `fold_oplogs` for complete historical scans. It admits and reads
+one descriptor at a time, bounds each read at its observed byte frontier, and
+revalidates the complete directory census before returning the accumulated result.
+A census retry starts with a fresh accumulator; callbacks must have no external
+side effects. The shared entry budget remains bounded, and an incomplete scan is
+an unavailable result, never evidence that processing failed or did no work.
+
+`catalog_oplogs` retains all admitted descriptors for consumers that need them
+later, such as live follow and retention. Its separate retained-handle limit
+continues to apply. Neither interface permits reopening an admitted leaf by name.
+
 ## Levels
 
 One sentence each, aimed at *this* codebase, not a generic rubric:

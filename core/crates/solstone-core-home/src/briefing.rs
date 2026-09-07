@@ -3,8 +3,32 @@
 
 //! Pure briefing projections.
 
-use chrono::{DateTime, Timelike, Utc};
+use chrono::{DateTime, NaiveDate, Timelike, Utc};
 use serde_json::{Value, json};
+
+/// Daily artifacts belong to their analysis day; their briefing presents the
+/// following local calendar day. This relation is independent of execution time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BriefingDates {
+    pub analysis: NaiveDate,
+    pub presentation: NaiveDate,
+}
+
+impl BriefingDates {
+    pub fn for_analysis(analysis: NaiveDate) -> Option<Self> {
+        Some(Self {
+            analysis,
+            presentation: analysis.succ_opt()?,
+        })
+    }
+
+    pub fn for_presentation(presentation: NaiveDate) -> Option<Self> {
+        Some(Self {
+            analysis: presentation.pred_opt()?,
+            presentation,
+        })
+    }
+}
 
 pub fn compute_phase(segment_count: i64, hour: u32, exists: bool) -> &'static str {
     if hour >= 20 {

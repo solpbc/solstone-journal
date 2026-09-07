@@ -668,3 +668,144 @@ fn ac30_exact_spawn_unverifiable_live_child_is_reaped_without_group_cleanup() {
     }
     panic!("test cleanup did not reap shell descendant {descendant}");
 }
+
+#[cfg(target_os = "linux")]
+mod exact_exit_race {
+    use solstone_core_system::process::*;
+    use std::process::{Child, Command};
+    use std::time::{Duration, Instant};
+
+    struct Bed {
+        parent: Child,
+        descendant: Child,
+    }
+    impl Drop for Bed {
+        fn drop(&mut self) {
+            let _ = self.parent.kill();
+            let _ = self.descendant.kill();
+            let _ = self.parent.wait();
+            let _ = self.descendant.wait();
+        }
+    }
+    struct ExitsAfterSnapshot {
+        parent: u32,
+        descendant: Option<u32>,
+    }
+    impl ProcessInstanceSource for ExitsAfterSnapshot {
+        fn inspect(&self, pid: u32) -> InspectResult {
+            SystemProcessInstanceSource.inspect(pid)
+        }
+        fn census(&self) -> InstanceCensus {
+            SystemProcessInstanceSource.census()
+        }
+        fn census_tree(&self, root: u32, deadline: Option<Instant>) -> InstanceCensus {
+            let InstanceCensus::Complete(mut rows) =
+                SystemProcessInstanceSource.census_tree(root, deadline)
+            else {
+                panic!("controlled snapshot unavailable");
+            };
+            if let Some(pid) = self.descendant {
+                let InspectResult::Present {
+                    instance,
+                    uid,
+                    execution,
+                    pgid,
+                    ..
+                } = self.inspect(pid)
+                else {
+                    panic!("owned descendant unavailable");
+                };
+                // A second owned child represents a known descendant so the
+                // test can both prove cleanup and reap it without orphaning it.
+                rows.push(CensusRow {
+                    instance,
+                    uid,
+                    execution,
+                    ppid: root,
+                    pgid: pgid.unwrap(),
+                });
+            }
+            nix::sys::signal::kill(
+                nix::unistd::Pid::from_raw(self.parent as i32),
+                nix::sys::signal::Signal::SIGKILL,
+            )
+            .unwrap();
+            // Prove exit without consuming Child's status: precisely after the
+            // census and before the termination path's identity recheck.
+            nix::sys::wait::waitid(
+                nix::sys::wait::Id::Pid(nix::unistd::Pid::from_raw(self.parent as i32)),
+                nix::sys::wait::WaitPidFlag::WEXITED | nix::sys::wait::WaitPidFlag::WNOWAIT,
+            )
+            .unwrap();
+            InstanceCensus::Complete(rows)
+        }
+    }
+    #[test]
+    fn parent_exit_after_census_is_reaped_and_known_descendants_are_cleaned() {
+        for with_descendant in [false, true] {
+            let mut bed = Bed {
+                parent: Command::new("sleep").arg("30").spawn().unwrap(),
+                descendant: Command::new("sleep").arg("30").spawn().unwrap(),
+            };
+            let InspectResult::Present { instance, .. } =
+                SystemProcessInstanceSource.inspect(bed.parent.id())
+            else {
+                panic!("owned parent identity unavailable");
+            };
+            let source = ExitsAfterSnapshot {
+                parent: bed.parent.id(),
+                descendant: with_descendant.then_some(bed.descendant.id()),
+            };
+            let result = terminate_exact_instance(
+                &mut bed.parent,
+                instance,
+                Duration::from_secs(2),
+                &source,
+            );
+            assert!(
+                matches!(result, Ok(TerminationOutcome::Graceful { .. })),
+                "{result:?}"
+            );
+            assert!(bed.parent.try_wait().unwrap().is_some());
+            assert_eq!(
+                bed.descendant.try_wait().unwrap().is_some(),
+                with_descendant
+            );
+        }
+    }
+    #[test]
+    fn unavailable_parent_identity_does_not_authorize_signalling_a_live_child() {
+        struct Unverifiable;
+        impl ProcessInstanceSource for Unverifiable {
+            fn inspect(&self, _: u32) -> InspectResult {
+                InspectResult::Unverifiable
+            }
+            fn census(&self) -> InstanceCensus {
+                InstanceCensus::Incomplete(Vec::new())
+            }
+        }
+        let mut bed = Bed {
+            parent: Command::new("sleep").arg("30").spawn().unwrap(),
+            descendant: Command::new("sleep").arg("30").spawn().unwrap(),
+        };
+        let InspectResult::Present { instance, .. } =
+            SystemProcessInstanceSource.inspect(bed.parent.id())
+        else {
+            panic!("owned parent identity unavailable");
+        };
+        let result = terminate_exact_instance(
+            &mut bed.parent,
+            instance,
+            Duration::from_secs(2),
+            &Unverifiable,
+        );
+        assert!(matches!(
+            result,
+            Err(TerminationError::ProcessTreeNotReaped {
+                reason: "parent_unproven",
+                ..
+            })
+        ));
+        assert!(bed.parent.try_wait().unwrap().is_none());
+    }
+}

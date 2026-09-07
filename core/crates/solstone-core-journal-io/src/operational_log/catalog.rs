@@ -7,7 +7,7 @@ use std::error::Error;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
 
 #[cfg(test)]
 use std::cell::{Cell, RefCell};
@@ -62,6 +62,7 @@ pub struct OplogCatalogEntry {
     identity: OplogFileIdentity,
     size: u64,
     payload_offset: usize,
+    modified: Option<std::time::SystemTime>,
 }
 
 impl OplogCatalogEntry {
@@ -88,6 +89,11 @@ impl OplogCatalogEntry {
     /// Byte length observed while cataloguing.
     pub fn size(&self) -> u64 {
         self.size
+    }
+
+    /// Modification time from the admitted descriptor, when supported.
+    pub fn modified(&self) -> Option<std::time::SystemTime> {
+        self.modified
     }
 
     /// Number of admission-header bytes before text payload begins.
@@ -244,6 +250,56 @@ pub fn catalog_oplogs(
     unreachable!("bounded catalog attempts either return or fail")
 }
 
+/// Fold a complete census without retaining one descriptor per historical log.
+///
+/// Each callback reads from the admitted identity, bounded at its observed byte
+/// frontier. At most one candidate descriptor is live. Directory/admission safety,
+/// the countable-entry budget and whole-census retries are shared with snapshots.
+/// A failed attempt discards its accumulator. Callbacks must only update that
+/// accumulator: external effects cannot be rolled back on a census retry.
+pub fn fold_oplogs<T: Default>(
+    root: JournalRoot,
+    days: &[NaiveDate],
+    read: impl Fn(&mut T, &OplogCatalogEntry, &mut dyn Read) -> std::io::Result<()>,
+) -> Result<T, OplogCatalogError> {
+    let mut days = days
+        .iter()
+        .map(|day| day.format("%Y%m%d").to_string())
+        .collect::<Vec<_>>();
+    days.sort();
+    days.dedup();
+    for attempt in 0..OPLOG_CATALOG_CENSUS_ATTEMPTS {
+        let result = catalog_pass(
+            &root,
+            &days,
+            None,
+            T::default(),
+            |value, entry, mut retained| {
+                let file = retained
+                    .file
+                    .as_mut()
+                    .expect("retained descriptor holds a file");
+                file.seek(SeekFrom::Start(entry.payload_offset as u64))?;
+                let mut frontier =
+                    file.take(entry.size.saturating_sub(entry.payload_offset as u64));
+                read(value, &entry, &mut frontier)
+            },
+        );
+        match result {
+            Ok(value) => return Ok(value),
+            Err(error) if error.retryable() && attempt + 1 < OPLOG_CATALOG_CENSUS_ATTEMPTS => {}
+            Err(error) if error.retryable() => {
+                return Err(OplogCatalogError::new(
+                    "oplog_catalog_unstable",
+                    error.day(),
+                ));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    unreachable!("bounded census attempts return a value or an error")
+}
+
 /// Probe the writer lease through an admission-bound descriptor, never a name
 /// lookup. The identity is only needed by Windows' `OpenFileById` probe.
 pub fn probe_retained_oplog_lease(file: &File, identity: OplogFileIdentity) -> LeaseProbe {
@@ -269,6 +325,37 @@ fn catalog_once(
     root: &JournalRoot,
     days: &[String],
 ) -> Result<OplogCatalogSnapshot, OplogCatalogError> {
+    let mut entries = catalog_pass(
+        root,
+        days,
+        Some(OPLOG_CATALOG_MAX_CANDIDATES_PER_DAY),
+        Vec::new(),
+        |entries, entry, retained| {
+            entries.push((entry, retained));
+            Ok(())
+        },
+    )?;
+    entries.sort_by(|(left, _), (right, _)| {
+        left.day.cmp(&right.day).then_with(|| {
+            left.leaf
+                .as_encoded_bytes()
+                .cmp(right.leaf.as_encoded_bytes())
+        })
+    });
+    let (entries, descriptors) = entries.into_iter().unzip();
+    Ok(OplogCatalogSnapshot {
+        entries,
+        descriptors,
+    })
+}
+
+fn catalog_pass<T>(
+    root: &JournalRoot,
+    days: &[String],
+    candidate_limit: Option<usize>,
+    mut value: T,
+    mut accept: impl FnMut(&mut T, OplogCatalogEntry, RetainedDescriptor) -> std::io::Result<()>,
+) -> Result<T, OplogCatalogError> {
     #[cfg(test)]
     {
         CATALOG_ONCE_CALLS.with(|calls| calls.set(calls.get() + 1));
@@ -284,7 +371,6 @@ fn catalog_once(
             ));
         }
     }
-    let mut entries = Vec::new();
     let mut listed_days = Vec::new();
     let mut countable = 0_usize;
 
@@ -325,7 +411,7 @@ fn catalog_once(
                 )
             })
             .count();
-        if candidates > OPLOG_CATALOG_MAX_CANDIDATES_PER_DAY {
+        if candidate_limit.is_some_and(|limit| candidates > limit) {
             return Err(OplogCatalogError::new(
                 "oplog_catalog_candidate_limit",
                 Some(day),
@@ -341,7 +427,9 @@ fn catalog_once(
             if item.kind != JournalEntryKind::RegularFile {
                 return Err(OplogCatalogError::new("oplog_catalog_unsafe", Some(day)));
             }
-            entries.push(catalog_entry(&health, day, item, name)?);
+            let (entry, retained) = catalog_entry(&health, day, item, name)?;
+            accept(&mut value, entry, retained)
+                .map_err(|_| OplogCatalogError::new("oplog_catalog_read", Some(day)))?;
         }
         listed_days.push(CataloguedDay { health, listed });
     }
@@ -384,18 +472,7 @@ fn catalog_once(
     }
     root.revalidate_canonical_binding()
         .map_err(|_| OplogCatalogError::new("oplog_catalog_identity_changed", None))?;
-    entries.sort_by(|(left, _), (right, _)| {
-        left.day.cmp(&right.day).then_with(|| {
-            left.leaf
-                .as_encoded_bytes()
-                .cmp(right.leaf.as_encoded_bytes())
-        })
-    });
-    let (entries, descriptors) = entries.into_iter().unzip();
-    Ok(OplogCatalogSnapshot {
-        entries,
-        descriptors,
-    })
+    Ok(value)
 }
 
 fn catalog_entry(
@@ -471,6 +548,11 @@ fn catalog_entry(
             identity,
             size: item.size,
             payload_offset: admission.header_len(),
+            modified: retained
+                .file
+                .as_ref()
+                .and_then(|file| file.metadata().ok())
+                .and_then(|metadata| metadata.modified().ok()),
         },
         retained,
     ))
@@ -813,6 +895,42 @@ mod tests {
             snapshot(&temporary).unwrap_err().kind(),
             "oplog_catalog_countable_limit"
         );
+    }
+
+    #[test]
+    fn complete_fold_exceeds_snapshot_capacity_with_one_handle_and_no_retry_duplicates() {
+        let temporary = TempDir::new().unwrap();
+        let count = OPLOG_CATALOG_MAX_CANDIDATES_PER_DAY + 1;
+        for _ in 0..count {
+            create(&temporary);
+        }
+        LIVE_RETAINED_DESCRIPTORS.with(|value| value.set(0));
+        MAX_LIVE_RETAINED_DESCRIPTORS.with(|value| value.set(0));
+        let read = || {
+            fold_oplogs(
+                JournalRoot::open(temporary.path()).unwrap(),
+                &[day()],
+                |count: &mut usize, _, input| {
+                    let mut text = String::new();
+                    input.read_to_string(&mut text)?;
+                    assert!(
+                        text.is_empty(),
+                        "admission header must not reach the reader"
+                    );
+                    *count += 1;
+                    Ok(())
+                },
+            )
+        };
+        assert_eq!(with_forced_unstable_after_entries(2, read).unwrap(), count);
+        assert_eq!(MAX_LIVE_RETAINED_DESCRIPTORS.with(Cell::get), 1);
+        assert_eq!(LIVE_RETAINED_DESCRIPTORS.with(Cell::get), 0);
+        std::fs::write(health(&temporary).join("oplog--invalid.log"), "invalid").unwrap();
+        assert!(
+            read().is_err(),
+            "unsafe/incomplete census must not yield a partial count"
+        );
+        assert_eq!(LIVE_RETAINED_DESCRIPTORS.with(Cell::get), 0);
     }
 
     #[test]

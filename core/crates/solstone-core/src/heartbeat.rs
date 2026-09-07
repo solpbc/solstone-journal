@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::ExitCode;
 use std::time::Instant;
@@ -13,9 +13,8 @@ use nix::sys::signal::kill;
 use nix::unistd::Pid;
 use serde_json::json;
 use solstone_core_journal_io::{
-    JournalRoot, MalformedPolicy,
-    operational_log::{OplogFormat, OplogWriter, catalog_oplogs, create_oplog_at},
-    read_jsonl_with_report,
+    JournalRoot,
+    operational_log::{OplogFormat, OplogWriter, create_oplog_at, fold_oplogs},
 };
 
 const RECENCY_WINDOW_HOURS: i64 = 12;
@@ -51,51 +50,43 @@ fn recently_succeeded(journal: &Path, now: DateTime<FixedOffset>) -> io::Result<
         return Ok(false);
     };
 
-    let snapshot = match JournalRoot::open(journal)
-        .ok()
-        .and_then(|root| catalog_oplogs(root, &[previous, today]).ok())
-    {
-        Some(snapshot) => snapshot,
-        None => return Ok(false),
+    let Ok(root) = JournalRoot::open(journal) else {
+        return Ok(false);
     };
-    let mut newest_success = None;
-    for entry in snapshot.entries() {
-        if entry.name().source().display_slug() != "heartbeat"
-            || entry.name().run().display_slug() != "pass"
-            || entry.name().format() != OplogFormat::Jsonl
-        {
-            continue;
-        }
-
-        let path = journal
-            .join("chronicle")
-            .join(entry.day())
-            .join("health")
-            .join(entry.leaf());
-        let Ok(report) =
-            read_jsonl_with_report::<serde_json::Value>(&path, Vec::new(), MalformedPolicy::Skip)
-        else {
-            continue;
-        };
-        for record in report.records {
-            let serde_json::Value::Object(row) = record.value else {
-                continue;
-            };
-            if row.get("event").and_then(serde_json::Value::as_str) != Some("pass.outcome")
-                || row.get("outcome").and_then(serde_json::Value::as_str) != Some("success")
-                || row
-                    .get("duration_seconds")
-                    .and_then(serde_json::Value::as_u64)
-                    .is_none()
+    let newest_success = fold_oplogs(
+        root,
+        &[previous, today],
+        |newest: &mut Option<i64>, entry, input| {
+            if entry.name().source().display_slug() != "heartbeat"
+                || entry.name().run().display_slug() != "pass"
+                || entry.name().format() != OplogFormat::Jsonl
             {
-                continue;
+                return Ok(());
             }
-            let Some(ts) = row.get("ts").and_then(serde_json::Value::as_i64) else {
-                continue;
-            };
-            newest_success = Some(newest_success.map_or(ts, |current: i64| current.max(ts)));
-        }
-    }
+            for line in BufReader::new(input).lines() {
+                let line = line?;
+                let Ok(serde_json::Value::Object(row)) = serde_json::from_str(&line) else {
+                    continue;
+                };
+                if row.get("event").and_then(serde_json::Value::as_str) != Some("pass.outcome")
+                    || row.get("outcome").and_then(serde_json::Value::as_str) != Some("success")
+                    || row
+                        .get("duration_seconds")
+                        .and_then(serde_json::Value::as_u64)
+                        .is_none()
+                {
+                    continue;
+                }
+                let Some(ts) = row.get("ts").and_then(serde_json::Value::as_i64) else {
+                    continue;
+                };
+                *newest = Some(newest.map_or(ts, |current| current.max(ts)));
+            }
+            Ok(())
+        },
+    )
+    .ok()
+    .flatten();
 
     Ok(newest_success.is_some_and(|ts| {
         now.timestamp_millis().saturating_sub(ts) < RECENCY_WINDOW_HOURS * 3_600_000

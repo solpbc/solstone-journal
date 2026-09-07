@@ -55,6 +55,7 @@ fn terminal_fold_uses_global_sorted_file_encounter_order_and_survives_malformed(
     let state = states
         .value
         .get(&TerminalUnit {
+            day: "20990201".into(),
             mode: "daily".into(),
             name: "alpha".into(),
             facet: None,
@@ -568,4 +569,74 @@ fn not_recommended_does_not_waive_required_or_unknown_talents() {
         );
         assert_ne!(thought_for(&progress, name), ThoughtVerdict::Complete);
     }
+}
+
+#[test]
+fn cadence_preserves_source_day_and_folds_terminal_state_across_midnight() {
+    let root = root();
+    write(
+        &root,
+        "20990201",
+        "001.jsonl",
+        &[
+            r#"{"event":"talent.complete","ts":10,"day":"20990201","mode":"activity","activity":"same-id","facet":"personal","name":"participation"}"#,
+            r#"{"event":"talent.complete","ts":11,"day":"20990201","mode":"segment","segment":"superseded","stream":"device","name":"sense"}"#,
+        ],
+    );
+    write(
+        &root,
+        "20990202",
+        "001.jsonl",
+        &[
+            r#"{"event":"talent.complete","ts":20,"day":"20990201","mode":"activity","activity":"same-id","facet":"personal","name":"participation"}"#,
+            r#"{"event":"talent.complete","ts":21,"day":"20990202","mode":"activity","activity":"same-id","facet":"personal","name":"participation"}"#,
+            r#"{"event":"talent.fail","ts":22,"day":"20990201","mode":"segment","segment":"superseded","stream":"device","name":"sense"}"#,
+            r#"{"event":"talent.complete","ts":23,"day":"20990201","mode":"segment","segment":"late","stream":"device","name":"sense"}"#,
+        ],
+    );
+    let source = FilesystemHealthLogSource::new(&root);
+    let result = read_completed_since(&source, "20990202", 15).unwrap().value;
+    assert_eq!(
+        result
+            .activities
+            .iter()
+            .map(|item| (item.day.as_str(), item.ts))
+            .collect::<Vec<_>>(),
+        vec![("20990201", 20), ("20990202", 21)]
+    );
+    assert_eq!(result.segments.len(), 1);
+    assert_eq!(result.segments[0].segment, "late");
+    assert_eq!(result.segments[0].day, "20990201");
+    let scoped = read_terminal_states(&source, "20990202", true)
+        .unwrap()
+        .value;
+    assert_eq!(scoped.len(), 1);
+    assert_eq!(scoped.keys().next().unwrap().day, "20990202");
+}
+
+#[test]
+fn daily_resume_never_borrows_another_days_completion_or_failure() {
+    let root = root();
+    write(
+        &root,
+        "20990202",
+        "001.jsonl",
+        &[
+            r#"{"event":"talent.complete","ts":10,"day":"20990201","mode":"daily","name":"summary"}"#,
+            r#"{"event":"talent.fail","ts":20,"day":"20990202","mode":"daily","name":"summary","reason_code":"provider_request_rejected"}"#,
+            r#"{"event":"talent.fail","ts":30,"day":"20990201","mode":"daily","name":"other","reason_code":"provider_request_rejected"}"#,
+        ],
+    );
+    let source = FilesystemHealthLogSource::new(root);
+    assert!(
+        read_completed_units(&source, "20990202")
+            .unwrap()
+            .value
+            .is_empty()
+    );
+    let failures = read_daily_deterministic_failures(&source, "20990202")
+        .unwrap()
+        .value;
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures.keys().next().unwrap().name, "summary");
 }

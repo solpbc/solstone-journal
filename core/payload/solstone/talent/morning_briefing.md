@@ -48,6 +48,10 @@ Every root key shown above is required. Use empty arrays when a section has no c
 
 ## Source Packet
 
+Analysis day: $briefing_analysis_day. Presentation day: $briefing_presentation_day.
+"Yesterday" describes the analysis day. "Today" and "Your Day" refer to the
+presentation day, even when generation runs late or is retried.
+
 ### Active Facets
 
 $active_facets

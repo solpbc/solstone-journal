@@ -509,7 +509,7 @@
       // The briefing card states the missing briefing in its own words and
       // links the same run. Yesterday's list does not say it a second time.
       // G1-103.
-      const briefingHref = '/app/thinking/#runs/' + encodeURIComponent(pulse?.today || '') + '/morning_briefing';
+      const briefingHref = '/app/thinking/#runs/' + encodeURIComponent(pulse?.briefing_analysis_day || '') + '/morning_briefing';
       const briefingCardOwnsIt = pulse?.briefing_phase === 'missing' && !pulse?.briefing_exists;
       const gapLinks = (yesterday.gap_links || []).filter(function (link) {
         return !(briefingCardOwnsIt && link && link.href === briefingHref);
@@ -812,7 +812,7 @@
     if (data.phase === 'missing') {
       return '<div class="pulse-briefing-placeholder">'
         + "your morning briefing wasn't prepared. "
-        + '<a class="pulse-briefing-status-link" href="/app/thinking/#runs/' + esc(pulseContext?.today || '') + '/morning_briefing">see the run →</a>'
+        + '<a class="pulse-briefing-status-link" href="/app/thinking/#runs/' + esc(pulseContext?.briefing_analysis_day || '') + '/morning_briefing">see the run →</a>'
         + '</div>';
     }
     if (data.phase !== 'pending') return '';
@@ -820,7 +820,7 @@
     if (lateness.late) {
       return '<div class="pulse-briefing-placeholder">'
         + "your briefing is usually ready by 10 am; it's " + esc(lateness.late_hours || 0) + 'h late.'
-        + '<a class="pulse-briefing-status-link" href="/app/thinking/#runs/' + esc(pulseContext?.today || '') + '/morning_briefing">check status</a>'
+        + '<a class="pulse-briefing-status-link" href="/app/thinking/#runs/' + esc(pulseContext?.briefing_analysis_day || '') + '/morning_briefing">check status</a>'
         + '</div>';
     }
     return '<div class="pulse-briefing-placeholder">your morning briefing is being prepared…</div>';

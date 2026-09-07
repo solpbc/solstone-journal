@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader, Seek, SeekFrom};
+use std::io::{BufRead, BufReader};
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
@@ -22,7 +22,7 @@ use solstone_core_cortex_client::{
 };
 use solstone_core_journal_io::{
     JournalRoot,
-    operational_log::{OplogFormat, catalog_oplogs},
+    operational_log::{OplogFormat, fold_oplogs},
 };
 
 use super::EXIT_FAILURE;
@@ -304,42 +304,41 @@ fn generated_at_ms(stamp: &str) -> Option<i64> {
 fn latest_daily_run_complete_ts(journal: &Path, today: &str) -> Option<i64> {
     let today = NaiveDate::parse_from_str(today, "%Y%m%d").ok()?;
     let previous = today.pred_opt()?;
-    let snapshot = catalog_oplogs(JournalRoot::open(journal).ok()?, &[previous, today]).ok()?;
-    let mut latest = None;
-    for (entry, mut file) in snapshot.into_catalogued_entries() {
-        if entry.name().source().display_slug() != "think"
-            || entry.name().run().display_slug() != "daily"
-            || entry.name().format() != OplogFormat::Jsonl
-        {
-            continue;
-        }
-        if file
-            .seek(SeekFrom::Start(entry.payload_offset() as u64))
-            .is_err()
-        {
-            continue;
-        }
-        for line in BufReader::new(file).lines().map_while(Result::ok) {
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
-            let Ok(Value::Object(row)) = serde_json::from_str::<Value>(line) else {
-                continue;
-            };
-            if row.get("event").and_then(Value::as_str) != Some("daily.completion")
-                || row.get("complete").and_then(Value::as_bool) != Some(true)
+    fold_oplogs(
+        JournalRoot::open(journal).ok()?,
+        &[previous, today],
+        |latest: &mut Option<i64>, entry, input| {
+            if entry.name().source().display_slug() != "think"
+                || entry.name().run().display_slug() != "daily"
+                || entry.name().format() != OplogFormat::Jsonl
             {
-                continue;
+                return Ok(());
             }
-            // Daily writers emit numeric timestamps; strings are intentionally ignored.
-            let Some(ts) = row.get("ts").and_then(Value::as_i64) else {
-                continue;
-            };
-            latest = Some(latest.map_or(ts, |current: i64| current.max(ts)));
-        }
-    }
-    latest
+            for line in BufReader::new(input).lines() {
+                let line = line?;
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                let Ok(Value::Object(row)) = serde_json::from_str::<Value>(line) else {
+                    continue;
+                };
+                if row.get("event").and_then(Value::as_str) != Some("daily.completion")
+                    || row.get("complete").and_then(Value::as_bool) != Some(true)
+                {
+                    continue;
+                }
+                // Daily writers emit numeric timestamps; strings are intentionally ignored.
+                let Some(ts) = row.get("ts").and_then(Value::as_i64) else {
+                    continue;
+                };
+                *latest = Some(latest.map_or(ts, |current| current.max(ts)));
+            }
+            Ok(())
+        },
+    )
+    .ok()
+    .flatten()
 }
 
 fn read_optional(path: &Path) -> Result<Option<String>, std::io::Error> {

@@ -10,8 +10,8 @@ use crate::read::read_day_records;
 use crate::vocabulary::{CAP, DETERMINISTIC_FAILURE_REASON_CODES, MIN_SPAN_MS};
 use crate::{
     CompletedUnit, CompletionActivity, CompletionSegment, CompletionsSince, DailyUnit,
-    DeterministicFailure, FoldRead, HealthError, HealthLogSource, TerminalEvent, TerminalState,
-    TerminalUnit,
+    DeterministicFailure, FoldRead, HealthError, HealthLogSource, RunLogRecord, TerminalEvent,
+    TerminalState, TerminalUnit,
 };
 
 #[derive(Debug, Clone)]
@@ -33,9 +33,25 @@ pub fn read_terminal_states<S: HealthLogSource>(
     scope_to_day: bool,
 ) -> Result<FoldRead<BTreeMap<TerminalUnit, TerminalState>>, HealthError> {
     let scanned = read_day_records(source, day)?;
+    Ok(FoldRead {
+        value: fold_terminal_records(
+            scanned
+                .value
+                .into_iter()
+                .map(|record| (day.to_owned(), record)),
+            scope_to_day.then_some(day),
+        ),
+        malformed_line_count: scanned.malformed_line_count,
+    })
+}
+
+fn fold_terminal_records(
+    input: impl IntoIterator<Item = (String, RunLogRecord)>,
+    scoped_day: Option<&str>,
+) -> BTreeMap<TerminalUnit, TerminalState> {
     let mut records: BTreeMap<TerminalUnit, Vec<ObservedTerminal>> = BTreeMap::new();
     let mut sequence = 0;
-    for record in scanned.value {
+    for (partition_day, record) in input {
         let event = match &record.event {
             HealthEvent::TalentComplete(_) => TerminalEvent::Complete,
             HealthEvent::TalentFail(_) => TerminalEvent::Fail,
@@ -44,12 +60,8 @@ pub fn read_terminal_states<S: HealthLogSource>(
         let Some(payload) = record.event.payload() else {
             continue;
         };
-        if scope_to_day
-            && payload
-                .day
-                .as_deref()
-                .is_some_and(|record_day| record_day != day)
-        {
+        let source_day = payload.day.as_deref().unwrap_or(&partition_day);
+        if scoped_day.is_some_and(|day| source_day != day) {
             continue;
         }
         let (Some(mode), Some(name)) = (payload.mode.clone(), payload.name.clone()) else {
@@ -57,6 +69,7 @@ pub fn read_terminal_states<S: HealthLogSource>(
         };
         sequence += 1;
         let unit = TerminalUnit {
+            day: source_day.to_owned(),
             mode,
             name,
             facet: payload.facet.clone(),
@@ -76,7 +89,7 @@ pub fn read_terminal_states<S: HealthLogSource>(
             cache_hit: payload.cache_hit == Some(true),
         });
     }
-    let states = records
+    records
         .into_iter()
         .map(|(unit, mut terminals)| {
             terminals.sort_by_key(|item| (item.ts, item.sequence));
@@ -126,11 +139,7 @@ pub fn read_terminal_states<S: HealthLogSource>(
                 },
             )
         })
-        .collect();
-    Ok(FoldRead {
-        value: states,
-        malformed_line_count: scanned.malformed_line_count,
-    })
+        .collect()
 }
 
 pub fn is_floor_talent_capped<S: HealthLogSource>(
@@ -142,6 +151,7 @@ pub fn is_floor_talent_capped<S: HealthLogSource>(
 ) -> Result<FoldRead<bool>, HealthError> {
     let states = read_terminal_states(source, day, false)?;
     let unit = TerminalUnit {
+        day: day.to_owned(),
         mode: "segment".to_owned(),
         name: name.to_owned(),
         facet: None,
@@ -166,7 +176,7 @@ pub fn read_completed_units<S: HealthLogSource>(
     source: &S,
     day: &str,
 ) -> Result<FoldRead<BTreeSet<CompletedUnit>>, HealthError> {
-    let states = read_terminal_states(source, day, false)?;
+    let states = read_terminal_states(source, day, true)?;
     let units = states
         .value
         .into_iter()
@@ -198,27 +208,36 @@ pub fn read_completed_since<S: HealthLogSource>(
     let mut segments: BTreeMap<(String, Option<String>, String), i64> = BTreeMap::new();
     let mut activities: BTreeMap<(String, Option<String>, String), i64> = BTreeMap::new();
     let mut malformed_line_count = 0;
-    for scan_day in [day, previous.as_str()] {
-        let states = read_terminal_states(source, scan_day, false)?;
-        malformed_line_count += states.malformed_line_count;
-        for (unit, state) in states.value {
-            let Some(ts) = state.last_real_complete_ts else {
-                continue;
-            };
-            if state.latest_event != TerminalEvent::Complete || ts <= since_ms {
-                continue;
-            }
-            if let Some(segment) = unit.segment.filter(|value| !value.is_empty()) {
-                segments
-                    .entry((scan_day.to_owned(), unit.stream, segment))
-                    .and_modify(|current| *current = (*current).max(ts))
-                    .or_insert(ts);
-            } else if let Some(activity) = unit.activity.filter(|value| !value.is_empty()) {
-                activities
-                    .entry((scan_day.to_owned(), unit.facet, activity))
-                    .and_modify(|current| *current = (*current).max(ts))
-                    .or_insert(ts);
-            }
+    // Fold both log partitions together before selecting completions: work may
+    // finish after midnight, and a later failure must supersede its earlier success.
+    let mut input = Vec::new();
+    for scan_day in [previous.as_str(), day] {
+        let scanned = read_day_records(source, scan_day)?;
+        malformed_line_count += scanned.malformed_line_count;
+        input.extend(
+            scanned
+                .value
+                .into_iter()
+                .map(|record| (scan_day.to_owned(), record)),
+        );
+    }
+    for (unit, state) in fold_terminal_records(input, None) {
+        let Some(ts) = state.last_real_complete_ts else {
+            continue;
+        };
+        if state.latest_event != TerminalEvent::Complete || ts <= since_ms {
+            continue;
+        }
+        if let Some(segment) = unit.segment.filter(|value| !value.is_empty()) {
+            segments
+                .entry((unit.day, unit.stream, segment))
+                .and_modify(|current| *current = (*current).max(ts))
+                .or_insert(ts);
+        } else if let Some(activity) = unit.activity.filter(|value| !value.is_empty()) {
+            activities
+                .entry((unit.day, unit.facet, activity))
+                .and_modify(|current| *current = (*current).max(ts))
+                .or_insert(ts);
         }
     }
     let mut segment_values = segments
@@ -268,7 +287,7 @@ pub fn read_daily_deterministic_failures<S: HealthLogSource>(
     source: &S,
     day: &str,
 ) -> Result<FoldRead<BTreeMap<DailyUnit, DeterministicFailure>>, HealthError> {
-    let states = read_terminal_states(source, day, false)?;
+    let states = read_terminal_states(source, day, true)?;
     let failures = states
         .value
         .into_iter()

@@ -11,6 +11,7 @@ use serde_json::{Map, Value, json};
 use solstone_core_facets::{load_activity_records, read_facet_declaration, read_news_file};
 use solstone_core_home::{
     HomeContext,
+    briefing::BriefingDates,
     readers::{enabled_facet_names, read_latest},
 };
 use solstone_core_indexer_query::{SearchHit, SearchRequest, search};
@@ -100,6 +101,8 @@ fn build_packet(
     model: &str,
     context: &ExecutionContext,
 ) -> Result<Map<String, Value>, String> {
+    let dates = BriefingDates::for_analysis(analysis_day).ok_or("briefing date overflow")?;
+    let presentation_day = dates.presentation.format("%Y%m%d").to_string();
     let mut gaps = Vec::new();
     let home = HomeContext::new(&context.journal, Utc::now());
     // `enabled_facet_names` supplies the reference's declared-name + muted filter.
@@ -119,14 +122,14 @@ fn build_packet(
     let newsletters = load_newsletters(&facets, day, context, &mut gaps);
     let today = load_activities(
         &facets,
-        &[day.to_owned()],
+        std::slice::from_ref(&presentation_day),
         context,
         &mut gaps,
         "no anticipated activities today",
     );
     let forward_days = (1..8)
         .map(|offset| {
-            (analysis_day + Duration::days(offset))
+            (dates.presentation + Duration::days(offset))
                 .format("%Y%m%d")
                 .to_string()
         })
@@ -162,6 +165,14 @@ fn build_packet(
     let counts = json!({"segments": paths.len(), "anticipated_activities": today.len(), "facet_newsletters": newsletters.len(), "followups": followups.len(), "steward_health": if health.is_empty() { "missing" } else { "present" }});
     let metadata = json!({"generated": chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string(), "model": model, "sources": counts, "gaps": gaps, "coverage_preamble": coverage_preamble(&counts, &gaps, decisions_total, forward.len(), followups_total)});
     Ok(Map::from_iter([
+        (
+            "briefing_analysis_day".into(),
+            Value::String(day.to_owned()),
+        ),
+        (
+            "briefing_presentation_day".into(),
+            Value::String(presentation_day),
+        ),
         (
             "briefing_metadata".into(),
             Value::String(
@@ -509,6 +520,53 @@ fn string_or(value: Option<&Value>, fallback: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn packet_keeps_analysis_sources_but_uses_the_next_mornings_agenda() {
+        let root = tempfile::TempDir::new().unwrap();
+        let facet = root.path().join("facets/work");
+        fs::create_dir_all(facet.join("activities")).unwrap();
+        fs::create_dir_all(facet.join("news")).unwrap();
+        fs::write(facet.join("facet.json"), r#"{"title":"Work"}"#).unwrap();
+        for (day, title) in [
+            ("20261231", "analysis agenda decoy"),
+            ("20270101", "presentation agenda"),
+            ("20270102", "forward agenda"),
+        ] {
+            fs::write(
+                facet.join(format!("activities/{day}.jsonl")),
+                json!({"id":day,"source":"anticipated","title":title}).to_string(),
+            )
+            .unwrap();
+        }
+        fs::write(facet.join("news/20261231.md"), "analysis newsletter").unwrap();
+        fs::write(
+            facet.join("news/20270101.md"),
+            "presentation newsletter decoy",
+        )
+        .unwrap();
+        let context = ExecutionContext {
+            journal: root.path().to_owned(),
+        };
+        let values = build_packet(
+            "20261231",
+            NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+            "test",
+            &context,
+        )
+        .unwrap();
+        assert_eq!(values["briefing_analysis_day"], "20261231");
+        assert_eq!(values["briefing_presentation_day"], "20270101");
+        let today = values["anticipated_today"].as_str().unwrap();
+        assert!(today.contains("presentation agenda"), "{today}");
+        assert!(!today.contains("decoy") && !today.contains("forward agenda"));
+        let forward = values["anticipated_forward"].as_str().unwrap();
+        assert!(forward.contains("forward agenda"), "{forward}");
+        assert!(!forward.contains("presentation agenda") && !forward.contains("decoy"));
+        let news = values["facet_newsletters"].as_str().unwrap();
+        assert!(news.contains("analysis newsletter"), "{news}");
+        assert!(!news.contains("decoy"));
+    }
+
     #[test]
     fn gate_keeps_reference_day_reasons() {
         // Derived from solstone/talent/morning_briefing.py:25-34.
