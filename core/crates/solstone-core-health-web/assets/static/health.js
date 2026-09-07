@@ -1295,7 +1295,7 @@
       btn.setAttribute('data-action', 'view-logs');
       btn.setAttribute('data-service', 'cortex');
       btn.className = 'error-advice-link';
-      btn.textContent = 'view model logs';
+      btn.textContent = 'view AI engine logs';
       advice.appendChild(btn);
       advice.appendChild(document.createTextNode(' for details.'));
       container.appendChild(advice);
