@@ -844,6 +844,7 @@
             "SPK_OWNER_REVEAL_EVIDENCE_TEMPLATE": "{tier} evidence",
             "SPK_OWNER_REVEAL_STATEMENTS_TEMPLATE": "{count} statements taught",
             "SPK_OWNER_REVEAL_STREAMS_TEMPLATE": "{count} places this voice appears",
+            "SPK_OWNER_REVEAL_STREAMS_TEMPLATE_ONE": "1 place this voice appears",
             "SPK_OWNER_REVEAL_TITLE": "your voice is confirmed",
             "SPK_OWNER_TEACH_BODY": "pick longer statements that are yours. they keep your voice separate from other speakers.",
             "SPK_OWNER_TEACH_BUSY": "voice update is busy; try the next statement in a moment",

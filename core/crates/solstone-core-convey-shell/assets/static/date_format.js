@@ -184,11 +184,38 @@
     return remainderMinutes ? `${hours} hr ${remainderMinutes} min` : `${hours} hr`;
   }
 
+  // A bare lookup on an object literal reaches Object.prototype, so a lane
+  // named 'constructor' or 'toString' returned a function and the sentence
+  // rendered it. Own keys only.
+  //
+  // This map is the sentence register: it is read after "running on" and
+  // before a reason, so the local lane says 'local processing' here. The runs
+  // and token tables name the same lane in a provider column, where the row's
+  // other cells carry the sense and the bare 'local' is the value (X-05,
+  // G2-43, S-5, and the matching notes in thinking.js and token-card.js).
+  // 'confidential processing' is one phrase in both, so the column already
+  // reads that way.
+  const PROCESSING_LANES = {spp: 'confidential processing', local: 'local processing',
+    openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google'};
   function processingLane(lane) {
-    return ({spp: 'confidential processing', local: 'local processing', openai: 'OpenAI',
-      anthropic: 'Anthropic', google: 'Google'})[lane] || 'processing';
+    return Object.hasOwn(PROCESSING_LANES, lane) ? PROCESSING_LANES[lane] : 'processing';
   }
 
-  window.JournalFormat = { processingLane, compactTokens: value => value >= 999500 ? `${Math.round(value / 1000000)}M` : value >= 1000 ? `${Math.round(value / 1000)}K` : String(Math.round(value)),  day: formatDateShort, dayFull: formatDateFull, stream: formatStreamLabel, segmentTime: formatSegmentTime, segmentTimeOfDay: formatSegmentTimeOfDay, timestamp: formatTimestamp, time: formatTimeOfDay, duration: formatDuration };
+  // A "since ..." sentence needs the day itself. formatDateShort answers
+  // "which day is this" with Today and Yesterday, which read as nonsense after
+  // "since" and stop being true while the sentence is still on screen. So this
+  // one is absolute, lowercase, and carries the year only when it is not this
+  // one (F-15). status_pane.js and health.js each held their own copy of it.
+  const SINCE_MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  function sinceDay(ms) {
+    const value = new Date(ms);
+    if (Number.isNaN(value.getTime())) return '';
+    const day = SINCE_MONTHS[value.getMonth()] + ' ' + value.getDate();
+    return value.getFullYear() === new Date().getFullYear()
+      ? day
+      : day + " '" + String(value.getFullYear()).slice(-2);
+  }
+
+  window.JournalFormat = { processingLane, sinceDay, compactTokens: value => value >= 999500 ? `${Math.round(value / 1000000)}M` : value >= 1000 ? `${Math.round(value / 1000)}K` : String(Math.round(value)),  day: formatDateShort, dayFull: formatDateFull, stream: formatStreamLabel, segmentTime: formatSegmentTime, segmentTimeOfDay: formatSegmentTimeOfDay, timestamp: formatTimestamp, time: formatTimeOfDay, duration: formatDuration };
   window.formatDateShort = formatDateShort;
 })();

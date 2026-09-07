@@ -253,20 +253,10 @@ window.whenShellReady(() => {
 
   // X-02: the pane printed its own lowercase 'sep 6'. Dates on a surface go
   // through the shared formatter, the way the rest of the shell reads them.
-  // A "since …" sentence needs the day itself. The shared formatter answers
-  // "which day is this" with Today and Yesterday, which read as nonsense after
-  // "since" and stop being true while the sentence is still on screen. So this
-  // one is absolute, lowercase, and carries the year only when it is not this
-  // one (F-15). health.js holds the same helper for the same sentence.
-  const SINCE_MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-  function sinceDay(ms) {
-    const value = new Date(ms);
-    if (Number.isNaN(value.getTime())) return '';
-    const day = SINCE_MONTHS[value.getMonth()] + ' ' + value.getDate();
-    return value.getFullYear() === new Date().getFullYear()
-      ? day
-      : day + " '" + String(value.getFullYear()).slice(-2);
-  }
+  // A "since …" sentence needs the day itself, absolute and lowercase (F-15).
+  // It lives in JournalFormat now; status_pane.js and health.js each carried
+  // their own copy of the same twelve months and the same year rule.
+  const sinceDay = ms => window.JournalFormat.sinceDay(ms);
 
   // Plural forms are real: the pane read '1 uploads turned away'.
   function uploadsTurnedAway(count) {

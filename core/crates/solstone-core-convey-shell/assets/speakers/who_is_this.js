@@ -206,6 +206,12 @@
       this.onFullyRestoredUndo = typeof this.options.onFullyRestoredUndo === 'function'
         ? this.options.onFullyRestoredUndo
         : async function noop() {};
+      // Fires once per close of an open sheet, whatever ended it: named,
+      // dismissed, "this is me", Escape, or the backdrop. A caller that put
+      // the page into a mode to open this sheet has no other place to leave it.
+      this.onClosed = typeof this.options.onClosed === 'function'
+        ? this.options.onClosed
+        : function noop() {};
       const debounceMs = Number(this.options.debounceMs);
       this.debounceMs = Number.isFinite(debounceMs) ? Math.max(0, debounceMs) : 150;
       this.requestIdFactory = typeof this.options.requestIdFactory === 'function'
@@ -282,6 +288,7 @@
 
     close(options) {
       const restoreFocus = !options || options.restoreFocus !== false;
+      const wasOpen = this.opened;
       this.opened = false;
       this.presence = null;
       this.cluster = null;
@@ -302,6 +309,7 @@
         }
       }
       this.trigger = null;
+      if (wasOpen) this.onClosed();
     }
 
     renderLoading() {

@@ -37,6 +37,7 @@
   "SPK_OWNER_REVEAL_TITLE": "your voice is confirmed",
   "SPK_OWNER_REVEAL_STATEMENTS_TEMPLATE": "{count} statements taught",
   "SPK_OWNER_REVEAL_STREAMS_TEMPLATE": "{count} places this voice appears",
+  "SPK_OWNER_REVEAL_STREAMS_TEMPLATE_ONE": "1 place this voice appears",
   "SPK_OWNER_REVEAL_EVIDENCE_TEMPLATE": "{tier} evidence",
   "SPK_OWNER_REVEAL_CLOSE_LABEL": "continue",
   "SPK_OVERVIEW_QUALITY_HEADER": "voice quality",

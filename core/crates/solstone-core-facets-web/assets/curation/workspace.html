@@ -382,10 +382,13 @@ window.CUR_COPY = CUR_COPY;
     return name.replace(/[_-]+/g, ' ').trim();
   }
 
+  // The replacement is a function, not a string: a value carrying $&, $` or $'
+  // is a substitution pattern to String.replace, and a facet or entity named
+  // with one came back mangled. A function replacement is taken literally.
   function copyFormat(template, values) {
     let result = String(template || '');
     Object.entries(values).forEach(([key, value]) => {
-      result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), String(value ?? ''));
+      result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), () => String(value ?? ''));
     });
     return result;
   }
@@ -467,12 +470,16 @@ window.CUR_COPY = CUR_COPY;
   // two candidates that share a slug are one facet however differently they are
   // spelled. Grouping on anything finer offers the owner two rows that create
   // the same thing, and the second one is dead the moment the first is taken.
-  // ASCII-only is deliberate on both sides.
+  // ASCII-only is deliberate on both sides, and so is the order: the server
+  // tests each character for ASCII alphanumeric and only then lowercases it.
+  // Lowercasing first is not the same walk -- JS folds 'I' to 'i' plus a
+  // combining dot, so a Turkish title kept a letter the server dropped and the
+  // two sides named different facets.
   function facetSlug(name) {
     return String(name ?? '')
       .trim()
+      .replace(/[^A-Za-z0-9]+/g, '-')
       .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '');
   }
 
