@@ -8,11 +8,17 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::json;
-use solstone_core_artifact_download::{ByteDownload, download_verified_bytes, verify_sha256_bytes};
+#[cfg(not(windows))]
+use solstone_core_artifact_download::download_verified_bytes;
+use solstone_core_artifact_download::{ByteDownload, verify_sha256_bytes};
+#[cfg(windows)]
+use solstone_core_distribution::windows_payload::WINDOWS_RCLONE_WORKER;
 use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
 
+#[cfg(not(windows))]
 use crate::install::DOWNLOAD_ATTEMPTS;
 use crate::readiness::{file_sha256, platform_info};
+#[cfg(not(windows))]
 use crate::runner::{ToolRunner, run_restic};
 
 pub const RCLONE_VERSION: &str = "1.74.4";
@@ -93,7 +99,7 @@ pub fn ensure_rclone(
     #[cfg(windows)]
     {
         let _ = (runner, force, requested_dir, downloader);
-        return crate::windows_tool::verify_package_and_get_tool("bin/rclone.exe")
+        return crate::windows_tool::verify_package_and_get_tool(WINDOWS_RCLONE_WORKER)
             .map_err(|e| e.to_string());
     }
     #[cfg(not(windows))]
@@ -165,6 +171,7 @@ pub fn install_from_zip(
         .map_err(|error| error.to_string())?;
     Ok(binary_path)
 }
+#[cfg(not(windows))]
 fn check_rclone_ready(
     runner: &dyn ToolRunner,
     dir: &Path,
@@ -200,6 +207,7 @@ fn check_rclone_ready(
     (result.returncode == 0 && result.stdout.contains(&format!("rclone v{RCLONE_VERSION}")))
         .then_some(binary)
 }
+#[cfg(not(windows))]
 fn bundle_path(filename: &str) -> Result<Option<PathBuf>, String> {
     if let Some(path) = env::var_os(RCLONE_BUNDLE_ENV) {
         return Ok(Some(crate::install::expand_and_resolve(PathBuf::from(

@@ -35,6 +35,8 @@ use nix::sys::wait::waitpid;
 #[cfg(unix)]
 use nix::unistd::{Pid, pipe};
 use serde_json::Value;
+#[cfg(windows)]
+use solstone_core_distribution::windows_payload::{WINDOWS_RCLONE_WORKER, WINDOWS_RESTIC_WORKER};
 #[cfg(unix)]
 use solstone_core_system::process::{Disposition, LaunchAuthority, LaunchError, launch};
 use thiserror::Error;
@@ -151,10 +153,10 @@ impl ToolRunner for SystemToolRunner {
             )
         };
         let admitted_restic = payload
-            .declared_path("bin/restic.exe")
+            .declared_path(WINDOWS_RESTIC_WORKER)
             .ok_or_else(missing_tool)?;
         let admitted_rclone = payload
-            .declared_path("bin/rclone.exe")
+            .declared_path(WINDOWS_RCLONE_WORKER)
             .ok_or_else(missing_tool)?;
         let canonical_program = Path::new(&request.program).canonicalize()?;
         let canonical_restic = admitted_restic.canonicalize()?;
