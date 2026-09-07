@@ -27,7 +27,7 @@ pub const NEWS_DAY_TITLE: &str = "newsletters for {date_label}";
 pub const NEWS_DAY_SUBTITLE: &str = "facet summaries for this day.";
 pub const NEWS_DAY_EMPTY_TITLE: &str = "no newsletters for {date_label}";
 pub const NEWS_DAY_EMPTY_BODY: &str = "No newsletters were written for this day.";
-pub const NEWS_SAMPLE_BANNER: &str = "This is a sample newsletter, not from your journal.";
+pub const NEWS_SAMPLE_BANNER: &str = "this is a sample newsletter, not from your journal.";
 pub const NEWS_SAMPLE_H1: &str = "sample newsletter";
 
 pub const SAMPLE_CONTENT: &str = "# 2026-03-10 News - Verona\n\n## Verona Platform Joint Venture Officially Launches\n**Source:** press-release | **Time:** 14:00\nMontague Tech and Capulet Industries announced a joint venture to develop the Verona Platform, a unified API gateway combining mesh routing and schema translation. The platform demonstrated sub-millisecond latency at 10,000 req/s during the board presentation.\n";
