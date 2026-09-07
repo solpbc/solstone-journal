@@ -52,6 +52,7 @@
   "SPK_OVERVIEW_QUALITY_TEACHING_ZERO": "no recent teaching changes",
   "SPK_OVERVIEW_QUALITY_UNREADABLE_WARNING": "some local speaker files could not be read",
   "SPK_OVERVIEW_QUALITY_ERROR_HEADING": "couldn't load voice quality",
+  "SPK_OVERVIEW_KNOWN_VOICES_ERROR_HEADING": "couldn't load known voices",
   "SPK_OVERVIEW_KNOWN_VOICES_HEADER": "known voices",
   "SPK_OVERVIEW_KNOWN_VOICES_QUALITY_HINT": "the word beside each voice shows how confidently it's recognized, not how much of it there is.",
   "SPK_OVERVIEW_KNOWN_VOICES_SORTS": [
