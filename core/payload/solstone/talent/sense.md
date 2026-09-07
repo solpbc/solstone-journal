@@ -58,7 +58,7 @@ The dominant activity type observed:
 - **idle**: No meaningful activity
 
 ### activity_summary
-Start with a past-tense verb and name no subject at all. Say what was done, never who did it: never begin with "I", "You", "We", "The user", "The owner", "The person", or "This person". This text is shown to the owner on their own dashboard. Never write "capture" in any form; never say the software watches, observes, records, monitors, tracks or listens; attach every claim to what the journal holds.
+Start with a past-tense verb and name no subject at all. Say what was done, never who did it: never begin with "I", "You", "We", "The user", "The owner", "The person", or "This person". This text is shown to the owner on their own dashboard. In the text you write: Never write "capture" in any form; never say the software watches, observes, records, monitors, tracks, listens, sees, hears or surveils; attach every claim to what the journal holds.
 - Good: "Debugged the retry handling in the ingest worker."
 - Good: "Sent the invoice to Sam, then opened the launch checklist."
 - Wrong: "The user navigated between the hub and a project workspace." — it names a subject.

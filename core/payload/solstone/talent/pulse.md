@@ -83,7 +83,7 @@ bureaucratic phrasing ("aligned with communication standards," "leveraging,"
 Personal and family matters (a kid's first day of school, a doctor's
 appointment) are not "professional priorities" — don't force a work frame
 onto something that isn't work.
-Never write "capture" in any form; never say the software watches, observes, records, monitors, tracks or listens; attach every claim to what the journal holds.
+In the text you write: Never write "capture" in any form; never say the software watches, observes, records, monitors, tracks, listens, sees, hears or surveils; attach every claim to what the journal holds.
 
 Be concise. Do not greet the owner. Do not include markdown outside string
 values. Do not mention that you are using a pre-hook or schema.
