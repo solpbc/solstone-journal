@@ -201,7 +201,10 @@ const _: () = assert!(PREVIEW_CHARS > MIN_PREVIEW_CHARS);
 /// letter whose every line is that short still gets its first line rather than
 /// nothing at all. A heading is scaffolding, so it does not open the body
 /// either: the header region runs to the first blank line that follows real
-/// content, and a `# Title` above a `Subject:`/`Date:` block is not that.
+/// content, and a `# Title` above a `Subject:`/`Date:` block is not that. The
+/// cost of that rule is deliberate: a `To:` line directly under a title reads
+/// as a header, so a letter that is a title and an address block and nothing
+/// else previews as nothing rather than as its address block (FE3 #2).
 fn preview_from_content(content: &str) -> Option<String> {
     let mut fallback: Option<String> = None;
     let mut chosen: Option<String> = None;
@@ -668,6 +671,23 @@ mod tests {
             (
                 "To: the whole team\nFrom: the office\n\nThe week brought two launches and one postponed.\n",
                 Some("The week brought two launches and one postponed."),
+            ),
+            // Fresh-eyes 3 #2: a heading is scaffolding, so a `To:` line
+            // directly under a title is still inside the header region and is
+            // read as a header, not as the letter's first sentence. That is the
+            // deliberate call: the seeded letters put their address block right
+            // under the title, and the body below it is what the card shows.
+            (
+                "# Weekly letter\n\nTo: the whole team, we ship on Friday.\n\nThe body sentence follows here.\n",
+                Some("The body sentence follows here."),
+            ),
+            // The price of that call, pinned so it cannot drift silently: a
+            // letter that is a title and an address block and nothing else has
+            // no body to preview, and the card shows no preview rather than its
+            // address block.
+            (
+                "# Weekly letter\n\nTo: the whole team, we ship on Friday.\n",
+                None,
             ),
             // Nothing to show at all.
             ("# heading only\n\n\n", None),
