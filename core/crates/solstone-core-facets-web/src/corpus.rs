@@ -238,10 +238,8 @@ async fn replay_record(router: Router, root: &Path, expected: &Value) {
                     body,
                     "\"{a}\" and \"{b}\" look like the same entity. merge them?"
                 );
-                *body = Value::String(
-                    "“{a}” and “{b}” look like the same entity. merge them?"
-                        .into(),
-                );
+                *body =
+                    Value::String("“{a}” and “{b}” look like the same entity. merge them?".into());
             }
             if let Some(body) = copy.get_mut("CUR_SPEAKER_BODY") {
                 assert_eq!(

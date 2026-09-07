@@ -1508,14 +1508,11 @@ fn fact_items(rows: &[NormalizedRow]) -> Vec<Value> {
     }
     let mut grouped = grouped.into_iter().collect::<Vec<_>>();
     grouped.sort_by(|(left, left_rows), (right, right_rows)| {
-        right_rows
-            .len()
-            .cmp(&left_rows.len())
-            .then_with(|| {
-                friendly_type_name(left)
-                    .to_lowercase()
-                    .cmp(&friendly_type_name(right).to_lowercase())
-            })
+        right_rows.len().cmp(&left_rows.len()).then_with(|| {
+            friendly_type_name(left)
+                .to_lowercase()
+                .cmp(&friendly_type_name(right).to_lowercase())
+        })
     });
     grouped.into_iter().map(|(record_type,items)| { let values=items.iter().filter_map(|row|value_number(row)).collect::<Vec<_>>(); let count=items.len(); let value=if record_type.contains("MindfulSession") { let sources=items.iter().map(|row|source_label(row)).collect::<BTreeSet<_>>(); let minutes=items.iter().filter_map(|row|match(record_time(row),end_time(row)){(Some(start),Some(end))if end>start=>Some((end-start).num_seconds()as f64/60.0),_=>None}).sum::<f64>();(sources.len()==1&&minutes>0.0).then(||duration(minutes)) } else if record_type.contains("AudioExposure")&&count>1 { let units=items.iter().filter_map(|row|unit(row)).collect::<BTreeSet<_>>();if !values.is_empty()&&units.len()==1{Some(format!("{count} entries · {}–{} {}",number(values.iter().copied().fold(f64::INFINITY,f64::min)),number(values.iter().copied().fold(f64::NEG_INFINITY,f64::max)),friendly_unit_label(&record_type,units.iter().next().copied()).unwrap_or_else(||units.iter().next().unwrap().to_string())))}else{None} } else if count==1 || record_type.contains("RestingHeartRate") { items.iter().filter_map(|row|value_number(row).map(|value|(row,value))).max_by_key(|(row,_)|record_time(row)).map(|(row,value)|display_value(&record_type,value,unit(row))) } else {None};json!({"label":friendly_type_name(&record_type),"count":count,"count_label":count.to_string(),"value":value}) }).collect()
 }
