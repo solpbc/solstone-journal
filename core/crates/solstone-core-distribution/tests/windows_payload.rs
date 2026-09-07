@@ -28,7 +28,19 @@ fn fixture() -> tempfile::TempDir {
             .join("lib/solstone_journal_models/assets/parakeet"),
     )
     .expect("Parakeet model lib");
+    fs::create_dir_all(
+        root.path()
+            .join("lib/solstone_journal_models/assets/rfdetr"),
+    )
+    .expect("rfdetr model lib");
     fs::write(root.path().join("bin/ced.dll"), b"ced dll").expect("ced");
+    fs::write(root.path().join("bin/rfdetr-cli.exe"), b"rfdetr cli").expect("rfdetr cli");
+    fs::write(
+        root.path()
+            .join("lib/solstone_journal_models/assets/rfdetr/rfdetr-nano-f16.gguf"),
+        b"rfdetr model",
+    )
+    .expect("rfdetr model");
     fs::write(root.path().join(WINDOWS_PDFIUM_WORKER), b"pdf worker").expect("pdf worker");
     fs::write(
         root.path().join("lib/solstone-core-pdf/pdfium.dll"),
@@ -94,6 +106,19 @@ fn signed_windows_payload_is_complete_and_refuses_mutation() {
             .declared_path("bin/ced.dll")
             .expect("declared CED path"),
         root.path().join(WINDOWS_CED_LIBRARY)
+    );
+    assert_eq!(
+        verified
+            .declared_path("bin/rfdetr-cli.exe")
+            .expect("declared RF-DETR worker"),
+        root.path().join("bin/rfdetr-cli.exe")
+    );
+    assert_eq!(
+        verified
+            .declared_path("lib/solstone_journal_models/assets/rfdetr/rfdetr-nano-f16.gguf")
+            .expect("declared RF-DETR model"),
+        root.path()
+            .join("lib/solstone_journal_models/assets/rfdetr/rfdetr-nano-f16.gguf")
     );
     assert_eq!(
         verified.ced_library_path().expect("declared CED engine"),

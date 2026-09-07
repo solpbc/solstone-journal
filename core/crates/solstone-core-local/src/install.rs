@@ -32,6 +32,7 @@ pub mod readiness;
 pub(crate) mod rfdetr_compiled_expectation;
 pub mod rfdetr_install;
 pub mod rfdetr_readiness;
+pub mod rfdetr_windows;
 pub mod status;
 
 /// Fixture-only driver for the registered installer integration targets.

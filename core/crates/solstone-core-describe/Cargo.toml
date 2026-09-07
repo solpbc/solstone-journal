@@ -29,6 +29,9 @@ solstone-core-assets.workspace = true
 base64 = "0.22.1"
 chrono.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+solstone-core-system.workspace = true
+
 [features]
 full-tests = []
 test-stubs = []
