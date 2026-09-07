@@ -1629,13 +1629,14 @@ fn access_wrong_instance_protocol_or_non_200_preserves_current() {
             bundle.clone(),
             ca_fp.clone(),
         );
+        let token = mock_device_token("wrong-instance-xyz");
         let wrong_instance_body = serde_json::to_vec(&json!({
-            "state": "ready",
+            "status": "ready",
             "protocol_version": 2,
             "relay_origin": "https://new.relay.app",
             "instance_id": "wrong-instance-xyz",
-            "device_token": "tok_xyz",
-            "expires_at": 2100000000,
+            "device_token": token,
+            "expires_at": "2500000000",
         }))
         .unwrap();
         let server = std::thread::spawn(move || {
@@ -1667,13 +1668,14 @@ fn access_wrong_instance_protocol_or_non_200_preserves_current() {
             bundle.clone(),
             ca_fp.clone(),
         );
+        let token = mock_device_token(&identity.instance_id);
         let wrong_pv_body = serde_json::to_vec(&json!({
-            "state": "ready",
+            "status": "ready",
             "protocol_version": 1,
             "relay_origin": "https://new.relay.app",
             "instance_id": identity.instance_id,
-            "device_token": "tok_xyz",
-            "expires_at": 2100000000,
+            "device_token": token,
+            "expires_at": "2500000000",
         }))
         .unwrap();
         let server = std::thread::spawn(move || {
@@ -1706,7 +1708,7 @@ fn access_wrong_instance_protocol_or_non_200_preserves_current() {
             ca_fp.clone(),
         );
         let body_503 = serde_json::to_vec(&json!({
-            "state": "not_configured",
+            "status": "not_configured",
             "protocol_version": 2,
         }))
         .unwrap();
@@ -1927,7 +1929,7 @@ fn combined_lanes_quiesce_with_carrier_close_and_subsequent_trigger_processes_la
                 let c = access_count_flag.fetch_add(1, Ordering::SeqCst);
                 first_access_received_flag.store(true, Ordering::SeqCst);
                 let body = serde_json::to_vec(&json!({
-                    "state": "not_configured",
+                    "status": "not_configured",
                     "protocol_version": 2,
                 }))
                 .unwrap();

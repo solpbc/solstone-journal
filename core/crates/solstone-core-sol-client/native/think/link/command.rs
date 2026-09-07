@@ -505,21 +505,8 @@ fn read_cached_version_fallback(
 /// applied here to the selected bundle's own chain rather than to any cached
 /// or peer-reported value.
 fn ca_fp_prefix_hex(ca_chain_pem: &[String]) -> Option<String> {
-    let der = pem_cert_der(ca_chain_pem.first()?)?;
+    let der = crate::link_credentials::pem_cert_der(ca_chain_pem.first()?)?;
     Some(spl_core::ca::sha256_hex(&der)[..32].to_string())
-}
-
-fn pem_cert_der(pem: &str) -> Option<Vec<u8>> {
-    use base64::Engine as _;
-    const BEGIN: &str = "-----BEGIN CERTIFICATE-----";
-    const END: &str = "-----END CERTIFICATE-----";
-    let start = pem.find(BEGIN)? + BEGIN.len();
-    let end = start + pem[start..].find(END)?;
-    let body: String = pem[start..end]
-        .chars()
-        .filter(|c| !c.is_whitespace())
-        .collect();
-    base64::engine::general_purpose::STANDARD.decode(body).ok()
 }
 
 fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
