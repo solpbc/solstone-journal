@@ -7,4 +7,4 @@
 5. copy it to your computer
 6. upload the file here
 
-If you use the Kindle app instead of a device, you can find your highlights at [read.amazon.com/notebook](https://read.amazon.com/notebook).
+if you use the Kindle app instead of a device, you can find your highlights at [read.amazon.com/notebook](https://read.amazon.com/notebook).

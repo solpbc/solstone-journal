@@ -12,7 +12,7 @@ use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 
 use chrono::{
-    DateTime, Duration, FixedOffset, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone,
+    DateTime, Duration, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone,
     Timelike, Utc,
 };
 use serde_json::{Map, Value, json};
@@ -292,6 +292,7 @@ fn merge_faceted_activity(kept: &mut Map<String, Value>, other: &Map<String, Val
 /// record was written, and the list is ordered by the same value.
 pub fn collect_activities(context: &HomeContext, day: &str) -> Vec<Value> {
     let cutoff = context.now_ms() - 4 * 60 * 60 * 1000;
+    let offset = context.day_offset();
     let mut collected: Vec<Map<String, Value>> = Vec::new();
     let mut positions: BTreeMap<String, usize> = BTreeMap::new();
     for facet in all_facet_names(context) {
@@ -307,14 +308,19 @@ pub fn collect_activities(context: &HomeContext, day: &str) -> Vec<Value> {
             {
                 continue;
             }
+            // One shape for both arms: RFC 3339 in the journal's day
+            // coordinate. The segment arm used to emit a naive local time and
+            // the write-time arm a UTC instant, so two rows on one list were
+            // read on two different clocks (F-6).
             record.insert(
                 "display_time".to_owned(),
                 activity_started_at(day, &record)
-                    .map(|start| start.format("%Y-%m-%dT%H:%M:%S").to_string())
+                    .and_then(|start| offset.from_local_datetime(&start).single())
                     .or_else(|| {
                         DateTime::from_timestamp_millis(created)
-                            .map(|time| time.with_timezone(&Utc).to_rfc3339())
+                            .map(|time| time.with_timezone(&offset))
                     })
+                    .map(|time| time.to_rfc3339())
                     .unwrap_or_default()
                     .into(),
             );
@@ -342,7 +348,7 @@ pub fn collect_activities(context: &HomeContext, day: &str) -> Vec<Value> {
         .into_iter()
         .map(|record| {
             let ordered = activity_started_at(day, &record)
-                .and_then(|start| Local.from_local_datetime(&start).earliest())
+                .and_then(|start| offset.from_local_datetime(&start).single())
                 .map(|start| start.timestamp_millis())
                 .or_else(|| record.get("created_at").and_then(Value::as_i64))
                 .unwrap_or(0);
@@ -1036,6 +1042,12 @@ fn home_client_row(row: &ClientAssessment) -> Value {
     let mut summary = json!({
         "name": client_name(row),
         "cid": row.cid,
+        // One rule for "this device is failing", shared with health's client
+        // rows (convey-shell clients.rs): the capture state, and nothing else.
+        // Home used to add "has any ingest rejection", so a stale device with an
+        // old rejection was named on one surface and not the other (F-8).
+        "failing": row.capture_state == ClientCaptureState::Degraded,
+        "capture_elapsed_ms": row.capture_elapsed_ms,
         "last_seen": row.last_seen_at,
         "last_accepted_ingest_at": row.last_accepted_ingest_at,
         "last_accepted_segment": row.last_accepted_segment,
@@ -1664,10 +1676,11 @@ mod tests {
                 "meeting_182504_302"
             ]
         );
-        assert_eq!(rows[0]["display_time"], "2026-06-02T18:40:38");
-        assert_eq!(rows[1]["display_time"], "2026-06-02T18:35:05");
+        // F-6: one shape, RFC 3339 in the journal's day coordinate (UTC here).
+        assert_eq!(rows[0]["display_time"], "2026-06-02T18:40:38+00:00");
+        assert_eq!(rows[1]["display_time"], "2026-06-02T18:35:05+00:00");
         // The earliest segment, not the first one listed.
-        assert_eq!(rows[2]["display_time"], "2026-06-02T18:25:04");
+        assert_eq!(rows[2]["display_time"], "2026-06-02T18:25:04+00:00");
         // The two facet copies collapse and keep both facets and both sentences.
         assert_eq!(rows[0]["facets"], json!(["personal", "solstone"]));
         assert_eq!(
@@ -1675,6 +1688,41 @@ mod tests {
             "Closed an automated sponsor session. Monitored H100 VM boot progress."
         );
         assert!(rows[1].get("facets").is_none());
+    }
+
+    /// F-6: the segment-derived arm and the write-time arm are one clock, the
+    /// journal's day offset. Before this they were a naive local time and a UTC
+    /// instant, so two rows in one list were read six hours apart on a -06:00
+    /// day and neither said which clock it meant.
+    #[test]
+    fn activity_display_times_share_the_journals_day_offset_on_both_arms() {
+        let root = TempDir::new().unwrap();
+        // 19:00Z is 13:00 on a -06:00 day.
+        let context = HomeContext::with_day_offset(
+            root.path(),
+            Utc.with_ymd_and_hms(2026, 6, 2, 19, 0, 0).unwrap(),
+            FixedOffset::east_opt(-6 * 3600).expect("mountain day offset"),
+        );
+        write(root.path(), "facets/work/facet.json", "{}");
+        write(
+            root.path(),
+            "facets/work/activities/20260602.jsonl",
+            concat!(
+                r#"{"id":"from_segments","source":"user","created_at":1780426800000,"segments":["130000_100"],"title":"timed by its segments"}"#,
+                "
+",
+                r#"{"id":"from_write_time","source":"user","created_at":1780426800000,"segments":["20260602-1300"],"title":"timed by when it was written"}"#,
+            ),
+        );
+        let rows = collect_activities(&context, "20260602");
+        assert_eq!(rows.len(), 2);
+        for row in &rows {
+            assert_eq!(
+                row["display_time"], "2026-06-02T13:00:00-06:00",
+                "{}",
+                row["id"]
+            );
+        }
     }
 
     #[test]

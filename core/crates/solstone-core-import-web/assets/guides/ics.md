@@ -1,7 +1,7 @@
 ### Google Calendar
 
 1. open [Google Calendar Settings](https://calendar.google.com/calendar/r/settings/export)
-2. click **Export** — this downloads a .zip file containing .ics files for each calendar
+2. click **Export**. this downloads a .zip file containing .ics files for each calendar
 3. upload the .zip file here
 
 ### Apple Calendar

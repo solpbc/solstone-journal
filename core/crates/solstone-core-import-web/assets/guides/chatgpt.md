@@ -5,6 +5,6 @@
 3. select **Settings**
 4. go to **Data controls**
 5. click **Export data**
-6. you'll receive an email with a download link — this may take a few minutes
+6. you'll receive an email with a download link. this may take a few minutes
 7. download the .zip file from the email
 8. upload the .zip file here

@@ -45,6 +45,14 @@ impl HomeContext {
         &self.journal_root
     }
 
+    /// The journal's day coordinate itself, for placing a wall-clock time that
+    /// was read out of a day directory back on the instant line. A fixed offset
+    /// has no DST gap, which is the point: a local time that a real zone would
+    /// call nonexistent still resolves here.
+    pub fn day_offset(&self) -> FixedOffset {
+        self.day_offset
+    }
+
     /// The instant expressed in the journal's day coordinate.
     pub fn now_local(&self) -> DateTime<FixedOffset> {
         self.now_utc.with_timezone(&self.day_offset)

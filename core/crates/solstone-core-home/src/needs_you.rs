@@ -56,17 +56,21 @@ pub fn needs_dedup_key(item: &Value) -> String {
 pub fn format_degraded_capture_line(capture: &Value) -> Option<String> {
     (capture.is_object() && capture.get("status").and_then(Value::as_str) == Some("degraded")).then(
         || {
-            let failing = failing_client_names(capture);
-            match (failing.as_slice(), named_attention_sources(capture)) {
-                ([name], _) => format!("{name} isn't reaching your journal."),
-                (names, _) if names.len() > 1 => format!(
-                    "{} devices aren't reaching your journal: {}.",
-                    names.len(),
-                    names.join(", ")
+            let (count, labels, named) = failing_clients(capture);
+            match (count, labels.as_slice(), named_attention_sources(capture)) {
+                (1, [label], _) => format!("{label} isn't reaching your journal."),
+                // Nameless devices are counted, never listed: "an unnamed
+                // device, an unnamed device" told the owner nothing twice.
+                (many, _, _) if many > 1 && !named => {
+                    format!("{many} devices aren't reaching your journal.")
+                }
+                (many, labels, _) if many > 1 => format!(
+                    "{many} devices aren't reaching your journal: {}.",
+                    labels.join(", ")
                 ),
                 // Nothing here names a device. The sources it is refusing are
                 // still more than "something is wrong", so they keep the line.
-                (_, Some(sources)) => format!(
+                (_, _, Some(sources)) => format!(
                     "the solstone app on one of your devices is having trouble adding {sources} to your journal."
                 ),
                 _ => "a device isn't reaching your journal.".to_owned(),
@@ -75,31 +79,66 @@ pub fn format_degraded_capture_line(capture: &Value) -> Option<String> {
     )
 }
 
-/// The devices whose deliveries are being refused, named the way health names
-/// them. A device with no name of its own is still one of the devices the
-/// sentence is about, so it counts even though it cannot be listed.
-fn failing_client_names(capture: &Value) -> Vec<String> {
-    capture
+/// Rewritten so the caller can count the devices separately from the labels it
+/// can print: a run of nameless devices is one label and several devices.
+fn failing_clients(capture: &Value) -> (usize, Vec<String>, bool) {
+    let labels = failing_client_names(capture);
+    let count = capture
         .get("clients")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter(|client| {
-            client.get("status").and_then(Value::as_str) == Some("degraded")
-                || client
-                    .get("ingest_rejection")
-                    .is_some_and(|value| !value.is_null())
-        })
-        .map(|client| {
+        .filter(|client| client.get("failing").and_then(Value::as_bool) == Some(true))
+        .count();
+    let named = labels
+        .iter()
+        .any(|label| !label.ends_with("unnamed device") && !label.ends_with("unnamed devices"));
+    (count, labels, named)
+}
+
+/// The devices whose deliveries are being refused, named the way health names
+/// them: the same `failing` flag, in the same quietest-first order, so the two
+/// surfaces name the same devices in the same sequence (F-8). A device with no
+/// name of its own is still one of the devices the sentence is about, so it
+/// counts even though it cannot be listed; several of them collapse into one
+/// count rather than repeating "an unnamed device, an unnamed device".
+fn failing_client_names(capture: &Value) -> Vec<String> {
+    let mut failing = capture
+        .get("clients")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|client| client.get("failing").and_then(Value::as_bool) == Some(true))
+        .collect::<Vec<_>>();
+    // health's byQuietestFirst: longest since its last capture comes first, and
+    // a device with no elapsed reading sorts last.
+    failing.sort_by_key(|client| {
+        std::cmp::Reverse(
             client
-                .get("name")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|name| !name.is_empty())
-                .unwrap_or("an unnamed device")
-                .to_owned()
-        })
-        .collect()
+                .get("capture_elapsed_ms")
+                .and_then(Value::as_i64)
+                .unwrap_or(-1),
+        )
+    });
+    let mut names = Vec::new();
+    let mut unnamed = 0usize;
+    for client in failing {
+        match client
+            .get("name")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+        {
+            Some(name) => names.push(name.to_owned()),
+            None => unnamed += 1,
+        }
+    }
+    match unnamed {
+        0 => {}
+        1 => names.push("an unnamed device".to_owned()),
+        many => names.push(format!("{many} unnamed devices")),
+    }
+    names
 }
 
 pub(crate) fn source_display_name(source: &str) -> &str {
@@ -203,29 +242,64 @@ mod tests {
         assert_eq!(
             format_degraded_capture_line(&json!({
                 "status": "degraded",
-                "clients": [{"name": "iPhone's iPhone", "status": "degraded"}]
+                "clients": [{"name": "iPhone's iPhone", "failing": true}]
             }))
             .as_deref(),
             Some("iPhone's iPhone isn't reaching your journal.")
         );
+        // F-8: quietest first, the order health's byQuietestFirst produces.
         assert_eq!(
             format_degraded_capture_line(&json!({
                 "status": "degraded",
                 "clients": [
-                    {"name": "suze", "status": "degraded"},
-                    {"name": "iPhone's iPhone", "ingest_rejection": {"active_count": 1}}
+                    {"name": "iPhone's iPhone", "failing": true, "capture_elapsed_ms": 60_000},
+                    {"name": "suze", "failing": true, "capture_elapsed_ms": 3_600_000}
                 ]
             }))
             .as_deref(),
             Some("2 devices aren't reaching your journal: suze, iPhone's iPhone.")
         );
+        // F-8: an old rejection on a device health does not call failing is not
+        // a second failing device. Neither surface names it, or both do.
         assert_eq!(
             format_degraded_capture_line(&json!({
                 "status": "degraded",
-                "clients": [{"status": "degraded"}]
+                "clients": [
+                    {"name": "suze", "failing": true},
+                    {"name": "iPhone's iPhone", "failing": false, "ingest_rejection": {"active_count": 1}}
+                ]
+            }))
+            .as_deref(),
+            Some("suze isn't reaching your journal.")
+        );
+        assert_eq!(
+            format_degraded_capture_line(&json!({
+                "status": "degraded",
+                "clients": [{"failing": true}]
             }))
             .as_deref(),
             Some("an unnamed device isn't reaching your journal.")
+        );
+        // F-8: several nameless devices are a count, not the same phrase twice.
+        assert_eq!(
+            format_degraded_capture_line(&json!({
+                "status": "degraded",
+                "clients": [{"failing": true}, {"failing": true}, {"failing": true}]
+            }))
+            .as_deref(),
+            Some("3 devices aren't reaching your journal.")
+        );
+        assert_eq!(
+            format_degraded_capture_line(&json!({
+                "status": "degraded",
+                "clients": [
+                    {"name": "suze", "failing": true},
+                    {"failing": true},
+                    {"failing": true}
+                ]
+            }))
+            .as_deref(),
+            Some("3 devices aren't reaching your journal: suze, 2 unnamed devices.")
         );
         assert_eq!(
             format_degraded_capture_line(&json!({"status": "active"})),

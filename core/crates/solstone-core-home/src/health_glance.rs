@@ -454,7 +454,9 @@ mod tests {
     }
 
     fn client(name: &str, status: &str, reach: &str) -> Value {
-        json!({"name": name, "status": status, "reach": reach})
+        // `failing` is what home_client_row emits and what both surfaces read,
+        // so the fixture carries it rather than restating the rule (F-8).
+        json!({"name": name, "status": status, "reach": reach, "failing": status == "degraded"})
     }
 
     /// The burn-in capture: home's headline counted issues while the line
