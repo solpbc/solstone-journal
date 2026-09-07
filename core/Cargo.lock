@@ -5605,7 +5605,7 @@ dependencies = [
 [[package]]
 name = "spl-core"
 version = "0.1.0"
-source = "git+https://github.com/solpbc/spl-rust?tag=v0.5.0#d64f8a1e2d5b5489183b1d95e178d840ad27cac1"
+source = "git+https://github.com/solpbc/spl-rust?tag=v0.6.1#3382a20154b8dbb0276b71d11e09351694c49de7"
 dependencies = [
  "base64 0.22.1",
  "hkdf",
@@ -5619,7 +5619,7 @@ dependencies = [
 [[package]]
 name = "spl-home"
 version = "0.1.0"
-source = "git+https://github.com/solpbc/spl-rust?tag=v0.5.0#d64f8a1e2d5b5489183b1d95e178d840ad27cac1"
+source = "git+https://github.com/solpbc/spl-rust?tag=v0.6.1#3382a20154b8dbb0276b71d11e09351694c49de7"
 dependencies = [
  "rustls",
  "spl-core",
@@ -5631,7 +5631,7 @@ dependencies = [
 [[package]]
 name = "spl-transport"
 version = "0.1.0"
-source = "git+https://github.com/solpbc/spl-rust?tag=v0.5.0#d64f8a1e2d5b5489183b1d95e178d840ad27cac1"
+source = "git+https://github.com/solpbc/spl-rust?tag=v0.6.1#3382a20154b8dbb0276b71d11e09351694c49de7"
 dependencies = [
  "base64 0.22.1",
  "futures-util",
@@ -5641,6 +5641,7 @@ dependencies = [
  "serde",
  "serde_json",
  "spl-core",
+ "spl-home",
  "thiserror 2.0.20",
  "tokio",
  "tokio-rustls",

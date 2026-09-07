@@ -1092,6 +1092,8 @@ fn pairing_error_text(error: LinkJoinPairingError) -> String {
         }
         kind @ (LinkJoinPairingErrorKind::Io
         | LinkJoinPairingErrorKind::Tls
+        | LinkJoinPairingErrorKind::TlsAccessDenied
+        | LinkJoinPairingErrorKind::TlsCertificateUnknown
         | LinkJoinPairingErrorKind::Crypto
         | LinkJoinPairingErrorKind::Mux
         | LinkJoinPairingErrorKind::Http
@@ -1147,7 +1149,7 @@ fn serve_transport_error_text(kind: LinkServeTransportErrorKind) -> String {
         LinkServeTransportErrorKind::Io => {
             "Link transport I/O failed while serving. Check that the journal is reachable on LAN/VPN or relay, then retry.".to_string()
         }
-        LinkServeTransportErrorKind::Tls => {
+        LinkServeTransportErrorKind::Tls | LinkServeTransportErrorKind::TlsAccessDenied | LinkServeTransportErrorKind::TlsCertificateUnknown => {
             "Secure link handshake failed. Re-run solstone link join if the journal certificate or pairing changed.".to_string()
         }
         LinkServeTransportErrorKind::Crypto => {
@@ -1237,6 +1239,8 @@ fn transport_error_code(kind: LinkJoinPairingErrorKind) -> &'static str {
     match kind {
         LinkJoinPairingErrorKind::Io => "io",
         LinkJoinPairingErrorKind::Tls => "tls",
+        LinkJoinPairingErrorKind::TlsAccessDenied => "tls-access-denied",
+        LinkJoinPairingErrorKind::TlsCertificateUnknown => "tls-certificate-unknown",
         LinkJoinPairingErrorKind::Crypto => "crypto",
         LinkJoinPairingErrorKind::Mux => "mux",
         LinkJoinPairingErrorKind::Http => "http",
@@ -2159,6 +2163,8 @@ mod tests {
         let kinds = [
             LinkServeTransportErrorKind::Io,
             LinkServeTransportErrorKind::Tls,
+            LinkServeTransportErrorKind::TlsAccessDenied,
+            LinkServeTransportErrorKind::TlsCertificateUnknown,
             LinkServeTransportErrorKind::Crypto,
             LinkServeTransportErrorKind::Mux,
             LinkServeTransportErrorKind::Http,
@@ -2582,6 +2588,8 @@ mod tests {
         let mut kinds = vec![
             LinkJoinPairingErrorKind::Io,
             LinkJoinPairingErrorKind::Tls,
+            LinkJoinPairingErrorKind::TlsAccessDenied,
+            LinkJoinPairingErrorKind::TlsCertificateUnknown,
             LinkJoinPairingErrorKind::Crypto,
             LinkJoinPairingErrorKind::Mux,
             LinkJoinPairingErrorKind::Http,

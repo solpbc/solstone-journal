@@ -79,6 +79,8 @@ pub enum LinkJoinRelayControlEndpoint {
 pub enum LinkJoinPairingErrorKind {
     Io,
     Tls,
+    TlsAccessDenied,
+    TlsCertificateUnknown,
     Crypto,
     Mux,
     Http,
@@ -264,6 +266,8 @@ pub enum LinkServeRelayControlEndpoint {
 pub enum LinkServeTransportErrorKind {
     Io,
     Tls,
+    TlsAccessDenied,
+    TlsCertificateUnknown,
     Crypto,
     Mux,
     Http,

@@ -232,6 +232,8 @@ fn map_transport_error(error: TransportError) -> LinkJoinPairingError {
             drop(message);
             LinkJoinPairingErrorKind::Tls
         }
+        TransportError::TlsAccessDenied => LinkJoinPairingErrorKind::TlsAccessDenied,
+        TransportError::TlsCertificateUnknown => LinkJoinPairingErrorKind::TlsCertificateUnknown,
         TransportError::Crypto(message) => {
             drop(message);
             LinkJoinPairingErrorKind::Crypto
@@ -288,6 +290,10 @@ fn map_relay_error(error: RelayError) -> LinkJoinRelayErrorKind {
         RelayError::Abnormal => LinkJoinRelayErrorKind::Abnormal,
         RelayError::UpgradeRejected => LinkJoinRelayErrorKind::UpgradeRejected,
         RelayError::Stalled => LinkJoinRelayErrorKind::Stalled,
+        RelayError::HomeListenConnection => LinkJoinRelayErrorKind::Abnormal,
+        RelayError::HomeRelayConfiguration | RelayError::HomeTunnelRejected(_) => {
+            LinkJoinRelayErrorKind::UpgradeRejected
+        }
     }
 }
 

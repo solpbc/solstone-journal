@@ -769,6 +769,8 @@ fn map_transport_error_ref(error: &TransportError) -> LinkServeTransportErrorKin
     match error {
         TransportError::Io(_) => LinkServeTransportErrorKind::Io,
         TransportError::Tls(_) => LinkServeTransportErrorKind::Tls,
+        TransportError::TlsAccessDenied => LinkServeTransportErrorKind::TlsAccessDenied,
+        TransportError::TlsCertificateUnknown => LinkServeTransportErrorKind::TlsCertificateUnknown,
         TransportError::Crypto(_) => LinkServeTransportErrorKind::Crypto,
         TransportError::Mux(_) => LinkServeTransportErrorKind::Mux,
         TransportError::Http(_) => LinkServeTransportErrorKind::Http,
@@ -802,6 +804,10 @@ fn map_relay_error(error: RelayError) -> LinkServeRelayErrorKind {
         RelayError::Abnormal => LinkServeRelayErrorKind::Abnormal,
         RelayError::UpgradeRejected => LinkServeRelayErrorKind::UpgradeRejected,
         RelayError::Stalled => LinkServeRelayErrorKind::Stalled,
+        RelayError::HomeListenConnection => LinkServeRelayErrorKind::Abnormal,
+        RelayError::HomeRelayConfiguration | RelayError::HomeTunnelRejected(_) => {
+            LinkServeRelayErrorKind::UpgradeRejected
+        }
     }
 }
 
@@ -816,6 +822,8 @@ fn serve_reason_code(kind: &LinkServeTransportErrorKind) -> &'static str {
     match kind {
         LinkServeTransportErrorKind::Io => "io",
         LinkServeTransportErrorKind::Tls => "tls",
+        LinkServeTransportErrorKind::TlsAccessDenied => "tls-access-denied",
+        LinkServeTransportErrorKind::TlsCertificateUnknown => "tls-certificate-unknown",
         LinkServeTransportErrorKind::Crypto => "crypto",
         LinkServeTransportErrorKind::Mux => "mux",
         LinkServeTransportErrorKind::Http => "http",
@@ -976,6 +984,7 @@ mod tests {
             contacted: false,
             carrier_live,
             active_requests: 0,
+            terminal_reason: None,
         }
     }
 
