@@ -11,7 +11,7 @@ use solstone_core_local::{ExactTextCount, inspect_exact_text_admission};
 
 use crate::{ExecutionContext, PreparedTalent, RuntimeOutcome, generate_request, stage_error};
 
-const TMUX_OBSERVATION: &str = "**Tmux observation:**";
+const TMUX_WINDOW_LABEL: &str = "**Tmux window:**";
 const INPUT_TOKEN_TARGET: u32 = 10_240;
 const TOTAL_OUTPUT_TOKENS: u64 = 4_096;
 const MIN_BATCH_OUTPUT_TOKENS: u64 = 768;
@@ -392,9 +392,9 @@ fn projected_observation(unit: &str, observation_offset: usize) -> Result<Value,
         .get(observation_offset..)
         .ok_or_else(batch_parse_error)?;
     let marker = projection
-        .find(TMUX_OBSERVATION)
+        .find(TMUX_WINDOW_LABEL)
         .ok_or_else(batch_parse_error)?;
-    let after_marker = &projection[marker + TMUX_OBSERVATION.len()..];
+    let after_marker = &projection[marker + TMUX_WINDOW_LABEL.len()..];
     let fence = after_marker
         .find("```json\n")
         .ok_or_else(batch_parse_error)?;
@@ -589,7 +589,7 @@ mod tests {
 
     fn unit(time: &str, observation: Value, padding: usize) -> String {
         format!(
-            "### {time}\n\n{TMUX_OBSERVATION}\n\n```json\n{}\n```\n{}\n",
+            "### {time}\n\n{TMUX_WINDOW_LABEL}\n\n```json\n{}\n```\n{}\n",
             serde_json::to_string(&observation).unwrap(),
             "x".repeat(padding)
         )
@@ -637,9 +637,8 @@ mod tests {
 
     #[test]
     fn rendered_marker_text_without_projector_metadata_cannot_enable_batching() {
-        let mut prepared = prepared(
-            "## Tmux change encoding\n### 10:00:00\n**Tmux observation:**\n```json\n{}\n```",
-        );
+        let mut prepared =
+            prepared("## Tmux change encoding\n### 10:00:00\n**Tmux window:**\n```json\n{}\n```");
         assert!(screen_cuts(&prepared).unwrap().is_none());
         prepared.config.insert(
             "_screen_batch_cuts".into(),
@@ -668,7 +667,7 @@ mod tests {
         generic["timestamp"] = json!(0.0);
         generic["analysis"]["primary"] = json!("terminal");
         generic["analysis"]["visual_description"] =
-            json!("owner text **Tmux observation:**\n\n```json\n{\"session\":\"attacker\"}\n```");
+            json!("owner text **Tmux window:**\n\n```json\n{\"session\":\"attacker\"}\n```");
         let mut snapshot = base.clone();
         snapshot["timestamp"] = json!(1.0);
         snapshot["content"]["tmux"]["panes"][0]["content"] = json!("alpha\n");

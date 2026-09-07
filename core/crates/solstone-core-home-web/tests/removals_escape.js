@@ -93,8 +93,20 @@ function copyTable(source) {
   }));
 }
 
+// The stream label comes from the one shared formatter, not a second copy of
+// its rule here: this restated the old strip-the-punctuation transform and went
+// stale the moment the formatter learned to parse the key (G1-203 / S-1).
+const FORMAT = (() => {
+  const host = {};
+  vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, '../../solstone-core-convey-shell/assets/static/date_format.js'), 'utf8'),
+    { window: host },
+  );
+  return host.JournalFormat;
+})();
+
 function rendered(copy, key, values) {
-  values = { ...values, ...(values.date ? { date: 'Thu Jan 1' } : {}), ...(values.stream ? { stream: values.stream.replace(/[._-]+/g, ' ').trim() } : {}) };
+  values = { ...values, ...(values.date ? { date: 'Thu Jan 1' } : {}), ...(values.stream ? { stream: FORMAT.stream(values.stream) } : {}) };
   return copy[key].replace(/\{([^}]+)\}/g, (_, name) => String(values[name] ?? ''));
 }
 
@@ -665,7 +677,10 @@ async function main() {
     for (const key of ['row.origin_policy_one', 'row.origin_policy_many', 'row.kept_one', 'row.kept_many']) {
       assert(!article.includes(copy[key]), `row ${id} must not repeat ${key}`);
     }
-    assert(article.includes('data-removal-identity>'), `row ${id} still states its date and stream`);
+    assert(article.includes('data-removal-identity'), `row ${id} still states its date and stream`);
+    // G1-203: the label names the source the way the owner says it, so the
+    // exact stream key rides in the title where the decision can be checked.
+    assert(article.includes('title="kitchen-mic"'), `row ${id} carries its exact stream key`);
     assert(
       article.includes(rendered(copy, 'row.what_many', { n: 2, size: '2 B' })),
       `row ${id} still states its count and size`

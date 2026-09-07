@@ -1492,9 +1492,9 @@ a.body-day-cell:focus-visible {
   function renderOverview(status) {
     const archive = asObject(status.archive);
     if (!archive.coverage) {
-      // Nothing imported yet: the hero plus the one action is the whole
-      // page — no record card, quick actions, day grid or coverage lists
-      // to render around a message that says there's nothing here.
+      // Nothing imported yet: the hero plus the one line is the whole page —
+      // no record card, quick actions, day grid or coverage lists to render
+      // around a message that says there's nothing here.
       // The second line used to restate the subtitle ("body imports will
       // appear here") and named no source, so the owner had to leave for
       // Import to learn whether their ring or their phone was supported
@@ -1502,9 +1502,15 @@ a.body-day-cell:focus-visible {
       // product has: `BodySourceFamily` in solstone-core-body-source admits
       // exactly those, and sleep, heart rate and activity all have real
       // ingest arms on both.
+      // The line used to end in an "import body data" link to /app/import/,
+      // whose catalog has no Apple Health and no Oura card — body ingest is
+      // `solstone-core body apple` and `solstone-core body oura` today
+      // (solstone-core/src/main.rs `BodyCommand`, docs/health_imports.md),
+      // and nothing on that screen can do it. The link is gone and the route
+      // that exists is named instead. S-8.
       return html([
         renderHeader("body", "your body, brought into your journal.", false),
-        '<p class="body-subtitle">nothing here yet. bring in sleep, heart rate and activity from Oura or Apple Health. <a class="body-link" href="/app/import/">import body data &rarr;</a></p>',
+        '<p class="body-subtitle">nothing here yet. bring in sleep, heart rate and activity from Oura or Apple Health. that runs from the command line for now, with <code class="body-code">solstone-core body apple</code> or <code class="body-code">solstone-core body oura</code>.</p>',
       ]);
     }
     return html([
@@ -1567,13 +1573,13 @@ a.body-day-cell:focus-visible {
     const nearest = asObject(bodyDay.nearest);
     return html([
       '<section class="body-card" aria-label="Empty day">',
-      '<p class="body-empty">no body data for this day.</p>',
+      '<p class="body-empty">nothing for this day. bring in sleep, heart rate and activity from Oura or Apple Health.</p>',
       (nearest.prev || nearest.next) ? html([
         '<p>nearby days with data: ',
         nearest.prev ? `<a class="body-link" href="${bodyDayHref(nearest.prev)}">&larr; ${escapeHtml(nearest.prev_label)}</a> ` : "",
         nearest.next ? `<a class="body-link" href="${bodyDayHref(nearest.next)}">${escapeHtml(nearest.next_label)} &rarr;</a>` : "",
         '</p>',
-      ]) : '<p class="body-muted">body imports will appear here. <a class="body-link" href="/app/body/">body overview →</a></p>',
+      ]) : '<p class="body-muted"><a class="body-link" href="/app/body/">body overview →</a></p>',
       '</section>',
     ]);
   }

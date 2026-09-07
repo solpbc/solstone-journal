@@ -363,10 +363,17 @@ async function main() {
   assert.strictEqual(format.segmentTime('125903_60'), '12:59:03');
   assert.strictEqual(format.segmentTime('246099_60'), 'time unavailable');
   assert.strictEqual(format.duration(59.6), '1 min 0 sec');
+  assert.strictEqual(format.duration(3599), '59 min 59 sec');
+  assert.strictEqual(format.duration(3600), '1 hr 0 min');
+  assert.strictEqual(format.duration(119700), '33 hr 15 min');
   assert.strictEqual(format.compactTokens(999500), '1M');
   assert.strictEqual(format.compactTokens(12000), '12K');
   assert.strictEqual(format.timestamp(null), 'time unavailable');
-  assert.strictEqual(format.stream('import.chatgpt'), 'import chatgpt');
+  assert.strictEqual(format.stream('import.chatgpt'), 'chatgpt import');
+  assert.strictEqual(format.stream('device.watch.audio'), 'watch audio');
+  assert.strictEqual(format.stream('device.omi.audio'), 'omi audio');
+  assert.strictEqual(format.stream('ja1r'), 'ja1r');
+  assert.strictEqual(format.stream('_default'), 'default');
   const thinking = window.__thinkingRuns;
   assert(thinking, 'test exports present');
   assert.strictEqual(source.includes('window.selectedFacet'), false, 'Thinking does not read the shared selected facet');
@@ -1004,8 +1011,8 @@ async function main() {
   );
   assert.deepStrictEqual(
     columnValues(inFlightTable, 'provider'),
-    ['local', 'local', 'Claude', 'GPT'],
-    'third-party brands keep their case and the local lane stays lowercase',
+    ['local', 'local', 'Anthropic', 'OpenAI'],
+    'the provider column names the provider, not the model, and the local lane stays lowercase',
   );
 
   // Prior G2-46 partial + X-04. One run still in flight is enough to make a
@@ -1067,7 +1074,7 @@ async function main() {
   const facetHost = nodes.get('thinkingRunsContent');
   assert.deepStrictEqual(
     byTag(facetHost, 'p').map((child) => child.textContent),
-    ['no runs in this facet on this day', '6 runs ran on this day, none in work life.'],
+    ['no runs in this facet on this day', '6 runs on this day, none in work life.'],
     'picking a facet says what the filter did, not that the day had no runs',
   );
   const facetReset = byTag(facetHost, 'button').filter((child) => child.textContent === 'show all facets');

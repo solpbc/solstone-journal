@@ -219,7 +219,7 @@ mod tests {
         let (failed, _) = failed
             .split_once("function markedRows()")
             .expect("failed renderer end");
-        assert!(failed.contains("identity(identityText(row))"));
+        assert!(failed.contains("identity(identityText(row), row)"));
         assert!(failed.contains("copy(\"failed.badge\")"));
         assert!(failed.contains("copy(\"failed.body\""));
         assert!(!failed.contains("row.what") && !failed.contains("row.origin_"));

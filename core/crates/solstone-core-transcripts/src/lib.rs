@@ -1075,8 +1075,8 @@ mod tests {
         assert!(generic.0.contains("Terminal session 'main'"));
         assert!(generic.0.contains("@8"));
         assert!(generic.0.contains("\\u001b[31m"));
-        assert!(!generic.0.contains("**Tmux observation:**"));
-        assert!(screen.0.contains("**Tmux observation:**"));
+        assert!(!generic.0.contains("**Tmux window:**"));
+        assert!(screen.0.contains("**Tmux window:**"));
         assert!(screen.0.contains("RED café"));
         assert!(!screen.0.contains("Terminal session 'main'"));
         assert!(!screen.0.contains("@8"));

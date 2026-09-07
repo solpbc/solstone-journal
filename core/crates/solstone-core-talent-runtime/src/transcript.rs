@@ -152,7 +152,7 @@ mod tests {
         let screen = load_transcript(journal.path(), &config("screen")).unwrap();
         let participation = load_transcript(journal.path(), &config("participation")).unwrap();
 
-        assert!(screen.text.contains("**Tmux observation:**"));
+        assert!(screen.text.contains("**Tmux window:**"));
         assert!(screen.text.contains("## Tmux change encoding"));
         assert!(screen.text.contains("zero-based `start_line`"));
         assert!(!screen.text.contains("Terminal session 'main'"));
@@ -165,7 +165,7 @@ mod tests {
         assert!(screen.text[cut.observation_byte_offset..].starts_with("### 10:21:59"));
 
         assert!(participation.text.contains("Terminal session 'main'"));
-        assert!(!participation.text.contains("**Tmux observation:**"));
+        assert!(!participation.text.contains("**Tmux window:**"));
         assert!(!participation.text.contains("## Tmux change encoding"));
         assert!(participation.screen_cuts.is_empty());
     }

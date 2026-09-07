@@ -825,6 +825,21 @@
   line-height: 1.5;
 }
 
+/* The day view reads; the overview looks. This link is the whole bridge, so
+   it is a real touch target at every width. S-9. */
+.spk-discovery-overview {
+  margin: 0;
+}
+
+.spk-discovery-overview-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--orange-text-aa);
+}
+
 .spk-discovery-clusters {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -1354,6 +1369,7 @@
   const escapeHtml = (value) => window.AppServices.escapeHtml(value);
   const pluralize = (count, singular, plural = `${singular}s`) => (count === 1 ? singular : plural);
   const PLACEHOLDER_SPEAKER_NAME = /^speaker\s+\d+$/i;
+  const DAY_DISCOVERY_LOAD_ERROR = "couldn't load new voices right now.";
   const isPlaceholderSpeakerName = (name) => PLACEHOLDER_SPEAKER_NAME.test(String(name || '').trim());
   const initialEmptyIcon = document.getElementById('spkInitialEmptyIcon');
   if (initialEmptyIcon) {
@@ -2434,21 +2450,25 @@
       });
   }
 
+  // X-11 sibling (S-9): opening a day used to chain a discovery scan POST off
+  // this cache read, so a read started a write. Looking for new voices is an
+  // owner action and it lives on the overview, which carries the control; the
+  // day view reads the cached result and points at that action.
   function checkDiscovery(options) {
     const throwOnError = Boolean(options?.throwOnError);
     const requestSeq = dayDiscoveryRequestSeq + 1;
     dayDiscoveryRequestSeq = requestSeq;
     discoveryBanner.style.display = 'block';
-    discoveryBanner.innerHTML = '<div class="spk-discovery-panel"><div class="spk-discovery-title"><span class="spk-spinner"></span> Discovering new voices…</div></div>';
+    discoveryBanner.innerHTML = '<div class="spk-discovery-panel"><div class="spk-discovery-title"><span class="spk-spinner"></span> loading new voices…</div></div>';
     return window.apiJson('/app/speakers/api/discovery/cache', { cache: 'no-store' })
       .then(data => {
         if (requestSeq !== dayDiscoveryRequestSeq) return false;
         renderDiscoveryPayload(data);
-        return refreshDayDiscoveryScan({ requestSeq, throwOnError });
+        return true;
       })
       .catch((err) => {
         if (requestSeq !== dayDiscoveryRequestSeq) return false;
-        dayDiscoveryNotice = dayDiscoveryErrorNotice();
+        dayDiscoveryNotice = dayDiscoveryLoadErrorNotice();
         renderDayDiscoveryBanner();
         if (throwOnError) throw err;
         return false;
@@ -2460,65 +2480,18 @@
     renderDayDiscoveryBanner();
   }
 
-  function refreshDayDiscoveryScan({ requestSeq, throwOnError } = {}) {
-    const activeSeq = requestSeq || dayDiscoveryRequestSeq + 1;
-    dayDiscoveryRequestSeq = activeSeq;
-    return window.apiJson('/app/speakers/api/discovery/scan', { method: 'POST' })
-      .then(data => {
-        if (activeSeq !== dayDiscoveryRequestSeq) return false;
-        dayDiscoveryClusters = discoveryRefreshClusters(data, dayDiscoveryClusters);
-        dayDiscoveryNotice = discoveryNoticeFromScan(data, SPK_COPY);
-        renderDayDiscoveryBanner();
-        return true;
-      })
-      .catch((err) => {
-        if (activeSeq !== dayDiscoveryRequestSeq) return false;
-        dayDiscoveryNotice = dayDiscoveryErrorNotice();
-        renderDayDiscoveryBanner();
-        if (throwOnError) throw err;
-        return false;
-      });
-  }
-
   function discoveryClusters(data) {
     return Array.isArray(data?.clusters) ? data.clusters : [];
   }
 
-  function discoveryRefreshClusters(data, currentClusters) {
-    const clusters = discoveryClusters(data);
-    if (data?.status === 'degraded' && !clusters.length && currentClusters.length) {
-      return currentClusters;
-    }
-    return clusters;
-  }
-
-  function discoveryIssueCount(issue) {
-    const count = Number(issue?.count || 0);
-    return Number.isFinite(count) ? count : 0;
-  }
-
-  function discoveryIssueMessage(issue, copy) {
-    const count = discoveryIssueCount(issue);
-    if (count > 0 && copy.SPK_DISCOVERY_DEGRADED_TEMPLATE) {
-      return copy.SPK_DISCOVERY_DEGRADED_TEMPLATE.replace('{count}', String(count));
-    }
-    return issue?.message || (copy.SPK_DISCOVERY_DEGRADED_TEMPLATE || '').replace('{count}', String(count));
-  }
-
-  function discoveryNoticeFromScan(data, copy) {
-    const issues = Array.isArray(data?.issues) ? data.issues : [];
-    if (data?.status !== 'degraded' || !issues.length) return null;
-    return {
-      type: 'degraded',
-      messages: issues.map((issue) => discoveryIssueMessage(issue, copy)).filter(Boolean),
-      retry: false,
-    };
-  }
-
-  function dayDiscoveryErrorNotice() {
+  // The day view only ever reads, so the one failure it can report is a failed
+  // read, and its recovery is to read again. The scan's own failure copy
+  // (SPK_DISCOVERY_ERROR) belongs to the overview, which is where scanning
+  // happens. S-9.
+  function dayDiscoveryLoadErrorNotice() {
     return {
       type: 'error',
-      messages: [SPK_COPY.SPK_DISCOVERY_ERROR || ''],
+      messages: [DAY_DISCOVERY_LOAD_ERROR],
       retry: true,
     };
   }
@@ -2560,6 +2533,7 @@
           <div class="spk-discovery-copy">
             ${clusters.length} recurring voice pattern${clusters.length > 1 ? 's' : ''} ${clusters.length > 1 ? "don't" : "doesn't"} match anyone you've named. listen to a few samples and name them.
           </div>
+          <p class="spk-discovery-overview"><a class="spk-discovery-overview-link" href="/app/speakers/#spkNewVoicesSection">look for new voices</a></p>
           <div class="spk-discovery-clusters">
             ${clusters.map(cluster => `
               <div class="spk-discovery-cluster" data-cluster-id="${escapeHtml(cluster.cluster_id)}">
@@ -2593,7 +2567,7 @@
       }
     });
     document.getElementById('spkDayDiscoveryRetry')?.addEventListener('click', () => {
-      refreshDayDiscoveryScan({ requestSeq: dayDiscoveryRequestSeq + 1, throwOnError: false });
+      checkDiscovery({ throwOnError: false });
     });
     document.getElementById('spkDayDiscoveryDismiss')?.addEventListener('click', () => {
       dayDiscoveryNotice = null;
@@ -3966,7 +3940,7 @@
   let discoveryClustersById = new Map();
   const DISCOVERY_SCAN_LABEL = 'look for new voices';
   const DISCOVERY_SCAN_RUNNING = 'looking for new voices…';
-  const DISCOVERY_EMPTY = 'no new voices are waiting. look for new voices to check again.';
+  const DISCOVERY_EMPTY = 'no new voices are waiting. check again any time.';
   const DISCOVERY_LOAD_ERROR = "couldn't load new voices right now.";
   let lastKnownData = null;
   let discoveryScanRunning = false;
@@ -4195,7 +4169,14 @@
     statements.filter(([, value]) => value > 0).forEach(([label, value]) => {
       lines.push(qualityLine(label, value, total));
     });
-    segments.filter(([, value]) => value > 0).forEach(([label, value]) => {
+    // The "across N statements" line above is the statement buckets' own
+    // denominator; without a lead-in of their own the two segment buckets read
+    // as sharing it, and they count a different thing. S-12.
+    const liveSegments = segments.filter(([, value]) => value > 0);
+    if (liveSegments.length) {
+      lines.push('<p class="spk-overview-muted">counted in segments</p>');
+    }
+    liveSegments.forEach(([label, value]) => {
       lines.push(qualityLine(label, value, 0));
     });
     const empty = statements.concat(segments).filter(([, value]) => value === 0);
@@ -4312,7 +4293,7 @@
       const href = `/app/speakers/${TODAY}?speaker=${encodeURIComponent(speaker.entity_id)}`;
       return `
         <a class="spk-known-card" href="${href}">
-          <h3 class="spk-card-title">${escapeHtml(speaker.name || 'unlabeled voice')}</h3>
+          <h3 class="spk-card-title">${escapeHtml(speaker.name || 'no name yet')}</h3>
           <p class="spk-card-line">${escapeHtml(String(speaker.embedding_count || 0))} ${escapeHtml(pluralize(speaker.embedding_count || 0, 'sample'))} · ${escapeHtml(String(speaker.segment_count || 0))} ${escapeHtml(pluralize(speaker.segment_count || 0, 'segment'))}</p>
           <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_CARD_LAST_HEARD_PREFIX)}: ${relativeTime(speaker.last_seen_ts)}</p>
           ${cohesion(speaker.intra_cosine_p25)}
@@ -4573,7 +4554,7 @@
     }
     const renderCluster = (cluster) => `
       <div class="spk-discovery-card" data-cluster-id="${escapeHtml(cluster.cluster_id)}">
-        <h3 class="spk-card-title">${escapeHtml(cluster.suggested_name || 'unlabeled voice')}</h3>
+        <h3 class="spk-card-title">${escapeHtml(cluster.suggested_name || 'not yet named')}</h3>
         <p class="spk-card-line">${escapeHtml(String(cluster.size || cluster.count || 0))} ${escapeHtml(pluralize(cluster.size || cluster.count || 0, 'sample'))}</p>
         <div class="spk-discovery-actions">
           <button type="button" class="spk-overview-btn spk-who-trigger" aria-haspopup="dialog" aria-expanded="false">${escapeHtml(COPY.SPK_ACTION_WHO_IS_THIS || '')}</button>
@@ -4586,7 +4567,7 @@
     // G1-206: paired with the known-voices disclosure above, which holds the
     // voices that already carry a placeholder name.
     discoveryContainer.innerHTML = named.map(renderCluster).join('') + (unnamed.length
-      ? `<details ${wasOpen ? 'open' : ''}><summary>voices heard but not yet named (${unnamed.length})</summary>${unnamed.map(renderCluster).join('')}</details>` : '');
+      ? `<details ${wasOpen ? 'open' : ''}><summary>voices without a name yet (${unnamed.length})</summary>${unnamed.map(renderCluster).join('')}</details>` : '');
     discoveryContainer.querySelectorAll('.spk-discovery-card').forEach((card) => {
       const trigger = card.querySelector('.spk-who-trigger');
       const cluster = discoveryClustersById.get(card.dataset.clusterId);

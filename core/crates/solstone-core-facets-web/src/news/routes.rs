@@ -244,11 +244,12 @@ const HEADER_LABELS: [&str; 8] = [
 /// 2026") is the letter's own header scaffolding, not something to preview --
 /// skip it like a heading. `TL;DR` gets its own handling below (its sentence
 /// is kept, not dropped); this catches the rest of that "header colon space"
-/// shape. Only the header region is ever tested: `preview_from_content` stops
-/// at the first line long enough to be the preview, so a `Date:`-shaped line
-/// inside the body is never reached. A short line above the body (G1-212: a
-/// 22-character title) is remembered as a fallback and does not end the header
-/// region, which is what let a letter preview its own `Date:` header.
+/// shape. `preview_from_content` stops at the first line long enough to be the
+/// preview, so this is only asked about lines above that one: the header region
+/// of an ordinary letter, and further in for a letter whose lines are all too
+/// short. A short line above the body (G1-212: a 22-character title) is
+/// remembered as a fallback and does not stop that walk, which is what let a
+/// letter preview its own `Date:` header.
 fn is_metadata_line(line: &str) -> bool {
     match line.find(':') {
         Some(idx) if idx > 0 => {
