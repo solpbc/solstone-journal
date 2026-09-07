@@ -775,6 +775,29 @@ async function main() {
   thinking.state.runsFacet = '';
   thinking.state.runsFacetExplicit = false;
   thinking.state.runsFailuresOnly = false;
+
+  // A whitespace-only model id is truthy in the model column but trims to
+  // nothing for the sentence. The note must not lift a column it went on to
+  // say nothing about.
+  dayResponses.push(Promise.resolve({uses: [
+    {id: 'blank-1', name: 'blank', start: 1788662697014, status: 'completed', provider: 'local', model: '   '},
+    {id: 'blank-2', name: 'blank', start: 1788662697014, status: 'completed', provider: 'local', model: '   '},
+  ], facets: []}));
+  window.location.hash = '#runs/20260207';
+  thinking.routeThinkingHash('history');
+  await settle();
+  await settle();
+  const blankModelGroup = nodes.get('thinkingRunsContent').children[1].children[1];
+  assert.strictEqual(
+    blankModelGroup.children[2].textContent,
+    '2 blank runs completed.',
+    'a model id that is only whitespace is not named in the note',
+  );
+  assert.deepStrictEqual(
+    blankModelGroup.children[3].children[0].children[0].children.map((cell) => cell.textContent),
+    ['ran', 'model', 'provider', 'runtime', 'thinking events', 'tool calls', 'run log'],
+    'a column the note did not speak for is never lifted out of the table',
+  );
   const bulkRuns = [];
   for (let index = 0; index < 120; index += 1) {
     bulkRuns.push({
@@ -796,15 +819,144 @@ async function main() {
   assert.strictEqual(busyGroup.children[0].textContent, '120 runs \u00b7 1 failed', 'the group summary carries its counts');
   assert.strictEqual(busyGroup.open, false, 'a busy day collapses each talent group');
   assert.strictEqual(busyGroup.children[1].textContent, 'exact id: entities:detection', 'the exact talent id stays in the disclosure');
-  assert.strictEqual(busyGroup.children[2].children[0].children[0].children[0].textContent, 'ran', 'the run time column says when the run executed');
-  assert.strictEqual(busyGroup.children[2].children[1].children.length, 50, 'a group pages its runs 50 at a time');
+  // G2-46: one of these 120 runs failed, so the group is not uniform and gets
+  // no note. The status column stays because nothing else is carrying it;
+  // model and provider go because they are blank on every row.
+  assert.strictEqual(
+    busyGroup.children.filter((child) => child.classList.contains('thinking-runs-group-note')).length,
+    0,
+    'a group holding both a failure and completions gets no uniform-group note',
+  );
+  const busyTable = busyGroup.children[2];
+  assert.ok(busyTable.classList.contains('thinking-runs-table'), 'without a note the table follows the exact id directly');
+  assert.deepStrictEqual(
+    busyTable.children[0].children[0].children.map((cell) => cell.textContent),
+    ['ran', 'status', 'runtime', 'thinking events', 'tool calls', 'run log'],
+    'the run time column says when the run executed and the last column is headed for the control it holds',
+  );
+  assert.strictEqual(busyTable.children[1].children.length, 50, 'a group pages its runs 50 at a time');
   const showMore = busyGroup.children[busyGroup.children.length - 1];
   assert.strictEqual(showMore.textContent, 'show 50 more runs \u00b7 70 left', 'the group offers the next page');
   showMore.emit('click');
   const pagedGroup = nodes.get('thinkingRunsContent').children[1].children[1];
   assert.strictEqual(pagedGroup.children[2].children[1].children.length, 100, 'showing more extends the same group');
   assert.strictEqual(pagedGroup.open, true, 'showing more keeps the group open');
-  assert.strictEqual(nodes.get('thinkingRunsContent').children[2].children[1].children[2].children[1].children.length, 1, 'a small group still renders in full');
+  // G2-46: this group is uniform, so its note sits between the exact id and
+  // the table and the walk has to step over it.
+  const smallGroup = nodes.get('thinkingRunsContent').children[2].children[1];
+  assert.strictEqual(smallGroup.children[1].textContent, 'exact id: speaker_attribution', 'the small group keeps its exact id');
+  const smallNote = smallGroup.children[2];
+  assert.ok(smallNote.classList.contains('thinking-runs-group-note'), 'a uniform group says its shape once instead of repeating it per row');
+  assert.strictEqual(
+    smallNote.textContent,
+    '1 speaker attribution run completed.',
+    'the group note never names a model the run did not record',
+  );
+  const smallTable = smallGroup.children[3];
+  assert.ok(smallTable.classList.contains('thinking-runs-table'), 'the runs table follows the group note');
+  assert.deepStrictEqual(
+    smallTable.children[0].children[0].children.map((cell) => cell.textContent),
+    ['ran', 'runtime', 'thinking events', 'tool calls', 'run log'],
+    'the note lifts out the status column, and the blank model and provider columns are dropped',
+  );
+  assert.strictEqual(smallTable.children[1].children.length, 1, 'a small group still renders in full');
+
+  // G2-46: a group that is uniform on real values states them once, and only
+  // then do those columns leave the table.
+  dayResponses.push(Promise.resolve({uses: [
+    {id: 'pulse-1', name: 'pulse', start: 1788662697014, status: 'completed', provider: 'local', model: 'local/qwen3.5-4b', runtime_seconds: 20},
+    {id: 'pulse-2', name: 'pulse', start: 1788662697014, status: 'completed', provider: 'local', model: 'local/qwen3.5-4b', runtime_seconds: 20},
+    {id: 'brief-1', name: 'briefing', start: 1788662697014, status: 'completed', provider: 'local', model: null, runtime_seconds: null},
+    {id: 'brief-2', name: 'briefing', start: 1788662697014, status: 'completed', provider: 'local', model: null, runtime_seconds: null},
+    {id: 'part-1', name: 'partial', start: 1788662697014, status: 'completed', provider: 'local', model: 'local/qwen3.5-4b', runtime_seconds: 20},
+    {id: 'part-2', name: 'partial', start: 1788662697014, status: 'completed', provider: 'local', model: 'local/qwen3.5-4b', runtime_seconds: null},
+    {id: 'spread-1', name: 'spread', start: 1788662697014, status: 'completed', provider: 'local', model: 'local/qwen3.5-4b', runtime_seconds: 2},
+    {id: 'spread-2', name: 'spread', start: 1788662697014, status: 'completed', provider: 'local', model: 'local/qwen3.5-4b', runtime_seconds: 38},
+  ], facets: []}));
+  window.location.hash = '#runs/20260205';
+  thinking.routeThinkingHash('history');
+  await settle();
+  await settle();
+  const uniformGroup = nodes.get('thinkingRunsContent').children[1].children[1];
+  assert.strictEqual(
+    uniformGroup.children[2].textContent,
+    '2 pulse runs completed on Qwen 3.5 4B (local), 20 sec each.',
+    'a uniform group states its status, model and typical runtime in one sentence',
+  );
+  assert.deepStrictEqual(
+    uniformGroup.children[3].children[0].children[0].children.map((cell) => cell.textContent),
+    ['ran', 'provider', 'runtime', 'thinking events', 'tool calls', 'run log'],
+    'the note lifts out only what it says, so the provider column it never names stays',
+  );
+
+  // An unrecorded runtime arrives as null, and Number(null) is 0 — the note
+  // used to average that in and report "about 0 sec each" for runs whose own
+  // runtime column reads "duration unavailable". With no model recorded the
+  // clause names the provider instead, because the note is what lifts the
+  // provider column out of the table.
+  const nullRuntimeGroup = nodes.get('thinkingRunsContent').children[2].children[1];
+  assert.strictEqual(
+    nullRuntimeGroup.children[2].textContent,
+    '2 briefing runs completed.',
+    'an unknown runtime is left out of the note instead of averaging in as zero',
+  );
+  assert.deepStrictEqual(
+    nullRuntimeGroup.children[3].children[0].children[0].children.map((cell) => cell.textContent),
+    ['ran', 'provider', 'runtime', 'thinking events', 'tool calls', 'run log'],
+    'with no model to name, the note says nothing about the lane and the provider column stays',
+  );
+  assert.strictEqual(
+    nullRuntimeGroup.children[3].children[1].children[0].children[2].textContent,
+    'duration unavailable',
+    'the runtime column and the group note agree that the runtime is unknown',
+  );
+
+  // The average is only true of the runs that recorded a runtime, but "each"
+  // distributes it across the whole group — so the clause is stated only when
+  // the whole group recorded one.
+  const partialRuntimeGroup = nodes.get('thinkingRunsContent').children[3].children[1];
+  assert.strictEqual(
+    partialRuntimeGroup.children[2].textContent,
+    '2 partial runs completed on Qwen 3.5 4B (local).',
+    'a runtime known for only part of the group is not reported as the time each run took',
+  );
+
+  // Recorded on every run, but 2 sec and 38 sec average to a figure true of
+  // neither — "each" only holds when every run reads the same.
+  const spreadRuntimeGroup = nodes.get('thinkingRunsContent').children[4].children[1];
+  assert.strictEqual(
+    spreadRuntimeGroup.children[2].textContent,
+    '2 spread runs completed on Qwen 3.5 4B (local).',
+    'runtimes that disagree are not averaged into a time each run took',
+  );
+  assert.deepStrictEqual(
+    spreadRuntimeGroup.children[3].children[1].children.map((row) => row.children[2].textContent),
+    ['2 sec', '38 sec'],
+    'the runtime column still carries each run\'s own time',
+  );
+
+  // The count stands in front of a *filtered* set: failed-runs-only narrows
+  // the group, and a facet narrows the day. A talent that mostly succeeded
+  // must not have its failures described as the whole of it — which is why
+  // the sentence carries no "all".
+  thinking.state.runsFailuresOnly = true;
+  dayResponses.push(Promise.resolve({uses: [
+    {id: 'mixed-1', name: 'mixed', start: 1788662697014, status: 'failed', failed: true, provider: 'local', model: 'local/qwen3.5-4b'},
+    {id: 'mixed-2', name: 'mixed', start: 1788662697014, status: 'failed', failed: true, provider: 'local', model: 'local/qwen3.5-4b'},
+    {id: 'mixed-3', name: 'mixed', start: 1788662697014, status: 'completed', provider: 'local', model: 'local/qwen3.5-4b'},
+    {id: 'mixed-4', name: 'mixed', start: 1788662697014, status: 'completed', provider: 'local', model: 'local/qwen3.5-4b'},
+    {id: 'mixed-5', name: 'mixed', start: 1788662697014, status: 'completed', provider: 'local', model: 'local/qwen3.5-4b'},
+  ], facets: []}));
+  window.location.hash = '#runs/20260206';
+  thinking.routeThinkingHash('history');
+  await settle();
+  await settle();
+  assert.strictEqual(
+    nodes.get('thinkingRunsContent').children[1].children[1].children[2].textContent,
+    '2 mixed runs failed on Qwen 3.5 4B (local).',
+    'the note counts the runs it stands in front of, never calling a filtered view the whole of a talent',
+  );
+  thinking.state.runsFailuresOnly = false;
 
   const now = new Date();
   const todayDay = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;

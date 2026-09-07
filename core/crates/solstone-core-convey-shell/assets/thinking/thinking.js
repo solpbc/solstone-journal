@@ -1335,26 +1335,31 @@
     {key: 'output', label: 'output', hideable: true, value: (run) => (run.output_file ? 'output' : '')},
   ];
 
-  // A group-wide constant (status/model/provider identical on every run) or
-  // an always-empty column (facet/output) is redundant on every row; both
-  // conditions are computed once per group, from the full group rather than
-  // just the shown page, so the table shape doesn't change as more rows
-  // page in (G2-46).
-  function thinkingRunHiddenColumns(group) {
+  // Two reasons a hideable column earns its way out of the table, and they are
+  // not interchangeable (G2-46). A column that is empty on every run in the
+  // group carries nothing, so it can always go — a model column blank down all
+  // 120 rows is the noise this was written to remove, whether or not the note
+  // is shown. A column that repeats one *real* value is only redundant while
+  // something else is saying that value, so it goes only when it is in
+  // `spokenFor`; anything the note does not say stays in the table. Both are
+  // read from the full group rather than the shown page, so the table shape
+  // doesn't change as more rows page in.
+  function thinkingRunHiddenColumns(group, spokenFor = new Set()) {
     const hidden = new Set();
-    ['status', 'model', 'provider'].forEach((key) => {
-      const column = thinkingRunColumns.find((col) => col.key === key);
+    thinkingRunColumns.forEach((column) => {
+      if (!column.hideable) return;
+      if (group.every((run) => !column.value(run))) {
+        hidden.add(column.key);
+        return;
+      }
+      if (!spokenFor.has(column.key)) return;
       const values = new Set(group.map((run) => String(column.value(run) ?? '')));
-      if (values.size === 1) hidden.add(key);
-    });
-    ['facet', 'output'].forEach((key) => {
-      const column = thinkingRunColumns.find((col) => col.key === key);
-      if (group.every((run) => !column.value(run))) hidden.add(key);
+      if (values.size === 1) hidden.add(column.key);
     });
     return hidden;
   }
 
-  // "all 52 pulse runs completed on qwen3.5-4b, about 20 seconds each" — the
+  // "52 pulse runs completed on Qwen 3.5 4B (local), 20 sec each" — the
   // sentence a reader would otherwise have to derive by scanning 52 identical
   // rows, shown once when the group actually is that uniform (G2-46).
   function thinkingRunGroupNote(label, group) {
@@ -1362,26 +1367,66 @@
     const statuses = new Set(group.map(runStatusLabel));
     const models = new Set(group.map(runModelLabel));
     const providers = new Set(group.map(runProviderLabel));
+    // The provider gate guards the *model* clause, not a provider clause -- do
+    // not drop it on the grounds that the sentence never says the provider.
+    // runModelLabel resolves LOCAL_MODEL_LABELS off a `${provider}/${model}`
+    // key, so "Qwen 3.5 4B (local)" makes a lane claim that rides on the
+    // provider; across two providers that resolve to one label, the lane would
+    // be false for some of the runs.
     if (statuses.size !== 1 || models.size !== 1 || providers.size !== 1) return null;
-    const durations = group
-      .map((run) => Number(run.runtime_seconds))
-      .filter((seconds) => Number.isFinite(seconds));
-    const avgSeconds = durations.length
-      ? Math.round(durations.reduce((sum, seconds) => sum + seconds, 0) / durations.length)
-      : null;
-    // "each" distributes an average over a group; one run has no group to
-    // distribute over, so the singular drops it: "1 pulse run completed on
-    // Qwen 3.5 4B (local), about 20 sec."
+    // Every clause here is a claim about every run in the group, not about the
+    // group in aggregate — that is what the uniformity guards above buy the
+    // status and the model, and the runtime has to earn it the same way. As an
+    // average it never did, and failed twice over: an unrecorded runtime is
+    // null, and Number(null) is 0 that passes Number.isFinite, so unknown
+    // runtimes averaged in as zero and told an owner watching for signs of
+    // life that the thinking took "about 0 sec" while the runtime column
+    // beside it read "duration unavailable" for those same runs; and a group
+    // of 2 sec and 38 sec averaged to "about 20 sec each", true of neither
+    // run. So this is not an average at all: it is the runtime column's own
+    // value, said once, and only when every run in the group reads the same.
     const eachSuffix = group.length === 1 ? '' : ' each';
-    const durationText = avgSeconds !== null
-      ? `, about ${window.JournalFormat.duration(avgSeconds)}${eachSuffix}`
+    const runtimes = new Set(group.map((run) => window.JournalFormat.duration(run.runtime_seconds)));
+    const sharedRuntime = runtimes.size === 1 ? [...runtimes][0] : null;
+    // No hedge: this is not an average any more, it is the runtime column's
+    // own string repeated, so "about" would be apologising for a figure that
+    // is exact -- and formatDuration is to the second above a minute, which
+    // made "about 5 min 3 sec each" read as generated.
+    const durationText = sharedRuntime && sharedRuntime !== 'duration unavailable'
+      ? `, ${sharedRuntime}${eachSuffix}`
       : '';
-    // A real plural branch: "1 pulse run completed" reads as English, where
-    // "all 1 pulse run" does not.
-    const runCount = group.length === 1
-      ? `1 ${label} run`
-      : `all ${group.length} ${label} runs`;
-    return `${runCount} ${[...statuses][0]} on ${[...models][0]}${durationText}.`;
+    // A run can simply not record a model, and runModelLabel hands the absent
+    // id straight back — which the sentence then read out as "completed on
+    // undefined." Say nothing rather than name a lane the runs did not record;
+    // the provider column stays in the table either way, so nothing is lost by
+    // the silence.
+    const modelLabel = String([...models][0] ?? '').trim();
+    const modelText = modelLabel ? ` on ${modelLabel}` : '';
+    // No "all". It is a quantifier over the population, and the population
+    // here is a filtered view -- `runs` is narrowed to failures when the
+    // failed-runs-only box is checked, and the day payload is narrowed to one
+    // facet when a facet is picked. A talent that ran 52 times and failed 3
+    // then said "all 3 pulse runs failed", which reads as a dead lane; worse,
+    // that filter forces statuses.size === 1, so the view that breaks the word
+    // is the view that most reliably shows it. A bare count is true under
+    // every filter, and the table below carries the completeness "all" was
+    // reaching for. (The empty state at the top of renderThinkingRunsDay
+    // already counts matchingRuns rather than runs for exactly this reason.)
+    const runCount = `${group.length} ${label} run${group.length === 1 ? '' : 's'}`;
+    // The note reports what it said, so the columns lifted out of the table
+    // cannot drift from the facts the sentence actually states. A static list
+    // did drift: a whitespace-only model id is truthy in the column (so it is
+    // not dropped as empty) but trims to nothing for the sentence, and the
+    // column went while nothing stood in for it. Never the provider, either --
+    // the note does not name it, and the model label only carries the lane for
+    // the single id in LOCAL_MODEL_LABELS, so a BYO model falling through
+    // runModelLabel as its bare wire id would take the one column saying
+    // whether the thinking stayed on the owner's device with it. `facet` and
+    // `output` are never here for the same reason: the note never says them,
+    // so they only leave by being empty on every row.
+    const spokenFor = new Set(['status']);
+    if (modelText) spokenFor.add('model');
+    return {text: `${runCount} ${[...statuses][0]}${modelText}${durationText}.`, spokenFor};
   }
 
   function renderThinkingRunList(host, runs, hiddenColumns = new Set()) {
@@ -1544,18 +1589,10 @@
       if (groupNote) {
         const note = document.createElement('p');
         note.className = 'thinking-runs-group-note';
-        note.textContent = groupNote;
+        note.textContent = groupNote.text;
         details.appendChild(note);
       }
-      const hiddenColumns = thinkingRunHiddenColumns(group);
-      // status/model/provider are hidden because the group note lifts them out
-      // of the table. When the note isn't shown (the group isn't uniform on all
-      // three), nothing carries them, so keep the columns.
-      if (!groupNote) {
-        hiddenColumns.delete('status');
-        hiddenColumns.delete('model');
-        hiddenColumns.delete('provider');
-      }
+      const hiddenColumns = thinkingRunHiddenColumns(group, groupNote ? groupNote.spokenFor : new Set());
       const shown = state.runsGroupShown.get(name) || thinkingRunsPageSize;
       renderThinkingRunList(details, group.slice(0, shown), hiddenColumns);
       if (group.length > shown) {
