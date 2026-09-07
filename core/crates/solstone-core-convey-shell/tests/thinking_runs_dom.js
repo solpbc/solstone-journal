@@ -308,6 +308,7 @@ async function main() {
   promptModal.close = () => { promptModal.open = false; };
   make('thinkingRunsPromptClose');
   make('thinkingRunsPromptContent');
+  make('thinkingRunsRequestContent');
 
   const requests = [];
   const dayResponses = [];
@@ -636,7 +637,7 @@ async function main() {
   assert.strictEqual(noOutput.hidden, true, 'a rendered output hides the no-output notice');
   outputTab.emit('click');
   await settle();
-  assert.strictEqual(nodes.get('thinkingRunsOutputPanel').textContent, 'saved output', 'newly visible output tab activates its panel');
+  assert.strictEqual(oneByTag(nodes.get('thinkingRunsOutputPanel'), 'pre').textContent, 'saved output', 'newly visible output tab activates its panel');
   outputTab.emit('keydown', {key: 'ArrowLeft'});
   assert.strictEqual(logTab.attributes['aria-selected'], 'true', 'detail tabs rove after output becomes visible');
 
@@ -818,7 +819,7 @@ async function main() {
   await settle();
   assert.strictEqual(thinking.state.runsCache.output.has('output:20260107:first.txt'), false, 'stale output response is not cached');
   assert.strictEqual(thinking.state.runsCache.output.get('output:20260108:second.txt').content, 'current output', 'current output response is cached');
-  assert.strictEqual(nodes.get('thinkingRunsOutputPanel').textContent, 'current output', 'stale output response does not replace the current render');
+  assert.strictEqual(oneByTag(nodes.get('thinkingRunsOutputPanel'), 'pre').textContent, 'current output', 'stale output response does not replace the current render');
   // --- night repairs: grouped + paged runs, readable labels, honest day and log ---
   thinking.state.runsFacet = '';
   thinking.state.runsFacetExplicit = false;

@@ -3864,7 +3864,7 @@ platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true
-required_features = ["host"]
+required_features = ["access-test-hooks", "host"]
 runtime = "none"
 
 [[suites]]

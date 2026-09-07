@@ -607,7 +607,7 @@
                   "accumulate": true,
                   "cadence_minutes": 5,
                   "color": "#6c757d",
-                  "description": "Living situational read of your day. The shape of today, what needs you, and a one-line glance.",
+                  "description": "a short summary of recently processed activity and any supported next steps.",
                   "hook": {
                     "post": "pulse",
                     "pre": "pulse"
@@ -1336,7 +1336,7 @@
                   "accumulate": true,
                   "cadence_minutes": 5,
                   "color": "#6c757d",
-                  "description": "Living situational read of your day. The shape of today, what needs you, and a one-line glance.",
+                  "description": "a short summary of recently processed activity and any supported next steps.",
                   "hook": {
                     "post": "pulse",
                     "pre": "pulse"
@@ -2183,7 +2183,7 @@
                   "accumulate": true,
                   "cadence_minutes": 5,
                   "color": "#6c757d",
-                  "description": "Living situational read of your day. The shape of today, what needs you, and a one-line glance.",
+                  "description": "a short summary of recently processed activity and any supported next steps.",
                   "hook": {
                     "post": "pulse",
                     "pre": "pulse"
@@ -3030,7 +3030,7 @@
                   "accumulate": true,
                   "cadence_minutes": 5,
                   "color": "#6c757d",
-                  "description": "Living situational read of your day. The shape of today, what needs you, and a one-line glance.",
+                  "description": "a short summary of recently processed activity and any supported next steps.",
                   "hook": {
                     "post": "pulse",
                     "pre": "pulse"

@@ -34,8 +34,9 @@ host = [
     "dep:time",
     "dep:x509-parser",
 ]
-full-tests = []
+full-tests = ["access-test-hooks"]
 test-hooks = ["solstone-core-journal-io?/test-hooks"]
+access-test-hooks = ["solstone-core-sol-client/store-test-hooks"]
 
 [dependencies]
 base64 = { version = "0.22.1", optional = true }
@@ -87,7 +88,7 @@ required-features = ["host"]
 
 [[test]]
 name = "sol_link_serving"
-required-features = ["host"]
+required-features = ["access-test-hooks", "host"]
 
 [[test]]
 name = "sol_link_publish_crash"

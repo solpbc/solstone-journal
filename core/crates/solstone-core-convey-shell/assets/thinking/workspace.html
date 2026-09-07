@@ -691,10 +691,20 @@
     }
 
     #thinkingRunsPromptContent,
-    #thinkingRunsOutputPanel {
+    #thinkingRunsRequestContent,
+    #thinkingRunsOutputPanel pre {
       white-space: pre-wrap;
       overflow-wrap: anywhere;
     }
+
+    .thinking-output-document { overflow-wrap: anywhere; line-height: 1.6; color: var(--ink); }
+    .thinking-output-document p, .thinking-output-document ul, .thinking-output-document ol { margin: 0.8em 0; }
+    .thinking-output-document h1, .thinking-output-document h2, .thinking-output-document h3 { margin: 1.2em 0 0.4em; line-height: 1.25; }
+    .thinking-output-document > :first-child { margin-top: 0; }
+    .thinking-output-document a { color: var(--orange-text-aa, #A15F17); text-decoration: underline; }
+    .thinking-output-document img { max-width: 100%; height: auto; }
+    .thinking-output-document table { display: block; max-width: 100%; overflow: auto; }
+    #thinkingRunsOutputPanel > details { margin-top: 1em; }
 
     .thinking-workspace .thinking-runs-modal-content {
       background: var(--paper);
@@ -1107,7 +1117,7 @@
         </details>
         <div class="thinking-runs-detail-facts" id="thinkingRunsDetailFacts"></div>
         <p class="thinking-runs-no-output" id="thinkingRunsNoOutput" hidden>this run doesn't have a saved output.</p>
-        <button type="button" class="thinking-runs-control" id="thinkingRunsPrompt">prompt</button>
+        <button type="button" class="thinking-runs-control" id="thinkingRunsPrompt">instructions</button>
         <div class="thinking-runs-detail-tabs" id="thinkingRunsDetailTabs" role="tablist">
           <button type="button" class="thinking-runs-detail-tab" id="thinkingRunsLogTab" role="tab" aria-selected="true" aria-controls="thinkingRunsLogPanel" tabindex="0">run log</button>
           <button type="button" class="thinking-runs-detail-tab" id="thinkingRunsOutputTab" role="tab" aria-selected="false" aria-controls="thinkingRunsOutputPanel" tabindex="-1" hidden>output</button>
@@ -1120,9 +1130,15 @@
 
 <dialog class="thinking-runs-modal" id="thinkingRunsPromptModal" role="dialog" aria-modal="true" aria-labelledby="thinkingRunsPromptHeading">
   <div class="thinking-runs-modal-content">
-    <h2 id="thinkingRunsPromptHeading">prompt</h2>
+    <h2 id="thinkingRunsPromptHeading">run instructions</h2>
     <button type="button" class="thinking-runs-modal-close" id="thinkingRunsPromptClose">close</button>
-    <div id="thinkingRunsPromptContent" role="status" aria-live="polite"></div>
+    <h3>saved request</h3>
+    <pre id="thinkingRunsRequestContent"></pre>
+    <details>
+      <summary>current template</summary>
+      <p>this uses the current template and settings, not the full instructions used by this run. placeholders may be unfilled.</p>
+      <div id="thinkingRunsPromptContent" role="status" aria-live="polite"></div>
+    </details>
   </div>
 </dialog>
 </div>

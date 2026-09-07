@@ -33,7 +33,6 @@ const STATUS_HELP: &str = "usage: solstone link status [-h] [--label LABEL]\n\nS
 const STATUS_USAGE: &str = "usage: solstone link status [-h] [--label LABEL]\n";
 const DEFAULT_CLIENT_LABEL: &str = "linked-system";
 const DEFAULT_SERVE_PORT: u16 = 5015;
-const DEFAULT_RELAY_URL: &str = "https://link.solstone.app";
 const PAIR_LINK_PREFIX: &str = "https://go.solstone.app/p#";
 const LOCAL_ENDPOINTS_MAX_BYTES: usize = 16 * 1024;
 static BUNDLE_STAGING_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -176,6 +175,44 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
             .as_bytes()
             .to_vec(),
     );
+    let store = crate::link_credentials::LinkCredentialStore::new(bundle_dir.clone(), &label);
+    let _lock = match store.acquire_lock() {
+        Ok(guard) => guard,
+        Err(err) => {
+            return CommandOutput::failure(format!("solstone link join: error: {err}\n"), 1);
+        }
+    };
+    if path_lexists(&bundle_dir) {
+        return CommandOutput::failure(
+            format!("{}\n", spent_existing_path_message(&bundle_dir)),
+            1,
+        );
+    }
+    if let (Some(origin), Some(token), Some(expires_at)) = (
+        &credential.relay_origin,
+        &credential.relay_device_token,
+        credential.relay_device_token_expires_at,
+    ) {
+        let cert_sha256 = format!(
+            "sha256:{}",
+            spl_core::ca::sha256_hex(credential.client_cert_pem.as_bytes())
+        );
+        let record = crate::link_credentials::RelayAccessRecord {
+            state: crate::link_credentials::RelayAccessState::Ready,
+            relay_origin: Some(origin.clone()),
+            device_token: Some(token.clone()),
+            expires_at: Some(expires_at),
+            access_generation: 1,
+            identity: crate::link_credentials::PairingIdentity {
+                cert_sha256,
+                instance_id: credential.instance_id.clone(),
+                ca_fingerprint: credential.ca_fingerprint.clone(),
+            },
+        };
+        if let Ok(bytes) = serde_json::to_vec_pretty(&record) {
+            files.insert("relay_access.json".to_string(), bytes);
+        }
+    }
     files.insert("peer.json".to_string(), peer_json.into_bytes());
 
     if let Err(error) = publish_bundle_atomic(&bundle_dir, &files) {
@@ -228,13 +265,23 @@ pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, Comman
     } else {
         LinkServeCarrierPolicy::RelayPermitted
     };
+    let explicit_relay_url = parsed
+        .relay_url
+        .as_deref()
+        .filter(|v| !v.trim().is_empty())
+        .or_else(|| {
+            ctx.env
+                .get("SOL_LINK_RELAY_URL")
+                .map(String::as_str)
+                .filter(|v| !v.trim().is_empty())
+        });
     let relay_origin = if parsed.direct {
         None
     } else {
-        Some(resolve_serve_relay_url(
-            parsed.relay_url.as_deref(),
-            ctx.env,
-        ))
+        explicit_relay_url.map(|explicit| {
+            crate::link_credentials::parse_relay_origin(explicit)
+                .unwrap_or_else(|_| explicit.trim().trim_end_matches('/').to_string())
+        })
     };
     let Some(runner) = ctx.link_serve else {
         return Err(CommandOutput::failure(
@@ -325,7 +372,7 @@ pub fn link_status(ctx: CommandContext<'_>) -> CommandOutput {
             });
     }
 
-    let (state_str, version_str) = if let Some(snap) = live_status {
+    let (state_str, version_str, persist_note) = if let Some(snap) = live_status {
         let ver = if let Some(raw_ver) = snap.journal_version {
             let clean_ver = sanitize_display_version(&raw_ver);
             if snap.journal_version_fresh {
@@ -336,14 +383,19 @@ pub fn link_status(ctx: CommandContext<'_>) -> CommandOutput {
         } else {
             read_cached_version_fallback(&selection, expected_ca_fp_prefix.as_deref())
         };
-        (snap.state, ver)
+        let note = if snap.persist_uncertain {
+            "Warning: connection changes may not have been saved. keep your credentials; the previous state may still be on disk.\n"
+        } else {
+            ""
+        };
+        (snap.state, ver, note)
     } else {
         let ver = read_cached_version_fallback(&selection, expected_ca_fp_prefix.as_deref());
-        ("stopped".to_string(), ver)
+        ("stopped".to_string(), ver, "")
     };
 
     CommandOutput::success(format!(
-        "Label: {}\nStatus: {}\nJournal version: {}\n",
+        "Label: {}\nStatus: {}\nJournal version: {}\n{persist_note}",
         selection.label, state_str, version_str
     ))
 }
@@ -443,21 +495,8 @@ fn read_cached_version_fallback(
 /// applied here to the selected bundle's own chain rather than to any cached
 /// or peer-reported value.
 fn ca_fp_prefix_hex(ca_chain_pem: &[String]) -> Option<String> {
-    let der = pem_cert_der(ca_chain_pem.first()?)?;
+    let der = crate::link_credentials::pem_cert_der(ca_chain_pem.first()?)?;
     Some(spl_core::ca::sha256_hex(&der)[..32].to_string())
-}
-
-fn pem_cert_der(pem: &str) -> Option<Vec<u8>> {
-    use base64::Engine as _;
-    const BEGIN: &str = "-----BEGIN CERTIFICATE-----";
-    const END: &str = "-----END CERTIFICATE-----";
-    let start = pem.find(BEGIN)? + BEGIN.len();
-    let end = start + pem[start..].find(END)?;
-    let body: String = pem[start..end]
-        .chars()
-        .filter(|c| !c.is_whitespace())
-        .collect();
-    base64::engine::general_purpose::STANDARD.decode(body).ok()
 }
 
 fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
@@ -667,6 +706,12 @@ fn load_serve_bundle(bundle_dir: &Path) -> Result<LinkServeBundle, String> {
         Some(_) => return Err("peer.json local_endpoints must be a list".to_string()),
     };
     let endpoints = serve_endpoints_from_value(&local_endpoints)?;
+    let label = bundle_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default();
+    let store = crate::link_credentials::LinkCredentialStore::new(bundle_dir.to_path_buf(), label);
+    let relay_access = Some(store.load_access());
     Ok(LinkServeBundle {
         private_key_pem,
         client_cert_pem,
@@ -689,6 +734,7 @@ fn load_serve_bundle(bundle_dir: &Path) -> Result<LinkServeBundle, String> {
             .to_string(),
         endpoints,
         local_endpoints,
+        relay_access,
     })
 }
 
@@ -751,19 +797,6 @@ fn serve_endpoints_from_value(value: &Value) -> Result<Vec<LinkServeEndpoint>, S
         endpoints.push(LinkServeEndpoint { host, port });
     }
     Ok(endpoints)
-}
-
-fn resolve_serve_relay_url(value: Option<&str>, env: &BTreeMap<String, String>) -> String {
-    if let Some(value) = value.filter(|value| !value.trim().is_empty()) {
-        return value.trim().trim_end_matches('/').to_string();
-    }
-    if let Some(value) = env
-        .get("SOL_LINK_RELAY_URL")
-        .filter(|value| !value.trim().is_empty())
-    {
-        return value.trim().trim_end_matches('/').to_string();
-    }
-    DEFAULT_RELAY_URL.to_string()
 }
 
 fn argparse_error(error: String) -> CommandOutput {
@@ -1311,9 +1344,7 @@ fn publish_bundle_atomic_with_writer<W>(
 where
     W: Fn(&Path, &[u8]) -> io::Result<()>,
 {
-    if files.len() != BUNDLE_FILES.len()
-        || BUNDLE_FILES.iter().any(|name| !files.contains_key(*name))
-    {
+    if BUNDLE_FILES.iter().any(|name| !files.contains_key(*name)) {
         return Err(io::Error::other("credential bundle file set is incomplete"));
     }
     let parent = bundle_dir.parent().unwrap_or_else(|| Path::new("."));
@@ -1575,6 +1606,7 @@ mod tests {
             home_label: "Home".to_string(),
             home_attestation: Some("header.payload.signature".to_string()),
             local_endpoints,
+            relay_origin: None,
             relay_device_token: None,
             relay_device_token_expires_at: None,
         }
@@ -1625,6 +1657,7 @@ mod tests {
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             endpoints: serve_endpoints_from_value(&local_endpoints).expect("serve endpoints"),
             local_endpoints,
+            relay_access: Some(crate::link_credentials::StoreLoadOutcome::Absent),
         }
     }
 
@@ -1846,7 +1879,7 @@ mod tests {
                 "beta",
                 5016,
                 LinkServeCarrierPolicy::RelayPermitted,
-                Some(DEFAULT_RELAY_URL),
+                None,
                 beta,
             ),
             result: Ok(ExpectedLinkServeSession {
@@ -1880,7 +1913,7 @@ mod tests {
                 "alpha",
                 DEFAULT_SERVE_PORT,
                 LinkServeCarrierPolicy::RelayPermitted,
-                Some(DEFAULT_RELAY_URL),
+                None,
                 alpha,
             ),
             result: Ok(ExpectedLinkServeSession {
@@ -1915,7 +1948,7 @@ mod tests {
                 "alpha",
                 0,
                 LinkServeCarrierPolicy::RelayPermitted,
-                Some(DEFAULT_RELAY_URL),
+                None,
                 bundle,
             ),
             result: Ok(ExpectedLinkServeSession {
@@ -2005,7 +2038,7 @@ mod tests {
                 "relay-only",
                 6002,
                 LinkServeCarrierPolicy::RelayOnly,
-                Some(DEFAULT_RELAY_URL),
+                None,
                 bundle,
             ),
             result: Ok(ExpectedLinkServeSession {
@@ -2033,10 +2066,7 @@ mod tests {
             recorded[0].request.policy,
             LinkServeCarrierPolicy::RelayOnly
         );
-        assert_eq!(
-            recorded[0].request.relay_origin,
-            Some(DEFAULT_RELAY_URL.to_string())
-        );
+        assert_eq!(recorded[0].request.relay_origin, None);
         assert!(!recorded[0].request.bundle.endpoints.is_empty());
         runner.assert_done();
     }
@@ -2111,7 +2141,7 @@ mod tests {
                 "laptop",
                 DEFAULT_SERVE_PORT,
                 LinkServeCarrierPolicy::RelayPermitted,
-                Some(DEFAULT_RELAY_URL),
+                None,
                 bundle.clone(),
             ),
             result: Err(LinkServeError::new(LinkServeErrorKind::Bind {
@@ -2136,7 +2166,7 @@ mod tests {
                 "laptop",
                 DEFAULT_SERVE_PORT,
                 LinkServeCarrierPolicy::RelayPermitted,
-                Some(DEFAULT_RELAY_URL),
+                None,
                 bundle,
             ),
             result: Err(LinkServeError::new(LinkServeErrorKind::Transport(
@@ -2334,7 +2364,10 @@ mod tests {
         let entries = fs::read_dir(bundle.parent().expect("bundle parent"))
             .expect("bundle parent")
             .collect::<Result<Vec<_>, _>>()
-            .expect("bundle entries");
+            .expect("bundle entries")
+            .into_iter()
+            .filter(|entry| !entry.file_name().to_string_lossy().starts_with('.'))
+            .collect::<Vec<_>>();
         assert_eq!(entries.len(), 1);
         assert_bundle_files_exist(&bundle);
         assert!(!path_lexists(&root.join("peers")));
@@ -2849,6 +2882,7 @@ mod tests {
             instance_id: "home-instance".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
+            persist_uncertain: false,
         };
         let response = crate::seam::HttpResponse {
             status: 200,
@@ -2897,6 +2931,7 @@ mod tests {
             instance_id: "home-instance".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
+            persist_uncertain: false,
         };
         let response = crate::seam::HttpResponse {
             status: 200,
@@ -2990,6 +3025,7 @@ mod tests {
             instance_id: "other-rogue-instance".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
+            persist_uncertain: false,
         };
         let response = crate::seam::HttpResponse {
             status: 200,
@@ -3056,6 +3092,7 @@ mod tests {
             instance_id: "home-instance".to_string(),
             ca_fp_prefix: "different-ca-fp".to_string(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
+            persist_uncertain: false,
         };
         let response = crate::seam::HttpResponse {
             status: 200,
@@ -3109,6 +3146,7 @@ mod tests {
             instance_id: "home-instance".to_string(),
             ca_fp_prefix: "rogue-ca-fp".to_string(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
+            persist_uncertain: false,
         };
         let response = crate::seam::HttpResponse {
             status: 200,
@@ -3176,6 +3214,7 @@ mod tests {
             instance_id: "home-instance".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "stale-paired-at-before-repair".to_string(),
+            persist_uncertain: false,
         };
         let response = crate::seam::HttpResponse {
             status: 200,
@@ -3227,6 +3266,7 @@ mod tests {
             instance_id: "home-instance".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
+            persist_uncertain: false,
         };
         let response = crate::seam::HttpResponse {
             status: 200,
@@ -3286,5 +3326,125 @@ mod tests {
         assert!(!bundle_dir.join("journal_metadata.json").exists());
         assert!(!bundle_dir.join("serve_runtime.json").exists());
         seam.assert_done();
+    }
+
+    #[test]
+    fn status_reports_sidecar_persist_uncertainty_warning() {
+        let temp = temp_dir("status-persist-uncertain");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        serve_bundle(&config, "alpha", json!([]));
+
+        let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
+        let runtime = LinkServeRuntimeRecord { port: 5015 };
+        fs::write(
+            bundle_dir.join("serve_runtime.json"),
+            serde_json::to_vec(&runtime).expect("serialize"),
+        )
+        .expect("write");
+
+        let snapshot = LinkServeStatusSnapshot {
+            state: "connected".to_string(),
+            health: "ok".to_string(),
+            manager_alive: true,
+            active_requests: 0,
+            reconnect_count: 0,
+            last_connected_at: Some(100.0),
+            connected_age_seconds: Some(10.0),
+            last_failure: None,
+            next_retry_at: None,
+            journal_version: Some("2026.07.26".to_string()),
+            journal_version_fresh: true,
+            instance_id: "home-instance".to_string(),
+            ca_fp_prefix: serve_bundle_ca_fp_prefix(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
+            persist_uncertain: true,
+        };
+        let response = crate::seam::HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: serde_json::to_vec(&snapshot).expect("serialize"),
+            policy: crate::seam::TimeoutPolicy::Api,
+        };
+        let probe = crate::seam::ScriptedLinkStatusProbe::new(vec![(5015, Ok(response))]);
+
+        let output = run_status(&[], &env, Some(&probe));
+        assert_eq!(output.exit, 0);
+        assert!(
+            output
+                .stdout
+                .contains("Warning: connection changes may not have been saved.")
+        );
+        assert_eq!(probe.recorded(), vec![5015]);
+    }
+
+    #[test]
+    fn join_with_pairing_token_persists_relay_access_and_load_serve_bundle_returns_ready() {
+        let temp = temp_dir("join-relay-access");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        let root = temp.join("journal");
+        let bundle = config.join("solstone-observer").join("spl").join("laptop");
+        let mut cred = credential(json!([{"ip": "10.0.0.2", "port": 7657}]));
+        cred.client_cert_pem = SERVE_BUNDLE_CERT.to_string();
+        cred.ca_chain_pem = vec![SERVE_BUNDLE_CERT.to_string()];
+        let der = crate::link_credentials::pem_cert_der(SERVE_BUNDLE_CERT).unwrap();
+        cred.ca_fingerprint = format!("sha256:{}", spl_core::ca::sha256_hex(&der));
+        cred.relay_origin = Some("https://link.solstone.app".to_string());
+        cred.relay_device_token = Some("mock_token_abc".to_string());
+        cred.relay_device_token_expires_at = Some(2000000000);
+
+        let seam = ScriptedLinkJoinPairingSeam::new(vec![ExpectedLinkJoinPairingCall::Direct {
+            expected: expected_direct_request("laptop"),
+            result: Ok(cred),
+        }]);
+        let clock = FakeClock::at_unix(0);
+
+        let output = run(
+            &["--code", &direct_pair_link(), "--label", "laptop"],
+            &env,
+            &root,
+            &seam,
+            &clock,
+        );
+        assert_eq!(output.exit, 0);
+        assert!(bundle.join("relay_access.json").is_file());
+
+        let loaded = load_serve_bundle(&bundle).expect("load serve bundle");
+        match loaded.relay_access {
+            Some(crate::link_credentials::StoreLoadOutcome::Ready(record)) => {
+                assert_eq!(
+                    record.relay_origin.as_deref(),
+                    Some("https://link.solstone.app")
+                );
+                assert_eq!(record.device_token.as_deref(), Some("mock_token_abc"));
+                assert_eq!(record.expires_at, Some(2000000000));
+            }
+            other => panic!("expected Ready outcome, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn old_bundle_without_relay_access_still_loads_lan() {
+        let temp = temp_dir("old-lan-bundle");
+        let config = temp.join("config");
+        let bundle_dir = config.join("solstone-observer").join("spl").join("laptop");
+        let _ = serve_bundle(
+            &config,
+            "laptop",
+            json!([{"ip": "192.168.1.50", "port": 7657}]),
+        );
+
+        // Ensure relay_access.json does not exist
+        let _ = fs::remove_file(bundle_dir.join("relay_access.json"));
+
+        let loaded = load_serve_bundle(&bundle_dir).expect("load old bundle");
+        assert_eq!(
+            loaded.relay_access,
+            Some(crate::link_credentials::StoreLoadOutcome::Absent)
+        );
+        assert_eq!(loaded.endpoints.len(), 1);
+        assert_eq!(loaded.endpoints[0].host, "192.168.1.50");
+        assert_eq!(loaded.endpoints[0].port, 7657);
     }
 }

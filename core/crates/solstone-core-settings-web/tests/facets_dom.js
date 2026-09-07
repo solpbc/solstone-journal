@@ -723,6 +723,63 @@ async function testCase(name, fn) {
     );
   });
 
+  await testCase('storage measurements cannot overwrite retention edits or block the form', async () => {
+    const h = createHarness();
+    const config = {retention: {raw_media: 'days', raw_media_days: 14, per_stream: {}, journal_logs: {}}, streams: []};
+    let resolveScan;
+    let scans = 0;
+    h.window.logError = () => {};
+    h.window.apiJson = url => {
+      if (url === 'api/storage/config') return Promise.resolve(config);
+      assert.strictEqual(url, 'api/storage');
+      scans++;
+      return new Promise(resolve => { resolveScan = resolve; });
+    };
+    // The existing renderer owns these helpers; no stream overrides in this fixture.
+    h.window.SettingsRender.buildStreamOverridesDrawerProps = () => null;
+    await run(h, 'loadStorage()');
+    assert.strictEqual(h.document.getElementById('storageSettingsForm').hidden, false);
+    const input = h.document.getElementById('retentionDaysInput');
+    assert.strictEqual(input.value, 14);
+    input.value = '45';
+    vm.runInContext('void measureStorage()', h.context);
+    vm.runInContext('void measureStorage()', h.context);
+    assert.strictEqual(scans, 1);
+    resolveScan({summary: {raw_media_human: '4 GiB', derived_human: '2 MiB', total_segments: 3, segments_with_raw: 2, segments_purged: 1}, warnings: [], retention: {...config.retention, raw_media_days: 7}});
+    await settle();
+    assert.strictEqual(scans, 2, 'overlapping refreshes coalesce into one follow-up scan');
+    resolveScan({summary: {raw_media_human: '4 GiB', derived_human: '2 MiB', total_segments: 3, segments_with_raw: 2, segments_purged: 1}, warnings: []});
+    await settle();
+    assert.strictEqual(input.value, '45');
+    assert.strictEqual(h.document.getElementById('storageSummaryRaw').textContent, '4 GiB');
+    assert.strictEqual(await run(h, 'storageData.retention.raw_media_days'), 14);
+    h.window.apiJson = () => Promise.reject(new Error('measurement failed'));
+    await run(h, 'measureStorage()');
+    assert.strictEqual(input.value, '45');
+    assert.strictEqual(input.disabled, false);
+    assert.strictEqual(h.document.getElementById('storageSummaryRaw').textContent, '—');
+    assert.strictEqual(h.document.getElementById('storageMeasurementState').querySelectorAll('button').length, 1);
+  });
+
+  await testCase('a measurement finishing after navigation cannot touch a replacement view', async () => {
+    for (const fail of [false, true]) {
+      const h = createHarness();
+      let finish;
+      h.window.apiJson = () => new Promise((resolve, reject) => { finish = fail ? reject : resolve; });
+      const pending = run(h, 'measureStorage()');
+      const original = h.document.getElementById('storageSummaryCard');
+      const replacement = h.document.createElement('div');
+      replacement.id = 'storageSummaryCard';
+      replacement.setAttribute('id', 'storageSummaryCard');
+      original.remove();
+      h.document.body.appendChild(replacement);
+      finish(fail ? new Error('late failure') : {});
+      await pending;
+      assert.strictEqual(replacement.textContent, '');
+      assert.strictEqual(await run(h, 'storageMeasurement'), null);
+    }
+  });
+
   process.stdout.write('DOM CASES: ' + cases + ' passed\n', () => process.exit(0));
 })().catch((error) => {
   console.error(error.stack || error);

@@ -7,6 +7,7 @@ pub mod decode;
 pub mod error;
 pub mod generated;
 pub mod json_format;
+pub mod link_credentials;
 pub mod pagination;
 pub mod resident;
 pub mod seam;

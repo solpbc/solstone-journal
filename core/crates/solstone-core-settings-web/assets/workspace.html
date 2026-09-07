@@ -259,7 +259,7 @@
 .settings-field small {
   display: block;
   margin-top: 0.3em;
-  color: #999;
+  color: var(--ink-muted, #66594A);
   font-size: 0.85em;
   line-height: 1.5;
   transition: opacity 0.3s ease;
@@ -1682,6 +1682,20 @@ input:checked + .slider:before {
   border-bottom: 1px solid #f0f0f0;
 }
 
+@media (max-width: 600px) {
+  .stream-override-row {
+    flex-wrap: wrap;
+  }
+  .stream-override-name {
+    flex-basis: 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .stream-override-select {
+    flex: 1 1 100%;
+  }
+}
+
 .stream-override-row:last-child {
   border-bottom: none;
 }
@@ -1693,6 +1707,8 @@ input:checked + .slider:before {
 }
 
 .stream-override-select {
+  min-width: 0;
+  max-width: 100%;
   padding: 0.35em 0.5em;
   border: 1px solid #ccc;
   border-radius: 4px;
@@ -2555,6 +2571,7 @@ button:focus:not(:focus-visible) {
       <form id="storageSettingsForm" class="settings-form" onsubmit="return false;" hidden inert>
 
       <div id="storageSummaryCard" class="settings-summary-card">
+        <div id="storageMeasurementState" role="status" aria-live="polite"></div>
         <div class="storage-summary-grid">
           <div>
             <div class="storage-stat-value" id="storageSummaryRaw">—</div>
@@ -2569,7 +2586,7 @@ button:focus:not(:focus-visible) {
             <div class="storage-stat-label">segments</div>
           </div>
         </div>
-        <div style="margin-top: 0.75em; font-size: 0.8em; color: #888; text-align: center;" id="storageSummaryDetail"></div>
+        <div style="margin-top: 0.75em; font-size: 0.8em; color: var(--ink-muted, #66594A); text-align: center;" id="storageSummaryDetail"></div>
       </div>
 
       <div class="settings-field" id="retentionModeField">
@@ -5474,6 +5491,8 @@ document.getElementById('saveCustomActivityBtn').addEventListener('click', async
 
 // ========== STORAGE ==========
 let storageData = null;
+let storageMeasurement = null;
+let storageMeasurementRefresh = false;
 
 function deriveRetention(daysValue, dontRetain) {
   if (dontRetain) return { mode: 'processed', days: null, statusText: 'currently: list originals for removal after processing.' };
@@ -5484,11 +5503,12 @@ function deriveRetention(daysValue, dontRetain) {
 
 async function loadStorage() {
   try {
-    storageData = await window.apiJson('api/storage');
+    storageData = await window.apiJson('api/storage/config');
     setLoadState('storageLoadState');
     setStorageControlsDisabled(false);
     storageLoadedOnce = true;
     populateStorage(storageData);
+    void measureStorage();
     document.getElementById("storageSettingsForm").hidden = false;
     document.getElementById("storageSettingsForm").inert = false;
   } catch (err) {
@@ -5505,7 +5525,49 @@ async function loadStorage() {
   }
 }
 
-function populateStorage(data) {
+async function measureStorage() {
+  const card = document.getElementById('storageSummaryCard');
+  if (!card) return;
+  const currentView = () => document.getElementById('storageSummaryCard') === card;
+  // Coalesce refreshes while one scan is running. A response only owns the
+  // measurements: it must never reset a retention control or the saved config.
+  if (storageMeasurement) {
+    storageMeasurementRefresh = true;
+    return storageMeasurement;
+  }
+  storageMeasurement = (async () => {
+    do {
+      storageMeasurementRefresh = false;
+      document.getElementById('storageMeasurementState').textContent = 'measuring storage use… you can edit retention settings while this runs.';
+      card.setAttribute('aria-busy', 'true');
+      try {
+        const data = await window.apiJson('api/storage');
+        if (!currentView()) return;
+        populateStorageMeasurement(data);
+        document.getElementById('storageMeasurementState').textContent = '';
+      } catch (err) {
+        if (!currentView()) return;
+        for (const id of ['storageSummaryRaw', 'storageSummaryDerived', 'storageSummarySegments']) document.getElementById(id).textContent = '—';
+        document.getElementById('storageSummaryDetail').textContent = '';
+        document.getElementById('storageWarnings').innerHTML = '';
+        const state = document.getElementById('storageMeasurementState');
+        state.textContent = 'storage use couldn\'t be measured. your retention settings are still available. ';
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.className = 'settings-btn secondary';
+        retry.textContent = 'try again';
+        retry.addEventListener('click', () => { void measureStorage(); });
+        state.appendChild(retry);
+        window.logError(err, { context: 'settings: measureStorage failed' });
+      } finally {
+        card.setAttribute('aria-busy', 'false');
+      }
+    } while (storageMeasurementRefresh);
+  })();
+  try { await storageMeasurement; } finally { storageMeasurement = null; }
+}
+
+function populateStorageMeasurement(data) {
   // Render storage warnings
   const warningsEl = document.getElementById('storageWarnings');
   warningsEl.innerHTML = '';
@@ -5525,6 +5587,9 @@ function populateStorage(data) {
   document.getElementById('storageSummaryDetail').textContent =
     Number(s.segments_with_raw).toLocaleString() + ' with raw media · ' + Number(s.segments_purged).toLocaleString() + ' purged';
 
+}
+
+function populateStorage(data) {
   const mode = data.retention.raw_media || 'keep';
   const days = data.retention.raw_media_days;
   const daysInput = document.getElementById('retentionDaysInput');

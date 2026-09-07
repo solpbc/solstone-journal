@@ -2008,6 +2008,29 @@
     if (output) loadThinkingOutput();
   }
 
+  function renderThinkingOutput(panel, payload) {
+    panel.replaceChildren();
+    const raw = String(payload.content || '');
+    if (payload.format === 'md') {
+      const documentView = document.createElement('div');
+      documentView.className = 'thinking-output-document';
+      const body = raw.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, '');
+      documentView.innerHTML = window.AppServices.renderMarkdown(body);
+      panel.appendChild(documentView);
+      const source = document.createElement('details');
+      const label = document.createElement('summary');
+      label.textContent = 'stored text';
+      const text = document.createElement('pre');
+      text.textContent = raw;
+      source.append(label, text);
+      panel.appendChild(source);
+    } else {
+      const text = document.createElement('pre');
+      text.textContent = raw;
+      panel.appendChild(text);
+    }
+  }
+
   function loadThinkingOutput() {
     const run = state.runsDetail;
     if (!run?.output_file || !run.day) return;
@@ -2015,7 +2038,7 @@
     const cached = readThinkingCache('output', key);
     const panel = $('thinkingRunsOutputPanel');
     if (cached) {
-      panel.textContent = cached.content || '';
+      renderThinkingOutput(panel, cached);
       return;
     }
     panel.textContent = 'loading output…';
@@ -2023,7 +2046,7 @@
     loadThinkingRequest(
       'output', key,
       () => window.apiJson(`/app/thinking/api/output/${run.day}/${encoded}`),
-      (payload) => { panel.textContent = payload.content || ''; },
+      (payload) => renderThinkingOutput(panel, payload),
       () => { panel.textContent = "couldn't load that output"; },
     );
   }
@@ -2035,7 +2058,8 @@
     state.runsModalFocus = document.activeElement;
     modal.showModal();
     const content = $('thinkingRunsPromptContent');
-    content.textContent = 'loading run details…';
+    $('thinkingRunsRequestContent').textContent = run.prompt || 'no request text was saved for this run.';
+    content.textContent = 'loading current template…';
     const key = thinkingCacheKey('prompt', {talent: run.name});
     const cached = readThinkingCache('prompt', key);
     if (cached) {
@@ -2046,7 +2070,7 @@
       'prompt', key,
       () => window.apiJson(`/app/thinking/api/preview/${encodeThinkingSegment(run.name)}`),
       (payload) => { content.textContent = payload.full_prompt || ''; },
-      () => { content.textContent = "couldn't load that prompt"; },
+      () => { content.textContent = "couldn't load the current template"; },
     );
   }
 
@@ -2316,7 +2340,7 @@
 
   function renderGlance() {
     const brain = state.providers.brain || {};
-    setText('thinkingIntro', brain.state === 'ready' ? 'your processing engine is ready. you can change it in setup.' : 'choose or check your processing engine in setup.');
+    setText('thinkingIntro', brain.state === 'ready' ? 'your model is ready. you can change it in setup.' : 'choose or check your model in setup.');
     const glance = $('brainGlance');
     const glanceLabel = $('thinkingActiveLane');
     const identity = brain.identity || {};

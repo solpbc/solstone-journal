@@ -453,6 +453,7 @@ mod tests {
             "narrative_content",
             "narrative_updated_at",
             "narrative_source",
+            "narrative_window",
             "narrative_header",
             "pulse_needs",
             "flow_content",
