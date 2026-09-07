@@ -369,7 +369,7 @@
                 },
                 "daily_schedule": {
                   "color": "#455a64",
-                  "description": "Analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
+                  "description": "analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
                   "hook": {
                     "post": "daily_schedule",
                     "pre": "daily_schedule"
@@ -388,13 +388,13 @@
                   "schema": "daily_schedule.schema.json",
                   "source": "system",
                   "thinking_budget": 4096,
-                  "title": "Maintenance Window",
+                  "title": "maintenance window",
                   "type": "generate"
                 },
                 "documents": {
                   "color": "#5c6bc0",
                   "degradation_check": true,
-                  "description": "Extracts structured details from imported documents",
+                  "description": "extracts structured details from imported documents",
                   "hook": {
                     "pre": "documents"
                   },
@@ -412,13 +412,13 @@
                   "schema": "documents.schema.json",
                   "source": "system",
                   "thinking_budget": 8192,
-                  "title": "Document Analysis",
+                  "title": "document analysis",
                   "type": "generate"
                 },
                 "entities:detection": {
                   "app": "entities",
                   "color": "#00695c",
-                  "description": "Per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
+                  "description": "per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
                   "hook": {
                     "post": "entities:detection",
                     "pre": "entities:detection"
@@ -437,13 +437,13 @@
                   "schema": "detection.schema.json",
                   "source": "app",
                   "thinking_budget": 2048,
-                  "title": "Entity Detection",
+                  "title": "entity detection",
                   "type": "generate"
                 },
                 "entities:entities_review": {
                   "app": "entities",
                   "color": "#00796b",
-                  "description": "Reviews detected entities and promotes recurring ones to attached status",
+                  "description": "reviews detected entities and promotes recurring ones to attached status",
                   "group": "Entities",
                   "hook": {
                     "post": "entities:entities_review",
@@ -463,7 +463,7 @@
                   "schema": "entities_review.schema.json",
                   "source": "app",
                   "thinking_budget": 2048,
-                  "title": "Entity Reviewer",
+                  "title": "entity reviewer",
                   "type": "generate"
                 },
                 "entities:entity_describe": {
@@ -484,7 +484,7 @@
                 "entities:entity_observer": {
                   "app": "entities",
                   "color": "#004d40",
-                  "description": "Extracts durable factoids about attached entities from journal content",
+                  "description": "extracts durable factoids about attached entities from journal content",
                   "group": "Entities",
                   "hook": {
                     "post": "entities:entity_observer",
@@ -504,7 +504,7 @@
                   "schema": "entity_observer.schema.json",
                   "source": "app",
                   "thinking_budget": 2048,
-                  "title": "Entity Observer",
+                  "title": "entity observer",
                   "type": "generate"
                 },
                 "event": {
@@ -542,7 +542,7 @@
                 "facet_newsletter": {
                   "accumulate": true,
                   "color": "#0d47a1",
-                  "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
+                  "description": "creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
                   "hook": {
                     "post": "facet_newsletter",
                     "pre": "facet_newsletter"
@@ -554,13 +554,13 @@
                   "priority": 40,
                   "schedule": "daily",
                   "source": "system",
-                  "title": "Facet Newsletter Generator",
+                  "title": "facet newsletter generator",
                   "type": "generate"
                 },
                 "morning_briefing": {
                   "color": "#1565c0",
                   "degradation_check": true,
-                  "description": "Synthesizes all daily agent outputs into a structured five-section morning briefing",
+                  "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
                   "hook": {
                     "pre": "morning_briefing"
                   },
@@ -572,7 +572,7 @@
                   "schedule": "daily",
                   "schema": "morning_briefing.schema.json",
                   "source": "system",
-                  "title": "Morning Briefing",
+                  "title": "morning briefing",
                   "type": "generate"
                 },
                 "participation": {
@@ -631,7 +631,7 @@
                 },
                 "schedule": {
                   "color": "#5e35b1",
-                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
+                  "description": "extracts future scheduled items from screen and transcript content into anticipated activity records. notes dates, times, participants, and cancellation state.",
                   "hook": {
                     "post": "schedule"
                   },
@@ -649,12 +649,12 @@
                   "schedule": "daily",
                   "schema": "schedule.schema.json",
                   "source": "system",
-                  "title": "Upcoming Schedule",
+                  "title": "upcoming schedule",
                   "type": "generate"
                 },
                 "screen": {
                   "color": "#9c27b0",
-                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
+                  "description": "creates a detailed documentary record of screen activity. focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "load": {
                     "percepts": "required",
                     "talents": false,
@@ -668,12 +668,12 @@
                   "schedule": "segment",
                   "schema": "screen.schema.json",
                   "source": "system",
-                  "title": "Screen Record",
+                  "title": "screen record",
                   "type": "generate"
                 },
                 "sense": {
                   "color": "#ff6f00",
-                  "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+                  "description": "unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "load": {
                     "percepts": true,
                     "talents": false,
@@ -688,12 +688,12 @@
                   "schema": "sense.schema.json",
                   "source": "system",
                   "timeout_s": 480,
-                  "title": "Segment Sense",
+                  "title": "segment sense",
                   "type": "generate"
                 },
                 "speaker_attribution": {
                   "color": "#d84315",
-                  "description": "Identifies who said what in each transcript segment. Layers 1-3 (owner, structural, acoustic) run computationally via hook; Layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
+                  "description": "identifies who said what in each transcript segment. layers 1-3 (owner, structural, acoustic) run computationally via hook; layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
                   "hook": {
                     "post": "speaker_attribution",
                     "pre": "speaker_attribution"
@@ -711,7 +711,7 @@
                   "schedule": "segment",
                   "schema": "speaker_attribution.schema.json",
                   "source": "system",
-                  "title": "Speaker Attribution",
+                  "title": "speaker attribution",
                   "type": "generate"
                 },
                 "steward": {
@@ -1098,7 +1098,7 @@
                 },
                 "daily_schedule": {
                   "color": "#455a64",
-                  "description": "Analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
+                  "description": "analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
                   "hook": {
                     "post": "daily_schedule",
                     "pre": "daily_schedule"
@@ -1117,13 +1117,13 @@
                   "schema": "daily_schedule.schema.json",
                   "source": "system",
                   "thinking_budget": 4096,
-                  "title": "Maintenance Window",
+                  "title": "maintenance window",
                   "type": "generate"
                 },
                 "documents": {
                   "color": "#5c6bc0",
                   "degradation_check": true,
-                  "description": "Extracts structured details from imported documents",
+                  "description": "extracts structured details from imported documents",
                   "hook": {
                     "pre": "documents"
                   },
@@ -1141,13 +1141,13 @@
                   "schema": "documents.schema.json",
                   "source": "system",
                   "thinking_budget": 8192,
-                  "title": "Document Analysis",
+                  "title": "document analysis",
                   "type": "generate"
                 },
                 "entities:detection": {
                   "app": "entities",
                   "color": "#00695c",
-                  "description": "Per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
+                  "description": "per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
                   "hook": {
                     "post": "entities:detection",
                     "pre": "entities:detection"
@@ -1166,13 +1166,13 @@
                   "schema": "detection.schema.json",
                   "source": "app",
                   "thinking_budget": 2048,
-                  "title": "Entity Detection",
+                  "title": "entity detection",
                   "type": "generate"
                 },
                 "entities:entities_review": {
                   "app": "entities",
                   "color": "#00796b",
-                  "description": "Reviews detected entities and promotes recurring ones to attached status",
+                  "description": "reviews detected entities and promotes recurring ones to attached status",
                   "group": "Entities",
                   "hook": {
                     "post": "entities:entities_review",
@@ -1192,7 +1192,7 @@
                   "schema": "entities_review.schema.json",
                   "source": "app",
                   "thinking_budget": 2048,
-                  "title": "Entity Reviewer",
+                  "title": "entity reviewer",
                   "type": "generate"
                 },
                 "entities:entity_describe": {
@@ -1213,7 +1213,7 @@
                 "entities:entity_observer": {
                   "app": "entities",
                   "color": "#004d40",
-                  "description": "Extracts durable factoids about attached entities from journal content",
+                  "description": "extracts durable factoids about attached entities from journal content",
                   "group": "Entities",
                   "hook": {
                     "post": "entities:entity_observer",
@@ -1233,7 +1233,7 @@
                   "schema": "entity_observer.schema.json",
                   "source": "app",
                   "thinking_budget": 2048,
-                  "title": "Entity Observer",
+                  "title": "entity observer",
                   "type": "generate"
                 },
                 "event": {
@@ -1271,7 +1271,7 @@
                 "facet_newsletter": {
                   "accumulate": true,
                   "color": "#0d47a1",
-                  "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
+                  "description": "creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
                   "hook": {
                     "post": "facet_newsletter",
                     "pre": "facet_newsletter"
@@ -1283,13 +1283,13 @@
                   "priority": 40,
                   "schedule": "daily",
                   "source": "system",
-                  "title": "Facet Newsletter Generator",
+                  "title": "facet newsletter generator",
                   "type": "generate"
                 },
                 "morning_briefing": {
                   "color": "#1565c0",
                   "degradation_check": true,
-                  "description": "Synthesizes all daily agent outputs into a structured five-section morning briefing",
+                  "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
                   "hook": {
                     "pre": "morning_briefing"
                   },
@@ -1301,7 +1301,7 @@
                   "schedule": "daily",
                   "schema": "morning_briefing.schema.json",
                   "source": "system",
-                  "title": "Morning Briefing",
+                  "title": "morning briefing",
                   "type": "generate"
                 },
                 "participation": {
@@ -1360,7 +1360,7 @@
                 },
                 "schedule": {
                   "color": "#5e35b1",
-                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
+                  "description": "extracts future scheduled items from screen and transcript content into anticipated activity records. notes dates, times, participants, and cancellation state.",
                   "hook": {
                     "post": "schedule"
                   },
@@ -1378,12 +1378,12 @@
                   "schedule": "daily",
                   "schema": "schedule.schema.json",
                   "source": "system",
-                  "title": "Upcoming Schedule",
+                  "title": "upcoming schedule",
                   "type": "generate"
                 },
                 "screen": {
                   "color": "#9c27b0",
-                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
+                  "description": "creates a detailed documentary record of screen activity. focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "load": {
                     "percepts": "required",
                     "talents": false,
@@ -1397,12 +1397,12 @@
                   "schedule": "segment",
                   "schema": "screen.schema.json",
                   "source": "system",
-                  "title": "Screen Record",
+                  "title": "screen record",
                   "type": "generate"
                 },
                 "sense": {
                   "color": "#ff6f00",
-                  "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+                  "description": "unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "load": {
                     "percepts": true,
                     "talents": false,
@@ -1417,12 +1417,12 @@
                   "schema": "sense.schema.json",
                   "source": "system",
                   "timeout_s": 480,
-                  "title": "Segment Sense",
+                  "title": "segment sense",
                   "type": "generate"
                 },
                 "speaker_attribution": {
                   "color": "#d84315",
-                  "description": "Identifies who said what in each transcript segment. Layers 1-3 (owner, structural, acoustic) run computationally via hook; Layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
+                  "description": "identifies who said what in each transcript segment. layers 1-3 (owner, structural, acoustic) run computationally via hook; layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
                   "hook": {
                     "post": "speaker_attribution",
                     "pre": "speaker_attribution"
@@ -1440,7 +1440,7 @@
                   "schedule": "segment",
                   "schema": "speaker_attribution.schema.json",
                   "source": "system",
-                  "title": "Speaker Attribution",
+                  "title": "speaker attribution",
                   "type": "generate"
                 },
                 "steward": {
@@ -1945,7 +1945,7 @@
                 },
                 "daily_schedule": {
                   "color": "#455a64",
-                  "description": "Analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
+                  "description": "analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
                   "hook": {
                     "post": "daily_schedule",
                     "pre": "daily_schedule"
@@ -1964,13 +1964,13 @@
                   "schema": "daily_schedule.schema.json",
                   "source": "system",
                   "thinking_budget": 4096,
-                  "title": "Maintenance Window",
+                  "title": "maintenance window",
                   "type": "generate"
                 },
                 "documents": {
                   "color": "#5c6bc0",
                   "degradation_check": true,
-                  "description": "Extracts structured details from imported documents",
+                  "description": "extracts structured details from imported documents",
                   "hook": {
                     "pre": "documents"
                   },
@@ -1988,13 +1988,13 @@
                   "schema": "documents.schema.json",
                   "source": "system",
                   "thinking_budget": 8192,
-                  "title": "Document Analysis",
+                  "title": "document analysis",
                   "type": "generate"
                 },
                 "entities:detection": {
                   "app": "entities",
                   "color": "#00695c",
-                  "description": "Per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
+                  "description": "per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
                   "hook": {
                     "post": "entities:detection",
                     "pre": "entities:detection"
@@ -2013,13 +2013,13 @@
                   "schema": "detection.schema.json",
                   "source": "app",
                   "thinking_budget": 2048,
-                  "title": "Entity Detection",
+                  "title": "entity detection",
                   "type": "generate"
                 },
                 "entities:entities_review": {
                   "app": "entities",
                   "color": "#00796b",
-                  "description": "Reviews detected entities and promotes recurring ones to attached status",
+                  "description": "reviews detected entities and promotes recurring ones to attached status",
                   "group": "Entities",
                   "hook": {
                     "post": "entities:entities_review",
@@ -2039,7 +2039,7 @@
                   "schema": "entities_review.schema.json",
                   "source": "app",
                   "thinking_budget": 2048,
-                  "title": "Entity Reviewer",
+                  "title": "entity reviewer",
                   "type": "generate"
                 },
                 "entities:entity_describe": {
@@ -2060,7 +2060,7 @@
                 "entities:entity_observer": {
                   "app": "entities",
                   "color": "#004d40",
-                  "description": "Extracts durable factoids about attached entities from journal content",
+                  "description": "extracts durable factoids about attached entities from journal content",
                   "group": "Entities",
                   "hook": {
                     "post": "entities:entity_observer",
@@ -2080,7 +2080,7 @@
                   "schema": "entity_observer.schema.json",
                   "source": "app",
                   "thinking_budget": 2048,
-                  "title": "Entity Observer",
+                  "title": "entity observer",
                   "type": "generate"
                 },
                 "event": {
@@ -2118,7 +2118,7 @@
                 "facet_newsletter": {
                   "accumulate": true,
                   "color": "#0d47a1",
-                  "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
+                  "description": "creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
                   "hook": {
                     "post": "facet_newsletter",
                     "pre": "facet_newsletter"
@@ -2130,13 +2130,13 @@
                   "priority": 40,
                   "schedule": "daily",
                   "source": "system",
-                  "title": "Facet Newsletter Generator",
+                  "title": "facet newsletter generator",
                   "type": "generate"
                 },
                 "morning_briefing": {
                   "color": "#1565c0",
                   "degradation_check": true,
-                  "description": "Synthesizes all daily agent outputs into a structured five-section morning briefing",
+                  "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
                   "hook": {
                     "pre": "morning_briefing"
                   },
@@ -2148,7 +2148,7 @@
                   "schedule": "daily",
                   "schema": "morning_briefing.schema.json",
                   "source": "system",
-                  "title": "Morning Briefing",
+                  "title": "morning briefing",
                   "type": "generate"
                 },
                 "participation": {
@@ -2207,7 +2207,7 @@
                 },
                 "schedule": {
                   "color": "#5e35b1",
-                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
+                  "description": "extracts future scheduled items from screen and transcript content into anticipated activity records. notes dates, times, participants, and cancellation state.",
                   "hook": {
                     "post": "schedule"
                   },
@@ -2225,12 +2225,12 @@
                   "schedule": "daily",
                   "schema": "schedule.schema.json",
                   "source": "system",
-                  "title": "Upcoming Schedule",
+                  "title": "upcoming schedule",
                   "type": "generate"
                 },
                 "screen": {
                   "color": "#9c27b0",
-                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
+                  "description": "creates a detailed documentary record of screen activity. focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "load": {
                     "percepts": "required",
                     "talents": false,
@@ -2244,12 +2244,12 @@
                   "schedule": "segment",
                   "schema": "screen.schema.json",
                   "source": "system",
-                  "title": "Screen Record",
+                  "title": "screen record",
                   "type": "generate"
                 },
                 "sense": {
                   "color": "#ff6f00",
-                  "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+                  "description": "unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "load": {
                     "percepts": true,
                     "talents": false,
@@ -2264,12 +2264,12 @@
                   "schema": "sense.schema.json",
                   "source": "system",
                   "timeout_s": 480,
-                  "title": "Segment Sense",
+                  "title": "segment sense",
                   "type": "generate"
                 },
                 "speaker_attribution": {
                   "color": "#d84315",
-                  "description": "Identifies who said what in each transcript segment. Layers 1-3 (owner, structural, acoustic) run computationally via hook; Layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
+                  "description": "identifies who said what in each transcript segment. layers 1-3 (owner, structural, acoustic) run computationally via hook; layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
                   "hook": {
                     "post": "speaker_attribution",
                     "pre": "speaker_attribution"
@@ -2287,7 +2287,7 @@
                   "schedule": "segment",
                   "schema": "speaker_attribution.schema.json",
                   "source": "system",
-                  "title": "Speaker Attribution",
+                  "title": "speaker attribution",
                   "type": "generate"
                 },
                 "steward": {
@@ -2792,7 +2792,7 @@
                 },
                 "daily_schedule": {
                   "color": "#455a64",
-                  "description": "Analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
+                  "description": "analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
                   "hook": {
                     "post": "daily_schedule",
                     "pre": "daily_schedule"
@@ -2811,13 +2811,13 @@
                   "schema": "daily_schedule.schema.json",
                   "source": "system",
                   "thinking_budget": 4096,
-                  "title": "Maintenance Window",
+                  "title": "maintenance window",
                   "type": "generate"
                 },
                 "documents": {
                   "color": "#5c6bc0",
                   "degradation_check": true,
-                  "description": "Extracts structured details from imported documents",
+                  "description": "extracts structured details from imported documents",
                   "hook": {
                     "pre": "documents"
                   },
@@ -2835,13 +2835,13 @@
                   "schema": "documents.schema.json",
                   "source": "system",
                   "thinking_budget": 8192,
-                  "title": "Document Analysis",
+                  "title": "document analysis",
                   "type": "generate"
                 },
                 "entities:detection": {
                   "app": "entities",
                   "color": "#00695c",
-                  "description": "Per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
+                  "description": "per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
                   "hook": {
                     "post": "entities:detection",
                     "pre": "entities:detection"
@@ -2860,13 +2860,13 @@
                   "schema": "detection.schema.json",
                   "source": "app",
                   "thinking_budget": 2048,
-                  "title": "Entity Detection",
+                  "title": "entity detection",
                   "type": "generate"
                 },
                 "entities:entities_review": {
                   "app": "entities",
                   "color": "#00796b",
-                  "description": "Reviews detected entities and promotes recurring ones to attached status",
+                  "description": "reviews detected entities and promotes recurring ones to attached status",
                   "group": "Entities",
                   "hook": {
                     "post": "entities:entities_review",
@@ -2886,7 +2886,7 @@
                   "schema": "entities_review.schema.json",
                   "source": "app",
                   "thinking_budget": 2048,
-                  "title": "Entity Reviewer",
+                  "title": "entity reviewer",
                   "type": "generate"
                 },
                 "entities:entity_describe": {
@@ -2907,7 +2907,7 @@
                 "entities:entity_observer": {
                   "app": "entities",
                   "color": "#004d40",
-                  "description": "Extracts durable factoids about attached entities from journal content",
+                  "description": "extracts durable factoids about attached entities from journal content",
                   "group": "Entities",
                   "hook": {
                     "post": "entities:entity_observer",
@@ -2927,7 +2927,7 @@
                   "schema": "entity_observer.schema.json",
                   "source": "app",
                   "thinking_budget": 2048,
-                  "title": "Entity Observer",
+                  "title": "entity observer",
                   "type": "generate"
                 },
                 "event": {
@@ -2965,7 +2965,7 @@
                 "facet_newsletter": {
                   "accumulate": true,
                   "color": "#0d47a1",
-                  "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
+                  "description": "creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
                   "hook": {
                     "post": "facet_newsletter",
                     "pre": "facet_newsletter"
@@ -2977,13 +2977,13 @@
                   "priority": 40,
                   "schedule": "daily",
                   "source": "system",
-                  "title": "Facet Newsletter Generator",
+                  "title": "facet newsletter generator",
                   "type": "generate"
                 },
                 "morning_briefing": {
                   "color": "#1565c0",
                   "degradation_check": true,
-                  "description": "Synthesizes all daily agent outputs into a structured five-section morning briefing",
+                  "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
                   "hook": {
                     "pre": "morning_briefing"
                   },
@@ -2995,7 +2995,7 @@
                   "schedule": "daily",
                   "schema": "morning_briefing.schema.json",
                   "source": "system",
-                  "title": "Morning Briefing",
+                  "title": "morning briefing",
                   "type": "generate"
                 },
                 "participation": {
@@ -3054,7 +3054,7 @@
                 },
                 "schedule": {
                   "color": "#5e35b1",
-                  "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
+                  "description": "extracts future scheduled items from screen and transcript content into anticipated activity records. notes dates, times, participants, and cancellation state.",
                   "hook": {
                     "post": "schedule"
                   },
@@ -3072,12 +3072,12 @@
                   "schedule": "daily",
                   "schema": "schedule.schema.json",
                   "source": "system",
-                  "title": "Upcoming Schedule",
+                  "title": "upcoming schedule",
                   "type": "generate"
                 },
                 "screen": {
                   "color": "#9c27b0",
-                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
+                  "description": "creates a detailed documentary record of screen activity. focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "load": {
                     "percepts": "required",
                     "talents": false,
@@ -3091,12 +3091,12 @@
                   "schedule": "segment",
                   "schema": "screen.schema.json",
                   "source": "system",
-                  "title": "Screen Record",
+                  "title": "screen record",
                   "type": "generate"
                 },
                 "sense": {
                   "color": "#ff6f00",
-                  "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+                  "description": "unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "load": {
                     "percepts": true,
                     "talents": false,
@@ -3111,12 +3111,12 @@
                   "schema": "sense.schema.json",
                   "source": "system",
                   "timeout_s": 480,
-                  "title": "Segment Sense",
+                  "title": "segment sense",
                   "type": "generate"
                 },
                 "speaker_attribution": {
                   "color": "#d84315",
-                  "description": "Identifies who said what in each transcript segment. Layers 1-3 (owner, structural, acoustic) run computationally via hook; Layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
+                  "description": "identifies who said what in each transcript segment. layers 1-3 (owner, structural, acoustic) run computationally via hook; layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
                   "hook": {
                     "post": "speaker_attribution",
                     "pre": "speaker_attribution"
@@ -3134,7 +3134,7 @@
                   "schedule": "segment",
                   "schema": "speaker_attribution.schema.json",
                   "source": "system",
-                  "title": "Speaker Attribution",
+                  "title": "speaker attribution",
                   "type": "generate"
                 },
                 "steward": {

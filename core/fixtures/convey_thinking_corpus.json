@@ -1468,100 +1468,100 @@
       },
       {
         "body_bytes": 2500,
-        "body_sha256": "4600cf6c17311bce991efad13975fbc0f1a65e468b43080b550bce79c9f88e63",
+        "body_sha256": "8961f7bd5db2c7c032b1ecc1694480d95a7714b3da5df5f7384e470e339bdae5",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
           "daily": [
             {
               "app": null,
-              "description": "Analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
+              "description": "analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
               "disabled": false,
               "key": "daily_schedule",
               "source": "system",
-              "title": "Maintenance Window"
+              "title": "maintenance window"
             },
             {
               "app": null,
-              "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
+              "description": "creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
               "disabled": false,
               "key": "facet_newsletter",
               "source": "system",
-              "title": "Facet Newsletter Generator"
+              "title": "facet newsletter generator"
             },
             {
               "app": null,
-              "description": "Synthesizes all daily agent outputs into a structured five-section morning briefing",
+              "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
-              "title": "Morning Briefing"
+              "title": "morning briefing"
             },
             {
               "app": null,
-              "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
+              "description": "extracts future scheduled items from screen and transcript content into anticipated activity records. notes dates, times, participants, and cancellation state.",
               "disabled": false,
               "key": "schedule",
               "source": "system",
-              "title": "Upcoming Schedule"
+              "title": "upcoming schedule"
             },
             {
               "app": "entities",
-              "description": "Reviews detected entities and promotes recurring ones to attached status",
+              "description": "reviews detected entities and promotes recurring ones to attached status",
               "disabled": false,
               "key": "entities:entities_review",
               "source": "app",
-              "title": "Entity Reviewer"
+              "title": "entity reviewer"
             },
             {
               "app": "entities",
-              "description": "Extracts durable factoids about attached entities from journal content",
+              "description": "extracts durable factoids about attached entities from journal content",
               "disabled": false,
               "key": "entities:entity_observer",
               "source": "app",
-              "title": "Entity Observer"
+              "title": "entity observer"
             }
           ],
           "segment": [
             {
               "app": null,
-              "description": "Extracts structured details from imported documents",
+              "description": "extracts structured details from imported documents",
               "disabled": false,
               "key": "documents",
               "source": "system",
-              "title": "Document Analysis"
+              "title": "document analysis"
             },
             {
               "app": null,
-              "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
+              "description": "creates a detailed documentary record of screen activity. focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
               "disabled": false,
               "key": "screen",
               "source": "system",
-              "title": "Screen Record"
+              "title": "screen record"
             },
             {
               "app": null,
-              "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+              "description": "unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
               "disabled": false,
               "key": "sense",
               "source": "system",
-              "title": "Segment Sense"
+              "title": "segment sense"
             },
             {
               "app": null,
-              "description": "Identifies who said what in each transcript segment. Layers 1-3 (owner, structural, acoustic) run computationally via hook; Layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
+              "description": "identifies who said what in each transcript segment. layers 1-3 (owner, structural, acoustic) run computationally via hook; layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
               "disabled": false,
               "key": "speaker_attribution",
               "source": "system",
-              "title": "Speaker Attribution"
+              "title": "speaker attribution"
             },
             {
               "app": "entities",
-              "description": "Per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
+              "description": "per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
               "disabled": false,
               "key": "entities:detection",
               "source": "app",
-              "title": "Entity Detection"
+              "title": "entity detection"
             }
           ]
         },
@@ -3695,100 +3695,100 @@
       },
       {
         "body_bytes": 2500,
-        "body_sha256": "4600cf6c17311bce991efad13975fbc0f1a65e468b43080b550bce79c9f88e63",
+        "body_sha256": "8961f7bd5db2c7c032b1ecc1694480d95a7714b3da5df5f7384e470e339bdae5",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
           "daily": [
             {
               "app": null,
-              "description": "Analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
+              "description": "analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
               "disabled": false,
               "key": "daily_schedule",
               "source": "system",
-              "title": "Maintenance Window"
+              "title": "maintenance window"
             },
             {
               "app": null,
-              "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
+              "description": "creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
               "disabled": false,
               "key": "facet_newsletter",
               "source": "system",
-              "title": "Facet Newsletter Generator"
+              "title": "facet newsletter generator"
             },
             {
               "app": null,
-              "description": "Synthesizes all daily agent outputs into a structured five-section morning briefing",
+              "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
-              "title": "Morning Briefing"
+              "title": "morning briefing"
             },
             {
               "app": null,
-              "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
+              "description": "extracts future scheduled items from screen and transcript content into anticipated activity records. notes dates, times, participants, and cancellation state.",
               "disabled": false,
               "key": "schedule",
               "source": "system",
-              "title": "Upcoming Schedule"
+              "title": "upcoming schedule"
             },
             {
               "app": "entities",
-              "description": "Reviews detected entities and promotes recurring ones to attached status",
+              "description": "reviews detected entities and promotes recurring ones to attached status",
               "disabled": false,
               "key": "entities:entities_review",
               "source": "app",
-              "title": "Entity Reviewer"
+              "title": "entity reviewer"
             },
             {
               "app": "entities",
-              "description": "Extracts durable factoids about attached entities from journal content",
+              "description": "extracts durable factoids about attached entities from journal content",
               "disabled": false,
               "key": "entities:entity_observer",
               "source": "app",
-              "title": "Entity Observer"
+              "title": "entity observer"
             }
           ],
           "segment": [
             {
               "app": null,
-              "description": "Extracts structured details from imported documents",
+              "description": "extracts structured details from imported documents",
               "disabled": false,
               "key": "documents",
               "source": "system",
-              "title": "Document Analysis"
+              "title": "document analysis"
             },
             {
               "app": null,
-              "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
+              "description": "creates a detailed documentary record of screen activity. focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
               "disabled": false,
               "key": "screen",
               "source": "system",
-              "title": "Screen Record"
+              "title": "screen record"
             },
             {
               "app": null,
-              "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+              "description": "unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
               "disabled": false,
               "key": "sense",
               "source": "system",
-              "title": "Segment Sense"
+              "title": "segment sense"
             },
             {
               "app": null,
-              "description": "Identifies who said what in each transcript segment. Layers 1-3 (owner, structural, acoustic) run computationally via hook; Layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
+              "description": "identifies who said what in each transcript segment. layers 1-3 (owner, structural, acoustic) run computationally via hook; layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
               "disabled": false,
               "key": "speaker_attribution",
               "source": "system",
-              "title": "Speaker Attribution"
+              "title": "speaker attribution"
             },
             {
               "app": "entities",
-              "description": "Per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
+              "description": "per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
               "disabled": false,
               "key": "entities:detection",
               "source": "app",
-              "title": "Entity Detection"
+              "title": "entity detection"
             }
           ]
         },
@@ -5902,100 +5902,100 @@
       },
       {
         "body_bytes": 2500,
-        "body_sha256": "4600cf6c17311bce991efad13975fbc0f1a65e468b43080b550bce79c9f88e63",
+        "body_sha256": "8961f7bd5db2c7c032b1ecc1694480d95a7714b3da5df5f7384e470e339bdae5",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
           "daily": [
             {
               "app": null,
-              "description": "Analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
+              "description": "analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
               "disabled": false,
               "key": "daily_schedule",
               "source": "system",
-              "title": "Maintenance Window"
+              "title": "maintenance window"
             },
             {
               "app": null,
-              "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
+              "description": "creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
               "disabled": false,
               "key": "facet_newsletter",
               "source": "system",
-              "title": "Facet Newsletter Generator"
+              "title": "facet newsletter generator"
             },
             {
               "app": null,
-              "description": "Synthesizes all daily agent outputs into a structured five-section morning briefing",
+              "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
-              "title": "Morning Briefing"
+              "title": "morning briefing"
             },
             {
               "app": null,
-              "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
+              "description": "extracts future scheduled items from screen and transcript content into anticipated activity records. notes dates, times, participants, and cancellation state.",
               "disabled": false,
               "key": "schedule",
               "source": "system",
-              "title": "Upcoming Schedule"
+              "title": "upcoming schedule"
             },
             {
               "app": "entities",
-              "description": "Reviews detected entities and promotes recurring ones to attached status",
+              "description": "reviews detected entities and promotes recurring ones to attached status",
               "disabled": false,
               "key": "entities:entities_review",
               "source": "app",
-              "title": "Entity Reviewer"
+              "title": "entity reviewer"
             },
             {
               "app": "entities",
-              "description": "Extracts durable factoids about attached entities from journal content",
+              "description": "extracts durable factoids about attached entities from journal content",
               "disabled": false,
               "key": "entities:entity_observer",
               "source": "app",
-              "title": "Entity Observer"
+              "title": "entity observer"
             }
           ],
           "segment": [
             {
               "app": null,
-              "description": "Extracts structured details from imported documents",
+              "description": "extracts structured details from imported documents",
               "disabled": false,
               "key": "documents",
               "source": "system",
-              "title": "Document Analysis"
+              "title": "document analysis"
             },
             {
               "app": null,
-              "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
+              "description": "creates a detailed documentary record of screen activity. focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
               "disabled": false,
               "key": "screen",
               "source": "system",
-              "title": "Screen Record"
+              "title": "screen record"
             },
             {
               "app": null,
-              "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+              "description": "unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
               "disabled": false,
               "key": "sense",
               "source": "system",
-              "title": "Segment Sense"
+              "title": "segment sense"
             },
             {
               "app": null,
-              "description": "Identifies who said what in each transcript segment. Layers 1-3 (owner, structural, acoustic) run computationally via hook; Layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
+              "description": "identifies who said what in each transcript segment. layers 1-3 (owner, structural, acoustic) run computationally via hook; layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
               "disabled": false,
               "key": "speaker_attribution",
               "source": "system",
-              "title": "Speaker Attribution"
+              "title": "speaker attribution"
             },
             {
               "app": "entities",
-              "description": "Per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
+              "description": "per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
               "disabled": false,
               "key": "entities:detection",
               "source": "app",
-              "title": "Entity Detection"
+              "title": "entity detection"
             }
           ]
         },
@@ -8099,100 +8099,100 @@
       },
       {
         "body_bytes": 2500,
-        "body_sha256": "4600cf6c17311bce991efad13975fbc0f1a65e468b43080b550bce79c9f88e63",
+        "body_sha256": "8961f7bd5db2c7c032b1ecc1694480d95a7714b3da5df5f7384e470e339bdae5",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
           "daily": [
             {
               "app": null,
-              "description": "Analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
+              "description": "analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
               "disabled": false,
               "key": "daily_schedule",
               "source": "system",
-              "title": "Maintenance Window"
+              "title": "maintenance window"
             },
             {
               "app": null,
-              "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
+              "description": "creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
               "disabled": false,
               "key": "facet_newsletter",
               "source": "system",
-              "title": "Facet Newsletter Generator"
+              "title": "facet newsletter generator"
             },
             {
               "app": null,
-              "description": "Synthesizes all daily agent outputs into a structured five-section morning briefing",
+              "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
-              "title": "Morning Briefing"
+              "title": "morning briefing"
             },
             {
               "app": null,
-              "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
+              "description": "extracts future scheduled items from screen and transcript content into anticipated activity records. notes dates, times, participants, and cancellation state.",
               "disabled": false,
               "key": "schedule",
               "source": "system",
-              "title": "Upcoming Schedule"
+              "title": "upcoming schedule"
             },
             {
               "app": "entities",
-              "description": "Reviews detected entities and promotes recurring ones to attached status",
+              "description": "reviews detected entities and promotes recurring ones to attached status",
               "disabled": false,
               "key": "entities:entities_review",
               "source": "app",
-              "title": "Entity Reviewer"
+              "title": "entity reviewer"
             },
             {
               "app": "entities",
-              "description": "Extracts durable factoids about attached entities from journal content",
+              "description": "extracts durable factoids about attached entities from journal content",
               "disabled": false,
               "key": "entities:entity_observer",
               "source": "app",
-              "title": "Entity Observer"
+              "title": "entity observer"
             }
           ],
           "segment": [
             {
               "app": null,
-              "description": "Extracts structured details from imported documents",
+              "description": "extracts structured details from imported documents",
               "disabled": false,
               "key": "documents",
               "source": "system",
-              "title": "Document Analysis"
+              "title": "document analysis"
             },
             {
               "app": null,
-              "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
+              "description": "creates a detailed documentary record of screen activity. focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
               "disabled": false,
               "key": "screen",
               "source": "system",
-              "title": "Screen Record"
+              "title": "screen record"
             },
             {
               "app": null,
-              "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+              "description": "unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
               "disabled": false,
               "key": "sense",
               "source": "system",
-              "title": "Segment Sense"
+              "title": "segment sense"
             },
             {
               "app": null,
-              "description": "Identifies who said what in each transcript segment. Layers 1-3 (owner, structural, acoustic) run computationally via hook; Layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
+              "description": "identifies who said what in each transcript segment. layers 1-3 (owner, structural, acoustic) run computationally via hook; layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
               "disabled": false,
               "key": "speaker_attribution",
               "source": "system",
-              "title": "Speaker Attribution"
+              "title": "speaker attribution"
             },
             {
               "app": "entities",
-              "description": "Per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
+              "description": "per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
               "disabled": false,
               "key": "entities:detection",
               "source": "app",
-              "title": "Entity Detection"
+              "title": "entity detection"
             }
           ]
         },
@@ -10492,100 +10492,100 @@
       },
       {
         "body_bytes": 2500,
-        "body_sha256": "4600cf6c17311bce991efad13975fbc0f1a65e468b43080b550bce79c9f88e63",
+        "body_sha256": "8961f7bd5db2c7c032b1ecc1694480d95a7714b3da5df5f7384e470e339bdae5",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
           "daily": [
             {
               "app": null,
-              "description": "Analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
+              "description": "analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
               "disabled": false,
               "key": "daily_schedule",
               "source": "system",
-              "title": "Maintenance Window"
+              "title": "maintenance window"
             },
             {
               "app": null,
-              "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
+              "description": "creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
               "disabled": false,
               "key": "facet_newsletter",
               "source": "system",
-              "title": "Facet Newsletter Generator"
+              "title": "facet newsletter generator"
             },
             {
               "app": null,
-              "description": "Synthesizes all daily agent outputs into a structured five-section morning briefing",
+              "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
-              "title": "Morning Briefing"
+              "title": "morning briefing"
             },
             {
               "app": null,
-              "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
+              "description": "extracts future scheduled items from screen and transcript content into anticipated activity records. notes dates, times, participants, and cancellation state.",
               "disabled": false,
               "key": "schedule",
               "source": "system",
-              "title": "Upcoming Schedule"
+              "title": "upcoming schedule"
             },
             {
               "app": "entities",
-              "description": "Reviews detected entities and promotes recurring ones to attached status",
+              "description": "reviews detected entities and promotes recurring ones to attached status",
               "disabled": false,
               "key": "entities:entities_review",
               "source": "app",
-              "title": "Entity Reviewer"
+              "title": "entity reviewer"
             },
             {
               "app": "entities",
-              "description": "Extracts durable factoids about attached entities from journal content",
+              "description": "extracts durable factoids about attached entities from journal content",
               "disabled": false,
               "key": "entities:entity_observer",
               "source": "app",
-              "title": "Entity Observer"
+              "title": "entity observer"
             }
           ],
           "segment": [
             {
               "app": null,
-              "description": "Extracts structured details from imported documents",
+              "description": "extracts structured details from imported documents",
               "disabled": false,
               "key": "documents",
               "source": "system",
-              "title": "Document Analysis"
+              "title": "document analysis"
             },
             {
               "app": null,
-              "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
+              "description": "creates a detailed documentary record of screen activity. focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
               "disabled": false,
               "key": "screen",
               "source": "system",
-              "title": "Screen Record"
+              "title": "screen record"
             },
             {
               "app": null,
-              "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+              "description": "unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
               "disabled": false,
               "key": "sense",
               "source": "system",
-              "title": "Segment Sense"
+              "title": "segment sense"
             },
             {
               "app": null,
-              "description": "Identifies who said what in each transcript segment. Layers 1-3 (owner, structural, acoustic) run computationally via hook; Layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
+              "description": "identifies who said what in each transcript segment. layers 1-3 (owner, structural, acoustic) run computationally via hook; layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
               "disabled": false,
               "key": "speaker_attribution",
               "source": "system",
-              "title": "Speaker Attribution"
+              "title": "speaker attribution"
             },
             {
               "app": "entities",
-              "description": "Per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
+              "description": "per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
               "disabled": false,
               "key": "entities:detection",
               "source": "app",
-              "title": "Entity Detection"
+              "title": "entity detection"
             }
           ]
         },
@@ -14036,100 +14036,100 @@
       },
       {
         "body_bytes": 2500,
-        "body_sha256": "4600cf6c17311bce991efad13975fbc0f1a65e468b43080b550bce79c9f88e63",
+        "body_sha256": "8961f7bd5db2c7c032b1ecc1694480d95a7714b3da5df5f7384e470e339bdae5",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
           "daily": [
             {
               "app": null,
-              "description": "Analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
+              "description": "analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
               "disabled": false,
               "key": "daily_schedule",
               "source": "system",
-              "title": "Maintenance Window"
+              "title": "maintenance window"
             },
             {
               "app": null,
-              "description": "Creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
+              "description": "creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
               "disabled": false,
               "key": "facet_newsletter",
               "source": "system",
-              "title": "Facet Newsletter Generator"
+              "title": "facet newsletter generator"
             },
             {
               "app": null,
-              "description": "Synthesizes all daily agent outputs into a structured five-section morning briefing",
+              "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
               "disabled": false,
               "key": "morning_briefing",
               "source": "system",
-              "title": "Morning Briefing"
+              "title": "morning briefing"
             },
             {
               "app": null,
-              "description": "Extracts future scheduled items from screen and transcript content into anticipated activity records. Notes dates, times, participants, and cancellation state.",
+              "description": "extracts future scheduled items from screen and transcript content into anticipated activity records. notes dates, times, participants, and cancellation state.",
               "disabled": false,
               "key": "schedule",
               "source": "system",
-              "title": "Upcoming Schedule"
+              "title": "upcoming schedule"
             },
             {
               "app": "entities",
-              "description": "Reviews detected entities and promotes recurring ones to attached status",
+              "description": "reviews detected entities and promotes recurring ones to attached status",
               "disabled": false,
               "key": "entities:entities_review",
               "source": "app",
-              "title": "Entity Reviewer"
+              "title": "entity reviewer"
             },
             {
               "app": "entities",
-              "description": "Extracts durable factoids about attached entities from journal content",
+              "description": "extracts durable factoids about attached entities from journal content",
               "disabled": false,
               "key": "entities:entity_observer",
               "source": "app",
-              "title": "Entity Observer"
+              "title": "entity observer"
             }
           ],
           "segment": [
             {
               "app": null,
-              "description": "Extracts structured details from imported documents",
+              "description": "extracts structured details from imported documents",
               "disabled": false,
               "key": "documents",
               "source": "system",
-              "title": "Document Analysis"
+              "title": "document analysis"
             },
             {
               "app": null,
-              "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
+              "description": "creates a detailed documentary record of screen activity. focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
               "disabled": false,
               "key": "screen",
               "source": "system",
-              "title": "Screen Record"
+              "title": "screen record"
             },
             {
               "app": null,
-              "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+              "description": "unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
               "disabled": false,
               "key": "sense",
               "source": "system",
-              "title": "Segment Sense"
+              "title": "segment sense"
             },
             {
               "app": null,
-              "description": "Identifies who said what in each transcript segment. Layers 1-3 (owner, structural, acoustic) run computationally via hook; Layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
+              "description": "identifies who said what in each transcript segment. layers 1-3 (owner, structural, acoustic) run computationally via hook; layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
               "disabled": false,
               "key": "speaker_attribution",
               "source": "system",
-              "title": "Speaker Attribution"
+              "title": "speaker attribution"
             },
             {
               "app": "entities",
-              "description": "Per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
+              "description": "per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
               "disabled": false,
               "key": "entities:detection",
               "source": "app",
-              "title": "Entity Detection"
+              "title": "entity detection"
             }
           ]
         },

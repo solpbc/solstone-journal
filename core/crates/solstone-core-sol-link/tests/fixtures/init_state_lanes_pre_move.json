@@ -14,7 +14,7 @@
     },
     {
       "id": "byo",
-      "label": "your own AI engine",
+      "label": "your own model",
       "sub": "your key, or your own endpoint",
       "description": "bring a provider key (Claude, Gemini, or GPT) or point processing at your own endpoint. the key stays in your journal; sol pbc is never in the path."
     }
