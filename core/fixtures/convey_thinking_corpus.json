@@ -1467,8 +1467,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2501,
-        "body_sha256": "e44df6e8b64e23257c25192d8ee486a847848007af487c2df59e330faec23818",
+        "body_bytes": 2500,
+        "body_sha256": "4600cf6c17311bce991efad13975fbc0f1a65e468b43080b550bce79c9f88e63",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -1525,7 +1525,7 @@
           "segment": [
             {
               "app": null,
-              "description": "Extracts structured intelligence from imported documents",
+              "description": "Extracts structured details from imported documents",
               "disabled": false,
               "key": "documents",
               "source": "system",
@@ -1533,7 +1533,7 @@
             },
             {
               "app": null,
-              "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what' - chronological account with preserved details, excerpts, and entities.",
+              "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
               "disabled": false,
               "key": "screen",
               "source": "system",
@@ -1541,7 +1541,7 @@
             },
             {
               "app": null,
-              "description": "Unified segment understanding \u2014 density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+              "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
               "disabled": false,
               "key": "sense",
               "source": "system",
@@ -3694,8 +3694,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2501,
-        "body_sha256": "e44df6e8b64e23257c25192d8ee486a847848007af487c2df59e330faec23818",
+        "body_bytes": 2500,
+        "body_sha256": "4600cf6c17311bce991efad13975fbc0f1a65e468b43080b550bce79c9f88e63",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -3752,7 +3752,7 @@
           "segment": [
             {
               "app": null,
-              "description": "Extracts structured intelligence from imported documents",
+              "description": "Extracts structured details from imported documents",
               "disabled": false,
               "key": "documents",
               "source": "system",
@@ -3760,7 +3760,7 @@
             },
             {
               "app": null,
-              "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what' - chronological account with preserved details, excerpts, and entities.",
+              "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
               "disabled": false,
               "key": "screen",
               "source": "system",
@@ -3768,7 +3768,7 @@
             },
             {
               "app": null,
-              "description": "Unified segment understanding \u2014 density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+              "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
               "disabled": false,
               "key": "sense",
               "source": "system",
@@ -5901,8 +5901,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2501,
-        "body_sha256": "e44df6e8b64e23257c25192d8ee486a847848007af487c2df59e330faec23818",
+        "body_bytes": 2500,
+        "body_sha256": "4600cf6c17311bce991efad13975fbc0f1a65e468b43080b550bce79c9f88e63",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -5959,7 +5959,7 @@
           "segment": [
             {
               "app": null,
-              "description": "Extracts structured intelligence from imported documents",
+              "description": "Extracts structured details from imported documents",
               "disabled": false,
               "key": "documents",
               "source": "system",
@@ -5967,7 +5967,7 @@
             },
             {
               "app": null,
-              "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what' - chronological account with preserved details, excerpts, and entities.",
+              "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
               "disabled": false,
               "key": "screen",
               "source": "system",
@@ -5975,7 +5975,7 @@
             },
             {
               "app": null,
-              "description": "Unified segment understanding \u2014 density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+              "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
               "disabled": false,
               "key": "sense",
               "source": "system",
@@ -8098,8 +8098,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2501,
-        "body_sha256": "e44df6e8b64e23257c25192d8ee486a847848007af487c2df59e330faec23818",
+        "body_bytes": 2500,
+        "body_sha256": "4600cf6c17311bce991efad13975fbc0f1a65e468b43080b550bce79c9f88e63",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -8156,7 +8156,7 @@
           "segment": [
             {
               "app": null,
-              "description": "Extracts structured intelligence from imported documents",
+              "description": "Extracts structured details from imported documents",
               "disabled": false,
               "key": "documents",
               "source": "system",
@@ -8164,7 +8164,7 @@
             },
             {
               "app": null,
-              "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what' - chronological account with preserved details, excerpts, and entities.",
+              "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
               "disabled": false,
               "key": "screen",
               "source": "system",
@@ -8172,7 +8172,7 @@
             },
             {
               "app": null,
-              "description": "Unified segment understanding \u2014 density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+              "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
               "disabled": false,
               "key": "sense",
               "source": "system",
@@ -10491,8 +10491,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2501,
-        "body_sha256": "e44df6e8b64e23257c25192d8ee486a847848007af487c2df59e330faec23818",
+        "body_bytes": 2500,
+        "body_sha256": "4600cf6c17311bce991efad13975fbc0f1a65e468b43080b550bce79c9f88e63",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -10549,7 +10549,7 @@
           "segment": [
             {
               "app": null,
-              "description": "Extracts structured intelligence from imported documents",
+              "description": "Extracts structured details from imported documents",
               "disabled": false,
               "key": "documents",
               "source": "system",
@@ -10557,7 +10557,7 @@
             },
             {
               "app": null,
-              "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what' - chronological account with preserved details, excerpts, and entities.",
+              "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
               "disabled": false,
               "key": "screen",
               "source": "system",
@@ -10565,7 +10565,7 @@
             },
             {
               "app": null,
-              "description": "Unified segment understanding \u2014 density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+              "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
               "disabled": false,
               "key": "sense",
               "source": "system",
@@ -14035,8 +14035,8 @@
         "why": "local runtime recovery view"
       },
       {
-        "body_bytes": 2501,
-        "body_sha256": "e44df6e8b64e23257c25192d8ee486a847848007af487c2df59e330faec23818",
+        "body_bytes": 2500,
+        "body_sha256": "4600cf6c17311bce991efad13975fbc0f1a65e468b43080b550bce79c9f88e63",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
@@ -14093,7 +14093,7 @@
           "segment": [
             {
               "app": null,
-              "description": "Extracts structured intelligence from imported documents",
+              "description": "Extracts structured details from imported documents",
               "disabled": false,
               "key": "documents",
               "source": "system",
@@ -14101,7 +14101,7 @@
             },
             {
               "app": null,
-              "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what' - chronological account with preserved details, excerpts, and entities.",
+              "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
               "disabled": false,
               "key": "screen",
               "source": "system",
@@ -14109,7 +14109,7 @@
             },
             {
               "app": null,
-              "description": "Unified segment understanding \u2014 density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+              "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
               "disabled": false,
               "key": "sense",
               "source": "system",

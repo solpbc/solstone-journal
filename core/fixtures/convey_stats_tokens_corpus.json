@@ -394,7 +394,7 @@
                 "documents": {
                   "color": "#5c6bc0",
                   "degradation_check": true,
-                  "description": "Extracts structured intelligence from imported documents",
+                  "description": "Extracts structured details from imported documents",
                   "hook": {
                     "pre": "documents"
                   },
@@ -607,7 +607,7 @@
                   "accumulate": true,
                   "cadence_minutes": 5,
                   "color": "#6c757d",
-                  "description": "Living situational read of the owner's day \u2014 the shape of today, what needs them, and a one-line glance.",
+                  "description": "Living situational read of your day. The shape of today, what needs you, and a one-line glance.",
                   "hook": {
                     "post": "pulse",
                     "pre": "pulse"
@@ -654,7 +654,7 @@
                 },
                 "screen": {
                   "color": "#9c27b0",
-                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what' - chronological account with preserved details, excerpts, and entities.",
+                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "load": {
                     "percepts": "required",
                     "talents": false,
@@ -673,7 +673,7 @@
                 },
                 "sense": {
                   "color": "#ff6f00",
-                  "description": "Unified segment understanding \u2014 density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+                  "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "load": {
                     "percepts": true,
                     "talents": false,
@@ -718,7 +718,7 @@
                   "accumulate": true,
                   "cadence_minutes": 30,
                   "color": "#6c757d",
-                  "description": "Writes the owner-facing health summary (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
                   "hook": {
                     "post": "steward",
                     "pre": "steward"
@@ -1123,7 +1123,7 @@
                 "documents": {
                   "color": "#5c6bc0",
                   "degradation_check": true,
-                  "description": "Extracts structured intelligence from imported documents",
+                  "description": "Extracts structured details from imported documents",
                   "hook": {
                     "pre": "documents"
                   },
@@ -1336,7 +1336,7 @@
                   "accumulate": true,
                   "cadence_minutes": 5,
                   "color": "#6c757d",
-                  "description": "Living situational read of the owner's day \u2014 the shape of today, what needs them, and a one-line glance.",
+                  "description": "Living situational read of your day. The shape of today, what needs you, and a one-line glance.",
                   "hook": {
                     "post": "pulse",
                     "pre": "pulse"
@@ -1383,7 +1383,7 @@
                 },
                 "screen": {
                   "color": "#9c27b0",
-                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what' - chronological account with preserved details, excerpts, and entities.",
+                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "load": {
                     "percepts": "required",
                     "talents": false,
@@ -1402,7 +1402,7 @@
                 },
                 "sense": {
                   "color": "#ff6f00",
-                  "description": "Unified segment understanding \u2014 density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+                  "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "load": {
                     "percepts": true,
                     "talents": false,
@@ -1447,7 +1447,7 @@
                   "accumulate": true,
                   "cadence_minutes": 30,
                   "color": "#6c757d",
-                  "description": "Writes the owner-facing health summary (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
                   "hook": {
                     "post": "steward",
                     "pre": "steward"
@@ -1970,7 +1970,7 @@
                 "documents": {
                   "color": "#5c6bc0",
                   "degradation_check": true,
-                  "description": "Extracts structured intelligence from imported documents",
+                  "description": "Extracts structured details from imported documents",
                   "hook": {
                     "pre": "documents"
                   },
@@ -2183,7 +2183,7 @@
                   "accumulate": true,
                   "cadence_minutes": 5,
                   "color": "#6c757d",
-                  "description": "Living situational read of the owner's day \u2014 the shape of today, what needs them, and a one-line glance.",
+                  "description": "Living situational read of your day. The shape of today, what needs you, and a one-line glance.",
                   "hook": {
                     "post": "pulse",
                     "pre": "pulse"
@@ -2230,7 +2230,7 @@
                 },
                 "screen": {
                   "color": "#9c27b0",
-                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what' - chronological account with preserved details, excerpts, and entities.",
+                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "load": {
                     "percepts": "required",
                     "talents": false,
@@ -2249,7 +2249,7 @@
                 },
                 "sense": {
                   "color": "#ff6f00",
-                  "description": "Unified segment understanding \u2014 density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+                  "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "load": {
                     "percepts": true,
                     "talents": false,
@@ -2294,7 +2294,7 @@
                   "accumulate": true,
                   "cadence_minutes": 30,
                   "color": "#6c757d",
-                  "description": "Writes the owner-facing health summary (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
                   "hook": {
                     "post": "steward",
                     "pre": "steward"
@@ -2817,7 +2817,7 @@
                 "documents": {
                   "color": "#5c6bc0",
                   "degradation_check": true,
-                  "description": "Extracts structured intelligence from imported documents",
+                  "description": "Extracts structured details from imported documents",
                   "hook": {
                     "pre": "documents"
                   },
@@ -3030,7 +3030,7 @@
                   "accumulate": true,
                   "cadence_minutes": 5,
                   "color": "#6c757d",
-                  "description": "Living situational read of the owner's day \u2014 the shape of today, what needs them, and a one-line glance.",
+                  "description": "Living situational read of your day. The shape of today, what needs you, and a one-line glance.",
                   "hook": {
                     "post": "pulse",
                     "pre": "pulse"
@@ -3077,7 +3077,7 @@
                 },
                 "screen": {
                   "color": "#9c27b0",
-                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what' - chronological account with preserved details, excerpts, and entities.",
+                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "load": {
                     "percepts": "required",
                     "talents": false,
@@ -3096,7 +3096,7 @@
                 },
                 "sense": {
                   "color": "#ff6f00",
-                  "description": "Unified segment understanding \u2014 density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+                  "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "load": {
                     "percepts": true,
                     "talents": false,
@@ -3141,7 +3141,7 @@
                   "accumulate": true,
                   "cadence_minutes": 30,
                   "color": "#6c757d",
-                  "description": "Writes the owner-facing health summary (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
                   "hook": {
                     "post": "steward",
                     "pre": "steward"

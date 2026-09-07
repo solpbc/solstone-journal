@@ -436,7 +436,7 @@
                 "documents": {
                   "app": null,
                   "color": "#5c6bc0",
-                  "description": "Extracts structured intelligence from imported documents",
+                  "description": "Extracts structured details from imported documents",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -568,7 +568,7 @@
                 "pulse": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Living situational read of the owner's day \u2014 the shape of today, what needs them, and a one-line glance.",
+                  "description": "Living situational read of your day. The shape of today, what needs you, and a one-line glance.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -601,7 +601,7 @@
                 "screen": {
                   "app": null,
                   "color": "#9c27b0",
-                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what' - chronological account with preserved details, excerpts, and entities.",
+                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -612,7 +612,7 @@
                 "sense": {
                   "app": null,
                   "color": "#ff6f00",
-                  "description": "Unified segment understanding \u2014 density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+                  "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -634,7 +634,7 @@
                 "steward": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Writes the owner-facing health summary (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -731,7 +731,7 @@
                 "documents": {
                   "app": null,
                   "color": "#5c6bc0",
-                  "description": "Extracts structured intelligence from imported documents",
+                  "description": "Extracts structured details from imported documents",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -863,7 +863,7 @@
                 "pulse": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Living situational read of the owner's day \u2014 the shape of today, what needs them, and a one-line glance.",
+                  "description": "Living situational read of your day. The shape of today, what needs you, and a one-line glance.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -896,7 +896,7 @@
                 "screen": {
                   "app": null,
                   "color": "#9c27b0",
-                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what' - chronological account with preserved details, excerpts, and entities.",
+                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -907,7 +907,7 @@
                 "sense": {
                   "app": null,
                   "color": "#ff6f00",
-                  "description": "Unified segment understanding \u2014 density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+                  "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -929,7 +929,7 @@
                 "steward": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Writes the owner-facing health summary (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -1277,7 +1277,7 @@
                 "documents": {
                   "app": null,
                   "color": "#5c6bc0",
-                  "description": "Extracts structured intelligence from imported documents",
+                  "description": "Extracts structured details from imported documents",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -1409,7 +1409,7 @@
                 "pulse": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Living situational read of the owner's day \u2014 the shape of today, what needs them, and a one-line glance.",
+                  "description": "Living situational read of your day. The shape of today, what needs you, and a one-line glance.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -1442,7 +1442,7 @@
                 "screen": {
                   "app": null,
                   "color": "#9c27b0",
-                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what' - chronological account with preserved details, excerpts, and entities.",
+                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -1453,7 +1453,7 @@
                 "sense": {
                   "app": null,
                   "color": "#ff6f00",
-                  "description": "Unified segment understanding \u2014 density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+                  "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -1475,7 +1475,7 @@
                 "steward": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Writes the owner-facing health summary (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -1607,7 +1607,7 @@
                 "documents": {
                   "app": null,
                   "color": "#5c6bc0",
-                  "description": "Extracts structured intelligence from imported documents",
+                  "description": "Extracts structured details from imported documents",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -1739,7 +1739,7 @@
                 "pulse": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Living situational read of the owner's day \u2014 the shape of today, what needs them, and a one-line glance.",
+                  "description": "Living situational read of your day. The shape of today, what needs you, and a one-line glance.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -1772,7 +1772,7 @@
                 "screen": {
                   "app": null,
                   "color": "#9c27b0",
-                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what' - chronological account with preserved details, excerpts, and entities.",
+                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -1783,7 +1783,7 @@
                 "sense": {
                   "app": null,
                   "color": "#ff6f00",
-                  "description": "Unified segment understanding \u2014 density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+                  "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -1805,7 +1805,7 @@
                 "steward": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Writes the owner-facing health summary (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -2232,7 +2232,7 @@
                 "documents": {
                   "app": null,
                   "color": "#5c6bc0",
-                  "description": "Extracts structured intelligence from imported documents",
+                  "description": "Extracts structured details from imported documents",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -2364,7 +2364,7 @@
                 "pulse": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Living situational read of the owner's day \u2014 the shape of today, what needs them, and a one-line glance.",
+                  "description": "Living situational read of your day. The shape of today, what needs you, and a one-line glance.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -2397,7 +2397,7 @@
                 "screen": {
                   "app": null,
                   "color": "#9c27b0",
-                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what' - chronological account with preserved details, excerpts, and entities.",
+                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -2408,7 +2408,7 @@
                 "sense": {
                   "app": null,
                   "color": "#ff6f00",
-                  "description": "Unified segment understanding \u2014 density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+                  "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -2430,7 +2430,7 @@
                 "steward": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Writes the owner-facing health summary (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -2562,7 +2562,7 @@
                 "documents": {
                   "app": null,
                   "color": "#5c6bc0",
-                  "description": "Extracts structured intelligence from imported documents",
+                  "description": "Extracts structured details from imported documents",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -2694,7 +2694,7 @@
                 "pulse": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Living situational read of the owner's day \u2014 the shape of today, what needs them, and a one-line glance.",
+                  "description": "Living situational read of your day. The shape of today, what needs you, and a one-line glance.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -2727,7 +2727,7 @@
                 "screen": {
                   "app": null,
                   "color": "#9c27b0",
-                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what' - chronological account with preserved details, excerpts, and entities.",
+                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -2738,7 +2738,7 @@
                 "sense": {
                   "app": null,
                   "color": "#ff6f00",
-                  "description": "Unified segment understanding \u2014 density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+                  "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -2760,7 +2760,7 @@
                 "steward": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Writes the owner-facing health summary (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -3187,7 +3187,7 @@
                 "documents": {
                   "app": null,
                   "color": "#5c6bc0",
-                  "description": "Extracts structured intelligence from imported documents",
+                  "description": "Extracts structured details from imported documents",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -3319,7 +3319,7 @@
                 "pulse": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Living situational read of the owner's day \u2014 the shape of today, what needs them, and a one-line glance.",
+                  "description": "Living situational read of your day. The shape of today, what needs you, and a one-line glance.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -3352,7 +3352,7 @@
                 "screen": {
                   "app": null,
                   "color": "#9c27b0",
-                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what' - chronological account with preserved details, excerpts, and entities.",
+                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -3363,7 +3363,7 @@
                 "sense": {
                   "app": null,
                   "color": "#ff6f00",
-                  "description": "Unified segment understanding \u2014 density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+                  "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -3385,7 +3385,7 @@
                 "steward": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Writes the owner-facing health summary (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -3517,7 +3517,7 @@
                 "documents": {
                   "app": null,
                   "color": "#5c6bc0",
-                  "description": "Extracts structured intelligence from imported documents",
+                  "description": "Extracts structured details from imported documents",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -3649,7 +3649,7 @@
                 "pulse": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Living situational read of the owner's day \u2014 the shape of today, what needs them, and a one-line glance.",
+                  "description": "Living situational read of your day. The shape of today, what needs you, and a one-line glance.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -3682,7 +3682,7 @@
                 "screen": {
                   "app": null,
                   "color": "#9c27b0",
-                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what' - chronological account with preserved details, excerpts, and entities.",
+                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -3693,7 +3693,7 @@
                 "sense": {
                   "app": null,
                   "color": "#ff6f00",
-                  "description": "Unified segment understanding \u2014 density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+                  "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -3715,7 +3715,7 @@
                 "steward": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Writes the owner-facing health summary (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -4141,7 +4141,7 @@
                 "documents": {
                   "app": null,
                   "color": "#5c6bc0",
-                  "description": "Extracts structured intelligence from imported documents",
+                  "description": "Extracts structured details from imported documents",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -4273,7 +4273,7 @@
                 "pulse": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Living situational read of the owner's day \u2014 the shape of today, what needs them, and a one-line glance.",
+                  "description": "Living situational read of your day. The shape of today, what needs you, and a one-line glance.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -4306,7 +4306,7 @@
                 "screen": {
                   "app": null,
                   "color": "#9c27b0",
-                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what' - chronological account with preserved details, excerpts, and entities.",
+                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -4317,7 +4317,7 @@
                 "sense": {
                   "app": null,
                   "color": "#ff6f00",
-                  "description": "Unified segment understanding \u2014 density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+                  "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -4339,7 +4339,7 @@
                 "steward": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Writes the owner-facing health summary (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -4471,7 +4471,7 @@
                 "documents": {
                   "app": null,
                   "color": "#5c6bc0",
-                  "description": "Extracts structured intelligence from imported documents",
+                  "description": "Extracts structured details from imported documents",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -4603,7 +4603,7 @@
                 "pulse": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Living situational read of the owner's day \u2014 the shape of today, what needs them, and a one-line glance.",
+                  "description": "Living situational read of your day. The shape of today, what needs you, and a one-line glance.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
@@ -4636,7 +4636,7 @@
                 "screen": {
                   "app": null,
                   "color": "#9c27b0",
-                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what' - chronological account with preserved details, excerpts, and entities.",
+                  "description": "Creates a detailed documentary record of screen activity. Focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -4647,7 +4647,7 @@
                 "sense": {
                   "app": null,
                   "color": "#ff6f00",
-                  "description": "Unified segment understanding \u2014 density, content type, entities, facets, speakers, and routing recommendations in a single pass",
+                  "description": "Unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "segment",
@@ -4669,7 +4669,7 @@
                 "steward": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Writes the owner-facing health summary (headline, sentence, suggested action) from the deterministic health surface.",
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action) from the deterministic health surface.",
                   "multi_facet": false,
                   "output_format": "json",
                   "schedule": "cadence",
