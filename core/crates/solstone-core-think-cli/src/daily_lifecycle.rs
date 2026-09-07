@@ -872,6 +872,15 @@ mod tests {
             Ok(format!("use-{}", request.name))
         }
 
+        fn dispatch_prepared(
+            &self,
+            _: &tokio::runtime::Runtime,
+            _: &solstone_core_cortex_client::CortexRequest,
+            _: Option<&str>,
+            _: &mut (dyn FnMut(&str) -> std::io::Result<()> + Send),
+        ) -> Result<String, crate::context::DispatchFailure> {
+            unreachable!("daily-only fixture")
+        }
         fn wait(
             &self,
             _runtime: &tokio::runtime::Runtime,

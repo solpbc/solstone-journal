@@ -4,6 +4,8 @@
 //! Native preflight and unavailable-run boundary for `journal think`.
 
 mod activity;
+mod activity_work;
+pub use activity_work::{ActivityRetry, due_activity_retries, seed_activity_retries};
 mod args;
 mod cadence;
 mod cadence_state;
@@ -587,6 +589,7 @@ fn validate(
 
 #[cfg(test)]
 mod tests {
+    mod activity_recovery;
     use std::cell::Cell;
     use std::collections::BTreeSet;
     use std::fs;
@@ -660,6 +663,17 @@ mod tests {
                 return Err(error);
             }
             Ok(format!("use-{}", requests.len()))
+        }
+        fn dispatch_prepared(
+            &self,
+            runtime: &tokio::runtime::Runtime,
+            request: &solstone_core_cortex_client::CortexRequest,
+            _reserved: Option<&str>,
+            prepare: &mut (dyn FnMut(&str) -> std::io::Result<()> + Send),
+        ) -> Result<String, context::DispatchFailure> {
+            let id = format!("use-{}", self.requests.lock().unwrap().len() + 1);
+            prepare(&id).map_err(|_| context::DispatchFailure::Unavailable)?;
+            self.dispatch(runtime, request)
         }
         fn wait(
             &self,
@@ -3787,6 +3801,15 @@ mod tests {
                     }
                 }
                 Ok(id)
+            }
+            fn dispatch_prepared(
+                &self,
+                _: &tokio::runtime::Runtime,
+                _: &solstone_core_cortex_client::CortexRequest,
+                _: Option<&str>,
+                _: &mut (dyn FnMut(&str) -> std::io::Result<()> + Send),
+            ) -> Result<String, context::DispatchFailure> {
+                unreachable!("segment-only fixture")
             }
             fn wait(
                 &self,

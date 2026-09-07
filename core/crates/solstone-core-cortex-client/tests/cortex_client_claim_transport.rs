@@ -281,3 +281,56 @@ fn damaged_counter_refuses_before_request_publication() {
         b"damaged"
     );
 }
+
+#[cfg(unix)]
+#[tokio::test(flavor = "current_thread")]
+async fn prepared_dispatch_persists_identity_before_send_and_failure_sends_nothing() {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    let journal = tempfile::tempdir().unwrap();
+    fs::create_dir_all(journal.path().join("health")).unwrap();
+    let listener =
+        tokio::net::UnixListener::bind(journal.path().join("health/callosum.sock")).unwrap();
+    let client = CortexRequestClient::with_allocator(
+        journal.path(),
+        CortexRequestPolicy::interactive(),
+        UseIdAllocator::new(|| Some(1)),
+    );
+    let request = CortexRequest::new("", "steward");
+    let mut refused = None;
+    let result = client
+        .dispatch_prepared(&request, &mut |id| {
+            refused = Some(id.to_owned());
+            Err(io::Error::other("receipt unavailable"))
+        })
+        .await;
+    assert_eq!(result, Err(DispatchError::Unavailable));
+    assert!(refused.is_some());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), listener.accept())
+            .await
+            .is_err()
+    );
+    let receipt = journal.path().join("receipt");
+    let receive = async {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut lines = BufReader::new(stream).lines();
+        let line = lines.next_line().await.unwrap().unwrap();
+        let message: serde_json::Value = serde_json::from_str(&line).unwrap();
+        let id = message["use_id"].as_str().unwrap();
+        assert_eq!(fs::read_to_string(&receipt).unwrap(), id);
+        write_use(
+            journal.path(),
+            id,
+            true,
+            serde_json::json!({"use_id":id,"name":"steward","event":"request"})
+                .to_string()
+                .as_bytes(),
+        );
+        id.to_owned()
+    };
+    let mut prepare = |id: &str| fs::write(&receipt, id);
+    let send = client.dispatch_prepared(&request, &mut prepare);
+    let (sent, observed) = tokio::join!(send, receive);
+    assert_eq!(sent.unwrap(), observed);
+    assert_ne!(refused.unwrap(), observed);
+}

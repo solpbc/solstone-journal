@@ -283,11 +283,26 @@ impl CortexRequestClient {
     }
 
     pub async fn dispatch(&self, request: &CortexRequest) -> Result<String, DispatchError> {
+        self.dispatch_prepared(request, &mut |_| Ok(())).await
+    }
+
+    /// Reserve and persist the caller's durable receipt before broadcasting.
+    /// A preparation failure sends nothing; retry may safely use the reserved id.
+    pub async fn dispatch_prepared(
+        &self,
+        request: &CortexRequest,
+        prepare: &mut (dyn FnMut(&str) -> io::Result<()> + Send),
+    ) -> Result<String, DispatchError> {
         let ts = allocate_cortex_use_id(&self.journal, self.use_ids.next()?).map_err(|error| {
             eprintln!("cortex: could not reserve use identity: {error}");
             DispatchError::Unavailable
         })?;
-        self.dispatch_with_use_id(request, ts, ts.to_string()).await
+        let use_id = ts.to_string();
+        prepare(&use_id).map_err(|error| {
+            eprintln!("cortex: could not persist request receipt: {error}");
+            DispatchError::Unavailable
+        })?;
+        self.dispatch_with_use_id(request, ts, use_id).await
     }
 
     pub async fn dispatch_with_use_id(

@@ -497,6 +497,27 @@ impl TaskQueue {
         outcome
     }
 
+    /// Whether this caller reference is pending, queued, or running. Periodic
+    /// reconcilers with a single submitting owner can avoid stacking the same
+    /// work before readiness as well as behind its active execution.
+    pub fn contains_reference(&self, reference: &str) -> bool {
+        let state = self.inner.state.lock().expect("queue state lock poisoned");
+        state
+            .pending
+            .iter()
+            .any(|entry| entry.reference == reference)
+            || state
+                .running
+                .values()
+                .any(|slot| slot.reference == reference)
+            || state.active.contains_key(reference)
+            || state
+                .queues
+                .values()
+                .flatten()
+                .any(|entry| entry.references.iter().any(|value| value == reference))
+    }
+
     pub fn set_ready(&self) {
         let (dispatches, events) = {
             let mut state = self.inner.state.lock().expect("queue state lock poisoned");

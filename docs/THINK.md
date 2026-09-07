@@ -66,6 +66,25 @@ Owners:
 Agents invoke journal data operations through `solstone call <app> <verb>`. See
 [SOLCLI.md](SOLCLI.md).
 
+### Interrupted activity work
+
+`think-cli::activity_work` persists unfinished talent names and accepted Cortex use
+IDs under `health/activity-work/` before waiting for results. A per-activity claim
+serializes dispatch and completion. Successful siblings are removed from the pending
+set; final success publishes the existing input provenance before removing the work
+record. A retry reattaches a running use or folds its durable finish before considering
+a new dispatch. A changed input fingerprint starts a new unit set after previous uses
+have stopped.
+
+The supervisor checks due work once per minute and submits at most eight identities
+through its existing task queue. Connection failures retry indefinitely, with delays
+from one minute to one hour; explicit non-retryable worker errors remain pending for
+repair or an explicit refresh. Retry discovery includes older pending records,
+independently of segment or daily completion. On startup and date rollover, existing
+connection failures from the current and previous source days are adopted without
+replaying historical segments. Remote and deferred-processing modes do not drain this
+queue. Activity failure counts propagate through the segment replay outcome.
+
 ## Prompt Context Configuration
 
 Generators and talents accept an optional `load` key in frontmatter:

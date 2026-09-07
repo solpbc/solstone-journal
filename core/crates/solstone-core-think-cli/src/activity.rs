@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use crate::activity_work::ActivityWork;
 use serde_json::{Map, Value};
-use solstone_core_cortex_client::{TimedOutUse, UseEndState};
+use solstone_core_cortex_client::{
+    UseEndState, UseFileStatus, get_use_end_state, read_use_events, use_file_status,
+};
 use solstone_core_facets::get_activity_record;
 use solstone_core_talent_config::{TalentFilter, get_output_name, load_talent_configs};
 use solstone_core_talent_runtime::activity_contract;
 
 use crate::context::{DispatchFailure, ThinkContext};
 use crate::dispatch::{
-    DEFAULT_THINK_TIMEOUT, ModeResult, PendingUse, dispatch_direct, failure_cause, grouped,
-    item_label, maybe_rescan_output, merge_mode_result, named_failure, runtime, timeout_cause,
+    DEFAULT_THINK_TIMEOUT, DrainOutcome, ModeResult, PendingUse, drain_with_deadline_observed,
+    grouped, merge_mode_result, runtime,
 };
 use crate::helpers;
 use crate::run_log::RunLogWriter;
@@ -55,10 +58,20 @@ pub(crate) fn run(
     .into_iter()
     .filter(|config| activity_contract::matches_activity(&config.metadata, kind))
     .collect::<Vec<_>>();
-    if configs.is_empty() {
-        return Ok(ModeResult::default());
+    let input_hash = crate::segment::compute_activity_input_hash(context, &context.day, &record)
+        .ok_or_else(|| "cannot fingerprint activity inputs".to_owned())?;
+    let mut work = ActivityWork::begin(
+        context,
+        facet,
+        activity_id,
+        input_hash,
+        configs.iter().map(|c| c.key.clone()).collect(),
+        refresh,
+    )?;
+    if !work.due(context.event_now_ms()) {
+        return Ok(failed("activity retry pending"));
     }
-
+    work.start_attempt(context.event_now_ms())?;
     let groups = grouped(configs);
     let total_count = groups.values().map(Vec::len).sum::<usize>();
     let start = fields(
@@ -95,6 +108,16 @@ pub(crate) fn run(
         let mut pending = Vec::new();
         let mut group = ModeResult::default();
         for config in configs {
+            if !work.contains(&config.key) {
+                continue;
+            }
+            if work.parked(&config.key) {
+                group.failed += 1;
+                group
+                    .failed_names
+                    .push(format!("{} (requires repair)", config.key));
+                continue;
+            }
             if activity_contract::skips_low_level_work(&config.key, kind, &record) {
                 // Source-derived, not measured: thinking.py:3330-3343 skips
                 // `work` below 0.4 for browsing and reading activities.
@@ -114,8 +137,32 @@ pub(crate) fn run(
                         ]),
                     ),
                 );
+                work.complete(&config.key)?;
                 continue;
             }
+            // Reattach an accepted use after a caller crash or lost wait; never
+            // submit another request while the previous use is still active.
+            let previous = work.use_id(&config.key).map(str::to_owned);
+            let mut reserved = None;
+            let resume = if let Some(id) = previous {
+                let status = use_file_status(&context.journal.join("talents"), &id)
+                    .map_err(|e| e.to_string())?;
+                if status == UseFileStatus::Running
+                    || get_use_end_state(&context.journal, &id).map_err(|e| e.to_string())?
+                        == UseEndState::Finish
+                {
+                    // The shared drain folds durable finishes and preserves
+                    // output-indexing behavior, including after a lost wait.
+                    Some(id)
+                } else {
+                    if status == UseFileStatus::NotFound {
+                        reserved = Some(id);
+                    }
+                    None
+                }
+            } else {
+                None
+            };
             match queue(
                 context,
                 &runtime,
@@ -125,12 +172,17 @@ pub(crate) fn run(
                 facet,
                 kind,
                 refresh,
+                resume,
+                reserved,
+                &mut work,
             ) {
                 Ok(item) => {
+                    work.dispatched(&config.key, &item.use_id)?;
                     log_dispatch(log, context, &config.key, activity_id, facet, &item);
                     pending.push(item);
                 }
                 Err(DispatchFailure::NotClaimed { use_id }) => {
+                    work.dispatched(&config.key, &use_id)?;
                     group.failed += 1;
                     group
                         .failed_names
@@ -171,13 +223,22 @@ pub(crate) fn run(
                         std::mem::take(&mut pending),
                         activity_id,
                         facet,
-                    ),
+                        &mut work,
+                    )?,
                 );
             }
         }
         merge(
             &mut group,
-            drain_activity(context, log, &runtime, pending, activity_id, facet),
+            drain_activity(
+                context,
+                log,
+                &runtime,
+                pending,
+                activity_id,
+                facet,
+                &mut work,
+            )?,
         );
         log.log(
             "group.complete",
@@ -229,6 +290,8 @@ pub(crate) fn run(
         ),
     );
     log.log("completed", context.now_ms, completed);
+    log.finish()?;
+    work.finish(context)?;
     Ok(total)
 }
 
@@ -245,6 +308,9 @@ fn queue(
     facet: &str,
     kind: &str,
     refresh: bool,
+    resume: Option<String>,
+    reserved: Option<String>,
+    work: &mut ActivityWork,
 ) -> Result<PendingUse, DispatchFailure> {
     let generate = activity_contract::is_explicit_generate(&config.metadata);
     let format = config
@@ -297,20 +363,48 @@ fn queue(
             request.insert("refresh".to_owned(), Value::Bool(true));
         }
     }
-    dispatch_direct(
-        context,
-        runtime,
-        &config.key,
+    if let Some(use_id) = resume {
+        return Ok(PendingUse {
+            use_id,
+            name: config.key.clone(),
+            facet: Some(facet.to_owned()),
+            output_path: request
+                .get("output_path")
+                .and_then(Value::as_str)
+                .map(std::path::PathBuf::from),
+            index_output: generate && format != "json",
+        });
+    }
+    let request = solstone_core_cortex_client::CortexRequest::new(
         if generate {
             String::new()
         } else {
             activity_contract::cogitate_prompt(activity_id, kind, facet, &context.day)
         },
-        request,
-        Some(facet),
+        config.key.clone(),
     )
+    .with_config(request);
+    let use_id =
+        context
+            .cortex
+            .dispatch_prepared(runtime, &request, reserved.as_deref(), &mut |id| {
+                work.dispatched(&config.key, id)
+                    .map_err(std::io::Error::other)
+            })?;
+    Ok(PendingUse {
+        use_id,
+        name: config.key.clone(),
+        facet: Some(facet.to_owned()),
+        output_path: request
+            .config
+            .get("output_path")
+            .and_then(Value::as_str)
+            .map(std::path::PathBuf::from),
+        index_output: generate && format != "json",
+    })
 }
 
+#[allow(clippy::too_many_arguments)] // Mode identity plus its durable completion owner.
 fn drain_activity(
     context: &ThinkContext,
     log: &mut RunLogWriter,
@@ -318,120 +412,73 @@ fn drain_activity(
     pending: Vec<PendingUse>,
     activity_id: &str,
     facet: &str,
-) -> ModeResult {
-    let mut result = ModeResult::default();
-    if pending.is_empty() {
-        return result;
-    }
-    let ids = pending
-        .iter()
-        .map(|item| item.use_id.clone())
-        .collect::<Vec<_>>();
-    let report = match context
-        .cortex
-        .wait(runtime, &ids, Some(DEFAULT_THINK_TIMEOUT))
-    {
-        Ok(report) => report,
-        Err(error) => {
-            let wait_error = format!("wait failed: {error:?}");
-            for item in pending {
-                result.failed += 1;
-                let cause = failure_cause(&context.journal, &item.use_id, &wait_error);
-                result
-                    .failed_names
-                    .push(named_failure(&item_label(&item.name, Some(facet)), &cause));
-                log_fail(
-                    log,
-                    context,
-                    activity_id,
-                    facet,
-                    &item.name,
-                    Some(&item.use_id),
-                    "unknown",
-                    Some(&cause),
-                );
-            }
-            return result;
-        }
-    };
-    for item in pending {
-        let label = item_label(&item.name, Some(facet));
-        if let Some(timeout) = report
-            .timed_out
-            .iter()
-            .find(|timeout| timeout.use_id() == item.use_id)
-        {
-            result.failed += 1;
-            let cause = failure_cause(&context.journal, &item.use_id, timeout_cause(timeout));
-            result.failed_names.push(named_failure(&label, &cause));
-            let state = match timeout {
-                TimedOutUse::LostAtDeadline { .. } => "unknown",
-                TimedOutUse::GenuineTimeout { .. } => "running",
+    work: &mut ActivityWork,
+) -> Result<ModeResult, String> {
+    let mut persistence_error = None;
+    let result = drain_with_deadline_observed(
+        context,
+        runtime,
+        pending,
+        Some(DEFAULT_THINK_TIMEOUT),
+        &mut |item, outcome| {
+            let saved = match outcome {
+                DrainOutcome::Finish => {
+                    log_complete(
+                        log,
+                        context,
+                        activity_id,
+                        facet,
+                        &item.name,
+                        &item.use_id,
+                        "finish",
+                    );
+                    log.finish().and_then(|()| work.complete(&item.name))
+                }
+                DrainOutcome::Fail { state, cause } => {
+                    log_fail(
+                        log,
+                        context,
+                        activity_id,
+                        facet,
+                        &item.name,
+                        Some(&item.use_id),
+                        state,
+                        cause.as_deref(),
+                    );
+                    // The worker's explicit non-retryable terminal is respected;
+                    // connection interruption never enters that parked set.
+                    if cause.as_deref() != Some("local_endpoint_unreachable")
+                        && read_use_events(&context.journal, &item.use_id)
+                            .ok()
+                            .is_some_and(|events| {
+                                events
+                                    .iter()
+                                    .rev()
+                                    .find(|e| {
+                                        e["event"] == "error"
+                                            && e.get("terminal")
+                                                .and_then(Value::as_bool)
+                                                .unwrap_or(true)
+                                    })
+                                    .is_some_and(|e| e["retryable"] == false)
+                            })
+                    {
+                        work.park(&item.name)
+                    } else {
+                        Ok(())
+                    }
+                }
             };
-            log_fail(
-                log,
-                context,
-                activity_id,
-                facet,
-                &item.name,
-                Some(&item.use_id),
-                state,
-                Some(&cause),
-            );
-            continue;
-        }
-        match report.completed.get(&item.use_id) {
-            Some(completion) if completion.end_state == UseEndState::Finish => {
-                maybe_rescan_output(context, &item, completion);
-                result.success += 1;
-                result.success_names.push(label);
-                log_complete(
-                    log,
-                    context,
-                    activity_id,
-                    facet,
-                    &item.name,
-                    &item.use_id,
-                    "finish",
-                );
+            if let Err(error) = saved {
+                persistence_error.get_or_insert(error);
             }
-            Some(completion) => {
-                result.failed += 1;
-                let cause = failure_cause(
-                    &context.journal,
-                    &item.use_id,
-                    completion.end_state.as_str(),
-                );
-                result.failed_names.push(named_failure(&label, &cause));
-                log_fail(
-                    log,
-                    context,
-                    activity_id,
-                    facet,
-                    &item.name,
-                    Some(&item.use_id),
-                    completion.end_state.as_str(),
-                    Some(&cause),
-                );
-            }
-            None => {
-                result.failed += 1;
-                let cause = failure_cause(&context.journal, &item.use_id, "unknown");
-                result.failed_names.push(named_failure(&label, &cause));
-                log_fail(
-                    log,
-                    context,
-                    activity_id,
-                    facet,
-                    &item.name,
-                    Some(&item.use_id),
-                    "unknown",
-                    Some(&cause),
-                );
-            }
-        }
+        },
+    );
+    if let Some(error) = persistence_error {
+        Err(error)
+    } else {
+        Ok(result)
     }
-    result
 }
 
 fn fields(
