@@ -401,6 +401,12 @@ async function main() {
   );
   click(overCard, 'select-all');
   await settle();
+  // The cap is stated on the live count the moment the selection passes it,
+  // not as a standing number beside a 20-row page. G1-204.
+  assert(overCard.innerHTML.includes(rendered(copy, 'bulk.selected_over_cap', { n: 33, max: 32 })),
+    'over-cap selection states the cap');
+  assert(!/choose up to \d+ items per action/.test(overCard.innerHTML),
+    'the standing scope sentence no longer names a cap');
   click(overCard, 'delete-selected');
   await settle();
   assert(outcome(overCard).includes(rendered(copy, 'done.too_many', { n: 32 })));
