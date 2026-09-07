@@ -400,17 +400,6 @@
             "body": {
               "facets": {},
               "talents": {
-                "chat": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Structured conversational reply planner for the chat backend rewrite",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Chat",
-                  "type": "generate"
-                },
                 "conversation": {
                   "app": null,
                   "color": "#00796b",
@@ -510,17 +499,6 @@
                   "title": "Event Story",
                   "type": "generate"
                 },
-                "exec": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Sol \u2014 takes action and makes changes in the journal",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Exec",
-                  "type": "cogitate"
-                },
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
@@ -557,12 +535,12 @@
                 "partner": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Weekly observation of the journal owner's behavioral patterns \u2014 work style, communication, priorities, decision-making, expertise",
+                  "description": "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, interactions you had, and decisions. your journal is always private, only yours.",
                   "multi_facet": false,
                   "output_format": null,
                   "schedule": "weekly",
                   "source": "system",
-                  "title": "Partner Profile",
+                  "title": "your profile",
                   "type": "cogitate"
                 },
                 "pulse": {
@@ -575,17 +553,6 @@
                   "source": "system",
                   "title": "Pulse",
                   "type": "generate"
-                },
-                "read": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Sol \u2014 finds, reads, and synthesizes anything in the journal (read-only)",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Read",
-                  "type": "cogitate"
                 },
                 "schedule": {
                   "app": null,
@@ -641,17 +608,6 @@
                   "source": "system",
                   "title": "Steward",
                   "type": "generate"
-                },
-                "support:support": {
-                  "app": "support",
-                  "color": "#0288d1",
-                  "description": "Drafts support requests and feedback to solstone support for owner review, searches help articles, and runs local diagnostics.",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "app",
-                  "title": "Support",
-                  "type": "cogitate"
                 },
                 "weekly_reflection": {
                   "app": null,
@@ -695,17 +651,6 @@
             "body": {
               "facets": {},
               "talents": {
-                "chat": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Structured conversational reply planner for the chat backend rewrite",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Chat",
-                  "type": "generate"
-                },
                 "conversation": {
                   "app": null,
                   "color": "#00796b",
@@ -805,17 +750,6 @@
                   "title": "Event Story",
                   "type": "generate"
                 },
-                "exec": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Sol \u2014 takes action and makes changes in the journal",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Exec",
-                  "type": "cogitate"
-                },
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
@@ -852,12 +786,12 @@
                 "partner": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Weekly observation of the journal owner's behavioral patterns \u2014 work style, communication, priorities, decision-making, expertise",
+                  "description": "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, interactions you had, and decisions. your journal is always private, only yours.",
                   "multi_facet": false,
                   "output_format": null,
                   "schedule": "weekly",
                   "source": "system",
-                  "title": "Partner Profile",
+                  "title": "your profile",
                   "type": "cogitate"
                 },
                 "pulse": {
@@ -870,17 +804,6 @@
                   "source": "system",
                   "title": "Pulse",
                   "type": "generate"
-                },
-                "read": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Sol \u2014 finds, reads, and synthesizes anything in the journal (read-only)",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Read",
-                  "type": "cogitate"
                 },
                 "schedule": {
                   "app": null,
@@ -936,17 +859,6 @@
                   "source": "system",
                   "title": "Steward",
                   "type": "generate"
-                },
-                "support:support": {
-                  "app": "support",
-                  "color": "#0288d1",
-                  "description": "Drafts support requests and feedback to solstone support for owner review, searches help articles, and runs local diagnostics.",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "app",
-                  "title": "Support",
-                  "type": "cogitate"
                 },
                 "weekly_reflection": {
                   "app": null,
@@ -1241,17 +1153,6 @@
             "body": {
               "facets": {},
               "talents": {
-                "chat": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Structured conversational reply planner for the chat backend rewrite",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Chat",
-                  "type": "generate"
-                },
                 "conversation": {
                   "app": null,
                   "color": "#00796b",
@@ -1351,17 +1252,6 @@
                   "title": "Event Story",
                   "type": "generate"
                 },
-                "exec": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Sol \u2014 takes action and makes changes in the journal",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Exec",
-                  "type": "cogitate"
-                },
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
@@ -1398,12 +1288,12 @@
                 "partner": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Weekly observation of the journal owner's behavioral patterns \u2014 work style, communication, priorities, decision-making, expertise",
+                  "description": "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, interactions you had, and decisions. your journal is always private, only yours.",
                   "multi_facet": false,
                   "output_format": null,
                   "schedule": "weekly",
                   "source": "system",
-                  "title": "Partner Profile",
+                  "title": "your profile",
                   "type": "cogitate"
                 },
                 "pulse": {
@@ -1416,17 +1306,6 @@
                   "source": "system",
                   "title": "Pulse",
                   "type": "generate"
-                },
-                "read": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Sol \u2014 finds, reads, and synthesizes anything in the journal (read-only)",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Read",
-                  "type": "cogitate"
                 },
                 "schedule": {
                   "app": null,
@@ -1482,17 +1361,6 @@
                   "source": "system",
                   "title": "Steward",
                   "type": "generate"
-                },
-                "support:support": {
-                  "app": "support",
-                  "color": "#0288d1",
-                  "description": "Drafts support requests and feedback to solstone support for owner review, searches help articles, and runs local diagnostics.",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "app",
-                  "title": "Support",
-                  "type": "cogitate"
                 },
                 "weekly_reflection": {
                   "app": null,
@@ -1571,17 +1439,6 @@
             "body": {
               "facets": {},
               "talents": {
-                "chat": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Structured conversational reply planner for the chat backend rewrite",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Chat",
-                  "type": "generate"
-                },
                 "conversation": {
                   "app": null,
                   "color": "#00796b",
@@ -1681,17 +1538,6 @@
                   "title": "Event Story",
                   "type": "generate"
                 },
-                "exec": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Sol \u2014 takes action and makes changes in the journal",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Exec",
-                  "type": "cogitate"
-                },
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
@@ -1728,12 +1574,12 @@
                 "partner": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Weekly observation of the journal owner's behavioral patterns \u2014 work style, communication, priorities, decision-making, expertise",
+                  "description": "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, interactions you had, and decisions. your journal is always private, only yours.",
                   "multi_facet": false,
                   "output_format": null,
                   "schedule": "weekly",
                   "source": "system",
-                  "title": "Partner Profile",
+                  "title": "your profile",
                   "type": "cogitate"
                 },
                 "pulse": {
@@ -1746,17 +1592,6 @@
                   "source": "system",
                   "title": "Pulse",
                   "type": "generate"
-                },
-                "read": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Sol \u2014 finds, reads, and synthesizes anything in the journal (read-only)",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Read",
-                  "type": "cogitate"
                 },
                 "schedule": {
                   "app": null,
@@ -1812,17 +1647,6 @@
                   "source": "system",
                   "title": "Steward",
                   "type": "generate"
-                },
-                "support:support": {
-                  "app": "support",
-                  "color": "#0288d1",
-                  "description": "Drafts support requests and feedback to solstone support for owner review, searches help articles, and runs local diagnostics.",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "app",
-                  "title": "Support",
-                  "type": "cogitate"
                 },
                 "weekly_reflection": {
                   "app": null,
@@ -2196,17 +2020,6 @@
             "body": {
               "facets": {},
               "talents": {
-                "chat": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Structured conversational reply planner for the chat backend rewrite",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Chat",
-                  "type": "generate"
-                },
                 "conversation": {
                   "app": null,
                   "color": "#00796b",
@@ -2306,17 +2119,6 @@
                   "title": "Event Story",
                   "type": "generate"
                 },
-                "exec": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Sol \u2014 takes action and makes changes in the journal",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Exec",
-                  "type": "cogitate"
-                },
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
@@ -2353,12 +2155,12 @@
                 "partner": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Weekly observation of the journal owner's behavioral patterns \u2014 work style, communication, priorities, decision-making, expertise",
+                  "description": "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, interactions you had, and decisions. your journal is always private, only yours.",
                   "multi_facet": false,
                   "output_format": null,
                   "schedule": "weekly",
                   "source": "system",
-                  "title": "Partner Profile",
+                  "title": "your profile",
                   "type": "cogitate"
                 },
                 "pulse": {
@@ -2371,17 +2173,6 @@
                   "source": "system",
                   "title": "Pulse",
                   "type": "generate"
-                },
-                "read": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Sol \u2014 finds, reads, and synthesizes anything in the journal (read-only)",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Read",
-                  "type": "cogitate"
                 },
                 "schedule": {
                   "app": null,
@@ -2437,17 +2228,6 @@
                   "source": "system",
                   "title": "Steward",
                   "type": "generate"
-                },
-                "support:support": {
-                  "app": "support",
-                  "color": "#0288d1",
-                  "description": "Drafts support requests and feedback to solstone support for owner review, searches help articles, and runs local diagnostics.",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "app",
-                  "title": "Support",
-                  "type": "cogitate"
                 },
                 "weekly_reflection": {
                   "app": null,
@@ -2526,17 +2306,6 @@
             "body": {
               "facets": {},
               "talents": {
-                "chat": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Structured conversational reply planner for the chat backend rewrite",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Chat",
-                  "type": "generate"
-                },
                 "conversation": {
                   "app": null,
                   "color": "#00796b",
@@ -2636,17 +2405,6 @@
                   "title": "Event Story",
                   "type": "generate"
                 },
-                "exec": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Sol \u2014 takes action and makes changes in the journal",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Exec",
-                  "type": "cogitate"
-                },
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
@@ -2683,12 +2441,12 @@
                 "partner": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Weekly observation of the journal owner's behavioral patterns \u2014 work style, communication, priorities, decision-making, expertise",
+                  "description": "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, interactions you had, and decisions. your journal is always private, only yours.",
                   "multi_facet": false,
                   "output_format": null,
                   "schedule": "weekly",
                   "source": "system",
-                  "title": "Partner Profile",
+                  "title": "your profile",
                   "type": "cogitate"
                 },
                 "pulse": {
@@ -2701,17 +2459,6 @@
                   "source": "system",
                   "title": "Pulse",
                   "type": "generate"
-                },
-                "read": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Sol \u2014 finds, reads, and synthesizes anything in the journal (read-only)",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Read",
-                  "type": "cogitate"
                 },
                 "schedule": {
                   "app": null,
@@ -2767,17 +2514,6 @@
                   "source": "system",
                   "title": "Steward",
                   "type": "generate"
-                },
-                "support:support": {
-                  "app": "support",
-                  "color": "#0288d1",
-                  "description": "Drafts support requests and feedback to solstone support for owner review, searches help articles, and runs local diagnostics.",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "app",
-                  "title": "Support",
-                  "type": "cogitate"
                 },
                 "weekly_reflection": {
                   "app": null,
@@ -3151,17 +2887,6 @@
             "body": {
               "facets": {},
               "talents": {
-                "chat": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Structured conversational reply planner for the chat backend rewrite",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Chat",
-                  "type": "generate"
-                },
                 "conversation": {
                   "app": null,
                   "color": "#00796b",
@@ -3261,17 +2986,6 @@
                   "title": "Event Story",
                   "type": "generate"
                 },
-                "exec": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Sol \u2014 takes action and makes changes in the journal",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Exec",
-                  "type": "cogitate"
-                },
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
@@ -3308,12 +3022,12 @@
                 "partner": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Weekly observation of the journal owner's behavioral patterns \u2014 work style, communication, priorities, decision-making, expertise",
+                  "description": "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, interactions you had, and decisions. your journal is always private, only yours.",
                   "multi_facet": false,
                   "output_format": null,
                   "schedule": "weekly",
                   "source": "system",
-                  "title": "Partner Profile",
+                  "title": "your profile",
                   "type": "cogitate"
                 },
                 "pulse": {
@@ -3326,17 +3040,6 @@
                   "source": "system",
                   "title": "Pulse",
                   "type": "generate"
-                },
-                "read": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Sol \u2014 finds, reads, and synthesizes anything in the journal (read-only)",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Read",
-                  "type": "cogitate"
                 },
                 "schedule": {
                   "app": null,
@@ -3392,17 +3095,6 @@
                   "source": "system",
                   "title": "Steward",
                   "type": "generate"
-                },
-                "support:support": {
-                  "app": "support",
-                  "color": "#0288d1",
-                  "description": "Drafts support requests and feedback to solstone support for owner review, searches help articles, and runs local diagnostics.",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "app",
-                  "title": "Support",
-                  "type": "cogitate"
                 },
                 "weekly_reflection": {
                   "app": null,
@@ -3481,17 +3173,6 @@
             "body": {
               "facets": {},
               "talents": {
-                "chat": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Structured conversational reply planner for the chat backend rewrite",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Chat",
-                  "type": "generate"
-                },
                 "conversation": {
                   "app": null,
                   "color": "#00796b",
@@ -3591,17 +3272,6 @@
                   "title": "Event Story",
                   "type": "generate"
                 },
-                "exec": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Sol \u2014 takes action and makes changes in the journal",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Exec",
-                  "type": "cogitate"
-                },
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
@@ -3638,12 +3308,12 @@
                 "partner": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Weekly observation of the journal owner's behavioral patterns \u2014 work style, communication, priorities, decision-making, expertise",
+                  "description": "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, interactions you had, and decisions. your journal is always private, only yours.",
                   "multi_facet": false,
                   "output_format": null,
                   "schedule": "weekly",
                   "source": "system",
-                  "title": "Partner Profile",
+                  "title": "your profile",
                   "type": "cogitate"
                 },
                 "pulse": {
@@ -3656,17 +3326,6 @@
                   "source": "system",
                   "title": "Pulse",
                   "type": "generate"
-                },
-                "read": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Sol \u2014 finds, reads, and synthesizes anything in the journal (read-only)",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Read",
-                  "type": "cogitate"
                 },
                 "schedule": {
                   "app": null,
@@ -3722,17 +3381,6 @@
                   "source": "system",
                   "title": "Steward",
                   "type": "generate"
-                },
-                "support:support": {
-                  "app": "support",
-                  "color": "#0288d1",
-                  "description": "Drafts support requests and feedback to solstone support for owner review, searches help articles, and runs local diagnostics.",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "app",
-                  "title": "Support",
-                  "type": "cogitate"
                 },
                 "weekly_reflection": {
                   "app": null,
@@ -4105,17 +3753,6 @@
             "body": {
               "facets": {},
               "talents": {
-                "chat": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Structured conversational reply planner for the chat backend rewrite",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Chat",
-                  "type": "generate"
-                },
                 "conversation": {
                   "app": null,
                   "color": "#00796b",
@@ -4215,17 +3852,6 @@
                   "title": "Event Story",
                   "type": "generate"
                 },
-                "exec": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Sol \u2014 takes action and makes changes in the journal",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Exec",
-                  "type": "cogitate"
-                },
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
@@ -4262,12 +3888,12 @@
                 "partner": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Weekly observation of the journal owner's behavioral patterns \u2014 work style, communication, priorities, decision-making, expertise",
+                  "description": "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, interactions you had, and decisions. your journal is always private, only yours.",
                   "multi_facet": false,
                   "output_format": null,
                   "schedule": "weekly",
                   "source": "system",
-                  "title": "Partner Profile",
+                  "title": "your profile",
                   "type": "cogitate"
                 },
                 "pulse": {
@@ -4280,17 +3906,6 @@
                   "source": "system",
                   "title": "Pulse",
                   "type": "generate"
-                },
-                "read": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Sol \u2014 finds, reads, and synthesizes anything in the journal (read-only)",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Read",
-                  "type": "cogitate"
                 },
                 "schedule": {
                   "app": null,
@@ -4346,17 +3961,6 @@
                   "source": "system",
                   "title": "Steward",
                   "type": "generate"
-                },
-                "support:support": {
-                  "app": "support",
-                  "color": "#0288d1",
-                  "description": "Drafts support requests and feedback to solstone support for owner review, searches help articles, and runs local diagnostics.",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "app",
-                  "title": "Support",
-                  "type": "cogitate"
                 },
                 "weekly_reflection": {
                   "app": null,
@@ -4435,17 +4039,6 @@
             "body": {
               "facets": {},
               "talents": {
-                "chat": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Structured conversational reply planner for the chat backend rewrite",
-                  "multi_facet": false,
-                  "output_format": "json",
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Chat",
-                  "type": "generate"
-                },
                 "conversation": {
                   "app": null,
                   "color": "#00796b",
@@ -4545,17 +4138,6 @@
                   "title": "Event Story",
                   "type": "generate"
                 },
-                "exec": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Sol \u2014 takes action and makes changes in the journal",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Exec",
-                  "type": "cogitate"
-                },
                 "facet_newsletter": {
                   "app": null,
                   "color": "#0d47a1",
@@ -4592,12 +4174,12 @@
                 "partner": {
                   "app": null,
                   "color": "#6c757d",
-                  "description": "Weekly observation of the journal owner's behavioral patterns \u2014 work style, communication, priorities, decision-making, expertise",
+                  "description": "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, interactions you had, and decisions. your journal is always private, only yours.",
                   "multi_facet": false,
                   "output_format": null,
                   "schedule": "weekly",
                   "source": "system",
-                  "title": "Partner Profile",
+                  "title": "your profile",
                   "type": "cogitate"
                 },
                 "pulse": {
@@ -4610,17 +4192,6 @@
                   "source": "system",
                   "title": "Pulse",
                   "type": "generate"
-                },
-                "read": {
-                  "app": null,
-                  "color": "#6c757d",
-                  "description": "Sol \u2014 finds, reads, and synthesizes anything in the journal (read-only)",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "system",
-                  "title": "Read",
-                  "type": "cogitate"
                 },
                 "schedule": {
                   "app": null,
@@ -4676,17 +4247,6 @@
                   "source": "system",
                   "title": "Steward",
                   "type": "generate"
-                },
-                "support:support": {
-                  "app": "support",
-                  "color": "#0288d1",
-                  "description": "Drafts support requests and feedback to solstone support for owner review, searches help articles, and runs local diagnostics.",
-                  "multi_facet": false,
-                  "output_format": null,
-                  "schedule": null,
-                  "source": "app",
-                  "title": "Support",
-                  "type": "cogitate"
                 },
                 "weekly_reflection": {
                   "app": null,
