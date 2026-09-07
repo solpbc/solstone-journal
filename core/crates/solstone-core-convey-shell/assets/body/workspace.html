@@ -320,18 +320,37 @@
   margin-left: var(--space-1);
 }
 
+/* One day-cell ladder for the whole app: 13px on desktop, 24px from 768 down,
+   with the 3px gap at every width. These are the values in
+   /static/day-grid.css; this page draws its own grid, so it carries the same
+   ladder rather than a fourth size of its own (F-12). The legend swatches take
+   the same size because they sit in the same row of cells. */
+.body-days-grid,
+.body-days-legend {
+  --daygrid-cell: 13px;
+  --daygrid-gap: 3px;
+  --daygrid-radius: 3px;
+}
+
+@media (max-width: 768px) {
+  .body-days-grid,
+  .body-days-legend {
+    --daygrid-cell: 24px;
+  }
+}
+
 .body-days-grid {
   display: grid;
   grid-auto-flow: column;
-  grid-template-rows: repeat(7, 11px);
-  grid-auto-columns: 11px;
-  gap: 2px;
+  grid-template-rows: repeat(7, var(--daygrid-cell));
+  grid-auto-columns: var(--daygrid-cell);
+  gap: var(--daygrid-gap);
 }
 
 .body-day-cell {
-  width: 9px;
-  height: 9px;
-  border-radius: 2px;
+  width: var(--daygrid-cell);
+  height: var(--daygrid-cell);
+  border-radius: var(--daygrid-radius);
   background: color-mix(
     in srgb,
     var(--orange) calc(var(--heat, 0) * 100%),

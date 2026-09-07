@@ -138,6 +138,18 @@ class Element {
 
   append(...children) { children.forEach((child) => this.appendChild(child)); }
 
+  insertAdjacentElement(position, element) {
+    const parent = this.parentElement;
+    if (!parent) throw new Error('insertAdjacentElement needs a parent');
+    const index = parent.children.indexOf(this);
+    if (index < 0) throw new Error('insertAdjacentElement needs an attached node');
+    if (position === 'afterend') parent.children.splice(index + 1, 0, element);
+    else if (position === 'beforebegin') parent.children.splice(index, 0, element);
+    else throw new Error('unsupported insertAdjacentElement position ' + position);
+    element.parentElement = parent;
+    return element;
+  }
+
   replaceChildren(...children) {
     this.children.forEach((child) => { child.parentElement = null; });
     this.children = [];
@@ -239,7 +251,9 @@ function fixture(document) {
   add(root, 'p', { 'data-backup-loading': '', role: 'status' });
   const panels = add(root, 'div', { class: 'backup-panels' });
   add(panels, 'article', { 'data-backup-panel': 'intro', hidden: '' });
-  add(panels, 'article', { 'data-backup-panel': 'management', hidden: '' });
+  const management = add(panels, 'article', { 'data-backup-panel': 'management', hidden: '' });
+  const managementGrid = add(management, 'div', { class: 'backup-management-grid' });
+  const lastBackup = add(managementGrid, 'p', { 'data-last-backup': '' });
   const destination = add(panels, 'article', { 'data-backup-panel': 'destination', hidden: '' });
   const destinationByo = add(destination, 'button', { class: 'backup-mode is-selected', 'data-mode': 'byo', role: 'radio', 'aria-checked': 'true' });
   destinationByo.textContent = 'your own';
@@ -272,7 +286,7 @@ function fixture(document) {
   add(byo, 'form', { 'data-restore-form': '' });
   const panelCancel = add(restore, 'button', { 'data-action': 'cancel-restore' });
   panelCancel.textContent = 'cancel';
-  return { root, restore, destinationByo, destinationHosted, byoLane, operatedLane, operated, byo, heading, keyControl, key, keyReassurance, outcome, primary, attemptCancel, panelCancel, banner };
+  return { root, restore, destinationByo, destinationHosted, byoLane, operatedLane, operated, byo, heading, keyControl, key, keyReassurance, outcome, primary, attemptCancel, panelCancel, banner, management, managementGrid, lastBackup };
 }
 
 function createHarness(options = {}) {
@@ -814,6 +828,38 @@ asyncCase('primary remains disabled through an in-flight attempt', async () => {
   harness.key.dispatchEvent(event('input'));
   assert.ok(harness.primary.disabled);
   resolvePrepare(response({ capability: 'capability' }));
+});
+
+// F-1: 'checked_subset' is restic's --read-data-subset selector. The last ISO
+// week of the year selects the 52nd slice, and the sentence must still say one
+// slice out of 52 rather than reading as a whole-backup verification.
+asyncCase('the verification scope reports one slice of the data, never a snapshot count', async () => {
+  const verified = Object.assign(status(), {
+    enabled: true,
+    last_verification: { time: 1769990000, status: 'ok', reason: null, checked_subset: '52/52', last_ok_time: 1769990000 },
+  });
+  const harness = createHarness({ respond(call) {
+    if (call.url === '/app/backup/status') return response(verified);
+  } });
+  await settle();
+  const subset = harness.root.querySelector('[data-last-verification-subset]');
+  assert.ok(subset, 'the verification scope line is mounted');
+  assert.ok(!subset.hidden, 'the verification scope line is shown');
+  assert.strictEqual(subset.textContent, 'checked 1 of 52 parts of your backup data');
+  assert.ok(!/snapshot/.test(subset.textContent), 'the scope line never counts snapshots');
+});
+
+asyncCase('a single-part verification says it covered everything', async () => {
+  const verified = Object.assign(status(), {
+    enabled: true,
+    last_verification: { time: 1769990000, status: 'ok', reason: null, checked_subset: '1/1', last_ok_time: 1769990000 },
+  });
+  const harness = createHarness({ respond(call) {
+    if (call.url === '/app/backup/status') return response(verified);
+  } });
+  await settle();
+  const subset = harness.root.querySelector('[data-last-verification-subset]');
+  assert.strictEqual(subset.textContent, 'checked all of your backup data');
 });
 
 async function runAsyncCases() {

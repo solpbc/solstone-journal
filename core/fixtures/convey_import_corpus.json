@@ -826,8 +826,8 @@
         "why": "\ud83d\udd34 the import history list: a LIST of enriched records, not a map"
       },
       {
-        "body_bytes": 762,
-        "body_sha256": "7cb7c5b9b0922de736bd238d3e8e1223c2f6de03c6f9491468eb8567bd1d74ff",
+        "body_bytes": 759,
+        "body_sha256": "aa72627c42417666d453b31029f134fe378fa2b30de05476f657fba63c322418",
         "body_sha256_basis": "raw-body",
         "content_type": "text/markdown; charset=utf-8",
         "method": "GET",
@@ -1558,8 +1558,8 @@
         "why": "\ud83d\udd34 the import history list: a LIST of enriched records, not a map"
       },
       {
-        "body_bytes": 762,
-        "body_sha256": "7cb7c5b9b0922de736bd238d3e8e1223c2f6de03c6f9491468eb8567bd1d74ff",
+        "body_bytes": 759,
+        "body_sha256": "aa72627c42417666d453b31029f134fe378fa2b30de05476f657fba63c322418",
         "body_sha256_basis": "raw-body",
         "content_type": "text/markdown; charset=utf-8",
         "method": "GET",

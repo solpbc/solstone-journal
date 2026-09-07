@@ -93,7 +93,8 @@
   };
 
   function readableModelLabel(id) {
-    return MODEL_LABELS[String(id || '').toLowerCase()] || id;
+    const key = String(id || '').toLowerCase();
+    return Object.hasOwn(MODEL_LABELS, key) ? MODEL_LABELS[key] : id;
   }
 
   // The provider column names the provider and the model column names the
@@ -105,13 +106,22 @@
     anthropic: 'Anthropic',
     google: 'Google',
     openai: 'OpenAI',
+    spp: 'confidential processing',
   };
 
-  // The provider is genuinely unrecorded for some rows; say so in plain
-  // words instead of echoing the internal null-name "unknown" (G2-31).
+  // 'unknown' is the internal sentinel for a row that arrived with no provider
+  // on it. The owner never sees that word: a cell says what is missing, and a
+  // sentence drops the clause it cannot fill (G2-31, F-21).
+  const UNKNOWN_PROVIDER = 'unknown';
+
+  function namedProvider(value) {
+    return Boolean(value) && value !== UNKNOWN_PROVIDER;
+  }
+
   function providerLabel(value) {
-    if (value === 'unknown') return 'not recorded';
-    return PROVIDER_LABELS[String(value || '').toLowerCase()] || value;
+    if (!namedProvider(value)) return 'no provider named';
+    const key = String(value).toLowerCase();
+    return Object.hasOwn(PROVIDER_LABELS, key) ? PROVIDER_LABELS[key] : value;
   }
 
   function cell(value) {
@@ -173,18 +183,29 @@
     label.className = 'token-table-summary-name';
     const detail = document.createElement('span');
     detail.className = 'token-table-summary-detail';
-    const parts = [requestCount(item.requests), `${number(item.tokens)} tokens`];
-    if (item.cached_tokens !== null && item.cached_tokens !== undefined) {
-      parts.push(`${number(item.cached_tokens)} cached`);
-    }
-    parts.push(share(item.percent));
+    // cached_tokens is always a number on the wire (tokens.rs number_value), so
+    // there is one rendering rule and no absent case to branch on (F-28).
+    const parts = [
+      requestCount(item.requests),
+      `${number(item.tokens)} tokens`,
+      `${number(item.cached_tokens)} cached`,
+      share(item.percent),
+    ];
     detail.textContent = parts.join(' · ');
     if (name === 'providers') {
-      label.textContent = `one provider this day: ${providerLabel(item.provider)}.`;
+      label.textContent = namedProvider(item.provider)
+        ? `one provider this day: ${providerLabel(item.provider)}.`
+        : 'one provider this day, no name given.';
       host.append(label, detail);
       return;
     }
-    label.textContent = `one model this day: ${readableModelLabel(item.model)}, through ${providerLabel(item.provider)}.`;
+    if (!item.model) {
+      label.textContent = 'one model this day, no name given.';
+    } else if (namedProvider(item.provider)) {
+      label.textContent = `one model this day: ${readableModelLabel(item.model)}, through ${providerLabel(item.provider)}.`;
+    } else {
+      label.textContent = `one model this day: ${readableModelLabel(item.model)}.`;
+    }
     host.append(label, detail);
     // The exact wire ids stay behind a disclosure, exactly as the model
     // column's own cell keeps them (G2-31).
@@ -206,11 +227,11 @@
     const { key, direction } = sorts[name];
     const rows = tableData[name];
     const host = tableHosts[name];
-    const summary = tableSummaries[name];
+    const summaryHost = tableSummaries[name];
     const note = tableNotes[name];
-    if (host && summary && note) {
+    if (host && summaryHost && note) {
       host.hidden = rows.length < 2;
-      summary.hidden = rows.length !== 1;
+      summaryHost.hidden = rows.length !== 1;
       note.hidden = rows.length !== 0;
       if (rows.length === 0) {
         note.textContent = name === 'providers'
@@ -232,7 +253,7 @@
         const values = [providerLabel(item.provider), item.requests, number(item.tokens), number(item.cached_tokens), `${Number(item.percent || 0).toFixed(1)}%`];
         row.append(...values.map(cell));
       } else {
-        const values = [item.requests, number(item.tokens), item.cached_tokens === null ? '—' : number(item.cached_tokens), `${Number(item.percent || 0).toFixed(1)}%`];
+        const values = [item.requests, number(item.tokens), number(item.cached_tokens), `${Number(item.percent || 0).toFixed(1)}%`];
         row.append(modelCell(item), cell(providerLabel(item.provider)), ...values.map(cell));
       }
       body.append(row);

@@ -371,12 +371,27 @@
   // which is not the same set as the activity list. Every facet the list holds
   // gets a chip, and a facet with no measured time says so rather than being
   // left out of the row entirely. G1-101.
+  // An activity written under two facets is collapsed onto one row that carries
+  // every facet it touched in `facets` (readers.rs merge_faceted_activity).
+  // Reading only `facet` credited the merge to whichever copy landed first and
+  // dropped the others from the chips entirely (F-10).
+  function activityFacets(activity) {
+    const many = Array.isArray(activity.facets) ? activity.facets : [activity.facet];
+    const names = [];
+    many.forEach(function (value) {
+      const facet = typeof value === 'string' ? value.trim() : '';
+      if (facet && names.indexOf(facet) === -1) names.push(facet);
+    });
+    return names;
+  }
+
   function facetChipRows(pulse, activities) {
     const measuredFacets = isPlainObject(pulse.facet_data) ? pulse.facet_data : {};
     const names = Object.keys(measuredFacets);
     activities.forEach(function (activity) {
-      const facet = typeof activity.facet === 'string' ? activity.facet.trim() : '';
-      if (facet && names.indexOf(facet) === -1) names.push(facet);
+      activityFacets(activity).forEach(function (facet) {
+        if (names.indexOf(facet) === -1) names.push(facet);
+      });
     });
     return names.map(function (name) {
       const data = measuredFacets[name];
@@ -447,8 +462,9 @@
       // G1-101.
       const measuredFacets = isPlainObject(pulse.facet_data) ? pulse.facet_data : {};
       const measured = activities.filter(function (activity) {
-        const facet = typeof activity.facet === 'string' ? activity.facet.trim() : '';
-        return Boolean(facet) && isPlainObject(measuredFacets[facet]);
+        return activityFacets(activity).some(function (facet) {
+          return isPlainObject(measuredFacets[facet]);
+        });
       }).length;
       const chipLabel = activities.length
         ? 'time by facet · measured for ' + measured + ' of ' + plural(activities.length, 'activity', 'activities')

@@ -462,24 +462,46 @@ window.CUR_COPY = CUR_COPY;
   // word-for-word identical question twice with only an unlabelled evidence
   // fraction between them, and creating the facet on one row would leave the
   // twin asking again (its accept then fails: the facet already exists).
-  // Group by the name the owner actually reads, sum the evidence, and carry
-  // every stored key on the one row so an answer retires all of them.
+  // The server folds a candidate name to this slug when it creates the facet
+  // (`facet_slug` in solstone-core-facets/src/store/review_candidates.rs), so
+  // two candidates that share a slug are one facet however differently they are
+  // spelled. Grouping on anything finer offers the owner two rows that create
+  // the same thing, and the second one is dead the moment the first is taken.
+  // ASCII-only is deliberate on both sides.
+  function facetSlug(name) {
+    return String(name ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  // Group by the slug the server will create, sum the evidence, and carry
+  // every stored key on the one row so an answer retires all of them. When the
+  // members are spelled differently the row names each spelling, so a merge is
+  // never silent.
   function groupFacetItems(items) {
     const groups = [];
-    const byName = new Map();
+    const bySlug = new Map();
     items.forEach((item) => {
       const display = humanizeFacetName(item.name);
-      let group = byName.get(display);
+      const slug = facetSlug(item.name) || display;
+      let group = bySlug.get(slug);
       if (!group) {
         group = {
           kind: 'facet_candidate',
           key: item.key,
           keys: [],
+          names: [],
           display,
           evidence: {samples: [], count: 0}
         };
-        byName.set(display, group);
+        bySlug.set(slug, group);
         groups.push(group);
+      }
+      if (display && !group.names.includes(display)) {
+        group.names.push(display);
+        group.display = group.names.join('" and "');
       }
       group.keys.push(item.key);
       const count = Math.trunc(Number(item?.evidence?.count));
@@ -494,7 +516,7 @@ window.CUR_COPY = CUR_COPY;
     const evidenceProps = window.CurationEvidence.buildEvidenceDrawerProps(group);
     const evidenceHtml = evidenceProps ? window.Drawer.render(evidenceProps) : '';
     return `
-      <article class="curation-item" data-curation-item data-kind="facet_candidate" data-name-key="${escapeAttr(group.key)}" data-name-keys='${escapeAttr(JSON.stringify(group.keys))}'>
+      <article class="curation-item" data-curation-item data-kind="facet_candidate" data-name-key="${escapeAttr(group.key)}" data-name-keys="${escapeAttr(JSON.stringify(group.keys))}">
         <p class="curation-body">${escapeHtml(copyFormat(CUR_COPY.CUR_FACET_BODY, {name: group.display}))}</p>
         <div class="curation-actions">
           <button class="curation-button curation-button-primary" type="button" data-action="facet-accept" data-name-key="${escapeAttr(group.key)}">${escapeHtml(CUR_COPY.CUR_FACET_CREATE_ACTION)}</button>
@@ -807,8 +829,11 @@ window.CUR_COPY = CUR_COPY;
     return holder.innerHTML;
   }
 
+  // Attribute values here are interpolated into both double- and single-quoted
+  // attributes, so both quote characters have to go. This is the same set
+  // curation_evidence.js escapes; keep them together.
   function escapeAttr(value) {
-    return escapeHtml(value).replace(/"/g, '&quot;');
+    return escapeHtml(value).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   function removeItem(item) {

@@ -488,7 +488,10 @@ const Dashboard = (function() {
     }
 
     bindHeatmapKeys(heatmap);
-    container.appendChild(heatmap);
+    // A live refresh calls this again with the same container: replace, never
+    // append, or the page stacks grids and every stale one keeps a tab stop
+    // (F-11).
+    container.replaceChildren(heatmap);
 
     const note = document.getElementById('heatmapNarrowNote');
     if (note) note.textContent = heatmapNarrowNote(data);

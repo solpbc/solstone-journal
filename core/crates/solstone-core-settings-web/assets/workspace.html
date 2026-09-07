@@ -3023,10 +3023,10 @@ const VALID_SECTIONS = ['guide', 'profile', 'apikeys', 'transcription', 'devices
 // fragment land on the same pane.
 const RETIRED_SECTION_HASHES = { observer: 'devices' };
 function resolveSectionHash(hash) {
-  return RETIRED_SECTION_HASHES[hash] || hash;
+  return Object.hasOwn(RETIRED_SECTION_HASHES, hash) ? RETIRED_SECTION_HASHES[hash] : hash;
 }
 
-function switchSection(sectionId, updateHash = true, loadSection = true) {
+function switchSection(sectionId, updateHash = true, loadSection = true, replaceHash = false) {
   // Validate section exists
   if (!VALID_SECTIONS.includes(sectionId)) {
     sectionId = 'guide';
@@ -3061,7 +3061,11 @@ function switchSection(sectionId, updateHash = true, loadSection = true) {
   if (updateHash) {
     const nextHash = '#' + sectionId;
     if (window.location.hash !== nextHash) {
-      history.pushState(null, '', nextHash);
+      // A retired fragment is a rewrite of the address the owner already has,
+      // not a new place. Pushing it kept #observer on the history stack, so
+      // Back landed on it, got redirected, and never left the page (F-19).
+      if (replaceHash) history.replaceState(null, '', nextHash);
+      else history.pushState(null, '', nextHash);
     }
   }
 
@@ -3297,7 +3301,7 @@ document.getElementById('navSelect').addEventListener('change', (e) => {
 function initFromHash() {
   const hash = resolveSectionHash(window.location.hash.slice(1));
   if (hash && VALID_SECTIONS.includes(hash)) {
-    switchSection(hash, hash !== window.location.hash.slice(1));
+    switchSection(hash, hash !== window.location.hash.slice(1), true, true);
   }
 }
 
@@ -3305,7 +3309,7 @@ window.addEventListener('hashchange', () => {
   const raw = window.location.hash.slice(1);
   const hash = resolveSectionHash(raw);
   if (hash && VALID_SECTIONS.includes(hash)) {
-    switchSection(hash, hash !== raw);
+    switchSection(hash, hash !== raw, true, true);
   } else if (!raw) {
     switchSection('guide', false);
   }

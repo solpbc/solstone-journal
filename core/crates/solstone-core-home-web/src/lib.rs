@@ -343,6 +343,10 @@ mod tests {
                 "clients": [{
                     "name": "desk",
                     "cid": "cid",
+                    // F-8: the same two fields health reads, so both surfaces
+                    // decide "failing" and "quietest first" from one source.
+                    "failing": false,
+                    "capture_elapsed_ms": 1000,
                     "last_seen": last_seen,
                     "last_accepted_ingest_at": last_seen,
                     "last_accepted_segment": null,
