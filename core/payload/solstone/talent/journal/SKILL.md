@@ -2,13 +2,13 @@
 name: journal
 description: >
   Search the journal, list facets, and explain how the journal is laid out
-  on disk — captures, extracts, talent outputs, apps, facets, and the search
+  on disk — original media, extracts, talent outputs, apps, facets, and the search
   index. Covers host commands such as `journal setup`, `journal doctor`,
   `journal service`, `journal health`, `journal talent`, and `journal
   identity`, plus the `solstone call journal` CLI.
   TRIGGER: journal, journal setup, journal doctor, journal service, journal
   health, journal talent, journal identity, journal layout, search journal,
-  find meeting, list facets, show agent output, captures, extracts, talents,
+  find meeting, list facets, show agent output, original media, captures, extracts, talents,
   apps, facet, indexer, activity records, solstone call journal, solstone call journal
   search, solstone call journal facet.
 ---
@@ -21,7 +21,7 @@ content queries.
 
 ## Overview
 
-A journal is the on-disk record of captures, extracts, facet data, app storage, and talent outputs.
+A journal is the on-disk record of original media, extracts, facet data, app storage, and talent outputs.
 
 ```
 ┌──────────────────────┐
@@ -33,9 +33,12 @@ A journal is the on-disk record of captures, extracts, facet data, app storage, 
 └──────────────────────┘
 ```
 
+`CAPTURES`, `EXTRACTS` and `OUTPUTS` are the layer identifiers used in code and
+logs. Layer 1 is the original media: the audio and video files as they arrived.
+
 Talent JSON outputs are rendered to text through the formatter registry.
 
-For the full pipeline, see [captures](references/captures.md).
+For the full pipeline, see [original media and extracts](references/captures.md).
 
 ## Host CLI
 
@@ -76,7 +79,7 @@ For app-contributed host command guidance, see
 | Term | Definition | Examples |
 |------|------------|----------|
 | **Day** | 24-hour activity directory | `20250119/` |
-| **Segment** | Timestamped capture window | `143022_300/` |
+| **Segment** | Timestamped window of original media | `143022_300/` |
 | **Facet** | Project/context scope | `#work`, `#personal` |
 | **Entity** | Tracked person/project/tool | People, companies, tools |
 | **Activity** | Completed span of one activity type | Meeting, coding session, review |
@@ -85,7 +88,7 @@ For app-contributed host command guidance, see
 
 | Path | Purpose |
 |------|---------|
-| `chronicle/` | Daily capture folders |
+| `chronicle/` | Daily folders of original media and everything derived from it |
 | `entities/` | Journal-level entity records |
 | `facets/` | Facet data: entities, events, news, logs |
 | `talents/` | Talent run logs and outputs |
@@ -101,7 +104,7 @@ For the full table, see [storage](references/storage.md).
 - [CLI reference](references/cli.md) — `solstone call journal` commands
 - [Configuration](references/config.md) — `journal.json`, providers, retention
 - [Facets](references/facets.md) — facet folders, entities, news, activities
-- [Captures and Extracts](references/captures.md) — layers, imports, segment layout
+- [Original Media and Extracts](references/captures.md) — layers, imports, segment layout
 - [Logs](references/logs.md) — action logs, token usage, talent logs, health
 - [Storage](references/storage.md) — top-level layout, app storage, search index
 - [Commands](references/commands.md) — journal-host command guidance contributed by apps (generated)

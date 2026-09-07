@@ -182,7 +182,7 @@ This allows for future automation of news gathering while maintaining manual cur
 
 ## Activity Records
 
-The `activities/` directory within each facet stores both the configured activity types (`activities.jsonl`) and completed activity records organized by day (`{day}.jsonl`). Activity records represent completed spans of activity — periods where a specific activity type was continuously tracked across one or more recording segments.
+The `activities/` directory within each facet stores both the configured activity types (`activities.jsonl`) and completed activity records organized by day (`{day}.jsonl`). Activity records represent completed spans of activity — periods where a specific activity type continued across one or more segments.
 
 **File path pattern:**
 ```

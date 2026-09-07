@@ -1,8 +1,8 @@
-# Captures and Extracts
+# Original Media and Extracts
 
 ## The Three-Layer Architecture
 
-solstone transforms raw recordings into actionable understanding through a three-layer pipeline:
+solstone turns the original audio and video into actionable understanding through a three-layer pipeline:
 
 ```
 ┌─────────────────────────────────────┐
@@ -21,12 +21,15 @@ solstone transforms raw recordings into actionable understanding through a three
 └─────────────────────────────────────┘
          ↑ derived from
 ┌─────────────────────────────────────┐
-│  LAYER 1: CAPTURES                  │  Raw recordings
-│  (Binary media files)               │  "What was recorded"
+│  LAYER 1: CAPTURES                  │  Original media
+│  (Binary media files)               │  "What came in"
 │  - *.flac, *.ogg, *.opus, *.wav (audio)    │
 │  - *.webm (video)                   │
 └─────────────────────────────────────┘
 ```
+
+`LAYER 1` through `LAYER 3` are the layer identifiers used in code and logs.
+Layer 1 is the original media: the audio and video files as they arrived.
 
 ### Vocabulary Quick Reference
 
@@ -34,8 +37,8 @@ solstone transforms raw recordings into actionable understanding through a three
 
 | Term | Definition | Examples |
 |------|------------|----------|
-| **Capture** | Raw audio/video recording | `*.flac`, `*.ogg`, `*.opus`, `*.wav`, `*.webm` |
-| **Extract** | Structured data from captures | `*.jsonl` |
+| **Original media** | An audio or video file as it arrived | `*.flac`, `*.ogg`, `*.opus`, `*.wav`, `*.webm` |
+| **Extract** | Structured data derived from the original media | `*.jsonl` |
 | **Agent Output** | AI-generated narrative summary | `talents/<name>.md` or `talents/<name>.json`; segment outputs use the segment's `talents/` directory |
 
 **Organization**
@@ -95,11 +98,11 @@ Once processed, imports are linked into the appropriate day's segment via `impor
 
 ## Day folder contents
 
-Within each day, captured content is organized into **segments** (timestamped duration folders). The folder name is the **segment key**, which uniquely identifies the segment within the day and follows this format:
+Within each day, material is organized into **segments** (timestamped duration folders). The folder name is the **segment key**, which uniquely identifies the segment within the day and follows this format:
 
 - `HHMMSS_LEN/` – Start time and duration in seconds (e.g., `143022_300/` for a 5-minute segment starting at 14:30:22)
 
-Each segment progresses through the three-layer pipeline: captures are recorded, extracts are generated, and agent outputs are synthesized.
+Each segment progresses through the three-layer pipeline: the original media arrives, extracts are derived from it, and agent outputs are synthesized.
 
 ### Stream identity
 
@@ -111,21 +114,22 @@ Every segment belongs to a **stream** — a named series of segments from a sing
   - `prev_segment` – segment key of the predecessor (null for first)
   - `seq` – sequence number within the stream
 
-Stream names follow the convention: `{hostname}` for local observers, `{observer_name}` for observers, `import.{type}` for imports (e.g., `import.apple`, `import.text`). Global stream state is tracked in the top-level `streams/` directory as `{name}.json` files.
+Stream names follow the convention: `{hostname}` for a source on this host, `{device_name}` for a linked device, `import.{type}` for imports (e.g., `import.apple`, `import.text`). Global stream state is tracked in the top-level `streams/` directory as `{name}.json` files.
 
 Pre-stream segments (created before stream identity was added) have no `stream.json` and are handled gracefully as `None` throughout the pipeline.
 
-## Layer 1: Captures
+## Layer 1: Original Media
 
-Captures are the original binary media files recorded by observation tools.
+Layer 1 is the original media: the binary audio and video files as the linked
+devices sent them, unmodified.
 
-`journal grab` walks observed screens from day to stream to segment to screen to frame.
+`journal grab` walks the screen material from day to stream to segment to screen to frame.
 Without `--out` it lists what is available or shows one frame's details.
 With `--out` it writes one or more frame images using the suffix you choose.
 Use bare `screen` for single-screen segments.
 Use stems like `center_DP-3_screen` for per-monitor segments.
 
-### Audio captures
+### Audio files
 
 Audio files are initially written to the day root with the segment key prefix (Linux) or directly to segment folders (macOS):
 
@@ -138,9 +142,9 @@ After transcription, audio files are moved into their segment folder:
 
 Note: The descriptive portion after the segment key (e.g., `_audio`, `_recording`) is preserved when files are moved into segment directories. Processing tools match files by extension only, ignoring the descriptive suffix.
 
-### Screen captures
+### Screen files
 
-Screen recordings use per-monitor files with position and connector/displayID in the filename:
+Screen video uses per-monitor files with position and connector/displayID in the filename:
 
 - **Linux**: `HHMMSS_LEN_<position>_<connector>_screen.webm` – screencast video files in day root (e.g., `143022_300_center_DP-3_screen.webm`)
 - **macOS**: `HHMMSS_LEN/<position>_<displayID>_screen.mov` – video files written directly to segment folder (e.g., `center_1_screen.mov`)
@@ -153,7 +157,7 @@ For multi-monitor setups, each monitor produces a separate file. Position labels
 
 ## Layer 2: Extracts
 
-Extracts are structured data files (JSON/JSONL) derived from captures through AI analysis.
+Extracts are structured data files (JSON/JSONL) derived from the original media through AI analysis.
 
 ### Audio transcript extracts
 
@@ -173,7 +177,7 @@ Example transcript file:
 - `model` – model used for transcription (e.g., "parakeet-tdt-0.6b-v3")
 - `device` – device used for inference (e.g., "cuda", "cpu", "coreml")
 - `compute_type` – compute precision used (e.g., "float16", "int8")
-- `observer` – observer name if transcribed from an observer source (optional)
+- `observer` – stored identifier: the name of the linked device the audio came from, when it came from one (optional)
 - `topics` – legacy enrichment topics, still present in some existing journals
 - `setting` – legacy enrichment setting, still present in some existing journals
 - `warning` – legacy enrichment warning, still present in some existing journals
@@ -278,11 +282,11 @@ These persisted historical files still allow the indexer to collect and search e
 
 ## Layer 3: Agent Outputs
 
-Agent outputs are AI-generated `.md` or `.json` files that provide human-readable narratives synthesized from captures and extracts. JSON outputs are rendered to text through the formatter registry.
+Agent outputs are AI-generated `.md` or `.json` files that provide human-readable narratives synthesized from the original media and extracts. JSON outputs are rendered to text through the formatter registry.
 
 ### Segment outputs
 
-After captures are processed, segment-level outputs are generated within each segment folder as `talents/<name>.md` or `talents/<name>.json`, depending on the talent's declared `output` format. Available segment output types are defined by templates in `solstone/talent/` with `"schedule": "segment"` in their metadata JSON.
+After the original media is processed, segment-level outputs are generated within each segment folder as `talents/<name>.md` or `talents/<name>.json`, depending on the talent's declared `output` format. Available segment output types are defined by templates in `solstone/talent/` with `"schedule": "segment"` in their metadata JSON.
 
 ### Daily outputs
 

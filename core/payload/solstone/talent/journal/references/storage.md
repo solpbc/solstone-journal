@@ -1,12 +1,12 @@
 # Storage
 
-This document describes the layout of a **journal** directory where all captures, extracts, and insights are stored. Each dated `YYYYMMDD` folder is referred to as a **day**, and within each day captured content is organized into **segments** (timestamped duration folders). Each segment folder uses the format `HHMMSS_LEN/` where `HHMMSS` is the start time and `LEN` is the duration in seconds. This folder name serves as the **segment key**, uniquely identifying the segment within a given day.
+This document describes the layout of a **journal** directory where all original media, extracts, and insights are stored. Each dated `YYYYMMDD` folder is referred to as a **day**, and within each day material is organized into **segments** (timestamped duration folders). Each segment folder uses the format `HHMMSS_LEN/` where `HHMMSS` is the start time and `LEN` is the duration in seconds. This folder name serves as the **segment key**, uniquely identifying the segment within a given day.
 
 ## Top-Level Directory Structure
 
 | Directory/File | Purpose |
 |----------------|---------|
-| `chronicle/` | Container for daily capture folders (`YYYYMMDD/`) containing segments, extracts, and agent outputs |
+| `chronicle/` | Container for daily folders (`YYYYMMDD/`) containing segments, extracts, and agent outputs |
 | `entities/` | Journal-level entity identity records (`<id>/entity.json`) |
 | `facets/` | Facet-specific data: activities, entity relationships, historical events, news, action logs |
 | `talents/` | Talent run logs in per-talent subdirectories (`<name>/<id>.jsonl`), day indexes (`<day>.jsonl`), and latest-run symlinks (`<name>.log`) |
