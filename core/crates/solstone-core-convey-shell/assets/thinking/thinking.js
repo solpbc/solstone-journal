@@ -1369,7 +1369,13 @@
     const avgSeconds = durations.length
       ? Math.round(durations.reduce((sum, seconds) => sum + seconds, 0) / durations.length)
       : null;
-    const durationText = avgSeconds !== null ? `, about ${window.JournalFormat.duration(avgSeconds)} each` : '';
+    // "each" distributes an average over a group; one run has no group to
+    // distribute over, so the singular drops it: "1 pulse run completed on
+    // Qwen 3.5 4B (local), about 20 sec."
+    const eachSuffix = group.length === 1 ? '' : ' each';
+    const durationText = avgSeconds !== null
+      ? `, about ${window.JournalFormat.duration(avgSeconds)}${eachSuffix}`
+      : '';
     // A real plural branch: "1 pulse run completed" reads as English, where
     // "all 1 pulse run" does not.
     const runCount = group.length === 1

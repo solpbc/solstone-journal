@@ -1765,7 +1765,7 @@
     const confirmedLocal = Boolean(state.localHost && confirmedPrimary && displayedStream === state.localHost);
     if (!confirmedLocal && displayedStream) {
       elements.observeSourceNote.textContent = state.localHost
-        ? `this computer's stream isn't reporting yet. showing ${displayedStream}`
+        ? "this computer's stream isn't reporting yet."
         : `this computer is unknown. showing ${displayedStream}`;
       elements.observeSourceNote.classList.remove('hidden');
     } else {
