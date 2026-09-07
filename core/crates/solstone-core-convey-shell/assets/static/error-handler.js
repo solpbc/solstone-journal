@@ -49,31 +49,76 @@
     return result;
   }
 
+  // The entry this message lands in is the one the owner can send on, so it
+  // carries the shape of a failure and never its contents.
+  const DETAIL_MESSAGE_MAX = 200;
+  const DETAIL_KEYS_MAX = 12;
+
+  function bounded(text) {
+    const value = String(text);
+    return value.length > DETAIL_MESSAGE_MAX ? `${value.slice(0, DETAIL_MESSAGE_MAX)}…` : value;
+  }
+
+  function nameFallback(error) {
+    try {
+      const name = error && typeof error.name === 'string' ? error.name : '';
+      if (name) return bounded(name);
+    } catch (_) {
+      // an exotic reason with a throwing accessor still has to say something
+    }
+    return 'unknown error';
+  }
+
+  // X-01: String() on a null-prototype object throws "Cannot convert object to
+  // primitive value", and it threw from inside the rejection listener, which
+  // took the whole handler down with it. Nothing here may throw.
+  function coerce(error) {
+    try {
+      const text = String(error ?? '');
+      if (text) return bounded(text);
+    } catch (_) {
+      // fall through to the name
+    }
+    return nameFallback(error);
+  }
+
+  // X-03: `throw await res.json()` makes the rejection reason a parsed response
+  // body, and serialising it put journal content into a diagnostic entry the
+  // owner can send to support. The keys say which read failed; the values are
+  // never the entry's business.
+  function objectShape(error) {
+    let keys = [];
+    try {
+      keys = Object.keys(error);
+    } catch (_) {
+      keys = [];
+    }
+    // "{}" has no shape to report, and String() on it is the "[object Object]"
+    // the owner was reading before any of this.
+    if (!keys.length) return nameFallback(error);
+    const shown = keys.slice(0, DETAIL_KEYS_MAX).map(key => bounded(String(key)));
+    const rest = keys.length - shown.length;
+    return `{keys: ${shown.join(', ')}${rest > 0 ? `, +${rest} more` : ''}}`;
+  }
+
   // X-01: a rejection reason is not always an Error. Coercing a plain object
   // with String() writes the literal "[object Object]" into the entry the
   // "show details" disclosure renders, so the owner gets a calm summary with
-  // nothing behind it. Read the message, then serialise, then coerce.
+  // nothing behind it. Read the message, then describe the shape, then coerce.
   function messageFromError(error) {
     if (error instanceof Error) {
-      return error.message || String(error);
+      return error.message || coerce(error);
     }
     if (typeof error === 'string') {
-      return error;
+      return bounded(error);
     }
     if (error && typeof error === 'object') {
       if (typeof error.message === 'string' && error.message) {
-        return error.message;
+        return bounded(error.message);
       }
-      try {
-        const json = JSON.stringify(error);
-        if (json && json !== '{}' && json !== 'null') {
-          return json;
-        }
-      } catch (_) {
-        // a circular or unserialisable reason falls through to String()
-      }
+      return objectShape(error);
     }
-    return String(error ?? 'unknown error');
+    return coerce(error);
   }
 
   function stackFromError(error) {
@@ -219,18 +264,28 @@
     const override = Number(window.CONVEY_NAV_ABORT_WINDOW_MS);
     return Number.isFinite(override) && override >= 0 ? override : 1000;
   }
-  const deferredAborts = new Set();
+  // Keyed by its own timer so the drop path can say what it dropped: a
+  // rejection that waits out the navigation window and is then discarded used
+  // to leave no trace at all, which made a real read failure during a tab
+  // switch indistinguishable from nothing having happened.
+  const deferredAborts = new Map();
+  function noteNavigationAbort(error, context) {
+    if (window.console && typeof window.console.debug === 'function') {
+      window.console.debug('navigation aborted a read:', error, context || '');
+    }
+  }
   function dropDeferredAborts() {
-    deferredAborts.forEach(timer => clearTimeout(timer));
+    deferredAborts.forEach((deferred, timer) => {
+      clearTimeout(timer);
+      noteNavigationAbort(deferred.error, deferred.context);
+    });
     deferredAborts.clear();
   }
 
   window.logError = (error, context) => {
     if (isNavigationAbort(error)) {
       // still visible to a developer, but it is not a fault of this session
-      if (window.console && typeof window.console.debug === 'function') {
-        window.console.debug('navigation aborted a read:', error, context || '');
-      }
+      noteNavigationAbort(error, context);
       return;
     }
     if (looksLikeCancelledFetch(error)) {
@@ -238,7 +293,7 @@
         deferredAborts.delete(timer);
         recordError(error, context);
       }, navigationWindowMs());
-      deferredAborts.add(timer);
+      deferredAborts.set(timer, { error, context });
       return;
     }
     recordError(error, context);
@@ -297,7 +352,7 @@
     const reason = e.reason;
     const error = (reason && typeof reason === 'object') || typeof reason === 'string'
       ? reason
-      : new Error(String(reason ?? 'unknown rejection'));
+      : new Error(coerce(reason ?? 'unknown rejection'));
     window.logError(error, { kind: 'unhandled-rejection' });
   });
 

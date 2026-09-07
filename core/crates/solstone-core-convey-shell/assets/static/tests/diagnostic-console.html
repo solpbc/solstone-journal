@@ -356,13 +356,73 @@
     await settled();
     assert('pageshow clears the guard', diagnostic.list().length === 1);
 
+    // X-03: a deferred rejection that the navigation window then drops used to
+    // vanish with no trace anywhere, so a read that really did fail during a
+    // tab switch and one that never happened looked identical to a developer.
+    diagnostic.clear();
+    window.dispatchEvent(new Event('pageshow'));
+    const realDebug = window.console.debug;
+    const debugCalls = [];
+    window.console.debug = (...args) => { debugCalls.push(args); };
+    window.logError(new TypeError('Failed to fetch'), { context: 'home: refreshVitals failed' });
+    window.dispatchEvent(new Event('pagehide'));
+    window.console.debug = realDebug;
+    await settled();
+    assert('a dropped deferred rejection is still visible to a developer',
+      debugCalls.length === 1 && debugCalls[0][0] === 'navigation aborted a read:',
+      String(debugCalls.length));
+    assert('a dropped deferred rejection never reaches system messages', diagnostic.list().length === 0);
+    window.dispatchEvent(new Event('pageshow'));
+
     // X-01: the detail is the whole point of "show details". A rejection reason
     // that is not an Error used to arrive there as the string "[object Object]".
+    // X-03: and then as its whole serialised body, so `throw await res.json()`
+    // put journal content into an entry the owner can send. The keys identify
+    // the shape; the values stay where they were.
     diagnostic.clear();
     window.logError({ code: 'ERR_PULSE', status: 503 }, { context: 'health: pulse failed' });
     const plain = diagnostic.list()[0];
     assert('a plain-object reason never reads as [object Object]',
-      plain.detail.message === '{"code":"ERR_PULSE","status":503}', plain.detail.message);
+      plain.detail.message === '{keys: code, status}', plain.detail.message);
+    diagnostic.clear();
+    window.logError({ day: '20260906', text: 'the owner said something private' },
+      { context: 'records: read failed' });
+    const bodyReason = diagnostic.list()[0];
+    assert('an object reason never carries its values into the entry',
+      !bodyReason.detail.message.includes('private')
+      && bodyReason.detail.message === '{keys: day, text}',
+      bodyReason.detail.message);
+    diagnostic.clear();
+    window.logError({}, { context: 'health: pulse failed' });
+    assert('an empty object reason is readable',
+      diagnostic.list()[0].detail.message === 'unknown error',
+      diagnostic.list()[0].detail.message);
+    diagnostic.clear();
+    const circularReason = { code: 'ERR_LOOP' };
+    circularReason.self = circularReason;
+    window.logError(circularReason, { context: 'health: pulse failed' });
+    assert('a circular object reason is readable',
+      diagnostic.list()[0].detail.message === '{keys: code, self}',
+      diagnostic.list()[0].detail.message);
+    diagnostic.clear();
+    const bareReason = Object.create(null);
+    window.logError(bareReason, { context: 'health: pulse failed' });
+    assert('a null-prototype reason does not take the handler down',
+      diagnostic.list().length === 1 && diagnostic.list()[0].detail.message === 'unknown error',
+      diagnostic.list()[0] && diagnostic.list()[0].detail.message);
+    diagnostic.clear();
+    const bigReason = {};
+    for (let i = 0; i < 40; i += 1) bigReason[`field_${i}`] = 'x'.repeat(128);
+    window.logError(bigReason, { context: 'health: pulse failed' });
+    const bigMessage = diagnostic.list()[0].detail.message;
+    assert('a large object reason is bounded',
+      bigMessage.length <= 220 && bigMessage.startsWith('{keys: field_0,') && bigMessage.includes('more}'),
+      `${bigMessage.length}: ${bigMessage}`);
+    diagnostic.clear();
+    window.logError({ message: 'y'.repeat(5000) }, { context: 'health: pulse failed' });
+    assert('a long message on an object reason is bounded',
+      diagnostic.list()[0].detail.message.length === 201,
+      String(diagnostic.list()[0].detail.message.length));
     diagnostic.clear();
     window.logError({ message: 'pulse read refused', stack: 'at pulse (health.js:1)' },
       { context: 'health: pulse failed' });
