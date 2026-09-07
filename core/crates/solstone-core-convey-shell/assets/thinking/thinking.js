@@ -37,6 +37,10 @@
     runsGroupShown: new Map(),
     runsFacet: '',
     runsFacetExplicit: false,
+    // The last unfiltered run count for a day, {day, count}. The server
+    // narrows the day payload to the picked facet, so a filtered render has no
+    // way to count the day it is filtering (G2-B02).
+    runsDayTotal: null,
     runsSelectedUseId: '',
     runsDetail: null,
     runsModalFocus: null,
@@ -55,11 +59,21 @@
   // talent and page each group; a light day still renders in full.
   const thinkingRunsPageSize = 50;
   const thinkingRunsExpandAllBelow = 50;
-  // Readable names for the talent ids that do not humanize cleanly. Anything
-  // else falls back to the humanized id; the exact id stays in the disclosure.
+  // Owner names for the talent ids whose own authored title is not one. These
+  // win over the title: `entities:entity_observer` is titled "Entity Observer",
+  // and "observer" is retired vocabulary, while "record" is a word the app
+  // never aims at the owner's material — and talent prompts are not this app's
+  // to edit. Everything else takes the talent's authored title from the day
+  // payload (lowercased house style, see talentTitles); only a talent that
+  // reports no title at all falls back to the humanized id, and the exact id
+  // stays in the group's disclosure either way (X-04).
   const talentLabels = {
     'entities:detection': 'entity detection',
+    'entities:entity_observer': 'entity facts',
+    screen: 'screen reading',
   };
+  // Filled from each day payload's `talents` map; empty until one arrives.
+  let talentTitles = {};
   const providerEnv = {
     anthropic: 'ANTHROPIC_API_KEY',
     google: 'GOOGLE_API_KEY',
@@ -1245,7 +1259,7 @@
       ['ran', window.JournalFormat.timestamp(run.start)],
       ['model', runModelLabel(run)],
       ['provider', runProviderLabel(run)],
-      ['runtime', window.JournalFormat.duration(run.runtime_seconds)],
+      ['runtime', runRuntimeLabel(run)],
       ['status', run.failed ? 'failed' : (run.status || 'unknown').replaceAll('_', ' ')],
       ['thinking events', run.thinking_count],
       ['tool calls', run.tool_count],
@@ -1307,7 +1321,7 @@
     const counted = run.thinking_count != null && run.tool_count != null;
     if (counted && !(run.thinking_count > 0) && !(run.tool_count > 0)) {
       button.classList.add('thinking-runs-run-control-empty');
-      button.title = 'no thinking events or tool calls were recorded for this run';
+      button.title = 'this run left no log';
     }
     button.textContent = 'run log';
     button.addEventListener('click', () => navigateThinkingRun(run));
@@ -1316,6 +1330,17 @@
 
   function runStatusLabel(run) {
     return run.failed ? 'failed' : (run.status || 'unknown').replaceAll('_', ' ');
+  }
+
+  // "duration unavailable" is what the app says about a fact it failed to get.
+  // A run that started two minutes ago and has not finished has no runtime to
+  // get yet, and that row read as a fault beside a healthy status (G2-B12).
+  // Only the in-flight case moves; a finished run that recorded no runtime
+  // keeps the sentinel.
+  function runRuntimeLabel(run) {
+    const missing = run.runtime_seconds === null || run.runtime_seconds === undefined;
+    if (missing && !run.failed && run.status === 'running') return 'still running';
+    return window.JournalFormat.duration(run.runtime_seconds);
   }
 
   // Column order for the runs table. `hideable` columns can be lifted out
@@ -1328,7 +1353,7 @@
     {key: 'status', label: 'status', hideable: true, value: runStatusLabel},
     {key: 'model', label: 'model', hideable: true, value: runModelLabel},
     {key: 'provider', label: 'provider', hideable: true, value: runProviderLabel},
-    {key: 'runtime', label: 'runtime', hideable: false, value: (run) => window.JournalFormat.duration(run.runtime_seconds)},
+    {key: 'runtime', label: 'runtime', hideable: false, value: runRuntimeLabel},
     {key: 'thinking_count', label: 'thinking events', hideable: false, value: (run) => run.thinking_count},
     {key: 'tool_count', label: 'tool calls', hideable: false, value: (run) => run.tool_count},
     {key: 'facet', label: 'facet', hideable: true, value: (run) => run.facet},
@@ -1367,13 +1392,21 @@
     const statuses = new Set(group.map(runStatusLabel));
     const models = new Set(group.map(runModelLabel));
     const providers = new Set(group.map(runProviderLabel));
+    // Each clause is a claim about every run in the group, so each earns its
+    // place on its own columns' uniformity. They used to earn it together --
+    // one differing status suppressed the whole note -- and a group with a run
+    // still in flight is exactly a group whose statuses differ, so today's day
+    // kept a table repeating one model and one provider down every row with
+    // nothing standing in for them (prior G2-46 partial).
+    //
     // The provider gate guards the *model* clause, not a provider clause -- do
     // not drop it on the grounds that the sentence never says the provider.
     // runModelLabel resolves LOCAL_MODEL_LABELS off a `${provider}/${model}`
     // key, so "Qwen 3.5 4B (local)" makes a lane claim that rides on the
     // provider; across two providers that resolve to one label, the lane would
     // be false for some of the runs.
-    if (statuses.size !== 1 || models.size !== 1 || providers.size !== 1) return null;
+    const statusText = statuses.size === 1 ? ` ${[...statuses][0]}` : '';
+    const uniformModel = models.size === 1 && providers.size === 1;
     // Every clause here is a claim about every run in the group, not about the
     // group in aggregate — that is what the uniformity guards above buy the
     // status and the model, and the runtime has to earn it the same way. As an
@@ -1386,13 +1419,16 @@
     // run. So this is not an average at all: it is the runtime column's own
     // value, said once, and only when every run in the group reads the same.
     const eachSuffix = group.length === 1 ? '' : ' each';
-    const runtimes = new Set(group.map((run) => window.JournalFormat.duration(run.runtime_seconds)));
+    const runtimes = new Set(group.map(runRuntimeLabel));
     const sharedRuntime = runtimes.size === 1 ? [...runtimes][0] : null;
     // No hedge: this is not an average any more, it is the runtime column's
     // own string repeated, so "about" would be apologising for a figure that
     // is exact -- and formatDuration is to the second above a minute, which
     // made "about 5 min 3 sec each" read as generated.
-    const durationText = sharedRuntime && sharedRuntime !== 'duration unavailable'
+    // "still running" joins "duration unavailable" as a value that is a state,
+    // not a duration; neither belongs in a sentence about how long the runs
+    // took (G2-B12).
+    const durationText = sharedRuntime && sharedRuntime !== 'duration unavailable' && sharedRuntime !== 'still running'
       ? `, ${sharedRuntime}${eachSuffix}`
       : '';
     // A run can simply not record a model, and runModelLabel hands the absent
@@ -1400,7 +1436,7 @@
     // undefined." Say nothing rather than name a lane the runs did not record;
     // the provider column stays in the table either way, so nothing is lost by
     // the silence.
-    const modelLabel = String([...models][0] ?? '').trim();
+    const modelLabel = uniformModel ? String([...models][0] ?? '').trim() : '';
     const modelText = modelLabel ? ` on ${modelLabel}` : '';
     // No "all". It is a quantifier over the population, and the population
     // here is a filtered view -- `runs` is narrowed to failures when the
@@ -1424,9 +1460,14 @@
     // whether the thinking stayed on the owner's device with it. `facet` and
     // `output` are never here for the same reason: the note never says them,
     // so they only leave by being empty on every row.
-    const spokenFor = new Set(['status']);
+    const spokenFor = new Set();
+    if (statusText) spokenFor.add('status');
     if (modelText) spokenFor.add('model');
-    return {text: `${runCount} ${[...statuses][0]}${modelText}${durationText}.`, spokenFor};
+    // The runtime column is never lifted out of the table, so a runtime clause
+    // on its own would only repeat what every row already shows. The note earns
+    // its line by standing in for a column; the runtime rides along when it can.
+    if (!spokenFor.size) return null;
+    return {text: `${runCount}${statusText}${modelText}${durationText}.`, spokenFor};
   }
 
   function renderThinkingRunList(host, runs, hiddenColumns = new Set()) {
@@ -1478,9 +1519,23 @@
   }
 
   function renderThinkingRunsDay(payload, route) {
-    const matchingRuns = normalizedThinkingRuns(payload).filter(run => !route.talent || run.name === route.talent);
+    rememberTalentTitles(payload);
+    const dayRuns = normalizedThinkingRuns(payload);
+    const matchingRuns = dayRuns.filter(run => !route.talent || run.name === route.talent);
     const runs = state.runsFailuresOnly ? matchingRuns.filter(run => run.failed) : matchingRuns;
+    const facetFiltered = Boolean(state.runsFacetExplicit && state.runsFacet);
+    // An unfiltered read of a day is the only thing that knows how many runs
+    // the day had; remember it so a later filtered read of the same day can
+    // say what the filter did rather than what the day did (G2-B02).
+    if (!facetFiltered) state.runsDayTotal = {day: route.day, count: dayRuns.length};
     updateThinkingRunsDayControls(route);
+    const returnedFacets = Array.isArray(payload?.facets)
+      ? payload.facets
+      : Object.entries(payload?.facets && typeof payload.facets === 'object' ? payload.facets : {})
+        .map(([name, metadata]) => ({
+          ...(metadata && typeof metadata === 'object' ? metadata : {}),
+          name,
+        }));
     const facet = $('thinkingRunsFacet');
     if (facet) {
       facet.replaceChildren();
@@ -1488,13 +1543,6 @@
       all.value = '';
       all.textContent = 'all';
       facet.appendChild(all);
-      const returnedFacets = Array.isArray(payload?.facets)
-        ? payload.facets
-        : Object.entries(payload?.facets && typeof payload.facets === 'object' ? payload.facets : {})
-          .map(([name, metadata]) => ({
-            ...(metadata && typeof metadata === 'object' ? metadata : {}),
-            name,
-          }));
       returnedFacets.forEach((item) => {
         const option = document.createElement('option');
         option.value = item.name || item;
@@ -1526,8 +1574,17 @@
     label.append(input, document.createTextNode(' failed runs only'));
     controls.append(label); host.append(controls);
     if (!runs.length) {
+      const picked = returnedFacets.find((item) => (item?.name ?? item) === state.runsFacet);
+      const facetTitle = (picked && (picked.title || picked.name)) || state.runsFacet;
+      const dayTotal = state.runsDayTotal && state.runsDayTotal.day === route.day ? state.runsDayTotal.count : null;
       const heading = document.createElement('p');
-      heading.textContent = state.runsFailuresOnly ? 'no failed runs match this view' : route.talent ? 'no runs found for this talent on this day' : 'no talent runs on this day';
+      heading.textContent = state.runsFailuresOnly
+        ? 'no failed runs match this view'
+        : route.talent
+          ? 'no runs found for this talent on this day'
+          : facetFiltered
+            ? 'no runs in this facet on this day'
+            : 'no talent runs on this day';
       const detail = document.createElement('p');
       // G2-33: the failures-only heading is filter-aware, but this line used to
       // fall through to "runs appear here when processing takes place" even on
@@ -1538,10 +1595,31 @@
         detail.textContent = `all ${count} ${count === 1 ? 'run' : 'runs'} on this day completed.`;
       } else if (route.talent) {
         detail.textContent = 'this day has no matching run record in the current view. try all talents or another day.';
+      } else if (facetFiltered) {
+        // G2-B02: the facet branch is the sibling G2-33 missed. It fell through
+        // to "runs appear here when processing takes place" on a day with 591
+        // of them, which answers "is my journal thinking?" with the opposite of
+        // the truth. Say what the filter did, and count the day only when an
+        // unfiltered read of this same day supplied the number.
+        detail.textContent = dayTotal
+          ? `${dayTotal} ${dayTotal === 1 ? 'run' : 'runs'} ran on this day, none in ${facetTitle}.`
+          : `no run on this day carries ${facetTitle}.`;
       } else {
         detail.textContent = 'runs appear here when processing takes place.';
       }
       host.append(heading, detail);
+      if (facetFiltered && !state.runsFailuresOnly && !route.talent) {
+        const showAll = document.createElement('button');
+        showAll.type = 'button';
+        showAll.className = 'thinking-runs-control';
+        showAll.textContent = 'show all facets';
+        showAll.addEventListener('click', () => {
+          const picker = $('thinkingRunsFacet');
+          if (picker) picker.value = '';
+          applyRunsFacetSelection('');
+        });
+        host.append(showAll);
+      }
       if (state.runsFailuresOnly && matchingRuns.length) {
         const showAll = document.createElement('button');
         showAll.type = 'button';
@@ -1934,6 +2012,17 @@
     );
   }
 
+  // One path for changing the facet, so the reset in the empty state and the
+  // picker itself cannot drift apart (G2-B02).
+  function applyRunsFacetSelection(value) {
+    setRunsFacet(value, Boolean(value));
+    const route = parseThinkingHash();
+    if (route?.kind !== 'runs') return;
+    const next = currentThinkingRunsRoute(route);
+    window.history.pushState(null, '', thinkingRunsHash(next));
+    routeThinkingHash('pointer');
+  }
+
   function closeThinkingPrompt() {
     $('thinkingRunsPromptModal').hidden = true;
     if (state.runsPromptEscapeHandler) {
@@ -1951,15 +2040,7 @@
     $('thinkingRunsPrevious')?.addEventListener('click', () => navigateThinkingRunsDay(-1));
     $('thinkingRunsNext')?.addEventListener('click', () => navigateThinkingRunsDay(1));
     $('thinkingRunsDate')?.addEventListener('change', (event) => navigateThinkingRunsDay(0, runsDayFromInput(event.target.value)));
-    $('thinkingRunsFacet')?.addEventListener('change', (event) => {
-      setRunsFacet(event.target.value, Boolean(event.target.value));
-      const route = parseThinkingHash();
-      if (route?.kind === 'runs') {
-        const next = currentThinkingRunsRoute(route);
-        window.history.pushState(null, '', thinkingRunsHash(next));
-        routeThinkingHash('pointer');
-      }
-    });
+    $('thinkingRunsFacet')?.addEventListener('change', (event) => applyRunsFacetSelection(event.target.value));
     $('thinkingRunsPrompt')?.addEventListener('click', openThinkingPrompt);
     $('thinkingRunsPromptClose')?.addEventListener('click', closeThinkingPrompt);
   }
@@ -2001,17 +2082,36 @@
   }
 
   // providerLabel() brand-names a provider for the BYO provider chooser
-  // ("Claude", "Local"); the runs table is a plain metadata column, and the
-  // rest of the shell (stats' provider column) shows that value lowercase
-  // (G2-43).
+  // ("Claude", "Local"). Third-party brands keep their case everywhere else in
+  // the canon, and this column was the one place they did not; the local lane
+  // is not a brand, so it is the one value that stays lowercase. stats'
+  // token-card.js brand-names the same providers the same way (X-05, G2-43).
   function runProviderLabel(run) {
-    return run.provider ? providerLabel(run.provider).toLowerCase() : run.provider;
+    if (!run.provider) return run.provider;
+    const label = providerLabel(run.provider);
+    return run.provider === 'local' ? label.toLowerCase() : label;
+  }
+
+  // The day payload already carries every talent's authored title; the runs
+  // view used to build its headings out of the raw id instead, so retired and
+  // agent-internal vocabulary reached the owner as product words (X-04).
+  function rememberTalentTitles(payload) {
+    const talents = payload && typeof payload.talents === 'object' && payload.talents ? payload.talents : null;
+    if (!talents) return;
+    const titles = {};
+    Object.entries(talents).forEach(([id, metadata]) => {
+      const title = String((metadata && metadata.title) || '').trim();
+      // The reads layer defaults a missing title to the talent key, so a title
+      // equal to the id is "this talent has no title", not a name anyone chose.
+      if (title && title !== id) titles[id] = title.toLowerCase();
+    });
+    talentTitles = titles;
   }
 
   function talentLabel(name) {
     const id = String(name || '');
     if (!id) return '';
-    return talentLabels[id] || id.replace(/[_:]+/g, ' ');
+    return talentLabels[id] || talentTitles[id] || id.replace(/[_:]+/g, ' ');
   }
 
   function configuredProviders() {

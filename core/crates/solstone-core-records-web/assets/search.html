@@ -60,13 +60,50 @@
   function append(n,parent){if(n.nodeType===3){parent.append(document.createTextNode(n.textContent));return;}if(n.nodeType!==1)return;const dest=n.tagName==='STRONG'?node('mark'):parent;if(dest!==parent)parent.append(dest);for(const child of n.childNodes)append(child,dest);}
   for(const child of doc.body.childNodes)append(child,out);return out;
  }
- function renderHit(hit){
+ // G2-B04: a stored agent output is a JSON record, and the excerpt used to be
+ // that record — braces, keys, the raw model id and a millisecond epoch, with
+ // the one readable sentence buried inside it. Read the record's human fields
+ // and its timestamp; the whole record still lives behind "read matched entry",
+ // where "as last indexed" already sets the right expectation.
+ const RECORD_TEXT_FIELDS=['headline','summary_sentence','summary','text','body','sentence','message','note'];
+ // The API hands back an escaped excerpt with <strong> around the matched
+ // terms, so the record has to be decoded before it can be read as JSON.
+ function plainText(value){
+  return new DOMParser().parseFromString(String(value||''),'text/html').body.textContent||'';
+ }
+ function readableRecord(value){
+  const raw=plainText(value).trim();
+  if(!raw.startsWith('{')||!raw.endsWith('}'))return null;
+  let record;
+  try{record=JSON.parse(raw);}catch(error){return null;}
+  if(!record||typeof record!=='object'||Array.isArray(record))return null;
+  const parts=[];
+  for(const field of RECORD_TEXT_FIELDS){
+   const part=typeof record[field]==='string'?record[field].trim():'';
+   // A summary that already opens with the headline would say it twice.
+   if(part&&!parts.some(seen=>seen.includes(part)||part.includes(seen)))parts.push(part);
+  }
+  if(!parts.length)return null;
+  // A headline rarely ends in a full stop, so joining on a bare space runs it
+  // into the sentence that follows it.
+  const text=parts.reduce((sentence,part)=>sentence?(/[.!?…]$/.test(sentence)?sentence+' '+part:sentence+'. '+part):part,'');
+  const stamp=Number(record.ts);
+  return {text,time:Number.isFinite(stamp)&&stamp>0?window.JournalFormat.time(stamp):''};
+ }
+ function renderHit(hit,dayHref){
   const card=node('article','search-result');const meta=node('div','search-meta');
-  for(const text of [hit.agent_label,hit.facet_title,window.JournalFormat.stream(hit.stream)])if(text)meta.append(node('span','',text));
-  card.append(meta);const text=node('p','search-excerpt');text.append(excerpt(hit.text));card.append(text);
+  const record=readableRecord(hit.text);
+  for(const text of [hit.agent_label,hit.facet_title,window.JournalFormat.stream(hit.stream),record&&record.time])if(text)meta.append(node('span','',text));
+  card.append(meta);const text=node('p','search-excerpt');
+  if(record)text.textContent=record.text;else text.append(excerpt(hit.text));
+  card.append(text);
   const actions=node('div','search-actions');const destination=sourceLink(hit);
   if(destination){const a=node('a','search-link',String(hit.path).startsWith('entity_search:')?'open entity':'open transcript');a.href=destination;actions.append(a);}
-  else if(hit.day){const a=node('a','search-link','open that day →');a.href='/app/transcripts/'+encodeURIComponent(hit.day);actions.append(a);}
+  // G2-B09: this link goes exactly where the day heading above it already
+  // goes, so on a page of five results per day it was the same link a hundred
+  // times over, teaching the eye to skip the one control the card has. Offer
+  // it only when the day heading is not already carrying it.
+  else if(hit.day){const href='/app/transcripts/'+encodeURIComponent(hit.day);if(href!==dayHref){const a=node('a','search-link','open that day →');a.href=href;actions.append(a);}}
   const path=String(hit.path||'');
   if(path&&!path.startsWith('entity_search:')&&hit.entry_id){
    const button=node('button','','read matched entry');button.type='button';button.setAttribute('aria-expanded','false');const content=node('pre','search-source');content.hidden=true;
@@ -78,7 +115,12 @@
     try{const data=await window.apiJson('/app/search/api/entry?'+new URLSearchParams({path,idx:String(hit.idx),entry_id:String(hit.entry_id)}));if(!root.isConnected)return;content.replaceChildren(node('span','search-meta','as last indexed'),document.createTextNode(data.content));content.dataset.loaded='true';}
     catch(error){if(!root.isConnected)return;content.textContent="couldn't open this entry. "+String(error.serverMessage||error.message||'try again.');if(error.rawDetail)content.textContent+=' '+String(error.rawDetail);}
    });actions.append(button);card.append(actions,content);
-  }else card.append(actions);
+  }else{
+   // No entry to open, so the disclosure that normally holds the raw record is
+   // not there. Keep the record reachable rather than dropping it (G2-B04).
+   if(actions.childNodes.length)card.append(actions);
+   if(record){const disclosure=node('details');disclosure.append(node('summary','','the stored record'),node('pre','search-source',plainText(hit.text)));card.append(disclosure);}
+  }
   return card;
  }
  let activeController=null;let progressTimeout=null;let progressInterval=null;
@@ -111,7 +153,8 @@
    for(const day of orderedDays(data.days)){
     const section=node('section','search-day');const heading=node('h2');heading.append(dayLink(day.day));section.append(heading);
     if(day.total>day.showing)section.append(node('p','search-meta',`showing the top ${day.showing} of ${day.total} matches for this day.`));
-    for(const hit of day.results)section.append(renderHit(hit));
+    const dayHref='/app/transcripts/'+encodeURIComponent(day.day);
+    for(const hit of day.results)section.append(renderHit(hit,dayHref));
     if(day.total>day.showing&&!exactDay){const a=node('a','search-link','more from this day');const date=day.day.replace(/(\d{4})(\d{2})(\d{2})/,'$1-$2-$3');a.href=pageUrl({from:date,to:date});section.append(a);}
     else if(day.total>day.showing)section.append(node('p','search-meta','add words to narrow these matches.'));
     results.append(section);
