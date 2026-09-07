@@ -1073,12 +1073,6 @@ function renderSourceDisplay(sourceType, sourceDisplay, fallbackText = '-') {
   return `<div class="import-source-inline">${iconSvg ? `<span class="import-source-inline-icon" aria-hidden="true">${iconSvg}</span>` : ''}<span>${escapeHtml(displayText)}</span></div>`;
 }
 
-// The eleven owner-facing source names the history filter offers. A recorded
-// source_display that is not one of them is a filename, not a source (G3-308).
-function ownerFacingSourceNames() {
-  return new Set(cachedSources.map(source => source.display_name).filter(Boolean));
-}
-
 function getImportById(importId) {
   return importsCache.find(item => item.timestamp === importId) || null;
 }
@@ -1136,15 +1130,16 @@ function renderImportRow(imp) {
   }
 
   // The file column holds a file and nothing else, and the source column holds a
-  // name the source filter also offers (G3-113, G3-308). Older imports recorded
-  // the uploaded file's name in source_display, so the source column repeated a
-  // filename while the file column was a dash on every row; anything that is not
-  // one of the app's own source names is that file, and belongs in the file cell.
+  // source (G3-113, G3-308). Older imports recorded the uploaded file's name in
+  // source_display, so the source column repeated a filename while the file
+  // column was a dash on every row. A recorded display that ends in a file
+  // extension is that file and belongs in the file cell; a recorded display that
+  // names a source the app does not carry metadata for is still a source.
   const knownSourceName = sourceMetadataByName[imp.source_type]?.display_name || '';
   const recordedDisplay = typeof imp.source_display === 'string' ? imp.source_display.trim() : '';
-  const recordedIsSourceName = recordedDisplay !== '' && ownerFacingSourceNames().has(recordedDisplay);
-  const sourceDisplayText = knownSourceName || (recordedIsSourceName ? recordedDisplay : '');
-  const fileDisplay = imp.original_filename || (recordedIsSourceName ? '' : recordedDisplay) || '-';
+  const recordedIsFilename = /\.[a-z0-9]{2,5}$/i.test(recordedDisplay);
+  const sourceDisplayText = knownSourceName || (recordedIsFilename ? '' : recordedDisplay);
+  const fileDisplay = imp.original_filename || (recordedIsFilename ? recordedDisplay : '') || '-';
   const sourceCell = sourceDisplayText
     ? renderSourceDisplay(imp.source_type || '', sourceDisplayText, sourceDisplayText)
     : '-';
