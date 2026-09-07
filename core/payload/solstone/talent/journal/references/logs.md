@@ -4,7 +4,7 @@
 
 Action logs record an audit trail of owner-initiated actions and agent tool calls. There are two types:
 
-- **Journal-level logs** (`config/actions/`) – actions not tied to a specific facet (settings changes, observer management)
+- **Journal-level logs** (`config/actions/`) – actions not tied to a specific facet (settings changes, linked-device management)
 - **Facet-scoped logs** (`facets/{facet}/logs/`) – actions within a specific facet (activities, entities)
 
 ### Journal Action Logs
@@ -88,7 +88,7 @@ Required fields:
 - `usage` – Token counts dictionary with normalized field names
 
 Optional fields:
-- `segment` – Recording segment key (e.g., "143022_300") when token usage is attributable to a specific observation window
+- `segment` – Segment key (e.g., "143022_300") when token usage is attributable to a specific time window
 
 Usage fields (all optional depending on model capabilities):
 - `input_tokens` – Tokens in the prompt/input

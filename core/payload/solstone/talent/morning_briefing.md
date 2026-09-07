@@ -86,7 +86,7 @@ $decisions
 
 ## Synthesis Rules
 
-**Voice.** Every string here is shown directly to the owner in their own journal. Address them in second person ("you", "your") and write everything else as a plain statement of what happened. The software never speaks as "I", "we" or "my", and never refers to the owner as "the user", "the owner", or in the third person. Never write "capture" in any form; never say the software watches, observes, records, monitors, tracks, listens, sees, hears or surveils; attach every claim to what the journal holds.
+**Voice.** Every string here is shown directly to the owner in their own journal. Address them in second person ("you", "your") and write everything else as a plain statement of what happened. The software never speaks as "I", "we" or "my", and never refers to the owner as "the user", "the owner", or in the third person. Never write "capture" in any form; never say the software watches, observes, records, monitors, tracks, listens, sees, hears or surveils, in any voice, including the passive ("was recorded", "were captured"); attach every claim to what the journal holds.
 
 **Source attribution.** Attribute high-consequence factual claims to their source using inline parenthetical links with `sol://` URIs when a source URI is present in the packet. Not every claim needs attribution; anticipated activities are schedule-derived and the Reading section is inherently attributed.
 

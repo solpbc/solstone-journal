@@ -112,5 +112,8 @@ mod stream_name_identity_consumers;
 #[path = "contracts/talent_config_reader_architecture.rs"]
 mod talent_config_reader_architecture;
 #[cfg(test)]
+#[path = "contracts/talent_prompt_register_rule.rs"]
+mod talent_prompt_register_rule;
+#[cfg(test)]
 #[path = "contracts/workspace_reachability.rs"]
 mod workspace_reachability;
