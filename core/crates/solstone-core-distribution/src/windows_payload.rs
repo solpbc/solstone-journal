@@ -51,6 +51,13 @@ pub const WINDOWS_PARAKEET_SERVER: &str = "bin/parakeet-server.exe";
 /// The Parakeet model is a signed package member, never copied into journal state.
 pub const WINDOWS_PARAKEET_MODEL: &str =
     "lib/solstone_journal_models/assets/parakeet/tdt-0.6b-v3-q8_0.gguf";
+/// The backup tools are verified package executables, never runtime downloads.
+pub const WINDOWS_RESTIC_WORKER: &str = "bin/restic.exe";
+pub const WINDOWS_RCLONE_WORKER: &str = "bin/rclone.exe";
+/// Required object detection uses the package engine and the bundled model.
+pub const WINDOWS_RFDETR_WORKER: &str = "bin/rfdetr-cli.exe";
+pub const WINDOWS_RFDETR_MODEL: &str =
+    "lib/solstone_journal_models/assets/rfdetr/rfdetr-nano-f16.gguf";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
