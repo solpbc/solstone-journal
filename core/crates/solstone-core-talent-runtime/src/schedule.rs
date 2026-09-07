@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{Datelike, NaiveDate, SecondsFormat, Utc};
 use serde_json::{Map, Value, json};
+use solstone_core_system::activity_state::normalize_activity_description;
 
 use crate::contract::{CommitPlan, ParsedOutput, PrePostState};
 use crate::writers::WriteIntent;
@@ -177,8 +178,14 @@ fn apply_event(
             ("target_date".to_owned(), Value::String(target_date)),
             ("start".to_owned(), start.map_or(Value::Null, Value::String)),
             ("end".to_owned(), end.map_or(Value::Null, Value::String)),
-            ("title".to_owned(), Value::String(title)),
-            ("description".to_owned(), Value::String(description)),
+            (
+                "title".to_owned(),
+                Value::String(normalize_activity_description(&title)),
+            ),
+            (
+                "description".to_owned(),
+                Value::String(normalize_activity_description(&description)),
+            ),
             ("details".to_owned(), Value::String(details)),
             ("facet".to_owned(), Value::String(facet.clone())),
             ("source".to_owned(), Value::String("anticipated".to_owned())),
@@ -421,6 +428,20 @@ fn longest_match(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn anticipated_titles_and_descriptions_drop_a_leading_subject() {
+        // the schedule talent's output reaches Home's today card verbatim, so it takes the
+        // same register normaliser as every other activity record
+        assert_eq!(
+            normalize_activity_description("The user meets Sam at two"),
+            "Meets Sam at two"
+        );
+        assert_eq!(
+            normalize_activity_description("Dentist at nine"),
+            "Dentist at nine"
+        );
+    }
+
     #[test]
     fn anticipation_id_and_fuzzy_supersede_match_reference_shape() {
         // Derived from solstone/think/activities.py:1350-1401.

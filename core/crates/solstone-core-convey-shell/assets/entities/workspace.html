@@ -2842,7 +2842,10 @@ function isEntityConnUpcoming(day, referenceDay) {
 
 function formatEntityConnDay(day, referenceDay) {
   if (!day) return '';
-  if (!/^\d{8}$/.test(day)) return day;
+  if (!/^\d{8}$/.test(day)) {
+    // a relative label from the server ('Today', 'Yesterday') reads mid-sentence, so it is lowercase
+    return /^(today|yesterday|tomorrow)$/i.test(day) ? day.toLowerCase() : day;
+  }
   const date = parseYYYYMMDD(day);
   let label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase();
   if (/^\d{8}$/.test(referenceDay || '')) {
