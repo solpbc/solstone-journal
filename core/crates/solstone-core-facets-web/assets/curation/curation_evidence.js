@@ -8,6 +8,7 @@
   const DRAWER_LABEL = 'evidence';
   const PIECE_SINGULAR = 'piece';
   const PIECE_PLURAL = 'pieces';
+  const COUNT_SHOWING = 'showing';
   const COUNT_OF = 'of';
   const META_SEPARATOR = ' · ';
   // --- end owner-facing strings ---
@@ -33,8 +34,10 @@
   }
 
   function formatEvidenceLine(displayedCount, totalCount) {
+    // G2-B08: a bare "3 of 29" beside the word "evidence" reads as an id or a
+    // rank. Say what the two numbers are.
     if (displayedCount < totalCount) {
-      return `${displayedCount} ${COUNT_OF} ${totalCount}`;
+      return `${COUNT_SHOWING} ${displayedCount} ${COUNT_OF} ${totalCount}`;
     }
     if (totalCount === 1) {
       return `1 ${PIECE_SINGULAR}`;

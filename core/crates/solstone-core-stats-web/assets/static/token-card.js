@@ -20,10 +20,25 @@
     models: document.querySelector('#tokenModels')
   };
   const tableData = { providers: [], models: [] };
+  const tableHosts = {
+    providers: document.querySelector('[data-token-table-host="providers"]'),
+    models: document.querySelector('[data-token-table-host="models"]')
+  };
+  const tableSummaries = {
+    providers: document.querySelector('[data-token-summary="providers"]'),
+    models: document.querySelector('[data-token-summary="models"]')
+  };
+  const tableNotes = {
+    providers: document.querySelector('[data-token-note="providers"]'),
+    models: document.querySelector('[data-token-note="models"]')
+  };
   const sorts = {
     providers: { key: 'tokens', direction: 'descending' },
     models: { key: 'tokens', direction: 'descending' }
   };
+  // A metric column sorts biggest-first on its first click; only the two
+  // name columns start A-to-Z (G2-B11).
+  const NAME_SORT_KEYS = ['provider', 'model'];
   let coverageFailed = false;
   let selected = initialDay();
   let scopedDateNav = null;
@@ -142,9 +157,73 @@
     return direction === 'ascending' ? result : -result;
   }
 
+  function share(value) {
+    return `${Number(value || 0).toFixed(1)}% of the day's tokens`;
+  }
+
+  // One provider and one model is the shipped default, and it is the case
+  // where the table charges the owner eleven sort buttons and a sideways
+  // drag to read two facts. Say the two facts instead; the table comes back
+  // the moment there is more than one row to compare (G2-B11).
+  function renderSingleRowSummary(name, item) {
+    const host = tableSummaries[name];
+    host.replaceChildren();
+    const label = document.createElement('span');
+    label.className = 'token-table-summary-name';
+    const detail = document.createElement('span');
+    detail.className = 'token-table-summary-detail';
+    const parts = [requestCount(item.requests), `${number(item.tokens)} tokens`];
+    if (item.cached_tokens !== null && item.cached_tokens !== undefined) {
+      parts.push(`${number(item.cached_tokens)} cached`);
+    }
+    parts.push(share(item.percent));
+    detail.textContent = parts.join(' · ');
+    if (name === 'providers') {
+      label.textContent = `one provider this day: ${providerLabel(item.provider)}.`;
+      host.append(label, detail);
+      return;
+    }
+    label.textContent = `one model this day: ${readableModelLabel(item.model)}, through ${providerLabel(item.provider)}.`;
+    host.append(label, detail);
+    // The exact wire ids stay behind a disclosure, exactly as the model
+    // column's own cell keeps them (G2-31).
+    const ids = Array.isArray(item.models_used) && item.models_used.length
+      ? item.models_used
+      : [item.model];
+    const details = document.createElement('details');
+    const summaryLine = document.createElement('summary');
+    summaryLine.textContent = 'exact model ids';
+    const idList = document.createElement('p');
+    idList.className = 'token-model-ids';
+    idList.textContent = ids.join(', ');
+    details.append(summaryLine, idList);
+    host.append(details);
+  }
+
   function renderTable(name) {
     const body = tableBodies[name];
     const { key, direction } = sorts[name];
+    const rows = tableData[name];
+    const host = tableHosts[name];
+    const summary = tableSummaries[name];
+    const note = tableNotes[name];
+    if (host && summary && note) {
+      host.hidden = rows.length < 2;
+      summary.hidden = rows.length !== 1;
+      note.hidden = rows.length !== 0;
+      if (rows.length === 0) {
+        note.textContent = name === 'providers'
+          ? 'no providers were recorded for this day.'
+          : 'no models were recorded for this day.';
+      }
+      if (rows.length === 1) {
+        renderSingleRowSummary(name, rows[0]);
+      }
+      if (rows.length < 2) {
+        body.replaceChildren();
+        return;
+      }
+    }
     body.replaceChildren();
     [...tableData[name]].sort((left, right) => compareRows(left, right, key, direction)).forEach(item => {
       const row = document.createElement('tr');
@@ -294,9 +373,11 @@
       const name = button.dataset.tokenTable;
       const key = button.dataset.tokenKey;
       const prior = sorts[name];
+      const first = NAME_SORT_KEYS.includes(key) ? 'ascending' : 'descending';
+      const flipped = first === 'ascending' ? 'descending' : 'ascending';
       sorts[name] = {
         key,
-        direction: prior.key === key && prior.direction === 'ascending' ? 'descending' : 'ascending'
+        direction: prior.key === key && prior.direction === first ? flipped : first
       };
       document.querySelectorAll(`[data-token-table="${name}"]`).forEach(other => {
         other.closest('th').setAttribute('aria-sort', other === button ? sorts[name].direction : 'none');
