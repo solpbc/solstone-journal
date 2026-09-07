@@ -172,18 +172,20 @@
         "client_label": 1
       },
       "decision": {
-        "accepted": false,
-        "detail": "client_label is invalid",
-        "http_status": 400,
-        "kind": "pairing_identity",
-        "reason_code": "pairing_request_invalid"
+        "accepted": true,
+        "http_status": 200,
+        "kind": "pairing_identity"
+      },
+      "expected": {
+        "client_label_state": "absent",
+        "platform_state": "absent"
       },
       "fixture_id": "declared.pairing.identity.invalid.client_label.type",
       "id": "pairing.identity.invalid.client_label.type",
       "kind": "declared",
       "pointers": [
-        "/reason_code",
-        "/detail"
+        "/client_label",
+        "/platform"
       ],
       "role": "phone"
     },
@@ -192,18 +194,20 @@
         "client_label": ""
       },
       "decision": {
-        "accepted": false,
-        "detail": "client_label is invalid",
-        "http_status": 400,
-        "kind": "pairing_identity",
-        "reason_code": "pairing_request_invalid"
+        "accepted": true,
+        "http_status": 200,
+        "kind": "pairing_identity"
+      },
+      "expected": {
+        "client_label_state": "absent",
+        "platform_state": "absent"
       },
       "fixture_id": "declared.pairing.identity.invalid.client_label.empty",
       "id": "pairing.identity.invalid.client_label.empty",
       "kind": "declared",
       "pointers": [
-        "/reason_code",
-        "/detail"
+        "/client_label",
+        "/platform"
       ],
       "role": "phone"
     },
@@ -212,18 +216,20 @@
         "client_label": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
       },
       "decision": {
-        "accepted": false,
-        "detail": "client_label is invalid",
-        "http_status": 400,
-        "kind": "pairing_identity",
-        "reason_code": "pairing_request_invalid"
+        "accepted": true,
+        "http_status": 200,
+        "kind": "pairing_identity"
+      },
+      "expected": {
+        "client_label_state": "absent",
+        "platform_state": "absent"
       },
       "fixture_id": "declared.pairing.identity.invalid.client_label.oversize",
       "id": "pairing.identity.invalid.client_label.oversize",
       "kind": "declared",
       "pointers": [
-        "/reason_code",
-        "/detail"
+        "/client_label",
+        "/platform"
       ],
       "role": "phone"
     },
@@ -232,18 +238,20 @@
         "platform": "plan9"
       },
       "decision": {
-        "accepted": false,
-        "detail": "platform is invalid",
-        "http_status": 400,
-        "kind": "pairing_identity",
-        "reason_code": "pairing_request_invalid"
+        "accepted": true,
+        "http_status": 200,
+        "kind": "pairing_identity"
+      },
+      "expected": {
+        "client_label_state": "absent",
+        "platform_state": "absent"
       },
       "fixture_id": "declared.pairing.identity.invalid.platform.unknown",
       "id": "pairing.identity.invalid.platform.unknown",
       "kind": "declared",
       "pointers": [
-        "/reason_code",
-        "/detail"
+        "/client_label",
+        "/platform"
       ],
       "role": "phone"
     },

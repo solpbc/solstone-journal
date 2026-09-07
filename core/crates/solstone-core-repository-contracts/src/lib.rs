@@ -15,6 +15,9 @@ mod backup_admission_caller_purity;
 #[path = "contracts/ci_gate_purity.rs"]
 mod ci_gate_purity;
 #[cfg(test)]
+#[path = "contracts/client_description_contract_bundle.rs"]
+mod client_description_contract_bundle;
+#[cfg(test)]
 #[path = "contracts/client_ingest_contract_bundle.rs"]
 mod client_ingest_contract_bundle;
 #[cfg(test)]

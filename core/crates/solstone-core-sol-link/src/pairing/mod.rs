@@ -420,8 +420,7 @@ pub fn complete_pairing(
             "sender_instance_id is invalid",
         ));
     }
-    let pairing_identity = validate_ceremony_pairing_identity(&ceremony.request.additional_fields)
-        .map_err(PairingError::PairingRequestInvalid)?;
+    let pairing_identity = validate_ceremony_pairing_identity(&ceremony.request.additional_fields);
     // Read only, and deliberately before consume: unavailable identity cannot burn a nonce.
     let identity = load_committed_identity(journal_root)
         .map_err(PairingError::CommittedIdentityUnavailable)?;
@@ -1232,29 +1231,29 @@ mod tests {
     }
 
     #[test]
-    fn ceremony_pairing_identity_invalid_fields_refuse_before_nonce_consume() {
+    fn ceremony_pairing_identity_invalid_fields_are_ignored() {
         let oversize = "é".repeat(127);
         assert_eq!(oversize.len(), 254);
         let accepted = "é".repeat(126) + "a";
         assert_eq!(accepted.len(), 253);
         let invalid = [
-            (json!({"client_label": 1}), "client_label is invalid"),
-            (json!({"client_label": ""}), "client_label is invalid"),
-            (json!({"client_label": oversize}), "client_label is invalid"),
-            (json!({"platform": "plan9"}), "platform is invalid"),
-            (json!({"platform": ""}), "platform is invalid"),
-            (json!({"platform": true}), "platform is invalid"),
+            json!({"client_label": 1}),
+            json!({"client_label": ""}),
+            json!({"client_label": oversize}),
+            json!({"platform": "plan9"}),
+            json!({"platform": ""}),
+            json!({"platform": true}),
         ];
         for relay in [false, true] {
-            for role in ["", "phone", "observer", "peer"] {
-                for (fields, detail) in &invalid {
+            for role in ["", "phone", "observer"] {
+                for fields in &invalid {
                     let temporary = TempDir::new();
                     identity(temporary.path());
                     let store = NonceStore::new(temporary.path());
                     let nonce = format!("invalid-{role}-{}", if relay { "r" } else { "d" });
                     mint_nonce(&store, &nonce, role, relay);
                     let request = pair_request_with(fields.as_object().expect("object").clone());
-                    let error = complete_pairing(
+                    let response = complete_pairing(
                         temporary.path(),
                         CeremonyRequest {
                             request: &request,
@@ -1264,52 +1263,16 @@ mod tests {
                         },
                         2,
                     )
-                    .expect_err("invalid pairing identity refuses");
-                    assert_eq!(error.status(), 400);
-                    assert_eq!(error.reason(), "pairing_request_invalid");
-                    assert_eq!(error.detail(), Some(*detail));
-                    assert!(!store.peek(&nonce).expect("preserved nonce").used);
+                    .expect("invalid pairing identity hints are ignored and ceremony succeeds");
+                    assert!(store.peek(&nonce).expect("consumed nonce").used);
+                    let entry = AuthorizationLedger::new(temporary.path())
+                        .get(&response.fingerprint)
+                        .expect("ledger entry");
+                    assert_eq!(entry.client_label, "");
+                    assert_eq!(entry.platform, None);
                 }
             }
         }
-
-        let temporary = TempDir::new();
-        identity(temporary.path());
-        let store = NonceStore::new(temporary.path());
-        mint_nonce(&store, "peer-retry", "peer", false);
-        let bad = pair_request_with(object_fields(json!({"client_label": ""})));
-        let refused = complete_pairing(
-            temporary.path(),
-            CeremonyRequest {
-                request: &bad,
-                nonce: "peer-retry",
-                sender_instance_id: None,
-                local_endpoints: None,
-            },
-            2,
-        )
-        .expect_err("malformed peer hint");
-        assert_eq!(refused.detail(), Some("client_label is invalid"));
-        assert!(!store.peek("peer-retry").expect("preserved").used);
-        let good = pair_request_with(object_fields(
-            json!({"client_label": accepted, "platform": "ios"}),
-        ));
-        let peer = complete_pairing(
-            temporary.path(),
-            CeremonyRequest {
-                request: &good,
-                nonce: "peer-retry",
-                sender_instance_id: None,
-                local_endpoints: None,
-            },
-            2,
-        )
-        .expect_err("valid retry reaches peer refusal");
-        assert_eq!(
-            peer.detail(),
-            Some("peer pairing is not available on this build")
-        );
-        assert!(store.peek("peer-retry").expect("consumed").used);
 
         let temporary = TempDir::new();
         identity(temporary.path());

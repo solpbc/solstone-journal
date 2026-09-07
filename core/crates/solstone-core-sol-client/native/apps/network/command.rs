@@ -428,6 +428,45 @@ pub fn unpair(ctx: CommandContext<'_>) -> CommandOutput {
     }
 }
 
+#[must_use]
+pub fn set_label(ctx: CommandContext<'_>) -> CommandOutput {
+    let parsed = match parse_args(ctx.args, &["--label"], &["--clear"]) {
+        Ok(parsed) => parsed,
+        Err(error) => return stderr(error, 1),
+    };
+    let Some(cid) = parsed.positionals.first() else {
+        return stderr("Error: missing argument CID", 1);
+    };
+    let has_label = parsed.value("--label").is_some();
+    let has_clear = parsed.has_flag("--clear");
+    if has_label == has_clear {
+        return stderr("Error: specify either --label <LABEL> or --clear", 1);
+    }
+    let label_value = if has_clear {
+        Value::Null
+    } else {
+        match parsed.value("--label") {
+            Some(label) if !label.trim().is_empty() => Value::String(label.to_string()),
+            _ => Value::Null,
+        }
+    };
+    let payload = json!({
+        "protocol_version": 1,
+        "label": label_value,
+    });
+    let route = format!("/app/network/api/clients/{cid}/label");
+    match request_json(ctx, HttpMethod::Patch, &route, vec![], Some(payload)) {
+        Ok(response) => {
+            let label_disp = response
+                .get("owner_label")
+                .and_then(Value::as_str)
+                .unwrap_or("(cleared)");
+            stdout_line(format!("Device label set to: {label_disp}"))
+        }
+        Err(error) => link_error(error),
+    }
+}
+
 fn devices(ctx: CommandContext<'_>) -> Result<Vec<Value>, ClientError> {
     let body = request_json(
         ctx,

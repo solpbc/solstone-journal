@@ -430,7 +430,10 @@ not the codebase. See [APPS.md](APPS.md).
 | `sol` | `core/native-sol/apps/sol/native/authority.toml` | set-owner, sol-init |
 | `settings` | `core/native-sol/apps/settings/native/authority.toml` | personal service keys (show/set/delete). Thinking provider selection lives in the Thinking app; local provider install lives at `journal install-provider local`. |
 | `awareness` | `core/native-sol/apps/awareness/native/authority.toml` | status, imports, log, log-read |
+| `link` | `core/native-sol/apps/network/native/authority.toml` | authorized-clients, list, observer-pause, pair, private-link (disable/setup/status), set-label, status, unpair |
 | `journal` | `core/native-sol/think/tools/native/journal/authority.toml` | agents, facet (create/delete/mute/rename/show/unmute/update), facets, import, imports, news, read, retention (config/list), search, storage-summary |
+
+`solstone call link set-label <cid> [--label <label>] [--clear]` sets or clears the journal owner override label for a paired device. Native `solstone link` publishes the caller device's description on usable bridge startup and reconnect transitions (`set_bound_port`, `carrier_open_succeeded`) without a continuous hostname watcher.
 
 `solstone skills` manages coding-agent skill installation with `install`, `uninstall`, and `list`. The former `build` verb is gone; `make skills` runs `scripts/build_skill_references.py` directly before invoking `solstone skills install`.
 

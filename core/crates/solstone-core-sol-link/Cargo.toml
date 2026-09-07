@@ -11,7 +11,9 @@ publish = false
 
 [features]
 default = ["client", "host"]
-client = []
+client = [
+    "dep:ureq",
+]
 host = [
     "client",
     "dep:base64",
@@ -30,7 +32,6 @@ host = [
     "dep:solstone-core-journal-io",
     "dep:solstone-core-thinking-copy",
     "dep:time",
-    "dep:ureq",
     "dep:x509-parser",
 ]
 full-tests = []

@@ -2764,6 +2764,7 @@ mod tests {
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             journal_version: "2026.07.26".to_string(),
+            journal_name: None,
             observed_at: 1234.0,
         };
         fs::write(
@@ -2793,6 +2794,7 @@ mod tests {
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             journal_version: "2026.07.26".to_string(),
+            journal_name: None,
             observed_at: 1234.0,
         };
         fs::write(
@@ -2925,6 +2927,7 @@ mod tests {
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             journal_version: "2026.07.26".to_string(),
+            journal_name: None,
             observed_at: 1234.0,
         };
         fs::write(
@@ -3017,6 +3020,7 @@ mod tests {
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             journal_version: "2026.07.26".to_string(),
+            journal_name: None,
             observed_at: 1234.0,
         };
         fs::write(
@@ -3140,6 +3144,7 @@ mod tests {
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "stale-paired-at-before-repair".to_string(),
             journal_version: "2026.06.01".to_string(),
+            journal_name: None,
             observed_at: 1000.0,
         };
         fs::write(

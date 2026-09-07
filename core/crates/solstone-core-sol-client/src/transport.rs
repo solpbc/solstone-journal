@@ -22,6 +22,7 @@ const SSE_CONNECT_SECONDS: u64 = 10;
 pub enum HttpMethod {
     Delete,
     Get,
+    Patch,
     Post,
     Put,
 }
@@ -32,6 +33,7 @@ impl HttpMethod {
         match self {
             HttpMethod::Delete => "DELETE",
             HttpMethod::Get => "GET",
+            HttpMethod::Patch => "PATCH",
             HttpMethod::Post => "POST",
             HttpMethod::Put => "PUT",
         }
@@ -301,6 +303,21 @@ impl HttpTransport for UreqHttpTransport {
             }
             HttpMethod::Put => {
                 let builder = add_headers(self.agent(policy).put(&url), &request.headers);
+                if let Some(value) = request.json.as_ref() {
+                    builder
+                        .header("Content-Type", "application/json")
+                        .send(json_body(value)?)
+                        .map_err(|error| {
+                            map_ureq_error(error, policy, request.method, &request.path)
+                        })?
+                } else {
+                    builder.send_empty().map_err(|error| {
+                        map_ureq_error(error, policy, request.method, &request.path)
+                    })?
+                }
+            }
+            HttpMethod::Patch => {
+                let builder = add_headers(self.agent(policy).patch(&url), &request.headers);
                 if let Some(value) = request.json.as_ref() {
                     builder
                         .header("Content-Type", "application/json")

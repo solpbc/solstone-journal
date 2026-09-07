@@ -118,3 +118,19 @@ handler = "unpair"
 params = [
   { name = "target", kind = "argument", type = "text", required = true, nargs = 1, multiple = false, options = ["target"], secondary = [], hidden = false, is_flag = false, count = false },
 ]
+
+[[entries]]
+path = ["link", "set-label"]
+kind = "command"
+help = "Set or clear the owner label for a paired device."
+operation_id = "link.set-label"
+entry_type = "http"
+method = "PATCH"
+route = "/app/network/api/clients/{cid}/label"
+contract_operation_id = "link.set-label"
+handler = "set_label"
+params = [
+  { name = "cid", kind = "argument", type = "text", required = true, nargs = 1, multiple = false, options = ["cid"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "label", kind = "option", type = "text", required = false, nargs = 1, multiple = false, options = ["--label"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "clear", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--clear"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
+]

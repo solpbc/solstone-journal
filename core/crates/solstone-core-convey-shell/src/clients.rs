@@ -8,11 +8,20 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::Json;
 use axum::Router;
-use axum::extract::{Extension, Path};
+use axum::extract::{DefaultBodyLimit, Extension, Path};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::get;
 use serde_json::{Map, Value, json};
+use solstone_core_convey_http::identity::AccessBasis;
+use solstone_core_sol_link::client_description::{
+    JournalIdentityMeta, PatchClientLabelRequest, PutSelfDescriptionRequest,
+    StoredClientDescription, current_display_label,
+};
+use solstone_core_sol_link::client_description_store::{
+    DescriptionMutationError, get_description_response, patch_owner_label, put_self_description,
+    read_descriptions,
+};
 use solstone_core_sol_link::client_status::{
     ClientActivityState, ClientAssessment, ClientCaptureState, ClientInspection,
     ClientLedgerUnavailable, ClientReach, ConnectionFreshness, ConnectionGroup, ConnectionState,
@@ -54,8 +63,18 @@ pub(crate) fn router(prefix: &str) -> Router {
     Router::new()
         .route(&format!("{prefix}/api/clients"), get(list))
         .route(
+            &format!("{prefix}/api/clients/self"),
+            get(get_self)
+                .put(put_self)
+                .layer(DefaultBodyLimit::max(16 * 1024)),
+        )
+        .route(
             &format!("{prefix}/api/clients/{{cid}}"),
             axum::routing::delete(delete_client),
+        )
+        .route(
+            &format!("{prefix}/api/clients/{{cid}}/label"),
+            axum::routing::patch(patch_label).layer(DefaultBodyLimit::max(16 * 1024)),
         )
 }
 
@@ -67,13 +86,211 @@ pub(crate) async fn redirect_workspace() -> Redirect {
     Redirect::permanent("/app/network/workspace")
 }
 
+fn journal_identity_meta(journal_root: &std::path::Path) -> JournalIdentityMeta {
+    let config = solstone_core_journal_config::read_journal_config(journal_root).ok();
+    let name = config.and_then(|c| {
+        c.config
+            .as_ref()?
+            .get("identity")?
+            .get("name")?
+            .as_str()
+            .map(|s| s.to_owned())
+    });
+    JournalIdentityMeta {
+        name,
+        version: env!("CARGO_PKG_VERSION").to_owned(),
+    }
+}
+
+async fn get_self(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    basis: Option<Extension<AccessBasis>>,
+) -> Response {
+    let Some(Extension(basis)) = basis else {
+        return crate::network::refusal(
+            "client_description_forbidden",
+            "access basis required",
+            StatusCode::FORBIDDEN,
+        );
+    };
+    let cid = match basis {
+        AccessBasis::LinkedDevice { cid, .. } => cid.as_str().to_owned(),
+        AccessBasis::Localhost | AccessBasis::PairingPeer { .. } => {
+            return crate::network::refusal(
+                "client_description_forbidden",
+                "linked device access required",
+                StatusCode::FORBIDDEN,
+            );
+        }
+    };
+    let meta = journal_identity_meta(&root.0);
+    match get_description_response(&root.0, &cid, false, meta) {
+        Ok(resp) => Json(resp).into_response(),
+        Err(DescriptionMutationError::NotAuthorized) => crate::network::refusal(
+            "client_description_forbidden",
+            "client is not authorized",
+            StatusCode::FORBIDDEN,
+        ),
+        Err(DescriptionMutationError::UnreadableStore(_)) => crate::network::refusal(
+            "client_description_unreadable",
+            "client description store could not be read",
+            StatusCode::SERVICE_UNAVAILABLE,
+        ),
+        Err(DescriptionMutationError::UnreadableLedger(_)) => crate::network::refusal(
+            "authorization_ledger_unreadable",
+            "authorized-client ledger could not be read",
+            StatusCode::SERVICE_UNAVAILABLE,
+        ),
+        Err(_) => crate::network::refusal(
+            "client_description_unreadable",
+            "client description could not be read",
+            StatusCode::SERVICE_UNAVAILABLE,
+        ),
+    }
+}
+
+async fn put_self(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    basis: Option<Extension<AccessBasis>>,
+    body: Result<Json<PutSelfDescriptionRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let Some(Extension(basis)) = basis else {
+        return crate::network::refusal(
+            "client_description_forbidden",
+            "access basis required",
+            StatusCode::FORBIDDEN,
+        );
+    };
+    let cid = match basis {
+        AccessBasis::LinkedDevice { cid, .. } => cid.as_str().to_owned(),
+        AccessBasis::Localhost | AccessBasis::PairingPeer { .. } => {
+            return crate::network::refusal(
+                "client_description_forbidden",
+                "linked device access required",
+                StatusCode::FORBIDDEN,
+            );
+        }
+    };
+    let Json(request) = match body {
+        Ok(json) => json,
+        Err(_) => {
+            return crate::network::refusal(
+                "client_description_invalid",
+                "invalid client description payload",
+                StatusCode::BAD_REQUEST,
+            );
+        }
+    };
+    let meta = journal_identity_meta(&root.0);
+    let now = time::OffsetDateTime::now_utc();
+    match put_self_description(&root.0, &cid, request, now, meta) {
+        Ok(resp) => Json(resp).into_response(),
+        Err(DescriptionMutationError::NotAuthorized) => crate::network::refusal(
+            "client_description_forbidden",
+            "client is not authorized",
+            StatusCode::FORBIDDEN,
+        ),
+        Err(DescriptionMutationError::RevisionConflict) => crate::network::refusal(
+            "revision_conflict",
+            "revision conflict",
+            StatusCode::CONFLICT,
+        ),
+        Err(DescriptionMutationError::Invalid(detail)) => crate::network::refusal(
+            "client_description_invalid",
+            detail,
+            StatusCode::BAD_REQUEST,
+        ),
+        Err(DescriptionMutationError::UnreadableStore(_)) => crate::network::refusal(
+            "client_description_unreadable",
+            "client description store could not be read",
+            StatusCode::SERVICE_UNAVAILABLE,
+        ),
+        Err(DescriptionMutationError::UnreadableLedger(_)) => crate::network::refusal(
+            "authorization_ledger_unreadable",
+            "authorized-client ledger could not be read",
+            StatusCode::SERVICE_UNAVAILABLE,
+        ),
+        Err(_) => crate::network::refusal(
+            "client_description_unreadable",
+            "failed to update client description",
+            StatusCode::SERVICE_UNAVAILABLE,
+        ),
+    }
+}
+
+async fn patch_label(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    basis: Option<Extension<AccessBasis>>,
+    Path(cid): Path<String>,
+    body: Result<Json<PatchClientLabelRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let Some(Extension(basis)) = basis else {
+        return crate::network::refusal(
+            "client_description_forbidden",
+            "access basis required",
+            StatusCode::FORBIDDEN,
+        );
+    };
+    match basis {
+        AccessBasis::Localhost => {}
+        AccessBasis::LinkedDevice { .. } | AccessBasis::PairingPeer { .. } => {
+            return crate::network::refusal(
+                "client_description_forbidden",
+                "owner localhost access required",
+                StatusCode::FORBIDDEN,
+            );
+        }
+    }
+    let Json(request) = match body {
+        Ok(json) => json,
+        Err(_) => {
+            return crate::network::refusal(
+                "client_description_invalid",
+                "invalid client label payload",
+                StatusCode::BAD_REQUEST,
+            );
+        }
+    };
+    let meta = journal_identity_meta(&root.0);
+    let now = time::OffsetDateTime::now_utc();
+    match patch_owner_label(&root.0, &cid, request.label, now, meta) {
+        Ok(resp) => Json(resp).into_response(),
+        Err(DescriptionMutationError::NotFound) => crate::network::refusal(
+            "not_found",
+            "paired device not found",
+            StatusCode::NOT_FOUND,
+        ),
+        Err(DescriptionMutationError::Invalid(detail)) => crate::network::refusal(
+            "client_description_invalid",
+            detail,
+            StatusCode::BAD_REQUEST,
+        ),
+        Err(DescriptionMutationError::UnreadableStore(_)) => crate::network::refusal(
+            "client_description_unreadable",
+            "client description store could not be read",
+            StatusCode::SERVICE_UNAVAILABLE,
+        ),
+        Err(DescriptionMutationError::UnreadableLedger(_)) => crate::network::refusal(
+            "authorization_ledger_unreadable",
+            "authorized-client ledger could not be read",
+            StatusCode::SERVICE_UNAVAILABLE,
+        ),
+        Err(_) => crate::network::refusal(
+            "client_description_unreadable",
+            "failed to update client label",
+            StatusCode::SERVICE_UNAVAILABLE,
+        ),
+    }
+}
+
 async fn list(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
+    let descriptions = read_descriptions(&root.0).ok().unwrap_or_default();
     match inspect_clients_at(&root.0, now_ms()) {
         ClientInspection::Empty { clients, activity }
         | ClientInspection::Ready { clients, activity } => Json(json!({
             "clients": clients
                 .iter()
-                .map(|client| client_json(client, activity))
+                .map(|client| client_json(client, activity, descriptions.get(&client.cid)))
                 .collect::<Vec<_>>(),
         }))
         .into_response(),
@@ -113,17 +330,22 @@ async fn delete_client(
     }
 }
 
-fn client_json(client: &ClientAssessment, activity: ClientActivityState) -> Value {
+fn client_json(
+    client: &ClientAssessment,
+    activity: ClientActivityState,
+    stored_desc: Option<&StoredClientDescription>,
+) -> Value {
     let entry = &client.client_entry;
     let (state, group, elapsed_ms, clock_skew, label, reach) = connection_fields(client);
     let (capture_state, unassessed_reason) = capture_fields(client, activity);
+    let display_label = current_display_label(entry, stored_desc);
     let value = Map::from_iter([
         ("cid".to_owned(), json!(client.cid)),
         ("cid_short".to_owned(), json!(cid_short(&client.cid))),
         ("device_label".to_owned(), json!(entry.device_label)),
         ("client_label".to_owned(), json!(entry.client_label)),
         ("label_ordinal".to_owned(), json!(entry.label_ordinal)),
-        ("display_label".to_owned(), json!(entry.display_label())),
+        ("display_label".to_owned(), json!(display_label)),
         ("paired_at".to_owned(), json!(entry.paired_at)),
         ("role".to_owned(), json!(entry.role.as_wire())),
         ("network".to_owned(), json!(entry.network)),
@@ -309,6 +531,8 @@ mod tests {
     use axum::http::{Request, StatusCode, header};
     use serde_json::{Value, json};
     use tower::ServiceExt;
+
+    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
 
     use super::*;
     use crate::network::{NETWORK_DEVICE_FIELDS, NETWORK_ROUTE_PREFIXES};
@@ -749,5 +973,296 @@ mod tests {
             assert_eq!(row["client_label"], expected);
             assert!(!row.contains_key("platform"));
         }
+    }
+
+    #[tokio::test]
+    async fn api_clients_self_admits_linked_device_and_refuses_localhost_and_pairing_peer() {
+        let cid_str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let cid = LinkedDeviceCid::try_from(cid_str).expect("parse cid");
+        let journal = EstablishedJournal::new();
+        journal.write_ledger(json!([client(cid_str, "phone")]));
+        let app = crate::router(journal.0.path().to_path_buf());
+
+        // 1. GET self with LinkedDevice (Direct) -> 200 OK
+        let mut req_direct = Request::get("/app/network/api/clients/self")
+            .body(Body::empty())
+            .expect("request");
+        req_direct
+            .extensions_mut()
+            .insert(AccessBasis::LinkedDevice {
+                cid: cid.clone(),
+                carrier: Carrier::Direct,
+            });
+        let (status, body) = request(app.clone(), req_direct).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["revision"], 0);
+        assert!(body["reported"].is_null());
+        assert!(body["owner_label"].is_null());
+        assert!(body["journal"]["version"].is_string());
+
+        // Verify link/client-descriptions.json was NOT created by GET
+        assert!(
+            !journal
+                .0
+                .path()
+                .join("link/client-descriptions.json")
+                .exists()
+        );
+
+        // 2. GET self with LinkedDevice (ViaSpl) on /app/link -> 200 OK
+        let mut req_viaspl = Request::get("/app/link/api/clients/self")
+            .body(Body::empty())
+            .expect("request");
+        req_viaspl
+            .extensions_mut()
+            .insert(AccessBasis::LinkedDevice {
+                cid: cid.clone(),
+                carrier: Carrier::ViaSpl,
+            });
+        let (status, body) = request(app.clone(), req_viaspl).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["revision"], 0);
+
+        // 3. Refuses Localhost -> 403 Forbidden
+        let mut req_local = Request::get("/app/network/api/clients/self")
+            .body(Body::empty())
+            .expect("request");
+        req_local.extensions_mut().insert(AccessBasis::Localhost);
+        let (status, body) = request(app.clone(), req_local).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body["reason_code"], "client_description_forbidden");
+
+        // 4. Refuses PairingPeer -> 403 Forbidden
+        let mut req_peer = Request::get("/app/network/api/clients/self")
+            .body(Body::empty())
+            .expect("request");
+        req_peer.extensions_mut().insert(AccessBasis::PairingPeer {
+            carrier: Carrier::Direct,
+        });
+        let (status, body) = request(app.clone(), req_peer).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body["reason_code"], "client_description_forbidden");
+
+        // 5. Refuses Missing AccessBasis -> 403 Forbidden
+        let req_none = Request::get("/app/network/api/clients/self")
+            .body(Body::empty())
+            .expect("request");
+        let (status, body) = request(app.clone(), req_none).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body["reason_code"], "client_description_forbidden");
+    }
+
+    #[tokio::test]
+    async fn api_clients_self_put_validation_and_cas_and_persistence() {
+        let cid_str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let cid = LinkedDeviceCid::try_from(cid_str).expect("parse cid");
+        let journal = EstablishedJournal::new();
+        journal.write_ledger(json!([client(cid_str, "phone")]));
+        let app = crate::router(journal.0.path().to_path_buf());
+
+        // 1. PUT unknown keys (e.g. cid, owner_label) -> 400 client_description_invalid
+        let mut req_invalid = Request::put("/app/network/api/clients/self")
+            .header("Content-Type", "application/json")
+            .body(Body::from(
+                json!({
+                    "protocol_version": 1,
+                    "expected_revision": 0,
+                    "cid": cid_str,
+                    "reported": {"name": "Test"}
+                })
+                .to_string(),
+            ))
+            .expect("request");
+        req_invalid
+            .extensions_mut()
+            .insert(AccessBasis::LinkedDevice {
+                cid: cid.clone(),
+                carrier: Carrier::Direct,
+            });
+        let (status, body) = request(app.clone(), req_invalid).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["reason_code"], "client_description_invalid");
+
+        // 2. Stale expected_revision -> 409 revision_conflict, no store change
+        let mut req_conflict = Request::put("/app/network/api/clients/self")
+            .header("Content-Type", "application/json")
+            .body(Body::from(
+                json!({
+                    "protocol_version": 1,
+                    "expected_revision": 5,
+                    "reported": {"name": "Test"}
+                })
+                .to_string(),
+            ))
+            .expect("request");
+        req_conflict
+            .extensions_mut()
+            .insert(AccessBasis::LinkedDevice {
+                cid: cid.clone(),
+                carrier: Carrier::Direct,
+            });
+        let (status, body) = request(app.clone(), req_conflict).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["reason_code"], "revision_conflict");
+        assert!(
+            !journal
+                .0
+                .path()
+                .join("link/client-descriptions.json")
+                .exists()
+        );
+
+        // 3. Valid PUT -> 200 OK with revision: 1
+        let mut req_valid = Request::put("/app/network/api/clients/self")
+            .header("Content-Type", "application/json")
+            .body(Body::from(
+                json!({
+                    "protocol_version": 1,
+                    "expected_revision": 0,
+                    "reported": {
+                        "name": "Jer's Laptop",
+                        "platform": "linux",
+                        "app_id": "solstone",
+                        "app_version": "2026.07.26"
+                    }
+                })
+                .to_string(),
+            ))
+            .expect("request");
+        req_valid
+            .extensions_mut()
+            .insert(AccessBasis::LinkedDevice {
+                cid: cid.clone(),
+                carrier: Carrier::Direct,
+            });
+        let (status, body) = request(app.clone(), req_valid).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["revision"], 1);
+        assert_eq!(body["reported"]["name"], "Jer's Laptop");
+        assert_eq!(body["reported"]["platform"], "linux");
+
+        // Verify file exists and GET returns revision 1
+        assert!(
+            journal
+                .0
+                .path()
+                .join("link/client-descriptions.json")
+                .exists()
+        );
+        let mut req_get = Request::get("/app/network/api/clients/self")
+            .body(Body::empty())
+            .expect("request");
+        req_get.extensions_mut().insert(AccessBasis::LinkedDevice {
+            cid: cid.clone(),
+            carrier: Carrier::Direct,
+        });
+        let (status, body) = request(app.clone(), req_get).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["revision"], 1);
+        assert_eq!(body["reported"]["name"], "Jer's Laptop");
+    }
+
+    #[tokio::test]
+    async fn api_clients_patch_label_and_display_label_precedence() {
+        let cid_str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let cid = LinkedDeviceCid::try_from(cid_str).expect("parse cid");
+        let journal = EstablishedJournal::new();
+        journal.write_ledger(json!([client(cid_str, "phone")]));
+        let app = crate::router(journal.0.path().to_path_buf());
+
+        // 1. PATCH from linked device -> 403 Forbidden (localhost only)
+        let mut req_patch_remote =
+            Request::patch(format!("/app/network/api/clients/{cid_str}/label"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(json!({"label": "New Name"}).to_string()))
+                .expect("request");
+        req_patch_remote
+            .extensions_mut()
+            .insert(AccessBasis::LinkedDevice {
+                cid: cid.clone(),
+                carrier: Carrier::Direct,
+            });
+        let (status, body) = request(app.clone(), req_patch_remote).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body["reason_code"], "client_description_forbidden");
+
+        // 2. PATCH unknown CID with Localhost -> 404 Not Found
+        let mut req_patch_unknown = Request::patch(
+            "/app/network/api/clients/sha256:unknown0000000000000000000000000/label",
+        )
+        .header("Content-Type", "application/json")
+        .body(Body::from(json!({"label": "New Name"}).to_string()))
+        .expect("request");
+        req_patch_unknown
+            .extensions_mut()
+            .insert(AccessBasis::Localhost);
+        let (status, body) = request(app.clone(), req_patch_unknown).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["reason_code"], "not_found");
+
+        // 3. PATCH with Localhost sets owner_label
+        let mut req_patch_ok = Request::patch(format!("/app/network/api/clients/{cid_str}/label"))
+            .header("Content-Type", "application/json")
+            .body(Body::from(
+                json!({"label": "Owner Custom Label"}).to_string(),
+            ))
+            .expect("request");
+        req_patch_ok.extensions_mut().insert(AccessBasis::Localhost);
+        let (status, body) = request(app.clone(), req_patch_ok).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["display_label"], "Owner Custom Label");
+
+        // 4. Linked device PUTs reported name "Reported Name"
+        let mut req_put = Request::put("/app/network/api/clients/self")
+            .header("Content-Type", "application/json")
+            .body(Body::from(
+                json!({
+                    "protocol_version": 1,
+                    "expected_revision": 1,
+                    "reported": {"name": "Reported Name"}
+                })
+                .to_string(),
+            ))
+            .expect("request");
+        req_put.extensions_mut().insert(AccessBasis::LinkedDevice {
+            cid: cid.clone(),
+            carrier: Carrier::Direct,
+        });
+        let (status, body) = request(app.clone(), req_put).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["owner_label"], "Owner Custom Label");
+        assert_eq!(body["reported"]["name"], "Reported Name");
+
+        // 5. List endpoint: display_label remains owner_label ("Owner Custom Label")
+        let (status, body) = request(
+            app.clone(),
+            Request::get("/app/network/api/clients")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["clients"][0]["display_label"], "Owner Custom Label");
+
+        // 6. PATCH with label: null clears owner_label -> reveals reported name
+        let mut req_clear = Request::patch(format!("/app/network/api/clients/{cid_str}/label"))
+            .header("Content-Type", "application/json")
+            .body(Body::from(json!({"label": null}).to_string()))
+            .expect("request");
+        req_clear.extensions_mut().insert(AccessBasis::Localhost);
+        let (status, body) = request(app.clone(), req_clear).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["display_label"], "Reported Name");
+
+        // List endpoint now shows "Reported Name"
+        let (status, body) = request(
+            app.clone(),
+            Request::get("/app/network/api/clients")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["clients"][0]["display_label"], "Reported Name");
     }
 }

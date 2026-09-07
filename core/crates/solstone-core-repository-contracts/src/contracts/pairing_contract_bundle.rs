@@ -295,29 +295,41 @@ fn behavior_vectors() -> Value {
                 "platform_value": "ios",
             }),
         ),
-        refused(
+        accepted(
             "pairing.identity.invalid.client_label.type",
             "phone",
             json!({"client_label": 1}),
-            "client_label is invalid",
+            json!({
+                "client_label_state": "absent",
+                "platform_state": "absent",
+            }),
         ),
-        refused(
+        accepted(
             "pairing.identity.invalid.client_label.empty",
             "phone",
             json!({"client_label": ""}),
-            "client_label is invalid",
+            json!({
+                "client_label_state": "absent",
+                "platform_state": "absent",
+            }),
         ),
-        refused(
+        accepted(
             "pairing.identity.invalid.client_label.oversize",
             "phone",
             json!({"client_label": label_254()}),
-            "client_label is invalid",
+            json!({
+                "client_label_state": "absent",
+                "platform_state": "absent",
+            }),
         ),
-        refused(
+        accepted(
             "pairing.identity.invalid.platform.unknown",
             "phone",
             json!({"platform": "plan9"}),
-            "platform is invalid",
+            json!({
+                "client_label_state": "absent",
+                "platform_state": "absent",
+            }),
         ),
         accepted(
             "pairing.identity.bound.client_label.253",
