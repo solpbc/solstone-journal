@@ -70,7 +70,7 @@
   const talentLabels = {
     'entities:detection': 'entity detection',
     'entities:entity_observer': 'entity facts',
-    screen: 'screen reading',
+    screen: 'screen descriptions',
   };
   // Filled from each day payload's `talents` map; empty until one arrives.
   let talentTitles = {};
@@ -1602,7 +1602,7 @@
         // the truth. Say what the filter did, and count the day only when an
         // unfiltered read of this same day supplied the number.
         detail.textContent = dayTotal
-          ? `${dayTotal} ${dayTotal === 1 ? 'run' : 'runs'} ran on this day, none in ${facetTitle}.`
+          ? `${dayTotal} ${dayTotal === 1 ? 'run' : 'runs'} on this day, none in ${facetTitle}.`
           : `no run on this day carries ${facetTitle}.`;
       } else {
         detail.textContent = 'runs appear here when processing takes place.';

@@ -1,10 +1,10 @@
 ### export your Claude history
 
-1. Open [Claude](https://claude.ai)
-2. Click your profile icon in the bottom-left corner
-3. Select **Settings**
-4. Scroll to **Account** section
-5. Click **Export Data**
-6. You'll receive an email with a download link
-7. Download the .zip file from the email
-8. Upload the .zip file here
+1. open [Claude](https://claude.ai)
+2. click your profile icon in the bottom-left corner
+3. select **Settings**
+4. scroll to **Account** section
+5. click **Export Data**
+6. you'll receive an email with a download link
+7. download the .zip file from the email
+8. upload the .zip file here

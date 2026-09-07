@@ -213,8 +213,8 @@
       note.hidden = rows.length !== 0;
       if (rows.length === 0) {
         note.textContent = name === 'providers'
-          ? 'no providers were recorded for this day.'
-          : 'no models were recorded for this day.';
+          ? 'no providers this day.'
+          : 'no models this day.';
       }
       if (rows.length === 1) {
         renderSingleRowSummary(name, rows[0]);
