@@ -14,7 +14,7 @@ use solstone_core_sol_link::pairing::RelayAccessSnapshot;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
-pub const DEFAULT_RELAY_ISSUER: &str = "spl-relay-auth";
+pub const DEFAULT_RELAY_ISSUER: &str = "link.solstone.app";
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_RESPONSE_BYTES: u64 = 65536;
 
@@ -76,9 +76,9 @@ pub fn validate_device_token(
     now: i64,
 ) -> Result<i64, RelayAccessError> {
     let parts: Vec<&str> = token.split('.').collect();
-    if parts.len() != 3 {
+    if parts.len() != 3 || parts.iter().any(|part| part.is_empty()) {
         return Err(RelayAccessError::Unavailable(
-            "malformed token: expected 3 parts".into(),
+            "malformed token: expected 3 nonempty parts".into(),
         ));
     }
     let payload_bytes = decode_base64url(parts[1]).ok_or_else(|| {
@@ -157,9 +157,11 @@ pub fn validate_device_token(
         _ => return Err(RelayAccessError::Unavailable("token sub mismatch".into())),
     }
 
-    // iss nonempty and matches expected_issuer
+    // HTTPS provenance authenticates the response. An explicitly configured
+    // issuer may narrow acceptance; an empty expectation requires only nonempty
+    // iss, because a self-hosted issuer need not equal its relay hostname.
     match obj.get("iss").and_then(Value::as_str) {
-        Some(iss) if !iss.is_empty() && iss == expected_issuer => {}
+        Some(iss) if !iss.is_empty() && (expected_issuer.is_empty() || iss == expected_issuer) => {}
         _ => return Err(RelayAccessError::Unavailable("token iss mismatch".into())),
     }
 
@@ -508,9 +510,11 @@ fn expires(snapshot: &RelayAccessSnapshot) -> Option<i64> {
 
 impl RelayAccessCache {
     pub fn new() -> Self {
-        Self::with_options(DEFAULT_RELAY_ISSUER, DEFAULT_REQUEST_TIMEOUT)
+        Self::with_options("", DEFAULT_REQUEST_TIMEOUT)
     }
 
+    /// An empty expected issuer accepts any nonempty issuer over the configured
+    /// authenticated relay transport. It does not infer an issuer from its URL.
     pub fn with_options(expected_issuer: &str, request_timeout: Duration) -> Self {
         Self {
             inner: Arc::new(RelayAccessCacheInner {

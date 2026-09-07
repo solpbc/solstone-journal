@@ -188,6 +188,8 @@ pub(crate) struct SupervisorState {
     /// Last completed retry-expiry scan; kept per supervisor instance so a
     /// restart cannot inherit another instance's throttle state.
     pub last_retry_expiry_drain: Instant,
+    pub last_activity_retry_drain: Instant,
+    pub activity_retry_seed_day: Option<String>,
     pub wedge: WedgeState,
     pub timing: SupervisorTiming,
     pub parent_loss_coordinator: Option<ParentLossCoordinatorSession>,
@@ -1586,6 +1588,8 @@ pub(crate) async fn boot_and_tick(
         },
         // Startup reconciliation/drain below seeds the retry watermark.
         last_retry_expiry_drain: Instant::now(),
+        last_activity_retry_drain: Instant::now() - Duration::from_secs(60),
+        activity_retry_seed_day: None,
         wedge: WedgeState::default(),
         timing: SupervisorTiming::for_app_fixture(fast_fixture_timing),
         parent_loss_coordinator: Some(parent_loss_coordinator),

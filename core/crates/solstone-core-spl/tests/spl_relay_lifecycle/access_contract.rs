@@ -84,6 +84,35 @@ fn base64_url_encode(bytes: &[u8]) -> String {
 }
 
 #[test]
+fn production_issuer_and_complete_token_segments_are_required() {
+    // The deployed relay's ISSUER is independent of the journal's default.
+    let token = create_test_jwt(
+        "link.solstone.app",
+        "instance:inst-test",
+        "spl-relay",
+        "session.dial",
+        2,
+        "inst-test",
+        500,
+        2000,
+        "jti",
+    );
+    let validate = |value: &str| {
+        validate_device_token(
+            value,
+            "inst-test",
+            DEFAULT_RELAY_ISSUER,
+            "1970-01-01T00:33:20Z",
+            1000,
+        )
+    };
+    assert_eq!(validate(&token).unwrap(), 2000);
+    let parts: Vec<_> = token.split('.').collect();
+    assert!(validate(&format!(".{}.{}", parts[1], parts[2])).is_err());
+    assert!(validate(&format!("{}.{}.", parts[0], parts[1])).is_err());
+}
+
+#[test]
 fn test_jwt_validation_strict() {
     let now = 1000;
     let exp = 2000;
@@ -588,12 +617,25 @@ fn delayed_access_server(
     std::sync::mpsc::Sender<()>,
     std::thread::JoinHandle<()>,
 ) {
+    delayed_access_server_with_issuer(instance, jti, DEFAULT_RELAY_ISSUER)
+}
+
+fn delayed_access_server_with_issuer(
+    instance: &str,
+    jti: &str,
+    issuer: &str,
+) -> (
+    String,
+    tokio::sync::oneshot::Receiver<()>,
+    std::sync::mpsc::Sender<()>,
+    std::thread::JoinHandle<()>,
+) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let origin = format!("http://{}", listener.local_addr().unwrap());
     let (started_tx, started_rx) = tokio::sync::oneshot::channel();
     let (release_tx, release_rx) = std::sync::mpsc::channel();
     let token = create_test_jwt(
-        DEFAULT_RELAY_ISSUER,
+        issuer,
         &format!("instance:{instance}"),
         "spl-relay",
         "session.dial",
@@ -608,8 +650,30 @@ fn delayed_access_server(
         stream
             .set_read_timeout(Some(Duration::from_secs(2)))
             .unwrap();
-        let mut bytes = [0; 4096];
-        stream.read(&mut bytes).unwrap();
+        // Consume the complete POST before closing; unread request bytes make
+        // TCP close reset the peer and intermittently discard our response.
+        let mut request = Vec::new();
+        loop {
+            let mut bytes = [0; 4096];
+            let read = stream.read(&mut bytes).unwrap();
+            assert!(read > 0);
+            request.extend_from_slice(&bytes[..read]);
+            assert!(request.len() <= 65536);
+            if let Some(header_end) = request.windows(4).position(|part| part == b"\r\n\r\n") {
+                let headers = std::str::from_utf8(&request[..header_end]).unwrap();
+                let length: usize = headers
+                    .lines()
+                    .find_map(|line| {
+                        let (name, value) = line.split_once(':')?;
+                        name.eq_ignore_ascii_case("content-length")
+                            .then(|| value.trim().parse().unwrap())
+                    })
+                    .expect("POST content length");
+                if request.len() >= header_end + 4 + length {
+                    break;
+                }
+            }
+        }
         let _ = started_tx.send(());
         release_rx.recv_timeout(Duration::from_secs(2)).unwrap();
         let body =
@@ -623,6 +687,32 @@ fn delayed_access_server(
         );
     });
     (origin, started_rx, release_tx, worker)
+}
+
+#[tokio::test]
+async fn default_cache_accepts_hosted_and_independent_issuers_but_not_empty() {
+    for issuer in ["link.solstone.app", "independent-self-hosted-issuer", ""] {
+        let journal = TempJournal::new();
+        let (origin, started, release, worker) =
+            delayed_access_server_with_issuer("inst-test", "issuer-control", issuer);
+        setup_test_journal(&journal.0, "inst-test", "service", &origin);
+        let cache = RelayAccessCache::new();
+        let root = journal.0.clone();
+        let task = tokio::spawn(async move { cache.acquire(&root, 1000).await });
+        tokio::time::timeout(Duration::from_secs(2), started)
+            .await
+            .unwrap()
+            .unwrap();
+        release.send(()).unwrap();
+        let result = task.await.unwrap();
+        assert_eq!(
+            result.is_ok(),
+            !issuer.is_empty(),
+            "issuer={issuer}, error={:?}",
+            result.err()
+        );
+        worker.join().unwrap();
+    }
 }
 
 #[tokio::test]

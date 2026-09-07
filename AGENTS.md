@@ -263,7 +263,8 @@ Verified directly against source, not against this table's own history — a sta
 | Awareness activity state (`awareness/activity_state.json`) | `core/crates/solstone-core-think-cli/src/segment.rs` (`persist_activity_state`). The state machine itself lives in `solstone-core-system::activity_state`, but that module only models the state; it never writes the file. |
 | Identity (`identity/*.md`, `identity/history.jsonl` audit log) | `core/crates/solstone-core-identity/src/store.rs` |
 | Day talent-output accumulator (`chronicle/<day>/talents/<name>.jsonl`) | `core/crates/solstone-core-talent-runtime/src/writers.rs` (`append_day_record`, via the closed `WriteIntent::DayAccumulator` contract; see L8) |
-| Talent provenance sidecars (`chronicle/<day>/health/talent-provenance/**`) | `core/crates/solstone-core-think-cli/src/segment.rs` (`write_activity_provenance`) |
+| Talent provenance sidecars (`chronicle/<day>/health/talent-provenance/**`) | `core/crates/solstone-core-think-cli/src/segment.rs` (`write_activity_provenance`), called by `activity_work.rs` under the activity claim |
+| Pending activity talent work (`health/activity-work/*.json`) | `core/crates/solstone-core-think-cli/src/activity_work.rs` (`ActivityWork`, `seed_activity_retries`); supervisor reads due identities and queues `journal think --activity` |
 | Config (`config/journal.json`) | `core/crates/solstone-core-journal-config-write/` (`config.rs::mutate_journal_config`, `commit.rs`). `solstone-core-journal-config` (no `-write` suffix) is read/schema-only, a deliberate two-crate split rather than drift. |
 | Schedules (`config/schedules.json`) | `core/crates/solstone-core-system/src/schedule/config.rs` (`mutate_schedule_entries`, `set_schedule_metadata`) |
 | Push devices (`config/push-registry.json`) | `core/crates/solstone-core-push/src/store.rs` |

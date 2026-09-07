@@ -723,6 +723,7 @@ pub(crate) fn replay_activity_state(
     skip_activity_prompts: bool,
     hydrate_existing: bool,
 ) -> Result<(), String> {
+    let mut errors = Vec::new();
     let mut ordered = segments.to_vec();
     ordered.sort();
     let mut machines = BTreeMap::new();
@@ -767,7 +768,7 @@ pub(crate) fn replay_activity_state(
                 log::debug!("failed to write activity state snapshot: {error}");
             }
         }
-        persist_ended_activities(
+        if let Err(error) = persist_ended_activities(
             context,
             log,
             &segment,
@@ -777,19 +778,27 @@ pub(crate) fn replay_activity_state(
             refresh,
             max_concurrency,
             skip_activity_prompts,
-        )?;
+        ) {
+            errors.push(error);
+        }
     }
-    if !hydrate_existing {
-        flush_replay_machines(
+    if !hydrate_existing
+        && let Err(error) = flush_replay_machines(
             context,
             log,
             machines,
             refresh,
             max_concurrency,
             skip_activity_prompts,
-        )?;
+        )
+    {
+        errors.push(error);
     }
-    Ok(())
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
+    }
 }
 
 fn valid_activity_sense(sense: &Value) -> bool {
@@ -808,6 +817,7 @@ fn flush_replay_machines(
     max_concurrency: i64,
     skip_activity_prompts: bool,
 ) -> Result<(), String> {
+    let mut errors = Vec::new();
     let today = Utc
         .timestamp_millis_opt(context.now_ms)
         .single()
@@ -832,7 +842,7 @@ fn flush_replay_machines(
             .unwrap_or(&context.day)
             .to_owned();
         let changes = machine.close_active(&last_segment, context.now_ms);
-        persist_ended_activities(
+        if let Err(error) = persist_ended_activities(
             context,
             log,
             &last_segment,
@@ -842,9 +852,15 @@ fn flush_replay_machines(
             refresh,
             max_concurrency,
             skip_activity_prompts,
-        )?;
+        ) {
+            errors.push(error);
+        }
     }
-    Ok(())
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
+    }
 }
 
 fn persist_activity_state(
@@ -881,6 +897,7 @@ fn persist_ended_activities(
         event.insert("segment_day".to_owned(), Value::String(context.day.clone()));
         event
     };
+    let mut failures = Vec::new();
     for change in changes {
         if change.get("state").and_then(Value::as_str) != Some("ended") {
             continue;
@@ -935,8 +952,7 @@ fn persist_ended_activities(
                 ])),
             );
         } else {
-            let (changed, input_hash) =
-                activity_input_changed(context, routing_day, facet, id, &record);
+            let (changed, _) = activity_input_changed(context, routing_day, facet, id, &record);
             if !(written || refresh || changed) {
                 log.log(
                     "activity.unchanged",
@@ -962,14 +978,16 @@ fn persist_ended_activities(
             prompt_context.status = context.status.clone();
             let result =
                 crate::activity::run(&prompt_context, log, id, facet, refresh, max_concurrency)?;
-            if result.failed == 0
-                && let Some(input_hash) = input_hash
-            {
-                write_activity_provenance(context, routing_day, facet, id, &input_hash)?;
+            if result.failed != 0 {
+                failures.extend(result.failed_names);
             }
         }
     }
-    Ok(())
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("activity work pending: {}", failures.join(", ")))
+    }
 }
 
 fn activity_input_changed(
@@ -996,7 +1014,7 @@ fn activity_input_changed(
     (stored.as_deref() != Some(&input_hash), Some(input_hash))
 }
 
-fn compute_activity_input_hash(
+pub(crate) fn compute_activity_input_hash(
     context: &ThinkContext,
     day: &str,
     record: &Map<String, Value>,
@@ -1014,11 +1032,14 @@ fn compute_activity_input_hash(
     let mut inputs = Vec::new();
     for segment in &spans {
         let mut sense = Vec::new();
-        let mut entries = std::fs::read_dir(&day_dir)
-            .ok()?
-            .flatten()
-            .map(|entry| entry.path())
-            .collect::<Vec<_>>();
+        let mut entries = match std::fs::read_dir(&day_dir) {
+            Ok(entries) => entries
+                .map(|entry| entry.map(|entry| entry.path()))
+                .collect::<Result<Vec<_>, _>>()
+                .ok()?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(_) => return None,
+        };
         entries.sort();
         for direct in entries {
             let segment_dir = if direct.file_name().and_then(|name| name.to_str()) == Some(segment)
@@ -1072,7 +1093,7 @@ fn canonical_json(value: Value) -> Value {
     }
 }
 
-fn activity_provenance_path(
+pub(crate) fn activity_provenance_path(
     context: &ThinkContext,
     day: &str,
     facet: &str,
@@ -1107,7 +1128,7 @@ fn provenance_component(value: &str) -> String {
     encoded
 }
 
-fn write_activity_provenance(
+pub(crate) fn write_activity_provenance(
     context: &ThinkContext,
     day: &str,
     facet: &str,

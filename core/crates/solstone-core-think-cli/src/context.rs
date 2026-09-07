@@ -24,6 +24,15 @@ pub(crate) trait CortexBoundary: Send + Sync {
         runtime: &tokio::runtime::Runtime,
         request: &CortexRequest,
     ) -> Result<String, DispatchFailure>;
+    /// The receipt must be persisted before any external send. An existing
+    /// reservation is reused when no durable claim was observed.
+    fn dispatch_prepared(
+        &self,
+        runtime: &tokio::runtime::Runtime,
+        request: &CortexRequest,
+        reserved: Option<&str>,
+        prepare: &mut (dyn FnMut(&str) -> std::io::Result<()> + Send),
+    ) -> Result<String, DispatchFailure>;
     fn wait(
         &self,
         runtime: &tokio::runtime::Runtime,
@@ -60,6 +69,28 @@ impl CortexBoundary for NativeCortexBoundary {
                 DispatchError::Unavailable => DispatchFailure::Unavailable,
                 DispatchError::NotClaimed { use_id } => DispatchFailure::NotClaimed { use_id },
             })
+    }
+
+    fn dispatch_prepared(
+        &self,
+        runtime: &tokio::runtime::Runtime,
+        request: &CortexRequest,
+        reserved: Option<&str>,
+        prepare: &mut (dyn FnMut(&str) -> std::io::Result<()> + Send),
+    ) -> Result<String, DispatchFailure> {
+        let result = if let Some(id) = reserved {
+            let ts = id
+                .parse::<i64>()
+                .map_err(|_| DispatchFailure::Unavailable)?;
+            prepare(id).map_err(|_| DispatchFailure::Unavailable)?;
+            runtime.block_on(self.0.dispatch_with_use_id(request, ts, id.to_owned()))
+        } else {
+            runtime.block_on(self.0.dispatch_prepared(request, prepare))
+        };
+        result.map_err(|error| match error {
+            DispatchError::Unavailable => DispatchFailure::Unavailable,
+            DispatchError::NotClaimed { use_id } => DispatchFailure::NotClaimed { use_id },
+        })
     }
 
     fn wait(

@@ -421,6 +421,8 @@ mod tests {
             flush: FlushState::default(),
             daily: DailyState { last_day: None },
             last_retry_expiry_drain: Instant::now(),
+            last_activity_retry_drain: Instant::now(),
+            activity_retry_seed_day: None,
             wedge: WedgeState::default(),
             timing: SupervisorTiming {
                 tick_interval: Duration::from_secs(1),

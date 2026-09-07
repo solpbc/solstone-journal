@@ -244,6 +244,36 @@ pub(crate) async fn run(
             false,
             tick,
         );
+        if !state.no_daily
+            && !state.is_remote_mode
+            && !processing_is_deferred(&state.journal)
+            && !no_thinking_engine_chosen(&state.journal)
+            && tick.duration_since(state.last_activity_retry_drain) >= RETRY_EXPIRY_INTERVAL
+        {
+            state.last_activity_retry_drain = tick;
+            let today = wall.format("%Y%m%d").to_string();
+            if state.activity_retry_seed_day.as_deref() != Some(today.as_str()) {
+                let yesterday = (wall.date_naive() - chrono::Duration::days(1))
+                    .format("%Y%m%d")
+                    .to_string();
+                let seeded = [yesterday, today.clone()].iter().try_for_each(|day| {
+                    solstone_core_think_cli::seed_activity_retries(
+                        &state.journal,
+                        day,
+                        wall.timestamp_millis(),
+                    )
+                });
+                match seeded {
+                    Ok(()) => state.activity_retry_seed_day = Some(today),
+                    Err(error) => eprintln!("supervisor: activity retry recovery failed: {error}"),
+                }
+            }
+            if let Err(error) =
+                run_activity_retry_drain(&state.journal, &state.queue, wall.timestamp_millis())
+            {
+                eprintln!("supervisor: activity retry drain failed: {error}");
+            }
+        }
         if !state.no_daily {
             let daily_drain = match handle_daily_tasks(
                 &state.journal,
@@ -540,6 +570,37 @@ pub(crate) fn run_catchup_drain(
         let _ = submit_catchup_think(queue, daily_think_argv(&day), &day, reference, provenance);
     }
     Ok(())
+}
+
+fn run_activity_retry_drain(journal: &Path, queue: &TaskQueue, now_ms: i64) -> Result<(), String> {
+    for retry in solstone_core_think_cli::due_activity_retries(journal, now_ms)?
+        .into_iter()
+        .take(8)
+    {
+        let reference = format!(
+            "supervisor-activity-{}",
+            serde_json::to_string(&retry).map_err(|e| e.to_string())?
+        );
+        if queue.contains_reference(&reference) {
+            continue;
+        }
+        let argv = activity_retry_argv(&retry);
+        let _ = submit_think(queue, argv, &retry.day, reference);
+    }
+    Ok(())
+}
+
+fn activity_retry_argv(retry: &solstone_core_think_cli::ActivityRetry) -> Vec<String> {
+    vec![
+        "journal".to_owned(),
+        "think".to_owned(),
+        "--day".to_owned(),
+        retry.day.clone(),
+        "--facet".to_owned(),
+        retry.facet.clone(),
+        "--activity".to_owned(),
+        retry.activity.clone(),
+    ]
 }
 
 fn flush_think_argv(day: &str, segment: &str, stream: Option<&str>) -> Vec<String> {
@@ -1921,6 +1982,44 @@ mod tests {
             .get("pending")
             .copied()
             .unwrap_or(0)
+    }
+
+    #[test]
+    fn activity_retry_drain_queues_old_source_identity_once_independent_of_daily_markers() {
+        use sha2::{Digest, Sha256};
+        let bed = Bed::new("activity-retry");
+        let queue = queue(&bed.root);
+        let identity = solstone_core_think_cli::ActivityRetry {
+            day: "20200101".to_owned(),
+            facet: "personal".to_owned(),
+            activity: "reading_090000".to_owned(),
+        };
+        let directory = bed.root.join("health/activity-work");
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join(format!(
+            "{:x}.json",
+            Sha256::digest(serde_json::to_vec(&identity).unwrap())
+        ));
+        fs::write(&path, serde_json::to_vec(&json!({"version":1,"identity":identity,"input_hash":"fixture","remaining":["participation"],"uses":{},"attempts":1,"next_attempt_ms":1000})).unwrap()).unwrap();
+        run_activity_retry_drain(&bed.root, &queue, 999).unwrap();
+        assert_eq!(pending(&queue), 0);
+        run_activity_retry_drain(&bed.root, &queue, 1000).unwrap();
+        assert_eq!(pending(&queue), 1);
+        run_activity_retry_drain(&bed.root, &queue, 1001).unwrap();
+        assert_eq!(pending(&queue), 1);
+        assert_eq!(
+            activity_retry_argv(&identity),
+            vec![
+                "journal",
+                "think",
+                "--day",
+                "20200101",
+                "--facet",
+                "personal",
+                "--activity",
+                "reading_090000"
+            ]
+        );
     }
 
     fn date(day: u32) -> NaiveDate {
