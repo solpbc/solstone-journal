@@ -2452,6 +2452,94 @@ async fn resolve_ambiguity_resolves_facet_scoped_choice() {
     assert_eq!(rows["items"][0]["ambiguity_id"], ambiguity_id);
 }
 
+// G2-B05: the durable "none of these" on a "names to clarify" row.
+#[tokio::test]
+async fn dismiss_ambiguity_takes_the_row_out_of_the_open_list() {
+    let j = Journal::new();
+    let row = seed_facet_ambiguity(j.path(), "Alic");
+    let ambiguity_id = row["ambiguity_id"].as_str().unwrap();
+
+    let (status, response) = post(
+        j.path(),
+        &format!("/app/entities/api/ambiguities/{ambiguity_id}/dismiss"),
+        json!({}),
+    )
+    .await;
+
+    assert_eq!(status, 200);
+    assert_eq!(response["status"], "dismissed");
+    assert_eq!(response["ambiguity"]["status"], "dismissed");
+    assert!(
+        response["ambiguity"]["dismissed_at"]
+            .as_str()
+            .is_some_and(|at| !at.is_empty())
+    );
+    let (_, open) = call(j.path(), "/app/entities/api/ambiguities?status=open").await;
+    assert_eq!(open["total"], 0);
+    let (_, all) = call(j.path(), "/app/entities/api/ambiguities").await;
+    assert_eq!(all["total"], 1);
+    assert_eq!(all["items"][0]["status"], "dismissed");
+}
+
+#[tokio::test]
+async fn dismiss_ambiguity_twice_reports_already_dismissed() {
+    let j = Journal::new();
+    let row = seed_facet_ambiguity(j.path(), "Alic");
+    let ambiguity_id = row["ambiguity_id"].as_str().unwrap();
+    let path = format!("/app/entities/api/ambiguities/{ambiguity_id}/dismiss");
+    let (_, first) = post(j.path(), &path, json!({})).await;
+    assert_eq!(first["status"], "dismissed");
+
+    let (status, second) = post(j.path(), &path, json!({})).await;
+
+    assert_eq!(status, 200);
+    assert_eq!(second["status"], "already_dismissed");
+    assert_eq!(
+        second["ambiguity"]["dismissed_at"],
+        first["ambiguity"]["dismissed_at"]
+    );
+}
+
+#[tokio::test]
+async fn dismiss_ambiguity_refuses_unknown_ambiguity_id() {
+    let j = Journal::new();
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/ambiguities/missing/dismiss",
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, 404);
+    assert_eq!(response["reason_code"], "entity_not_found");
+}
+
+#[tokio::test]
+async fn dismiss_ambiguity_refuses_a_resolved_row() {
+    let j = Journal::new();
+    seed_entity(j.path(), "a", "Alice");
+    seed_facet_entity(j.path(), "work", "a");
+    let row = seed_facet_ambiguity(j.path(), "Alic");
+    let ambiguity_id = row["ambiguity_id"].as_str().unwrap();
+    let (_, resolved) = post(
+        j.path(),
+        &format!("/app/entities/api/ambiguities/{ambiguity_id}/resolve"),
+        json!({"entity_id":"a"}),
+    )
+    .await;
+    assert_eq!(resolved["ambiguity"]["status"], "resolved");
+
+    let (_, response) = post(
+        j.path(),
+        &format!("/app/entities/api/ambiguities/{ambiguity_id}/dismiss"),
+        json!({}),
+    )
+    .await;
+
+    assert_eq!(response["reason_code"], "invalid_request_value");
+    let (_, rows) = call(j.path(), "/app/entities/api/ambiguities?status=resolved").await;
+    assert_eq!(rows["total"], 1);
+}
+
 #[tokio::test]
 async fn resolve_ambiguity_refuses_unknown_ambiguity_id() {
     let j = Journal::new();

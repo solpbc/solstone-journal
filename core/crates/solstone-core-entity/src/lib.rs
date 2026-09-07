@@ -35,7 +35,7 @@ pub use store::{
     PreparedHistoryOutcome, VoiceprintArchive, VoiceprintEnvelope, VoiceprintItem, VoiceprintKey,
     VoiceprintNpzError, VoiceprintOperationError, VoiceprintRemoval, VoiceprintRemovalReport,
     VoiceprintSkipReasons, accept_merge_candidate, classify_prepared_history, commit_entity_merge,
-    create_journal_entity, delete_entity_directory, dismiss_merge_candidate,
+    create_journal_entity, delete_entity_directory, dismiss_ambiguity, dismiss_merge_candidate,
     entity_identity_destination_occupied, entity_last_active_day, entity_last_active_ts,
     entity_matches_identity_name, entity_memory_path, entity_path,
     guard_restore_does_not_cross_merge, guard_visible_event_collision, has_journal_principal,

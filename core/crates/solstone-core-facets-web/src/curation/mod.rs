@@ -1158,6 +1158,44 @@ mod tests {
         );
     }
 
+    // G2-B05: a dismissed ambiguity leaves the queue because this list filters
+    // to status == "open" -- the same filter the three sibling groups use. The
+    // owner's "none of these" is durable and the card does not come back.
+    #[test]
+    fn a_dismissed_ambiguity_leaves_the_curation_list() {
+        let root = crate::test_support::phase_root("populated");
+        let before = load_state(root.path()).expect("state");
+        let ambiguity_id = before["ambiguity_items"][0]["key"]
+            .as_str()
+            .expect("one seeded ambiguity")
+            .to_owned();
+        assert_eq!(
+            before["ambiguity_items"].as_array().expect("items").len(),
+            1
+        );
+        assert!(
+            before["copy"]["CUR_AMBIGUITY_DISMISS_ACTION"] == "none of these",
+            "the dismiss action ships in the served copy payload"
+        );
+
+        solstone_core_entity::dismiss_ambiguity(root.path(), &ambiguity_id)
+            .expect("dismiss")
+            .expect("row exists");
+
+        let after = load_state(root.path()).expect("state");
+        assert!(
+            after["ambiguity_items"]
+                .as_array()
+                .expect("items")
+                .is_empty()
+        );
+        assert_eq!(
+            read_ambiguities(root.path(), MalformedPolicy::Raise).expect("rows")[0]["status"],
+            "dismissed",
+            "the row is still on disk, carrying the owner's no"
+        );
+    }
+
     #[tokio::test]
     async fn malformed_curation_body_reaches_missing_field_validation() {
         let root = crate::test_support::phase_root("established_empty");

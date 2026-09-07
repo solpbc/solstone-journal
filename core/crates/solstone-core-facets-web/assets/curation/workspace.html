@@ -636,6 +636,7 @@ window.CUR_COPY = CUR_COPY;
               ${escapeHtml(copyFormat(CUR_COPY.CUR_AMBIGUITY_CHOOSE_ACTION, {name: candidate.name}))}
             </button>
           `).join('')}
+          <button class="curation-button" type="button" data-action="ambiguity-dismiss" data-ambiguity-id="${escapeHtml(item.key)}">${escapeHtml(CUR_COPY.CUR_AMBIGUITY_DISMISS_ACTION)}</button>
         </div>
         ${evidence}
         <p class="curation-item-error" hidden></p>
@@ -1143,6 +1144,23 @@ window.CUR_COPY = CUR_COPY;
       postJson(
         `/app/entities/api/ambiguities/${encodeURIComponent(button.dataset.ambiguityId)}/resolve`,
         {entity_id: button.dataset.entityId}
+      )
+        .then(() => removeItem(item))
+        .catch((err) => {
+          setBusy(button, false);
+          showError(item, err.serverMessage || err.message);
+        });
+      return;
+    }
+
+    // G2-B05: the durable "none of these". The row leaves the queue because
+    // the served list filters to status == "open"; a re-observation of the
+    // same name updates the dismissed row in place and does not reopen it.
+    if (action === 'ambiguity-dismiss') {
+      setBusy(button, true);
+      postJson(
+        `/app/entities/api/ambiguities/${encodeURIComponent(button.dataset.ambiguityId)}/dismiss`,
+        {}
       )
         .then(() => removeItem(item))
         .catch((err) => {

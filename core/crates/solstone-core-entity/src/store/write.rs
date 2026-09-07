@@ -609,6 +609,46 @@ pub fn record_ambiguity_choice(
     })
 }
 
+/// Record the owner's "none of these" against one durable ambiguity row.
+///
+/// Returns the row when `ambiguity_id` names one, and `None` when it does not.
+/// Only an `open` row is rewritten: a row already carrying `dismissed` is
+/// returned untouched so a repeated dismissal is idempotent rather than an
+/// error, and a `resolved` row is returned untouched so a dismissal can never
+/// quietly drop a recorded choice — the caller decides what to say about a
+/// status it did not expect.
+///
+/// There is no audit entry to write, unlike `record_ambiguity_choice`:
+/// `audit.prior_choices` records a choice being *replaced*, and dismissing an
+/// open row replaces nothing. A later resolution of a dismissed row therefore
+/// still finds the audit trail it would have found anyway.
+pub fn dismiss_ambiguity(
+    journal_root: &Path,
+    ambiguity_id: &str,
+) -> Result<Option<Value>, EntityWriteError> {
+    let _trust = hold_entity_trust_lock(journal_root)?;
+    let mut dismissed = None;
+    mutate_ambiguities(journal_root, |rows| {
+        let Some(row) = rows
+            .iter_mut()
+            .find(|row| row.get("ambiguity_id").and_then(Value::as_str) == Some(ambiguity_id))
+        else {
+            return Ok(Value::Null);
+        };
+        let object = row.as_object_mut().expect("strict rows are objects");
+        if object.get("status").and_then(Value::as_str) == Some("open") {
+            object.insert("status".to_owned(), Value::String("dismissed".to_owned()));
+            object.insert(
+                "dismissed_at".to_owned(),
+                Value::String(ambiguity_now_iso()),
+            );
+        }
+        dismissed = Some(row.clone());
+        Ok(row.clone())
+    })?;
+    Ok(dismissed)
+}
+
 /// Return a valid cache, rebuilding it from a fresh scan when unreadable.
 pub fn refresh_identity_map_cache(
     journal_root: &Path,

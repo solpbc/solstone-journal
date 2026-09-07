@@ -947,7 +947,7 @@
         "rule": "observed_tier is one of the low-confidence tiers 5-8"
       },
       {
-        "refusal": "status is not open or resolved",
+        "refusal": "status is not open, resolved or dismissed",
         "row": {
           "ambiguity_id": "amb_04374a01e8579a661fb1d1aa",
           "audit": {

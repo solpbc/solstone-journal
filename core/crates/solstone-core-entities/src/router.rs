@@ -144,6 +144,10 @@ fn api_router_from_state(state: Arc<RouterState>) -> Router {
             "/app/entities/api/ambiguities/{ambiguity_id}/resolve",
             post(resolve_ambiguity_route),
         )
+        .route(
+            "/app/entities/api/ambiguities/{ambiguity_id}/dismiss",
+            post(dismiss_ambiguity_route),
+        )
         .route("/app/entities/api/move", post(move_route))
         .route(
             "/app/entities/api/{facet_name}",
@@ -3067,6 +3071,73 @@ async fn resolve_ambiguity_route(
             solstone_core_entity::LockError::Timeout(_),
         ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
         _ => refusal(ReasonCode::InvalidRequestValue, "ambiguity resolve failed"),
+    }
+}
+
+// G2-B05: "names to clarify" was the one curation group with no way to say no.
+// Modelled on dismiss_facet_candidate_route: read the row, reply
+// already_dismissed rather than erroring when the answer is already recorded,
+// and refuse a status a dismissal must not overwrite. The dismissed row leaves
+// the curation queue, which filters to status == "open".
+async fn dismiss_ambiguity_route(
+    Extension(b): Extension<AccessBasis>,
+    State(root): State<Arc<RouterState>>,
+    RoutePath(ambiguity_id): RoutePath<String>,
+) -> Response {
+    if let Some(r) = admitted(&b) {
+        return r;
+    }
+    let existing = match solstone_core_serving::seam::run_blocking({
+        let root = Arc::clone(&root);
+        let ambiguity_id = ambiguity_id.clone();
+        move || {
+            solstone_core_entity::read_ambiguities(
+                &root,
+                solstone_core_entity::MalformedPolicy::Raise,
+            )
+            .map(|rows| {
+                rows.into_iter().find(|row| {
+                    row.get("ambiguity_id").and_then(serde_json::Value::as_str)
+                        == Some(ambiguity_id.as_str())
+                })
+            })
+        }
+    })
+    .await
+    {
+        Ok(Ok(Some(row))) => row,
+        Ok(Ok(None)) => return refusal(ReasonCode::EntityNotFound, ambiguity_id),
+        _ => return refusal(ReasonCode::EntityOperationFailed, "ambiguity read failed"),
+    };
+    let status = existing
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("open");
+    if status == "dismissed" {
+        return Json(json!({"status":"already_dismissed","ambiguity":existing})).into_response();
+    }
+    if status != "open" {
+        return refusal(
+            ReasonCode::InvalidRequestValue,
+            format!("cannot dismiss ambiguity with status {status}"),
+        );
+    }
+    match run_entity_write(move || solstone_core_entity::dismiss_ambiguity(&root, &ambiguity_id))
+        .await
+    {
+        Ok(Ok(Some(ambiguity))) => {
+            Json(json!({"status":"dismissed","ambiguity":ambiguity})).into_response()
+        }
+        Ok(Ok(None)) => refusal(ReasonCode::EntityNotFound, "ambiguity not found"),
+        Ok(Err(solstone_core_entity::EntityWriteError::TrustLock(
+            solstone_core_entity::EntityTrustLockError::Lock(
+                solstone_core_entity::LockError::Timeout(_),
+            ),
+        )))
+        | Ok(Err(solstone_core_entity::EntityWriteError::AmbiguityLock(
+            solstone_core_entity::LockError::Timeout(_),
+        ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
+        _ => refusal(ReasonCode::InvalidRequestValue, "ambiguity dismiss failed"),
     }
 }
 

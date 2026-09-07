@@ -407,13 +407,18 @@ fn invalid_row(path: &Path, line: usize, detail: impl Into<String>) -> EntitySto
 /// Validate the shared `entities/ambiguities.jsonl` schema.
 ///
 /// `observed_tier` intentionally remains limited to low-confidence tiers 5
-/// through 8. Three live Python surfaces strictly validate this artifact
-/// (`solstone/apps/entities/routes.py:1105`, `:1125`, and
-/// `solstone/think/curation.py:331`), while
-/// `solstone/think/entities/ambiguities.py:341` strictly loads it before every
-/// write. Accepting a high-confidence row here would therefore not merely make
-/// that row unreadable to Python; it would wedge every later Python ambiguity
-/// write for the journal.
+/// through 8. Every reader of this artifact loads it under
+/// `MalformedPolicy::Raise`, and `mutate_ambiguities` re-validates the whole
+/// file before each write, so a row this function rejects is not a row one
+/// surface skips: it is a hard read failure for the journal, and it wedges
+/// every later ambiguity write. (The three Python surfaces this note used to
+/// name were retired with the packaging rail in `83cc83312`; the strictness
+/// they motivated is now the Rust readers' own.)
+///
+/// `status` carries three values. `open` is a question still owed an answer,
+/// `resolved` names the entity the owner chose, and `dismissed` is the owner
+/// saying "none of these" — a durable no, carrying `dismissed_at` exactly as a
+/// resolution carries `resolved_at`.
 pub(super) fn validate_row(row: &Map<String, Value>) -> Result<(), &'static str> {
     let schema_version = row.get("schema_version");
     if !is_integer(schema_version)
@@ -469,11 +474,12 @@ pub(super) fn validate_row(row: &Map<String, Value>) -> Result<(), &'static str>
         .expect("checked integer tier");
 
     let status = row.get("status").and_then(Value::as_str);
-    if !matches!(status, Some("open" | "resolved")) {
-        return Err("status is not open or resolved");
+    if !matches!(status, Some("open" | "resolved" | "dismissed")) {
+        return Err("status is not open, resolved or dismissed");
     }
     let resolved_entity_id = row.get("resolved_entity_id");
     let resolved_at = row.get("resolved_at");
+    let dismissed_at = row.get("dismissed_at");
     if status == Some("resolved") {
         if non_empty_string(resolved_entity_id).is_none() {
             return Err("resolved row has no entity choice");
@@ -485,6 +491,13 @@ pub(super) fn validate_row(row: &Map<String, Value>) -> Result<(), &'static str>
         || !resolved_at.is_none_or(Value::is_null)
     {
         return Err("open row contains a resolved choice");
+    }
+    if status == Some("dismissed") {
+        if non_empty_string(dismissed_at).is_none() {
+            return Err("dismissed row has no timestamp");
+        }
+    } else if !dismissed_at.is_none_or(Value::is_null) {
+        return Err("undismissed row contains a dismissal");
     }
 
     let candidates = row.get("ranked_candidates").and_then(Value::as_array);

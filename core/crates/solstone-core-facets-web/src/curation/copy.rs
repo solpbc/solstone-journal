@@ -13,7 +13,7 @@ pub fn payload() -> Value {
     )
 }
 
-const COPY: [(&str, &str); 52] = [
+const COPY: [(&str, &str); 53] = [
     ("CUR_HEADING", "suggestions"),
     (
         "CUR_FACET_BODY",
@@ -95,6 +95,9 @@ const COPY: [(&str, &str); 52] = [
     ("CUR_AMBIGUITY_BODY", "which entry matches \"{query}\"?"),
     ("CUR_AMBIGUITY_ORIGIN_LABEL", "noticed in"),
     ("CUR_AMBIGUITY_CHOOSE_ACTION", "choose {name}"),
+    // G2-B05: the durable "none of these". The three sibling groups all
+    // have a way to say no; this one had only the candidate buttons.
+    ("CUR_AMBIGUITY_DISMISS_ACTION", "none of these"),
     ("CUR_UNDO_ACTION", "undo merge"),
     ("CUR_UNDO_DONE", "merge undone."),
     (

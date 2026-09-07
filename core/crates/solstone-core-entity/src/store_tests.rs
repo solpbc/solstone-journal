@@ -20,13 +20,13 @@ use crate::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityIdentityRepairError,
     EntityIdentityRepairGuard, EntityIdentityRepairSkipReason, EntityWriteError,
     IdentityMapLoserReason, PreparedHistoryOutcome, ambiguity_id, classify_prepared_history,
-    guard_restore_does_not_cross_merge, guard_visible_event_collision, load_all_journal_entities,
-    load_resolved_ambiguity_choice, read_ambiguities, read_entity_identity, read_identity_map,
-    read_prepared_history, read_visible_history, record_ambiguity_choice,
-    record_ambiguity_observation, refresh_identity_map_cache, repair_entity_identities,
-    rescope_facet_ambiguities, save_entity_identity, save_entity_identity_with_timeout,
-    set_forced_identity_write_failure, set_repair_identity_write_failure_on_attempt,
-    write_history_event_json_for_test,
+    dismiss_ambiguity, guard_restore_does_not_cross_merge, guard_visible_event_collision,
+    load_all_journal_entities, load_resolved_ambiguity_choice, read_ambiguities,
+    read_entity_identity, read_identity_map, read_prepared_history, read_visible_history,
+    record_ambiguity_choice, record_ambiguity_observation, refresh_identity_map_cache,
+    repair_entity_identities, rescope_facet_ambiguities, save_entity_identity,
+    save_entity_identity_with_timeout, set_forced_identity_write_failure,
+    set_repair_identity_write_failure_on_attempt, write_history_event_json_for_test,
 };
 
 const ENTITY_STORE_FIXTURE: &str = include_str!(concat!(
@@ -1655,6 +1655,129 @@ fn ambiguity_writer_refuses_all_validator_rules_not_covered_by_the_corpus() {
             "{rule}"
         );
     }
+}
+
+// G2-B05: the durable "none of these" on a "names to clarify" row.
+#[test]
+fn ambiguity_dismissal_marks_the_row_and_stamps_it() {
+    let temporary = TempDir::new();
+    let row = record_ambiguity_observation(temporary.path(), &valid_observation()).unwrap();
+    let ambiguity_id = row["ambiguity_id"].as_str().unwrap().to_owned();
+
+    let dismissed = dismiss_ambiguity(temporary.path(), &ambiguity_id)
+        .unwrap()
+        .expect("row exists");
+
+    assert_eq!(dismissed["status"], "dismissed");
+    assert!(
+        dismissed["dismissed_at"]
+            .as_str()
+            .is_some_and(|at| !at.is_empty())
+    );
+    assert_eq!(dismissed["resolved_entity_id"], Value::Null);
+    assert_eq!(dismissed["resolved_at"], Value::Null);
+    let stored = read_ambiguities(temporary.path(), MalformedPolicy::Raise).unwrap();
+    assert_eq!(stored.len(), 1);
+    assert_eq!(stored[0]["status"], "dismissed");
+}
+
+// The proof the dismissal is durable: `record_ambiguity_observation` finds an
+// existing row by (scope, normalized_query) and updates it in place. It never
+// filters to `open` and never creates a second row, so seeing the same name
+// again refreshes the evidence and leaves the owner's no standing.
+#[test]
+fn re_observing_a_dismissed_ambiguity_does_not_reopen_it() {
+    let temporary = TempDir::new();
+    let row = record_ambiguity_observation(temporary.path(), &valid_observation()).unwrap();
+    let ambiguity_id = row["ambiguity_id"].as_str().unwrap().to_owned();
+    let dismissed = dismiss_ambiguity(temporary.path(), &ambiguity_id)
+        .unwrap()
+        .expect("row exists");
+    let dismissed_at = dismissed["dismissed_at"].as_str().unwrap().to_owned();
+
+    let mut again = valid_observation();
+    again.origin = json!({"lane": "segment", "day": "20260806", "segment_id": "s9"});
+    let observed = record_ambiguity_observation(temporary.path(), &again).unwrap();
+
+    assert_eq!(observed["ambiguity_id"], ambiguity_id.as_str());
+    assert_eq!(observed["status"], "dismissed");
+    assert_eq!(observed["dismissed_at"], dismissed_at.as_str());
+    assert_eq!(observed["occurrence_count"], 2);
+    let stored = read_ambiguities(temporary.path(), MalformedPolicy::Raise).unwrap();
+    assert_eq!(stored.len(), 1, "re-observation must not add a second row");
+    assert_eq!(stored[0]["status"], "dismissed");
+}
+
+#[test]
+fn ambiguity_dismissal_is_idempotent_and_leaves_a_resolved_row_alone() {
+    let temporary = TempDir::new();
+    let row = record_ambiguity_observation(temporary.path(), &valid_observation()).unwrap();
+    let ambiguity_id = row["ambiguity_id"].as_str().unwrap().to_owned();
+    let first = dismiss_ambiguity(temporary.path(), &ambiguity_id)
+        .unwrap()
+        .expect("row exists");
+
+    let second = dismiss_ambiguity(temporary.path(), &ambiguity_id)
+        .unwrap()
+        .expect("row exists");
+
+    assert_eq!(second["dismissed_at"], first["dismissed_at"]);
+
+    let resolved_temporary = TempDir::new();
+    let mut resolved_row = valid_ambiguity_row();
+    resolved_row["status"] = json!("resolved");
+    resolved_row["resolved_entity_id"] = json!("alice_chen");
+    resolved_row["resolved_at"] = json!("2026-08-04T00:00:00Z");
+    write_json(
+        resolved_temporary.path(),
+        "entities/ambiguities.jsonl",
+        &resolved_row,
+    );
+    let untouched = dismiss_ambiguity(
+        resolved_temporary.path(),
+        resolved_row["ambiguity_id"].as_str().unwrap(),
+    )
+    .unwrap()
+    .expect("row exists");
+
+    assert_eq!(untouched["status"], "resolved");
+    assert_eq!(untouched["resolved_entity_id"], "alice_chen");
+    assert_eq!(untouched["dismissed_at"], Value::Null);
+}
+
+#[test]
+fn ambiguity_dismissal_of_an_unknown_id_reports_no_row() {
+    let temporary = TempDir::new();
+    record_ambiguity_observation(temporary.path(), &valid_observation()).unwrap();
+    let before = fs::read(temporary.path().join("entities/ambiguities.jsonl")).unwrap();
+
+    assert!(
+        dismiss_ambiguity(temporary.path(), "amb_missing")
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        fs::read(temporary.path().join("entities/ambiguities.jsonl")).unwrap(),
+        before
+    );
+}
+
+#[test]
+fn ambiguity_validation_pairs_the_dismissed_status_with_its_timestamp() {
+    let mut without_stamp = valid_ambiguity_row();
+    without_stamp["status"] = json!("dismissed");
+    assert_manual_ambiguity_refusal(without_stamp, "dismissed row has no timestamp");
+
+    let mut stamped_but_open = valid_ambiguity_row();
+    stamped_but_open["dismissed_at"] = json!("2026-08-04T00:00:00Z");
+    assert_manual_ambiguity_refusal(stamped_but_open, "undismissed row contains a dismissal");
+
+    let mut dismissed_with_choice = valid_ambiguity_row();
+    dismissed_with_choice["status"] = json!("dismissed");
+    dismissed_with_choice["dismissed_at"] = json!("2026-08-04T00:00:00Z");
+    dismissed_with_choice["resolved_entity_id"] = json!("alice_chen");
+    dismissed_with_choice["resolved_at"] = json!("2026-08-04T00:00:00Z");
+    assert_manual_ambiguity_refusal(dismissed_with_choice, "open row contains a resolved choice");
 }
 
 #[test]

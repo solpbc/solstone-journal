@@ -251,6 +251,12 @@ async fn replay_record(router: Router, root: &Path, expected: &Value) {
                         .into(),
                 );
             }
+            // G2-B05: "none of these" is a key the frozen corpus predates, not
+            // a revised value. Assert the live string, then drop the key so the
+            // recorded digest still matches without regenerating the corpus.
+            if let Some(dismiss) = copy.remove("CUR_AMBIGUITY_DISMISS_ACTION") {
+                assert_eq!(dismiss, Value::String("none of these".to_owned()));
+            }
             if let Some(empty) = copy.get_mut("CUR_EMPTY_STATE") {
                 assert_eq!(empty, "nothing to review. no new structure to suggest yet.");
                 *empty = Value::String(

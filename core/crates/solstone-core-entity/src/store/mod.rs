@@ -78,8 +78,8 @@ pub use voiceprints::{
 pub use write::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityOperationContext,
     EntityOperationKind, EntitySaveResult, EntityWriteError, IdentityMapCacheLoad,
-    record_ambiguity_choice, record_ambiguity_observation, refresh_identity_map_cache,
-    rewrite_identity_map_cache, save_entity_identity,
+    dismiss_ambiguity, record_ambiguity_choice, record_ambiguity_observation,
+    refresh_identity_map_cache, rewrite_identity_map_cache, save_entity_identity,
 };
 
 #[cfg(test)]
