@@ -371,43 +371,138 @@ const Dashboard = (function() {
     container.appendChild(legend);
   }
 
+  const HEATMAP_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  // The four anchors an owner reads a 24-column axis by. Every other column
+  // stays a blank tick: 24 labels don't fit, and a bare 0-23 grid is the one
+  // place on the page the owner has to translate a clock (G2-B14).
+  const HEATMAP_HOUR_LABELS = {0: '12 am', 6: '6 am', 12: '12 pm', 18: '6 pm'};
+
+  // The heatmap's buckets run to thousands of minutes, and the shared
+  // JournalFormat.duration ladder tops out at "N min M sec" (it takes
+  // seconds and has no hours rung), so 1,995 minutes would read
+  // "1995 min 0 sec" through it. Write hours and minutes here, in the same
+  // register the rest of the app uses ("30 sec", "5 min 3 sec") (G2-B14).
+  function heatmapDuration(minutes) {
+    const total = Math.round(Number(minutes) || 0);
+    if (total < 60) return `${total} min`;
+    const hours = Math.floor(total / 60);
+    const rest = total % 60;
+    return rest ? `${hours} hr ${rest} min` : `${hours} hr`;
+  }
+
+  function heatmapHourSpoken(hour) {
+    if (hour === 0) return '12 am';
+    if (hour === 12) return '12 pm';
+    return hour < 12 ? `${hour} am` : `${hour - 12} pm`;
+  }
+
+  // One line of the same information the grid carries, for the widths where
+  // the grid is hidden (G2-B06). Only claims what the data says: the single
+  // busiest hour on weekdays and on weekends.
+  function heatmapNarrowNote(data) {
+    function peak(rows) {
+      let best = -1;
+      let hour = null;
+      for (let h = 0; h < 24; h++) {
+        const total = rows.reduce((sum, d) => sum + (Number(data[d][h]) || 0), 0);
+        if (total > best) {
+          best = total;
+          hour = h;
+        }
+      }
+      return best > 0 ? hour : null;
+    }
+    const weekday = peak([0, 1, 2, 3, 4]);
+    const weekend = peak([5, 6]);
+    if (weekday === null && weekend === null) {
+      return 'no activity to chart yet.';
+    }
+    const parts = [];
+    if (weekday !== null) parts.push(`around ${heatmapHourSpoken(weekday)} on weekdays`);
+    if (weekend !== null) parts.push(`around ${heatmapHourSpoken(weekend)} at weekends`);
+    return `your busiest hour is ${parts.join(' and ')}. the hour by hour grid needs a wider screen.`;
+  }
+
+  // Arrow-key roving across the 168 cells. Before this, every cell carried
+  // tabindex -1 and nothing in the section was focusable, so the values were
+  // reachable by mouse only and the stylesheet's :focus-visible tooltip rule
+  // could never fire (G2-B06).
+  function bindHeatmapKeys(heatmap) {
+    heatmap.addEventListener('keydown', event => {
+      const cell = event.target.closest && event.target.closest('.heatmap-cell');
+      if (!cell) return;
+      const cells = Array.from(heatmap.querySelectorAll('.heatmap-cell'));
+      const index = cells.indexOf(cell);
+      if (index < 0) return;
+      let day = Math.floor(index / 24);
+      let hour = index % 24;
+      switch (event.key) {
+        case 'ArrowLeft': hour = Math.max(0, hour - 1); break;
+        case 'ArrowRight': hour = Math.min(23, hour + 1); break;
+        case 'ArrowUp': day = Math.max(0, day - 1); break;
+        case 'ArrowDown': day = Math.min(6, day + 1); break;
+        case 'Home': hour = 0; break;
+        case 'End': hour = 23; break;
+        default: return;
+      }
+      const next = cells[day * 24 + hour];
+      if (!next || next === cell) {
+        event.preventDefault();
+        return;
+      }
+      event.preventDefault();
+      cells.forEach(other => { other.tabIndex = -1; });
+      next.tabIndex = 0;
+      next.focus();
+    });
+  }
+
   // Build heatmap
   function buildHeatmap(container, data) {
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const days = HEATMAP_DAYS;
     const maxVal = Math.max(...data.flat()) || 1;
 
     const heatmap = el('div', {className: 'heatmap', role: 'grid', 'aria-label': 'activity heatmap showing activity by day of week and hour'});
 
-    // Empty top-left corner
-    heatmap.appendChild(el('div'));
-
-    // Hour headers
-    const header = el('div', {className: 'heatmap-header'});
+    // Hour headers, in their own row so the grid's rows are real elements
+    const header = el('div', {className: 'heatmap-row heatmap-header', role: 'row'});
+    header.appendChild(el('div'));
     for (let h = 0; h < 24; h++) {
-      header.appendChild(el('div', {className: 'heatmap-hour'}, [String(h)]));
+      const label = HEATMAP_HOUR_LABELS[h] || '';
+      header.appendChild(el('div', {
+        className: 'heatmap-hour',
+        role: 'columnheader',
+        'aria-label': heatmapHourSpoken(h)
+      }, [label]));
     }
     heatmap.appendChild(header);
 
     // Days with cells
     for (let d = 0; d < 7; d++) {
-      heatmap.appendChild(el('div', {className: 'heatmap-label'}, [days[d]]));
+      const row = el('div', {className: 'heatmap-row', role: 'row'});
+      row.appendChild(el('div', {className: 'heatmap-label', role: 'rowheader'}, [days[d]]));
 
       for (let h = 0; h < 24; h++) {
         const intensity = data[d][h] / maxVal;
-        const cellTitle = `${days[d]} ${h}:00 - ${Math.round(data[d][h])} min`;
-        const cell = el('div', {
+        const cellTitle = `${days[d]} ${heatmapHourSpoken(h)} · ${heatmapDuration(data[d][h])}`;
+        row.appendChild(el('div', {
           className: 'heatmap-cell',
           style: {background: `rgba(${WARM_HEATMAP_RGB},${intensity})`},
           'data-tip': cellTitle,
           'aria-label': cellTitle,
           role: 'gridcell',
-          tabindex: '-1'
-        });
-        heatmap.appendChild(cell);
+          tabindex: d === 0 && h === 0 ? '0' : '-1'
+        }));
       }
+      heatmap.appendChild(row);
     }
 
+    bindHeatmapKeys(heatmap);
     container.appendChild(heatmap);
+
+    const note = document.getElementById('heatmapNarrowNote');
+    if (note) note.textContent = heatmapNarrowNote(data);
   }
 
   // Lighten (positive percent) or darken (negative percent) a hex color,
@@ -826,7 +921,9 @@ const Dashboard = (function() {
 
   function renderBacklog(stats) {
     const main = document.getElementById('mainContent');
-    const statsGrid = document.getElementById('statsGrid');
+    // The hero goes above the whole tile block, not between the block's
+    // "since your journal began" kicker and the tiles it scopes (G2-B10).
+    const statsGrid = document.getElementById('statsGridBlock');
     if (!main || !statsGrid) return;
 
     const existing = document.getElementById('backlogSection');
@@ -877,6 +974,7 @@ const Dashboard = (function() {
       'tokenChart',
       'audioChart',
       'heatmap',
+      'heatmapNarrowNote',
       'facetsChart',
       'activitiesChart'
     ].forEach(id => {

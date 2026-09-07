@@ -92,6 +92,17 @@ h1 {
   margin-bottom: 1.5em;
 }
 
+/* The five tiles are lifetime figures, and the only scope label above them
+   belongs to the 30-day backlog hero. Give them their own scope, in the
+   same kicker style the audio-processing card already uses (G2-B10). */
+.stats-grid-scope {
+  color: var(--ink-soft, #5B5246);
+  font-size: 0.8em;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  margin: 0 0 0.5em;
+}
+
 .stat-card {
   background: white;
   border-radius: 12px;
@@ -479,12 +490,21 @@ h1 {
   justify-content: center;
 }
 
-/* Heatmap */
+/* Heatmap. Each weekday is its own grid row element rather than a flat run
+   of cells, so role="grid" actually wraps role="row" (G2-B06); the columns
+   are minmax(0, 1fr) so a wide hour label can't push the grid past its
+   container and overflow the document (G2-B14). */
 .heatmap {
-  display: grid;
-  grid-template-columns: 40px repeat(24, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 2px;
   margin-top: 1.5em;
+}
+
+.heatmap-row {
+  display: grid;
+  grid-template-columns: 40px repeat(24, minmax(0, 1fr));
+  gap: 2px;
 }
 
 .heatmap-label {
@@ -545,18 +565,28 @@ h1 {
 }
 
 .heatmap-header {
-  grid-column: 2 / -1;
-  display: grid;
-  grid-template-columns: repeat(24, 1fr);
-  gap: 2px;
   margin-bottom: 4px;
 }
 
+/* Only the four anchor hours carry a label (G2-B14); the rest are blank
+   ticks, so an anchor wider than one column paints over empty neighbours
+   instead of widening the grid. */
 .heatmap-hour {
   text-align: center;
   font-size: 0.75em;
   color: #999;
   font-weight: 500;
+  overflow: visible;
+  white-space: nowrap;
+}
+
+/* The 24-column grid is unreadable much under 480px and stays hidden there.
+   What changed is that the section no longer vanishes without a word: the
+   same peak the grid shows is written out in one line instead (G2-B06). */
+.heatmap-narrow-note {
+  color: var(--ink-soft, #5B5246);
+  display: none;
+  margin: 1em 0 0;
 }
 
 
@@ -822,6 +852,41 @@ h1 {
   text-align: left;
 }
 
+/* A one-row token table is eleven sort buttons and a sideways scroller over
+   two facts; say the two facts instead (G2-B11). */
+.token-table-summary {
+  margin: 0 0 1rem;
+}
+
+.token-table-summary-name {
+  display: block;
+  font-weight: 600;
+}
+
+.token-table-summary-detail {
+  color: var(--ink-soft, #5B5246);
+  display: block;
+  margin-top: 0.2rem;
+}
+
+.token-table-summary details {
+  margin-top: 0.35rem;
+}
+
+.token-table-summary summary {
+  color: var(--ink-soft, #5B5246);
+  cursor: pointer;
+  font-size: 0.9em;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
+.token-table-note {
+  color: var(--ink-soft, #5B5246);
+  margin: 0 0 1rem;
+}
+
 .token-sort {
   background: transparent;
   border: 0;
@@ -871,7 +936,9 @@ h1 {
   }
   .heatmap {
     font-size: 0.8em;
-    grid-template-columns: 30px repeat(24, 1fr);
+  }
+  .heatmap-row {
+    grid-template-columns: 30px repeat(24, minmax(0, 1fr));
   }
   .bar {
     min-width: 10px;
@@ -906,8 +973,15 @@ h1 {
   .bar-value {
     display: none;
   }
-  #heatmapSection {
+  #heatmap {
     display: none;
+  }
+  .heatmap-narrow-note {
+    display: block;
+  }
+  .token-sort {
+    min-height: 44px;
+    padding: 0.6rem 0;
   }
   .model-select {
     min-height: 44px;
@@ -931,6 +1005,13 @@ h1 {
 .chart-pair-lede {
   color: var(--ink-soft, #5B5246);
   margin: 0 0 -0.5em;
+}
+
+/* The lede describes the facets/activities pair, not the chart above it.
+   Grouping the three in one element keeps them together for a reader
+   working top-down (G2-B03). */
+.chart-pair {
+  display: block;
 }
 
 /* Edge fades for a horizontally scrollable rollup/table that has more
@@ -991,7 +1072,10 @@ h1 {
   </div>
 
   <div id="mainContent" style="display: none;">
-    <div id="statsGrid" class="stats-grid"></div>
+    <div id="statsGridBlock">
+      <p class="stats-grid-scope">since your journal began</p>
+      <div id="statsGrid" class="stats-grid"></div>
+    </div>
     <div id="progressSection" class="progress-section"></div>
     <div id="repairSection"></div>
 
@@ -1009,7 +1093,9 @@ h1 {
         <div class="token-comparison" id="tokenTypeComparison" aria-label="generate and cogitate comparison"></div>
 
         <h4>providers</h4>
-        <div class="token-scroll-fade">
+        <p class="token-table-note" data-token-note="providers" hidden></p>
+        <div class="token-table-summary" data-token-summary="providers" hidden></div>
+        <div class="token-scroll-fade" data-token-table-host="providers">
           <div class="token-table-scroll" tabindex="0" aria-label="provider token activity table">
             <table id="tokenProviderTable">
               <thead><tr><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="provider">provider</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="requests">requests</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="tokens">tokens</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="cached_tokens">cached</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="percent">token share</button></th></tr></thead>
@@ -1019,7 +1105,9 @@ h1 {
         </div>
 
         <h4>models</h4>
-        <div class="token-scroll-fade">
+        <p class="token-table-note" data-token-note="models" hidden></p>
+        <div class="token-table-summary" data-token-summary="models" hidden></div>
+        <div class="token-scroll-fade" data-token-table-host="models">
           <div class="token-table-scroll" tabindex="0" aria-label="model token activity table">
             <table id="tokenModelTable">
               <thead><tr><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="model">model</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="provider">provider</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="requests">requests</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="tokens">tokens</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="cached_tokens">cached</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="percent">token share</button></th></tr></thead>
@@ -1036,21 +1124,24 @@ h1 {
     </div>
 
     <div class="chart-section" id="heatmapSection">
-      <h2>activity heatmap</h2>
+      <h2>activity heatmap (since your journal began)</h2>
+      <p class="heatmap-narrow-note" id="heatmapNarrowNote"></p>
       <div id="heatmap"></div>
     </div>
 
-    <p class="chart-pair-lede">the same days, split two ways: by facet below, then by activity.</p>
+    <section class="chart-pair">
+      <p class="chart-pair-lede">the last 30 days, split two ways: by facet below, then by activity.</p>
 
-    <div class="chart-section">
-      <h2>facets (last 30 days)</h2>
-      <div class="chart" id="facetsChart"></div>
-    </div>
+      <div class="chart-section">
+        <h2>facets (last 30 days)</h2>
+        <div class="chart" id="facetsChart"></div>
+      </div>
 
-    <div class="chart-section">
-      <h2>activities (last 30 days)</h2>
-      <div class="chart" id="activitiesChart"></div>
-    </div>
+      <div class="chart-section">
+        <h2>activities (last 30 days)</h2>
+        <div class="chart" id="activitiesChart"></div>
+      </div>
+    </section>
   </div>
 </div>
 
