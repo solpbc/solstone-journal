@@ -109,7 +109,10 @@
     if (error instanceof Error) {
       // An Error's own message is the one branch that used to skip the bound,
       // and a parser or a fetch wrapper can carry a whole response body in it.
-      return bounded(error.message) || coerce(error);
+      // A reconstructed Error (`Object.create(Error.prototype)`) has no own
+      // message, and `String(undefined)` wrote the literal "undefined" into the
+      // entry. Coerce the absence to empty so the name path takes it. FE3 #4.
+      return bounded(error.message ?? '') || coerce(error);
     }
     if (typeof error === 'string') {
       return bounded(error);
