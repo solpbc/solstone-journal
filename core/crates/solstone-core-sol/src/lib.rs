@@ -1081,6 +1081,7 @@ mod tests {
         );
     }
 
+    use solstone_core_sol_client::link_credentials::StoreLoadOutcome;
     use solstone_core_sol_client::seam::{
         ExpectedLinkServeCall, ExpectedLinkServeSession, LinkServeBundle, LinkServeCarrierPolicy,
         LinkServeRequest, ScriptedHttpTransport, ScriptedLinkJoinPairingSeam,
@@ -1148,6 +1149,7 @@ mod tests {
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             endpoints: vec![],
             local_endpoints: json!([]),
+            relay_access: Some(StoreLoadOutcome::Absent),
         }
     }
 

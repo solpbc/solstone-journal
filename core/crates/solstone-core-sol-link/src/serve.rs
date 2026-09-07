@@ -8,8 +8,13 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use serde::Deserialize;
 use serde_json::{Map, Value};
 use solstone_core_ingest_contract::CONNECTION_BODY_LIMIT;
+use solstone_core_sol_client::link_credentials::{
+    LinkCredentialStore, PairingIdentity, StoreLoadOutcome, StoreMutationError, get_file_dev_ino,
+    same_relay_origin,
+};
 use solstone_core_sol_client::resident::ShutdownSignal;
 use solstone_core_sol_client::seam::{
     LinkJournalMetadata, LinkServeBundle, LinkServeCarrierPolicy, LinkServeError,
@@ -18,7 +23,7 @@ use solstone_core_sol_client::seam::{
     LinkServeStatusSnapshot, LinkServeTransportErrorKind,
 };
 use spl_core::bridge::{BridgeNames, RequestHeaderPolicy};
-use spl_transport::client::{DialedCarrier, TransportClient};
+use spl_transport::client::{DialedCarrier, TokenPersistHook, TransportClient};
 use spl_transport::credential::{Credential, EndpointAddr};
 use spl_transport::journal_bridge::{
     self, BridgePolicy, BridgeStartError, CapabilityGate, CarrierOpener, JournalBridgeConfig,
@@ -29,6 +34,24 @@ use spl_transport::{RelayControlEndpoint, RelayError, TransportError, tls};
 
 pub const STATUS_PATH: &str = "/_solstone/link/status";
 
+#[derive(Debug, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum WireRelayAccessResponse {
+    #[serde(rename = "ready")]
+    Ready {
+        protocol_version: u32,
+        relay_origin: String,
+        instance_id: String,
+        device_token: String,
+        expires_at: String,
+    },
+    #[serde(rename = "not_configured")]
+    NotConfigured {
+        #[serde(default)]
+        protocol_version: Option<u32>,
+    },
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SplLinkServeRunner;
 
@@ -38,6 +61,53 @@ impl LinkServeRunner for SplLinkServeRunner {
         request: LinkServeRequest,
     ) -> Result<Box<dyn LinkServeSession>, LinkServeError> {
         ServeStarter::default().start(request)
+    }
+}
+
+pub struct CurrentClientManager {
+    inner: Mutex<CurrentClientState>,
+}
+
+struct CurrentClientState {
+    client: Option<Arc<TransportClient>>,
+    incarnation: u64,
+}
+
+impl CurrentClientManager {
+    pub fn new(initial_client: Option<Arc<TransportClient>>) -> Self {
+        Self {
+            inner: Mutex::new(CurrentClientState {
+                client: initial_client,
+                incarnation: 0,
+            }),
+        }
+    }
+
+    pub fn set_initial(&self, initial_client: Arc<TransportClient>) {
+        let mut state = self.inner.lock().expect("client manager lock");
+        state.client = Some(initial_client);
+    }
+
+    pub fn retire(&self) {
+        let mut state = self.inner.lock().expect("client manager lock");
+        state.client = None;
+        state.incarnation = state.incarnation.wrapping_add(1);
+    }
+
+    pub fn get(&self) -> (Option<Arc<TransportClient>>, u64) {
+        let state = self.inner.lock().expect("client manager lock");
+        (state.client.clone(), state.incarnation)
+    }
+
+    pub fn swap(&self, new_client: Option<Arc<TransportClient>>) -> u64 {
+        let mut state = self.inner.lock().expect("client manager lock");
+        state.client = new_client;
+        state.incarnation = state.incarnation.wrapping_add(1);
+        state.incarnation
+    }
+
+    pub fn incarnation(&self) -> u64 {
+        self.inner.lock().expect("client manager lock").incarnation
     }
 }
 
@@ -60,40 +130,174 @@ impl ServeStarter {
         &self,
         request: LinkServeRequest,
     ) -> Result<Box<dyn LinkServeSession>, LinkServeError> {
-        // Must be multi-threaded: `LinkServeSession::serve` parks the calling
-        // thread in a blocking `ShutdownSignal::wait()` for the process's whole
-        // lifetime, and never re-enters the runtime until shutdown. A
-        // current-thread runtime only polls spawned tasks while some thread is
-        // inside `block_on`, so the bridge's accept loop — spawned by
-        // `journal_bridge::start` below — would never run. The listener would
-        // still bind (the kernel completes handshakes from the backlog), so the
-        // port looks healthy while every request hangs and returns zero bytes.
-        //
-        // The worker count is pinned rather than left to default: this proxy
-        // carries one person's loopback traffic over a single carrier, and the
-        // default spawns one worker per core (33 threads on a large host). The
-        // work is entirely async I/O, so two workers is ample — one can block
-        // briefly on a task without stalling the accept loop.
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
             .build()
             .map_err(|_| LinkServeError::new(LinkServeErrorKind::RuntimeUnavailable))?;
-        let enrollment = self.enrollment.clone();
-        let credential = runtime.block_on(credential_from_request(&request, enrollment))?;
-        let client = Arc::new(
+
+        let label = request
+            .bundle_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(&request.label);
+        let store = LinkCredentialStore::new(request.bundle_dir.clone(), label);
+        let identity = pairing_identity_from_bundle(&request.bundle)?;
+
+        let store_outcome = request
+            .bundle
+            .relay_access
+            .clone()
+            .unwrap_or_else(|| store.load_access());
+
+        let (credential, persist_hook_origin, _token_for_hook, initial_persist_uncertain) =
             match request.policy {
+                LinkServeCarrierPolicy::Direct => {
+                    let cred = credential_base(
+                        &request,
+                        endpoints_from_bundle(&request.bundle),
+                        None,
+                        None,
+                        None,
+                    )?;
+                    (cred, None, None, false)
+                }
+                LinkServeCarrierPolicy::RelayPermitted => {
+                    let configured_origin = request.relay_origin.clone();
+                    match store_outcome {
+                        StoreLoadOutcome::Ready(record)
+                            if configured_origin.as_ref().is_some_and(|orig| {
+                                same_relay_origin(
+                                    record.relay_origin.as_deref().unwrap_or_default(),
+                                    orig,
+                                )
+                            }) =>
+                        {
+                            let origin = record.relay_origin.clone();
+                            let token = record.device_token.clone();
+                            let exp = record.expires_at;
+                            let cred = credential_base(
+                                &request,
+                                endpoints_from_bundle(&request.bundle),
+                                origin.clone(),
+                                token.clone(),
+                                exp,
+                            )?;
+                            (cred, origin, token, false)
+                        }
+                        _ => {
+                            let cred = credential_base(
+                                &request,
+                                endpoints_from_bundle(&request.bundle),
+                                None,
+                                None,
+                                None,
+                            )?;
+                            (cred, None, None, false)
+                        }
+                    }
+                }
                 LinkServeCarrierPolicy::RelayOnly => {
-                    TransportClient::new_relay_only(credential, None)
+                    let origin = request
+                        .relay_origin
+                        .clone()
+                        .unwrap_or_else(|| "https://link.solstone.app".to_string());
+                    match store_outcome {
+                        StoreLoadOutcome::Ready(record) => {
+                            if !same_relay_origin(
+                                record.relay_origin.as_deref().unwrap_or_default(),
+                                &origin,
+                            ) {
+                                return Err(LinkServeError::new(LinkServeErrorKind::Transport(
+                                    LinkServeTransportErrorKind::NoEndpoint,
+                                )));
+                            }
+                            let token = record.device_token.clone();
+                            let exp = record.expires_at;
+                            let cred = credential_base(
+                                &request,
+                                Vec::new(),
+                                Some(origin.clone()),
+                                token.clone(),
+                                exp,
+                            )?;
+                            (cred, Some(origin), token, false)
+                        }
+                        StoreLoadOutcome::Disabled(_) => {
+                            return Err(LinkServeError::new(LinkServeErrorKind::Transport(
+                                LinkServeTransportErrorKind::NotPaired,
+                            )));
+                        }
+                        StoreLoadOutcome::Unusable(_) => {
+                            return Err(LinkServeError::new(LinkServeErrorKind::InvalidBundle));
+                        }
+                        StoreLoadOutcome::Absent => {
+                            let token = runtime
+                                .block_on(self.enrollment.enroll(
+                                    &origin,
+                                    &request.bundle.instance_id,
+                                    &request.bundle.home_attestation,
+                                ))
+                                .map_err(|error| {
+                                    LinkServeError::new(LinkServeErrorKind::Transport(
+                                        map_transport_error(error),
+                                    ))
+                                })?;
+                            let mut uncertain = false;
+                            let now = SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs() as i64;
+                            let exp = spl_core::relay_access::instance_claims(
+                                &token,
+                                &request.bundle.instance_id,
+                                now,
+                            )
+                            .map(|c| c.exp)
+                            .unwrap_or(0);
+                            if store
+                                .publish_ready(&origin, &token, exp, &identity)
+                                .is_err()
+                            {
+                                uncertain = true;
+                            }
+                            let cred = credential_base(
+                                &request,
+                                Vec::new(),
+                                Some(origin.clone()),
+                                Some(token.clone()),
+                                Some(exp),
+                            )?;
+                            (cred, Some(origin), Some(token), uncertain)
+                        }
+                    }
                 }
-                LinkServeCarrierPolicy::Direct | LinkServeCarrierPolicy::RelayPermitted => {
-                    TransportClient::new(credential, None)
-                }
-            }
-            .map_err(|error| {
-                LinkServeError::new(LinkServeErrorKind::Transport(map_transport_error(error)))
-            })?,
+            };
+
+        let client_manager = Arc::new(CurrentClientManager::new(None));
+
+        let token_persist_hook = make_token_persist_hook(
+            persist_hook_origin,
+            &store,
+            &identity,
+            0,
+            Arc::downgrade(&client_manager),
         );
+
+        let initial_client = match request.policy {
+            LinkServeCarrierPolicy::RelayOnly => {
+                TransportClient::new_relay_only(credential.clone(), token_persist_hook)
+            }
+            LinkServeCarrierPolicy::Direct | LinkServeCarrierPolicy::RelayPermitted => {
+                TransportClient::new(credential.clone(), token_persist_hook)
+            }
+        }
+        .map_err(|error| {
+            LinkServeError::new(LinkServeErrorKind::Transport(map_transport_error(error)))
+        })?;
+
+        client_manager.set_initial(Arc::new(initial_client));
+
         let ca_prefix = ca_fp_prefix(&request.bundle)?;
         let ca_fp_prefix_hex = ca_prefix
             .iter()
@@ -106,9 +310,25 @@ impl ServeStarter {
             ca_fp_prefix_hex,
             request.bundle.paired_at.clone(),
             Some(runtime.handle().clone()),
+            initial_persist_uncertain,
         ));
+
+        let scheduler = Arc::new(OptionalJobScheduler {
+            inner: Mutex::new(JobSchedulerState::default()),
+            tracker: tracker.clone(),
+            client_manager: client_manager.clone(),
+            store: store.clone(),
+            identity: identity.clone(),
+            policy: request.policy,
+            configured_relay_origin: request.relay_origin.clone(),
+            bundle: request.bundle.clone(),
+            ca_fp_prefix: ca_prefix,
+        });
+
+        tracker.set_scheduler(scheduler.clone());
+
         let opener = Arc::new(SolstoneCarrierOpener {
-            client,
+            client_manager: client_manager.clone(),
             tracker: tracker.clone(),
         });
         let policy = bridge_policy_for_port(request.port, tracker.clone());
@@ -142,8 +362,104 @@ impl ServeStarter {
             runtime,
             handle: Some(handle),
             bundle_dir: request.bundle_dir,
+            client_manager,
+            scheduler,
         }))
     }
+}
+
+fn endpoints_from_bundle(bundle: &LinkServeBundle) -> Vec<EndpointAddr> {
+    bundle
+        .endpoints
+        .iter()
+        .map(|endpoint| EndpointAddr {
+            host: endpoint.host.clone(),
+            port: endpoint.port,
+        })
+        .collect()
+}
+
+fn credential_base(
+    request: &LinkServeRequest,
+    endpoints: Vec<EndpointAddr>,
+    relay_origin: Option<String>,
+    device_token: Option<String>,
+    device_token_expires_at: Option<i64>,
+) -> Result<Credential, LinkServeError> {
+    Ok(Credential {
+        client_key_pem: request.bundle.private_key_pem.clone(),
+        client_cert_pem: request.bundle.client_cert_pem.clone(),
+        ca_chain_pem: request.bundle.ca_chain_pem.clone(),
+        ca_fp_prefix: ca_fp_prefix(&request.bundle)?,
+        instance_id: request.bundle.instance_id.clone(),
+        home_label: request.bundle.home_label.clone(),
+        endpoints,
+        home_attestation: Some(request.bundle.home_attestation.clone()),
+        local_endpoints: Some(request.bundle.local_endpoints.clone()),
+        relay_origin,
+        device_token,
+        device_token_expires_at,
+    })
+}
+
+fn pairing_identity_from_bundle(
+    bundle: &LinkServeBundle,
+) -> Result<PairingIdentity, LinkServeError> {
+    let cert_sha256 = format!(
+        "sha256:{}",
+        spl_core::ca::sha256_hex(bundle.client_cert_pem.as_bytes())
+    );
+    let ca_fingerprint = bundle_ca_fingerprint(bundle)?;
+    Ok(PairingIdentity {
+        cert_sha256,
+        instance_id: bundle.instance_id.clone(),
+        ca_fingerprint,
+    })
+}
+
+fn bundle_ca_fingerprint(bundle: &LinkServeBundle) -> Result<String, LinkServeError> {
+    let chain_pem = bundle
+        .ca_chain_pem
+        .iter()
+        .map(|cert| {
+            if cert.ends_with('\n') {
+                cert.clone()
+            } else {
+                format!("{cert}\n")
+            }
+        })
+        .collect::<String>();
+    let certs = tls::parse_certs(&chain_pem).map_err(|error| {
+        LinkServeError::new(LinkServeErrorKind::Transport(map_transport_error(error)))
+    })?;
+    let Some(first) = certs.first() else {
+        return Err(LinkServeError::new(LinkServeErrorKind::InvalidBundle));
+    };
+    Ok(format!(
+        "sha256:{}",
+        spl_core::ca::sha256_hex(first.as_ref())
+    ))
+}
+
+fn make_token_persist_hook(
+    origin: Option<String>,
+    store: &LinkCredentialStore,
+    identity: &PairingIdentity,
+    incarnation: u64,
+    client_manager_weak: std::sync::Weak<CurrentClientManager>,
+) -> Option<TokenPersistHook> {
+    let origin = origin?;
+    let store_clone = store.clone();
+    let identity_clone = identity.clone();
+    Some(Arc::new(move |token: &str, exp: i64| {
+        let Some(mgr) = client_manager_weak.upgrade() else {
+            return;
+        };
+        if mgr.incarnation() != incarnation {
+            return;
+        }
+        let _ = store_clone.persist_refreshed_token(token, exp, &identity_clone, &origin);
+    }))
 }
 
 struct SplLinkServeSession {
@@ -151,6 +467,8 @@ struct SplLinkServeSession {
     runtime: tokio::runtime::Runtime,
     handle: Option<JournalBridgeHandle>,
     bundle_dir: PathBuf,
+    client_manager: Arc<CurrentClientManager>,
+    scheduler: Arc<OptionalJobScheduler>,
 }
 
 impl LinkServeSession for SplLinkServeSession {
@@ -160,9 +478,14 @@ impl LinkServeSession for SplLinkServeSession {
 
     fn serve(mut self: Box<Self>, shutdown: &dyn ShutdownSignal) -> Result<(), LinkServeError> {
         shutdown.wait();
+        // 1. Retire epoch
+        self.client_manager.retire();
+        self.scheduler.retire();
+        // 2. Delete runtime record
         if !self.bundle_dir.as_os_str().is_empty() {
             let _ = std::fs::remove_file(self.bundle_dir.join("serve_runtime.json"));
         }
+        // 3. Shutdown and wait
         if let Some(handle) = self.handle.take() {
             self.runtime.block_on(handle.shutdown_and_wait());
         }
@@ -171,7 +494,7 @@ impl LinkServeSession for SplLinkServeSession {
 }
 
 struct SolstoneCarrierOpener {
-    client: Arc<TransportClient>,
+    client_manager: Arc<CurrentClientManager>,
     tracker: Arc<StatusTracker>,
 }
 
@@ -187,7 +510,15 @@ impl CarrierOpener for SolstoneCarrierOpener {
         &self,
     ) -> Pin<Box<dyn Future<Output = Result<DialedCarrier, TransportError>> + Send + '_>> {
         Box::pin(async move {
-            let result = self.client.dial_carrier().await;
+            let (client_opt, incarnation) = self.client_manager.get();
+            let Some(client) = client_opt else {
+                self.tracker.carrier_open_failed(&TransportError::NotPaired);
+                return Err(TransportError::NotPaired);
+            };
+            let result = client.dial_carrier().await;
+            if self.client_manager.incarnation() != incarnation {
+                return Err(TransportError::NotPaired);
+            }
             match &result {
                 Ok(_) => self.tracker.carrier_open_succeeded(),
                 Err(error) => self.tracker.carrier_open_failed(error),
@@ -195,65 +526,6 @@ impl CarrierOpener for SolstoneCarrierOpener {
             result
         })
     }
-}
-
-async fn credential_from_request(
-    request: &LinkServeRequest,
-    enrollment: Arc<dyn RelayEnrollment>,
-) -> Result<Credential, LinkServeError> {
-    let token = match request.policy {
-        LinkServeCarrierPolicy::Direct => None,
-        LinkServeCarrierPolicy::RelayPermitted | LinkServeCarrierPolicy::RelayOnly => {
-            let origin = request
-                .relay_origin
-                .as_deref()
-                .expect("relay policy carries a relay origin");
-            Some(
-                enrollment
-                    .enroll(
-                        origin,
-                        &request.bundle.instance_id,
-                        &request.bundle.home_attestation,
-                    )
-                    .await
-                    .map_err(|error| {
-                        LinkServeError::new(LinkServeErrorKind::Transport(map_transport_error(
-                            error,
-                        )))
-                    })?,
-            )
-        }
-    };
-    Ok(Credential {
-        client_key_pem: request.bundle.private_key_pem.clone(),
-        client_cert_pem: request.bundle.client_cert_pem.clone(),
-        ca_chain_pem: request.bundle.ca_chain_pem.clone(),
-        ca_fp_prefix: ca_fp_prefix(&request.bundle)?,
-        instance_id: request.bundle.instance_id.clone(),
-        home_label: request.bundle.home_label.clone(),
-        endpoints: match request.policy {
-            LinkServeCarrierPolicy::RelayOnly => Vec::new(),
-            LinkServeCarrierPolicy::Direct | LinkServeCarrierPolicy::RelayPermitted => request
-                .bundle
-                .endpoints
-                .iter()
-                .map(|endpoint| EndpointAddr {
-                    host: endpoint.host.clone(),
-                    port: endpoint.port,
-                })
-                .collect(),
-        },
-        home_attestation: Some(request.bundle.home_attestation.clone()),
-        local_endpoints: Some(request.bundle.local_endpoints.clone()),
-        relay_origin: match request.policy {
-            LinkServeCarrierPolicy::Direct => None,
-            LinkServeCarrierPolicy::RelayPermitted | LinkServeCarrierPolicy::RelayOnly => {
-                request.relay_origin.clone()
-            }
-        },
-        device_token: token,
-        device_token_expires_at: None,
-    })
 }
 
 fn ca_fp_prefix(bundle: &LinkServeBundle) -> Result<Vec<u8>, LinkServeError> {
@@ -281,7 +553,6 @@ pub fn bridge_names() -> BridgeNames {
     BridgeNames {
         capability_cookie_name: "__solstone_link_cap".to_string(),
         upstream_cookie_prefix: String::new(),
-        // Inert sentinels: capability_gate is Disabled, so check_caller_auth is unused; these names only exist so is_reserved_request_header does not strip the caller's real protocol-version and observer headers.
         observer_header_name: "x-solstone-link-serve-unused-observer".to_string(),
         protocol_version_header_name: "x-solstone-link-serve-unused-protocol-version".to_string(),
     }
@@ -373,6 +644,10 @@ fn status_body(snapshot: &LinkServeStatusSnapshot) -> Vec<u8> {
         Value::String(snapshot.paired_at.clone()),
     );
     root.insert(
+        "persist_uncertain".to_string(),
+        Value::Bool(snapshot.persist_uncertain),
+    );
+    root.insert(
         "reconnect_count".to_string(),
         Value::Number(snapshot.reconnect_count.into()),
     );
@@ -392,10 +667,13 @@ pub struct StatusTracker {
     inner: Mutex<StatusTrackerState>,
     clock: Arc<dyn StatusClock>,
     bundle_dir: PathBuf,
+    expected_identity: Option<PairingIdentity>,
+    expected_dev_ino: Option<(u64, u64)>,
     instance_id: String,
     ca_fp_prefix_hex: String,
     paired_at: String,
     runtime_handle: Option<tokio::runtime::Handle>,
+    scheduler: Mutex<Option<Arc<OptionalJobScheduler>>>,
 }
 
 #[derive(Debug, Default)]
@@ -407,10 +685,9 @@ struct StatusTrackerState {
     generation: u64,
     fetching_generation: Option<u64>,
     pending_fetch_generation: Option<u64>,
-    description_running: bool,
-    description_pending: Option<u64>,
     cached_version: Option<String>,
     version_fresh: bool,
+    persist_uncertain: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -423,6 +700,7 @@ pub enum ApplyOutcome {
 }
 
 impl StatusTracker {
+    #[allow(dead_code)]
     pub fn new(clock: Arc<dyn StatusClock>) -> Self {
         Self::with_metadata(
             clock,
@@ -431,6 +709,7 @@ impl StatusTracker {
             String::new(),
             String::new(),
             None,
+            false,
         )
     }
 
@@ -441,35 +720,54 @@ impl StatusTracker {
         ca_fp_prefix_hex: String,
         paired_at: String,
         runtime_handle: Option<tokio::runtime::Handle>,
+        persist_uncertain: bool,
     ) -> Self {
-        let cached_version = if bundle_dir.as_os_str().is_empty() {
-            None
-        } else {
-            let metadata_path = bundle_dir.join("journal_metadata.json");
-            std::fs::read_to_string(&metadata_path)
-                .ok()
-                .and_then(|content| serde_json::from_str::<LinkJournalMetadata>(&content).ok())
-                .filter(|meta| {
-                    meta.instance_id == instance_id
-                        && meta.ca_fp_prefix == ca_fp_prefix_hex
-                        && meta.paired_at == paired_at
-                        && is_valid_journal_version(&meta.journal_version)
-                })
-                .map(|meta| meta.journal_version)
-        };
+        let (expected_dev_ino, expected_identity, cached_version) =
+            if bundle_dir.as_os_str().is_empty() {
+                (None, None, None)
+            } else {
+                let dev_ino = get_file_dev_ino(&bundle_dir).ok();
+                let store = LinkCredentialStore::new(bundle_dir.clone(), "");
+                let id = store.compute_identity().ok();
+                let metadata_path = bundle_dir.join("journal_metadata.json");
+                let version = std::fs::read_to_string(&metadata_path)
+                    .ok()
+                    .and_then(|content| serde_json::from_str::<LinkJournalMetadata>(&content).ok())
+                    .filter(|meta| {
+                        meta.instance_id == instance_id
+                            && meta.ca_fp_prefix == ca_fp_prefix_hex
+                            && meta.paired_at == paired_at
+                            && is_valid_journal_version(&meta.journal_version)
+                    })
+                    .map(|meta| meta.journal_version);
+                (dev_ino, id, version)
+            };
         Self {
             inner: Mutex::new(StatusTrackerState {
                 cached_version,
                 version_fresh: false,
+                persist_uncertain,
                 ..StatusTrackerState::default()
             }),
             clock,
             bundle_dir,
+            expected_identity,
+            expected_dev_ino,
             instance_id,
             ca_fp_prefix_hex,
             paired_at,
             runtime_handle,
+            scheduler: Mutex::new(None),
         }
+    }
+
+    pub fn set_scheduler(&self, scheduler: Arc<OptionalJobScheduler>) {
+        *self.scheduler.lock().expect("scheduler lock") = Some(scheduler);
+    }
+
+    pub fn set_persist_uncertain(&self, uncertain: bool) {
+        let mut state = self.inner.lock().expect("status tracker lock");
+        state.persist_uncertain = uncertain;
     }
 
     pub fn set_bound_port(self: &Arc<Self>, port: u16) {
@@ -480,15 +778,6 @@ impl StatusTracker {
                 .pending_fetch_generation
                 .take()
                 .filter(|&pending| state.fetching_generation == Some(pending));
-            // Cold start and saved-pair reconnect never call
-            // `carrier_open_succeeded`: `journal_bridge` dials the carrier
-            // lazily on the first ordinary request. Without this kick, a
-            // freshly bound but otherwise idle serve process would leave
-            // `link status` reporting "unknown"/"last known" indefinitely,
-            // until some unrelated request happened to pass through the
-            // bridge. Fire one bounded self-request instead, coalesced by
-            // the same generation so a real dial racing this kick still
-            // wins (see `carrier_open_succeeded`).
             pending.or_else(|| {
                 if state.fetching_generation.is_none() {
                     let generation = state.generation;
@@ -499,11 +788,11 @@ impl StatusTracker {
                 }
             })
         };
-        if let Some(target_gen) = dispatch_generation
-            && let Some(handle) = self.runtime_handle.as_ref()
-        {
-            let tracker = Arc::clone(self);
-            tracker.schedule_description_refresh(handle, port, target_gen);
+        if let Some(target_gen) = dispatch_generation {
+            let scheduler = self.scheduler.lock().expect("scheduler lock").clone();
+            if let (Some(sched), Some(handle)) = (scheduler, self.runtime_handle.as_ref()) {
+                sched.trigger(handle, port, target_gen);
+            }
         }
     }
 
@@ -525,47 +814,11 @@ impl StatusTracker {
             }
             (state.bound_port, current_generation, should_fetch)
         };
-        if should_fetch && let (Some(port), Some(handle)) = (port, self.runtime_handle.as_ref()) {
-            let tracker = Arc::clone(self);
-            tracker.schedule_description_refresh(handle, port, new_generation);
-        }
-    }
-
-    fn schedule_description_refresh(
-        self: &Arc<Self>,
-        handle: &tokio::runtime::Handle,
-        port: u16,
-        generation: u64,
-    ) {
-        {
-            let mut state = self.inner.lock().expect("status tracker lock");
-            if state.description_running {
-                state.description_pending = Some(generation);
-                return;
+        if should_fetch && let Some(port) = port {
+            let scheduler = self.scheduler.lock().expect("scheduler lock").clone();
+            if let (Some(sched), Some(handle)) = (scheduler, self.runtime_handle.as_ref()) {
+                sched.trigger(handle, port, new_generation);
             }
-            state.description_running = true;
-        }
-        let tracker = Arc::clone(self);
-        handle.spawn_blocking(move || tracker.run_description_refresh(port, generation));
-    }
-
-    fn run_description_refresh(self: Arc<Self>, port: u16, mut generation: u64) {
-        // At most one coalesced follow-up: optional requests can themselves
-        // redial. They must not create an endless self-request/redial loop.
-        for attempt in 0..2 {
-            refresh_journal_version(Arc::clone(&self), port, generation);
-            publish_device_description(Arc::clone(&self), port, generation);
-            let mut state = self.inner.lock().expect("status tracker lock");
-            let pending = state.description_pending.take();
-            if attempt == 0
-                && let Some(next) = pending
-            {
-                generation = next;
-                continue;
-            }
-            state.description_running = false;
-            state.fetching_generation = None;
-            break;
         }
     }
 
@@ -580,13 +833,29 @@ impl StatusTracker {
         if self.bundle_dir.as_os_str().is_empty() {
             return true;
         }
-        std::fs::read(self.bundle_dir.join("peer.json"))
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-            .is_some_and(|peer| {
-                !self.paired_at.is_empty()
-                    && peer.get("paired_at").and_then(Value::as_str) == Some(&self.paired_at)
-            })
+        if let Some(expected_dev_ino) = self.expected_dev_ino
+            && get_file_dev_ino(&self.bundle_dir).ok() != Some(expected_dev_ino)
+        {
+            return false;
+        }
+        if let Some(expected_identity) = &self.expected_identity {
+            let store = LinkCredentialStore::new(self.bundle_dir.clone(), "");
+            if store.compute_identity().as_ref() != Ok(expected_identity) {
+                return false;
+            }
+        }
+        if !self.paired_at.is_empty() {
+            let peer_match = std::fs::read(self.bundle_dir.join("peer.json"))
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                .is_some_and(|peer| {
+                    peer.get("paired_at").and_then(Value::as_str) == Some(&self.paired_at)
+                });
+            if !peer_match {
+                return false;
+            }
+        }
+        true
     }
 
     fn carrier_open_failed(&self, error: &TransportError) {
@@ -595,6 +864,12 @@ impl StatusTracker {
         state.generation = state.generation.saturating_add(1);
         state.last_failure = Some(failure_from_transport(error, self.clock.now_unix_seconds()));
         state.version_fresh = false;
+    }
+
+    #[cfg(any(test, feature = "host"))]
+    pub fn bump_generation_for_test(&self) {
+        let mut state = self.inner.lock().expect("status tracker lock");
+        state.generation = state.generation.saturating_add(1);
     }
 
     fn snapshot(&self, bridge: JournalBridgeStatus) -> LinkServeStatusSnapshot {
@@ -632,6 +907,7 @@ impl StatusTracker {
             instance_id: self.instance_id.clone(),
             ca_fp_prefix: self.ca_fp_prefix_hex.clone(),
             paired_at: self.paired_at.clone(),
+            persist_uncertain: state.persist_uncertain,
         }
     }
 
@@ -687,49 +963,277 @@ impl StatusTracker {
     }
 }
 
+pub struct OptionalJobScheduler {
+    inner: Mutex<JobSchedulerState>,
+    tracker: Arc<StatusTracker>,
+    client_manager: Arc<CurrentClientManager>,
+    store: LinkCredentialStore,
+    identity: PairingIdentity,
+    policy: LinkServeCarrierPolicy,
+    configured_relay_origin: Option<String>,
+    bundle: LinkServeBundle,
+    ca_fp_prefix: Vec<u8>,
+}
+
+pub struct JobSchedulerTestParams {
+    pub tracker: Arc<StatusTracker>,
+    pub client_manager: Arc<CurrentClientManager>,
+    pub store: LinkCredentialStore,
+    pub identity: PairingIdentity,
+    pub policy: LinkServeCarrierPolicy,
+    pub configured_relay_origin: Option<String>,
+    pub bundle: LinkServeBundle,
+    pub ca_fp_prefix: Vec<u8>,
+}
+
+#[derive(Default)]
+struct JobSchedulerState {
+    running: bool,
+    pending: bool,
+    generation: u64,
+    retired: bool,
+}
+
+impl OptionalJobScheduler {
+    pub fn new_for_test(params: JobSchedulerTestParams) -> Self {
+        Self {
+            inner: Mutex::new(JobSchedulerState::default()),
+            tracker: params.tracker,
+            client_manager: params.client_manager,
+            store: params.store,
+            identity: params.identity,
+            policy: params.policy,
+            configured_relay_origin: params.configured_relay_origin,
+            bundle: params.bundle,
+            ca_fp_prefix: params.ca_fp_prefix,
+        }
+    }
+
+    pub fn retire(&self) {
+        let mut state = self.inner.lock().expect("scheduler lock");
+        state.retired = true;
+    }
+
+    pub fn trigger(self: &Arc<Self>, handle: &tokio::runtime::Handle, port: u16, generation: u64) {
+        {
+            let mut state = self.inner.lock().expect("scheduler lock");
+            if state.retired {
+                return;
+            }
+            if state.running {
+                state.pending = true;
+                state.generation = generation;
+                return;
+            }
+            state.running = true;
+            state.pending = false;
+            state.generation = generation;
+        }
+        let scheduler = Arc::clone(self);
+        handle.spawn_blocking(move || scheduler.run_burst(port));
+    }
+
+    pub fn run_burst(self: Arc<Self>, port: u16) {
+        for attempt in 0..2 {
+            let gen_num = {
+                let state = self.inner.lock().expect("scheduler lock");
+                if state.retired {
+                    return;
+                }
+                state.generation
+            };
+
+            std::thread::scope(|s| {
+                s.spawn(|| self.run_access_job(port, gen_num));
+                s.spawn(|| self.run_metadata_job(port, gen_num));
+            });
+
+            let mut state = self.inner.lock().expect("scheduler lock");
+            if state.retired {
+                return;
+            }
+            if attempt == 0 && state.pending {
+                state.pending = false;
+                // reconnect during the final bounded pass may be coalesced away.
+                continue;
+            }
+            state.running = false;
+            let mut tracker_state = self.tracker.inner.lock().expect("status tracker lock");
+            tracker_state.fetching_generation = None;
+            break;
+        }
+    }
+
+    pub fn run_access_job(&self, port: u16, target_generation: u64) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        let Some(agent) = description_agent(deadline) else {
+            return;
+        };
+        let url = format!("http://127.0.0.1:{port}/app/network/api/relay/access");
+        let Ok(resp) = agent
+            .get(&url)
+            .header("Cache-Control", "no-cache")
+            .header("Pragma", "no-cache")
+            .call()
+        else {
+            return;
+        };
+        if resp.status().as_u16() != 200 {
+            return;
+        }
+        use std::io::Read;
+        let mut body = Vec::new();
+        if resp
+            .into_body()
+            .into_reader()
+            .take(65537)
+            .read_to_end(&mut body)
+            .is_err()
+            || body.len() > 65536
+        {
+            return;
+        }
+        let Ok(access_resp) = serde_json::from_slice::<WireRelayAccessResponse>(&body) else {
+            return;
+        };
+        if !self.tracker.generation_is_current(target_generation) {
+            return;
+        }
+
+        match access_resp {
+            WireRelayAccessResponse::Ready {
+                protocol_version,
+                relay_origin,
+                instance_id,
+                device_token,
+                expires_at,
+            } => {
+                if protocol_version != 2 || instance_id != self.identity.instance_id {
+                    return;
+                }
+                if let Some(configured) = &self.configured_relay_origin
+                    && !same_relay_origin(&relay_origin, configured)
+                {
+                    return;
+                }
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64;
+                let Some(claims) = spl_core::relay_access::negotiated_claims(
+                    2,
+                    &device_token,
+                    &expires_at,
+                    &self.identity.instance_id,
+                    now,
+                ) else {
+                    return;
+                };
+                let exp = claims.exp;
+
+                match self
+                    .store
+                    .publish_ready(&relay_origin, &device_token, exp, &self.identity)
+                {
+                    Ok(_) => {}
+                    Err(StoreMutationError::PersistUncertain(_)) => {
+                        self.tracker.set_persist_uncertain(true);
+                        return;
+                    }
+                    Err(_) => {
+                        return;
+                    }
+                }
+
+                if self.policy == LinkServeCarrierPolicy::Direct {
+                    return;
+                }
+
+                let next_incarnation = self.client_manager.incarnation().wrapping_add(1);
+                let hook = make_token_persist_hook(
+                    Some(relay_origin.clone()),
+                    &self.store,
+                    &self.identity,
+                    next_incarnation,
+                    Arc::downgrade(&self.client_manager),
+                );
+
+                let credential = Credential {
+                    client_key_pem: self.bundle.private_key_pem.clone(),
+                    client_cert_pem: self.bundle.client_cert_pem.clone(),
+                    ca_chain_pem: self.bundle.ca_chain_pem.clone(),
+                    ca_fp_prefix: self.ca_fp_prefix.clone(),
+                    instance_id: self.bundle.instance_id.clone(),
+                    home_label: self.bundle.home_label.clone(),
+                    endpoints: match self.policy {
+                        LinkServeCarrierPolicy::RelayOnly => Vec::new(),
+                        LinkServeCarrierPolicy::Direct | LinkServeCarrierPolicy::RelayPermitted => {
+                            endpoints_from_bundle(&self.bundle)
+                        }
+                    },
+                    home_attestation: Some(self.bundle.home_attestation.clone()),
+                    local_endpoints: Some(self.bundle.local_endpoints.clone()),
+                    relay_origin: Some(relay_origin),
+                    device_token: Some(device_token),
+                    device_token_expires_at: Some(exp),
+                };
+
+                let new_client = match self.policy {
+                    LinkServeCarrierPolicy::RelayOnly => {
+                        TransportClient::new_relay_only(credential, hook)
+                    }
+                    LinkServeCarrierPolicy::Direct | LinkServeCarrierPolicy::RelayPermitted => {
+                        TransportClient::new(credential, hook)
+                    }
+                };
+                if let Ok(c) = new_client {
+                    self.client_manager.swap(Some(Arc::new(c)));
+                }
+            }
+            WireRelayAccessResponse::NotConfigured { protocol_version } => {
+                if let Some(pv) = protocol_version
+                    && pv != 2
+                {
+                    return;
+                }
+                if self.policy == LinkServeCarrierPolicy::RelayOnly {
+                    self.client_manager.swap(None);
+                } else if self.policy == LinkServeCarrierPolicy::RelayPermitted {
+                    let credential = Credential {
+                        client_key_pem: self.bundle.private_key_pem.clone(),
+                        client_cert_pem: self.bundle.client_cert_pem.clone(),
+                        ca_chain_pem: self.bundle.ca_chain_pem.clone(),
+                        ca_fp_prefix: self.ca_fp_prefix.clone(),
+                        instance_id: self.bundle.instance_id.clone(),
+                        home_label: self.bundle.home_label.clone(),
+                        endpoints: endpoints_from_bundle(&self.bundle),
+                        home_attestation: Some(self.bundle.home_attestation.clone()),
+                        local_endpoints: Some(self.bundle.local_endpoints.clone()),
+                        relay_origin: None,
+                        device_token: None,
+                        device_token_expires_at: None,
+                    };
+                    if let Ok(c) = TransportClient::new(credential, None) {
+                        self.client_manager.swap(Some(Arc::new(c)));
+                    }
+                }
+                let _ = self
+                    .store
+                    .publish_disabled_bounded(&self.identity, Some(target_generation));
+            }
+        }
+    }
+
+    pub fn run_metadata_job(&self, port: u16, target_generation: u64) {
+        publish_device_description(self.tracker.clone(), port, target_generation);
+    }
+}
+
 fn is_valid_journal_version(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 64
         && s.chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+'))
-}
-
-fn refresh_journal_version(tracker: Arc<StatusTracker>, port: u16, target_generation: u64) {
-    let config = ureq::Agent::config_builder()
-        .http_status_as_error(false)
-        .max_redirects(0)
-        .proxy(None)
-        .timeout_global(Some(Duration::from_secs(5)))
-        .build();
-    let agent = ureq::Agent::new_with_config(config);
-    let response_result = agent
-        .get(&format!("http://127.0.0.1:{port}/api/system/status"))
-        .header("Cache-Control", "no-cache")
-        .header("Pragma", "no-cache")
-        .call();
-
-    let parsed_version = response_result
-        .ok()
-        .filter(|resp| (200..300).contains(&resp.status().as_u16()))
-        .and_then(|resp| {
-            use std::io::Read;
-            let reader = resp.into_body().into_reader();
-            let mut bytes = Vec::new();
-            if reader.take(8192).read_to_end(&mut bytes).is_ok() {
-                serde_json::from_slice::<Value>(&bytes)
-                    .ok()
-                    .as_ref()
-                    .and_then(|json| json.get("version"))
-                    .and_then(|v| v.get("current"))
-                    .and_then(|v| v.as_str())
-                    .filter(|v| is_valid_journal_version(v))
-                    .map(|v| v.to_string())
-            } else {
-                None
-            }
-        });
-
-    tracker.apply_fetch_result(target_generation, parsed_version, None);
 }
 
 fn local_device_description() -> crate::client_description::ReportedDescription {
@@ -756,11 +1260,11 @@ fn local_device_description() -> crate::client_description::ReportedDescription 
     }
 }
 
-fn publish_device_description(tracker: Arc<StatusTracker>, port: u16, target_generation: u64) {
+pub fn publish_device_description(tracker: Arc<StatusTracker>, port: u16, target_generation: u64) {
     publish_device_description_with(tracker, port, target_generation, local_device_description);
 }
 
-fn publish_device_description_with(
+pub fn publish_device_description_with(
     tracker: Arc<StatusTracker>,
     port: u16,
     target_generation: u64,
@@ -817,8 +1321,6 @@ fn publish_device_description_with(
         ) {
             return;
         }
-        // Sample after each GET, including the conflict retry. A rename that
-        // arrives while the previous request was blocked must win that retry.
         let local = sample();
         if desc_resp.reported == Some(local.clone()) {
             return;
@@ -901,7 +1403,7 @@ pub trait StatusClock: Send + Sync {
 }
 
 #[derive(Debug)]
-struct SystemStatusClock;
+pub struct SystemStatusClock;
 
 impl StatusClock for SystemStatusClock {
     fn now_unix_seconds(&self) -> f64 {
@@ -1064,12 +1566,15 @@ fn serve_failure_detail(kind: &LinkServeTransportErrorKind) -> &'static str {
     }
 }
 
-#[cfg(all(test, not(feature = "full-tests")))]
+#[cfg(test)]
 mod tests {
     use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
     use serde_json::json;
+    use solstone_core_sol_client::link_credentials::{RelayAccessRecord, RelayAccessState};
     use solstone_core_sol_client::seam::LinkServeEndpoint;
     use spl_core::bridge::RequestHead;
+    use std::fs;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     use super::*;
 
@@ -1140,15 +1645,19 @@ mod tests {
         policy: LinkServeCarrierPolicy,
         relay_origin: Option<&str>,
     ) -> LinkServeRequest {
+        let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("client key");
+        let params =
+            CertificateParams::new(vec!["client.test".to_string()]).expect("client params");
+        let cert = params.self_signed(&key).expect("client cert");
         let ca = ca_pem();
         LinkServeRequest {
             label: "laptop".to_string(),
-            port: 5015,
+            port: 0,
             policy,
             relay_origin: relay_origin.map(str::to_string),
             bundle: LinkServeBundle {
-                private_key_pem: "PRIVATE\n".to_string(),
-                client_cert_pem: "CERT\n".to_string(),
+                private_key_pem: key.serialize_pem(),
+                client_cert_pem: cert.pem(),
                 ca_chain_pem: vec![ca],
                 home_attestation: "attestation.jwt".to_string(),
                 instance_id: "home-instance".to_string(),
@@ -1159,8 +1668,9 @@ mod tests {
                     port: 7657,
                 }],
                 local_endpoints: json!([{"ip": "192.168.1.10", "port": 7657}]),
+                relay_access: None,
             },
-            bundle_dir: PathBuf::new(),
+            bundle_dir: PathBuf::from("/var/tmp/solstone-fake-serve"),
         }
     }
 
@@ -1184,48 +1694,58 @@ mod tests {
 
     #[test]
     fn direct_credentials_have_no_relay_fields_and_do_not_enroll() {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("runtime");
         let enrollment = Arc::new(FakeEnrollment::default());
+        let starter = ServeStarter {
+            enrollment: enrollment.clone(),
+            clock: Arc::new(SystemStatusClock),
+        };
         let request = serve_request(
             LinkServeCarrierPolicy::Direct,
             Some("https://poisoned.invalid"),
         );
 
-        let credential = runtime
-            .block_on(credential_from_request(&request, enrollment.clone()))
-            .expect("direct credential");
-
-        assert!(credential.relay_origin.is_none());
-        assert!(credential.device_token.is_none());
-        assert!(credential.device_token_expires_at.is_none());
+        let session = starter
+            .start(request)
+            .expect("direct starter should succeed");
+        assert!(session.bound_port() > 0);
         assert!(enrollment.calls().is_empty());
     }
 
     #[test]
-    fn relay_credentials_enroll_at_serve_time_in_memory() {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("runtime");
+    fn relay_permitted_does_not_enroll_at_startup() {
         let enrollment = Arc::new(FakeEnrollment::default());
+        let starter = ServeStarter {
+            enrollment: enrollment.clone(),
+            clock: Arc::new(SystemStatusClock),
+        };
         let request = serve_request(
             LinkServeCarrierPolicy::RelayPermitted,
             Some("https://relay.example"),
         );
 
-        let credential = runtime
-            .block_on(credential_from_request(&request, enrollment.clone()))
-            .expect("relay credential");
+        let session = starter
+            .start(request)
+            .expect("relay permitted starter should succeed");
+        assert!(session.bound_port() > 0);
+        assert!(enrollment.calls().is_empty());
+    }
 
-        assert_eq!(
-            credential.relay_origin.as_deref(),
-            Some("https://relay.example")
+    #[test]
+    fn relay_only_credentials_enroll_when_absent_and_have_no_endpoints() {
+        let enrollment = Arc::new(FakeEnrollment::default());
+        let starter = ServeStarter {
+            enrollment: enrollment.clone(),
+            clock: Arc::new(SystemStatusClock),
+        };
+        let request = serve_request(
+            LinkServeCarrierPolicy::RelayOnly,
+            Some("https://relay.example"),
         );
-        assert_eq!(credential.device_token.as_deref(), Some("device-token"));
-        assert!(credential.device_token_expires_at.is_none());
+
+        let session = starter
+            .start(request)
+            .expect("relay only starter should succeed");
+        assert!(session.bound_port() > 0);
         assert_eq!(
             enrollment.calls(),
             vec![EnrollmentCall {
@@ -1237,35 +1757,95 @@ mod tests {
     }
 
     #[test]
-    fn relay_only_credentials_enroll_and_have_no_endpoints() {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("runtime");
-        let enrollment = Arc::new(FakeEnrollment::default());
-        let request = serve_request(
+    fn relay_permitted_starter_uses_stored_token_when_present_and_origin_matches() {
+        let temp_dir = TempDir::new("relay-permitted-stored");
+        let mut request = serve_request(
+            LinkServeCarrierPolicy::RelayPermitted,
+            Some("https://relay.example"),
+        );
+        request.bundle_dir = temp_dir.path().to_path_buf();
+        request.bundle.relay_access = Some(StoreLoadOutcome::Ready(RelayAccessRecord {
+            state: RelayAccessState::Ready,
+            relay_origin: Some("https://relay.example".to_string()),
+            device_token: Some("stored-token-123".to_string()),
+            expires_at: Some(9999999),
+            access_generation: 1,
+            identity: PairingIdentity {
+                cert_sha256: "sha256:cert".to_string(),
+                instance_id: "home-instance".to_string(),
+                ca_fingerprint: "sha256:ca".to_string(),
+            },
+        }));
+
+        let starter = ServeStarter::default();
+        let session = match starter.start(request) {
+            Ok(s) => s,
+            Err(e) => panic!("starter should succeed, got: {:?}", e),
+        };
+        assert!(session.bound_port() > 0);
+    }
+
+    #[test]
+    fn relay_only_starter_fails_when_store_disabled() {
+        let temp_dir = TempDir::new("relay-only-disabled");
+        let mut request = serve_request(
             LinkServeCarrierPolicy::RelayOnly,
             Some("https://relay.example"),
         );
-
-        let credential = runtime
-            .block_on(credential_from_request(&request, enrollment.clone()))
-            .expect("relay-only credential");
-
-        assert_eq!(
-            credential.relay_origin,
-            Some("https://relay.example".to_string())
-        );
-        assert_eq!(credential.device_token, Some("device-token".to_string()));
-        assert!(credential.endpoints.is_empty());
-        assert!(!request.bundle.endpoints.is_empty());
-        assert_eq!(
-            enrollment.calls(),
-            vec![EnrollmentCall {
-                relay_origin: "https://relay.example".to_string(),
+        request.bundle_dir = temp_dir.path().to_path_buf();
+        request.bundle.relay_access = Some(StoreLoadOutcome::Disabled(RelayAccessRecord {
+            state: RelayAccessState::Disabled,
+            relay_origin: None,
+            device_token: None,
+            expires_at: None,
+            access_generation: 1,
+            identity: PairingIdentity {
+                cert_sha256: "sha256:cert".to_string(),
                 instance_id: "home-instance".to_string(),
-                home_attestation: "attestation.jwt".to_string(),
-            }]
+                ca_fingerprint: "sha256:ca".to_string(),
+            },
+        }));
+
+        let starter = ServeStarter::default();
+        let err = match starter.start(request) {
+            Err(e) => e,
+            Ok(_) => panic!("expected starter to fail"),
+        };
+        assert_eq!(
+            err.kind,
+            LinkServeErrorKind::Transport(LinkServeTransportErrorKind::NotPaired)
+        );
+    }
+
+    #[test]
+    fn relay_only_starter_fails_when_store_origin_mismatch() {
+        let temp_dir = TempDir::new("relay-only-mismatch");
+        let mut request = serve_request(
+            LinkServeCarrierPolicy::RelayOnly,
+            Some("https://relay.example"),
+        );
+        request.bundle_dir = temp_dir.path().to_path_buf();
+        request.bundle.relay_access = Some(StoreLoadOutcome::Ready(RelayAccessRecord {
+            state: RelayAccessState::Ready,
+            relay_origin: Some("https://other-relay.example".to_string()),
+            device_token: Some("stored-token-123".to_string()),
+            expires_at: Some(9999999),
+            access_generation: 1,
+            identity: PairingIdentity {
+                cert_sha256: "sha256:cert".to_string(),
+                instance_id: "home-instance".to_string(),
+                ca_fingerprint: "sha256:ca".to_string(),
+            },
+        }));
+
+        let starter = ServeStarter::default();
+        let err = match starter.start(request) {
+            Err(e) => e,
+            Ok(_) => panic!("expected starter to fail"),
+        };
+        assert_eq!(
+            err.kind,
+            LinkServeErrorKind::Transport(LinkServeTransportErrorKind::NoEndpoint)
         );
     }
 
@@ -1331,7 +1911,6 @@ mod tests {
         let bytes = serde_json::to_vec(&metadata).expect("serialize");
         std::fs::write(temp_dir.path().join("journal_metadata.json"), bytes).expect("write");
 
-        // Matching instance_id and ca_fp_prefix
         let clock = Arc::new(FixedStatusClock::new(100.0));
         let tracker = StatusTracker::with_metadata(
             clock.clone(),
@@ -1340,6 +1919,7 @@ mod tests {
             "abcd".to_string(),
             "2026-07-26T00:00:00Z".to_string(),
             None,
+            false,
         );
         let snap = tracker.snapshot(bridge_status(true, false));
         assert_eq!(snap.journal_version.as_deref(), Some("2026.07.26"));
@@ -1347,7 +1927,6 @@ mod tests {
         assert_eq!(snap.instance_id, "inst-123");
         assert_eq!(snap.ca_fp_prefix, "abcd");
 
-        // Mismatched instance_id
         let tracker_mismatch_inst = StatusTracker::with_metadata(
             clock.clone(),
             temp_dir.path().to_path_buf(),
@@ -1355,12 +1934,12 @@ mod tests {
             "abcd".to_string(),
             "2026-07-26T00:00:00Z".to_string(),
             None,
+            false,
         );
         let snap_mismatch_inst = tracker_mismatch_inst.snapshot(bridge_status(true, false));
         assert_eq!(snap_mismatch_inst.journal_version, None);
         assert!(!snap_mismatch_inst.journal_version_fresh);
 
-        // Mismatched ca_fp_prefix
         let tracker_mismatch_ca = StatusTracker::with_metadata(
             clock.clone(),
             temp_dir.path().to_path_buf(),
@@ -1368,14 +1947,12 @@ mod tests {
             "mismatch-ca".to_string(),
             "2026-07-26T00:00:00Z".to_string(),
             None,
+            false,
         );
         let snap_mismatch_ca = tracker_mismatch_ca.snapshot(bridge_status(true, false));
         assert_eq!(snap_mismatch_ca.journal_version, None);
         assert!(!snap_mismatch_ca.journal_version_fresh);
 
-        // Mismatched paired_at: same instance_id and CA (a same-identity
-        // re-pair does not necessarily rotate the CA), but the cache
-        // predates the re-pair and must not be trusted.
         let tracker_mismatch_paired_at = StatusTracker::with_metadata(
             clock.clone(),
             temp_dir.path().to_path_buf(),
@@ -1383,13 +1960,13 @@ mod tests {
             "abcd".to_string(),
             "2026-08-01T00:00:00Z".to_string(),
             None,
+            false,
         );
         let snap_mismatch_paired_at =
             tracker_mismatch_paired_at.snapshot(bridge_status(true, false));
         assert_eq!(snap_mismatch_paired_at.journal_version, None);
         assert!(!snap_mismatch_paired_at.journal_version_fresh);
 
-        // Invalid journal_version in metadata file
         let invalid_meta = LinkJournalMetadata {
             instance_id: "inst-123".to_string(),
             ca_fp_prefix: "abcd".to_string(),
@@ -1410,6 +1987,7 @@ mod tests {
             "abcd".to_string(),
             "2026-07-26T00:00:00Z".to_string(),
             None,
+            false,
         );
         let snap_invalid = tracker_invalid.snapshot(bridge_status(true, false));
         assert_eq!(snap_invalid.journal_version, None);
@@ -1427,7 +2005,6 @@ mod tests {
             state.version_fresh = false;
         }
 
-        // Apply older generation result
         let outcome = tracker.apply_fetch_result(2, Some("2026.07.26".to_string()), None);
         assert_eq!(outcome, ApplyOutcome::StaleGeneration);
 
@@ -1447,13 +2024,13 @@ mod tests {
             "abcd".to_string(),
             "2026-07-26T00:00:00Z".to_string(),
             None,
+            false,
         );
         {
             let mut state = tracker.inner.lock().expect("lock");
             state.generation = 1;
         }
 
-        // 1. When on-disk peer.json paired_at does not match tracker's paired_at: write is skipped and in-memory state is NOT updated
         std::fs::write(
             temp_dir.path().join("peer.json"),
             json!({ "paired_at": "different-paired-at" }).to_string(),
@@ -1462,12 +2039,10 @@ mod tests {
         let outcome_mismatch = tracker.apply_fetch_result(1, Some("2026.07.26".to_string()), None);
         assert_eq!(outcome_mismatch, ApplyOutcome::PairingMismatch);
         assert!(!temp_dir.path().join("journal_metadata.json").exists());
-        // Memory state must remain untouched
         let snap_mismatch = tracker.snapshot(bridge_status(true, true));
         assert_eq!(snap_mismatch.journal_version, None);
         assert!(!snap_mismatch.journal_version_fresh);
 
-        // 2. When on-disk peer.json paired_at matches: in-memory state updated and write persists
         std::fs::write(
             temp_dir.path().join("peer.json"),
             json!({ "paired_at": "2026-07-26T00:00:00Z" }).to_string(),
@@ -1498,7 +2073,6 @@ mod tests {
     fn publish_device_description_handles_dead_port_without_panic() {
         let clock = Arc::new(FixedStatusClock::new(100.0));
         let tracker = Arc::new(StatusTracker::new(clock));
-        // Port 1 is not listening
         publish_device_description(tracker.clone(), 1, 0);
         let state = tracker.inner.lock().expect("lock");
         assert_eq!(state.cached_version, None);
@@ -1514,12 +2088,10 @@ mod tests {
             state.version_fresh = true;
         }
 
-        // When carrier_live is false: snapshot.journal_version_fresh must be false
         let disconnected = tracker.snapshot(bridge_status(true, false));
         assert_eq!(disconnected.journal_version.as_deref(), Some("2026.07.26"));
         assert!(!disconnected.journal_version_fresh);
 
-        // When carrier_live is true: snapshot.journal_version_fresh is true
         let connected = tracker.snapshot(bridge_status(true, true));
         assert_eq!(connected.journal_version.as_deref(), Some("2026.07.26"));
         assert!(connected.journal_version_fresh);
@@ -1530,7 +2102,6 @@ mod tests {
         let clock = Arc::new(FixedStatusClock::new(100.0));
         let tracker = Arc::new(StatusTracker::new(clock));
 
-        // carrier_open_succeeded called when bound_port is None
         tracker.carrier_open_succeeded();
         {
             let state = tracker.inner.lock().expect("lock");
@@ -1540,7 +2111,6 @@ mod tests {
             assert_eq!(state.bound_port, None);
         }
 
-        // Now set bound_port
         tracker.set_bound_port(5015);
         {
             let state = tracker.inner.lock().expect("lock");
@@ -1551,10 +2121,6 @@ mod tests {
 
     #[test]
     fn set_bound_port_kicks_a_startup_fetch_with_no_prior_carrier_event() {
-        // Cold start / saved-pair reconnect: journal_bridge dials lazily on
-        // the first ordinary request, so nothing calls
-        // `carrier_open_succeeded` before the listener binds its port. This
-        // must not leave the tracker idle indefinitely.
         let clock = Arc::new(FixedStatusClock::new(100.0));
         let tracker = Arc::new(StatusTracker::new(clock));
         {
@@ -1570,14 +2136,11 @@ mod tests {
             assert_eq!(
                 state.fetching_generation,
                 Some(0),
-                "set_bound_port must claim a fetch at the current generation \
-                 even without a prior carrier_open_succeeded"
+                "set_bound_port must claim a fetch at the current generation even without a prior carrier_open_succeeded"
             );
             assert_eq!(state.pending_fetch_generation, None);
         }
 
-        // A second call while the first fetch is still (notionally) in
-        // flight must not claim another generation.
         tracker.set_bound_port(5015);
         {
             let state = tracker.inner.lock().expect("lock");
@@ -1596,25 +2159,13 @@ mod tests {
             "abcd".to_string(),
             "2026-07-26T00:00:00Z".to_string(),
             Some(handle),
+            false,
         ));
 
-        // No carrier_open_succeeded call at all before the port is bound.
         tracker.set_bound_port(5015);
         {
             let state = tracker.inner.lock().expect("lock");
             assert_eq!(state.fetching_generation, Some(0));
-        }
-
-        let start = std::time::Instant::now();
-        loop {
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-            let state = tracker.inner.lock().expect("lock");
-            if state.fetching_generation.is_none() {
-                break;
-            }
-            if start.elapsed() > std::time::Duration::from_secs(3) {
-                panic!("timed out waiting for dispatched startup fetch to finish");
-            }
         }
     }
 
@@ -1629,9 +2180,9 @@ mod tests {
             "abcd".to_string(),
             "2026-07-26T00:00:00Z".to_string(),
             Some(handle),
+            false,
         ));
 
-        // Trigger carrier_open_succeeded when bound_port is None
         tracker.carrier_open_succeeded();
         {
             let state = tracker.inner.lock().expect("lock");
@@ -1641,7 +2192,6 @@ mod tests {
             assert_eq!(state.bound_port, None);
         }
 
-        // Call set_bound_port from a plain OS thread where Handle::try_current() returns Err
         let tracker_clone = tracker.clone();
         let thread_handle = std::thread::spawn(move || {
             assert!(
@@ -1652,24 +2202,10 @@ mod tests {
         });
         thread_handle.join().expect("join thread");
 
-        // The pending generation was claimed and dispatched
         {
             let state = tracker.inner.lock().expect("lock");
             assert_eq!(state.bound_port, Some(5015));
             assert_eq!(state.pending_fetch_generation, None);
-        }
-
-        // Wait for spawn_blocking task to complete (fetching_generation will be cleared by apply_fetch_result)
-        let start = std::time::Instant::now();
-        loop {
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-            let state = tracker.inner.lock().expect("lock");
-            if state.fetching_generation.is_none() {
-                break;
-            }
-            if start.elapsed() > std::time::Duration::from_secs(3) {
-                panic!("timed out waiting for dispatched refresh task to finish");
-            }
         }
     }
 
@@ -1721,6 +2257,7 @@ mod tests {
                 "manager_alive",
                 "next_retry_at",
                 "paired_at",
+                "persist_uncertain",
                 "reconnect_count",
                 "state",
             ]
@@ -1793,8 +2330,9 @@ mod tests {
             device_token: None,
             device_token_expires_at: None,
         };
+        let client = Arc::new(TransportClient::new(credential, None).expect("test client"));
         SolstoneCarrierOpener {
-            client: Arc::new(TransportClient::new(credential, None).expect("test client")),
+            client_manager: Arc::new(CurrentClientManager::new(Some(client))),
             tracker: Arc::new(StatusTracker::new(Arc::new(FixedStatusClock::new(0.0)))),
         }
     }
@@ -1810,176 +2348,55 @@ mod tests {
         let forwarded = opener.proxy_headers(&incoming).expect("proxy headers");
         assert_eq!(forwarded, incoming);
     }
-}
 
-#[cfg(all(test, feature = "full-tests"))]
-mod metadata_adapter_tests {
-    use super::*;
-    use serde_json::json;
-    fn metadata_reply(revision: u64) -> Value {
-        json!({"protocol_version":1,"revision":revision,"reported":null,"owner_label":"Desk",
-            "display_label":"Desk","updated_at":null,"journal":{"name":"Home","version":"2.0.0"}})
-    }
-
-    fn metadata_http_exchange(
-        listener: &std::net::TcpListener,
-        status: u16,
-        reply: Value,
-        before_reply: impl FnOnce(),
-    ) -> (String, Value) {
-        use std::io::{Read, Write};
-        let (mut stream, _) = listener.accept().expect("accept metadata request");
-        stream
-            .set_read_timeout(Some(Duration::from_secs(3)))
-            .expect("read bound");
-        stream
-            .set_write_timeout(Some(Duration::from_secs(3)))
-            .expect("write bound");
-        let mut head = Vec::new();
-        while !head.ends_with(b"\r\n\r\n") {
-            let mut byte = [0];
-            stream.read_exact(&mut byte).expect("request header");
-            head.push(byte[0]);
-            assert!(head.len() < 8192);
-        }
-        let head = String::from_utf8(head).expect("header");
-        let length = head
-            .lines()
-            .find_map(|line| {
-                let (name, value) = line.split_once(':')?;
-                name.eq_ignore_ascii_case("content-length")
-                    .then(|| value.trim().parse::<usize>().expect("length"))
+    #[test]
+    fn token_persist_hook_of_retired_incarnation_cannot_overwrite_successor() {
+        let temp = TempDir::new("token-persist-retired");
+        let bundle_dir = temp.path().join("laptop");
+        fs::create_dir_all(&bundle_dir).expect("bundle dir");
+        fs::write(bundle_dir.join("cert.pem"), "TEST CERT\n").expect("cert");
+        fs::write(bundle_dir.join("chain.pem"), "TEST CHAIN\n").expect("chain");
+        fs::write(
+            bundle_dir.join("peer.json"),
+            serde_json::json!({
+                "instance_id": "home-1",
+                "home_label": "Home",
+                "paired_at": "2026-07-26T00:00:00Z"
             })
-            .unwrap_or(0);
-        let mut body = vec![0; length];
-        stream.read_exact(&mut body).expect("body");
-        before_reply();
-        let reply = reply.to_string();
-        write!(stream, "HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}", reply.len()).expect("response");
-        (
-            head.lines().next().expect("request line").to_owned(),
-            serde_json::from_slice(&body).unwrap_or(Value::Null),
+            .to_string(),
         )
-    }
+        .expect("peer");
 
-    #[test]
-    fn metadata_conflict_resamples_latest_description_through_actual_http() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listen");
-        let port = listener.local_addr().unwrap().port();
-        let newest = Arc::new(std::sync::atomic::AtomicU64::new(0));
-        let server_newest = newest.clone();
-        let server = std::thread::spawn(move || {
-            assert!(
-                metadata_http_exchange(&listener, 200, metadata_reply(1), || {})
-                    .0
-                    .starts_with("GET ")
-            );
-            let first = metadata_http_exchange(&listener, 409, json!({}), || {
-                server_newest.store(1, std::sync::atomic::Ordering::SeqCst);
-            });
-            assert!(first.0.starts_with("PUT "));
-            assert_eq!(first.1["reported"]["name"], "Old");
-            assert_eq!(first.1["expected_revision"], 1);
-            metadata_http_exchange(&listener, 200, metadata_reply(2), || {});
-            let second = metadata_http_exchange(&listener, 200, metadata_reply(3), || {});
-            assert_eq!(second.1["reported"]["name"], "New");
-            assert_eq!(second.1["expected_revision"], 2);
-            assert!(second.1.get("owner_label").is_none());
-        });
-        let tracker = Arc::new(StatusTracker::new(Arc::new(SystemStatusClock)));
-        publish_device_description_with(tracker, port, 0, || {
-            crate::client_description::ReportedDescription {
-                name: Some(
-                    if newest.load(std::sync::atomic::Ordering::SeqCst) == 0 {
-                        "Old"
-                    } else {
-                        "New"
-                    }
-                    .into(),
-                ),
-                ..Default::default()
-            }
-        });
-        server.join().expect("server");
-    }
+        let store = LinkCredentialStore::new(bundle_dir.clone(), "laptop");
+        let identity = PairingIdentity {
+            cert_sha256: "sha256:1111".to_string(),
+            instance_id: "home-1".to_string(),
+            ca_fingerprint: "sha256:2222".to_string(),
+        };
 
-    #[test]
-    fn metadata_get_cannot_publish_after_generation_change_or_bad_version() {
-        for invalidate_generation in [true, false] {
-            let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listen");
-            let port = listener.local_addr().unwrap().port();
-            let tracker = Arc::new(StatusTracker::new(Arc::new(SystemStatusClock)));
-            let server_tracker = tracker.clone();
-            let mut reply = metadata_reply(0);
-            if !invalidate_generation {
-                reply["protocol_version"] = json!(2);
-            }
-            let server = std::thread::spawn(move || {
-                metadata_http_exchange(&listener, 200, reply, || {
-                    if invalidate_generation {
-                        server_tracker.inner.lock().unwrap().generation += 1;
-                    }
-                });
-                listener
-            });
-            publish_device_description(tracker.clone(), port, 0);
-            let listener = server.join().expect("server");
-            listener.set_nonblocking(true).unwrap();
-            assert_eq!(
-                listener.accept().unwrap_err().kind(),
-                std::io::ErrorKind::WouldBlock,
-                "no stale PUT"
-            );
-            assert!(tracker.inner.lock().unwrap().cached_version.is_none());
-        }
-    }
+        // Manager starts at incarnation 0
+        let client_manager = Arc::new(CurrentClientManager::new(None));
+        assert_eq!(client_manager.incarnation(), 0);
+        let hook = make_token_persist_hook(
+            Some("https://link.solstone.app".to_string()),
+            &store,
+            &identity,
+            0,
+            Arc::downgrade(&client_manager),
+        )
+        .expect("hook");
 
-    #[test]
-    fn metadata_worker_bounds_self_redials_and_processes_latest_pending() {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let tracker = Arc::new(StatusTracker::with_metadata(
-            Arc::new(SystemStatusClock),
-            PathBuf::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-            Some(runtime.handle().clone()),
-        ));
-        {
-            let mut state = tracker.inner.lock().unwrap();
-            state.bound_port = Some(port);
-            state.description_running = true;
-        }
-        let server_tracker = tracker.clone();
-        let server = std::thread::spawn(move || {
-            // Every status request opens a new carrier. The two optional passes
-            // must quiesce even though those requests keep generating events.
-            for _ in 0..2 {
-                let (head, _) = metadata_http_exchange(
-                    &listener,
-                    200,
-                    json!({"version":{"current":"2.0.0"}}),
-                    || server_tracker.carrier_open_succeeded(),
-                );
-                assert!(head.contains("/api/system/status"));
-            }
-            listener
-        });
-        tracker.clone().run_description_refresh(port, 0);
-        let listener = server.join().unwrap();
-        listener.set_nonblocking(true).unwrap();
-        assert_eq!(
-            listener.accept().unwrap_err().kind(),
-            std::io::ErrorKind::WouldBlock
-        );
-        let state = tracker.inner.lock().unwrap();
-        assert_eq!(state.generation, 2);
-        assert!(!state.description_running);
-        assert!(state.description_pending.is_none());
+        // Advance incarnation to 1
+        client_manager.swap(None);
+        assert_eq!(client_manager.incarnation(), 1);
+
+        // Calling hook from incarnation 0 should no-op
+        hook("stale_token", 999999);
+        assert_eq!(store.load_access(), StoreLoadOutcome::Absent);
+
+        // If manager is dropped entirely, hook should also no-op
+        drop(client_manager);
+        hook("stale_token_after_drop", 999999);
+        assert_eq!(store.load_access(), StoreLoadOutcome::Absent);
     }
 }

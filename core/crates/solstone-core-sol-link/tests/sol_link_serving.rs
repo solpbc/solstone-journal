@@ -12,6 +12,9 @@ use rustls::ServerConfig;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use serde_json::json;
 use solstone_core_ingest_contract::CONNECTION_BODY_LIMIT;
+use solstone_core_sol_client::link_credentials::{
+    LinkCredentialStore, PairingIdentity, StoreLoadOutcome, pem_cert_der,
+};
 use solstone_core_sol_client::resident::ShutdownSignal;
 use solstone_core_sol_client::seam::{
     LinkServeBundle, LinkServeCarrierPolicy, LinkServeEndpoint, LinkServeErrorKind,
@@ -19,7 +22,9 @@ use solstone_core_sol_client::seam::{
 };
 use solstone_core_sol_link::SplLinkServeRunner;
 use solstone_core_sol_link::serve_test_support::{
-    STATUS_PATH, StatusClock, StatusTracker, bridge_names, bridge_policy_for_port,
+    CurrentClientManager, JobSchedulerTestParams, OptionalJobScheduler, ReportedDescription,
+    STATUS_PATH, StatusClock, StatusTracker, SystemStatusClock, bridge_names,
+    bridge_policy_for_port, publish_device_description, publish_device_description_with,
 };
 use spl_core::bridge::{RequestHead, parse_request_head};
 use spl_core::frame::{FLAG_CLOSE, FLAG_DATA, FLAG_WINDOW, Frame, FrameDecoder, RECOMMENDED_CHUNK};
@@ -545,6 +550,16 @@ fn request_is_complete(raw: &[u8]) -> bool {
         .is_none_or(|length| raw.len() >= header_end + 4 + length)
 }
 
+fn mock_device_token(instance_id: &str) -> String {
+    use base64::Engine as _;
+    let header =
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(r#"{"alg":"none","typ":"JWT"}"#);
+    let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(format!(
+        r#"{{"sub":"device:laptop","device_fp":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","instance_id":"{instance_id}","aud":"spl-relay","scope":"session.dial","iss":"mock-relay","jti":"mock-id","iat":1700000000,"exp":2500000000}}"#
+    ));
+    format!("{header}.{payload}.sig")
+}
+
 fn spawn_mock_relay(enroll_status: Option<u16>, dial_status: u16) -> (String, Arc<AtomicUsize>) {
     use std::io::{Read as _, Write as _};
 
@@ -583,7 +598,8 @@ fn spawn_mock_relay(enroll_status: Option<u16>, dial_status: u16) -> (String, Ar
                         body.len()
                     )
                 } else {
-                    let body = r#"{"device_token":"mock-relay-token"}"#;
+                    let token = mock_device_token("home-instance");
+                    let body = format!(r#"{{"device_token":"{token}"}}"#);
                     format!(
                         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                         body.len()
@@ -627,6 +643,15 @@ fn resident_serve_request(
     relay_origin: Option<&str>,
     endpoint_port: u16,
 ) -> LinkServeRequest {
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let count = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let bundle_dir = PathBuf::from("/var/tmp").join(format!(
+        "solstone-resident-serve-{}-{}-{}",
+        std::process::id(),
+        port,
+        count
+    ));
+    let _ = std::fs::create_dir_all(&bundle_dir);
     let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("client key");
     let params = CertificateParams::new(vec!["client.test".to_string()]).expect("client params");
     let cert = params.self_signed(&key).expect("client cert");
@@ -648,8 +673,9 @@ fn resident_serve_request(
                 port: endpoint_port,
             }],
             local_endpoints: json!([{"ip": "127.0.0.1", "port": 7657}]),
+            relay_access: None,
         },
-        bundle_dir: PathBuf::new(),
+        bundle_dir,
     }
 }
 
@@ -1204,4 +1230,741 @@ fn get_ingest_segments_success_and_rejection_round_trip() {
         .await;
         assert_get_round_trip("/app/devices/ingest/segments/20260815", 403, denied).await;
     });
+}
+
+fn metadata_reply(revision: u64) -> serde_json::Value {
+    json!({"protocol_version":1,"revision":revision,"reported":null,"owner_label":"Desk",
+        "display_label":"Desk","updated_at":null,"journal":{"name":"Home","version":"2.0.0"}})
+}
+
+fn metadata_http_exchange(
+    listener: &std::net::TcpListener,
+    status: u16,
+    reply: serde_json::Value,
+    before_reply: impl FnOnce(),
+) -> (String, serde_json::Value) {
+    use std::io::{Read, Write};
+    let (mut stream, _) = listener.accept().expect("accept metadata request");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .expect("read bound");
+    stream
+        .set_write_timeout(Some(Duration::from_secs(3)))
+        .expect("write bound");
+    let mut head = Vec::new();
+    while !head.ends_with(b"\r\n\r\n") {
+        let mut byte = [0];
+        stream.read_exact(&mut byte).expect("request header");
+        head.push(byte[0]);
+        assert!(head.len() < 8192);
+    }
+    let head = String::from_utf8(head).expect("header");
+    let length = head
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().expect("length"))
+        })
+        .unwrap_or(0);
+    let mut body = vec![0; length];
+    stream.read_exact(&mut body).expect("body");
+    before_reply();
+    let reply = reply.to_string();
+    write!(stream, "HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}", reply.len()).expect("response");
+    (
+        head.lines().next().expect("request line").to_owned(),
+        serde_json::from_slice(&body).unwrap_or(serde_json::Value::Null),
+    )
+}
+
+#[test]
+fn metadata_conflict_resamples_latest_description_through_actual_http() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listen");
+    let port = listener.local_addr().unwrap().port();
+    let newest = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let server_newest = newest.clone();
+    let server = std::thread::spawn(move || {
+        assert!(
+            metadata_http_exchange(&listener, 200, metadata_reply(1), || {})
+                .0
+                .starts_with("GET ")
+        );
+        let first = metadata_http_exchange(&listener, 409, json!({}), || {
+            server_newest.store(1, std::sync::atomic::Ordering::SeqCst);
+        });
+        assert!(first.0.starts_with("PUT "));
+        assert_eq!(first.1["reported"]["name"], "Old");
+        assert_eq!(first.1["expected_revision"], 1);
+        metadata_http_exchange(&listener, 200, metadata_reply(2), || {});
+        let second = metadata_http_exchange(&listener, 200, metadata_reply(3), || {});
+        assert_eq!(second.1["reported"]["name"], "New");
+        assert_eq!(second.1["expected_revision"], 2);
+        assert!(second.1.get("owner_label").is_none());
+    });
+    let tracker = Arc::new(StatusTracker::new(Arc::new(SystemStatusClock)));
+    publish_device_description_with(tracker, port, 0, || ReportedDescription {
+        name: Some(
+            if newest.load(std::sync::atomic::Ordering::SeqCst) == 0 {
+                "Old"
+            } else {
+                "New"
+            }
+            .into(),
+        ),
+        ..Default::default()
+    });
+    server.join().expect("server");
+}
+
+#[test]
+fn metadata_get_cannot_publish_after_generation_change_or_bad_version() {
+    for invalidate_generation in [true, false] {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listen");
+        let port = listener.local_addr().unwrap().port();
+        let tracker = Arc::new(StatusTracker::new(Arc::new(SystemStatusClock)));
+        let server_tracker = tracker.clone();
+        let mut reply = metadata_reply(0);
+        if !invalidate_generation {
+            reply["protocol_version"] = json!(2);
+        }
+        let server = std::thread::spawn(move || {
+            metadata_http_exchange(&listener, 200, reply, || {
+                if invalidate_generation {
+                    server_tracker.bump_generation_for_test();
+                }
+            });
+            listener
+        });
+        publish_device_description(tracker.clone(), port, 0);
+        let listener = server.join().expect("server");
+        listener.set_nonblocking(true).unwrap();
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock,
+            "no stale PUT"
+        );
+    }
+}
+
+fn test_bundle_and_store(
+    label: &str,
+) -> (
+    PathBuf,
+    LinkCredentialStore,
+    PairingIdentity,
+    LinkServeBundle,
+    Vec<u8>,
+) {
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let count = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let path = PathBuf::from("/var/tmp").join(format!(
+        "solstone-link-serving-{}-{}-{}",
+        label,
+        std::process::id(),
+        count
+    ));
+    let _ = std::fs::remove_dir_all(&path);
+    std::fs::create_dir_all(&path).expect("create bundle dir");
+
+    let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("client key");
+    let params = CertificateParams::new(vec!["laptop.test".to_string()]).expect("client params");
+    let cert = params.self_signed(&key).expect("client cert");
+    let ca_cert_pem = ca_pem();
+
+    std::fs::write(path.join("cert.pem"), cert.pem()).expect("cert");
+    std::fs::write(path.join("chain.pem"), &ca_cert_pem).expect("chain");
+    std::fs::write(
+        path.join("peer.json"),
+        serde_json::json!({
+            "instance_id": "test-home-instance",
+            "home_label": "Home",
+            "paired_at": "2026-07-26T00:00:00Z"
+        })
+        .to_string(),
+    )
+    .expect("peer");
+
+    let store = LinkCredentialStore::new(path.clone(), label);
+    let der = pem_cert_der(&ca_cert_pem).unwrap();
+    let ca_fp = der.clone();
+    let ca_fingerprint = format!("sha256:{}", spl_core::ca::sha256_hex(&der));
+    let cert_sha256 = format!("sha256:{}", spl_core::ca::sha256_hex(cert.pem().as_bytes()));
+    let identity = PairingIdentity {
+        cert_sha256,
+        instance_id: "test-home-instance".to_string(),
+        ca_fingerprint,
+    };
+
+    let bundle = LinkServeBundle {
+        private_key_pem: key.serialize_pem(),
+        client_cert_pem: cert.pem(),
+        ca_chain_pem: vec![ca_cert_pem],
+        home_attestation: "test_jwt".to_string(),
+        instance_id: "test-home-instance".to_string(),
+        home_label: "Home".to_string(),
+        paired_at: "2026-07-26T00:00:00Z".to_string(),
+        endpoints: Vec::new(),
+        local_endpoints: serde_json::json!([]),
+        relay_access: None,
+    };
+
+    (path, store, identity, bundle, ca_fp)
+}
+
+fn access_http_exchange(
+    listener: &std::net::TcpListener,
+    status: u16,
+    headers: &[(&str, &str)],
+    body: &[u8],
+) -> String {
+    use std::io::{Read, Write};
+    let (mut stream, _) = listener.accept().expect("accept access request");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .expect("read bound");
+    stream
+        .set_write_timeout(Some(Duration::from_secs(3)))
+        .expect("write bound");
+    let mut head = Vec::new();
+    while !head.ends_with(b"\r\n\r\n") {
+        let mut byte = [0];
+        stream.read_exact(&mut byte).expect("request header");
+        head.push(byte[0]);
+        assert!(head.len() < 8192);
+    }
+    let head = String::from_utf8(head).expect("header");
+    let mut extra = String::new();
+    for (k, v) in headers {
+        extra.push_str(&format!("{k}: {v}\r\n"));
+    }
+    write!(
+        stream,
+        "HTTP/1.1 {status} Status\r\n{extra}Content-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    )
+    .expect("write headers");
+    stream.write_all(body).expect("write body");
+    head.lines().next().expect("request line").to_owned()
+}
+
+fn test_scheduler(
+    tracker: Arc<StatusTracker>,
+    client_manager: Arc<CurrentClientManager>,
+    store: LinkCredentialStore,
+    identity: PairingIdentity,
+    policy: LinkServeCarrierPolicy,
+    configured_relay_origin: Option<String>,
+    bundle: LinkServeBundle,
+    ca_fp_prefix: Vec<u8>,
+) -> Arc<OptionalJobScheduler> {
+    Arc::new(OptionalJobScheduler::new_for_test(JobSchedulerTestParams {
+        tracker,
+        client_manager,
+        store,
+        identity,
+        policy,
+        configured_relay_origin,
+        bundle,
+        ca_fp_prefix,
+    }))
+}
+
+#[test]
+fn access_redirect_is_refused_preserving_current_access() {
+    let (_bundle_dir, store, identity, bundle, ca_fp) = test_bundle_and_store("laptop-redirect");
+    store
+        .publish_ready(
+            "https://old.relay.app",
+            "initial_token",
+            2000000000,
+            &identity,
+        )
+        .unwrap();
+    let initial_outcome = store.load_access();
+    assert!(matches!(initial_outcome, StoreLoadOutcome::Ready(_)));
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listen");
+    let port = listener.local_addr().unwrap().port();
+    let tracker = Arc::new(StatusTracker::new(Arc::new(SystemStatusClock)));
+    let client_mgr = Arc::new(CurrentClientManager::new(None));
+    let scheduler = test_scheduler(
+        tracker,
+        client_mgr,
+        store.clone(),
+        identity,
+        LinkServeCarrierPolicy::RelayPermitted,
+        None,
+        bundle,
+        ca_fp,
+    );
+
+    let server = std::thread::spawn(move || {
+        access_http_exchange(
+            &listener,
+            302,
+            &[("Location", "http://127.0.0.1:9999/other")],
+            b"",
+        );
+    });
+
+    scheduler.run_access_job(port, 0);
+    server.join().expect("server");
+
+    assert_eq!(store.load_access(), initial_outcome);
+}
+
+#[test]
+fn access_body_overflow_preserves_current_access() {
+    let (_bundle_dir, store, identity, bundle, ca_fp) = test_bundle_and_store("laptop-overflow");
+    store
+        .publish_ready(
+            "https://old.relay.app",
+            "initial_token",
+            2000000000,
+            &identity,
+        )
+        .unwrap();
+    let initial_outcome = store.load_access();
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listen");
+    let port = listener.local_addr().unwrap().port();
+    let tracker = Arc::new(StatusTracker::new(Arc::new(SystemStatusClock)));
+    let client_mgr = Arc::new(CurrentClientManager::new(None));
+    let scheduler = test_scheduler(
+        tracker,
+        client_mgr,
+        store.clone(),
+        identity,
+        LinkServeCarrierPolicy::RelayPermitted,
+        None,
+        bundle,
+        ca_fp,
+    );
+
+    let oversize = vec![b'A'; 65537];
+    let server = std::thread::spawn(move || {
+        access_http_exchange(
+            &listener,
+            200,
+            &[("Content-Type", "application/json")],
+            &oversize,
+        );
+    });
+
+    scheduler.run_access_job(port, 0);
+    server.join().expect("server");
+
+    assert_eq!(store.load_access(), initial_outcome);
+}
+
+#[test]
+fn access_stall_respects_deadline_and_preserves_access() {
+    let (_bundle_dir, store, identity, bundle, ca_fp) = test_bundle_and_store("laptop-deadline");
+    store
+        .publish_ready(
+            "https://old.relay.app",
+            "initial_token",
+            2000000000,
+            &identity,
+        )
+        .unwrap();
+    let initial_outcome = store.load_access();
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listen");
+    let port = listener.local_addr().unwrap().port();
+    let tracker = Arc::new(StatusTracker::new(Arc::new(SystemStatusClock)));
+    let client_mgr = Arc::new(CurrentClientManager::new(None));
+    let scheduler = test_scheduler(
+        tracker,
+        client_mgr,
+        store.clone(),
+        identity,
+        LinkServeCarrierPolicy::RelayPermitted,
+        None,
+        bundle,
+        ca_fp,
+    );
+
+    let server = std::thread::spawn(move || {
+        use std::io::Read;
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            std::thread::sleep(Duration::from_millis(500));
+        }
+    });
+
+    scheduler.run_access_job(port, 0);
+    assert_eq!(store.load_access(), initial_outcome);
+    server.join().expect("server");
+}
+
+#[test]
+fn access_wrong_instance_protocol_or_non_200_preserves_current() {
+    let (_bundle_dir, store, identity, bundle, ca_fp) = test_bundle_and_store("laptop-wrong-inst");
+    store
+        .publish_ready(
+            "https://old.relay.app",
+            "initial_token",
+            2000000000,
+            &identity,
+        )
+        .unwrap();
+    let initial_outcome = store.load_access();
+
+    // 1. Wrong instance ID
+    {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listen");
+        let port = listener.local_addr().unwrap().port();
+        let tracker = Arc::new(StatusTracker::new(Arc::new(SystemStatusClock)));
+        let client_mgr = Arc::new(CurrentClientManager::new(None));
+        let scheduler = test_scheduler(
+            tracker,
+            client_mgr,
+            store.clone(),
+            identity.clone(),
+            LinkServeCarrierPolicy::RelayPermitted,
+            None,
+            bundle.clone(),
+            ca_fp.clone(),
+        );
+        let wrong_instance_body = serde_json::to_vec(&json!({
+            "state": "ready",
+            "protocol_version": 2,
+            "relay_origin": "https://new.relay.app",
+            "instance_id": "wrong-instance-xyz",
+            "device_token": "tok_xyz",
+            "expires_at": 2100000000,
+        }))
+        .unwrap();
+        let server = std::thread::spawn(move || {
+            access_http_exchange(
+                &listener,
+                200,
+                &[("Content-Type", "application/json")],
+                &wrong_instance_body,
+            );
+        });
+        scheduler.run_access_job(port, 0);
+        server.join().expect("server");
+        assert_eq!(store.load_access(), initial_outcome);
+    }
+
+    // 2. Wrong protocol_version (e.g. 1)
+    {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listen");
+        let port = listener.local_addr().unwrap().port();
+        let tracker = Arc::new(StatusTracker::new(Arc::new(SystemStatusClock)));
+        let client_mgr = Arc::new(CurrentClientManager::new(None));
+        let scheduler = test_scheduler(
+            tracker,
+            client_mgr,
+            store.clone(),
+            identity.clone(),
+            LinkServeCarrierPolicy::RelayPermitted,
+            None,
+            bundle.clone(),
+            ca_fp.clone(),
+        );
+        let wrong_pv_body = serde_json::to_vec(&json!({
+            "state": "ready",
+            "protocol_version": 1,
+            "relay_origin": "https://new.relay.app",
+            "instance_id": identity.instance_id,
+            "device_token": "tok_xyz",
+            "expires_at": 2100000000,
+        }))
+        .unwrap();
+        let server = std::thread::spawn(move || {
+            access_http_exchange(
+                &listener,
+                200,
+                &[("Content-Type", "application/json")],
+                &wrong_pv_body,
+            );
+        });
+        scheduler.run_access_job(port, 0);
+        server.join().expect("server");
+        assert_eq!(store.load_access(), initial_outcome);
+    }
+
+    // 3. HTTP 503 with ready/not_configured body is a failure, must preserve
+    {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listen");
+        let port = listener.local_addr().unwrap().port();
+        let tracker = Arc::new(StatusTracker::new(Arc::new(SystemStatusClock)));
+        let client_mgr = Arc::new(CurrentClientManager::new(None));
+        let scheduler = test_scheduler(
+            tracker,
+            client_mgr,
+            store.clone(),
+            identity.clone(),
+            LinkServeCarrierPolicy::RelayPermitted,
+            None,
+            bundle.clone(),
+            ca_fp.clone(),
+        );
+        let body_503 = serde_json::to_vec(&json!({
+            "state": "not_configured",
+            "protocol_version": 2,
+        }))
+        .unwrap();
+        let server = std::thread::spawn(move || {
+            access_http_exchange(
+                &listener,
+                503,
+                &[("Content-Type", "application/json")],
+                &body_503,
+            );
+        });
+        scheduler.run_access_job(port, 0);
+        server.join().expect("server");
+        assert_eq!(store.load_access(), initial_outcome);
+    }
+}
+
+#[test]
+fn access_old_home_404_preserves_access_and_lan_no_enroll() {
+    let (_bundle_dir, store, identity, bundle, ca_fp) =
+        test_bundle_and_store("laptop-old-home-404");
+    store
+        .publish_ready(
+            "https://old.relay.app",
+            "initial_token",
+            2000000000,
+            &identity,
+        )
+        .unwrap();
+    let initial_outcome = store.load_access();
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listen");
+    let port = listener.local_addr().unwrap().port();
+    let tracker = Arc::new(StatusTracker::new(Arc::new(SystemStatusClock)));
+    let client_mgr = Arc::new(CurrentClientManager::new(None));
+    let scheduler = test_scheduler(
+        tracker,
+        client_mgr,
+        store.clone(),
+        identity,
+        LinkServeCarrierPolicy::RelayPermitted,
+        None,
+        bundle,
+        ca_fp,
+    );
+
+    let server = std::thread::spawn(move || {
+        access_http_exchange(
+            &listener,
+            404,
+            &[("Content-Type", "application/json")],
+            b"{\"error\":\"not found\"}",
+        );
+    });
+
+    scheduler.run_access_job(port, 0);
+    server.join().expect("server");
+
+    assert_eq!(store.load_access(), initial_outcome);
+}
+
+#[test]
+fn stall_access_while_metadata_and_ordinary_traffic_progress() {
+    let (_bundle_dir, store, identity, bundle, ca_fp) = test_bundle_and_store("laptop-stall-lanes");
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listen");
+    let port = listener.local_addr().unwrap().port();
+
+    let tracker = Arc::new(StatusTracker::new(Arc::new(SystemStatusClock)));
+    let client_mgr = Arc::new(CurrentClientManager::new(None));
+    let scheduler = test_scheduler(
+        tracker.clone(),
+        client_mgr,
+        store.clone(),
+        identity,
+        LinkServeCarrierPolicy::RelayPermitted,
+        None,
+        bundle,
+        ca_fp,
+    );
+
+    let access_unblock = Arc::new(AtomicBool::new(false));
+    let access_unblock_server = access_unblock.clone();
+    let metadata_completed = Arc::new(AtomicBool::new(false));
+    let metadata_completed_flag = metadata_completed.clone();
+
+    let server = std::thread::spawn(move || {
+        use std::io::{Read, Write};
+        let (mut stream1, _) = listener.accept().expect("accept 1");
+        let mut head1 = Vec::new();
+        while !head1.ends_with(b"\r\n\r\n") {
+            let mut b = [0];
+            stream1.read_exact(&mut b).unwrap();
+            head1.push(b[0]);
+        }
+        let req1 = String::from_utf8(head1).unwrap();
+
+        let (mut stream2, _) = listener.accept().expect("accept 2");
+        let mut head2 = Vec::new();
+        while !head2.ends_with(b"\r\n\r\n") {
+            let mut b = [0];
+            stream2.read_exact(&mut b).unwrap();
+            head2.push(b[0]);
+        }
+        let _req2 = String::from_utf8(head2).unwrap();
+
+        let (mut access_stream, mut meta_stream) = if req1.contains("/relay/access") {
+            (stream1, stream2)
+        } else {
+            (stream2, stream1)
+        };
+
+        let reply = metadata_reply(1).to_string();
+        write!(
+            meta_stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+            reply.len()
+        )
+        .unwrap();
+        metadata_completed_flag.store(true, Ordering::SeqCst);
+
+        while !access_unblock_server.load(Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        write!(
+            access_stream,
+            "HTTP/1.1 503 Busy\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        )
+        .unwrap();
+    });
+
+    let sched = scheduler.clone();
+    let burst = std::thread::spawn(move || {
+        std::thread::scope(|s| {
+            s.spawn(|| sched.run_access_job(port, 0));
+            s.spawn(|| sched.run_metadata_job(port, 0));
+        });
+    });
+
+    let start = std::time::Instant::now();
+    while !metadata_completed.load(Ordering::SeqCst) && start.elapsed() < Duration::from_secs(3) {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        metadata_completed.load(Ordering::SeqCst),
+        "metadata progressed while access was stalled"
+    );
+
+    access_unblock.store(true, Ordering::SeqCst);
+    burst.join().expect("burst join");
+    server.join().expect("server join");
+}
+
+#[test]
+fn combined_lanes_quiesce_with_carrier_close_and_subsequent_trigger_processes_latest_pending() {
+    let (_bundle_dir, store, identity, bundle, ca_fp) =
+        test_bundle_and_store("laptop-quiesce-pending");
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listen");
+    let port = listener.local_addr().unwrap().port();
+
+    let tracker = Arc::new(StatusTracker::new(Arc::new(SystemStatusClock)));
+    let client_mgr = Arc::new(CurrentClientManager::new(None));
+    let scheduler = test_scheduler(
+        tracker.clone(),
+        client_mgr,
+        store.clone(),
+        identity.clone(),
+        LinkServeCarrierPolicy::RelayPermitted,
+        None,
+        bundle,
+        ca_fp,
+    );
+
+    scheduler.retire();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    scheduler.trigger(runtime.handle(), port, 1);
+
+    let (_bundle_dir2, store2, identity2, bundle2, ca_fp2) =
+        test_bundle_and_store("laptop-coalesce");
+    let listener2 = std::net::TcpListener::bind("127.0.0.1:0").expect("listen");
+    let port2 = listener2.local_addr().unwrap().port();
+    let tracker2 = Arc::new(StatusTracker::new(Arc::new(SystemStatusClock)));
+    let client_mgr2 = Arc::new(CurrentClientManager::new(None));
+    let scheduler2 = test_scheduler(
+        tracker2,
+        client_mgr2,
+        store2.clone(),
+        identity2,
+        LinkServeCarrierPolicy::RelayPermitted,
+        None,
+        bundle2,
+        ca_fp2,
+    );
+
+    let first_access_received = Arc::new(AtomicBool::new(false));
+    let first_access_received_flag = first_access_received.clone();
+    let access_count = Arc::new(AtomicUsize::new(0));
+    let access_count_flag = access_count.clone();
+
+    let server2 = std::thread::spawn(move || {
+        use std::io::{Read, Write};
+        while let Ok((mut stream, _)) = listener2.accept() {
+            let mut head = Vec::new();
+            while !head.ends_with(b"\r\n\r\n") {
+                let mut b = [0];
+                if stream.read_exact(&mut b).is_err() {
+                    break;
+                }
+                head.push(b[0]);
+            }
+            if head.is_empty() {
+                continue;
+            }
+            let req = String::from_utf8_lossy(&head);
+            if req.contains("/relay/access") {
+                let c = access_count_flag.fetch_add(1, Ordering::SeqCst);
+                first_access_received_flag.store(true, Ordering::SeqCst);
+                let body = serde_json::to_vec(&json!({
+                    "state": "not_configured",
+                    "protocol_version": 2,
+                }))
+                .unwrap();
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(&body);
+                if c >= 1 {
+                    break;
+                }
+            } else {
+                let body = metadata_reply(1).to_string();
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+            }
+        }
+    });
+
+    let sched2 = scheduler2.clone();
+    let burst_thread = std::thread::spawn(move || {
+        sched2.run_burst(port2);
+    });
+
+    let start = std::time::Instant::now();
+    while !first_access_received.load(Ordering::SeqCst) && start.elapsed() < Duration::from_secs(3)
+    {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    scheduler2.trigger(runtime.handle(), port2, 2);
+
+    burst_thread.join().expect("burst join");
+    server2.join().expect("server join");
+
+    assert!(access_count.load(Ordering::SeqCst) >= 2);
 }
