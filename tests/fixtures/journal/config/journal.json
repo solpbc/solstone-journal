@@ -64,5 +64,22 @@
   },
   "env": {
     "TEST_CONFIG_ENV_VAR": "from_config"
+  },
+  "backup": {
+    "enabled": true,
+    "last_backup": {
+      "time": 1773144000,
+      "snapshot_id": "fixture-only-snapshot-do-not-use-in-production",
+      "status": "ok",
+      "error_reason": null
+    },
+    "last_verification": {
+      "time": 1773144000,
+      "status": "ok",
+      "reason": null,
+      "last_ok_time": 1773144000,
+      "checked_subset": "11/52"
+    }
   }
 }
+

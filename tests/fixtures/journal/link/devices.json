@@ -1,0 +1,7 @@
+{
+  "fixture-suze": {
+    "last_seen_at": "2026-07-03T00:01:41Z",
+    "last_accepted_ingest_at": "2026-07-03T00:01:41Z",
+    "last_accepted_segment": {"day": "20260703", "name": "000141_317"}
+  }
+}

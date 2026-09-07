@@ -345,4 +345,56 @@ mod tests {
             assert!(!get(&temporary.0, path).await.0.is_success(), "{path}");
         }
     }
+
+    fn copy_tree(source: &Path, destination: &Path) {
+        fs::create_dir_all(destination).expect("destination creates");
+        for entry in fs::read_dir(source).expect("source reads") {
+            let entry = entry.expect("directory entry");
+            let target = destination.join(entry.file_name());
+            let kind = entry.file_type().expect("entry type");
+            if kind.is_symlink() {
+                continue;
+            }
+            if kind.is_dir() {
+                copy_tree(&entry.path(), &target);
+            } else {
+                fs::copy(entry.path(), target).expect("file copies");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn demo_journal_fixture_serves_a_healthy_nonempty_grid() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/journal");
+        let temporary = TempDir::new();
+        copy_tree(&source, &temporary.0);
+
+        let (status, index) = get(&temporary.0, "/app/body/api/index").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(index["coverage"].is_object(), "{index}");
+        assert!(
+            index["months"]["202603"].as_u64().unwrap_or(0) > 0,
+            "{index}"
+        );
+
+        let (status, body_status) = get(&temporary.0, "/app/body/api/status").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_ne!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert!(
+            body_status["day_counts"]["20260304"].as_u64().unwrap_or(0) > 0,
+            "{body_status}"
+        );
+
+        let (status, march) = get(&temporary.0, "/app/body/api/stats/202603").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(march["20260304"].as_u64().unwrap_or(0) > 0, "{march}");
+
+        let (status, january) = get(&temporary.0, "/app/body/api/stats/202401").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(january, json!({}));
+
+        let (status, empty_day) = get(&temporary.0, "/app/body/api/day/20240101").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(empty_day["has_data"], false);
+    }
 }

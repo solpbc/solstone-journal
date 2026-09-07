@@ -18,8 +18,11 @@ tests/fixtures/journal/tokens/*.json
 tests/fixtures/journal/*/health/*.jsonl
 tests/fixtures/journal/chronicle/*/health/*.jsonl
 *.sqlite
+# Track the demo journal body aggregate (root *.sqlite would hide it).
+!tests/fixtures/journal/imports/health-dedupe.sqlite
 *.sqlite-shm
 *.sqlite-wal
+
 *.log
 *.port
 /config*.py

@@ -1115,10 +1115,57 @@ fn corrupt_config(root: &Path) -> Option<Response> {
 
 #[cfg(test)]
 mod tests {
-    use axum::{body::Body, http::Request};
+    use std::fs;
+    use std::path::Path;
+
+    use axum::{
+        body::{Body, to_bytes},
+        http::{Request, StatusCode},
+    };
     use tower::ServiceExt;
 
     use super::*;
+
+    fn copy_tree(source: &Path, destination: &Path) {
+        fs::create_dir_all(destination).expect("destination creates");
+        for entry in fs::read_dir(source).expect("source reads") {
+            let entry = entry.expect("directory entry");
+            let target = destination.join(entry.file_name());
+            let kind = entry.file_type().expect("entry type");
+            if kind.is_symlink() {
+                continue;
+            }
+            if kind.is_dir() {
+                copy_tree(&entry.path(), &target);
+            } else {
+                fs::copy(entry.path(), target).expect("file copies");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn demo_journal_fixture_serves_open_facet_candidates() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/journal");
+        let copy = tempfile::tempdir().expect("temporary journal");
+        copy_tree(&source, copy.path());
+        let response = routes(copy.path().to_path_buf())
+            .oneshot(
+                Request::get("/app/curation/api/state")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .expect("JSON");
+        let items = body["facet_items"].as_array().expect("facet_items array");
+        assert!(!items.is_empty(), "{body}");
+    }
     #[test]
     fn entity_evidence_uses_the_degraded_no_neighborhood_branch() {
         let row = json!({"facet":"work","source_slug":"a","target_slug":"b","evidence":{"detection_count":3}});

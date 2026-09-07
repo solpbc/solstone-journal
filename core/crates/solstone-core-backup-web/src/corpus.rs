@@ -151,6 +151,57 @@ async fn corpus_replays_all_cases() {
     assert_eq!((asserted, deferred, gate), (52, 0, 26));
 }
 
+fn copy_tree(source: &Path, destination: &Path) {
+    fs::create_dir_all(destination).unwrap();
+    for entry in fs::read_dir(source).unwrap() {
+        let entry = entry.unwrap();
+        let target = destination.join(entry.file_name());
+        let kind = entry.file_type().unwrap();
+        if kind.is_symlink() {
+            continue;
+        }
+        if kind.is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}
+
+fn week_subset(value: &str) -> bool {
+    let Some((count, weeks)) = value.split_once('/') else {
+        return false;
+    };
+    weeks == "52"
+        && !count.is_empty()
+        && count.as_bytes()[0].is_ascii_digit()
+        && count.as_bytes()[0] != b'0'
+        && count.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+#[tokio::test]
+async fn demo_journal_fixture_serves_enabled_completed_verification() {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/journal");
+    let copy = tempfile::tempdir().unwrap();
+    copy_tree(&source, copy.path());
+    let (status, body) = response_json(
+        crate::routes(copy.path().to_path_buf()),
+        Request::get("/app/backup/status")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(body["enabled"], true);
+    assert_eq!(body["last_verification"]["status"], "ok");
+    let subset = body["last_verification"]["checked_subset"]
+        .as_str()
+        .expect("checked_subset");
+    assert!(week_subset(subset), "{subset}");
+    assert!(!body["last_verification"]["last_ok_time"].is_null());
+    assert_eq!(body["last_backup"]["status"], "ok");
+}
+
 #[tokio::test]
 async fn status_shape_preserves_backup_phase_discrimination() {
     for phase in ["fresh", "enabled_never_run", "broken", "healthy"] {

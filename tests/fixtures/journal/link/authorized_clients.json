@@ -1,0 +1,9 @@
+[
+  {
+    "fingerprint": "fixture-suze",
+    "device_label": "Suze",
+    "paired_at": "2026-07-01T10:00:00Z",
+    "instance_id": "fixture-suze-instance",
+    "kind": "cert"
+  }
+]

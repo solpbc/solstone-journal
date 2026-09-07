@@ -109,6 +109,23 @@ mod tests {
         solstone_core_convey_shell::router(root.to_path_buf())
     }
 
+    fn copy_tree(source: &Path, destination: &Path) {
+        fs::create_dir_all(destination).expect("destination creates");
+        for entry in fs::read_dir(source).expect("source reads") {
+            let entry = entry.expect("directory entry");
+            let target = destination.join(entry.file_name());
+            let kind = entry.file_type().expect("entry type");
+            if kind.is_symlink() {
+                continue;
+            }
+            if kind.is_dir() {
+                copy_tree(&entry.path(), &target);
+            } else {
+                fs::copy(entry.path(), target).expect("file copies");
+            }
+        }
+    }
+
     fn seed_client_activity(
         root: &Path,
         last_seen_at: &str,
@@ -322,6 +339,21 @@ mod tests {
         assert_eq!(response.0, StatusCode::OK);
         assert_eq!(tree_entries(&root), before);
         assert!(!root.join("awareness").exists());
+    }
+
+    #[tokio::test]
+    async fn demo_journal_fixture_serves_assessed_device_pulse() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/journal");
+        let copy = TempDir::new().expect("temporary journal");
+        copy_tree(&source, copy.path());
+        let router = super::routes(copy.path().to_path_buf(), super::Clock::system());
+        let response = get(router, "/app/home/api/pulse").await;
+        assert_eq!(response.0, StatusCode::OK);
+        let body: Value = serde_json::from_slice(&response.3).expect("JSON");
+        let clients = body["capture_health"]["clients"]
+            .as_array()
+            .expect("clients array");
+        assert!(!clients.is_empty(), "{body}");
     }
 
     #[tokio::test]
