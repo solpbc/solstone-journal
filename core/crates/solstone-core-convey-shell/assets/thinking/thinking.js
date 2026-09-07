@@ -2081,15 +2081,24 @@
     return prefix.length > 1 && modelId.startsWith(prefix) ? modelId.slice(prefix.length) : modelId;
   }
 
-  // providerLabel() brand-names a provider for the BYO provider chooser
-  // ("Claude", "Local"). Third-party brands keep their case everywhere else in
-  // the canon, and this column was the one place they did not; the local lane
-  // is not a brand, so it is the one value that stays lowercase. stats'
-  // token-card.js brand-names the same providers the same way (X-05, G2-43).
+  // The runs table has a model column beside this one, so the provider column
+  // names the provider and the model column names the model -- "Claude" in
+  // both said one thing twice. This is the same set the shell's
+  // JournalFormat.processingLane already uses, and stats' token-card.js now
+  // agrees. providerLabel() is left alone: it serves the BYO chooser, where
+  // the owner really does hold a "Claude key". The local lane is not a brand
+  // and stays lowercase (X-05, G2-43, S-5).
+  const RUN_PROVIDER_LABELS = {
+    anthropic: 'Anthropic',
+    google: 'Google',
+    openai: 'OpenAI',
+  };
+
   function runProviderLabel(run) {
     if (!run.provider) return run.provider;
-    const label = providerLabel(run.provider);
-    return run.provider === 'local' ? label.toLowerCase() : label;
+    const key = String(run.provider).toLowerCase();
+    if (key === 'local') return 'local';
+    return RUN_PROVIDER_LABELS[key] || providerLabel(run.provider);
   }
 
   // The day payload already carries every talent's authored title; the runs

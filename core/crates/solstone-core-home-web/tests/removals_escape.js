@@ -93,8 +93,20 @@ function copyTable(source) {
   }));
 }
 
+// The stream label comes from the one shared formatter, not a second copy of
+// its rule here: this restated the old strip-the-punctuation transform and went
+// stale the moment the formatter learned to parse the key (G1-203 / S-1).
+const FORMAT = (() => {
+  const host = {};
+  vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, '../../solstone-core-convey-shell/assets/static/date_format.js'), 'utf8'),
+    { window: host },
+  );
+  return host.JournalFormat;
+})();
+
 function rendered(copy, key, values) {
-  values = { ...values, ...(values.date ? { date: 'Thu Jan 1' } : {}), ...(values.stream ? { stream: values.stream.replace(/[._-]+/g, ' ').trim() } : {}) };
+  values = { ...values, ...(values.date ? { date: 'Thu Jan 1' } : {}), ...(values.stream ? { stream: FORMAT.stream(values.stream) } : {}) };
   return copy[key].replace(/\{([^}]+)\}/g, (_, name) => String(values[name] ?? ''));
 }
 

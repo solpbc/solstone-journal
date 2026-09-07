@@ -106,6 +106,43 @@
       !/55/.test(segment) && window.JournalFormat.segmentTime('200155_300') === '20:01:55',
       `got "${segment}"`);
 
+    // JournalFormat.stream: a stream key is structured, so it is parsed, not
+    // stripped of its punctuation. G1-203 / S-1.
+    for (const [key, expected] of [
+      ['device.watch.audio', 'watch audio'],
+      ['device.omi.audio', 'omi audio'],
+      ['device.pixel_watch.audio', 'pixel watch audio'],
+      ['import.chatgpt', 'chatgpt import'],
+      ['import.apple_health', 'apple health import'],
+      ['ja1r', 'ja1r'],
+      ['192-168-1-1', '192-168-1-1'],
+      ['_default', 'default'],
+      ['', ''],
+    ]) {
+      const actual = window.JournalFormat.stream(key);
+      assert(`JournalFormat.stream(${JSON.stringify(key)})`, actual === expected,
+        `expected "${expected}", got "${actual}"`);
+    }
+    assert('JournalFormat.stream keeps no dot on a parsed key',
+      !window.JournalFormat.stream('device.watch.audio').includes('.'));
+
+    // JournalFormat.duration: seconds in, and an hours rung so a stats bucket
+    // of 1,995 minutes does not read "1995 min 0 sec". S-3 / G2-B14.
+    for (const [seconds, expected] of [
+      [0, '0 sec'],
+      [30, '30 sec'],
+      [59.6, '1 min 0 sec'],
+      [3599, '59 min 59 sec'],
+      [3600, '1 hr 0 min'],
+      [119700, '33 hr 15 min'],
+    ]) {
+      const actual = window.JournalFormat.duration(seconds);
+      assert(`JournalFormat.duration(${seconds})`, actual === expected,
+        `expected "${expected}", got "${actual}"`);
+    }
+    assert('JournalFormat.duration says so when it has no number',
+      window.JournalFormat.duration(null) === 'duration unavailable');
+
     assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
   }
 
