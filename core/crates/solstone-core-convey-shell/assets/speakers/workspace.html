@@ -3853,15 +3853,18 @@
   }
 }
 
-@media (max-width: 480px) {
-  /* Every control on this page is thumb-driven here. */
+/* Every control on this page is thumb-driven from the tablet down, the same
+   reasoning that gave the day grid one cell ladder (G1-213). */
+@media (max-width: 768px) {
   .spk-overview-btn,
   .spk-overview-link,
   .spk-overview-select,
   .spk-overview-filter {
     min-height: 44px;
   }
+}
 
+@media (max-width: 480px) {
   .spk-overview-filter,
   .spk-overview-select {
     width: 100%;
