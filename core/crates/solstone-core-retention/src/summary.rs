@@ -122,28 +122,25 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn recursive_accounting_skips_descendant_symlink_cycles() {
-        let temporary = TempDir::new().unwrap();
+    fn recursive_accounting_skips_descendant_symlink_cycles() -> std::io::Result<()> {
+        let temporary = TempDir::new()?;
         let segment = temporary.path().join("chronicle/20260810/tmux/090000_300");
-        fs::create_dir_all(&segment).unwrap();
-        fs::write(segment.join("notes.md"), "abc").unwrap();
-        std::os::unix::fs::symlink(&segment, segment.join("cycle")).unwrap();
-        let summary = compute_storage_summary(temporary.path()).unwrap();
+        fs::create_dir_all(&segment)?;
+        fs::write(segment.join("notes.md"), "abc")?;
+        std::os::unix::fs::symlink(&segment, segment.join("cycle"))?;
+        let summary = compute_storage_summary(temporary.path())?;
         assert_eq!(summary.derived_bytes, 3);
         assert_eq!(summary.total_segments, 1);
+        Ok(())
     }
 
     #[test]
-    fn unavailable_chronicle_is_not_reported_as_empty() {
-        let temporary = TempDir::new().unwrap();
-        assert_eq!(
-            compute_storage_summary(temporary.path())
-                .unwrap()
-                .total_segments,
-            0
-        );
-        fs::write(temporary.path().join("chronicle"), "not a directory").unwrap();
+    fn unavailable_chronicle_is_not_reported_as_empty() -> std::io::Result<()> {
+        let temporary = TempDir::new()?;
+        assert_eq!(compute_storage_summary(temporary.path())?.total_segments, 0);
+        fs::write(temporary.path().join("chronicle"), "not a directory")?;
         assert!(compute_storage_summary(temporary.path()).is_err());
+        Ok(())
     }
 
     #[test]
