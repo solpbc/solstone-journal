@@ -150,6 +150,22 @@
     assert('JournalFormat.duration says so when it has no number',
       window.JournalFormat.duration(null) === 'duration unavailable');
 
+    // JournalFormat.sinceDay: the day a "since ..." sentence needs. Absolute
+    // and lowercase, never Today or Yesterday, and it carries the year only
+    // when it is not this one. status_pane.js and health.js each held a copy
+    // of this before it moved here (F-15, fresh-eyes 2 #14).
+    const thisYear = new Date().getFullYear();
+    assert('JournalFormat.sinceDay is a lowercase month and day',
+      window.JournalFormat.sinceDay(new Date(thisYear, 2, 9).getTime()) === 'mar 9',
+      window.JournalFormat.sinceDay(new Date(thisYear, 2, 9).getTime()));
+    assert('JournalFormat.sinceDay carries the year when it is not this one',
+      window.JournalFormat.sinceDay(new Date(thisYear - 2, 11, 31).getTime())
+        === "dec 31 '" + String(thisYear - 2).slice(-2),
+      window.JournalFormat.sinceDay(new Date(thisYear - 2, 11, 31).getTime()));
+    assert('JournalFormat.sinceDay says nothing when it has no day',
+      window.JournalFormat.sinceDay(NaN) === '' && window.JournalFormat.sinceDay(undefined) === '',
+      JSON.stringify([window.JournalFormat.sinceDay(NaN), window.JournalFormat.sinceDay(undefined)]));
+
     assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
   }
 

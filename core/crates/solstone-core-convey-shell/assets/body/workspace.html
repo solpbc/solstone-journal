@@ -337,10 +337,13 @@
   --daygrid-radius: 3px;
 }
 
+/* The grid and its month labels take the phone rung together, because the
+   labels are the grid's own columns and a legend swatch is not. The swatches
+   are read, never tapped, so they keep the base size the same way
+   /static/day-grid.css keeps its own (X-09, fresh-eyes 2 #7). */
 @media (max-width: 768px) {
   .body-days-grid,
-  .body-days-months,
-  .body-days-legend {
+  .body-days-months {
     --daygrid-cell: 24px;
   }
 }

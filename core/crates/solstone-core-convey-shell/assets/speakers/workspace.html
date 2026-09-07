@@ -1370,6 +1370,12 @@
   const pluralize = (count, singular, plural = `${singular}s`) => (count === 1 ? singular : plural);
   const PLACEHOLDER_SPEAKER_NAME = /^speaker\s+\d+$/i;
   const DAY_DISCOVERY_LOAD_ERROR = "couldn't load new voices right now.";
+  // The day view reads the cached look and never starts one, so its two quiet
+  // states point at the overview, which carries the control. They are distinct
+  // answers: nothing has looked yet is not the same as nothing is waiting.
+  const DAY_DISCOVERY_NEVER_RUN = 'nothing has looked for new voices yet.';
+  const DAY_DISCOVERY_EMPTY = 'no new voices are waiting.';
+  const DAY_DISCOVERY_OVERVIEW_LINK = 'look for new voices';
   const isPlaceholderSpeakerName = (name) => PLACEHOLDER_SPEAKER_NAME.test(String(name || '').trim());
   const initialEmptyIcon = document.getElementById('spkInitialEmptyIcon');
   if (initialEmptyIcon) {
@@ -1459,6 +1465,7 @@
   let dayDiscoveryRequestSeq = 0;
   let dayDiscoveryClusters = [];
   let dayDiscoveryNotice = null;
+  let dayDiscoveryStatus = '';
   let segmentsRequestSeq = 0;
   let segmentSpeakersRequestSeq = 0;
   let reviewRequestSeq = 0;
@@ -1933,8 +1940,12 @@
     if (source === 'manual_tags') return [ownerRevealStatementText(state, copy)];
     const meta = state?.centroid_metadata || {};
     const streams = Array.isArray(meta.streams) ? meta.streams.length : 0;
+    // Plural forms are real: this read "1 places this voice appears".
+    const streamsTemplate = streams === 1
+      ? copy.SPK_OWNER_REVEAL_STREAMS_TEMPLATE_ONE
+      : copy.SPK_OWNER_REVEAL_STREAMS_TEMPLATE;
     return [
-      ownerTeachTemplateText(copy.SPK_OWNER_REVEAL_STREAMS_TEMPLATE, { count: streams }),
+      ownerTeachTemplateText(streamsTemplate, { count: streams }),
       ownerTeachTemplateText(copy.SPK_OWNER_REVEAL_EVIDENCE_TEMPLATE, { tier: meta.evidence_tier || '' }),
     ];
   }
@@ -2477,6 +2488,9 @@
 
   function renderDiscoveryPayload(data) {
     dayDiscoveryClusters = discoveryClusters(data);
+    // The cache reports its own absence, and it is not the same answer as an
+    // empty one: no look has run against this journal yet.
+    dayDiscoveryStatus = typeof data?.status === 'string' ? data.status : '';
     renderDayDiscoveryBanner();
   }
 
@@ -2517,12 +2531,26 @@
 
   let dayDiscoveryOpen = false;
 
+  // The overview is where a look is started, so every state of this banner
+  // carries the link to it -- including the two quiet ones. Hiding the banner
+  // when nothing is waiting left a never-scanned journal with no pointer at
+  // the only control that starts a scan (S-9, fresh-eyes 2 #8).
+  function dayDiscoveryOverviewLinkHtml() {
+    return `<p class="spk-discovery-overview"><a class="spk-discovery-overview-link" href="/app/speakers/#spkNewVoicesSection">${escapeHtml(DAY_DISCOVERY_OVERVIEW_LINK)}</a></p>`;
+  }
+
+  function dayDiscoveryQuietHtml() {
+    const sentence = dayDiscoveryStatus === 'cache_unavailable'
+      ? DAY_DISCOVERY_NEVER_RUN
+      : DAY_DISCOVERY_EMPTY;
+    return `
+          <div class="spk-discovery-copy">${escapeHtml(sentence)}</div>
+          ${dayDiscoveryOverviewLinkHtml()}
+    `;
+  }
+
   function renderDayDiscoveryBanner() {
     const clusters = dayDiscoveryClusters;
-    if (!clusters.length && !dayDiscoveryNotice) {
-      hideDiscovery();
-      return;
-    }
     discoveryBanner.style.display = 'block';
     discoveryBanner.innerHTML = `
       <div class="spk-discovery-panel">
@@ -2533,7 +2561,7 @@
           <div class="spk-discovery-copy">
             ${clusters.length} recurring voice pattern${clusters.length > 1 ? 's' : ''} ${clusters.length > 1 ? "don't" : "doesn't"} match anyone you've named. listen to a few samples and name them.
           </div>
-          <p class="spk-discovery-overview"><a class="spk-discovery-overview-link" href="/app/speakers/#spkNewVoicesSection">look for new voices</a></p>
+          ${dayDiscoveryOverviewLinkHtml()}
           <div class="spk-discovery-clusters">
             ${clusters.map(cluster => `
               <div class="spk-discovery-cluster" data-cluster-id="${escapeHtml(cluster.cluster_id)}">
@@ -2553,7 +2581,7 @@
             `).join('')}
           </div>
           </details>
-        ` : ''}
+        ` : dayDiscoveryQuietHtml()}
       </div>
     `;
 
@@ -2578,6 +2606,7 @@
   function hideDiscovery() {
     dayDiscoveryClusters = [];
     dayDiscoveryNotice = null;
+    dayDiscoveryStatus = '';
     discoveryBanner.style.display = 'none';
     discoveryBanner.innerHTML = '';
   }
@@ -4428,6 +4457,9 @@
       onDismissed: ({ clusterId }) => {
         removeOverviewDiscoveryCluster(clusterId);
       },
+      onClosed: () => {
+        clearOverviewHandoff();
+      },
       onFullyRestoredUndo: async () => {
         await refreshOverviewWhoIsThisContext();
       },
@@ -4701,6 +4733,44 @@
     return window.apiJson(`/app/speakers/api/discovery/resolve-statement?${params}`);
   }
 
+  // The handoff arrives in the URL and used to be read once, at load: the
+  // latch below only ever went true and the context kept the params forever,
+  // so "looking for new voices waits until you finish…" stayed true for the
+  // rest of the page's life and the scan button never worked again. Clearing
+  // both, and the params, makes hasOverviewHandoff() an answer about now
+  // (X-11 / L10, fresh-eyes 2 #5).
+  const OVERVIEW_HANDOFF_PARAMS = [
+    'voice_cluster_id',
+    'voice_day',
+    'voice_stream_layout',
+    'voice_stream',
+    'voice_segment_key',
+    'voice_source',
+    'voice_sentence_id',
+  ];
+
+  function clearOverviewHandoff() {
+    overviewHandoffSheetOpen = false;
+    const context = window.SPEAKERS_CONTEXT || {};
+    context.voiceClusterId = '';
+    context.statementHandoff = {};
+    const url = new URL(window.location.href);
+    let cleared = false;
+    for (const key of OVERVIEW_HANDOFF_PARAMS) {
+      if (!url.searchParams.has(key)) continue;
+      url.searchParams.delete(key);
+      cleared = true;
+    }
+    if (cleared) {
+      window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+    }
+    // The busy sentence was true when it was written and is not any more.
+    if (overviewDiscoveryNotice?.messages?.[0] === DISCOVERY_HANDOFF_BUSY) {
+      overviewDiscoveryNotice = null;
+      renderOverviewDiscoveryNotice();
+    }
+  }
+
   function hasOverviewHandoff() {
     const context = window.SPEAKERS_CONTEXT || {};
     return Boolean(
@@ -4718,6 +4788,15 @@
   }
 
   async function handleOverviewHandoff() {
+    const opened = await openOverviewHandoff();
+    // A handoff that could not open its sheet has nothing left to finish, and
+    // the guard must not go on saying it has. The statement notice already
+    // says the voice is not in new voices; the scan control works again.
+    if (!opened) clearOverviewHandoff();
+    return opened;
+  }
+
+  async function openOverviewHandoff() {
     const context = window.SPEAKERS_CONTEXT || {};
     hideStatementHandoffNotice();
     if (context.voiceClusterId) {

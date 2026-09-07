@@ -152,7 +152,7 @@ fn search_response(journal_root: PathBuf, query: SearchQuery) -> Response {
                     "agent_label": agent_label(&hit.metadata.agent),
                     "facet": hit.metadata.facet,
                     "facet_title": facets.get(&hit.metadata.facet).map_or(&hit.metadata.facet, |facet| &facet.title),
-                    "text": highlight(readable.as_ref().map_or(hit.text.as_str(), |record| record.text.as_str()), &request.query),
+                    "text": excerpt_html(&hit.text, readable.as_ref(), &request.query),
                     "ts": readable.as_ref().and_then(|record| record.ts),
                     "record": readable.as_ref().map(|_| cap_words(&hit.text)),
                     "stream": hit.metadata.stream,
@@ -479,10 +479,39 @@ struct ReadableRecord {
     ts: Option<i64>,
 }
 
+/// Read a stored `ts` however the record wrote it.
+///
+/// The indexer writes an integer, but a record carried in from an import can
+/// hold the same value as a JSON float or as a string. The client this moved
+/// off read it with `Number(record.ts)`, which took all three; reading only
+/// `as_i64` here dropped the time off exactly those rows and the card then
+/// showed no time at all. The float bound is the largest integer an f64 holds
+/// exactly, which is the range `Number()` could carry.
+fn record_ts(value: &Value) -> Option<i64> {
+    if let Some(number) = value.as_i64() {
+        return Some(number);
+    }
+    let number = match value {
+        Value::Number(_) => value.as_f64(),
+        Value::String(text) => {
+            let text = text.trim();
+            match text.parse::<i64>() {
+                Ok(parsed) => return Some(parsed),
+                Err(_) => text.parse::<f64>().ok(),
+            }
+        }
+        _ => None,
+    }?;
+    if !number.is_finite() || number.abs() > 9_007_199_254_740_992.0 {
+        return None;
+    }
+    Some(number as i64)
+}
+
 /// A stored `ts` is milliseconds on every record the indexer writes, but a
-/// record carried in from an import can hold seconds. No real journal timestamp
-/// in milliseconds is below 1e11 (that is 1973 in seconds, 1970 in
-/// milliseconds), so a value under it is seconds and is read as seconds.
+/// record carried in from an import can hold seconds. 1e11 is early 1973 read
+/// as milliseconds and the year 5138 read as seconds, so no real journal
+/// timestamp lands under it in milliseconds and a value below it is seconds.
 fn record_millis(value: i64) -> Option<i64> {
     if value <= 0 {
         return None;
@@ -520,6 +549,16 @@ fn readable_record(text: &str) -> Option<ReadableRecord> {
         {
             if part.len() > parts[index].len() {
                 parts[index] = part.to_owned();
+                // The replacement was only ever compared against the one part
+                // it matched, so a fragment pushed earlier survives beside it
+                // ("... at noon. noon"). Drop every part the longer value now
+                // says (F-22).
+                let mut cursor = 0;
+                parts.retain(|seen| {
+                    let keep = cursor == index || !part.contains(seen.as_str());
+                    cursor += 1;
+                    keep
+                });
             }
             continue;
         }
@@ -544,10 +583,7 @@ fn readable_record(text: &str) -> Option<ReadableRecord> {
     }
     Some(ReadableRecord {
         text: sentences,
-        ts: record
-            .get("ts")
-            .and_then(Value::as_i64)
-            .and_then(record_millis),
+        ts: record.get("ts").and_then(record_ts).and_then(record_millis),
     })
 }
 
@@ -562,6 +598,29 @@ fn cap_words(text: &str) -> String {
         value.push_str("...");
     }
     value
+}
+
+/// The excerpt the card shows, with the searched terms bolded.
+///
+/// A row can match on a field the readable sentences never carry -- a tag, a
+/// key, the model id -- and the readable excerpt then renders with nothing
+/// bolded and no way to see why the row is there at all. When the readable
+/// sentences hold no match and the stored record does, the record is what the
+/// owner is shown; otherwise the sentences win, which is every ordinary hit.
+fn excerpt_html(raw: &str, readable: Option<&ReadableRecord>, query: &str) -> String {
+    let Some(record) = readable else {
+        return highlight(raw, query);
+    };
+    let readable_excerpt = highlight(&record.text, query);
+    if readable_excerpt.contains("<strong>") {
+        return readable_excerpt;
+    }
+    let raw_excerpt = highlight(raw, query);
+    if raw_excerpt.contains("<strong>") {
+        raw_excerpt
+    } else {
+        readable_excerpt
+    }
 }
 
 fn highlight(text: &str, query: &str) -> String {
@@ -945,6 +1004,71 @@ mod highlight_phrase_tests {
         .to_string();
         let readable = readable_record(&record).expect("a stored record reads");
         assert_eq!(readable.text, "release burn finished at noon.");
+    }
+
+    // Fresh-eyes 2 #4: the longer-wins replacement was only compared against
+    // the one part it matched, so "noon" pushed before it survived beside the
+    // sentence that already said it.
+    #[test]
+    fn a_replacement_also_drops_the_parts_it_contains() {
+        let record = json!({
+            "headline": "release burn",
+            "summary": "noon",
+            "text": "release burn finished at noon.",
+        })
+        .to_string();
+        let readable = readable_record(&record).expect("a stored record reads");
+        assert_eq!(readable.text, "release burn finished at noon.");
+    }
+
+    // Fresh-eyes 2 #3: a row can match on a field the readable sentences never
+    // carry. Bolding nothing reads as a result with no reason to be there, so
+    // the stored record is the excerpt for exactly that row.
+    #[test]
+    fn a_match_outside_the_readable_fields_falls_back_to_the_record() {
+        let record = json!({
+            "headline": "thursday afternoon",
+            "summary": "it finished.",
+            "model": "local/qwen3.5-4b",
+        })
+        .to_string();
+        let readable = readable_record(&record).expect("a stored record reads");
+        let excerpt = excerpt_html(&record, Some(&readable), "qwen3.5");
+        assert!(excerpt.contains("<strong>qwen3.5</strong>"), "{excerpt}");
+        // An ordinary hit still reads as sentences, not as a stored record.
+        let ordinary = excerpt_html(&record, Some(&readable), "thursday");
+        assert_eq!(
+            ordinary,
+            "<strong>thursday</strong> afternoon. it finished."
+        );
+        // No match anywhere leaves the sentences, never the braces.
+        let neither = excerpt_html(&record, Some(&readable), "hopper");
+        assert_eq!(neither, "thursday afternoon. it finished.");
+    }
+
+    // Fresh-eyes 2 #13: the old client read `ts` with `Number(record.ts)`, so
+    // an imported record that stored it as a string or a float still showed a
+    // time. Reading only `as_i64` dropped it off exactly those rows.
+    #[test]
+    fn a_string_or_float_timestamp_is_still_read() {
+        let string_ts = json!({"headline": "release burn", "ts": "1788662697014"}).to_string();
+        assert_eq!(
+            readable_record(&string_ts).expect("reads").ts,
+            Some(1_788_662_697_014)
+        );
+        let float_ts =
+            json!({"headline": "release burn", "ts": 1_788_662_697_014.0_f64}).to_string();
+        assert_eq!(
+            readable_record(&float_ts).expect("reads").ts,
+            Some(1_788_662_697_014)
+        );
+        let seconds_string = json!({"headline": "release burn", "ts": " 1788662697 "}).to_string();
+        assert_eq!(
+            readable_record(&seconds_string).expect("reads").ts,
+            Some(1_788_662_697_000)
+        );
+        let nonsense = json!({"headline": "release burn", "ts": "not a time"}).to_string();
+        assert_eq!(readable_record(&nonsense).expect("reads").ts, None);
     }
 
     // F-32: an imported record can carry seconds. No millisecond journal

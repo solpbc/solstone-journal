@@ -895,6 +895,11 @@
     const selected = Number(parts[0]);
     const total = Number(parts[1]);
     if (!Number.isFinite(selected) || !Number.isFinite(total) || total <= 0) return '';
+    // The only producer today is verification_subset_for_week, which always
+    // emits '/52', so the one-part branch is unreachable from this journal.
+    // It is kept rather than dropped: the selector is restic's, a future
+    // schedule that reads the whole pack in one turn would emit '1/1', and a
+    // sentence saying "1 of 1 parts" is the failure it would land as.
     const key = total === 1
       ? 'management.status_labels.verification_subset_one'
       : 'management.status_labels.verification_subset';

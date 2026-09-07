@@ -1456,10 +1456,10 @@
     if (runningCount > 0) serviceParts.push(runningCount + ' active');
     if (retryingCount > 0) serviceParts.push(retryingCount + ' retrying');
     if (crashedCount > 0) serviceParts.push(crashedCount + ' needs attention');
-    sections[0]?.setAttribute('aria-label', 'Services: ' + (state.supervisorSeen ? serviceParts.join(', ') || 'none' : pendingVitalLabel()));
+    sections[0]?.setAttribute('aria-label', 'services: ' + (state.supervisorSeen ? serviceParts.join(', ') || 'none' : pendingVitalLabel()));
 
-    sections[1]?.setAttribute('aria-label', 'Talents: ' + (state.cortexSeen ? state.agentCount + ' running' : pendingVitalLabel()));
-    sections[2]?.setAttribute('aria-label', 'Tasks: ' + (state.supervisorSeen ? state.tasks.length + ' active' : pendingVitalLabel()));
+    sections[1]?.setAttribute('aria-label', 'talents: ' + (state.cortexSeen ? state.agentCount + ' running' : pendingVitalLabel()));
+    sections[2]?.setAttribute('aria-label', 'tasks: ' + (state.supervisorSeen ? state.tasks.length + ' active' : pendingVitalLabel()));
 
     const staleCount = state.health?.stale_heartbeats?.length || 0;
     let healthLabel = timeoutFired ? 'unavailable' : 'loading';
@@ -1472,17 +1472,17 @@
     } else if (state.health) {
       healthLabel = 'ok';
     }
-    sections[3]?.setAttribute('aria-label', 'Health: ' + healthLabel);
+    sections[3]?.setAttribute('aria-label', 'health: ' + healthLabel);
 
     const queueEntries = Object.entries(state.queues).filter(([, count]) => count > 0);
     sections[4]?.setAttribute(
       'aria-label',
-      'Queues: ' + (queueEntries.map(([cmd, count]) => cmd + ' ' + count).join(', ') || (state.supervisorSeen ? 'none' : pendingVitalLabel()))
+      'queues: ' + (queueEntries.map(([cmd, count]) => cmd + ' ' + count).join(', ') || (state.supervisorSeen ? 'none' : pendingVitalLabel()))
     );
 
     sections[5]?.setAttribute(
       'aria-label',
-      'Schedules: ' + (state.schedules.length ? state.schedules.length + ' scheduled' : state.supervisorSeen ? 'none' : pendingVitalLabel())
+      'schedules: ' + (state.schedules.length ? state.schedules.length + ' scheduled' : state.supervisorSeen ? 'none' : pendingVitalLabel())
     );
   }
 
@@ -2029,20 +2029,10 @@
     }
   }
 
-	  // A "since …" sentence needs the day itself. The shared formatter answers
-	  // "which day is this" with Today and Yesterday, which read as nonsense after
-	  // "since" and stop being true while the sentence is still on screen. So this
-	  // one is absolute, lowercase, and carries the year only when it is not this
-	  // one (F-15). status_pane.js holds the same helper for the same sentence.
-	  const SINCE_MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-	  function sinceDay(ms) {
-	    const value = new Date(ms);
-	    if (Number.isNaN(value.getTime())) return '';
-	    const day = SINCE_MONTHS[value.getMonth()] + ' ' + value.getDate();
-	    return value.getFullYear() === new Date().getFullYear()
-	      ? day
-	      : day + " '" + String(value.getFullYear()).slice(-2);
-	  }
+	  // A "since …" sentence needs the day itself, absolute and lowercase (F-15).
+	  // It lives in JournalFormat now; health.js and status_pane.js each carried
+	  // their own copy of the same twelve months and the same year rule.
+	  const sinceDay = ms => window.JournalFormat.sinceDay(ms);
 
 	  // Plural forms are real: '1 uploads turned away' was one of them.
 	  function uploadsTurnedAway(count) {

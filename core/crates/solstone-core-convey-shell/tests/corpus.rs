@@ -696,7 +696,10 @@ async fn speakers_state_uses_the_python_local_date_semantics() {
     // SPK_OVERVIEW_OWNER_STREAMS_UNKNOWN (the "where this voice appears"
     // empty-value copy,
     // replacing a bare em-dash).
-    assert_eq!(state["speaker_copy"].as_object().unwrap().len(), 124);
+    // 124 + 1: fresh-eyes 2 #E-15 added SPK_OWNER_REVEAL_STREAMS_TEMPLATE_ONE
+    // (the singular of "{count} places this voice appears", which read
+    // "1 places").
+    assert_eq!(state["speaker_copy"].as_object().unwrap().len(), 125);
 }
 
 #[tokio::test]
