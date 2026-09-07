@@ -311,6 +311,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "convey",
+        "relay_access",
+        include_str!("../../../solstone-core-convey-shell/src/relay_access.rs"),
+    ),
+    (
+        "convey",
         "relay_admission",
         include_str!("../../../solstone-core-convey-shell/src/relay_admission.rs"),
     ),
@@ -498,6 +503,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
         "spl",
         "reconnect_backoff",
         include_str!("../../../solstone-core-spl/src/reconnect_backoff.rs"),
+    ),
+    (
+        "spl",
+        "relay_access",
+        include_str!("../../../solstone-core-spl/src/relay_access.rs"),
     ),
     (
         "spl",

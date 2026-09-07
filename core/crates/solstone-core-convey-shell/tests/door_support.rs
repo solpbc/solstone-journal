@@ -127,7 +127,7 @@ pub struct Fixture {
     ca_der: CertificateDer<'static>,
     clients: Vec<Client>,
     established_authorized_clients: Vec<u8>,
-    instance_id: String,
+    pub instance_id: String,
 }
 pub struct Client {
     pub certificate: CertificateDer<'static>,

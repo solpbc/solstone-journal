@@ -8,7 +8,10 @@ use std::{
     fmt,
     net::SocketAddr,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, OnceLock, Weak},
+    sync::{
+        Arc, Mutex, OnceLock, Weak,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 /// The exact relay pairing nonce admitted for one Door carrier.
@@ -75,6 +78,7 @@ struct DoorState {
 pub(crate) struct RelayAdmissionRegistry {
     entries: Mutex<HashMap<SocketAddr, RelayAdmissionEntry>>,
     door: Mutex<DoorState>,
+    service_epoch: AtomicU64,
 }
 
 impl RelayAdmissionRegistry {
@@ -82,7 +86,17 @@ impl RelayAdmissionRegistry {
         Self {
             entries: Mutex::new(HashMap::new()),
             door: Mutex::new(DoorState::default()),
+            service_epoch: AtomicU64::new(0),
         }
+    }
+
+    pub(crate) fn service_epoch(&self) -> u64 {
+        self.service_epoch.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn bump_service_epoch(&self) -> u64 {
+        let _door = lock_door(&self.door);
+        self.service_epoch.fetch_add(1, Ordering::SeqCst) + 1
     }
 
     pub(crate) fn set_door_port(&self, port: u16) {
@@ -106,10 +120,13 @@ impl RelayAdmissionRegistry {
     pub(crate) fn while_current<T>(
         &self,
         availability: DoorAvailability,
+        service_epoch: u64,
         operation: impl FnOnce() -> T,
     ) -> Option<T> {
         let door = lock_door(&self.door);
-        (door.port == Some(availability.port) && door.generation == availability.generation)
+        (door.port == Some(availability.port)
+            && door.generation == availability.generation
+            && self.service_epoch.load(Ordering::SeqCst) == service_epoch)
             .then(operation)
     }
 

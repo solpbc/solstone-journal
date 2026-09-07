@@ -252,6 +252,7 @@ async fn private_link_enable(
     Extension(journal): Extension<Arc<JournalRoot>>,
     Extension(operations): Extension<Arc<OperationRegistry>>,
     Extension(runtime): Extension<SplRuntime>,
+    pair_windows: Option<Extension<Arc<PairWindowManager>>>,
     override_runtime: Option<Extension<SplRuntimeOverride>>,
     override_operations: Option<Extension<NetworkOperationsOverride>>,
 ) -> Response {
@@ -301,7 +302,14 @@ async fn private_link_enable(
             Ok(value) => value,
             Err(_) => return busy_refusal(),
         };
-    spawn_handoff(journal.0.clone(), operations, handle, runtime, nonce);
+    spawn_handoff(
+        journal.0.clone(),
+        operations,
+        handle,
+        runtime,
+        nonce,
+        pair_windows.map(|Extension(pw)| pw),
+    );
     (
         StatusCode::ACCEPTED,
         Json(json!({"success":true,"service":SERVICE,"operation":operation})),
@@ -328,17 +336,22 @@ async fn private_link_disable(
     }
     match disable_spl(&journal.0) {
         Ok(result) => {
-            if let Some(Extension(pair_windows)) = pair_windows
-                && pair_windows
+            if let Some(Extension(pair_windows)) = pair_windows.as_ref() {
+                pair_windows.relay_access().bump_epoch();
+                pair_windows.relay_admissions().bump_service_epoch();
+                if pair_windows
                     .retire_all(&journal.0, unix_seconds())
                     .await
                     .is_err()
-            {
-                return refusal(
-                    "service_operation_failed",
-                    "",
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                );
+                {
+                    return refusal(
+                        "service_operation_failed",
+                        "",
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    );
+                }
+            } else {
+                crate::relay_admission::admission_registry_for(&journal.0).bump_service_epoch();
             }
             let mut status = serde_json::to_value(private_link_body(
                 &journal.0,
@@ -381,6 +394,7 @@ fn spawn_handoff(
     handle: OperationHandle,
     runtime: SplRuntime,
     nonce: String,
+    pair_windows: Option<Arc<PairWindowManager>>,
 ) {
     tokio::spawn(async move {
         if !operations.mark_waiting(SERVICE, handle) {
@@ -412,6 +426,15 @@ fn spawn_handoff(
                         let result = enable_spl_with(&journal, |identity, ca| {
                             enroll.enroll(&journal, identity, ca)
                         });
+                        if result.is_ok() {
+                            if let Some(ref pw) = pair_windows {
+                                pw.relay_access().bump_epoch();
+                                pw.relay_admissions().bump_service_epoch();
+                            } else {
+                                crate::relay_admission::admission_registry_for(&journal)
+                                    .bump_service_epoch();
+                            }
+                        }
                         break match result {
                             Ok(()) => outcome(Phase::Enabled, "approved", None),
                             Err(solstone_core_spl::EnableSplError::Enroll(error)) => {

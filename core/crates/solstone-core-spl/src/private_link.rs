@@ -84,26 +84,19 @@ pub fn enroll_home(
     relay_base_url: &str,
     instance_id: &str,
     ca_pubkey: &str,
-    home_label: &str,
+    _home_label: &str,
 ) -> Result<String, EnrollError> {
-    let agent = ureq::Agent::config_builder()
-        .http_status_as_error(false)
-        .timeout_connect(Some(Duration::from_secs(30)))
-        .timeout_recv_response(Some(Duration::from_secs(30)))
-        .timeout_recv_body(Some(Duration::from_secs(30)))
-        .timeout_global(Some(Duration::from_secs(30)))
-        .build()
-        .new_agent();
-    let payload = serde_json::to_string(
-        &json!({"instance_id": instance_id, "ca_pubkey": ca_pubkey, "home_label": home_label}),
-    )
-    .expect("enrollment payload serializes");
+    let agent = crate::relay_access::build_isolated_ureq_agent(Duration::from_secs(30));
+    let payload =
+        serde_json::to_string(&json!({"instance_id": instance_id, "ca_pubkey": ca_pubkey}))
+            .expect("enrollment payload serializes");
     let response = agent
         .post(&format!(
             "{}/enroll/home",
             relay_base_url.trim_end_matches('/')
         ))
         .header("Content-Type", "application/json")
+        .header("User-Agent", "")
         .send(payload);
     let response = match response {
         Ok(response) => response,
@@ -164,11 +157,19 @@ pub fn enable_spl_with(
     let identity = load_or_create_service_identity(journal_root, "solstone")?;
     let ca = load_service_identity_ca(journal_root)?;
     let token = enroll(&identity, &ca.public_key_spki_pem())?;
-    write_posture(journal_root, "spl")?;
-    save_service_token(journal_root, &token).map_err(EnableSplError::Token)
+    crate::relay_access::mutate_service_configuration(journal_root, || {
+        write_posture(journal_root, "spl")?;
+        save_service_token_unlocked(journal_root, &token).map_err(EnableSplError::Token)
+    })
 }
 
 pub fn save_service_token(journal_root: &Path, token: &str) -> Result<(), AtomicWriteError> {
+    crate::relay_access::mutate_service_configuration(journal_root, || {
+        save_service_token_unlocked(journal_root, token)
+    })
+}
+
+fn save_service_token_unlocked(journal_root: &Path, token: &str) -> Result<(), AtomicWriteError> {
     let path = journal_root
         .join("link")
         .join("tokens")
@@ -191,25 +192,27 @@ pub fn save_service_token(journal_root: &Path, token: &str) -> Result<(), Atomic
 
 pub fn disable_spl(journal_root: &Path) -> Result<SplDisableOutcome, DisableSplError> {
     require_journal_config(journal_root).map_err(|_| DisableSplError::JournalNotInitialized)?;
-    let result = mutate_journal_config(journal_root, Default::default(), |config| {
-        let enabled = config
-            .get("link")
-            .and_then(Value::as_object)
-            .and_then(|link| link.get("posture"))
-            .and_then(Value::as_str)
-            == Some("spl");
-        if enabled {
-            object_at(config, "link")
-                .insert("posture".to_owned(), Value::String("direct".to_owned()));
-        }
-        JournalConfigMutation {
-            changed: enabled,
-            value: SplDisableOutcome {
-                was_enabled: enabled,
-            },
-        }
-    })?;
-    Ok(result.value)
+    crate::relay_access::mutate_service_configuration(journal_root, || {
+        let result = mutate_journal_config(journal_root, Default::default(), |config| {
+            let enabled = config
+                .get("link")
+                .and_then(Value::as_object)
+                .and_then(|link| link.get("posture"))
+                .and_then(Value::as_str)
+                == Some("spl");
+            if enabled {
+                object_at(config, "link")
+                    .insert("posture".to_owned(), Value::String("direct".to_owned()));
+            }
+            JournalConfigMutation {
+                changed: enabled,
+                value: SplDisableOutcome {
+                    was_enabled: enabled,
+                },
+            }
+        })?;
+        Ok(result.value)
+    })
 }
 
 fn require_journal_config(journal_root: &Path) -> Result<(), EnableSplError> {

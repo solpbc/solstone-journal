@@ -130,12 +130,60 @@ async fn drive_pair(
     additional_fields: Map<String, Value>,
     relay: bool,
 ) -> (StatusCode, Value) {
+    drive_pair_with_hook(root, nonce, role, additional_fields, relay, None).await
+}
+
+async fn drive_pair_with_hook(
+    root: &Path,
+    nonce: &str,
+    role: &str,
+    additional_fields: Map<String, Value>,
+    relay: bool,
+    hook: Option<Arc<dyn Fn(bool) + Send + Sync>>,
+) -> (StatusCode, Value) {
     committed_identity(root);
     let store = NonceStore::new(root);
+    let admissions = crate::relay_admission::admission_registry_for(root);
+    admissions.set_door_port(7657);
+    let pair_windows = Arc::new(crate::pair_window_manager::PairWindowManager::new(
+        admissions.clone(),
+        Arc::new(solstone_core_spl::relay_access::RelayAccessCache::new()),
+    ));
+    if let Some(hook) = hook {
+        pair_windows.set_pair_commit_hook(hook);
+    }
     if relay {
+        fs::write(
+            root.join("config/journal.json"),
+            r#"{"link":{"posture":"spl"},"pairing":{"home_address":"10.0.0.2:7657"}}"#,
+        )
+        .expect("relay config");
+        solstone_core_spl::save_service_token(root, "fixture-service-token")
+            .expect("fixture token");
         store
             .add_relay(nonce.to_owned(), "phone".into(), role.to_owned(), now())
             .expect("relay nonce");
+        if let Some(door) = admissions.door_availability() {
+            pair_windows.insert_relay_entry(
+                nonce.to_owned(),
+                crate::pair_window_manager::RelayWindowEntry {
+                    snapshot: solstone_core_sol_link::pairing::RelayAccessSnapshot {
+                        protocol_version: 2,
+                        status: "ready".to_string(),
+                        relay_origin: "https://relay.example.com".to_string(),
+                        instance_id: "test-instance".to_string(),
+                        device_token: "test-device-token".to_string(),
+                        expires_at: "2099-01-01T00:00:00Z".to_string(),
+                    },
+                    door,
+                    service_epoch: admissions.service_epoch(),
+                    configuration: solstone_core_spl::relay_access::current_service_configuration(
+                        root,
+                    )
+                    .expect("configured fixture"),
+                },
+            );
+        }
     } else {
         store
             .add(
@@ -163,6 +211,7 @@ async fn drive_pair(
         .route("/pair", post(pair))
         .layer(axum::Extension(AccessBasis::PairingPeer { carrier }))
         .layer(axum::Extension(admission))
+        .layer(axum::Extension(pair_windows))
         .layer(axum::Extension(PairingSnapshot::default()))
         .layer(axum::Extension(Arc::new(JournalRoot(root.to_path_buf()))));
     let response = app
@@ -349,4 +398,76 @@ async fn committed_pairing_vectors_drive_direct_and_relay_pair_routes() {
             );
         }
     }
+}
+
+#[tokio::test]
+async fn service_change_after_snapshot_lookup_refuses_without_pair_ledger() {
+    let root = TempDir::new();
+    let mutation_root = root.path().to_path_buf();
+    let hook = Arc::new(move |inside: bool| {
+        if !inside {
+            solstone_core_spl::disable_spl(&mutation_root).expect("disable wins");
+        }
+    });
+    let (status, _) = drive_pair_with_hook(
+        root.path(),
+        "change-wins",
+        "observer",
+        Map::new(),
+        true,
+        Some(hook),
+    )
+    .await;
+    assert_ne!(status, StatusCode::OK);
+    assert!(!root.path().join("link/authorized_clients.json").exists());
+}
+
+#[tokio::test]
+async fn pair_commit_wins_before_service_mutation_and_returns_captured_access() {
+    let root = TempDir::new();
+    let mutation_root = root.path().to_path_buf();
+    let (completed_tx, completed_rx) = std::sync::mpsc::channel();
+    let completed_rx = Arc::new(std::sync::Mutex::new(completed_rx));
+    let hook_rx = completed_rx.clone();
+    let hook = Arc::new(move |inside: bool| {
+        if inside {
+            let root = mutation_root.clone();
+            let completed = completed_tx.clone();
+            let (started_tx, started_rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                started_tx.send(()).expect("mutation starting");
+                solstone_core_spl::disable_spl(&root).expect("disable after commit");
+                completed.send(()).expect("mutation completed");
+            });
+            started_rx
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .expect("mutation thread starts");
+            assert!(
+                hook_rx
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(std::time::Duration::from_millis(30))
+                    .is_err(),
+                "service mutation must wait for pairing commitment"
+            );
+        }
+    });
+    let (status, body) = drive_pair_with_hook(
+        root.path(),
+        "commit-wins",
+        "observer",
+        Map::new(),
+        true,
+        Some(hook),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["relay_access"]["status"], "ready");
+    assert_eq!(body["relay_access"]["device_token"], "test-device-token");
+    assert!(root.path().join("link/authorized_clients.json").exists());
+    completed_rx
+        .lock()
+        .unwrap()
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("mutation completes after pair commit");
 }

@@ -875,6 +875,7 @@ struct SinglePairRelay {
 
 #[derive(Default)]
 struct SinglePairRelayState {
+    instance_id: Option<String>,
     windows: HashMap<String, PairRelayWindow>,
     tunnels: HashMap<String, PairRelayTunnel>,
     next_tunnel: u64,
@@ -905,7 +906,16 @@ enum PairRelayConnection {
 }
 
 impl SinglePairRelay {
+    #[allow(dead_code)]
     async fn bind() -> Self {
+        Self::bind_with_instance(None).await
+    }
+
+    async fn bind_for_instance(instance_id: &str) -> Self {
+        Self::bind_with_instance(Some(instance_id.to_string())).await
+    }
+
+    async fn bind_with_instance(instance_id: Option<String>) -> Self {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
             .await
             .expect("pair relay listener binds");
@@ -913,7 +923,10 @@ impl SinglePairRelay {
             "http://{}",
             listener.local_addr().expect("pair relay listener address")
         );
-        let state = Arc::new(Mutex::new(SinglePairRelayState::default()));
+        let state = Arc::new(Mutex::new(SinglePairRelayState {
+            instance_id,
+            ..Default::default()
+        }));
         let listener_state = Arc::clone(&state);
         let listener_task = tokio::spawn(async move {
             while let Ok((stream, _)) = listener.accept().await {
@@ -946,7 +959,7 @@ async fn serve_single_pair_relay_connection(
     state: Arc<Mutex<SinglePairRelayState>>,
 ) {
     if is_pair_relay_enroll_request(&stream).await {
-        serve_pair_relay_enroll(&mut stream).await;
+        serve_pair_relay_enroll(&mut stream, &state).await;
         return;
     }
     let accepted = Arc::new(Mutex::new(None));
@@ -987,6 +1000,48 @@ async fn serve_single_pair_relay_connection(
     }
 }
 
+fn make_door_e2e_jwt(iss: &str, instance_id: &str, iat: i64, exp: i64) -> (String, String) {
+    let header = "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0";
+    let payload = serde_json::json!({
+        "iss": iss,
+        "sub": format!("instance:{instance_id}"),
+        "aud": "spl-relay",
+        "scope": "session.dial",
+        "ver": 2,
+        "instance_id": instance_id,
+        "iat": iat,
+        "exp": exp,
+        "jti": "jti-door-e2e-test",
+    });
+    let payload_str = serde_json::to_string(&payload).unwrap();
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let bytes = payload_str.as_bytes();
+    let mut payload_b64 = String::new();
+    for chunk in bytes.chunks(3) {
+        let mut b = (chunk[0] as u32) << 16;
+        if chunk.len() > 1 {
+            b |= (chunk[1] as u32) << 8;
+        }
+        if chunk.len() > 2 {
+            b |= chunk[2] as u32;
+        }
+        payload_b64.push(CHARS[((b >> 18) & 0x3F) as usize] as char);
+        payload_b64.push(CHARS[((b >> 12) & 0x3F) as usize] as char);
+        if chunk.len() > 1 {
+            payload_b64.push(CHARS[((b >> 6) & 0x3F) as usize] as char);
+        }
+        if chunk.len() > 2 {
+            payload_b64.push(CHARS[(b & 0x3F) as usize] as char);
+        }
+    }
+    let token = format!("{header}.{payload_b64}.sig");
+    let exp_dt = time::OffsetDateTime::from_unix_timestamp(exp).unwrap();
+    let expires_at = exp_dt
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap();
+    (token, expires_at)
+}
+
 async fn is_pair_relay_enroll_request(stream: &TcpStream) -> bool {
     tokio::time::timeout(Duration::from_secs(1), async {
         let mut preview = [0_u8; 256];
@@ -996,7 +1051,11 @@ async fn is_pair_relay_enroll_request(stream: &TcpStream) -> bool {
                 return None;
             }
             if let Some(line_end) = preview[..count].windows(2).position(|item| item == b"\r\n") {
-                return Some(&preview[..line_end] == b"POST /enroll/device HTTP/1.1");
+                let line = &preview[..line_end];
+                return Some(
+                    line.starts_with(b"POST /enroll/device HTTP/")
+                        || line.starts_with(b"POST /token/access HTTP/"),
+                );
             }
             if count == preview.len() {
                 return Some(false);
@@ -1010,7 +1069,7 @@ async fn is_pair_relay_enroll_request(stream: &TcpStream) -> bool {
     .unwrap_or(false)
 }
 
-async fn serve_pair_relay_enroll(stream: &mut TcpStream) {
+async fn serve_pair_relay_enroll(stream: &mut TcpStream, state: &Arc<Mutex<SinglePairRelayState>>) {
     let mut request = Vec::new();
     let mut header_end = None;
     let mut content_length = None;
@@ -1043,13 +1102,36 @@ async fn serve_pair_relay_enroll(stream: &mut TcpStream) {
             break;
         }
     }
-    let body = br#"{"device_token":"test-device-token"}"#;
+
+    let instance_id = header_end
+        .and_then(|end| {
+            let body_bytes = &request[end..];
+            let v: serde_json::Value = serde_json::from_slice(body_bytes).ok()?;
+            v.get("instance_id")?.as_str().map(String::from)
+        })
+        .or_else(|| lock_pair_relay(state).instance_id.clone())
+        .unwrap_or_else(|| "test-instance".to_string());
+
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    let exp = now + 3600;
+    let (device_token, expires_at) = make_door_e2e_jwt(
+        solstone_core_spl::relay_access::DEFAULT_RELAY_ISSUER,
+        &instance_id,
+        now,
+        exp,
+    );
+    let body = serde_json::to_vec(&serde_json::json!({
+        "protocol_version": 2,
+        "device_token": device_token,
+        "expires_at": expires_at,
+    }))
+    .expect("json");
     let response = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         body.len()
     );
     if stream.write_all(response.as_bytes()).await.is_ok() {
-        let _ = stream.write_all(body).await;
+        let _ = stream.write_all(&body).await;
         let _ = stream.shutdown().await;
     }
 }
@@ -3069,14 +3151,14 @@ async fn pair_response_is_canonical_and_omits_empty_local_endpoints_on_raw_json(
 async fn relay_pair_window_round_trip_delivers_the_complete_pair_response() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let fixture = Fixture::established(0);
-        let relay = SinglePairRelay::bind().await;
+        let relay = SinglePairRelay::bind_for_instance(&fixture.instance_id).await;
         configure_relay_pairing(&fixture, relay.origin());
         let (authorization_sender, authorization) = watch::channel(DeviceDoorAuthorization::from(
             AuthorizedClientsRead::Missing,
         ));
         let door_base = pairing_router(&fixture, pairing_snapshot());
         let handle = bind_with_authorization(
-            options(&fixture, pairing_router(&fixture, pairing_snapshot()), 0),
+            options(&fixture, door_base.clone(), 0),
             solstone_core_convey_shell::authorization_gate::authorized_router_with_router(
                 door_base,
                 fixture.root.clone(),
@@ -3095,11 +3177,7 @@ async fn relay_pair_window_round_trip_delivers_the_complete_pair_response() {
         );
         let other_door_base = pairing_router(&other_fixture, pairing_snapshot());
         let other_handle = bind_with_authorization(
-            options(
-                &other_fixture,
-                pairing_router(&other_fixture, pairing_snapshot()),
-                0,
-            ),
+            options(&other_fixture, other_door_base.clone(), 0),
             solstone_core_convey_shell::authorization_gate::authorized_router_with_router(
                 other_door_base,
                 other_fixture.root.clone(),

@@ -1466,3 +1466,6 @@ async fn rejected_pair_window_registration_leaves_no_open_window() -> Result<(),
     .await
     .map_err(|_| "refused pair-window registration fixture timed out".to_owned())?
 }
+
+#[path = "spl_relay_lifecycle/access_contract.rs"]
+mod access_contract;
