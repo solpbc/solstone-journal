@@ -394,10 +394,10 @@ USER_BIN := $(HOME)/.local/bin
 uv.lock: pyproject.toml
 	$(UV) lock
 
-# Hopper lode setup. Hopper prefers this target over `install` and its contract
-# is deliberately lean: the dependencies needed to EDIT the tree and run the
-# unit gate, and nothing else. Host runtime provisioning and large artifact
-# downloads stay in `install`.
+# Coding-agent setup. Automation prefers this target over `install` and its
+# contract is deliberately lean: the dependencies needed to EDIT the tree and
+# run the unit gate, and nothing else. Host runtime provisioning and large
+# artifact downloads stay in `install`.
 #
 # `make ci` is fmt + CI topology + Clippy + unit tests, all cargo, and none of
 # those targets depends on `.installed`. The three ONNX crates are outside the
@@ -405,18 +405,18 @@ uv.lock: pyproject.toml
 # business, not this target's. A populated cargo registry is therefore the
 # whole requirement -- and it must be populated, because the CI topology check
 # runs `cargo run --locked --offline`.
-.PHONY: hopper-install
-hopper-install: ci-full-prep-cargo
+.PHONY: agent-setup
+agent-setup: ci-full-prep-cargo
 
 # Retired. The journal installs from the distribution tree. Developers use
-# cargo. Hopper lodes use hopper-install. Remaining Python repo-maintenance
+# cargo. Coding agents run `make agent-setup`. Remaining Python repo-maintenance
 # scripts still depend on `.installed` and `uv sync`; do not treat this
 # target's refusal as a regression those scripts caused.
 # A zero-byte gitignored `.installed` predating the cut makes `.installed` a
 # no-op on any machine that already ran it — `rm -f .installed` first or the
 # tree lies.
 install:
-	@echo "Error: 'make install' is retired. Install the journal from the distribution tree; develop with cargo; hopper lodes use hopper-install." >&2
+	@echo "Error: 'make install' is retired. Install the journal from the distribution tree; develop with cargo; coding agents run 'make agent-setup'." >&2
 	@exit 1
 
 # Staging the shared host runtime is BUILD-TIME tooling: it shells to Python, so
