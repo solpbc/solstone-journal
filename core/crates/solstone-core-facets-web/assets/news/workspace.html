@@ -638,7 +638,7 @@
     const jumpDays = days.slice(1, 8).filter(day => dayLabel(day));
     // One chip would only restate the link beside the heading.
     const jumpHtml = jumpDays.length > 1
-      ? `<nav class="news-day-jump" aria-label="Recent newsletter days"><span class="news-day-jump-label">recent days</span><ul class="news-day-jump-list">${jumpDays.map(day => `<li><a class="news-day-jump-link" href="${escapeAttr(dayHref(day))}">${escapeHtml(dayLabel(day))}</a></li>`).join('')}</ul></nav>`
+      ? `<nav class="news-day-jump" aria-label="recent newsletter days"><span class="news-day-jump-label">recent days</span><ul class="news-day-jump-list">${jumpDays.map(day => `<li><a class="news-day-jump-link" href="${escapeAttr(dayHref(day))}">${escapeHtml(dayLabel(day))}</a></li>`).join('')}</ul></nav>`
       : '';
     // The summary counts the day groups this disclosure actually holds. Bare
     // "earlier newsletters" read as a heading for the heatmap card below it.

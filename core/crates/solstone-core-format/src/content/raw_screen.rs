@@ -153,7 +153,7 @@ pub(super) fn render_for_screen_talent(rel: &str, records: &[JsonObject]) -> Scr
                 "panes": pane_changes,
             });
             let content = format!(
-                "{heading}\n\n**Tmux observation:**\n\n```json\n{}\n```\n",
+                "{heading}\n\n**Tmux window:**\n\n```json\n{}\n```\n",
                 serde_json::to_string(&projected).expect("tmux projection is JSON")
             );
             recorded_chunk(content, base_timestamp.saturating_add(offset_ms), frame)
@@ -828,7 +828,7 @@ mod tests {
         let mut wrong_primary = valid.clone();
         wrong_primary["analysis"]["primary"] = json!("terminal");
         wrong_primary["analysis"]["visual_description"] =
-            json!("## Tmux change encoding\n### 10:22:00\n**Tmux observation:**\n```json");
+            json!("## Tmux change encoding\n### 10:22:00\n**Tmux window:**\n```json");
         cases.push(wrong_primary);
 
         let mut missing_session = valid.clone();
