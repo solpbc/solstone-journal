@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+store-test-hooks = []
+
 [dependencies]
 base64 = "0.22.1"
 chrono = { workspace = true }

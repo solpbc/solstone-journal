@@ -499,6 +499,7 @@ pub fn complete_pairing(
         fingerprint: issued.cid().to_owned(),
         home_attestation: Some(attestation),
         local_endpoints: ceremony.local_endpoints,
+        relay_access: None,
     })
 }
 
@@ -1039,6 +1040,7 @@ mod tests {
             fingerprint: "sha256:fp".into(),
             home_attestation: None,
             local_endpoints: None,
+            relay_access: None,
         };
         let empty_json = pair_response_json(&response, None).expect("json");
         assert!(empty_json.get("local_endpoints").is_none());
