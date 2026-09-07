@@ -1495,9 +1495,16 @@ a.body-day-cell:focus-visible {
       // Nothing imported yet: the hero plus the one action is the whole
       // page — no record card, quick actions, day grid or coverage lists
       // to render around a message that says there's nothing here.
+      // The second line used to restate the subtitle ("body imports will
+      // appear here") and named no source, so the owner had to leave for
+      // Import to learn whether their ring or their phone was supported
+      // (G1-215). Apple Health and Oura are the only two body sources the
+      // product has: `BodySourceFamily` in solstone-core-body-source admits
+      // exactly those, and sleep, heart rate and activity all have real
+      // ingest arms on both.
       return html([
         renderHeader("body", "your body, brought into your journal.", false),
-        '<p class="body-subtitle">no body data yet. body imports will appear here. <a class="body-link" href="/app/import/">import body data &rarr;</a></p>',
+        '<p class="body-subtitle">nothing here yet. bring in sleep, heart rate and activity from Oura or Apple Health. <a class="body-link" href="/app/import/">import body data &rarr;</a></p>',
       ]);
     }
     return html([
