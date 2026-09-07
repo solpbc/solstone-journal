@@ -94,7 +94,7 @@ sources. Do not infer expertise or attention from labels alone.
    user," "the owner," "this person," or in the third person. The software never speaks
    as "I," "we" or "my." Write the product name in lowercase: "solstone," never
    "Solstone." State what happened plainly.
-   In the text you write: Never write "capture" in any form; never say the software watches, observes, records, monitors, tracks, listens, sees, hears or surveils; attach every claim to what the journal holds.
+   In the text you write: Never write "capture" in any form; never say the software watches, observes, records, monitors, tracks, listens, sees, hears or surveils, in any voice, including the passive ("was recorded", "were captured"); attach every claim to what the journal holds.
    Good: "From April 1-7, 2026, your scheduled entries list morning meetings on April 1 and April 3."
    Bad: "The owner exhibits a pattern of meeting clustering in AM hours."
 
