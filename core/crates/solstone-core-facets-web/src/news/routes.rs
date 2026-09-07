@@ -203,12 +203,25 @@ const _: () = assert!(PREVIEW_CHARS > MIN_PREVIEW_CHARS);
 fn preview_from_content(content: &str) -> Option<String> {
     let mut fallback: Option<String> = None;
     let mut chosen: Option<String> = None;
+    // The header region is bounded by position, not only by shape. A letter's
+    // scaffolding is the run of lines before its first blank line; past that
+    // the reader is in the body, where "To: the whole team, ..." is a sentence
+    // the owner wrote and not a header to skip (F-24).
+    let mut in_header_region = true;
+    let mut seen_content = false;
     for raw in content.lines() {
         let trimmed = raw.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
+        if trimmed.is_empty() {
+            if seen_content {
+                in_header_region = false;
+            }
             continue;
         }
-        if is_metadata_line(trimmed) {
+        seen_content = true;
+        if trimmed.starts_with('#') {
+            continue;
+        }
+        if in_header_region && is_metadata_line(trimmed) {
             continue;
         }
         let cleaned = trimmed.trim_matches('*').replace("**", "");
@@ -626,6 +639,19 @@ mod tests {
             ),
             // Every line short: the owner still gets the first one.
             ("a quiet week.\nnothing else.\n", Some("a quiet week.")),
+            // F-24: past the header region a "To: ..." line is the letter's own
+            // body. The header region ends at the first blank line, so this one
+            // is a sentence and the short lines above it are only fallbacks.
+            (
+                "Week 36\n\nShort note.\n\nTo: the whole team, we ship on Friday.\n",
+                Some("To: the whole team, we ship on Friday."),
+            ),
+            // ...and the header region itself is still skipped, blank line and
+            // all: a real header block above the body never previews.
+            (
+                "To: the whole team\nFrom: the office\n\nThe week brought two launches and one postponed.\n",
+                Some("The week brought two launches and one postponed."),
+            ),
             // Nothing to show at all.
             ("# heading only\n\n\n", None),
             ("", None),
