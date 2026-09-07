@@ -2451,7 +2451,7 @@
     // Progress bars
     const progressItems = [];
     if (d.agents_total > 0) {
-      progressItems.push({ label: 'Talents: ' + (d.agents_completed || 0) + ' / ' + d.agents_total, pct: Math.round((d.agents_completed || 0) / d.agents_total * 100) });
+      progressItems.push({ label: 'talents: ' + (d.agents_completed || 0) + ' / ' + d.agents_total, pct: Math.round((d.agents_completed || 0) / d.agents_total * 100) });
     }
     if (d.segments_total > 0) {
       progressItems.push({ label: 'Segments: ' + (d.segments_completed || 0) + ' / ' + d.segments_total, pct: Math.round((d.segments_completed || 0) / d.segments_total * 100) });
