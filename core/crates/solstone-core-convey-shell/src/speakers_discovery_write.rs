@@ -357,7 +357,7 @@ pub async fn scan(
                 StatusCode::INTERNAL_SERVER_ERROR
             };
             return (status, Json(json!({
-                "error":"i couldn't look for new voices right now.", "reason_code":"speaker_discovery_failed",
+                "error":"couldn't look for new voices right now.", "reason_code":"speaker_discovery_failed",
                 "detail":"", "retryable":retryable,
             }))).into_response();
         }
