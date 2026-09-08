@@ -5,25 +5,26 @@
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use serde_json::{Value, json};
+use serde_json::Value;
 
-#[cfg(windows)]
-use solstone_core_distribution::windows_payload::{VerifiedWindowsPayload, verify_windows_payload};
-#[cfg(windows)]
+#[cfg(any(windows, test))]
+use solstone_core_distribution::windows_payload::{
+    WINDOWS_RFDETR_MODEL, WINDOWS_RFDETR_WORKER, WindowsPayloadError, WindowsPayloadRefusal,
+    verify_windows_payload,
+};
+#[cfg(any(windows, test))]
 use std::ffi::OsStr;
-
-pub const WINDOWS_RFDETR_WORKER_MEMBER: &str = "bin/rfdetr-cli.exe";
-pub const WINDOWS_RFDETR_MODEL_MEMBER: &str =
-    "lib/solstone_journal_models/assets/rfdetr/rfdetr-nano-f16.gguf";
 
 pub const RFDETR_HELP_TIMEOUT: Duration = Duration::from_secs(10);
 pub const RFDETR_DETECT_TIMEOUT: Duration = Duration::from_secs(120);
 pub const RFDETR_STDIN_LIMIT_BYTES: usize = 1;
 pub const RFDETR_STDOUT_LIMIT_BYTES: usize = 64 * 1024;
 pub const RFDETR_STDERR_LIMIT_BYTES: usize = 64 * 1024;
+pub const RFDETR_RESULT_LIMIT_BYTES: u64 = 1024 * 1024;
 pub const RFDETR_COMMITTED_MEMORY_BYTES: usize = 2 * 1024 * 1024 * 1024;
 pub const RFDETR_CPU_RATE_PER_10_000: u32 = 10000;
 pub const RFDETR_THRESHOLD: &str = "0.25";
@@ -47,60 +48,76 @@ pub struct WindowsRfdetrPackage {
     pub model: PathBuf,
 }
 
-/// Resolve RF-DETR only from the complete signed package containing the running
-/// journal executable. Re-verified on every call.
+#[derive(Debug, thiserror::Error)]
+pub enum WindowsRfdetrPackageError {
+    #[error("{0}")]
+    Missing(String),
+    #[error("{0}")]
+    Invalid(String),
+}
+
+#[cfg(any(windows, test))]
+impl From<WindowsPayloadError> for WindowsRfdetrPackageError {
+    fn from(error: WindowsPayloadError) -> Self {
+        match error.kind {
+            WindowsPayloadRefusal::Missing | WindowsPayloadRefusal::MissingMember => {
+                Self::Missing(error.to_string())
+            }
+            _ => Self::Invalid(error.to_string()),
+        }
+    }
+}
+
+/// Resolve RF-DETR from the complete signed package containing the running
+/// journal executable. Every invocation verifies the current bytes.
 #[cfg(windows)]
-pub fn verified_windows_rfdetr_package() -> Result<WindowsRfdetrPackage, String> {
-    let executable = std::env::current_exe()
-        .map_err(|error| format!("could not determine the running journal executable: {error}"))?;
+pub fn verified_windows_rfdetr_package() -> Result<WindowsRfdetrPackage, WindowsRfdetrPackageError>
+{
+    let executable = std::env::current_exe().map_err(|error| {
+        WindowsRfdetrPackageError::Missing(format!(
+            "could not determine the running journal executable: {error}"
+        ))
+    })?;
+    verified_windows_rfdetr_package_at(&executable)
+}
+
+#[cfg(not(windows))]
+pub fn verified_windows_rfdetr_package() -> Result<WindowsRfdetrPackage, WindowsRfdetrPackageError>
+{
+    Err(WindowsRfdetrPackageError::Missing(
+        "Windows RF-DETR package verification requires a Windows runtime".to_owned(),
+    ))
+}
+
+#[cfg(any(windows, test))]
+fn verified_windows_rfdetr_package_at(
+    executable: &Path,
+) -> Result<WindowsRfdetrPackage, WindowsRfdetrPackageError> {
+    use WindowsRfdetrPackageError::{Invalid, Missing};
     let bin = executable.parent().ok_or_else(|| {
-        format!(
-            "running journal executable has no containing directory: {}",
-            executable.display()
-        )
+        Missing("running journal executable has no containing directory".to_owned())
     })?;
     if bin.file_name() != Some(OsStr::new("bin")) {
-        return Err(format!(
+        return Err(Invalid(format!(
             "running journal executable is not in the package bin directory: {}",
             executable.display()
-        ));
+        )));
     }
-    let package_root = bin.parent().ok_or_else(|| {
-        format!(
-            "package bin directory has no package root: {}",
-            bin.display()
-        )
-    })?;
-    let payload = verify_windows_payload(package_root)
-        .map_err(|error| format!("could not verify the signed RF-DETR app payload: {error}"))?;
-    declared_rfdetr_members(package_root, &payload)
-}
-
-/// Non-Windows callers cannot establish the installed Windows package scope.
-#[cfg(not(windows))]
-pub fn verified_windows_rfdetr_package() -> Result<WindowsRfdetrPackage, String> {
-    Err("Windows RF-DETR package verification requires a Windows runtime".to_owned())
-}
-
-#[cfg(windows)]
-pub fn declared_rfdetr_members(
-    package_root: &Path,
-    payload: &VerifiedWindowsPayload,
-) -> Result<WindowsRfdetrPackage, String> {
-    let binary = payload
-        .declared_path(WINDOWS_RFDETR_WORKER_MEMBER)
-        .ok_or_else(|| {
-            format!("signed RF-DETR app payload does not declare {WINDOWS_RFDETR_WORKER_MEMBER}")
-        })?;
-    let model = payload
-        .declared_path(WINDOWS_RFDETR_MODEL_MEMBER)
-        .ok_or_else(|| {
-            format!("signed RF-DETR app payload does not declare {WINDOWS_RFDETR_MODEL_MEMBER}")
-        })?;
+    let package_root = bin
+        .parent()
+        .ok_or_else(|| Missing("package bin directory has no package root".to_owned()))?;
+    let payload = verify_windows_payload(package_root)?;
+    let member = |path: &str| {
+        payload.declared_path(path).ok_or_else(|| {
+            Missing(format!(
+                "signed RF-DETR app payload does not declare {path}"
+            ))
+        })
+    };
     Ok(WindowsRfdetrPackage {
         package_root: package_root.to_path_buf(),
-        binary,
-        model,
+        binary: member(WINDOWS_RFDETR_WORKER)?,
+        model: member(WINDOWS_RFDETR_MODEL)?,
     })
 }
 
@@ -121,28 +138,11 @@ pub struct RfdetrWindowsLaunchSpec {
     pub committed_memory_bytes: usize,
 }
 
-fn resolve_package_bin_directory(package: &WindowsRfdetrPackage) -> PathBuf {
-    if let Some(parent) = package
-        .binary
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-    {
-        parent.to_path_buf()
-    } else {
-        let root_str = package.package_root.to_string_lossy();
-        if root_str.contains('\\') {
-            PathBuf::from(format!("{root_str}\\bin"))
-        } else {
-            package.package_root.join("bin")
-        }
-    }
-}
-
 pub fn rfdetr_windows_help_launch(
     package: &WindowsRfdetrPackage,
     system_root: OsString,
 ) -> RfdetrWindowsLaunchSpec {
-    let current_directory = resolve_package_bin_directory(package);
+    let current_directory = package.package_root.join("bin");
     RfdetrWindowsLaunchSpec {
         package_root: package.package_root.clone(),
         executable: package.binary.clone(),
@@ -165,7 +165,7 @@ pub fn rfdetr_windows_detect_launch(
     input: &Path,
     output: &Path,
 ) -> RfdetrWindowsLaunchSpec {
-    let current_directory = resolve_package_bin_directory(package);
+    let current_directory = package.package_root.join("bin");
     RfdetrWindowsLaunchSpec {
         package_root: package.package_root.clone(),
         executable: package.binary.clone(),
@@ -194,31 +194,144 @@ pub fn rfdetr_windows_detect_launch(
     }
 }
 
-pub fn map_rfdetr_help_probe(
-    runnable: bool,
-    exit_code: Option<i32>,
-    error_message: Option<&str>,
-) -> Value {
-    if runnable {
-        json!({"runnable": true, "reason_code": Value::Null})
-    } else if let Some(code) = exit_code {
-        json!({"runnable": false, "reason_code": "binary_exit", "exit_code": code})
-    } else if let Some(message) = error_message {
-        let reason_code = if message.contains("timed out") || message.contains("DeadlineExceeded") {
-            "timeout"
-        } else {
-            "binary_unavailable"
-        };
-        json!({"runnable": false, "reason_code": reason_code, "message": message})
-    } else {
-        json!({"runnable": false, "reason_code": "binary_unavailable"})
-    }
-}
-
 pub fn map_rfdetr_detect_completion(exit_ok: bool, output_path: &Path) -> Result<Value, String> {
     if !exit_ok {
         return Err("rfdetr-cli detect failed".to_owned());
     }
-    let bytes = std::fs::read(output_path).map_err(|error| error.to_string())?;
+    let file = std::fs::File::open(output_path).map_err(|error| error.to_string())?;
+    let mut bytes = Vec::new();
+    file.take(RFDETR_RESULT_LIMIT_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    if bytes.len() as u64 > RFDETR_RESULT_LIMIT_BYTES {
+        return Err("RF-DETR result exceeded its byte limit".to_owned());
+    }
     serde_json::from_slice(&bytes).map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolver_refuses_wrong_layout_and_missing_manifest() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(matches!(
+            verified_windows_rfdetr_package_at(&root.path().join("journal.exe")),
+            Err(WindowsRfdetrPackageError::Invalid(_))
+        ));
+        std::fs::create_dir(root.path().join("bin")).unwrap();
+        assert!(matches!(
+            verified_windows_rfdetr_package_at(&root.path().join("bin/journal.exe")),
+            Err(WindowsRfdetrPackageError::Missing(_))
+        ));
+    }
+
+    #[test]
+    fn detection_result_is_bounded_and_child_failure_precedes_file_read() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("output.json");
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(RFDETR_RESULT_LIMIT_BYTES + 1).unwrap();
+        assert!(
+            map_rfdetr_detect_completion(true, &path)
+                .unwrap_err()
+                .contains("byte limit")
+        );
+        assert_eq!(
+            map_rfdetr_detect_completion(false, &path).unwrap_err(),
+            "rfdetr-cli detect failed"
+        );
+        std::fs::write(&path, b"{bad").unwrap();
+        assert!(map_rfdetr_detect_completion(true, &path).is_err());
+        std::fs::write(&path, br#"{"image":{},"detections":[]}"#).unwrap();
+        assert_eq!(
+            map_rfdetr_detect_completion(true, &path).unwrap()["detections"],
+            serde_json::json!([])
+        );
+    }
+
+    #[cfg(feature = "test-fixture-pin")]
+    #[test]
+    fn signed_package_readiness_rechecks_tamper_before_probe() {
+        use super::super::rfdetr_readiness::{
+            RfdetrDegradedCause, RfdetrReadiness, evaluate_windows_rfdetr_readiness_from,
+        };
+        use solstone_core_distribution::manifest_verify::install_test_fixture_pin;
+        use solstone_core_distribution::windows_payload::{
+            WINDOWS_PAYLOAD_MANIFEST, WINDOWS_PAYLOAD_SIGNATURE, render_windows_payload_manifest,
+        };
+        use std::cell::Cell;
+        use std::io::Cursor;
+        let root = tempfile::tempdir().unwrap();
+        let executable = root.path().join("bin/journal.exe");
+        for (path, bytes) in [
+            ("bin/journal.exe", b"journal".as_slice()),
+            (WINDOWS_RFDETR_WORKER, b"engine".as_slice()),
+            (WINDOWS_RFDETR_MODEL, b"model".as_slice()),
+        ] {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, bytes).unwrap();
+        }
+        let manifest =
+            render_windows_payload_manifest(root.path(), &"a".repeat(40), &"b".repeat(64)).unwrap();
+        let minisign::KeyPair { pk, sk } =
+            minisign::KeyPair::generate_unencrypted_keypair().unwrap();
+        let pin_dir = tempfile::tempdir().unwrap();
+        let pin = pin_dir.path().join("fixture.pub");
+        std::fs::write(&pin, pk.to_box().unwrap().to_bytes()).unwrap();
+        install_test_fixture_pin(&pin).unwrap();
+        let signature = minisign::sign(
+            Some(&pk),
+            &sk,
+            Cursor::new(manifest.as_slice()),
+            None,
+            Some("RF-DETR consumer fixture"),
+        )
+        .unwrap();
+        let manifest_path = root.path().join(WINDOWS_PAYLOAD_MANIFEST);
+        std::fs::create_dir_all(manifest_path.parent().unwrap()).unwrap();
+        std::fs::write(&manifest_path, manifest).unwrap();
+        std::fs::write(
+            root.path().join(WINDOWS_PAYLOAD_SIGNATURE),
+            signature.into_string(),
+        )
+        .unwrap();
+        let calls = Cell::new(0);
+        let evaluate = || {
+            evaluate_windows_rfdetr_readiness_from(
+                verified_windows_rfdetr_package_at(&executable),
+                |package| {
+                    calls.set(calls.get() + 1);
+                    let spec = rfdetr_windows_help_launch(package, OsString::from("system-root"));
+                    assert_eq!(spec.executable, root.path().join(WINDOWS_RFDETR_WORKER));
+                    assert_eq!(spec.current_directory, root.path().join("bin"));
+                    assert_eq!(spec.arguments, ["--help"]);
+                    serde_json::json!({"runnable": true})
+                },
+            )
+        };
+        assert!(matches!(evaluate(), RfdetrReadiness::Ready { .. }));
+        std::fs::write(root.path().join(WINDOWS_RFDETR_MODEL), b"wrong").unwrap();
+        assert!(matches!(
+            evaluate(),
+            RfdetrReadiness::Degraded {
+                cause: RfdetrDegradedCause::IntegrityInvalid,
+                ..
+            }
+        ));
+        assert_eq!(calls.get(), 1);
+        std::fs::write(root.path().join(WINDOWS_RFDETR_MODEL), b"model").unwrap();
+        assert!(matches!(evaluate(), RfdetrReadiness::Ready { .. }));
+        std::fs::remove_file(root.path().join(WINDOWS_RFDETR_WORKER)).unwrap();
+        assert!(matches!(
+            evaluate(),
+            RfdetrReadiness::Degraded {
+                cause: RfdetrDegradedCause::Absent,
+                ..
+            }
+        ));
+        assert_eq!(calls.get(), 2);
+    }
 }

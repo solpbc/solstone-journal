@@ -16,8 +16,8 @@ use super::rfdetr_install::{
 
 pub use super::rfdetr_windows::{
     RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE, RfdetrWindowsLaunchSpec, WindowsRfdetrPackage,
-    map_rfdetr_detect_completion, map_rfdetr_help_probe, rfdetr_degraded_guidance,
-    rfdetr_windows_detect_launch, rfdetr_windows_help_launch, verified_windows_rfdetr_package,
+    map_rfdetr_detect_completion, rfdetr_degraded_guidance, rfdetr_windows_detect_launch,
+    rfdetr_windows_help_launch, verified_windows_rfdetr_package,
 };
 
 pub const RFDETR_READY_DETAIL: &str = "rf-detr.cpp object-detection engine and model are ready";
@@ -48,19 +48,19 @@ pub enum RfdetrReadiness {
 }
 
 pub fn evaluate_windows_rfdetr_readiness_from(
-    package: Result<WindowsRfdetrPackage, String>,
+    package: Result<WindowsRfdetrPackage, super::rfdetr_windows::WindowsRfdetrPackageError>,
     probe: impl FnOnce(&WindowsRfdetrPackage) -> Value,
 ) -> RfdetrReadiness {
     let package = match package {
         Ok(package) => package,
         Err(error) => {
-            let cause = if error.contains("requires a Windows runtime")
-                || error.contains("no containing directory")
-                || error.contains("no package root")
-            {
-                RfdetrDegradedCause::Absent
-            } else {
-                RfdetrDegradedCause::IntegrityInvalid
+            let cause = match &error {
+                super::rfdetr_windows::WindowsRfdetrPackageError::Missing(_) => {
+                    RfdetrDegradedCause::Absent
+                }
+                super::rfdetr_windows::WindowsRfdetrPackageError::Invalid(_) => {
+                    RfdetrDegradedCause::IntegrityInvalid
+                }
             };
             return RfdetrReadiness::Degraded {
                 cause,
@@ -198,8 +198,14 @@ mod tests {
 
     #[test]
     fn windows_package_readiness_refuses_corrupt_payload_before_probe() {
-        let package: Result<WindowsRfdetrPackage, String> =
-            Err("signed RF-DETR app payload does not declare bin/rfdetr-cli.exe".to_owned());
+        let package: Result<
+            WindowsRfdetrPackage,
+            super::super::rfdetr_windows::WindowsRfdetrPackageError,
+        > = Err(
+            super::super::rfdetr_windows::WindowsRfdetrPackageError::Invalid(
+                "signed RF-DETR app payload digest mismatch".to_owned(),
+            ),
+        );
         let readiness = evaluate_windows_rfdetr_readiness_from(package, |_| {
             unreachable!("must not probe corrupt payload")
         });
@@ -207,7 +213,7 @@ mod tests {
             readiness,
             RfdetrReadiness::Degraded {
                 cause: RfdetrDegradedCause::IntegrityInvalid,
-                detail: "Windows RF-DETR package verification failed: signed RF-DETR app payload does not declare bin/rfdetr-cli.exe".to_owned(),
+                detail: "Windows RF-DETR package verification failed: signed RF-DETR app payload digest mismatch".to_owned(),
             }
         );
     }
@@ -255,7 +261,7 @@ mod tests {
         );
         assert_eq!(
             help_spec.current_directory,
-            PathBuf::from(r"C:\Program Files\Solstone\bin")
+            package.package_root.join("bin")
         );
         assert_eq!(help_spec.arguments, vec!["--help"]);
         assert_eq!(help_spec.environment.len(), 1);

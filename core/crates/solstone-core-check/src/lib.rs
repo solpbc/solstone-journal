@@ -322,7 +322,7 @@ pub fn gather_host_inputs(journal: &Path, version: &str) -> CheckInputs {
         },
     }
 }
-fn evaluate_host_rfdetr(journal: &Path, os: &str, arch: &str) -> RfdetrReadiness {
+pub fn evaluate_host_rfdetr(journal: &Path, os: &str, arch: &str) -> RfdetrReadiness {
     if solstone_core_local::install::rfdetr_install::rfdetr_uses_package_payload(os, arch) {
         solstone_core_local::install::rfdetr_readiness::evaluate_windows_rfdetr_readiness(
             probe_windows_rfdetr_help,
@@ -336,21 +336,16 @@ fn evaluate_host_rfdetr(journal: &Path, os: &str, arch: &str) -> RfdetrReadiness
 fn probe_windows_rfdetr_help(
     package: &solstone_core_local::install::rfdetr_windows::WindowsRfdetrPackage,
 ) -> Value {
-    use solstone_core_local::install::rfdetr_windows::{
-        map_rfdetr_help_probe, rfdetr_windows_help_launch,
-    };
+    use solstone_core_local::install::rfdetr_windows::rfdetr_windows_help_launch;
     use solstone_core_system::process::{
-        BoundedHelperBudget, BoundedHelperRequest, BoundedHelperResourceLimits, run_bounded_helper,
+        BoundedHelperBudget, BoundedHelperError, BoundedHelperRequest, BoundedHelperResourceLimits,
+        run_bounded_helper,
     };
 
     let system_root = match std::env::var_os("SystemRoot") {
         Some(val) if !val.is_empty() => val,
         _ => {
-            return map_rfdetr_help_probe(
-                false,
-                None,
-                Some("SystemRoot environment variable is not set"),
-            );
+            return json!({"runnable": false, "reason_code": "binary_unavailable", "message": "SystemRoot environment variable is not set"});
         }
     };
     let spec = rfdetr_windows_help_launch(package, system_root);
@@ -373,8 +368,20 @@ fn probe_windows_rfdetr_help(
         }),
     };
     match run_bounded_helper(request) {
-        Ok(output) => map_rfdetr_help_probe(output.exit_code == 0, Some(output.exit_code), None),
-        Err(error) => map_rfdetr_help_probe(false, None, Some(&error.to_string())),
+        Ok(output) if output.exit_code == 0 => {
+            json!({"runnable": true, "reason_code": Value::Null})
+        }
+        Ok(output) => {
+            json!({"runnable": false, "reason_code": "binary_exit", "exit_code": output.exit_code})
+        }
+        Err(error) => {
+            let reason = if matches!(&error, BoundedHelperError::DeadlineExceeded { .. }) {
+                "timeout"
+            } else {
+                "binary_unavailable"
+            };
+            json!({"runnable": false, "reason_code": reason, "message": error.to_string()})
+        }
     }
 }
 

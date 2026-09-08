@@ -4512,6 +4512,7 @@ dependencies = [
  "flate2",
  "hmac",
  "log",
+ "minisign",
  "nix",
  "rcgen",
  "rustls",

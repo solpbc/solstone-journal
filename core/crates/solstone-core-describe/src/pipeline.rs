@@ -26,6 +26,7 @@ use crate::session::{DescribeSession, DescribeSessionFactory, SystemSessionFacto
 
 pub const EXIT_PROVIDER_BLOCKED: i32 = 69;
 const MAX_ATTEMPTS: u64 = 5;
+#[cfg(not(windows))]
 const RFDETR_UNAVAILABLE_DETAIL: &str = "Object detection is unavailable. Run `journal install-models` to check or repair the RF-DETR assets.";
 
 #[derive(Debug)]
