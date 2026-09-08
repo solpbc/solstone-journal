@@ -82,15 +82,14 @@ fn windows_service_capture_receipt() {
         .unwrap_or_else(|error| panic!("{mode}: {error}"));
         assert!(output.quiescent, "{mode}: fixture Job is not empty");
         assert_eq!(output.exit_code, expected, "{mode}");
-        let original_output = format!(
-            "{}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let original_output = format!("{stdout}\n{stderr}");
         let marker = format!("CAPTURE_CONTROL_{mode}=PASS");
         assert_eq!(
-            original_output
+            stdout
                 .lines()
+                .chain(stderr.lines())
                 .filter(|line| *line == marker)
                 .count(),
             1,
