@@ -283,7 +283,7 @@ fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runner::{ToolOutput, ToolRequest, run_restic_with_stdin};
+    use crate::runner::{ToolOutput, ToolRequest};
     use serde_json::json;
     use std::cell::RefCell;
     use std::io;
