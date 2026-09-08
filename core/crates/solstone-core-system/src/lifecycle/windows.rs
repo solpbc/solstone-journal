@@ -297,6 +297,10 @@ pub(crate) fn write_readiness_with_store(
     extra.remove("pid");
     extra.remove("ready_at");
     extra.remove("start_time");
+    extra.insert(
+        super::readiness::WINDOWS_PROCESS_INSTANCE_FIELD.to_owned(),
+        serde_json::to_value(identity.process_instance)?,
+    );
     let marker = super::ReadinessMarker {
         pid: identity.base.pid,
         ready_at,
@@ -1844,5 +1848,27 @@ mod tests {
         ));
         assert!(!store.assembled_files.contains(&filename));
         assert!(store.removal_attempts.is_empty());
+    }
+
+    #[test]
+    fn readiness_writer_uses_boot_identity_over_caller_extra() {
+        let mut store = FakeWindowsLifecycleStore::with_scans([
+            ScanStep::Entries(Vec::new()),
+            ScanStep::Entries(Vec::new()),
+        ]);
+        let state = boot(&mut store).expect("model boot");
+        let mut extra = serde_json::Map::new();
+        extra.insert(
+            super::super::readiness::WINDOWS_PROCESS_INSTANCE_FIELD.into(),
+            serde_json::json!("caller value"),
+        );
+        let observation =
+            write_readiness_with_store(&mut store, &state.identity, NOW, extra).unwrap();
+        let marker = super::super::readiness::parse_marker(&observation.bytes).unwrap();
+        let bound: ProcessInstance = serde_json::from_value(
+            marker.extra[super::super::readiness::WINDOWS_PROCESS_INSTANCE_FIELD].clone(),
+        )
+        .unwrap();
+        assert_eq!(bound, state.identity.process_instance);
     }
 }

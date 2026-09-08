@@ -472,7 +472,7 @@ fn run_convey_bound(
     journal_root: PathBuf,
     port: u16,
     hosted_parent: Option<Arc<solstone_core_system::lifecycle::HostedServiceParentRuntime>>,
-    #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
+    #[cfg(windows)] discovery_generation: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<(), String> {
     use solstone_core_journal_config::read_direct_door_port;
     use solstone_core_sol_link::ledger::AuthorizedClientsRead;
@@ -499,8 +499,9 @@ fn run_convey_bound(
     );
     let loopback_router = router_with_hosted_parent(journal_root.clone(), hosted_parent.clone());
     #[cfg(windows)]
-    let loopback_router =
-        loopback_router.layer(Extension(DiscoveryGenerationContext(generation.clone())));
+    let loopback_router = loopback_router.layer(Extension(DiscoveryGenerationContext(
+        discovery_generation.clone(),
+    )));
     let door_router = authorization_gate::authorized_router_with_router(
         loopback_router.clone(),
         journal_root.clone(),

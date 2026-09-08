@@ -249,6 +249,28 @@ impl ManagedProcess {
             .failure(cause, owner, io, std::mem::take(&mut self.resources))
     }
 
+    /// Fault control for descendant-only capability lifetime receipts. This
+    /// deliberately removes this successfully admitted launch's parent grant
+    /// copies while preserving its original Job, stop, log and drain owners.
+    /// Production builds have no resource-release escape.
+    #[cfg(feature = "test-hooks")]
+    pub fn release_parent_read_file_grants_for_test(&mut self) -> io::Result<()> {
+        if self.stop_event.is_none()
+            || self.resources.len() != 2
+            || self.owner_mut().poll()?.is_some()
+        {
+            return Err(io::Error::other(
+                "expected a live admitted managed test launch",
+            ));
+        }
+        // launch_managed_hosted installs the grant Vec; from_owned_job adds
+        // the log writer. This hook is not a generic resource-bag operation.
+        let mut retained = super::bounded::BoundedHelperResources::new();
+        retained.retain(self.log_writer.clone());
+        self.resources = retained;
+        Ok(())
+    }
+
     pub fn pid(&self) -> u32 {
         self.instance.pid
     }

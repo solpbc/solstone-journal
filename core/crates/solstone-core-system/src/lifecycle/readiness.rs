@@ -11,6 +11,8 @@ use super::LifecycleError;
 /// Shared with Python readiness validation.
 pub const START_TIME_TOLERANCE_SECONDS: f64 = 1.5;
 
+pub(super) const WINDOWS_PROCESS_INSTANCE_FIELD: &str = "windows_process_instance";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ReadinessMarker {
     pub pid: u32,
@@ -122,7 +124,7 @@ pub fn readiness_is_valid(journal: impl AsRef<Path>) -> bool {
     else {
         return false;
     };
-    if marker.pid != instance.pid {
+    if !windows_marker_matches_instance(&marker, &instance) {
         return false;
     }
     matches!(
@@ -132,6 +134,19 @@ pub fn readiness_is_valid(journal: impl AsRef<Path>) -> bool {
         ),
         crate::process::InstanceVerdict::SameLive { .. }
     )
+}
+
+#[cfg(any(windows, test))]
+fn windows_marker_matches_instance(
+    marker: &ReadinessMarker,
+    instance: &crate::process::ProcessInstance,
+) -> bool {
+    let Some(value) = marker.extra.get(WINDOWS_PROCESS_INSTANCE_FIELD) else {
+        return false;
+    };
+    serde_json::from_value::<crate::process::ProcessInstance>(value.clone()).is_ok_and(|bound| {
+        bound.pid == marker.pid && bound == *instance && bound.birth.windows_filetime().is_some()
+    })
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -209,5 +224,54 @@ mod tests {
             .is_none()
         );
         super::super::state::remove_test_supervisor_journal(root);
+    }
+}
+
+#[cfg(test)]
+mod windows_marker_identity_tests {
+    use super::*;
+    use crate::process::{ProcessBirth, ProcessInstance};
+
+    #[test]
+    fn exact_windows_birth_binds_readiness_even_when_pid_and_float_time_match() {
+        let current = ProcessInstance {
+            pid: 42,
+            birth: ProcessBirth::windows(134_333_000_000_000_001),
+        };
+        let stale = ProcessInstance {
+            pid: current.pid,
+            birth: ProcessBirth::windows(134_333_000_000_000_000),
+        };
+        let mut marker = ReadinessMarker {
+            pid: current.pid,
+            ready_at: 2.0,
+            start_time: 1.0,
+            extra: Default::default(),
+        };
+        // Missing, malformed and unknown birth never become an unbound ready marker.
+        assert!(!windows_marker_matches_instance(&marker, &current));
+        marker.extra.insert(
+            WINDOWS_PROCESS_INSTANCE_FIELD.into(),
+            serde_json::json!("invalid"),
+        );
+        assert!(!windows_marker_matches_instance(&marker, &current));
+        marker.extra.insert(
+            WINDOWS_PROCESS_INSTANCE_FIELD.into(),
+            serde_json::to_value(stale).unwrap(),
+        );
+        assert!(!windows_marker_matches_instance(&marker, &current));
+        marker.extra.insert(
+            WINDOWS_PROCESS_INSTANCE_FIELD.into(),
+            serde_json::to_value(current).unwrap(),
+        );
+        assert!(windows_marker_matches_instance(&marker, &current));
+        marker.pid += 1;
+        assert!(!windows_marker_matches_instance(&marker, &current));
+        marker.pid = current.pid;
+        marker.extra.insert(
+            WINDOWS_PROCESS_INSTANCE_FIELD.into(),
+            serde_json::json!({"pid":current.pid,"birth":{"kind":"unknown"}}),
+        );
+        assert!(!windows_marker_matches_instance(&marker, &current));
     }
 }

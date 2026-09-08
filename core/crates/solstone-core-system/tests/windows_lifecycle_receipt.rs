@@ -716,3 +716,100 @@ fn windows_managed_process_facade_receipt() {
 
     println!("JOURNAL_WIN_CI_MANAGED_PROCESS_FACADE=executed/pass");
 }
+
+#[test]
+#[ignore = "requires native Windows readiness publisher and exact birth observation"]
+fn windows_readiness_birth_binding_receipt() {
+    use solstone_core_system::lifecycle::{
+        ArtifactClearOutcome, ShutdownDisposition, ShutdownDriver, ShutdownRegime,
+        readiness_is_valid,
+    };
+    use solstone_core_system::process::{
+        InstanceVerdict, ProcessBirth, ProcessInstance, ProcessInstanceSource,
+        SystemProcessInstanceSource,
+    };
+    // This fixture starts no services, tasks or children. The empty driver
+    // permits lifecycle artifact cleanup; it is not service shutdown evidence.
+    struct NoServices;
+    impl ShutdownDriver for NoServices {
+        fn reap_managed(&mut self, _: Duration) -> ShutdownDisposition {
+            ShutdownDisposition::Orderly
+        }
+        fn drain_tasks(&mut self, _: Duration) -> ShutdownDisposition {
+            ShutdownDisposition::Orderly
+        }
+        fn stop_children(&mut self, _: Option<Duration>) -> ShutdownDisposition {
+            ShutdownDisposition::Orderly
+        }
+        fn join_bus(&mut self, _: Duration) -> ShutdownDisposition {
+            ShutdownDisposition::Orderly
+        }
+    }
+    let root = tempfile::tempdir().expect("isolated native readiness journal");
+    assert_eq!(filesystem_name(root.path()).unwrap(), "NTFS");
+    let mut lifecycle = boot(root.path());
+    let health = root.path().join("health");
+    let ready_path = health.join("supervisor.ready");
+    let instance: ProcessInstance =
+        serde_json::from_slice(&fs::read(health.join("supervisor.process_instance")).unwrap())
+            .unwrap();
+    assert!(matches!(
+        SystemProcessInstanceSource.observe(&instance),
+        InstanceVerdict::SameLive { .. }
+    ));
+    let birth = instance.birth.windows_filetime().unwrap();
+    let stale = ProcessInstance {
+        pid: instance.pid,
+        birth: ProcessBirth::windows(birth.checked_sub(1).unwrap()),
+    };
+    let extra = serde_json::Map::from_iter([(
+        "windows_process_instance".to_owned(),
+        serde_json::json!("caller cannot override boot identity"),
+    )]);
+    lifecycle.signal_ready(NOW, extra).unwrap();
+    let valid: serde_json::Value = serde_json::from_slice(&fs::read(&ready_path).unwrap()).unwrap();
+    let bound: ProcessInstance =
+        serde_json::from_value(valid["windows_process_instance"].clone()).unwrap();
+    let initial_valid = readiness_is_valid(root.path()) && bound == instance;
+    let mut variants = Vec::new();
+    let mut stale_marker = valid.clone();
+    stale_marker["windows_process_instance"] = serde_json::to_value(stale).unwrap();
+    variants.push(("same-pid-stale-100ns-birth", stale_marker));
+    let mut missing = valid.clone();
+    missing
+        .as_object_mut()
+        .unwrap()
+        .remove("windows_process_instance");
+    variants.push(("missing", missing));
+    let mut malformed = valid.clone();
+    malformed["windows_process_instance"] = serde_json::json!("invalid");
+    variants.push(("malformed", malformed));
+    let mut wrong_pid = valid.clone();
+    wrong_pid["pid"] = serde_json::json!(instance.pid.wrapping_add(1));
+    variants.push(("wrong-pid", wrong_pid));
+    let mut unknown = valid.clone();
+    unknown["windows_process_instance"] =
+        serde_json::json!({"pid":instance.pid,"birth":{"kind":"unknown"}});
+    variants.push(("unknown-birth", unknown));
+    let mut refused = Vec::new();
+    let mut restored = true;
+    for (label, marker) in variants {
+        fs::write(&ready_path, serde_json::to_vec(&marker).unwrap()).unwrap();
+        refused.push((label, !readiness_is_valid(root.path())));
+        // The production publisher obtains a fresh retained observation before
+        // cleanup, rather than pretending corrupted bytes match the old one.
+        lifecycle.signal_ready(NOW, serde_json::Map::new()).unwrap();
+        restored &= readiness_is_valid(root.path());
+    }
+    let cleanup = lifecycle.shutdown(&mut NoServices, ShutdownRegime::Standard, false);
+    assert_eq!(cleanup.readiness, ArtifactClearOutcome::Cleared);
+    assert_eq!(cleanup.self_heartbeat, ArtifactClearOutcome::Cleared);
+    assert_eq!(cleanup.identity, ArtifactClearOutcome::Cleared);
+    assert!(!readiness_is_valid(root.path()));
+    assert!(
+        initial_valid && restored,
+        "native positive controls must validate"
+    );
+    assert!(refused.iter().all(|(_, outcome)| *outcome), "{refused:?}");
+    println!("JOURNAL_WIN_CI_READINESS_BIRTH=executed/pass");
+}

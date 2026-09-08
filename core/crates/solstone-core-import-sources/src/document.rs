@@ -6,7 +6,9 @@
 use std::collections::{BTreeSet, HashSet};
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
-use std::io::{Cursor, Read};
+use std::io::Cursor;
+#[cfg(not(windows))]
+use std::io::Read;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -130,6 +132,7 @@ pub enum PdfCommand {
     Extract,
 }
 
+#[cfg(not(windows))]
 impl PdfCommand {
     const fn as_str(self) -> &'static str {
         match self {
@@ -185,16 +188,26 @@ pub trait PdfWorker {
 
 /// Runtime `solstone-core-pdf` worker. The owning executable resolves its path.
 pub struct SystemPdfWorker {
+    #[cfg(not(windows))]
     executable: PathBuf,
+    #[cfg(not(windows))]
     timeout: Duration,
 }
 
 impl SystemPdfWorker {
     #[must_use]
     pub fn new(executable: impl Into<PathBuf>, timeout: Duration) -> Self {
-        Self {
-            executable: executable.into(),
-            timeout,
+        #[cfg(windows)]
+        {
+            let _ = (executable.into(), timeout);
+            Self {}
+        }
+        #[cfg(not(windows))]
+        {
+            Self {
+                executable: executable.into(),
+                timeout,
+            }
         }
     }
 }
