@@ -72,7 +72,7 @@ fn resolve_context_at(selected: Option<&Path>) -> Result<ServiceContext, ExitCod
         None => match resolve_process_journal_path() {
             Ok(line) => line.path,
             Err(error) => {
-                eprintln!("could not resolve journal path: {error}");
+                crate::eprint_journal_path_error(error);
                 return Err(ExitCode::from(1));
             }
         },

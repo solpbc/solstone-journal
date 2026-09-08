@@ -340,7 +340,7 @@ fn exit_code_for_shutdown_cause(cause: supervisor::ShutdownCause) -> u8 {
     }
 }
 
-#[cfg(not(any(unix, windows)))]
+#[cfg(not(unix))]
 fn unavailable() -> ExitCode {
     ExitCode::from(EXIT_UNAVAILABLE)
 }
@@ -1195,8 +1195,11 @@ fn run_maintenance(
                 Err(error) => {
                     return (
                         String::new(),
-                        format!("{error}\n"),
-                        i32::from(EXIT_TEMPFAIL),
+                        error
+                            .message()
+                            .map(|message| format!("{message}\n"))
+                            .unwrap_or_default(),
+                        error.exit_code(),
                     );
                 }
             }
@@ -1557,8 +1560,10 @@ fn run_convey(
     ) {
         Ok(generation) => generation,
         Err(error) => {
-            eprintln!("{error}");
-            return ExitCode::from(EXIT_TEMPFAIL);
+            if let Some(message) = error.message() {
+                eprintln!("{message}");
+            }
+            return ExitCode::from(error.exit_code() as u8);
         }
     };
     let service_journal = journal.clone();
