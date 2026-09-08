@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#![cfg_attr(not(windows), forbid(unsafe_code))]
+
 //! Library seams shared by the native supervisor executable and hosted callers.
 
+#[cfg(windows)]
+mod heartbeat_pid_windows;
 pub mod installation_context;
 #[cfg(any(unix, windows))]
 pub mod supervisor;

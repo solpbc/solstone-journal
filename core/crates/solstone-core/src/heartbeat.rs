@@ -8,8 +8,11 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use chrono::{DateTime, FixedOffset, Local, Utc};
+#[cfg(unix)]
 use nix::errno::Errno;
+#[cfg(unix)]
 use nix::sys::signal::kill;
+#[cfg(unix)]
 use nix::unistd::Pid;
 use serde_json::json;
 use solstone_core_journal_io::{
@@ -95,12 +98,23 @@ fn recently_succeeded(journal: &Path, now: DateTime<FixedOffset>) -> io::Result<
 
 fn guarded_pass(journal: &Path, pid_path: &Path) -> io::Result<()> {
     match fs::read_to_string(pid_path) {
+        #[cfg(unix)]
         Ok(raw) => match raw.trim().parse::<i32>() {
             Ok(pid) => match kill(Pid::from_raw(pid), None) {
                 Ok(()) | Err(Errno::EPERM) => return Ok(()),
                 Err(Errno::ESRCH) => remove_if_present(pid_path)?,
                 Err(error) => return Err(io::Error::other(error)),
             },
+            Err(_) => remove_if_present(pid_path)?,
+        },
+        #[cfg(windows)]
+        Ok(raw) => match raw.trim().parse::<u32>() {
+            Ok(pid) => {
+                if crate::heartbeat_pid_windows::recorded_pid_may_be_running(pid)? {
+                    return Ok(());
+                }
+                remove_if_present(pid_path)?;
+            }
             Err(_) => remove_if_present(pid_path)?,
         },
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}

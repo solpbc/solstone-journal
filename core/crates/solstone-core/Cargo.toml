@@ -7,8 +7,10 @@ license.workspace = true
 publish = false
 autotests = false
 
-[lints]
-workspace = true
+# Windows-only native process, scheduler and capture seams use local audited FFI.
+# All other unsafe code is denied; the workspace forbid remains unchanged.
+[lints.rust]
+unsafe_code = "deny"
 
 [features]
 test-hooks = ["solstone-core-system/test-hooks"]

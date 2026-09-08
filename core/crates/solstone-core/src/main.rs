@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#![cfg_attr(not(windows), forbid(unsafe_code))]
+
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::process::ExitCode;
@@ -57,6 +59,8 @@ mod health;
 mod health_logs;
 #[cfg(any(unix, windows))]
 mod heartbeat;
+#[cfg(windows)]
+mod heartbeat_pid_windows;
 mod identity;
 mod import_sources;
 mod install_models;

@@ -1292,6 +1292,7 @@ fn handle_think_daily_complete(state: &mut SupervisorState, message: &CallosumEn
         return;
     }
     let heartbeat_pid = state.journal.join("health/heartbeat.pid");
+    #[cfg(unix)]
     if let Ok(contents) = std::fs::read_to_string(&heartbeat_pid)
         && let Ok(pid) = contents.trim().parse::<i32>()
     {
@@ -1302,6 +1303,22 @@ fn handle_think_daily_complete(state: &mut SupervisorState, message: &CallosumEn
             }
             Err(nix::errno::Errno::ESRCH) => {}
             Err(error) => eprintln!("supervisor: could not check heartbeat pid {pid}: {error}"),
+        }
+    }
+    #[cfg(windows)]
+    if let Ok(contents) = std::fs::read_to_string(&heartbeat_pid)
+        && let Ok(pid) = contents.trim().parse::<u32>()
+    {
+        match crate::heartbeat_pid_windows::recorded_pid_may_be_running(pid) {
+            Ok(true) => {
+                eprintln!("supervisor: heartbeat already running with pid {pid}");
+                return;
+            }
+            Ok(false) => {}
+            Err(error) => {
+                eprintln!("supervisor: could not check heartbeat pid {pid}: {error}");
+                return;
+            }
         }
     }
     let _ = submit_task(

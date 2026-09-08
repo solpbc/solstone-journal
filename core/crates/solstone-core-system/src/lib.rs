@@ -18,7 +18,7 @@ pub mod provider_runtime;
 pub mod queue;
 pub mod request;
 pub mod schedule;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod status_wire;
 pub mod stt_backend_choice;
 
