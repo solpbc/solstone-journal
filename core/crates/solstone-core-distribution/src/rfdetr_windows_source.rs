@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -298,8 +298,7 @@ pub fn inspect_git_bundle(
             ));
         }
     };
-    verify_bundle_commit(path, expected)?;
-    let bytes = fs::read(path)?;
+    let bytes = verify_bundle_commit(path, expected)?;
     Ok(InputIdentityEntry {
         label: label.to_owned(),
         sha256: sha256_hex(&bytes),
@@ -309,18 +308,25 @@ pub fn inspect_git_bundle(
 
 /// Import into an empty object database: a bundle that requires hidden local
 /// prerequisites cannot satisfy the pinned-source admission check.
-fn verify_bundle_commit(path: &Path, expected: &str) -> Result<(), RfdetrWindowsSourceError> {
-    let path = fs::canonicalize(path)?;
+fn verify_bundle_commit(path: &Path, expected: &str) -> Result<Vec<u8>, RfdetrWindowsSourceError> {
+    // Rust accepts both ordinary and canonical Windows file paths. Git for
+    // Windows does not accept the canonical verbatim prefix as a bundle argv.
+    // Verify one byte snapshot via a fixed relative name in the existing empty
+    // object database; the caller hashes exactly these verified bytes.
+    let bytes = fs::read(path)?;
     let scratch = tempfile::Builder::new()
         .prefix("rfdetr-bundle-verify-")
         .tempdir()?;
     let outcome = (|| {
         git_checked(scratch.path(), &["init", "--bare", "."])?;
-        let path = path
-            .to_str()
-            .ok_or_else(|| RfdetrWindowsSourceError::new("bundle path is not UTF-8"))?;
-        git_checked(scratch.path(), &["bundle", "verify", path])?;
-        git_checked(scratch.path(), &["bundle", "unbundle", path])?;
+        let mut snapshot = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(scratch.path().join("input.bundle"))?;
+        snapshot.write_all(&bytes)?;
+        drop(snapshot);
+        git_checked(scratch.path(), &["bundle", "verify", "input.bundle"])?;
+        git_checked(scratch.path(), &["bundle", "unbundle", "input.bundle"])?;
         let kind = git_checked(scratch.path(), &["cat-file", "-t", expected])?;
         if kind.trim() != "commit" {
             return Err(RfdetrWindowsSourceError::new(
@@ -335,7 +341,7 @@ fn verify_bundle_commit(path: &Path, expected: &str) -> Result<(), RfdetrWindows
     })();
     // Cleanup failures remain failures even when object verification succeeded.
     scratch.close()?;
-    outcome
+    outcome.map(|()| bytes)
 }
 
 fn git_checked(root: &Path, args: &[&str]) -> Result<String, RfdetrWindowsSourceError> {
@@ -1140,13 +1146,23 @@ CMAKE_CXX_FLAGS_RELEASE:STRING=/MD /O2 /Ob2 /DNDEBUG
         git_checked(&repo, &["init", "."]).unwrap();
         let first = commit_fixture(&repo, "first");
         let second = commit_fixture(&repo, "second");
-        let complete = temp.path().join("complete.bundle");
+        let complete = temp.path().join("complete Zoë & source.bundle");
         git_checked(
             &repo,
             &["bundle", "create", complete.to_str().unwrap(), "HEAD"],
         )
         .unwrap();
-        verify_bundle_commit(&complete, &second).unwrap();
+        let original = fs::read(&complete).unwrap();
+        assert_eq!(verify_bundle_commit(&complete, &second).unwrap(), original);
+        let canonical = fs::canonicalize(&complete).unwrap();
+        #[cfg(windows)]
+        assert!(matches!(
+            canonical.components().next(),
+            Some(std::path::Component::Prefix(prefix))
+                if matches!(prefix.kind(), std::path::Prefix::VerbatimDisk(_))
+        ));
+        assert_eq!(verify_bundle_commit(&canonical, &second).unwrap(), original);
+        assert_eq!(fs::read(&complete).unwrap(), original);
         assert!(verify_bundle_commit(&complete, &"0".repeat(40)).is_err());
         let incremental = temp.path().join("incremental.bundle");
         git_checked(
