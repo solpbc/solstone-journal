@@ -12,7 +12,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use chrono::Utc;
+use chrono::Local;
 use serde::Deserialize;
 use solstone_core_convey_http::envelope::error_envelope;
 
@@ -56,7 +56,7 @@ pub(crate) fn api_router(journal_root: PathBuf) -> Router {
 }
 
 async fn summary(root: PathBuf, Query(query): Query<DayQuery>) -> Response {
-    let now = Utc::now();
+    let now = Local::now();
     let result = query
         .day
         .as_deref()
@@ -72,14 +72,14 @@ async fn full(root: PathBuf, Query(query): Query<DayQuery>) -> Response {
 }
 
 async fn for_range(root: PathBuf, Query(query): Query<RangeQuery>) -> Response {
-    let now = Utc::now();
+    let now = Local::now();
     let result = resolve_range(query.day_from.as_deref(), query.day_to.as_deref(), now)
         .and_then(|range| build_health_report(&root, range, now));
     report_response(result)
 }
 
 async fn pipeline_route(root: PathBuf, Query(query): Query<DayQuery>) -> Response {
-    let now = Utc::now();
+    let now = Local::now();
     let result = match query.day.as_deref() {
         None | Some("") => Err(HealthError::MissingRequiredField(
             "day is required".to_owned(),

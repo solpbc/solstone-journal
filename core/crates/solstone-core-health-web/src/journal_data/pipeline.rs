@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use chrono::{DateTime, NaiveDate, Timelike, Utc};
+use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use serde::Serialize;
 use serde_json::{Value, json};
 use solstone_core_journal_io::{
@@ -122,8 +122,10 @@ pub(crate) fn resolve_pipeline_day(value: &str) -> Result<NaiveDate, HealthError
 pub(crate) fn summarize_pipeline_day(
     journal_root: &Path,
     date: NaiveDate,
-    now: DateTime<Utc>,
+    now: DateTime<impl TimeZone>,
 ) -> Result<PipelineReport, HealthError> {
+    let today = now.date_naive();
+    let now = now.with_timezone(&Utc);
     let day = date.format("%Y%m%d").to_string();
     let mut summary = PipelineReport::new(day.clone(), now);
     let health_dir = journal_root.join("chronicle").join(&day).join("health");
@@ -140,7 +142,7 @@ pub(crate) fn summarize_pipeline_day(
             }
         };
         set_exhausted(&mut summary, &segments);
-        if day < now.date_naive().format("%Y%m%d").to_string() && segments.total > 0 {
+        if date < today && segments.total > 0 {
             summary.status = "unknown".to_owned();
             summary
                 .anomalies
@@ -200,8 +202,8 @@ pub(crate) fn summarize_pipeline_day(
             .anomalies
             .push(json!({"kind":"activity_agents_missing"}));
     }
-    let today = now.date_naive().format("%Y%m%d").to_string();
-    if (day == today && now.hour() >= 23 || day < today) && summary.runs.daily.count == 0 {
+    // The supervisor admits daily work after the local calendar day ends.
+    if date < today && summary.runs.daily.count == 0 {
         summary
             .anomalies
             .push(json!({"kind":"daily_agents_missing"}));
@@ -722,6 +724,75 @@ mod tests {
         assert_eq!(
             report["exhausted_segments"],
             json!({"count":1,"segments":["120000_60"]})
+        );
+    }
+    #[test]
+    fn daily_warning_waits_for_the_local_day_to_end() {
+        for zone in [
+            chrono_tz::America::Denver,
+            chrono_tz::Asia::Tokyo,
+            chrono_tz::UTC,
+        ] {
+            // Include both Denver daylight-saving transition days.
+            for (year, month, day) in [(2026, 9, 7), (2026, 3, 8), (2026, 11, 1)] {
+                let root = temporary();
+                let date = NaiveDate::from_ymd_opt(year, month, day).unwrap();
+                let day = date.format("%Y%m%d").to_string();
+                write_log(
+                    root.path(),
+                    &day,
+                    "segment",
+                    &[json!({"event":"run.complete","day":day,"mode":"segment"})],
+                );
+                for hour in [17, 23] {
+                    let before = zone
+                        .from_local_datetime(&date.and_hms_opt(hour, 59, 59).unwrap())
+                        .single()
+                        .unwrap();
+                    let report = summarize_pipeline_day(root.path(), date, before).unwrap();
+                    assert_eq!(report.status, "healthy", "{before}");
+                    assert_eq!(report.generated_at, before.timestamp_millis());
+                }
+                let after = zone
+                    .from_local_datetime(&date.succ_opt().unwrap().and_hms_opt(0, 0, 0).unwrap())
+                    .single()
+                    .unwrap();
+                let report = summarize_pipeline_day(root.path(), date, after).unwrap();
+                assert_eq!(report.status, "stale", "{after}");
+                assert!(
+                    report
+                        .anomalies
+                        .iter()
+                        .any(|a| a["kind"] == "daily_agents_missing")
+                );
+                write_log(
+                    root.path(),
+                    &day,
+                    "daily",
+                    &[json!({"event":"run.complete","day":day,"mode":"daily"})],
+                );
+                let report = summarize_pipeline_day(root.path(), date, after).unwrap();
+                assert_eq!(report.status, "healthy", "completed day at {after}");
+            }
+        }
+    }
+
+    #[test]
+    fn absent_health_directory_uses_the_same_local_day_boundary() {
+        let root = temporary();
+        let zone = chrono_tz::America::Denver;
+        let date = NaiveDate::from_ymd_opt(2026, 9, 7).unwrap();
+        screen_segment(root.path(), "20260907", "120000_60");
+        let before = zone.with_ymd_and_hms(2026, 9, 7, 18, 0, 0).unwrap();
+        assert_ne!(date, before.with_timezone(&Utc).date_naive());
+        let report = summarize_pipeline_day(root.path(), date, before).unwrap();
+        assert_eq!(report.status, "healthy");
+        let after = zone.with_ymd_and_hms(2026, 9, 8, 0, 0, 0).unwrap();
+        let report = summarize_pipeline_day(root.path(), date, after).unwrap();
+        assert_eq!(report.status, "unknown");
+        assert_eq!(
+            report.anomalies,
+            vec![json!({"kind":"segments_not_thought","error":"no_health_dir"})]
         );
     }
 }

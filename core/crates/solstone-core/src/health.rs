@@ -16,7 +16,7 @@ use solstone_core_local::install::ced_readiness::{
     CED_READY_DETAIL, CED_UNAVAILABLE_GUIDANCE, CedVerdict, evaluate_ced_readiness,
 };
 use solstone_core_local::install::rfdetr_readiness::{
-    RFDETR_READY_DETAIL, RFDETR_UNAVAILABLE_GUIDANCE, RfdetrReadiness, evaluate_rfdetr_readiness,
+    RFDETR_READY_DETAIL, RfdetrReadiness, evaluate_rfdetr_readiness,
 };
 use solstone_core_system::process::SystemProcessInstanceSource;
 use solstone_core_system_health::{
@@ -645,6 +645,7 @@ mod tests {
     use serde_json::json;
     use solstone_core_local::install::capability_status::CapabilityStatus;
     use solstone_core_local::install::ced_readiness::CED_CAPABILITY;
+    use solstone_core_local::install::rfdetr_readiness::RFDETR_UNAVAILABLE_GUIDANCE;
 
     use super::*;
 
