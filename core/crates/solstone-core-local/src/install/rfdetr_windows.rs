@@ -30,7 +30,8 @@ pub const RFDETR_CPU_RATE_PER_10_000: u32 = 10000;
 pub const RFDETR_THRESHOLD: &str = "0.25";
 pub const RFDETR_THREADS: &str = "4";
 
-pub const RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE: &str = "Object detection is degraded because the signed RF-DETR package assets are unavailable or invalid. Reinstall or repair the application package.";
+pub const RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE: &str =
+    "Object detection is unavailable. Repair or reinstall the solstone app.";
 
 pub fn rfdetr_degraded_guidance(os_name: &str, arch: &str) -> &'static str {
     if super::rfdetr_install::rfdetr_uses_package_payload(os_name, arch) {

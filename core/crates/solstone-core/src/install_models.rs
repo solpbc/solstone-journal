@@ -150,19 +150,19 @@ fn install_required_rfdetr(
     stdout: &mut Vec<String>,
 ) -> Result<(), rfdetr_install::RfdetrInstallError> {
     if rfdetr_install::rfdetr_uses_package_payload(&host.os_name, &host.arch) {
-        if options.check {
-            provider(journal, &host.os_name, &host.arch, InstallerAction::Check)?;
+        let action = if options.check {
+            InstallerAction::Check
         } else {
-            provider(
-                journal,
-                &host.os_name,
-                &host.arch,
-                InstallerAction::Install {
-                    force: options.force,
-                },
-            )?;
-        }
-        return Ok(());
+            InstallerAction::Install {
+                force: options.force,
+            }
+        };
+        return provider(journal, &host.os_name, &host.arch, action)
+            .map(|_| ())
+            .map_err(|error| {
+                let message = format!("{} {error}", solstone_core_local::install::rfdetr_windows::RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE);
+                rfdetr_install::RfdetrInstallError::new(error.reason_code, message, error.exit_code)
+            });
     }
     if rfdetr_install::rfdetr_artifact_key(&host.os_name, &host.arch).is_none() {
         stdout.push(format!(
@@ -1242,6 +1242,48 @@ mod tests {
                 .any(|line| line.contains("unsupported platform windows/x86_64")),
             "stdout should not contain unsupported platform: {stdout:?}"
         );
+    }
+
+    #[test]
+    fn windows_rfdetr_failure_preserves_reason_and_supplies_repair_guidance() {
+        for check in [false, true] {
+            let journal = tempfile::tempdir().unwrap();
+            let mut opts = options(InstallModelsVariant::Auto);
+            opts.check = check;
+            opts.force = true;
+            let mut provider = |_: &Path, _: &str, _: &str, action: InstallerAction| {
+                assert_eq!(
+                    action,
+                    if check {
+                        InstallerAction::Check
+                    } else {
+                        InstallerAction::Install { force: true }
+                    }
+                );
+                Err(rfdetr_install::RfdetrInstallError::new(
+                    "integrity_mismatch",
+                    "digest mismatch",
+                    65,
+                ))
+            };
+            let error = install_required_rfdetr(
+                journal.path(),
+                &host("windows", "x86_64", None),
+                &opts,
+                &mut provider,
+                &mut Vec::new(),
+            )
+            .unwrap_err();
+            assert_eq!(error.reason_code, "integrity_mismatch");
+            assert_eq!(error.exit_code, 65);
+            assert!(
+                error
+                    .to_string()
+                    .contains("Repair or reinstall the solstone app.")
+            );
+            assert!(error.to_string().contains("digest mismatch"));
+            assert_eq!(std::fs::read_dir(journal.path()).unwrap().count(), 0);
+        }
     }
 
     #[test]
