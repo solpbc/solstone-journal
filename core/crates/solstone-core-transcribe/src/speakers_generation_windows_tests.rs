@@ -638,3 +638,201 @@ fn windows_generation_descendant_receipt() {
     }
     println!("JOURNAL_WIN_CI_GENERATION_DESCENDANTS=PASS");
 }
+
+const INSTALLED_CROSS_SELECTOR: &str =
+    "speakers_installation::windows_generation_tests::windows_generation_installed_entry_probe";
+
+fn installed_cross_request() -> solstone_core_system::process::InstalledTaskLaunchRequest {
+    use solstone_core_installation_identity::{
+        GuardFields, journal_token_from_path, load_installation_binding, owner_base,
+        root_token_from_path,
+    };
+    let journal = PathBuf::from(env::var_os(ROOT_PROBE_JOURNAL).expect("bound fixture journal"));
+    let executable = env::current_exe().unwrap();
+    let root = executable
+        .parent()
+        .and_then(solstone_core_journal::resolve_identity_root_from_executable_dir)
+        .expect("installed signed fixture root");
+    let binding = load_installation_binding(
+        &owner_base().expect("actual owner"),
+        &root_token_from_path(&root).expect("actual root token"),
+    )
+    .expect("actual setup-created binding");
+    assert_eq!(
+        journal_token_from_path(&journal).unwrap(),
+        binding.journal_token
+    );
+    solstone_core_system::process::InstalledTaskLaunchRequest {
+        journal,
+        guard: GuardFields::from_binding(&binding),
+        arguments: vec![
+            "--ignored".into(),
+            "--exact".into(),
+            INSTALLED_CROSS_SELECTOR.into(),
+            "--show-output".into(),
+            "--test-threads=2".into(),
+        ],
+        acknowledgement_timeout: Duration::from_secs(3),
+    }
+}
+
+#[test]
+#[ignore = "child of real-generation installed-entry refusal receipt"]
+fn windows_generation_installed_entry_probe() {
+    use solstone_core_system::process::{
+        LaunchError, receive_windows_installed_task_launch, receive_windows_launch,
+    };
+    let expected = installed_cross_request();
+    assert_eq!(env::args().skip(1).collect::<Vec<_>>(), expected.arguments);
+    let refusal = receive_windows_installed_task_launch(&expected)
+        .expect_err("hosted tuple must refuse the installed entry before pipe/ACK");
+    assert!(matches!(refusal, LaunchError::Admission(ref message)
+        if message == "launch variant or installed action mismatch"));
+    // The refused entry must leave this same transaction available for its
+    // correct hosted recipient. Completing it provides an actual exit/status
+    // witness without inferring child completion from an admission error.
+    let admitted = receive_windows_launch()
+        .unwrap()
+        .expect("correct hosted transaction");
+    let generation = enter_speakers_analyze_generation(
+        &expected.journal,
+        SpeakersAnalyzeOwnerRole::Convey,
+        Some(&admitted),
+    )
+    .expect("real authenticated borrowing after wrong-entry refusal");
+    println!("JOURNAL_WIN_CI_GENERATION_INSTALLED_ENTRY=REFUSED_THEN_HOSTED_ADMITTED");
+    drop(generation);
+    drop(admitted);
+}
+
+#[test]
+#[ignore = "native signed installation with setup-bound journal and actual generation required"]
+fn windows_generation_installed_entry_receipt() {
+    use solstone_core_system::process::{
+        Disposition, HelperAdmissionStatus, HostedLaunchProvenance, ManagedLaunchRequest,
+        SpawnOptions, launch_managed_hosted, observe_windows_launch_cleanup,
+        retry_windows_launch_cleanup_until,
+    };
+    for key in [
+        GENERATION_ENV_KEY,
+        GENERATION_TOKEN_ENV_KEY,
+        GENERATION_FD_ENV_KEY,
+        "SOL_WINDOWS_LAUNCH",
+    ] {
+        assert!(
+            env::var_os(key).is_none(),
+            "receipt must be an unrelated root"
+        );
+    }
+    assert!(matches!(
+        observe_windows_launch_cleanup(),
+        HelperAdmissionStatus::Ready
+    ));
+    installation_proof().expect("real signed ONNX package admission");
+    let request = installed_cross_request();
+    let generation = enter_speakers_analyze_generation(
+        &request.journal,
+        SpeakersAnalyzeOwnerRole::Supervisor,
+        None,
+    )
+    .expect("actual exclusive supervisor generation");
+    let output = Arc::new(DescendantOutput::default());
+    let mut child = None;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let body_deadline = deadline - Duration::from_secs(10);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let context = generation.child_launch_context();
+        let mut environment = context.environment;
+        for (key, value) in
+            solstone_core_installation_identity::service_guard_environment(&request.guard)
+        {
+            environment.insert(key.into(), value.into());
+        }
+        for key in [
+            "SystemRoot",
+            "SOLSTONE_JOURNAL_MINISIGN_PIN",
+            "USERPROFILE",
+            "LOCALAPPDATA",
+            "APPDATA",
+            "TEMP",
+            "TMP",
+        ] {
+            if let Some(value) = env::var_os(key) {
+                environment.insert(key.into(), value);
+            }
+        }
+        environment.insert(
+            ROOT_PROBE_JOURNAL.into(),
+            request.journal.as_os_str().to_owned(),
+        );
+        let mut command = vec![env::current_exe().unwrap().to_str().unwrap().to_owned()];
+        command.extend(request.arguments.clone());
+        child = Some(
+            launch_managed_hosted(
+                Disposition::IndependentLongLived,
+                ManagedLaunchRequest {
+                    command,
+                    options: SpawnOptions {
+                        journal_root: request.journal.clone(),
+                        reference: format!("generation-installed-entry-{}", random_hex().unwrap()),
+                        day: None,
+                        sink: Some(output.clone()),
+                        environment,
+                    },
+                    read_file_grants: context.read_file_grants,
+                },
+                HostedLaunchProvenance {
+                    journal: request.journal.clone(),
+                    generation: 1,
+                    launch_id: format!("generation-installed-entry-{}", random_hex().unwrap()),
+                    service: None,
+                    parent_launch_id: None,
+                    acknowledgement_timeout: Duration::from_secs(3),
+                },
+            )
+            .expect("correct hosted ACK after installed refusal")
+            .into_managed()
+            .expect("retain original child Job"),
+        );
+        wait_descendant(child.as_mut().unwrap(), body_deadline, None);
+    }));
+    let mut settled = true;
+    if let Some(child) = child.as_mut() {
+        if child.poll().ok().flatten().is_none() {
+            let _ = child.terminate_exact_until(deadline);
+        }
+        settled &= child.cleanup_until(deadline);
+        child.detach_after_bounded_shutdown();
+    }
+    drop(child);
+    settled &= matches!(
+        retry_windows_launch_cleanup_until(deadline),
+        HelperAdmissionStatus::Ready
+    );
+    // Configured synthetic journal is retained; never remove setup's bound root.
+    // A failed cleanup still owns the original grant in its retained native state.
+    drop(generation);
+    assert!(settled, "original native owner and I/O remain incomplete");
+    if let Err(panic) = result {
+        std::panic::resume_unwind(panic);
+    }
+    assert!(!output.invalid.load(std::sync::atomic::Ordering::SeqCst));
+    let lines = output.lines.lock().unwrap();
+    for required in [
+        format!("test {INSTALLED_CROSS_SELECTOR} ... ok"),
+        "JOURNAL_WIN_CI_GENERATION_INSTALLED_ENTRY=REFUSED_THEN_HOSTED_ADMITTED".into(),
+    ] {
+        assert_eq!(
+            lines.iter().filter(|line| **line == required).count(),
+            1,
+            "{lines:?}"
+        );
+    }
+    let summaries: Vec<_> = lines
+        .iter()
+        .filter(|line| line.starts_with("test result:"))
+        .collect();
+    assert_eq!(summaries.len(), 1);
+    assert!(summaries[0].starts_with("test result: ok. 1 passed; 0 failed; 0 ignored;"));
+    println!("JOURNAL_WIN_CI_GENERATION_INSTALLED_REFUSAL=PASS");
+}

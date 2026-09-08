@@ -54,3 +54,7 @@ workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true
+
+[target.'cfg(windows)'.dev-dependencies]
+solstone-core-installation-identity.workspace = true
+solstone-core-journal.workspace = true
