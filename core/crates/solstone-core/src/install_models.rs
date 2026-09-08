@@ -46,7 +46,7 @@ fn rfdetr_bundled_asset_disclosure() -> String {
 
 use solstone_core_assets::canonical_host_pair;
 use solstone_core_local::install::ced_readiness::{CED_UNAVAILABLE_GUIDANCE, CedVerdict};
-use solstone_core_local::install::rfdetr_readiness::{RfdetrReadiness, evaluate_rfdetr_readiness};
+use solstone_core_local::install::rfdetr_readiness::RfdetrReadiness;
 use solstone_core_local::install::{
     DispatchError, ced_install, coreml_install, fingerprint, fit_report,
     install_parakeet_with_lease, lease, pins, rfdetr_install, status,
@@ -58,80 +58,7 @@ use crate::{
     eprint_journal_path_error, resolve_process_journal_path,
 };
 
-fn evaluate_host_rfdetr(journal: &Path, os: &str, arch: &str) -> RfdetrReadiness {
-    if solstone_core_local::install::rfdetr_install::rfdetr_uses_package_payload(os, arch) {
-        solstone_core_local::install::rfdetr_readiness::evaluate_windows_rfdetr_readiness(
-            probe_windows_rfdetr_help,
-        )
-    } else {
-        evaluate_rfdetr_readiness(journal, os, arch)
-    }
-}
-
-#[cfg(windows)]
-fn probe_windows_rfdetr_help(
-    package: &solstone_core_local::install::rfdetr_windows::WindowsRfdetrPackage,
-) -> serde_json::Value {
-    use solstone_core_local::install::rfdetr_windows::{
-        map_rfdetr_help_probe, rfdetr_windows_help_launch,
-    };
-    use solstone_core_system::process::{
-        BoundedHelperBudget, BoundedHelperRequest, BoundedHelperResourceLimits, run_bounded_helper,
-    };
-
-    let system_root = match std::env::var_os("SystemRoot") {
-        Some(val) if !val.is_empty() => val,
-        _ => {
-            return map_rfdetr_help_probe(
-                false,
-                None,
-                Some("SystemRoot environment variable is not set"),
-            );
-        }
-    };
-    let spec = rfdetr_windows_help_launch(package, system_root);
-    let request = BoundedHelperRequest {
-        resources: Default::default(),
-        package_root: spec.package_root,
-        executable: spec.executable,
-        current_directory: spec.current_directory,
-        arguments: spec.arguments,
-        environment: spec.environment,
-        stdin: spec.stdin,
-        budget: BoundedHelperBudget {
-            timeout: spec.timeout,
-            stdin_limit_bytes: spec.stdin_limit_bytes,
-            stdout_limit_bytes: spec.stdout_limit_bytes,
-            stderr_limit_bytes: spec.stderr_limit_bytes,
-        },
-        resource_limits: Some(BoundedHelperResourceLimits {
-            cpu_rate_per_10_000: spec.cpu_rate_per_10_000,
-            committed_memory_bytes: spec.committed_memory_bytes,
-        }),
-    };
-    match run_bounded_helper(request) {
-        Ok(output) => map_rfdetr_help_probe(output.exit_code == 0, Some(output.exit_code), None),
-        Err(error) => {
-            let reason = if error.cleanup().is_none()
-                && matches!(
-                    error.cause(),
-                    solstone_core_system::process::BoundedHelperError::DeadlineExceeded { .. }
-                ) {
-                "timeout"
-            } else {
-                "binary_unavailable"
-            };
-            serde_json::json!({"runnable": false, "reason_code": reason, "message": error.to_string()})
-        }
-    }
-}
-
-#[cfg(not(windows))]
-fn probe_windows_rfdetr_help(
-    _package: &solstone_core_local::install::rfdetr_windows::WindowsRfdetrPackage,
-) -> serde_json::Value {
-    serde_json::json!({"runnable": false, "reason_code": "windows_only"})
-}
+use solstone_core_check::evaluate_host_rfdetr;
 
 fn rfdetr_ready_record(
     journal: &Path,
@@ -221,19 +148,19 @@ fn install_required_rfdetr(
     stdout: &mut Vec<String>,
 ) -> Result<(), rfdetr_install::RfdetrInstallError> {
     if rfdetr_install::rfdetr_uses_package_payload(&host.os_name, &host.arch) {
-        if options.check {
-            provider(journal, &host.os_name, &host.arch, InstallerAction::Check)?;
+        let action = if options.check {
+            InstallerAction::Check
         } else {
-            provider(
-                journal,
-                &host.os_name,
-                &host.arch,
-                InstallerAction::Install {
-                    force: options.force,
-                },
-            )?;
-        }
-        return Ok(());
+            InstallerAction::Install {
+                force: options.force,
+            }
+        };
+        return provider(journal, &host.os_name, &host.arch, action)
+            .map(|_| ())
+            .map_err(|error| {
+                let message = format!("{} {error}", solstone_core_local::install::rfdetr_windows::RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE);
+                rfdetr_install::RfdetrInstallError::new(error.reason_code, message, error.exit_code)
+            });
     }
     if rfdetr_install::rfdetr_artifact_key(&host.os_name, &host.arch).is_none() {
         stdout.push(format!(
@@ -1313,6 +1240,48 @@ mod tests {
                 .any(|line| line.contains("unsupported platform windows/x86_64")),
             "stdout should not contain unsupported platform: {stdout:?}"
         );
+    }
+
+    #[test]
+    fn windows_rfdetr_failure_preserves_reason_and_supplies_repair_guidance() {
+        for check in [false, true] {
+            let journal = tempfile::tempdir().unwrap();
+            let mut opts = options(InstallModelsVariant::Auto);
+            opts.check = check;
+            opts.force = true;
+            let mut provider = |_: &Path, _: &str, _: &str, action: InstallerAction| {
+                assert_eq!(
+                    action,
+                    if check {
+                        InstallerAction::Check
+                    } else {
+                        InstallerAction::Install { force: true }
+                    }
+                );
+                Err(rfdetr_install::RfdetrInstallError::new(
+                    "integrity_mismatch",
+                    "digest mismatch",
+                    65,
+                ))
+            };
+            let error = install_required_rfdetr(
+                journal.path(),
+                &host("windows", "x86_64", None),
+                &opts,
+                &mut provider,
+                &mut Vec::new(),
+            )
+            .unwrap_err();
+            assert_eq!(error.reason_code, "integrity_mismatch");
+            assert_eq!(error.exit_code, 65);
+            assert!(
+                error
+                    .to_string()
+                    .contains("Repair or reinstall the solstone app.")
+            );
+            assert!(error.to_string().contains("digest mismatch"));
+            assert_eq!(std::fs::read_dir(journal.path()).unwrap().count(), 0);
+        }
     }
 
     #[test]

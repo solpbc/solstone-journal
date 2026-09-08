@@ -411,14 +411,15 @@ pub fn check_rfdetr_model(
 fn check_windows_package_rfdetr() -> Result<RfdetrInstallRecord, RfdetrInstallError> {
     match super::rfdetr_windows::verified_windows_rfdetr_package() {
         Ok(_) => Ok(RfdetrInstallRecord::Installed),
-        Err(error)
-            if error.contains("requires a Windows runtime")
-                || error.contains("no containing directory")
-                || error.contains("no package root") =>
-        {
-            Err(RfdetrInstallError::new("sidecar_missing", error, 65))
+        Err(error) => {
+            let reason = match &error {
+                super::rfdetr_windows::WindowsRfdetrPackageError::Missing(_) => "file_missing",
+                super::rfdetr_windows::WindowsRfdetrPackageError::Invalid(_) => {
+                    "integrity_mismatch"
+                }
+            };
+            Err(RfdetrInstallError::new(reason, error.to_string(), 65))
         }
-        Err(error) => Err(RfdetrInstallError::new("integrity_mismatch", error, 65)),
     }
 }
 

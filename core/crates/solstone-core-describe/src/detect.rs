@@ -6,23 +6,33 @@
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus, Stdio};
+use std::process::{Child, ExitStatus};
+#[cfg(not(windows))]
+use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
+#[cfg(not(windows))]
 use solstone_core_assets::canonical_host_pair;
+use solstone_core_local::install::rfdetr_install::ENGINE_PROVENANCE_REF;
+#[cfg(any(not(windows), all(test, feature = "full-tests")))]
 use solstone_core_local::install::rfdetr_install::{
-    ENGINE_PROVENANCE_REF, RfdetrInstallError, RfdetrInstallRecord, binary_path,
-    check_rfdetr_model, model_path, rfdetr_artifact_key,
+    RfdetrInstallError, RfdetrInstallRecord, binary_path, model_path,
 };
+#[cfg(not(windows))]
+use solstone_core_local::install::rfdetr_install::{check_rfdetr_model, rfdetr_artifact_key};
 
+#[cfg(not(windows))]
 const THRESHOLD: &str = "0.25";
 const ENGINE_NAME: &str = "rf-detr.cpp";
 const MODEL_NAME: &str = "rfdetr-nano-f16";
+#[cfg(not(windows))]
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 const POLL_INTERVAL: Duration = Duration::from_millis(20);
+#[cfg(not(windows))]
 const BINARY_ENV: &str = "SOLSTONE_DESCRIBE_DETECT_BINARY";
+#[cfg(not(windows))]
 const TIMEOUT_ENV: &str = "SOLSTONE_DESCRIBE_DETECT_TIMEOUT_MS";
 
 pub fn screen_gate(analysis: &Value) -> Option<String> {
@@ -51,13 +61,6 @@ pub fn detections_block(result: &Value, source: &str, gate: &str) -> Result<Valu
         "image": image,
         "objects": objects,
     }))
-}
-
-pub fn windows_detect_executable<'a>(
-    package: &'a solstone_core_local::install::rfdetr_windows::WindowsRfdetrPackage,
-    _env_override: Option<&std::ffi::OsStr>,
-) -> &'a Path {
-    &package.binary
 }
 
 #[cfg(windows)]
@@ -133,6 +136,7 @@ pub fn detect(full_png: &[u8], journal: &Path) -> Result<Value, String> {
         .map_err(|error| error.to_string())
 }
 
+#[cfg(not(windows))]
 fn timeout() -> Duration {
     env::var(TIMEOUT_ENV)
         .ok()
@@ -162,6 +166,7 @@ pub fn wait_for_child(child: &mut Child, timeout: Duration) -> Result<ExitStatus
     }
 }
 
+#[cfg(not(windows))]
 fn native_paths(journal: &Path) -> Result<(PathBuf, PathBuf), String> {
     let (os, arch) = canonical_host_pair(env::consts::OS, env::consts::ARCH);
     let key = rfdetr_artifact_key(os, arch);
@@ -169,6 +174,7 @@ fn native_paths(journal: &Path) -> Result<(PathBuf, PathBuf), String> {
     paths_from_install_check(result, journal, key)
 }
 
+#[cfg(any(not(windows), all(test, feature = "full-tests")))]
 fn paths_from_install_check(
     result: Result<RfdetrInstallRecord, RfdetrInstallError>,
     journal: &Path,
@@ -216,15 +222,11 @@ impl Drop for TempDir {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsStr;
     use std::fs;
-    use std::path::PathBuf;
 
-    use super::{detections_block, screen_gate, windows_detect_executable};
+    use super::{detections_block, screen_gate};
     use serde_json::json;
-    use solstone_core_local::install::rfdetr_windows::{
-        WindowsRfdetrPackage, map_rfdetr_detect_completion,
-    };
+    use solstone_core_local::install::rfdetr_windows::map_rfdetr_detect_completion;
 
     #[test]
     fn primary_gate_precedes_secondary() {
@@ -247,17 +249,6 @@ mod tests {
         )
         .expect("block");
         assert_eq!(result["objects"][0]["score"], 0.1);
-    }
-
-    #[test]
-    fn env_override_does_not_change_chosen_executable() {
-        let pkg = WindowsRfdetrPackage {
-            package_root: PathBuf::from(r"C:\solstone"),
-            binary: PathBuf::from(r"C:\solstone\bin\rfdetr-cli.exe"),
-            model: PathBuf::from(r"C:\solstone\lib\model.gguf"),
-        };
-        let chosen = windows_detect_executable(&pkg, Some(OsStr::new("C:\\custom\\rfdetr.exe")));
-        assert_eq!(chosen, &pkg.binary);
     }
 
     #[test]
