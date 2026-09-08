@@ -164,15 +164,6 @@ pub(crate) fn reach_name(row: &ClientAssessment) -> &'static str {
     }
 }
 
-pub(crate) fn delivery_reach_clause(reach: ClientReach) -> &'static str {
-    match reach {
-        ClientReach::Active | ClientReach::Stale => {
-            "it is still running, but it isn't adding to your journal"
-        }
-        ClientReach::Offline => "the device appears offline and may be asleep",
-    }
-}
-
 pub(crate) fn source_display_name(source: &str) -> &str {
     if source.is_empty() { "default" } else { source }
 }

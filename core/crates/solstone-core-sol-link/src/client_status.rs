@@ -177,61 +177,25 @@ pub fn inspect_clients_at(journal_root: &Path, now_ms: i64) -> ClientInspection 
     }
 }
 
-/// Classify each observed source on one device.
-///
-/// Never consults another device's sources or connection. `Current` is the
-/// capture Active or Stale band (`elapsed < CLIENT_CAPTURE_STALE_MS`). Quiet
-/// sources escalate only with signal (a) (this device is not fully offline) or
-/// signal (b) (a sibling source on this device is `Current`).
+/// Classify delivery evidence without inferring whether a source should be recording.
+/// A recent sibling upload or heartbeat does not establish that expectation:
+/// watch audio can be batched while location continues independently.
+/// Only an explicit rejected upload calls for attention; old timestamps remain
+/// available for an informational freshness display.
 pub fn classify_source_deliveries(
     sources: &BTreeMap<String, SourceRecord>,
-    connection: &ConnectionFreshness,
+    _connection: &ConnectionFreshness,
     now_ms: i64,
 ) -> BTreeMap<String, SourceDeliveryRow> {
-    let preliminary = sources
+    sources
         .iter()
-        .map(|(source, record)| (source.clone(), classify_source_pass1(record, now_ms)))
-        .collect::<Vec<_>>();
-    let any_current = preliminary.iter().any(|(_, pass)| {
-        matches!(
-            pass,
-            SourcePass::Decided(row) if row.state == SourceDelivery::Current
-        )
-    });
-    let signal_a = matches!(
-        connection,
-        ConnectionFreshness::Known {
-            reach: ClientReach::Active | ClientReach::Stale,
-            ..
-        }
-    );
-    preliminary
-        .into_iter()
-        .map(|(source, pass)| {
-            let row = match pass {
-                SourcePass::Decided(row) => row,
-                SourcePass::Undecided(mut row) => {
-                    row.state = if signal_a || any_current {
-                        SourceDelivery::NeedsAttention
-                    } else {
-                        SourceDelivery::Unknown
-                    };
-                    row
-                }
-            };
-            (source, row)
-        })
+        .map(|(source, record)| (source.clone(), classify_source_delivery(record, now_ms)))
         .collect()
 }
 
-enum SourcePass {
-    Decided(SourceDeliveryRow),
-    Undecided(SourceDeliveryRow),
-}
-
-fn classify_source_pass1(record: &SourceRecord, now_ms: i64) -> SourcePass {
+fn classify_source_delivery(record: &SourceRecord, now_ms: i64) -> SourceDeliveryRow {
     let SourceRecord::Valid(activity) = record else {
-        return SourcePass::Decided(malformed_source_row());
+        return malformed_source_row();
     };
     let row = SourceDeliveryRow {
         state: SourceDelivery::Unknown,
@@ -245,27 +209,25 @@ fn classify_source_pass1(record: &SourceRecord, now_ms: i64) -> SourcePass {
             .last_accepted_ingest_at
             .as_deref()
             .and_then(|value| timestamp_age_ms(value, now_ms));
-        return SourcePass::Decided(SourceDeliveryRow {
+        return SourceDeliveryRow {
             state: SourceDelivery::NeedsAttention,
             elapsed_ms,
             ..row
-        });
+        };
     }
     let (capture_state, elapsed_ms) =
         capture_freshness(activity.last_accepted_ingest_at.as_deref(), false, now_ms);
     let row = SourceDeliveryRow { elapsed_ms, ..row };
     match capture_state {
-        ClientCaptureState::Active | ClientCaptureState::Stale => {
-            SourcePass::Decided(SourceDeliveryRow {
-                state: SourceDelivery::Current,
-                ..row
-            })
-        }
-        ClientCaptureState::Unknown => SourcePass::Decided(SourceDeliveryRow {
+        ClientCaptureState::Active | ClientCaptureState::Stale => SourceDeliveryRow {
+            state: SourceDelivery::Current,
+            ..row
+        },
+        ClientCaptureState::Unknown => SourceDeliveryRow {
             state: SourceDelivery::Unknown,
             ..row
-        }),
-        ClientCaptureState::Offline | ClientCaptureState::NoCapture => SourcePass::Undecided(row),
+        },
+        ClientCaptureState::Offline | ClientCaptureState::NoCapture => row,
         // Rejection is handled above; capture_freshness(..., false, ...) never
         // returns Degraded.
         ClientCaptureState::Degraded => {
@@ -687,7 +649,7 @@ mod tests {
     }
 
     #[test]
-    fn quiet_sources_need_attention_when_the_device_is_not_fully_offline() {
+    fn quiet_sources_do_not_infer_recording_from_device_liveness() {
         let sources = BTreeMap::from([
             (
                 "audio".to_owned(),
@@ -700,12 +662,12 @@ mod tests {
         ]);
         let classified =
             classify_source_deliveries(&sources, &known_connection(ClientReach::Active), NOW_MS);
-        assert_eq!(classified["audio"].state, SourceDelivery::NeedsAttention);
-        assert_eq!(classified["location"].state, SourceDelivery::NeedsAttention);
+        assert_eq!(classified["audio"].state, SourceDelivery::Unknown);
+        assert_eq!(classified["location"].state, SourceDelivery::Unknown);
     }
 
     #[test]
-    fn quiet_source_needs_attention_when_a_sibling_is_current_even_if_offline() {
+    fn quiet_source_does_not_infer_recording_from_a_current_sibling() {
         let sources = BTreeMap::from([
             ("audio".to_owned(), valid_source_at_age(30_000)),
             (
@@ -716,7 +678,7 @@ mod tests {
         let classified =
             classify_source_deliveries(&sources, &known_connection(ClientReach::Offline), NOW_MS);
         assert_eq!(classified["audio"].state, SourceDelivery::Current);
-        assert_eq!(classified["location"].state, SourceDelivery::NeedsAttention);
+        assert_eq!(classified["location"].state, SourceDelivery::Unknown);
     }
 
     #[test]
@@ -732,14 +694,14 @@ mod tests {
     }
 
     #[test]
-    fn stale_connection_reach_still_satisfies_signal_a() {
+    fn stale_connection_does_not_establish_expected_capture() {
         let sources = BTreeMap::from([(
             "audio".to_owned(),
             valid_source_at_age(CLIENT_CAPTURE_STALE_MS),
         )]);
         let classified =
             classify_source_deliveries(&sources, &known_connection(ClientReach::Stale), NOW_MS);
-        assert_eq!(classified["audio"].state, SourceDelivery::NeedsAttention);
+        assert_eq!(classified["audio"].state, SourceDelivery::Unknown);
     }
 
     #[test]

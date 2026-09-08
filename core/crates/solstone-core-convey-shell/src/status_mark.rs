@@ -74,16 +74,16 @@ fn status_mark_table_maps_every_contract_condition_to_its_stem() {
         json!("*"),
         "mark-offline",
     );
-    assert_row(&rows[3], "*", json!("offline"), json!("*"), "mark-offline");
+    assert_row(&rows[5], "*", json!("offline"), json!("*"), "mark-paused");
     assert_row(
-        &rows[4],
+        &rows[3],
         "*",
         json!("degraded"),
         json!("*"),
         "mark-attention",
     );
-    assert_row(&rows[5], "*", json!("*"), json!(true), "mark-attention");
-    assert_row(&rows[6], "*", json!("stale"), json!("*"), "mark-attention");
+    assert_row(&rows[4], "*", json!("*"), json!(true), "mark-attention");
+    assert_row(&rows[6], "*", json!("stale"), json!("*"), "mark-paused");
     assert_row(
         &rows[7],
         "*",
@@ -99,7 +99,7 @@ fn status_mark_table_maps_every_contract_condition_to_its_stem() {
 fn status_mark_table_rejects_error_stem_and_offline_attention_inversions() {
     let rows = status_map();
     let offline = row_with_capture(&rows, "offline");
-    assert_eq!(offline["variant"], "mark-offline");
+    assert_eq!(offline["variant"], "mark-paused");
     assert_ne!(offline["variant"], "mark-error");
 
     let degraded = row_with_capture(&rows, "degraded");
@@ -114,7 +114,7 @@ fn status_mark_table_rejects_error_stem_and_offline_attention_inversions() {
     assert_ne!(unviewed["variant"], "mark-offline");
 
     let stale = row_with_capture(&rows, "stale");
-    assert_eq!(stale["variant"], "mark-attention");
+    assert_eq!(stale["variant"], "mark-paused");
     assert_ne!(stale["variant"], "mark-offline");
 
     let catch_all = rows

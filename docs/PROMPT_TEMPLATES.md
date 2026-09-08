@@ -1,196 +1,61 @@
-# Prompt Template System
+# Prompt templates
 
-This document describes solstone's template variable system for personalizing prompts used in generators and agents. Templates enable dynamic substitution of owner identity, contextual information, and reusable prompt fragments.
+Talent instructions are Markdown files with optional JSON frontmatter. Rust loads their definitions, composes shared prompt fragments, and supplies request context before execution. There is no Python `load_prompt()` API in the runtime.
 
-## Overview
+## Definitions and composition
 
-Prompts are stored as `.md` files with optional JSON frontmatter for metadata. The prompt content is loaded via `load_prompt()` from `solstone/think/prompts.py`, which uses Python's `string.Template` with `safe_substitute`. This means:
+Shipped definitions live in `core/payload/solstone/talent/`. App talents are discovered under each app's `talent/` directory. The definition's explicit `type` selects `generate` or `cogitate`; the presence of `tools` alone does not select an execution type.
 
-- Variables use `$name` or `${name}` syntax
-- Undefined variables are left as-is (no errors)
-- Use `$$` to escape a literal dollar sign
-
-The system supports three categories of variables with the following precedence (highest to lowest):
-
-1. **Context variables** - Passed by callers at runtime
-2. **Identity variables** - From journal configuration
-3. **Template variables** - From reusable template files
-
-## File Format
-
-Prompt files use JSON frontmatter with `{` and `}` as delimiters (braces on their own lines):
+Frontmatter uses an opening `{` and closing `}` on their own lines. YAML frontmatter is not supported. For example:
 
 ```markdown
 {
-  "title": "Activity Synthesis",
-  "color": "#00bcd4",
+  "title": "Activity synthesis",
+  "type": "generate",
   "schedule": "segment"
 }
 
 $segment_preamble
 
-# Segment Activity Synthesis
-
-Your prompt content here...
+Describe the activity supported by the supplied material.
 ```
 
-Files without metadata can omit the frontmatter entirely - just write the prompt content directly.
+[`solstone-core-talent-config`](../core/crates/solstone-core-talent-config/src/lib.rs) owns `read_frontmatter`, discovery, overrides and validation. Its `TalentConfig` carries the key, file, metadata and body.
 
-## Variable Categories
+[`compose_talent`](../core/crates/solstone-core-talent-cli/src/compose.rs) validates execution settings and returns a configuration map containing `user_instruction`. It also resolves schemas and input-source settings. `compose_talent_instruction` renders a definition's body with a journal root, template directory, optional focused facet and `BTreeMap<String, String>` context. The runtime's [preparation path](../core/crates/solstone-core-talent-runtime/src/prepare.rs) recomposes the instruction after merging request context.
 
-### Identity Variables
+## Substitution rules
 
-Identity variables come from the `identity` block in `config/journal.json`. These are available in all prompts automatically.
+The [template implementation](../core/crates/solstone-core-talent-cli/src/templates.rs) accepts `$name` and `${name}`, preserves unknown or malformed placeholders, and turns `$$` into a literal dollar sign. Identifiers use ASCII letters, digits and underscores, starting with a letter or underscore. Substitution does not recursively expand inserted values.
 
-**Common variables:**
-- `$name` - Full name
-- `$preferred` - Preferred name or nickname
-- `$bio` - Self-description
-- `$timezone` - IANA timezone identifier
+Composition proceeds in this order:
 
-**Pronoun variables** (flattened from nested structure):
-- `$pronouns_subject` - e.g., "he", "she", "they"
-- `$pronouns_object` - e.g., "him", "her", "them"
-- `$pronouns_possessive` - e.g., "his", "her", "their"
-- `$pronouns_reflexive` - e.g., "himself", "herself", "themselves"
+1. Flatten supported fields from `identity` in `config/journal.json`. Nested fields such as `pronouns.subject` become `pronouns_subject`. Missing, blank or path-shaped owner names are not inserted.
+2. Add a default `$now` formatted in UTC. Caller context can override it and identity fields.
+3. Add trimmed `identity/*.md` contents as `$identity_<stem>` when that key is not already supplied.
+4. Load `.md` fragments from the template directory and render each against that same base variable map. Insert the rendered fragments by filename stem, then substitute the talent body. A fragment name takes precedence over a colliding base key in this final body pass.
 
-**Uppercase-first versions** are automatically generated for all identity variables:
-- `$Name`, `$Preferred`, `$Bio`
-- `$Pronouns_subject`, `$Pronouns_possessive`, etc.
+Fragments can use identity and caller context. They do not recursively render one another. Avoid name collisions. A fragment-loading error leaves the body unsubstituted; an unreadable or invalid journal configuration propagates an error.
 
-The flattening logic converts nested objects using underscore separators. For example, `identity.pronouns.subject` becomes `$pronouns_subject`.
+Identity and caller context also receive capitalized aliases: the first character is uppercased and the remainder lowercased, for both the key and value. For example, `$day_YYYYMMDD` has an alias `$Day_yyyymmdd`. Use the original variable when exact capitalization matters.
 
-**References:**
-- Identity configuration: [config.md](../talent/journal/references/config.md) (identity section)
-- Flattening implementation: `solstone/think/prompts.py` → `_flatten_identity_to_template_vars()`
+Shipped fragments include `daily_preamble.md`, `segment_preamble.md` and `activity_preamble.md` in [`core/payload/solstone/think/templates/`](../core/payload/solstone/think/templates/). Adding a file there makes its stem available during composition.
 
-### Template Variables
+## Request context
 
-Template variables come from `.md` files in the `core/payload/solstone/think/templates/` directory. Each file's stem becomes a variable name containing its contents.
+Variables depend on the request and talent. They are not all globally available. The [request-context builder](../core/crates/solstone-core-talent-runtime/src/prompt_context.rs) supplies:
 
-**Current templates:**
-- `$daily_preamble` - Preamble for full-day output analysis
-- `$segment_preamble` - Preamble for single-segment analysis
-- `$activity_preamble` - Preamble for activity-level analysis (uses `$activity_*` context variables)
+- Day: `$day` and `$day_YYYYMMDD`.
+- Segment or span: `$segment` where applicable, `$segment_start` and `$segment_end`.
+- Source: `$stream`, `$content_description` and `$import_guidance`.
+- Facet: `$facet` and `$activity_md_dir`; the composer supplies `$facets` for discovery or focused-facet guidance.
+- Activity: `$activity_id`, `$activity_type`, `$activity_description`, `$activity_level`, `$activity_entities`, `$activity_segments`, `$activity_duration` and `$activity_context` when their required inputs exist.
+- Weekly bounds: `$week_end_YYYYMMDD` is six calendar days after the request day; `$lookback_start_YYYYMMDD` is six days before it. The talent determines whether its request day is a start or an as-of anchor.
 
-Templates can themselves use identity and context variables, enabling composable prompt construction. For example, `daily_preamble.md` uses `$preferred` and `$day`.
+Talent-specific preparation can add variables later. [`apply_template_vars`](../core/crates/solstone-core-talent-runtime/src/lib.rs) substitutes those values in `user_instruction`, `transcript` and `prompt`. Inspect the owning talent's preparation code before depending on a variable. Do not treat the default `$now` as the journal's local calendar date.
 
-**Pattern:** To add a new template variable, create `core/payload/solstone/think/templates/mytemplate.md` and it becomes available as `$mytemplate` in all prompts.
+## Validation references
 
-**Reference:** `core/payload/solstone/think/templates/` directory
+The existing tests in `templates.rs` cover escaping, unresolved placeholders, identity fields, fragment composition and invalid configuration. `compose.rs` covers execution configuration and facet/schema composition. Runtime `prompt_context.rs` tests cover dates, spans, streams, activity context and weekly boundaries.
 
-### Context Variables
-
-Context variables are passed at runtime by the code calling `load_prompt()`. These are use-case specific and not globally available.
-
-**Common generator context:**
-- `$day` - Human-readable date (e.g., "Friday, January 24, 2026")
-- `$day_YYYYMMDD` - Day in YYYYMMDD format (e.g., "20260124")
-- `$facet` - Focused facet name when the prompt is dispatched per-facet (bare name, e.g. `work`)
-- `$activity_md_dir` - Directory path containing per-activity narrative `.md` outputs for the focused facet/day, with trailing slash
-- `$now` - Current date and time with timezone (e.g., "Monday, February 3, 2025 at 10:30 AM PST")
-- `$segment` - Segment key (e.g., "143022_300")
-- `$segment_start` - Formatted start time (e.g., "2:30 PM")
-- `$segment_end` - Formatted end time (e.g., "2:35 PM")
-
-**Activity context** (available for `schedule: "activity"` agents):
-- `$activity_id` - Activity record ID (e.g., "coding_095809_303")
-- `$activity_type` - Activity type (e.g., "coding", "meeting")
-- `$activity_description` - Description of the activity
-- `$activity_level` - Average engagement level (0-1)
-- `$activity_entities` - Comma-separated active entities
-- `$activity_segments` - Comma-separated segment keys
-- `$activity_duration` - Estimated duration in minutes
-
-Context variables also get automatic uppercase-first versions (`$Day`, `$Day_yyyymmdd`, etc.).
-
-**References:**
-- Generator context building: `solstone/think/generate.py` (search for `prompt_context`)
-
-## Usage Patterns
-
-### For Generators
-
-Generator prompts typically compose a shared preamble with agent-specific instructions:
-
-```markdown
-{
-  "title": "My Generator",
-  "color": "#4caf50",
-  "schedule": "segment"
-}
-
-$segment_preamble
-
-# Segment Activity Synthesis
-
-Your specific instructions here...
-```
-
-The `$segment_preamble` or `$daily_preamble` template provides standardized context about what's being analyzed, while the rest of the prompt defines the specific analysis task.
-
-**Optional model configuration:** Add `max_output_tokens` (response length limit) and `thinking_budget` (model thinking token budget) to override provider defaults.
-
-**Reference:** `core/payload/solstone/talent/*.md` for examples (files with `schedule` field but no `tools` field)
-
-### For Agents
-
-Agent prompts are `.md` files with configuration in frontmatter:
-
-```markdown
-{
-  "title": "My Agent",
-  "tools": "journal"
-}
-
-You are a helpful assistant...
-```
-
-**Optional model configuration:** Add `max_output_tokens` (response length limit) and `thinking_budget` (model thinking token budget) to tune the request sent through the active brain. Note: OpenAI uses fixed reasoning and ignores `thinking_budget`.
-
-**Reference:** `solstone/think/talent.py` → `get_talent()` for agent configuration loading
-
-### The load_prompt() Function
-
-```python
-load_prompt(
-    name: str,                      # Prompt filename (without .md)
-    base_dir: Path | None = None,   # Directory containing prompt
-    context: dict | None = None,    # Runtime context variables
-) -> PromptContent
-```
-
-Returns a `PromptContent` named tuple with `text` (substituted content), `path` (source file), and `metadata` (frontmatter dict).
-
-**Reference:** `solstone/think/prompts.py` → `load_prompt()`
-
-## Adding New Variables
-
-### Identity Variables
-
-Edit `config/journal.json` to add or modify identity fields. Nested objects are automatically flattened with underscore separators.
-
-### Template Variables
-
-Create a new `.md` file in `core/payload/solstone/think/templates/`. The filename stem becomes the variable name.
-
-### Context Variables
-
-Pass via the `context` parameter when calling `load_prompt()`:
-
-```python
-load_prompt("myprompt", context={"custom_var": "value"})
-```
-
-## Reference Index
-
-| Category | Authoritative Source |
-|----------|---------------------|
-| Identity config schema | [config.md](../talent/journal/references/config.md) (identity section) |
-| Identity flattening | `solstone/think/prompts.py` (`_flatten_identity_to_template_vars`) |
-| Template loading | `solstone/think/prompts.py` (`_load_templates`) |
-| Core load function | `solstone/think/prompts.py` (`load_prompt`) |
-| Template files | `core/payload/solstone/think/templates/*.md` |
-| Test coverage | `tests/test_template_substitution.py` |
-| Generator prompts | `core/payload/solstone/talent/*.md` (files with `schedule` field but no `tools`) |
-| Agent prompts | `core/payload/solstone/talent/*.md` (files with `tools` field) |
+For identity settings, see the [journal configuration reference](../core/payload/solstone/talent/journal/references/config.md). For execution settings and model options, use [THINK.md](THINK.md) and the talent configuration validators.
