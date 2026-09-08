@@ -25,8 +25,11 @@ use solstone_core_body_store::{BodyBundleReplay, BodyDedupeState, validate_legac
 use solstone_core_journal_io::{
     AtomicWriteOptions, DirEntry, DirEntryKind, LockError, LockOptions, Removed,
     create_directory_with_mode, hold_lock, install_file, list_dir_entries,
-    list_dir_entries_bounded, remove_file, sync_dir, write_bytes_exclusive,
+    list_dir_entries_bounded, remove_file, write_bytes_exclusive,
 };
+
+#[cfg(unix)]
+use solstone_core_journal_io::sync_dir;
 
 #[cfg(test)]
 mod test_support;
@@ -870,14 +873,8 @@ fn publish_database_with_installer(
     #[cfg(windows)]
     let database_path = windows_database_publication_path(&database_path);
     remove_if_present(journal_root, TEMP_DATABASE_REL)?;
-    write_bytes_exclusive(&temp_path, &[], AtomicWriteOptions { mode: Some(0o600) }).map_err(
-        |source| {
-            #[cfg(test)]
-            eprintln!("BODY_REBUILD_CREATE_TEMP_DATABASE_ERROR: {source:?}");
-            let _ = source;
-            error(BodyRebuildErrorKind::Publication, "create_temp_database")
-        },
-    )?;
+    write_bytes_exclusive(&temp_path, &[], AtomicWriteOptions { mode: Some(0o600) })
+        .map_err(|_| error(BodyRebuildErrorKind::Publication, "create_temp_database"))?;
 
     let build_result = build_database(&temp_path, state);
     if let Err(error) = build_result {
@@ -894,12 +891,12 @@ fn publish_database_with_installer(
         for suffix in ["-wal", "-shm", "-journal"] {
             remove_if_present(journal_root, &format!("{DATABASE_REL}{suffix}"))?;
         }
-        sync_dir(journal_root, IMPORTS_DIR).map_err(|source| {
-            #[cfg(test)]
-            eprintln!("BODY_REBUILD_SYNC_IMPORTS_ERROR: {source:?}");
-            let _ = source;
-            error(BodyRebuildErrorKind::Publication, "sync_imports")
-        })?;
+        // Unix also requires the parent-directory durability barrier. Windows
+        // install_file flushes the database and checks its native replacement;
+        // that platform contract does not include a directory-fsync step.
+        #[cfg(unix)]
+        sync_dir(journal_root, IMPORTS_DIR)
+            .map_err(|_| error(BodyRebuildErrorKind::Publication, "sync_imports"))?;
         Ok(())
     })();
     if publication.is_err() {
