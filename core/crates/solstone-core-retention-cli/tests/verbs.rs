@@ -896,7 +896,7 @@ fn remove_marked_stops_at_a_locked_later_mark_without_losing_completed_rows() {
     assert_eq!(
         body["outcome"]["halted"]["reason"],
         format!(
-            "i couldn't start on the originals for {} because something else is using them. the rest of the removal list wasn't attempted (1 remaining).",
+            "the originals for {} couldn't be started on because something else is using them. the rest of the removal list wasn't attempted (1 remaining).",
             second_id.as_str()
         )
     );
@@ -943,7 +943,7 @@ fn remove_marked_reports_halted_before_start_when_the_first_mark_is_locked() {
     assert_eq!(
         body["outcome"]["halted"]["reason"],
         format!(
-            "i couldn't start on the originals for {id} because something else is using them. the rest of the removal list wasn't attempted (1 remaining)."
+            "the originals for {id} couldn't be started on because something else is using them. the rest of the removal list wasn't attempted (1 remaining)."
         )
     );
     assert!(segment.join("audio.flac").exists());

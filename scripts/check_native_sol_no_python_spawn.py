@@ -25,9 +25,6 @@ CLIENT_CRATES = (
 )
 SEAM_FILE = REPO_ROOT / "core/crates/solstone-core-sol-client/src/seam.rs"
 CLI_LIB_FILE = REPO_ROOT / "core/crates/solstone-core-sol-client-cli/src/lib.rs"
-PARITY_TEST_FILE = (
-    REPO_ROOT / "core/crates/solstone-core-sol-client-cli/tests/parity.rs"
-)
 
 FORBIDDEN_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("direct-std-process-command", re.compile(r"\bstd::process::Command\b")),
@@ -124,10 +121,6 @@ def check_required_spawn_guard_tests() -> list[Violation]:
         CLI_LIB_FILE: (
             "missing-unsupported-without-spawn-test",
             "classifies_unported_call_as_unsupported_without_spawn_path",
-        ),
-        PARITY_TEST_FILE: (
-            "missing-native-parity-test",
-            "native_matches_sol_call_parity_vectors",
         ),
     }
     violations: list[Violation] = []

@@ -66,7 +66,7 @@ pub fn remove_marked(
             Err(()) => {
                 let remaining = marks.as_slice().len().saturating_sub(index);
                 let reason = format!(
-                    "i couldn't start on the originals for {} because something else is using them. the rest of the removal list wasn't attempted ({remaining} remaining).",
+                    "the originals for {} couldn't be started on because something else is using them. the rest of the removal list wasn't attempted ({remaining} remaining).",
                     id.as_str()
                 );
                 if outcome.targets.is_empty() {
