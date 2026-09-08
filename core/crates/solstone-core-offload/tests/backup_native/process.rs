@@ -101,10 +101,10 @@ pub(super) fn refused_restore_roots(
     let link = workspace.join("junction root");
     fs::create_dir(&outside).unwrap();
     fs::write(outside.join("sentinel"), b"untouched").unwrap();
-    let command = required_path("SystemRoot").join("System32/cmd.exe");
+    let command = required_path("SystemRoot").join("System32").join("cmd.exe");
     assert!(
         Command::new(command)
-            .args(["/c", "mklink", "/J"])
+            .args(["/d", "/c", "mklink", "/J"])
             .arg(&link)
             .arg(&outside)
             .status()
@@ -161,8 +161,8 @@ pub(super) fn refused_restore_roots(
             assert_eq!(output.returncode, 0);
             fs::rename(self.target, self.displaced).unwrap();
             assert!(
-                Command::new(required_path("SystemRoot").join("System32/cmd.exe"))
-                    .args(["/c", "mklink", "/J"])
+                Command::new(required_path("SystemRoot").join("System32").join("cmd.exe"))
+                    .args(["/d", "/c", "mklink", "/J"])
                     .arg(self.target)
                     .arg(self.outside)
                     .status()
@@ -232,10 +232,10 @@ pub(super) fn refused_selective_root(
     fs::rename(segment, &outside).unwrap();
     fs::write(outside.join("sentinel"), b"unchanged").unwrap();
     let count = fs::read_dir(&outside).unwrap().count();
-    let command = required_path("SystemRoot").join("System32/cmd.exe");
+    let command = required_path("SystemRoot").join("System32").join("cmd.exe");
     assert!(
         Command::new(command)
-            .args(["/c", "mklink", "/J"])
+            .args(["/d", "/c", "mklink", "/J"])
             .arg(segment)
             .arg(&outside)
             .status()
