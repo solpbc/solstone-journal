@@ -38,9 +38,11 @@ window.whenShellReady(() => {
     statusIcon.setAttribute('aria-label', label);
     statusIcon.setAttribute('title', label);
     const unread = window.AppServices?.quietNotifs?.unviewedCount?.() || 0;
-    statusIcon.href = ['degraded', 'offline'].includes(lastCaptureStatusForPane)
+    statusIcon.href = lastCaptureStatusForPane === 'degraded'
       ? '/app/health/#registeredClientsCard'
-      : unread ? '/app/health/#quiet-notifs-section' : '/app/health/#healthSystemDetails';
+      : unread ? '/app/health/#quiet-notifs-section'
+      : ['offline', 'stale'].includes(lastCaptureStatusForPane)
+        ? '/app/health/#registeredClientsCard' : '/app/health/#healthSystemDetails';
     const visibleLabel = document.querySelector('#status-instrument .status-label');
     if (visibleLabel) visibleLabel.textContent = label;
     if (liveRegion) liveRegion.textContent = label;
@@ -342,10 +344,8 @@ window.whenShellReady(() => {
 		        appendLine('and ' + (degraded.length - 1) + ' more need attention', 'color: var(--ink-soft); font-size: 12px; margin-top: 2px;');
 		      }
 		      return;
-	    } else if (status === 'offline') {
-      text.style.color = 'var(--danger)';
-    } else if (status === 'stale') {
-      text.style.color = 'var(--warn-ink)';
+	    } else if (status === 'offline' || status === 'stale') {
+      text.style.color = 'var(--ink-soft)';
     } else {
       text.style.color = 'var(--ink-faint)';
     }

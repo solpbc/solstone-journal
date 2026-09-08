@@ -6,7 +6,7 @@ use crate::{
     vocabulary::{Check, CheckResult, RunnerResult, Status, make_result, truncate},
 };
 use solstone_core_sol_link::client_status::{
-    ClientAssessment, ClientCaptureState, ClientInspection, ConnectionFreshness,
+    ClientAssessment, ClientCaptureState, ClientInspection,
 };
 
 const HOUR_MS: i64 = 3_600_000;
@@ -46,7 +46,7 @@ pub(crate) fn result_from_assessment(inspection: ClientInspection, check: Check)
         let clauses: Vec<String> = rows
             .iter()
             .filter_map(|row| {
-                if row.capture_state != ClientCaptureState::Active {
+                if row.capture_state == ClientCaptureState::Degraded {
                     Some(capture_clause(row))
                 } else {
                     source_attention_clause(row)
@@ -57,7 +57,14 @@ pub(crate) fn result_from_assessment(inspection: ClientInspection, check: Check)
             make_result(
                 check,
                 Status::Ok,
-                "rollup=active; the solstone app on every device that has added to your journal is current",
+                if rows
+                    .iter()
+                    .all(|row| row.capture_state == ClientCaptureState::Active)
+                {
+                    "rollup=active; the solstone app on every device that has added to your journal is current"
+                } else {
+                    "rollup=quiet; no rejected uploads recorded; see devices for last delivery times"
+                },
                 None::<String>,
             )
         } else {
@@ -87,19 +94,7 @@ fn capture_clause(row: &ClientAssessment) -> String {
         ),
     };
     let names = common::needs_attention_source_names(row);
-    let base = common::with_source_attention(base, &names);
-    if matches!(
-        row.capture_state,
-        ClientCaptureState::Stale | ClientCaptureState::Offline
-    ) {
-        let reach = match row.connection {
-            ConnectionFreshness::Known { reach, .. } => reach,
-            ConnectionFreshness::Unknown => return base,
-        };
-        format!("{base}; {}", common::delivery_reach_clause(reach))
-    } else {
-        base
-    }
+    common::with_source_attention(base, &names)
 }
 
 fn source_attention_clause(row: &ClientAssessment) -> Option<String> {

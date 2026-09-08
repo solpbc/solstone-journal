@@ -193,10 +193,10 @@
     {"ws": "connecting", "capture": "*", "unviewed": "*", "variant": "mark-connecting", "label": "connecting"},
     {"ws": "connected", "capture": null, "unviewed": "*", "variant": "mark-connecting", "label": "connecting"},
     {"ws": "disconnected", "capture": "*", "unviewed": "*", "variant": "mark-offline", "label": "disconnected"},
-    {"ws": "*", "capture": "offline", "unviewed": "*", "variant": "mark-offline", "label": "a device hasn't added recently"},
     {"ws": "*", "capture": "degraded", "unviewed": "*", "variant": "mark-attention", "label": "a device needs attention"},
     {"ws": "*", "capture": "*", "unviewed": true, "variant": "mark-attention", "label": "attention"},
-    {"ws": "*", "capture": "stale", "unviewed": "*", "variant": "mark-attention", "label": "a device hasn't reached your journal"},
+    {"ws": "*", "capture": "offline", "unviewed": "*", "variant": "mark-paused", "label": "a device hasn't added recently"},
+    {"ws": "*", "capture": "stale", "unviewed": "*", "variant": "mark-paused", "label": "a device hasn't added recently"},
     {"ws": "*", "capture": "no_clients", "unviewed": "*", "variant": "mark-paused", "label": "no devices connected"},
     {"ws": "*", "capture": "active", "unviewed": "*", "variant": "mark", "label": "going in"},
     {"ws": "*", "capture": "*", "unviewed": "*", "variant": "mark-offline", "label": "can't confirm"}

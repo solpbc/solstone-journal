@@ -6,10 +6,8 @@ use crate::{
     vocabulary::{Check, CheckResult, RunnerResult, Status, make_result, truncate},
 };
 use solstone_core_sol_link::client_status::{
-    ClientAssessment, ClientCaptureState, ClientInspection, ConnectionFreshness, SourceDelivery,
+    ClientAssessment, ClientCaptureState, ClientInspection,
 };
-
-const MINUTE_MS: i64 = 60_000;
 
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     Ok(result_from_assessment(
@@ -46,17 +44,15 @@ pub(crate) fn result_from_assessment(inspection: ClientInspection, check: Check)
             .expect("available assessment rows")
             .into_iter()
             .filter(|row| {
-                matches!(
-                    row.capture_state,
-                    ClientCaptureState::Stale | ClientCaptureState::Offline
-                ) || !common::needs_attention_source_names(row).is_empty()
+                matches!(row.capture_state, ClientCaptureState::Degraded)
+                    || !common::needs_attention_source_names(row).is_empty()
             })
             .collect();
         if stalled.is_empty() {
             make_result(
                 check,
                 Status::Ok,
-                "the solstone app on every device that has added to your journal is current",
+                "no rejected uploads recorded; see devices for last delivery times",
                 None::<String>,
             )
         } else {
@@ -65,9 +61,7 @@ pub(crate) fn result_from_assessment(inspection: ClientInspection, check: Check)
                 check,
                 Status::Warn,
                 truncate(&common::join_capped(&clauses, " | "), 400),
-                Some(
-                    "restart the solstone app on that device, then confirm something new is in your journal",
-                ),
+                Some("open /app/health to inspect the rejected upload"),
             )
         }
     };
@@ -76,45 +70,11 @@ pub(crate) fn result_from_assessment(inspection: ClientInspection, check: Check)
 }
 
 fn stall_clause(row: &ClientAssessment) -> String {
-    let names = common::needs_attention_source_names(row);
-    let body = if matches!(
-        row.capture_state,
-        ClientCaptureState::Stale | ClientCaptureState::Offline
-    ) {
-        let added = row
-            .capture_elapsed_ms
-            .expect("stalled device has a last-sent stamp");
-        let body = format!(
-            "the solstone app on {} last added {}m ago",
-            common::client_name(row),
-            added / MINUTE_MS
-        );
-        common::with_source_attention(body, &names)
-    } else {
-        let sources = common::format_attention_sources(&names)
-            .expect("active source stall names a NeedsAttention source");
-        match row
-            .source_delivery
-            .values()
-            .filter(|delivery| delivery.state == SourceDelivery::NeedsAttention)
-            .filter_map(|delivery| delivery.elapsed_ms)
-            .max()
-        {
-            Some(added) => format!(
-                "the solstone app on {} last added {sources} {}m ago",
-                common::client_name(row),
-                added / MINUTE_MS
-            ),
-            None => format!(
-                "the solstone app on {} is having trouble adding {sources}",
-                common::client_name(row)
-            ),
-        }
-    };
-    match row.connection {
-        ConnectionFreshness::Known { reach, .. } => {
-            format!("{body}; {}", common::delivery_reach_clause(reach))
-        }
-        ConnectionFreshness::Unknown => body,
-    }
+    common::with_source_attention(
+        format!(
+            "the journal rejected an upload from {}",
+            common::client_name(row)
+        ),
+        &common::needs_attention_source_names(row),
+    )
 }

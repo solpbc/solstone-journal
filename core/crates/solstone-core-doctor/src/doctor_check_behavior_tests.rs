@@ -531,7 +531,7 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
                 write_client_fixture(
                     &context,
                     "abcdefgh",
-                    serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"last_seen":now-1,"last_segment_received_at":now-86_400_001}),
+                    serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"last_seen":now-1,"last_segment_received_at":now-86_400_001,"health":{"ingest_rejection":{"active_count":1}}}),
                 );
             }
         }
@@ -561,7 +561,7 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
                 write_client_fixture(
                     &context,
                     "ijklmnop",
-                    serde_json::json!({"key":"ijklmnop-key","name":"tablet","enabled":true,"created_at":1,"last_seen":now-1_000,"last_segment_received_at":now-21_600_001}),
+                    serde_json::json!({"key":"ijklmnop-key","name":"tablet","enabled":true,"created_at":1,"last_seen":now-1_000,"last_segment_received_at":now-21_600_001,"health":{"ingest_rejection":{"active_count":1}}}),
                 );
             }
         }
@@ -825,7 +825,7 @@ fn write_device(
 }
 
 #[test]
-fn lone_long_stop_warns_both_checks() {
+fn lone_long_stop_is_informational() {
     let hour = 3_600_000;
     for (sent_age, seen_age) in [(89 * hour, 1_000), (25 * hour, 25 * hour)] {
         let c = fixture();
@@ -839,16 +839,13 @@ fn lone_long_stop_warns_both_checks() {
         );
         let capture = result("capture_health", &c);
         let stall = result("client_delivery_stall", &c);
-        assert_eq!(capture.status, Status::Warn);
-        assert!(capture.detail.contains("rollup=attention"));
-        assert!(capture.detail.contains("phone"));
-        assert_eq!(stall.status, Status::Warn);
-        assert!(stall.detail.contains("phone"));
+        assert_eq!(capture.status, Status::Ok);
+        assert_eq!(stall.status, Status::Ok);
     }
 }
 
 #[test]
-fn peer_makes_six_hour_and_long_stop_stale() {
+fn active_peer_does_not_make_a_quiet_device_failed() {
     let hour = 3_600_000;
     for sent_age in [7 * hour, 25 * hour] {
         let c = fixture();
@@ -857,11 +854,8 @@ fn peer_makes_six_hour_and_long_stop_stale() {
         write_device(&c, "ijklmnop", "bravo", now - 1_000, Some(now - sent_age));
         let capture = result("capture_health", &c);
         let stall = result("client_delivery_stall", &c);
-        assert_eq!(capture.status, Status::Warn);
-        assert!(capture.detail.contains("bravo"));
-        assert!(!capture.detail.contains("alpha"));
-        assert_eq!(stall.status, Status::Warn);
-        assert!(stall.detail.contains("bravo"));
+        assert_eq!(capture.status, Status::Ok);
+        assert_eq!(stall.status, Status::Ok);
     }
 }
 
@@ -872,12 +866,12 @@ fn overnight_quiet_is_ok() {
     let eight = 8 * 3_600_000;
     write_device(&c, "abcdefgh", "alpha", now - eight, Some(now - eight));
     write_device(&c, "ijklmnop", "bravo", now - eight, Some(now - eight));
-    assert_eq!(status("capture_health", &c), Status::Warn);
-    assert_eq!(status("client_delivery_stall", &c), Status::Warn);
+    assert_eq!(status("capture_health", &c), Status::Ok);
+    assert_eq!(status("client_delivery_stall", &c), Status::Ok);
 }
 
 #[test]
-fn fleet_long_stop_stall_is_warn() {
+fn fleet_long_stop_is_informational() {
     let c = fixture();
     let now = c.now.timestamp_millis();
     for (index, prefix) in ["abcdefgh", "ijklmnop", "qrstuvwx", "yzabcdef"]
@@ -892,7 +886,7 @@ fn fleet_long_stop_stall_is_warn() {
             Some(now - 41 * 3_600_000),
         );
     }
-    assert_eq!(status("client_delivery_stall", &c), Status::Warn);
+    assert_eq!(status("client_delivery_stall", &c), Status::Ok);
 }
 
 #[test]
@@ -1059,8 +1053,8 @@ fn lone_six_hour_gap_is_ok() {
     let c = fixture();
     let now = c.now.timestamp_millis();
     write_device(&c, "abcdefgh", "phone", now - 1_000, Some(now - 21_600_001));
-    assert_eq!(status("client_delivery_stall", &c), Status::Warn);
-    assert_eq!(status("capture_health", &c), Status::Warn);
+    assert_eq!(status("client_delivery_stall", &c), Status::Ok);
+    assert_eq!(status("capture_health", &c), Status::Ok);
 }
 
 #[test]
@@ -1079,7 +1073,7 @@ fn rejection_without_last_sent_warns_capture() {
     let stall = result("client_delivery_stall", &alone);
     assert_eq!(capture.status, Status::Warn);
     assert_ne!(stall.status, Status::Skip);
-    assert_eq!(stall.status, Status::Ok);
+    assert_eq!(stall.status, Status::Warn);
     assert!(capture.detail.contains("having trouble adding"));
     assert!(!capture.detail.contains("still running"));
     assert!(!capture.detail.contains("asleep"));
@@ -1726,7 +1720,7 @@ fn stall_warn_omits_duplicate_and_queue_clauses() {
             "last_seen": now - 1_000,
             "last_segment_received_at": now - 86_400_001,
             "stats": {"duplicates_rejected": 793866},
-            "health": {"beacon": {"pending_queue_depth": 4}}
+            "health": {"beacon": {"pending_queue_depth": 4}, "ingest_rejection":{"active_count":1}}
         }),
     );
     let row = result("client_delivery_stall", &context);
@@ -1735,18 +1729,21 @@ fn stall_warn_omits_duplicate_and_queue_clauses() {
     assert!(!row.detail.contains("pending queue"));
 }
 
-fn write_stalled_fleet(context: &CheckContext, name: impl Fn(usize) -> String, seen_age: i64) {
+fn write_rejected_fleet(context: &CheckContext, name: impl Fn(usize) -> String, seen_age: i64) {
     let now = context.now.timestamp_millis();
     for (index, prefix) in ["abcdefgh", "ijklmnop", "qrstuvwx", "yzabcdef"]
         .into_iter()
         .enumerate()
     {
-        write_device(
+        write_client_fixture(
             context,
             prefix,
-            &name(index),
-            now - seen_age,
-            Some(now - 41 * 3_600_000),
+            serde_json::json!({
+                "key": format!("{prefix}-key"), "name": name(index), "enabled": true,
+                "created_at": 1, "last_seen": now-seen_age,
+                "last_segment_received_at": now-41*3_600_000,
+                "health": {"ingest_rejection": {"active_count": 1}}
+            }),
         );
     }
     write_client_fixture(
@@ -1814,7 +1811,7 @@ fn assert_facts_survive_in_json_and_not_text(capture: &CheckResult, stall: &Chec
 #[test]
 fn delivery_facts_survive_truncated_detail_and_are_absent_from_text() {
     let context = fixture();
-    write_stalled_fleet(&context, |index| format!("d{index}"), 200_000);
+    write_rejected_fleet(&context, |index| format!("d{index}"), 200_000);
     let capture = result("capture_health", &context);
     let stall = result("client_delivery_stall", &context);
     assert_eq!(capture.status, Status::Warn);
@@ -1833,10 +1830,10 @@ fn delivery_facts_survive_truncated_detail_and_are_absent_from_text() {
 }
 
 #[test]
-fn delivery_facts_survive_400_truncation_with_reach_clause() {
+fn delivery_facts_survive_400_truncation_with_rejections() {
     let context = fixture();
-    let long = "x".repeat(66);
-    write_stalled_fleet(&context, |index| format!("{long}{index}"), 200_000);
+    let long = "x".repeat(160);
+    write_rejected_fleet(&context, |index| format!("{long}{index}"), 200_000);
     let capture = result("capture_health", &context);
     let stall = result("client_delivery_stall", &context);
     assert_eq!(capture.status, Status::Warn);
@@ -1857,7 +1854,7 @@ fn delivery_facts_survive_400_truncation_with_reach_clause() {
 }
 
 #[test]
-fn reach_clause_replaces_last_contact_and_matches_across_checks() {
+fn quiet_devices_preserve_reach_facts_without_inventing_failure() {
     let hour = 3_600_000;
     let running = fixture();
     let now = running.now.timestamp_millis();
@@ -1894,41 +1891,25 @@ fn reach_clause_replaces_last_contact_and_matches_across_checks() {
     let asleep_capture = result("capture_health", &asleep);
     let asleep_stall = result("client_delivery_stall", &asleep);
 
-    assert_eq!(running_capture.status, Status::Warn);
-    assert_eq!(running_stall.status, Status::Warn);
-    assert_eq!(stale_capture.status, Status::Warn);
-    assert_eq!(stale_stall.status, Status::Warn);
-    assert_eq!(asleep_capture.status, Status::Warn);
-    assert_eq!(asleep_stall.status, Status::Warn);
+    for row in [
+        &running_capture,
+        &running_stall,
+        &stale_capture,
+        &stale_stall,
+        &asleep_capture,
+        &asleep_stall,
+    ] {
+        assert_eq!(row.status, Status::Ok);
+        assert!(row.fix.is_none());
+        assert!(!row.detail.contains("isn't adding"));
+        assert!(!row.detail.contains("still running"));
+    }
     assert_eq!(
         running_capture.client_delivery,
         running_stall.client_delivery
     );
     assert_eq!(stale_capture.client_delivery, stale_stall.client_delivery);
     assert_eq!(asleep_capture.client_delivery, asleep_stall.client_delivery);
-    assert_eq!(running_capture.fix, stale_capture.fix);
-    assert_eq!(running_capture.fix, asleep_capture.fix);
-    assert_eq!(running_stall.fix, stale_stall.fix);
-    assert_eq!(running_stall.fix, asleep_stall.fix);
-    assert!(!running_stall.detail.contains("last contact"));
-    assert!(!stale_stall.detail.contains("last contact"));
-    assert!(!asleep_stall.detail.contains("last contact"));
-    assert!(running_stall.detail.contains("still running"));
-    assert!(
-        running_stall
-            .detail
-            .contains("isn't adding to your journal")
-    );
-    assert!(running_capture.detail.contains("still running"));
-    assert!(stale_stall.detail.contains("still running"));
-    assert!(stale_capture.detail.contains("still running"));
-    assert!(asleep_stall.detail.contains("the device appears offline"));
-    assert!(asleep_stall.detail.contains("may be asleep"));
-    assert!(asleep_capture.detail.contains("the device appears offline"));
-    assert!(asleep_capture.detail.contains("may be asleep"));
-    assert!(running_capture.detail.contains("rollup=attention"));
-    assert!(running_capture.detail.contains("phone"));
-
     let running_facts = serde_json::to_value(&running_capture.client_delivery).unwrap();
     let stale_facts = serde_json::to_value(&stale_capture.client_delivery).unwrap();
     let asleep_facts = serde_json::to_value(&asleep_capture.client_delivery).unwrap();
@@ -1959,10 +1940,11 @@ fn rfc3339_millis(timestamp: i64) -> String {
 }
 
 #[test]
-fn single_source_capture_and_stall_wording_is_unchanged() {
+fn quiet_single_source_capture_and_stall_are_informational() {
     let hour = 3_600_000;
-    let expected_capture = "rollup=attention; the solstone app on phone last added 89h ago; it is still running, but it isn't adding to your journal";
-    let expected_stall = "the solstone app on phone last added 5340m ago; it is still running, but it isn't adding to your journal";
+    let expected_capture =
+        "rollup=quiet; no rejected uploads recorded; see devices for last delivery times";
+    let expected_stall = "no rejected uploads recorded; see devices for last delivery times";
     for sources in [
         None,
         Some(serde_json::json!({
@@ -2006,7 +1988,7 @@ fn single_source_capture_and_stall_wording_is_unchanged() {
 }
 
 #[test]
-fn multi_source_needs_attention_names_the_quiet_source() {
+fn multi_source_needs_attention_names_the_rejected_source() {
     let c = fixture();
     let now = c.now.timestamp_millis();
     write_client_fixture(
@@ -2021,7 +2003,7 @@ fn multi_source_needs_attention_names_the_quiet_source() {
             "last_segment_received_at": now - 1_000,
             "sources": {
                 "audio": {"last_accepted_ingest_at": rfc3339_millis(now - 1_000)},
-                "location": {"last_accepted_ingest_at": rfc3339_millis(now - 700_000)},
+                "location": {"last_accepted_ingest_at": rfc3339_millis(now - 700_000), "ingest_rejection": {"active_count": 1, "reason_code":"ingest_rejected", "first":rfc3339_millis(now), "latest":rfc3339_millis(now)}},
             }
         }),
     );
@@ -2035,12 +2017,12 @@ fn multi_source_needs_attention_names_the_quiet_source() {
     );
     assert_eq!(
         stall.detail,
-        "the solstone app on phone last added location 11m ago; it is still running, but it isn't adding to your journal"
+        "the journal rejected an upload from phone (location needs attention)"
     );
 }
 
 #[test]
-fn multi_source_plural_need_attention_joins_quiet_names() {
+fn multi_source_plural_need_attention_joins_rejected_names() {
     let c = fixture();
     let now = c.now.timestamp_millis();
     let quiet = rfc3339_millis(now - 700_000);
@@ -2055,9 +2037,9 @@ fn multi_source_plural_need_attention_joins_quiet_names() {
             "last_seen": now - 1_000,
             "last_segment_received_at": now - 700_000,
             "sources": {
-                "audio": {"last_accepted_ingest_at": quiet},
-                "location": {"last_accepted_ingest_at": quiet},
-                "screen": {"last_accepted_ingest_at": quiet},
+                "audio": {"last_accepted_ingest_at": quiet, "ingest_rejection": {"active_count": 1, "reason_code":"ingest_rejected", "first":rfc3339_millis(now), "latest":rfc3339_millis(now)}},
+                "location": {"last_accepted_ingest_at": quiet, "ingest_rejection": {"active_count": 1, "reason_code":"ingest_rejected", "first":rfc3339_millis(now), "latest":rfc3339_millis(now)}},
+                "screen": {"last_accepted_ingest_at": quiet, "ingest_rejection": {"active_count": 1, "reason_code":"ingest_rejected", "first":rfc3339_millis(now), "latest":rfc3339_millis(now)}},
             }
         }),
     );
@@ -2068,15 +2050,15 @@ fn multi_source_plural_need_attention_joins_quiet_names() {
     assert!(
         capture
             .detail
-            .contains("audio, location, screen need attention"),
-        "capture should join quiet sources with the plural verb: {}",
+            .contains("having trouble adding audio, location, screen"),
+        "capture should name the rejected sources: {}",
         capture.detail
     );
     assert!(
         stall
             .detail
             .contains("audio, location, screen need attention"),
-        "stall should join quiet sources with the plural verb: {}",
+        "stall should join rejected sources with the plural verb: {}",
         stall.detail
     );
     assert!(!capture.detail.contains("needs attention"));
@@ -2099,7 +2081,7 @@ fn empty_source_is_named_default_on_a_multi_source_device() {
             "last_segment_received_at": now - 1_000,
             "sources": {
                 "audio": {"last_accepted_ingest_at": rfc3339_millis(now - 1_000)},
-                "": {"last_accepted_ingest_at": rfc3339_millis(now - 700_000)},
+                "": {"last_accepted_ingest_at": rfc3339_millis(now - 700_000), "ingest_rejection": {"active_count": 1, "reason_code":"ingest_rejected", "first":rfc3339_millis(now), "latest":rfc3339_millis(now)}},
             }
         }),
     );
@@ -2113,7 +2095,7 @@ fn empty_source_is_named_default_on_a_multi_source_device() {
     );
     assert_eq!(
         stall.detail,
-        "the solstone app on phone last added default 11m ago; it is still running, but it isn't adding to your journal"
+        "the journal rejected an upload from phone (default needs attention)"
     );
 }
 
