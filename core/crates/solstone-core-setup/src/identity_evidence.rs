@@ -548,6 +548,7 @@ mod tests {
     use solstone_core_installation_identity::{
         Generation, InstallationId, JournalToken, NamespaceName,
     };
+    #[cfg(unix)]
     use std::os::unix::fs::{PermissionsExt, symlink};
 
     fn fields() -> GuardFields {
@@ -675,6 +676,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn exact_v1_launcher_is_admitted_only_by_the_setup_transition() {
         let root = std::env::temp_dir().join(format!(
             "solstone-identity-v1-launcher-{}",
