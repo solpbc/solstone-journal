@@ -3,8 +3,7 @@
 
 //! Whole-day catchup composition for the unscoped `journal think --day` mode.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::ffi::OsString;
+use std::collections::BTreeSet;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::Utc;
@@ -86,7 +85,7 @@ pub(crate) fn run(
     args: &ThinkArgs,
     default_segment_workers: usize,
     timeout: Option<Duration>,
-    sense_child_environment: &BTreeMap<OsString, OsString>,
+    sense_child_environment: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<ModeResult, String> {
     run_with_phase_process(
         context,
@@ -106,7 +105,7 @@ fn run_with_phase_process(
     default_segment_workers: usize,
     timeout: Option<Duration>,
     phase_process: &dyn PhaseProcessRunner,
-    sense_child_environment: &BTreeMap<OsString, OsString>,
+    sense_child_environment: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<ModeResult, String> {
     let observed_generation = stream_generation(context)?;
     let observed_fingerprint = read_raw_input_fingerprint(&context.journal, &context.day)
@@ -997,7 +996,7 @@ mod tests {
             &ThinkArgs::default(),
             1,
             Some(Duration::from_secs(610)),
-            &BTreeMap::new(),
+            &solstone_core_system::process::ChildLaunchContext::default(),
         )
         .unwrap();
         assert_eq!(result.failed, 0);
@@ -1036,7 +1035,7 @@ mod tests {
             &ThinkArgs::default(),
             1,
             Some(Duration::from_secs(610)),
-            &BTreeMap::new(),
+            &solstone_core_system::process::ChildLaunchContext::default(),
         )
         .unwrap();
 
@@ -1072,7 +1071,7 @@ mod tests {
             &ThinkArgs::default(),
             1,
             Some(Duration::from_secs(610)),
-            &BTreeMap::new(),
+            &solstone_core_system::process::ChildLaunchContext::default(),
         )
         .unwrap();
 
@@ -1108,7 +1107,7 @@ mod tests {
             &ThinkArgs::default(),
             1,
             Some(Duration::from_secs(610)),
-            &BTreeMap::new(),
+            &solstone_core_system::process::ChildLaunchContext::default(),
         )
         .unwrap();
 
@@ -1293,7 +1292,7 @@ mod tests {
             &args,
             1,
             Some(Duration::from_secs(610)),
-            &BTreeMap::new(),
+            &solstone_core_system::process::ChildLaunchContext::default(),
         )
         .unwrap();
         assert_eq!(result.failed, 0);
@@ -1902,7 +1901,7 @@ mod tests {
             1,
             Some(Duration::from_secs(610)),
             &runner,
-            &BTreeMap::new(),
+            &solstone_core_system::process::ChildLaunchContext::default(),
         )
         .unwrap();
 
@@ -1947,7 +1946,7 @@ mod tests {
             1,
             Some(Duration::from_secs(610)),
             &runner,
-            &BTreeMap::new(),
+            &solstone_core_system::process::ChildLaunchContext::default(),
         )
         .unwrap();
 

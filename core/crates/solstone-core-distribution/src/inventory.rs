@@ -973,7 +973,7 @@ mod tests {
     }
 
     #[test]
-    fn the_committed_windows_target_declares_its_own_field_set_and_no_entries() {
+    fn the_committed_windows_target_declares_native_commands_and_shared_models() {
         let inventory = committed();
         let target = inventory
             .target
@@ -991,12 +991,40 @@ mod tests {
         assert_eq!(target.triple_apple, "");
         assert_eq!(target.min_macos, "");
         assert_eq!(target.triples(), vec!["x86_64-pc-windows-msvc"]);
-        assert!(!inventory.entry.iter().any(|entry| {
-            entry_fields(entry)
-                .1
+        let entries = inventory
+            .entry
+            .iter()
+            .filter(|entry| {
+                entry_fields(entry)
+                    .1
+                    .iter()
+                    .any(|id| id == "windows-x86_64")
+            })
+            .collect::<Vec<_>>();
+        for (public, binary) in [
+            ("bin/journal.exe", "solstone-core-journal"),
+            ("bin/solstone.exe", "solstone-core-sol"),
+        ] {
+            assert!(entries.iter().any(|entry| matches!(entry,
+                Entry::Bin { dest, bin, .. } if dest == public && bin == binary)));
+        }
+        assert!(
+            !entries
                 .iter()
-                .any(|id| id == "windows-x86_64")
-        }));
+                .any(|entry| matches!(entry, Entry::Launcher { .. }))
+        );
+        assert!(
+            entries
+                .iter()
+                .any(|entry| matches!(entry, Entry::ModelAsset { dest, .. }
+            if dest == crate::windows_payload::WINDOWS_RFDETR_MODEL))
+        );
+        assert!(
+            !entries
+                .iter()
+                .any(|entry| matches!(entry, Entry::ModelAsset { dest, .. }
+            if dest.contains("ced")))
+        );
     }
 
     #[test]
@@ -1479,7 +1507,7 @@ min_macos = "14.0"
     fn windows_entry_dests_outside_the_layout_are_refused() {
         let root = tempfile::Builder::new()
             .prefix("solstone-distribution-windows-dest-")
-            .tempdir_in("/var/tmp")
+            .tempdir()
             .expect("temporary inventory");
         let distribution = root.path().join("core/distribution");
         fs::create_dir_all(&distribution).unwrap();
@@ -1504,17 +1532,17 @@ triple_windows = "x86_64-pc-windows-msvc"
 [[entry]]
 kind = "copy"
 source = "LICENSE"
-dest = "bin/solstone-core.exe"
+dest = "runtime/solstone-core.exe"
 mode = 0o644
 targets = ["windows-x86_64"]
 "#,
         )
         .unwrap();
         let error = load_inventory(&distribution.join("inventory.toml"))
-            .expect_err("linux dest on windows")
+            .expect_err("retired synthetic dest on windows")
             .to_string();
         assert!(error.contains("unexpected windows dest"), "{error}");
-        assert!(error.contains("bin/solstone-core.exe"), "{error}");
+        assert!(error.contains("runtime/solstone-core.exe"), "{error}");
     }
 
     #[test]

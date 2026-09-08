@@ -41,9 +41,15 @@ pub enum DiscoveryRefreshError {
 pub fn refresh_discovery_cache(
     root: &Path,
     hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
+    #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<DiscoveryRefresh, DiscoveryRefreshError> {
     refresh_with_cluster(root, |embeddings| {
-        crate::discovery_helper::discovery_cluster(embeddings, hosted_parent)
+        crate::discovery_helper::discovery_cluster(
+            embeddings,
+            hosted_parent,
+            #[cfg(windows)]
+            generation,
+        )
     })
 }
 

@@ -49,6 +49,37 @@ impl PipedStdio {
         })
     }
 
+    #[cfg(windows)]
+    pub(super) fn redirect_null(&mut self, nulls: [bool; 3]) -> io::Result<()> {
+        use std::os::windows::io::IntoRawHandle;
+        for (index, null) in nulls.into_iter().enumerate() {
+            if !null {
+                continue;
+            }
+            let file = std::fs::OpenOptions::new()
+                .read(index == 0)
+                .write(index != 0)
+                .open("NUL")?;
+            let child = PipeEndHandle::new(file.into_raw_handle());
+            match index {
+                0 => {
+                    self.child_stdin_read = Some(child);
+                    self.parent_stdin_write.close()?;
+                }
+                1 => {
+                    self.child_stdout_write = Some(child);
+                    self.parent_stdout_read.close()?;
+                }
+                2 => {
+                    self.child_stderr_write = Some(child);
+                    self.parent_stderr_read.close()?;
+                }
+                _ => unreachable!(),
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn child_stdin_read(&self) -> &PipeEndHandle {
         self.child_stdin_read
             .as_ref()
@@ -100,9 +131,17 @@ impl PipedStdio {
             &mut self.child_stdout_write,
             &mut self.child_stderr_write,
         ] {
-            if let Some(mut end) = end.take() {
-                preserve_first_error(&mut first_error, api.clear_inherit(&end));
-                preserve_first_error(&mut first_error, api.close_end(&mut end));
+            if let Some(mut handle) = end.take() {
+                preserve_first_error(&mut first_error, api.clear_inherit(&handle));
+                #[cfg(windows)]
+                let close = super::job_process::finalization_boundary("child-end-close")
+                    .and_then(|()| api.close_end(&mut handle));
+                #[cfg(not(windows))]
+                let close = api.close_end(&mut handle);
+                if let Err(error) = close {
+                    preserve_first_error(&mut first_error, Err(error));
+                    *end = Some(handle);
+                }
             }
         }
         match first_error {

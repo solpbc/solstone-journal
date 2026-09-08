@@ -53,6 +53,10 @@ pub enum SpeakersAnalyzeOwnerRole {
     Sense,
     Think,
     Transcribe,
+    #[cfg(windows)]
+    Convey,
+    #[cfg(windows)]
+    Maintenance,
 }
 
 impl SpeakersAnalyzeOwnerRole {
@@ -63,6 +67,10 @@ impl SpeakersAnalyzeOwnerRole {
             Self::Sense => "sense",
             Self::Think => "think",
             Self::Transcribe => "transcribe",
+            #[cfg(windows)]
+            Self::Convey => "convey",
+            #[cfg(windows)]
+            Self::Maintenance => "maintenance",
         }
     }
 
@@ -72,6 +80,10 @@ impl SpeakersAnalyzeOwnerRole {
             "sense" => Some(Self::Sense),
             "think" => Some(Self::Think),
             "transcribe" => Some(Self::Transcribe),
+            #[cfg(windows)]
+            "convey" => Some(Self::Convey),
+            #[cfg(windows)]
+            "maintenance" => Some(Self::Maintenance),
             _ => None,
         }
     }
@@ -109,19 +121,31 @@ impl SpeakersAnalyzeOwnerView {
 
 /// A held or inherited speakers-analyze installation generation.
 ///
-/// The owner keeps the advisory lease alive for its descendants. A borrower
-/// retains no lease because its inherited descriptor is owned by the parent.
+/// Unix roots retain the advisory lease and descendants retain their inherited
+/// descriptor. Windows roots and borrowers retain the same exclusive file object
+/// through reduced-rights capabilities; the last holder releases the generation.
 #[derive(Debug)]
 pub struct SpeakersAnalyzeGeneration {
     _lease: Option<solstone_core_journal_io::FileLease>,
     inherited_fd: Option<i32>,
     environment: BTreeMap<OsString, OsString>,
+    #[cfg(windows)]
+    read_grant: solstone_core_system::process::ReadFileGrant,
 }
 
 impl SpeakersAnalyzeGeneration {
     /// Environment passed only to native child commands that can borrow this generation.
+    #[cfg(not(windows))]
     pub fn inheritance_environment(&self) -> BTreeMap<OsString, OsString> {
         self.environment.clone()
+    }
+    /// Metadata and typed capabilities for the next authenticated journal child.
+    pub fn child_launch_context(&self) -> solstone_core_system::process::ChildLaunchContext {
+        solstone_core_system::process::ChildLaunchContext {
+            environment: self.environment.clone(),
+            #[cfg(windows)]
+            read_file_grants: vec![self.read_grant.clone()],
+        }
     }
 }
 
@@ -138,6 +162,7 @@ impl Drop for SpeakersAnalyzeGeneration {
 /// `role` is a static call-site declaration of the acquiring root. Borrowers
 /// still pass the role of their own process; it is recorded only when this
 /// process actually acquires.
+#[cfg(not(windows))]
 pub fn enter_speakers_analyze_generation(
     journal: &Path,
     role: SpeakersAnalyzeOwnerRole,
@@ -152,7 +177,7 @@ pub fn enter_speakers_analyze_generation(
 }
 
 /// Test seam: drive acquire/borrow with a caller-supplied proof and no asset digest check.
-#[cfg(test)]
+#[cfg(all(test, not(windows)))]
 pub(crate) fn enter_with_proof(
     journal: &Path,
     role: SpeakersAnalyzeOwnerRole,
@@ -161,6 +186,7 @@ pub(crate) fn enter_with_proof(
     enter_impl(journal, role, proof, false, inherited_from_env())
 }
 
+#[cfg(not(windows))]
 fn enter_impl(
     journal: &Path,
     role: SpeakersAnalyzeOwnerRole,
@@ -221,6 +247,249 @@ fn enter_impl(
     })
 }
 
+/// Enter a Windows generation using only an authenticated launch capability
+/// for borrowing. Root acquisition owns one exclusive-open file object.
+#[cfg(windows)]
+pub fn enter_speakers_analyze_generation(
+    journal: &Path,
+    role: SpeakersAnalyzeOwnerRole,
+    admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+) -> Result<SpeakersAnalyzeGeneration, CliError> {
+    use solstone_core_system::process::{ReadFileGrant, ReadFileGrantKind};
+    use std::io::Write;
+    use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT,
+    };
+
+    if env::var_os(GENERATION_FD_ENV_KEY).is_some() {
+        return Err(installation_error(
+            "obsolete Windows generation descriptor marker",
+        ));
+    }
+    let proof = installation_proof()?;
+    let metadata = windows_inherited_generation()?;
+    if let Some(admitted) = admitted {
+        if admitted.journal() != journal || role == SpeakersAnalyzeOwnerRole::Supervisor {
+            return Err(installation_error(
+                "generation launch provenance does not match this root",
+            ));
+        }
+        let [grant] = admitted.read_file_grants() else {
+            return Err(installation_error(
+                "authenticated generation grant is missing or duplicated",
+            ));
+        };
+        let (id, token) =
+            metadata.ok_or_else(|| installation_error("generation metadata is missing"))?;
+        if grant.kind() != ReadFileGrantKind::SpeakersAnalyzeGeneration {
+            return Err(installation_error("unexpected generation grant kind"));
+        }
+        validate_windows_borrow(journal, &proof, &id, &token, grant)?;
+        return Ok(SpeakersAnalyzeGeneration {
+            _lease: None,
+            inherited_fd: None,
+            environment: windows_generation_environment(&id, &token),
+            read_grant: grant.clone(),
+        });
+    }
+    if metadata.is_some() {
+        return Err(installation_error(
+            "generation metadata has no authenticated launch capability",
+        ));
+    }
+    let lease_path = generation_lock_path(journal);
+    fs::create_dir_all(lease_path.parent().expect("generation lock has parent"))
+        .map_err(|error| installation_error(format!("generation-directory: {error}")))?;
+    let mut file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .share_mode(0)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(&lease_path)
+        .map_err(|error| {
+            if error.raw_os_error() == Some(32) {
+                generation_contention_error(journal)
+            } else {
+                installation_error(format!("generation-open: {error}"))
+            }
+        })?;
+    let attributes = file
+        .metadata()
+        .map_err(|error| installation_error(error.to_string()))?;
+    if !attributes.is_file() || attributes.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(installation_error(
+            "generation lock is not an ordinary file",
+        ));
+    }
+    // Package proof already verified the signed Windows helper/model bytes.
+    // Write through this exclusive file object; never reopen its pathname.
+    let id = random_hex()?;
+    let token = random_hex()?;
+    file.set_len(0)
+        .and_then(|_| file.write_all(token.as_bytes()))
+        .and_then(|_| file.sync_all())
+        .map_err(|error| installation_error(format!("generation-token: {error}")))?;
+    let grant =
+        ReadFileGrant::try_clone_read_only(ReadFileGrantKind::SpeakersAnalyzeGeneration, &file)
+            .map_err(|error| installation_error(format!("generation-capability: {error}")))?;
+    write_json(
+        generation_path(journal),
+        &json!({
+            "schema": INSTALL_GENERATION_SCHEMA, "id": id, "token": token, "proof": proof,
+        }),
+        OWNER_WRITE_OPTIONS,
+    )
+    .map_err(|error| installation_error(format!("generation-record: {error}")))?;
+    // The reduced-rights duplicate retains the same exclusive file object after
+    // this local writable handle closes; there is no explicit unlock on Drop.
+    drop(file);
+    Ok(SpeakersAnalyzeGeneration {
+        _lease: None,
+        inherited_fd: None,
+        environment: windows_generation_environment(&id, &token),
+        read_grant: grant,
+    })
+}
+
+#[cfg(windows)]
+fn windows_generation_environment(id: &str, token: &str) -> BTreeMap<OsString, OsString> {
+    BTreeMap::from([
+        (GENERATION_ENV_KEY.into(), id.into()),
+        (GENERATION_TOKEN_ENV_KEY.into(), token.into()),
+    ])
+}
+
+#[cfg(windows)]
+fn windows_inherited_generation() -> Result<Option<(String, String)>, CliError> {
+    let id = env::var_os(GENERATION_ENV_KEY);
+    let token = env::var_os(GENERATION_TOKEN_ENV_KEY);
+    match (id, token) {
+        (None, None) => Ok(None),
+        (Some(id), Some(token)) => {
+            let id = id
+                .into_string()
+                .map_err(|_| installation_error("non-Unicode generation ID"))?;
+            let token = token
+                .into_string()
+                .map_err(|_| installation_error("non-Unicode generation token"))?;
+            if [&id, &token].iter().any(|value| {
+                value.len() != 32 || !value.bytes().all(|byte| byte.is_ascii_hexdigit())
+            }) {
+                return Err(installation_error("malformed generation metadata"));
+            }
+            Ok(Some((id, token)))
+        }
+        _ => Err(installation_error("partial generation metadata")),
+    }
+}
+
+#[cfg(windows)]
+fn validate_windows_borrow(
+    journal: &Path,
+    proof: &Value,
+    id: &str,
+    token: &str,
+    grant: &solstone_core_system::process::ReadFileGrant,
+) -> Result<(), CliError> {
+    use solstone_core_journal_io::windows_file_identity;
+    use std::os::windows::fs::{FileExt, MetadataExt, OpenOptionsExt};
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES,
+        FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    };
+    let fail =
+        || installation_error("generation capability does not match the current installation");
+    let path = generation_lock_path(journal);
+    // Metadata-only open is compatible with the exclusive data open; it cannot
+    // read the token or borrow the generation by itself.
+    let named = fs::OpenOptions::new()
+        .access_mode(FILE_READ_ATTRIBUTES)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(&path)
+        .map_err(|_| fail())?;
+    let metadata = named.metadata().map_err(|_| fail())?;
+    if !metadata.is_file()
+        || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+        || windows_file_identity(&named).map_err(|_| fail())?
+            != windows_file_identity(grant.file()).map_err(|_| fail())?
+    {
+        return Err(fail());
+    }
+    // Observe exclusive data-open contention. A metadata handle alone cannot
+    // produce a successful token read from the authenticated grant below.
+    match fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .share_mode(0)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(&path)
+    {
+        Err(error) if error.raw_os_error() == Some(32) => {}
+        _ => return Err(fail()),
+    }
+    if grant.file().metadata().map_err(|_| fail())?.len() != 32 {
+        return Err(fail());
+    }
+    let mut bytes = [0u8; 32];
+    let mut consumed = 0;
+    while consumed < bytes.len() {
+        // Every short-read retry supplies its own absolute offset. Duplicated
+        // file handles share a cursor, and seek_read also updates that cursor.
+        let count = grant
+            .file()
+            .seek_read(&mut bytes[consumed..], consumed as u64)
+            .map_err(|_| fail())?;
+        if count == 0 {
+            return Err(fail());
+        }
+        consumed += count;
+    }
+    if bytes != token.as_bytes() {
+        return Err(fail());
+    }
+    let record = read_json(
+        generation_path(journal),
+        Value::Null,
+        MalformedPolicy::Raise,
+    )
+    .map_err(|_| fail())?;
+    if record.get("schema").and_then(Value::as_str) != Some(INSTALL_GENERATION_SCHEMA)
+        || record.get("id").and_then(Value::as_str) != Some(id)
+        || record.get("token").and_then(Value::as_str) != Some(token)
+        || record.get("proof") != Some(proof)
+    {
+        return Err(fail());
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+pub(crate) fn validate_speakers_analyze_runtime() -> Result<ValidatedInstallation, CliError> {
+    let package = solstone_core_local::install::onnx_readiness::verified_windows_onnx_package()
+        .map_err(installation_error)?;
+    Ok(ValidatedInstallation {
+        helper: package.speakers_worker,
+        wespeaker_model: package.wespeaker_model,
+        pyannote_model: package.pyannote_model,
+    })
+}
+
+#[cfg(windows)]
+fn installation_proof() -> Result<Value, CliError> {
+    let paths = validate_speakers_analyze_runtime()?;
+    Ok(json!({
+        "schema": PROOF_KEY_SCHEMA, "platform": runtime_platform(),
+        "helper": file_stamp(&paths.helper)?,
+        "assets": [
+            { "name": WESPEAKER_ASSET, "file": file_stamp(&paths.wespeaker_model)? },
+            { "name": PYANNOTE_ASSET, "file": file_stamp(&paths.pyannote_model)? },
+        ],
+    }))
+}
+
 /// Read owner diagnostics without affecting acquire/borrow authorization.
 pub fn read_speakers_analyze_owner(journal: &Path) -> SpeakersAnalyzeOwnerView {
     read_speakers_analyze_owner_inner(journal).unwrap_or(SpeakersAnalyzeOwnerView::Unavailable)
@@ -278,6 +547,7 @@ fn read_speakers_analyze_owner_inner(journal: &Path) -> Option<SpeakersAnalyzeOw
 }
 
 /// Fully validate the helper and both pinned model assets for an invocation.
+#[cfg(not(windows))]
 pub(crate) fn validate_speakers_analyze_runtime() -> Result<ValidatedInstallation, CliError> {
     let proof = installation_proof()?;
     let wespeaker_model = resolve_model_asset(WESPEAKER_ASSET)
@@ -307,6 +577,7 @@ pub(crate) struct ValidatedInstallation {
     pub(crate) pyannote_model: PathBuf,
 }
 
+#[cfg(not(windows))]
 fn installation_proof() -> Result<Value, CliError> {
     check_platform_coverage()?;
     let helper = helper_path()?;
@@ -600,7 +871,7 @@ fn owner_path(journal: &Path) -> PathBuf {
     journal.join("health/speakers-analyze/owner.json")
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(windows)))]
 mod tests {
     use super::*;
     use std::ffi::OsStr;
@@ -1132,3 +1403,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(all(test, windows, feature = "test-hooks"))]
+#[path = "speakers_generation_windows_tests.rs"]
+mod windows_generation_tests;

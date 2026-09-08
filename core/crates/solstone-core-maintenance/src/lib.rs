@@ -47,6 +47,8 @@ impl std::fmt::Debug for CliRun {
 #[derive(Debug, Clone, Copy)]
 pub struct MaintenanceServices<'a> {
     pub routines: &'a [RoutineDescriptor],
+    #[cfg(windows)]
+    discovery_generation: Option<&'a solstone_core_system::process::ChildLaunchContext>,
 }
 
 /// Injectable time and owner-timezone dependencies for health routines.
@@ -57,7 +59,11 @@ pub struct HealthServices<'a> {
 
 impl<'a> MaintenanceServices<'a> {
     pub const fn new(routines: &'a [RoutineDescriptor]) -> Self {
-        Self { routines }
+        Self {
+            routines,
+            #[cfg(windows)]
+            discovery_generation: None,
+        }
     }
 }
 
@@ -72,6 +78,34 @@ pub fn run_cli(args: &[String], journal: &Path) -> CliRun {
         &http,
         ToolInstallDirs::default(),
     )
+}
+
+/// Select only an actual discovery body; help and other maintenance verbs need no generation.
+#[cfg(windows)]
+pub fn is_discovery_run(args: &[String]) -> bool {
+    let args = strip_maintenance_global_flags(args);
+    if maintenance_has_help(&args) {
+        return false;
+    }
+    let Some(rest) = args.strip_prefix(&["run".to_owned(), "speakers:discover-voices".to_owned()])
+    else {
+        return false;
+    };
+    rest.is_empty() || rest == ["--"]
+}
+
+/// The executable has acquired or authenticated and journal-validated this generation.
+#[cfg(windows)]
+pub fn run_cli_with_discovery_generation(
+    args: &[String],
+    journal: &Path,
+    generation: &solstone_core_system::process::ChildLaunchContext,
+) -> CliRun {
+    let services = MaintenanceServices {
+        routines: routines(),
+        discovery_generation: Some(generation),
+    };
+    parser::run(args, journal, &services, None, None)
 }
 
 fn run_cli_with_deps(

@@ -7,12 +7,10 @@ use std::path::{Path, PathBuf};
 
 #[cfg(windows)]
 use std::ffi::OsStr;
-#[cfg(windows)]
-use std::sync::OnceLock;
 
 #[cfg(windows)]
 use solstone_core_distribution::windows_payload::{
-    VerifiedWindowsPayload, WINDOWS_CED_LIBRARY, verify_windows_payload,
+    WINDOWS_CED_LIBRARY, WINDOWS_CED_WORKER, verify_windows_payload,
 };
 
 use serde_json::{Value, json};
@@ -55,8 +53,23 @@ pub enum CedVerdict {
 ///
 /// `os` and `arch` must already be canonical.
 pub fn evaluate_ced_readiness(journal: &Path, os: &str, arch: &str) -> CedVerdict {
+    evaluate_ced_readiness_with_probe(journal, os, arch, |library, model| {
+        probe_ced_engine(&CedAnalyzeProgram::SiblingHelper, library, model)
+    })
+}
+
+/// Keep the catalog/digest authority here while the host supplies its owned
+/// helper transport. Windows callers use the check-owned bounded Job runner.
+pub fn evaluate_ced_readiness_with_probe(
+    journal: &Path,
+    os: &str,
+    arch: &str,
+    probe: impl FnOnce(&Path, &Path) -> Result<(), String>,
+) -> CedVerdict {
     match model_artifact() {
-        Ok(artifact) => evaluate_ced_readiness_against(journal, os, arch, artifact.sha256),
+        Ok(artifact) => {
+            evaluate_ced_readiness_against_with_probe(journal, os, arch, artifact.sha256, probe)
+        }
         Err(error) => CedVerdict::Degraded(CapabilityStatus::IntegrityInvalid {
             capability: CED_CAPABILITY.to_owned(),
             detail: error.to_string(),
@@ -139,46 +152,47 @@ fn probe_windows_package_engine(
     probe_model_and_library_at_paths(&model, expected_model_sha256, &library, probe)
 }
 
+/// Named signed members for one CED helper invocation. The model remains an
+/// owner-fetched journal asset and is checked separately by the verdict.
+#[derive(Debug, Clone)]
+pub struct WindowsCedPackage {
+    pub root: PathBuf,
+    pub helper: PathBuf,
+    pub library: PathBuf,
+}
+
 #[cfg(windows)]
-fn windows_package_ced_library() -> Result<PathBuf, String> {
-    static PAYLOAD: OnceLock<Result<VerifiedWindowsPayload, String>> = OnceLock::new();
-    let payload = PAYLOAD.get_or_init(|| {
-        let executable = std::env::current_exe().map_err(|error| {
-            format!("could not determine the running journal executable: {error}")
-        })?;
-        let bin = executable.parent().ok_or_else(|| {
-            format!(
-                "running journal executable has no containing directory: {}",
-                executable.display()
-            )
-        })?;
-        if bin.file_name() != Some(OsStr::new("bin")) {
-            return Err(format!(
-                "running journal executable is not in the package bin directory: {}",
-                executable.display()
-            ));
-        }
-        let root = bin.parent().ok_or_else(|| {
-            format!(
-                "package bin directory has no package root: {}",
-                bin.display()
-            )
-        })?;
-        verify_windows_payload(root)
-            .map_err(|error| format!("could not verify the signed CED app payload: {error}"))
-    });
-    payload
-        .as_ref()
-        .map_err(Clone::clone)?
-        .ced_library_path()
-        .map_err(|error| {
-            format!("signed CED app payload does not declare {WINDOWS_CED_LIBRARY}: {error}")
-        })
+pub fn verified_windows_ced_package() -> Result<WindowsCedPackage, String> {
+    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+    let bin = executable
+        .parent()
+        .ok_or("running executable has no containing directory")?;
+    if bin.file_name() != Some(OsStr::new("bin")) {
+        return Err("running executable is not in the package bin directory".to_owned());
+    }
+    let root = bin
+        .parent()
+        .ok_or("package bin directory has no package root")?;
+    let payload = verify_windows_payload(root).map_err(|error| error.to_string())?;
+    let member = |path| {
+        payload
+            .declared_path(path)
+            .ok_or_else(|| format!("signed CED app payload does not declare {path}"))
+    };
+    Ok(WindowsCedPackage {
+        root: root.to_path_buf(),
+        helper: member(WINDOWS_CED_WORKER)?,
+        library: member(WINDOWS_CED_LIBRARY)?,
+    })
 }
 
 #[cfg(not(windows))]
-fn windows_package_ced_library() -> Result<PathBuf, String> {
+pub fn verified_windows_ced_package() -> Result<WindowsCedPackage, String> {
     Err("Windows CED package verification requires a Windows runtime".to_owned())
+}
+
+fn windows_package_ced_library() -> Result<PathBuf, String> {
+    verified_windows_ced_package().map(|package| package.library)
 }
 
 fn ced_install_status(error: &super::ced_install::CedInstallError) -> CapabilityStatus {
@@ -317,6 +331,7 @@ mod tests {
     /// The sibling tests below inject a probe CLOSURE and therefore cannot see
     /// this class at all; this one drives the real invocation path.
     #[test]
+    #[cfg(unix)]
     fn probe_ced_engine_invokes_the_helper_in_probe_mode() {
         let root = tempfile::tempdir().expect("temp root");
         let stub = root.path().join("helper.sh");
@@ -530,6 +545,7 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
     /// from a dev `cargo test` run); the process boundary, argv/JSON
     /// contract, and exit-code classification it exercises are real.
     #[test]
+    #[cfg(unix)]
     fn real_subprocess_probe_drives_the_unparameterized_readiness_functions() {
         use crate::install::ced_runtime::set_test_helper_base_dir;
 

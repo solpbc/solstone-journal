@@ -678,6 +678,8 @@ fn windows_managed_process_facade_receipt() {
             timeout: Duration::from_secs(2),
         },
         ManagedLaunchRequest {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
             command: vec![fixture.to_owned(), "sleep".to_owned()],
             options: options("windows-managed-authority"),
         },

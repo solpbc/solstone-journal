@@ -618,7 +618,7 @@ checksum = "157a8ba7b480713b56f4c09fd13fc3e0a22a5dfab8097ba61cbc5feef950788a"
 dependencies = [
  "glob",
  "libc",
- "libloading",
+ "libloading 0.8.9",
 ]
 
 [[package]]
@@ -1862,6 +1862,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "libloading"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "754ca22de805bb5744484a5b151a9e1a8e837d5dc232c2d7d8c2e3492edc8b60"
+dependencies = [
+ "cfg-if",
+ "windows-link 0.2.1",
+]
+
+[[package]]
 name = "libm"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2295,6 +2305,7 @@ version = "2.0.0-rc.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7de3af33d24a745ffb8fab904b13478438d1cd52868e6f17735ef6e1f8bf133"
 dependencies = [
+ "libloading 0.9.0",
  "ndarray",
  "ort-sys",
  "smallvec",
@@ -3279,6 +3290,7 @@ dependencies = [
 name = "solstone-core"
 version = "2.0.0"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "env_logger",
  "futures-util",
@@ -3356,11 +3368,13 @@ dependencies = [
  "solstone-core-top",
  "solstone-core-transcribe",
  "solstone-core-transfer",
+ "solstone-core-win-owner-rail",
  "spl-core",
  "tempfile",
  "tokio",
  "tokio-rustls",
  "tokio-tungstenite",
+ "windows-sys 0.61.2",
  "zip",
 ]
 
@@ -3438,6 +3452,7 @@ dependencies = [
  "solstone-core-backup",
  "solstone-core-backup-runtime",
  "solstone-core-body-rebuild",
+ "solstone-core-distribution",
  "solstone-core-indexer-store",
  "solstone-core-journal-io",
  "solstone-core-system",
@@ -3462,11 +3477,13 @@ dependencies = [
  "solstone-core-backup",
  "solstone-core-backup-runtime",
  "solstone-core-callosum",
+ "solstone-core-convey-http",
  "solstone-core-convey-shell",
  "solstone-core-handoff-nonce",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-offload",
+ "solstone-core-sol-link",
  "solstone-core-system",
  "tempfile",
  "tokio",
@@ -3566,6 +3583,8 @@ dependencies = [
  "serde_json",
  "sha2",
  "solstone-core-cogitate-wire",
+ "solstone-core-installation-identity",
+ "solstone-core-journal",
  "solstone-core-journal-io",
  "solstone-core-system",
  "tokio",
@@ -3579,6 +3598,7 @@ version = "2.0.0"
 dependencies = [
  "serde_json",
  "solstone-core-ced-sys",
+ "solstone-core-local",
  "tempfile",
 ]
 
@@ -3586,7 +3606,7 @@ dependencies = [
 name = "solstone-core-ced-sys"
 version = "2.0.0"
 dependencies = [
- "libloading",
+ "libloading 0.8.9",
  "solstone-core-win-dll-load",
 ]
 
@@ -3594,6 +3614,7 @@ dependencies = [
 name = "solstone-core-check"
 version = "2.0.0"
 dependencies = [
+ "log",
  "nix",
  "serde",
  "serde_json",
@@ -3887,9 +3908,12 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "sha2",
  "solstone-core-assets",
  "solstone-core-cli-boundary",
+ "solstone-core-depict",
  "solstone-core-describe-categories",
+ "solstone-core-distribution",
  "solstone-core-format",
  "solstone-core-generate",
  "solstone-core-journal",
@@ -4445,6 +4469,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-sol-client",
  "solstone-core-system",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4512,6 +4537,7 @@ dependencies = [
  "flate2",
  "hmac",
  "log",
+ "minisign",
  "nix",
  "rcgen",
  "rustls",
@@ -4624,14 +4650,18 @@ name = "solstone-core-offload"
 version = "2.0.0"
 dependencies = [
  "chrono",
+ "minisign",
  "nix",
  "serde",
  "serde_json",
  "sha2",
+ "solstone-core-artifact-download",
  "solstone-core-backup",
  "solstone-core-backup-runtime",
+ "solstone-core-distribution",
  "solstone-core-journal-io",
  "solstone-core-retention",
+ "solstone-core-system",
  "tempfile",
 ]
 
@@ -4670,7 +4700,7 @@ version = "2.0.0"
 dependencies = [
  "image",
  "libc",
- "libloading",
+ "libloading 0.8.9",
  "serde",
  "serde_json",
  "sha2",
@@ -4863,6 +4893,7 @@ version = "2.0.0"
 dependencies = [
  "base64 0.22.1",
  "plist",
+ "quick-xml",
  "serde_json",
  "solstone-core-installation-identity",
  "solstone-core-service-legacy-evidence",
@@ -4921,6 +4952,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
+ "solstone-core-service-unit",
  "solstone-core-system",
  "toml_edit",
 ]
@@ -5018,6 +5050,7 @@ dependencies = [
  "log",
  "serde_json",
  "solstone-core-assets",
+ "solstone-core-check",
  "solstone-core-local",
  "tempfile",
 ]
@@ -5052,6 +5085,7 @@ dependencies = [
  "solstone-core-facets",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
+ "solstone-core-local",
  "solstone-core-npy",
  "solstone-core-segment",
  "solstone-core-speaker-id",
@@ -5087,7 +5121,10 @@ version = "2.0.0"
 dependencies = [
  "ort",
  "serde_json",
+ "solstone-core-distribution",
+ "solstone-core-local",
  "solstone-core-speakers",
+ "solstone-core-win-dll-load",
 ]
 
 [[package]]
@@ -5098,6 +5135,7 @@ dependencies = [
  "futures-util",
  "serde_json",
  "sha2",
+ "solstone-core-callosum",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
@@ -5250,6 +5288,8 @@ dependencies = [
  "solstone-core-assets",
  "solstone-core-brain",
  "solstone-core-format",
+ "solstone-core-installation-identity",
+ "solstone-core-journal",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-local",
@@ -5446,6 +5486,7 @@ version = "2.0.0"
 dependencies = [
  "chrono",
  "getrandom 0.3.4",
+ "log",
  "nix",
  "rustix",
  "serde_json",
@@ -5465,7 +5506,9 @@ dependencies = [
  "solstone-core-system",
  "solstone-core-system-health",
  "tempfile",
+ "thiserror 2.0.20",
  "ureq",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5559,13 +5602,14 @@ dependencies = [
  "ort",
  "serde_json",
  "sha2",
+ "solstone-core-speakers-onnx",
 ]
 
 [[package]]
 name = "solstone-core-vulkan-probe"
 version = "2.0.0"
 dependencies = [
- "libloading",
+ "libloading 0.8.9",
  "serde",
  "serde_json",
 ]
@@ -5574,7 +5618,7 @@ dependencies = [
 name = "solstone-core-win-dll-load"
 version = "2.0.0"
 dependencies = [
- "libloading",
+ "libloading 0.8.9",
  "windows-sys 0.61.2",
 ]
 

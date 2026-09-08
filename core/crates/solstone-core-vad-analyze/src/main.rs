@@ -20,6 +20,14 @@ fn main() {
         process::exit(EXIT_USAGE);
     }
 
+    // The closed-stdin readiness probe must establish DLL/API readiness before
+    // malformed-request exit 64 can be taken as evidence of a runnable helper.
+    #[cfg(windows)]
+    if let Err(error) = solstone_core_vad_analyze::loaded_onnx_runtime_version() {
+        eprintln!("{}", error_line_for_vad_error(&error));
+        process::exit(EXIT_UNAVAILABLE);
+    }
+
     let mut input = String::new();
     if let Err(error) = io::stdin().read_to_string(&mut input) {
         eprintln!(

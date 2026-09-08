@@ -152,6 +152,15 @@ pub struct PdfWorkerRequest {
     pub source: PathBuf,
     pub password: Option<String>,
     pub render: Option<PdfRenderOptions>,
+    #[cfg(windows)]
+    pub resources: PdfWorkerResources,
+}
+
+/// Keeps the importer-owned render directory alive through native helper cleanup.
+#[cfg(windows)]
+#[derive(Clone, Debug, Default)]
+pub struct PdfWorkerResources {
+    _render_directory: Option<std::sync::Arc<TemporaryRenderDirectory>>,
 }
 
 #[derive(Clone, Debug)]
@@ -699,7 +708,9 @@ pub fn import(
                     continue;
                 }
             };
-            match worker.execute(&worker_request(
+            #[cfg(windows)]
+            let render_dir = std::sync::Arc::new(render_dir);
+            let render_request = worker_request(
                 PdfCommand::Extract,
                 source,
                 request.password,
@@ -708,7 +719,15 @@ pub fn import(
                     render_dir: render_dir.path().to_path_buf(),
                     dpi: RENDER_DPI,
                 }),
-            )) {
+            );
+            #[cfg(windows)]
+            let render_request = PdfWorkerRequest {
+                resources: PdfWorkerResources {
+                    _render_directory: Some(render_dir.clone()),
+                },
+                ..render_request
+            };
+            match worker.execute(&render_request) {
                 Ok(payload) => Some((render_dir, payload)),
                 Err(failure) => {
                     let message = owner_message(source, &failure);
@@ -886,6 +905,8 @@ fn worker_request(
         source: source.to_path_buf(),
         password: password.map(str::to_owned),
         render,
+        #[cfg(windows)]
+        resources: PdfWorkerResources::default(),
     }
 }
 
@@ -1494,6 +1515,7 @@ fn create_temporary_file(parent: &Path, name: &std::ffi::OsStr) -> PathBuf {
     }
 }
 
+#[derive(Debug)]
 struct TemporaryRenderDirectory {
     path: PathBuf,
 }

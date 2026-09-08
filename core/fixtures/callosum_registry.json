@@ -73,6 +73,7 @@
       "queue",
       "scheduled",
       "provider_runtime",
+      "service_stop",
       "request",
       "restart",
       "drain",

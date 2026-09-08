@@ -1875,6 +1875,20 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core::windows_service_capture"
+package = "solstone-core"
+target = "windows_service_capture"
+set = "component"
+areas = ["core"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
 id = "solstone-core::service_logs_cli"
 package = "solstone-core"
 target = "service_logs_cli"
@@ -2177,6 +2191,20 @@ timeout = "standard"
 serial_group = "host-contention"
 default_full = true
 required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-offload::backup_native"
+package = "solstone-core-offload"
+target = "backup_native"
+set = "native"
+areas = ["backup", "retention", "system"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache", "host-tools"]
+timeout = "standard"
+serial_group = "host-contention"
+default_full = true
+required_features = []
 runtime = "none"
 
 [[suites]]
@@ -4735,3 +4763,29 @@ serial_group = "host-contention"
 default_full = true
 required_features = []
 runtime = "none"
+
+[[suites]]
+id = "solstone-core-describe::windows_rfdetr_consumers"
+package = "solstone-core-describe"
+target = "windows_rfdetr_consumers"
+set = "native"
+areas = ["media"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache", "ffmpeg-toolchain"]
+timeout = "standard"
+default_full = false
+required_features = ["test-fixture-pin"]
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-speakers-onnx::windows_runtime_binding"
+package = "solstone-core-speakers-onnx"
+target = "windows_runtime_binding"
+set = "native"
+areas = ["audio"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache", "onnx-runtime"]
+timeout = "standard"
+default_full = false
+required_features = ["runtime", "test-fixture-pin"]
+runtime = "onnx"

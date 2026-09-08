@@ -87,7 +87,11 @@ pub(crate) fn candidate_pairs(args: &[String], journal: &Path) -> CliRun {
     }
 }
 
-pub(crate) fn discovery(args: &[String], journal: &Path) -> CliRun {
+pub(crate) fn discovery(
+    args: &[String],
+    journal: &Path,
+    #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
+) -> CliRun {
     use solstone_core_speaker_resolve::discovery_scan::{
         DiscoveryRefresh, DiscoveryRefreshError, refresh_discovery_cache,
     };
@@ -98,7 +102,12 @@ pub(crate) fn discovery(args: &[String], journal: &Path) -> CliRun {
             exit_code: 2,
         };
     }
-    let report = match refresh_discovery_cache(journal, None) {
+    let report = match refresh_discovery_cache(
+        journal,
+        None,
+        #[cfg(windows)]
+        generation,
+    ) {
         Ok(DiscoveryRefresh::IdentityInvalid) => {
             serde_json::json!({"status":"skipped","reason_code":"speaker_owner_identity_invalid"})
         }

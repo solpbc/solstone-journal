@@ -8,7 +8,19 @@
 mod env;
 mod plist;
 mod systemd;
+mod windows_action;
+mod windows_task;
+mod windows_task_readback;
 
 pub use env::build_service_environment;
 pub use plist::render_launchd_plist;
 pub use systemd::render_systemd_unit;
+pub use windows_task::{WindowsTaskInput, render_windows_task_xml};
+
+pub use windows_action::{
+    WindowsServiceAction, decode_windows_task_arguments, encode_windows_task_arguments,
+};
+
+pub use windows_task_readback::{
+    WindowsTaskDefinition, decode_windows_task_xml, encode_windows_task_xml, parse_windows_task_xml,
+};

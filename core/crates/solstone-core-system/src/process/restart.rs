@@ -73,9 +73,9 @@ pub fn describe_exit(return_code: i32) -> String {
     if return_code >= 0 {
         return format!("exit {return_code}");
     }
-    let signal_number = -return_code;
     #[cfg(unix)]
     {
+        let signal_number = -return_code;
         match nix::sys::signal::Signal::try_from(signal_number) {
             Ok(signal) => format!("exit {return_code} / {signal:?}"),
             Err(_) => format!("exit {return_code} / signal {signal_number}"),
@@ -83,7 +83,8 @@ pub fn describe_exit(return_code: i32) -> String {
     }
     #[cfg(not(unix))]
     {
-        format!("exit {return_code} / signal {signal_number}")
+        let dword = u32::from_ne_bytes(return_code.to_ne_bytes());
+        format!("exit {return_code} (0x{dword:08X})")
     }
 }
 
@@ -97,5 +98,29 @@ pub fn exit_status_for_code(exit_code: i32) -> &'static str {
         "empty"
     } else {
         "error"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::describe_exit;
+
+    #[test]
+    fn describe_exit_keeps_non_negative_codes() {
+        assert_eq!(describe_exit(0), "exit 0");
+        assert_eq!(describe_exit(1), "exit 1");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn describe_exit_names_unix_signals() {
+        assert!(describe_exit(-15).contains("SIGTERM") || describe_exit(-15).contains("signal"));
+    }
+
+    #[cfg(not(unix))]
+    #[test]
+    fn describe_exit_renders_windows_high_bit_dword() {
+        let code = i32::from_ne_bytes(0xC000_0005_u32.to_ne_bytes());
+        assert_eq!(describe_exit(code), format!("exit {code} (0xC0000005)"));
     }
 }

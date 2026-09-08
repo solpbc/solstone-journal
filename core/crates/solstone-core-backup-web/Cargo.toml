@@ -25,8 +25,16 @@ solstone-core-journal-config-write.workspace = true
 solstone-core-offload.workspace = true
 solstone-core-system.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+tokio = { workspace = true, features = ["rt", "time"] }
+
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["fs"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+solstone-core-convey-http.workspace = true
+solstone-core-sol-link.workspace = true
+solstone-core-system = { workspace = true, features = ["test-hooks"] }
 
 [dev-dependencies]
 sha2.workspace = true

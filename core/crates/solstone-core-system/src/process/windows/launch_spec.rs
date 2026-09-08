@@ -200,6 +200,26 @@ pub(super) fn prepare_windows_launch_spec<F: WindowsFullPathName>(
         .map(|argument| string_to_wide(argument))
         .collect::<Result<Vec<_>, _>>()?;
 
+    prepare_windows_wide_launch_spec(
+        &program,
+        &arguments,
+        environment_overrides,
+        adapters,
+        full_path,
+    )
+}
+
+/// Preserve Windows-native arguments, including unpaired UTF-16 surrogates.
+pub(super) fn prepare_windows_wide_launch_spec<F: WindowsFullPathName>(
+    program: &[u16],
+    arguments: &[Vec<u16>],
+    environment_overrides: &BTreeMap<OsString, OsString>,
+    adapters: &WindowsLaunchAdapters<'_>,
+    full_path: &F,
+) -> Result<WindowsLaunchSpec, WindowsLaunchPrepError> {
+    if program.contains(&NUL) || arguments.iter().any(|argument| argument.contains(&NUL)) {
+        return Err(WindowsLaunchPrepError::InteriorNul);
+    }
     let environment = prepare_environment(
         environment_overrides,
         adapters.ordinal,
@@ -207,14 +227,14 @@ pub(super) fn prepare_windows_launch_spec<F: WindowsFullPathName>(
         adapters.wide_encoder,
     )?;
     let application_name = resolve_executable(
-        &program,
+        program,
         adapters.probe,
         adapters.directories,
         full_path,
         environment.child_path.as_deref(),
         environment.parent_path.as_deref(),
     )?;
-    let command_line = make_command_line(&program, &arguments)?;
+    let command_line = make_command_line(program, arguments)?;
 
     Ok(WindowsLaunchSpec {
         application_name: WideNulConst::from_terminated(application_name)?,

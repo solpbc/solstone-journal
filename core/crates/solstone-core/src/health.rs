@@ -13,10 +13,12 @@ use serde_json::{Map, Value};
 use solstone_core_assets::canonical_host_pair;
 use solstone_core_callosum::{CallosumEnvelope, CallosumSocketConnection};
 use solstone_core_local::install::ced_readiness::{
-    CED_READY_DETAIL, CED_UNAVAILABLE_GUIDANCE, CedVerdict, evaluate_ced_readiness,
+    CED_READY_DETAIL, CED_UNAVAILABLE_GUIDANCE, CedVerdict,
 };
+#[cfg(test)]
+use solstone_core_local::install::rfdetr_readiness::RFDETR_UNAVAILABLE_GUIDANCE;
 use solstone_core_local::install::rfdetr_readiness::{
-    RFDETR_READY_DETAIL, RFDETR_UNAVAILABLE_GUIDANCE, RfdetrReadiness, evaluate_rfdetr_readiness,
+    RFDETR_READY_DETAIL, RfdetrReadiness, evaluate_rfdetr_readiness,
 };
 use solstone_core_system::process::SystemProcessInstanceSource;
 use solstone_core_system_health::{
@@ -39,7 +41,7 @@ pub(super) fn run(verbose: bool, debug: bool) -> std::process::ExitCode {
         Err(error) => return super::print_journal_error(error),
     };
     let (os, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
-    let ced = evaluate_ced_readiness(&journal, os, arch);
+    let ced = solstone_core_check::evaluate_host_ced(&journal, os, arch);
     let rfdetr = evaluate_host_rfdetr(&journal, os, arch);
     let socket_path = journal.join("health").join("callosum.sock");
     let fetch = match inspect_socket(&socket_path) {
@@ -117,6 +119,7 @@ fn probe_windows_rfdetr_help(
     };
     let spec = rfdetr_windows_help_launch(package, system_root);
     let request = BoundedHelperRequest {
+        resources: Default::default(),
         package_root: spec.package_root,
         executable: spec.executable,
         current_directory: spec.current_directory,
@@ -136,7 +139,18 @@ fn probe_windows_rfdetr_help(
     };
     match run_bounded_helper(request) {
         Ok(output) => map_rfdetr_help_probe(output.exit_code == 0, Some(output.exit_code), None),
-        Err(error) => map_rfdetr_help_probe(false, None, Some(&error.to_string())),
+        Err(error) => {
+            let reason = if error.cleanup().is_none()
+                && matches!(
+                    error.cause(),
+                    solstone_core_system::process::BoundedHelperError::DeadlineExceeded { .. }
+                ) {
+                "timeout"
+            } else {
+                "binary_unavailable"
+            };
+            serde_json::json!({"runnable": false, "reason_code": reason, "message": error.to_string()})
+        }
     }
 }
 

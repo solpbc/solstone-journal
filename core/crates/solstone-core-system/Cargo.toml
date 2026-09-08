@@ -47,11 +47,13 @@ tokio = { workspace = true, features = ["macros", "rt"] }
 tempfile = "3.24.0"
 
 [target.'cfg(windows)'.dependencies]
+solstone-core-installation-identity.workspace = true
+solstone-core-journal.workspace = true
 solstone-core-assets = { workspace = true }
 solstone-core-brain = { workspace = true }
 solstone-core-journal-config = { workspace = true }
 solstone-core-local = { workspace = true }
-windows-sys = { workspace = true, features = ["Win32_System_SystemInformation", "Win32_System_JobObjects", "Win32_System_Pipes"] }
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_LibraryLoader", "Win32_System_IO", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Diagnostics_ToolHelp", "Win32_System_WindowsProgramming", "Win32_System_SystemInformation", "Win32_System_JobObjects", "Win32_System_Console", "Win32_System_Pipes", "Win32_System_Threading"] }
 
 [[bin]]
 name = "solstone-system-test-child"

@@ -228,12 +228,16 @@ pub(crate) async fn run(
         {
             return reason;
         }
+        #[cfg(windows)]
+        let _ = solstone_core_system::process::observe_windows_launch_cleanup();
         let app_samples = reconcile_app_processes(state);
         let tick = Instant::now();
         state.queue.enforce_deadlines(tick);
         record_schedule_completions(state);
         reconcile_providers(state);
-        drain_inbound(state).await;
+        if let Some(reason) = drain_inbound(state).await {
+            return reason;
+        }
         let wall = chrono::Local::now();
         let wall_now = SystemTime::now();
         check_segment_flush(
@@ -947,15 +951,21 @@ fn synchronize_parakeet_sense_credentials(state: &mut SupervisorState) -> bool {
 
     state
         .sense_child_environment
+        .environment
         .remove(&std::ffi::OsString::from("SOLSTONE_PARAKEET_AUTH_TOKEN"));
     state
         .sense_child_environment
+        .environment
         .remove(&std::ffi::OsString::from("SOLSTONE_PARAKEET_AUTH_NONCE"));
     state
         .sense_child_environment
+        .environment
         .remove(&std::ffi::OsString::from("SOLSTONE_PARAKEET_AUTH_PORT"));
     if let Some(credentials) = credentials {
-        state.sense_child_environment.extend(credentials);
+        state
+            .sense_child_environment
+            .environment
+            .extend(credentials);
     }
     state.parakeet_sense_credentials_revision = revision;
     false
@@ -1015,15 +1025,82 @@ fn synthetic_nvidia_probe() -> NvidiaProbe {
     }
 }
 
-async fn drain_inbound(state: &mut SupervisorState) {
+async fn drain_inbound(state: &mut SupervisorState) -> Option<SupervisorStopReason> {
     for _ in 0..MAX_INBOUND_PER_TICK {
         let message =
             match tokio::time::timeout(Duration::ZERO, state.connection.next_message()).await {
                 Ok(Some(message)) => message,
                 _ => break,
             };
+        #[cfg(windows)]
+        if service_stop_is_admitted(state, &message) {
+            return Some(SupervisorStopReason::Signal(SupervisorSignal::SigTerm));
+        }
         handle_message(state, message);
     }
+    None
+}
+
+/// This handler is reachable only through the existing authenticated Callosum
+/// transport. Guard metadata cannot itself authenticate a process or borrow a generation.
+#[cfg(windows)]
+fn service_stop_is_admitted(state: &SupervisorState, message: &CallosumEnvelope) -> bool {
+    use solstone_core_installation_identity::{
+        GuardFields, journal_token_from_path, load_installation_binding, owner_base,
+        parse_service_guard_environment, root_token_from_path,
+    };
+    use solstone_core_system::process::{InstanceVerdict, ProcessInstance};
+    if message.tract != "supervisor" || message.event != "service_stop" {
+        return false;
+    }
+    let Some(target) = message
+        .extra
+        .get("target")
+        .cloned()
+        .and_then(|value| serde_json::from_value::<ProcessInstance>(value).ok())
+    else {
+        return false;
+    };
+    if target.pid != std::process::id() || target.birth.windows_filetime().is_none() {
+        return false;
+    }
+    if !matches!(
+        SystemProcessInstanceSource.observe(&target),
+        InstanceVerdict::SameLive { .. }
+    ) {
+        return false;
+    }
+    let Some(guard_object) = message.extra.get("guard").and_then(Value::as_object) else {
+        return false;
+    };
+    let Some(environment) = guard_object
+        .iter()
+        .map(|(key, value)| value.as_str().map(|value| (key.clone(), value.to_owned())))
+        .collect::<Option<std::collections::BTreeMap<_, _>>>()
+    else {
+        return false;
+    };
+    if environment.len() != 4 {
+        return false;
+    }
+    let Ok(Some(guard)) = parse_service_guard_environment(&environment) else {
+        return false;
+    };
+    if guard != state.service_guard {
+        return false;
+    }
+    // Require both boot-admitted binding and its current on-disk authority;
+    // an old supervisor cannot be stopped using another installation/generation.
+    let loaded = (|| {
+        let owner = owner_base().ok()?;
+        let root = crate::installation_context::identity_root_from_current_executable().ok()?;
+        let binding = load_installation_binding(&owner, &root_token_from_path(&root).ok()?).ok()?;
+        if binding.journal_token != journal_token_from_path(&state.journal).ok()? {
+            return None;
+        }
+        Some(GuardFields::from_binding(&binding))
+    })();
+    loaded.as_ref() == Some(&guard)
 }
 
 fn handle_message(state: &mut SupervisorState, message: CallosumEnvelope) {
@@ -1623,6 +1700,8 @@ mod tests {
 
     fn queue(root: &std::path::Path) -> TaskQueue {
         TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
             journal_root: root.to_path_buf(),
             cap_resolver: Arc::new(FixedCap),
             process_state_probe: Arc::new(UnreachableProcessStateProbe),

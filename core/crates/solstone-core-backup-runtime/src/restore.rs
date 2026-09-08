@@ -24,6 +24,7 @@ pub const RESTORE_CHECK_TIMEOUT_SECONDS: u64 = 6 * 60 * 60;
 pub const RESTORE_REASON_INVALID_KEY: &str = "invalid_key";
 pub const RESTORE_REASON_RESTIC_UNAVAILABLE: &str = "restic_unavailable";
 pub const RESTORE_REASON_DESTINATION_INVALID: &str = "destination_invalid";
+pub const RESTORE_REASON_DESTINATION_ADMISSION_FAILED: &str = "destination_admission_failed";
 pub const RESTORE_REASON_SNAPSHOT_LIST_IO_FAILED: &str = "snapshot_list_io_failed";
 pub const RESTORE_REASON_SNAPSHOT_LIST_FAILED: &str = "snapshot_list_failed";
 pub const RESTORE_REASON_SNAPSHOT_CATALOG_INVALID: &str = "snapshot_catalog_invalid";
@@ -167,6 +168,21 @@ fn backend(destination: &Destination) -> Result<BTreeMap<String, Option<String>>
         .map_err(|_| RESTORE_REASON_DESTINATION_INVALID)
 }
 
+fn unrecorded_outcome(draft: RestoreDraft) -> RestoreOutcome {
+    RestoreOutcome {
+        status: draft.status,
+        reason_code: draft.reason_code,
+        recording_failure: None,
+        integrity_ok: draft.integrity_ok,
+        resumable: draft.resumable,
+        files_expected: draft.files_expected,
+        files_restored: draft.files_restored,
+        bytes_expected: draft.bytes_expected,
+        bytes_restored: draft.bytes_restored,
+        _sealed: (),
+    }
+}
+
 #[allow(clippy::too_many_arguments)] // Mirrors the shared restic invocation boundary.
 fn restic(
     services: &BackupServices<'_>,
@@ -242,6 +258,43 @@ pub fn restore_journal(
     destination: Destination,
     entered_recovery_key: &str,
 ) -> RestoreOutcome {
+    let admitted = match crate::destination_admission::admit_restore_destination(journal) {
+        Ok(admitted) => admitted,
+        Err(_) => {
+            return unrecorded_outcome(error_draft(RESTORE_REASON_DESTINATION_ADMISSION_FAILED));
+        }
+    };
+    #[cfg(windows)]
+    let admitted = std::sync::Arc::new(admitted);
+    #[cfg(windows)]
+    let retaining_runner = {
+        let mut resources = solstone_core_system::process::BoundedHelperResources::new();
+        resources.retain(admitted.clone());
+        crate::windows_cleanup::RetainingToolRunner::new(services.runner, resources)
+    };
+    #[cfg(windows)]
+    let services = &BackupServices {
+        runner: &retaining_runner,
+        ..*services
+    };
+    let journal = match admitted.revalidate_for_target() {
+        Ok(path) => path,
+        Err(_) => {
+            return unrecorded_outcome(error_draft(RESTORE_REASON_DESTINATION_ADMISSION_FAILED));
+        }
+    };
+    let finish =
+        |journal: &Path, clock: &dyn Clock, recorder: &dyn RestoreRecorder, draft: RestoreDraft| {
+            #[cfg(windows)]
+            if retaining_runner.cleanup_pending() {
+                return unrecorded_outcome(draft);
+            }
+            if admitted.revalidate_for_target().is_err() {
+                unrecorded_outcome(error_draft(RESTORE_REASON_DESTINATION_ADMISSION_FAILED))
+            } else {
+                crate::restore::finish(journal, clock, recorder, draft)
+            }
+        };
     let canonical = match parse_recovery_key(entered_recovery_key) {
         Ok(key) => key,
         Err(_) => {
@@ -303,13 +356,23 @@ pub fn restore_journal(
             );
         }
     };
+    let target_path = match admitted.revalidate_for_target() {
+        Ok(path) => path,
+        Err(_) => {
+            return unrecorded_outcome(error_draft(RESTORE_REASON_DESTINATION_ADMISSION_FAILED));
+        }
+    };
     let restored = match restic(
         services,
         vec![
             "restore".into(),
-            format!("{}:{}", snapshot.id, snapshot.path),
+            format!(
+                "{}:{}",
+                snapshot.id,
+                crate::restic_tree_path(Path::new(&snapshot.path))
+            ),
             "--target".into(),
-            journal.display().to_string(),
+            target_path.display().to_string(),
         ],
         &destination,
         &canonical,
@@ -375,6 +438,9 @@ pub fn restore_journal(
             false,
         )
     };
+    if admitted.revalidate_for_target().is_err() {
+        return unrecorded_outcome(error_draft(RESTORE_REASON_DESTINATION_ADMISSION_FAILED));
+    }
     if services
         .journal_maintenance
         .rebuild_body_history(journal)
@@ -392,6 +458,9 @@ pub fn restore_journal(
             ),
         );
     }
+    if admitted.revalidate_for_target().is_err() {
+        return unrecorded_outcome(error_draft(RESTORE_REASON_DESTINATION_ADMISSION_FAILED));
+    }
     if set_destination(journal, &destination).is_err() {
         return finish(
             journal,
@@ -405,6 +474,9 @@ pub fn restore_journal(
             ),
         );
     }
+    if admitted.revalidate_for_target().is_err() {
+        return unrecorded_outcome(error_draft(RESTORE_REASON_DESTINATION_ADMISSION_FAILED));
+    }
     if set_recovery_key(journal, &canonical).is_err() {
         return finish(
             journal,
@@ -417,6 +489,9 @@ pub fn restore_journal(
                 false,
             ),
         );
+    }
+    if admitted.revalidate_for_target().is_err() {
+        return unrecorded_outcome(error_draft(RESTORE_REASON_DESTINATION_ADMISSION_FAILED));
     }
     if set_recovery_key_confirmed(journal, true).is_err() {
         return finish(
@@ -440,6 +515,9 @@ pub fn restore_journal(
                 .map(str::to_owned)
         })
         .is_some_and(|key| !key.is_empty());
+    if admitted.revalidate_for_target().is_err() {
+        return unrecorded_outcome(error_draft(RESTORE_REASON_DESTINATION_ADMISSION_FAILED));
+    }
     if services.journal_maintenance.full_scan(journal).is_err() {
         return finish(
             journal,
@@ -964,5 +1042,33 @@ mod tests {
             Some(RESTORE_REASON_RESTORE_RECORD_FAILED)
         );
         assert_eq!(outcome.files_restored, Some(3));
+    }
+
+    #[test]
+    fn restore_journal_fails_closed_when_destination_admission_fails() {
+        let runner = Script::new(vec![]);
+        let clock = TestClock;
+        let maintenance = Maintenance;
+        let services = services(&runner, &clock, &maintenance);
+        let recorder = Recorder::new();
+
+        let outcome = crate::destination_admission::with_forced_admission_failure(|| {
+            restore_journal(
+                Path::new("/tmp/unadmitted-destination"),
+                &services,
+                &recorder,
+                destination(),
+                "daily",
+            )
+        });
+
+        assert_eq!(outcome.status, "error");
+        assert_eq!(
+            outcome.reason_code.as_deref(),
+            Some(RESTORE_REASON_DESTINATION_ADMISSION_FAILED)
+        );
+        assert_eq!(outcome.recording_failure, None);
+        assert_eq!(recorder.calls.borrow().len(), 0);
+        assert_eq!(runner.calls.borrow().len(), 0);
     }
 }

@@ -758,7 +758,42 @@ async fn write_callosum_line(
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+async fn run_callosum_output(
+    socket_path: PathBuf,
+    queue: Arc<Mutex<CallosumQueue>>,
+    lifecycle_notify: Arc<Notify>,
+    start_gate: Option<Arc<Notify>>,
+) {
+    if let Some(start_gate) = start_gate {
+        start_gate.notified().await;
+    }
+    let sender =
+        solstone_core_callosum::CallosumOneShotSender::new(&socket_path, CALLOSUM_IO_TIMEOUT);
+    loop {
+        let notification = lifecycle_notify.notified();
+        let next = match queue.lock() {
+            Ok(mut queue) => (queue.pop_next(), queue.closed),
+            Err(poisoned) => {
+                let mut queue = poisoned.into_inner();
+                (queue.pop_next(), queue.closed)
+            }
+        };
+        match next {
+            (Some(line), _) => {
+                drop(notification);
+                if let Ok(line_str) = std::str::from_utf8(&line) {
+                    let _ = sender.send_line(line_str);
+                }
+                continue;
+            }
+            (None, true) => break,
+            (None, false) => notification.await,
+        }
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
 async fn run_callosum_output(
     _socket_path: PathBuf,
     queue: Arc<Mutex<CallosumQueue>>,

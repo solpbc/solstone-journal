@@ -74,15 +74,104 @@ triple_apple = "aarch64-apple-darwin"
 # oldest macOS we claim.
 min_macos = "14.0"
 
-# Windows target is declared so inventory validation owns the field set. No
-# production entry is admitted for it yet; Windows dests live in
-# synthetic test inventories only.
+# Windows public commands are real binaries. Native dependency artifacts are
+# admitted separately before the complete payload can be produced.
 [[target]]
 id = "windows-x86_64"
 os = "windows"
 arch = "x86_64"
 lane = "msvc-native"
 triple_windows = "x86_64-pc-windows-msvc"
+
+[[entry]]
+kind = "bin"
+package = "solstone-core"
+bin = "solstone-core"
+dest = "bin/solstone-core.exe"
+mode = 0o755
+lane = "msvc-native"
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "bin"
+package = "solstone-core-journal-bin"
+bin = "solstone-core-journal"
+dest = "bin/journal.exe"
+mode = 0o755
+lane = "msvc-native"
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "bin"
+package = "solstone-core-sol-bin"
+bin = "solstone-core-sol"
+dest = "bin/solstone.exe"
+mode = 0o755
+lane = "msvc-native"
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "bin"
+package = "solstone-core-depict"
+bin = "solstone-core-depict"
+dest = "bin/solstone-core-depict.exe"
+mode = 0o755
+lane = "msvc-native"
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "bin"
+package = "solstone-core-retention-cli"
+bin = "solstone-retention"
+dest = "bin/solstone-retention.exe"
+mode = 0o755
+lane = "msvc-native"
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "bin"
+package = "solstone-core-describe"
+bin = "solstone-core-describe"
+dest = "bin/solstone-core-describe.exe"
+mode = 0o755
+lane = "msvc-native"
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "bin"
+package = "solstone-core-speakers-analyze"
+bin = "solstone-core-speakers-analyze"
+dest = "bin/solstone-core-speakers-analyze.exe"
+mode = 0o755
+lane = "msvc-native"
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "bin"
+package = "solstone-core-ced-analyze"
+bin = "solstone-core-ced-analyze"
+dest = "bin/solstone-core-ced-analyze.exe"
+mode = 0o755
+lane = "msvc-native"
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "bin"
+package = "solstone-core-vad-analyze"
+bin = "solstone-core-vad-analyze"
+dest = "bin/solstone-core-vad-analyze.exe"
+mode = 0o755
+lane = "msvc-native"
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "bin"
+package = "solstone-core-pdf"
+bin = "solstone-core-pdf"
+dest = "bin/solstone-core-pdf.exe"
+mode = 0o755
+lane = "msvc-native"
+targets = ["windows-x86_64"]
 
 [[entry]]
 kind = "bin"
@@ -210,7 +299,7 @@ dest = "lib/solstone_journal_models/assets/wespeaker-resnet34-256.onnx"
 mode = 0o644
 digest_const = "WESPEAKER_RESNET34_SHA256"
 digest_source = "core/crates/solstone-core-transcribe/src/model_assets.rs"
-targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
 
 [[entry]]
 kind = "model-asset"
@@ -219,7 +308,7 @@ dest = "lib/solstone_journal_models/assets/pyannote-segmentation-3.0.onnx"
 mode = 0o644
 digest_const = "PYANNOTE_SEGMENTATION_SHA256"
 digest_source = "core/crates/solstone-core-transcribe/src/model_assets.rs"
-targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
 
 [[entry]]
 kind = "model-asset"
@@ -228,7 +317,7 @@ dest = "lib/solstone_journal_models/assets/silero_vad_v6.onnx"
 mode = 0o644
 digest_const = "SILERO_VAD_V6_SHA256"
 digest_source = "core/crates/solstone-core-transcribe/src/model_assets.rs"
-targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
 
 [[entry]]
 kind = "model-asset"
@@ -267,7 +356,7 @@ dest = "lib/solstone_journal_models/assets/rfdetr/rfdetr-nano-f16.gguf"
 mode = 0o644
 digest_const = "RFDETR_MODEL_SHA256"
 digest_source = "core/crates/solstone-core-local/src/install/rfdetr_install.rs"
-targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
 
 [[entry]]
 kind = "onnx-runtime"
@@ -286,7 +375,7 @@ kind = "copy"
 source = "LICENSE"
 dest = "share/LICENSE"
 mode = 0o644
-targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64", "windows-x86_64"]
 
 # Agent-facing install/troubleshooting README, for a coding agent helping an
 # owner get the journal running or crossing over from a v1 (Python) install.

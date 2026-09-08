@@ -10,7 +10,7 @@ mod oneshot;
 mod reader;
 mod registry;
 #[cfg(any(test, windows))]
-mod windows;
+pub mod windows;
 #[cfg(feature = "wire")]
 mod wire;
 mod writer;

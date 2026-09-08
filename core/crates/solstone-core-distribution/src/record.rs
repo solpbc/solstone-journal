@@ -245,21 +245,15 @@ pub fn declared_records(
             }
         }
     }
-    if target.is_windows() {
-        if !payload.is_empty() {
-            return Err("windows payload is not implemented in this lode".to_owned());
-        }
-    } else {
-        for source in payload {
-            let dest = payload_dest(&inventory.payload_dest_prefix, source);
-            let bytes = std::fs::read(repo.join(&inventory.payload_src_root).join(source))
-                .map_err(|error| error.to_string())?;
-            records.push(FileRecord::file(
-                dest,
-                stage::recorded_mode(0o644),
-                sha256_hex(&bytes),
-            ));
-        }
+    for source in payload {
+        let dest = payload_dest(&inventory.payload_dest_prefix, source);
+        let bytes = std::fs::read(repo.join(&inventory.payload_src_root).join(source))
+            .map_err(|error| error.to_string())?;
+        records.push(FileRecord::file(
+            dest,
+            stage::recorded_mode(0o644),
+            sha256_hex(&bytes),
+        ));
     }
     Ok(records)
 }

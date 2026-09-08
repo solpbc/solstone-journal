@@ -17,6 +17,44 @@ use std::time::Duration;
 use thiserror::Error;
 
 use super::super::ProcessInstance;
+#[cfg(windows)]
+use super::bounded_cleanup::{BoundedHelperFailure, Completion, HelperIo, Reservation};
+
+/// Keeps existing caller-owned resources alive through helper Job and I/O cleanup.
+/// This bag neither validates nor transfers native authority.
+#[cfg(windows)]
+#[derive(Clone, Default)]
+pub struct BoundedHelperResources {
+    owners: Vec<std::sync::Arc<dyn Send + Sync + 'static>>,
+}
+
+#[cfg(windows)]
+impl BoundedHelperResources {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn retain<T: Send + Sync + 'static>(&mut self, owner: std::sync::Arc<T>) {
+        self.owners.push(owner);
+    }
+    pub fn extend(&mut self, resources: &Self) {
+        self.owners.extend(resources.owners.iter().cloned());
+    }
+    pub fn len(&self) -> usize {
+        self.owners.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.owners.is_empty()
+    }
+}
+
+#[cfg(windows)]
+impl std::fmt::Debug for BoundedHelperResources {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BoundedHelperResources")
+            .field("owners", &self.len())
+            .finish()
+    }
+}
 
 /// Explicit resource limits installed on a helper Job before the helper's
 /// first instruction.
@@ -53,6 +91,8 @@ pub struct BoundedHelperRequest {
     pub stdin: Vec<u8>,
     pub budget: BoundedHelperBudget,
     pub resource_limits: Option<BoundedHelperResourceLimits>,
+    #[cfg(windows)]
+    pub resources: BoundedHelperResources,
 }
 
 /// The complete, bounded result returned to a helper protocol parser.
@@ -71,6 +111,12 @@ pub struct BoundedHelperOutput {
 #[derive(Debug, Error, Eq, PartialEq)]
 #[cfg_attr(not(windows), allow(dead_code))]
 pub enum BoundedHelperError {
+    #[error("earlier bounded helper cleanup blocks admission")]
+    CleanupPending,
+    #[error("bounded helper cleanup admission is contended")]
+    CleanupContended,
+    #[error("bounded helper admission did not complete before its deadline")]
+    AdmissionDeadlineExceeded,
     #[error("bounded helper timeout must be nonzero")]
     ZeroTimeout,
     #[error("bounded helper {stream} byte limit must be nonzero")]
@@ -99,6 +145,17 @@ pub enum BoundedHelperError {
     PathNotRepresentable,
     #[error("bounded helper failed before an owned child identity was available")]
     LaunchFailed,
+    #[error("native launch finalization failed: {detail}")]
+    LaunchFinalizationFailed {
+        detail: String,
+        process_id: Option<u32>,
+    },
+    #[error("bounded helper {stream} I/O worker could not start")]
+    IoWorkerStartFailed {
+        stream: &'static str,
+        identity: ProcessInstance,
+        quiescent: bool,
+    },
     #[error("bounded helper input writer failed")]
     InputWriteFailed {
         identity: ProcessInstance,
@@ -204,21 +261,50 @@ fn canonicalize_request(
 
 #[cfg(windows)]
 #[derive(Debug)]
-enum CaptureError {
+pub(super) enum CaptureError {
     TooLarge,
     Io,
+}
+
+#[cfg(all(windows, feature = "test-hooks"))]
+thread_local! {
+    static FAIL_IO_WORKER: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(windows)]
+fn spawn_io_worker(name: &str, work: impl FnOnce() + Send + 'static) -> io::Result<()> {
+    #[cfg(feature = "test-hooks")]
+    if FAIL_IO_WORKER.with(|remaining| match remaining.get() {
+        Some(1) => {
+            remaining.set(None);
+            true
+        }
+        Some(value) => {
+            remaining.set(Some(value - 1));
+            false
+        }
+        None => false,
+    }) {
+        return Err(io::Error::other(
+            "injected helper I/O worker creation failure",
+        ));
+    }
+    std::thread::Builder::new()
+        .name(name.to_owned())
+        .spawn(work)
+        .map(|_join| ())
 }
 
 #[cfg(windows)]
 fn capture_stream<R>(
     mut reader: R,
     limit: usize,
-) -> std::sync::mpsc::Receiver<Result<Vec<u8>, CaptureError>>
+) -> io::Result<std::sync::mpsc::Receiver<Result<Vec<u8>, CaptureError>>>
 where
     R: io::Read + Send + 'static,
 {
     let (sender, receiver) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
+    spawn_io_worker("bounded-helper-output", move || {
         let mut output = Vec::new();
         let mut buffer = [0_u8; 8192];
         let result = loop {
@@ -231,50 +317,46 @@ where
                 Err(_) => break Err(CaptureError::Io),
             }
         };
+        drop(reader);
         let _ = sender.send(result);
-    });
-    receiver
+    })?;
+    Ok(receiver)
 }
 
 #[cfg(windows)]
 fn write_input(
-    mut writer: std::fs::File,
+    writer: Option<std::fs::File>,
     input: Vec<u8>,
-) -> std::sync::mpsc::Receiver<io::Result<()>> {
+) -> io::Result<std::sync::mpsc::Receiver<io::Result<()>>> {
     use std::io::Write;
 
     let (sender, receiver) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let result = writer.write_all(&input);
+    spawn_io_worker("bounded-helper-input", move || {
+        let result = match writer {
+            Some(mut writer) => {
+                let result = writer.write_all(&input);
+                drop(writer);
+                result
+            }
+            None => Err(io::Error::other("owned helper stdin was unavailable")),
+        };
+        drop(input);
         let _ = sender.send(result);
-    });
-    receiver
+    })?;
+    Ok(receiver)
 }
 
 #[cfg(windows)]
-fn drain_receiver<T>(receiver: &std::sync::mpsc::Receiver<T>, deadline: std::time::Instant) {
-    let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) else {
-        return;
-    };
-    let _ = receiver.recv_timeout(remaining);
-}
-
-#[cfg(windows)]
-fn stop_and_drain(
-    owner: &mut super::job_process::WindowsJobProcess,
-    stdin: &std::sync::mpsc::Receiver<io::Result<()>>,
-    stdout: &std::sync::mpsc::Receiver<Result<Vec<u8>, CaptureError>>,
-    stderr: &std::sync::mpsc::Receiver<Result<Vec<u8>, CaptureError>>,
-) -> bool {
-    use super::super::DRAIN_JOIN_TIMEOUT;
-
-    let drain_deadline = std::time::Instant::now() + DRAIN_JOIN_TIMEOUT;
+fn stop_and_drain(owner: &mut super::job_process::WindowsJobProcess, io: &mut HelperIo) -> bool {
+    if super::bounded_cleanup::current_observation_fault_active() {
+        return false;
+    }
+    let drain_deadline = std::time::Instant::now() + super::super::DRAIN_JOIN_TIMEOUT;
     if !owner.is_quiescent().unwrap_or(false) {
         let _ = owner.hard_stop_until(drain_deadline);
     }
-    drain_receiver(stdin, drain_deadline);
-    drain_receiver(stdout, drain_deadline);
-    drain_receiver(stderr, drain_deadline);
+    io.drain_until(drain_deadline);
+    io.observe();
     owner.is_quiescent().unwrap_or(false)
 }
 
@@ -285,14 +367,19 @@ fn stop_and_drain(
 #[cfg(windows)]
 pub fn run_bounded_helper(
     request: BoundedHelperRequest,
-) -> Result<BoundedHelperOutput, BoundedHelperError> {
+) -> Result<BoundedHelperOutput, BoundedHelperFailure> {
     use std::sync::mpsc::TryRecvError;
     use std::time::Instant;
 
     use super::job::JobResourceLimits;
     use super::job_process::{WindowsJobLaunchOptions, launch_windows_job_process_with_options};
 
-    let canonical = canonicalize_request(&request)?;
+    let started = Instant::now();
+    let canonical = canonicalize_request(&request).map_err(BoundedHelperFailure::prelaunch)?;
+    let deadline = started.checked_add(request.budget.timeout).ok_or_else(|| {
+        BoundedHelperFailure::prelaunch(BoundedHelperError::AdmissionDeadlineExceeded)
+    })?;
+    let reservation = Reservation::acquire(deadline)?;
     let mut command = Vec::with_capacity(request.arguments.len() + 1);
     command.push(canonical.executable);
     command.extend(request.arguments.iter().cloned());
@@ -305,7 +392,7 @@ pub fn run_bounded_helper(
         cpu_rate_per_10_000: limits.cpu_rate_per_10_000,
         committed_memory_bytes: limits.committed_memory_bytes,
     });
-    let mut owner = launch_windows_job_process_with_options(
+    let mut owner = match launch_windows_job_process_with_options(
         &command,
         &environment,
         WindowsJobLaunchOptions {
@@ -313,18 +400,80 @@ pub fn run_bounded_helper(
             resource_limits,
             exact_environment: true,
             retain_parent_stdin: true,
+            null_stdio: [false; 3],
         },
-    )
-    .map_err(|_| BoundedHelperError::LaunchFailed)?;
+    ) {
+        Ok(owner) => owner,
+        Err(failure) => return Err(reservation.launch_failure(failure, request.resources)),
+    };
     let identity = owner.identity();
-    let stdin = owner
-        .take_input_file()
-        .ok_or(BoundedHelperError::LaunchFailed)?;
+    let stdin = owner.take_input_file();
     let (stdout, stderr) = owner.take_output_files();
-    let stdin = write_input(stdin, request.stdin);
-    let stdout = capture_stream(stdout, request.budget.stdout_limit_bytes);
-    let stderr = capture_stream(stderr, request.budget.stderr_limit_bytes);
-    let deadline = Instant::now() + request.budget.timeout;
+    // An unstarted slot means no I/O operation exists. A failed Builder::spawn
+    // drops its closure and stream; previously started streams remain in `io`.
+    let mut io = HelperIo::unstarted();
+    match write_input(stdin, request.stdin) {
+        Ok(receiver) => io.stdin = Completion::new(receiver),
+        Err(_) => {
+            drop(stdout);
+            drop(stderr);
+            let quiescent = stop_and_drain(&mut owner, &mut io);
+            return Err(reservation.failure(
+                BoundedHelperError::IoWorkerStartFailed {
+                    stream: "stdin",
+                    identity,
+                    quiescent,
+                },
+                owner,
+                io,
+                request.resources,
+            ));
+        }
+    }
+    match capture_stream(stdout, request.budget.stdout_limit_bytes) {
+        Ok(receiver) => io.stdout = Completion::new(receiver),
+        Err(_) => {
+            drop(stderr);
+            let quiescent = stop_and_drain(&mut owner, &mut io);
+            return Err(reservation.failure(
+                BoundedHelperError::IoWorkerStartFailed {
+                    stream: "stdout",
+                    identity,
+                    quiescent,
+                },
+                owner,
+                io,
+                request.resources,
+            ));
+        }
+    }
+    match capture_stream(stderr, request.budget.stderr_limit_bytes) {
+        Ok(receiver) => io.stderr = Completion::new(receiver),
+        Err(_) => {
+            let quiescent = stop_and_drain(&mut owner, &mut io);
+            return Err(reservation.failure(
+                BoundedHelperError::IoWorkerStartFailed {
+                    stream: "stderr",
+                    identity,
+                    quiescent,
+                },
+                owner,
+                io,
+                request.resources,
+            ));
+        }
+    }
+    if super::bounded_cleanup::current_observation_fault_active() {
+        return Err(reservation.failure(
+            BoundedHelperError::ProcessObservationFailed {
+                identity,
+                quiescent: false,
+            },
+            owner,
+            io,
+            request.resources,
+        ));
+    }
     let mut stdin_complete = false;
     let mut stdout_result = None;
     let mut stderr_result = None;
@@ -332,42 +481,57 @@ pub fn run_bounded_helper(
 
     loop {
         if !stdin_complete {
-            match stdin.try_recv() {
+            match io.stdin.try_recv() {
                 Ok(Ok(())) => stdin_complete = true,
                 Ok(Err(_)) | Err(TryRecvError::Disconnected) => {
-                    let quiescent = stop_and_drain(&mut owner, &stdin, &stdout, &stderr);
-                    return Err(BoundedHelperError::InputWriteFailed {
-                        identity,
-                        quiescent,
-                    });
+                    let quiescent = stop_and_drain(&mut owner, &mut io);
+                    return Err(reservation.failure(
+                        BoundedHelperError::InputWriteFailed {
+                            identity,
+                            quiescent,
+                        },
+                        owner,
+                        io,
+                        request.resources,
+                    ));
                 }
                 Err(TryRecvError::Empty) => {}
             }
         }
         if stdout_result.is_none() {
-            match stdout.try_recv() {
+            match io.stdout.try_recv() {
                 Ok(result) => stdout_result = Some(result),
                 Err(TryRecvError::Disconnected) => {
-                    let quiescent = stop_and_drain(&mut owner, &stdin, &stdout, &stderr);
-                    return Err(BoundedHelperError::OutputReadFailed {
-                        stream: "stdout",
-                        identity,
-                        quiescent,
-                    });
+                    let quiescent = stop_and_drain(&mut owner, &mut io);
+                    return Err(reservation.failure(
+                        BoundedHelperError::OutputReadFailed {
+                            stream: "stdout",
+                            identity,
+                            quiescent,
+                        },
+                        owner,
+                        io,
+                        request.resources,
+                    ));
                 }
                 Err(TryRecvError::Empty) => {}
             }
         }
         if stderr_result.is_none() {
-            match stderr.try_recv() {
+            match io.stderr.try_recv() {
                 Ok(result) => stderr_result = Some(result),
                 Err(TryRecvError::Disconnected) => {
-                    let quiescent = stop_and_drain(&mut owner, &stdin, &stdout, &stderr);
-                    return Err(BoundedHelperError::OutputReadFailed {
-                        stream: "stderr",
-                        identity,
-                        quiescent,
-                    });
+                    let quiescent = stop_and_drain(&mut owner, &mut io);
+                    return Err(reservation.failure(
+                        BoundedHelperError::OutputReadFailed {
+                            stream: "stderr",
+                            identity,
+                            quiescent,
+                        },
+                        owner,
+                        io,
+                        request.resources,
+                    ));
                 }
                 Err(TryRecvError::Empty) => {}
             }
@@ -379,20 +543,30 @@ pub fn run_bounded_helper(
         ] {
             match result {
                 Some(Err(CaptureError::TooLarge)) => {
-                    let quiescent = stop_and_drain(&mut owner, &stdin, &stdout, &stderr);
-                    return Err(BoundedHelperError::OutputLimitExceeded {
-                        stream,
-                        identity,
-                        quiescent,
-                    });
+                    let quiescent = stop_and_drain(&mut owner, &mut io);
+                    return Err(reservation.failure(
+                        BoundedHelperError::OutputLimitExceeded {
+                            stream,
+                            identity,
+                            quiescent,
+                        },
+                        owner,
+                        io,
+                        request.resources,
+                    ));
                 }
                 Some(Err(CaptureError::Io)) => {
-                    let quiescent = stop_and_drain(&mut owner, &stdin, &stdout, &stderr);
-                    return Err(BoundedHelperError::OutputReadFailed {
-                        stream,
-                        identity,
-                        quiescent,
-                    });
+                    let quiescent = stop_and_drain(&mut owner, &mut io);
+                    return Err(reservation.failure(
+                        BoundedHelperError::OutputReadFailed {
+                            stream,
+                            identity,
+                            quiescent,
+                        },
+                        owner,
+                        io,
+                        request.resources,
+                    ));
                 }
                 Some(Ok(_)) | None => {}
             }
@@ -403,11 +577,16 @@ pub fn run_bounded_helper(
                 Ok(Some(code)) => exit_code = Some(code),
                 Ok(None) => {}
                 Err(_) => {
-                    let quiescent = stop_and_drain(&mut owner, &stdin, &stdout, &stderr);
-                    return Err(BoundedHelperError::ProcessObservationFailed {
-                        identity,
-                        quiescent,
-                    });
+                    let quiescent = stop_and_drain(&mut owner, &mut io);
+                    return Err(reservation.failure(
+                        BoundedHelperError::ProcessObservationFailed {
+                            identity,
+                            quiescent,
+                        },
+                        owner,
+                        io,
+                        request.resources,
+                    ));
                 }
             }
         }
@@ -417,10 +596,13 @@ pub fn run_bounded_helper(
             stderr_result.as_ref(),
             stdin_complete,
         ) {
-            if !owner.is_quiescent().unwrap_or(false)
-                && !stop_and_drain(&mut owner, &stdin, &stdout, &stderr)
-            {
-                return Err(BoundedHelperError::JobNotQuiescent { identity });
+            if !owner.is_quiescent().unwrap_or(false) && !stop_and_drain(&mut owner, &mut io) {
+                return Err(reservation.failure(
+                    BoundedHelperError::JobNotQuiescent { identity },
+                    owner,
+                    io,
+                    request.resources,
+                ));
             }
             let captured_stdout = stdout_result
                 .take()
@@ -439,11 +621,16 @@ pub fn run_bounded_helper(
             });
         }
         if Instant::now() >= deadline {
-            let quiescent = stop_and_drain(&mut owner, &stdin, &stdout, &stderr);
-            return Err(BoundedHelperError::DeadlineExceeded {
-                identity,
-                quiescent,
-            });
+            let quiescent = stop_and_drain(&mut owner, &mut io);
+            return Err(reservation.failure(
+                BoundedHelperError::DeadlineExceeded {
+                    identity,
+                    quiescent,
+                },
+                owner,
+                io,
+                request.resources,
+            ));
         }
         std::thread::sleep(Duration::from_millis(10));
     }
@@ -486,11 +673,125 @@ fn receipt_request(
         environment: BTreeMap::from([(OsString::from("SystemRoot"), system_root)]),
         stdin,
         budget,
+        resources: BoundedHelperResources::default(),
         resource_limits: Some(BoundedHelperResourceLimits {
             cpu_rate_per_10_000: 2_500,
             committed_memory_bytes: 512 * 1024 * 1024,
         }),
     })
+}
+
+// The request bag is the ONLY file-capability owner in this control. The child
+// receives ordinary stdio only. This proves resource retention independently of
+// the separate descendant generation-borrowing acceptance.
+#[cfg(all(windows, feature = "test-hooks"))]
+fn retained_resource_receipt_for_test(
+    fixture: &std::path::Path,
+    budget: BoundedHelperBudget,
+) -> Result<(), String> {
+    use super::bounded_cleanup::{
+        HelperCleanupObservationFault, HelperCleanupStatus,
+        run_bounded_helper_with_observation_fault_for_test,
+    };
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::sync::Arc;
+    use std::time::{Instant, SystemTime, UNIX_EPOCH};
+
+    for stage in [
+        "child-end-close",
+        "primary-thread-close",
+        "process-birth",
+        "after-io",
+    ] {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| error.to_string())?
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "solstone-helper-resource-{}-{nonce}-{stage}",
+            std::process::id()
+        ));
+        let resource = Arc::new(
+            std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .share_mode(0)
+                .create_new(true)
+                .open(&path)
+                .map_err(|error| error.to_string())?,
+        );
+        let weak = Arc::downgrade(&resource);
+        let mut request = receipt_request(fixture, "sleep", &[], Vec::new(), budget)?;
+        request.resources.retain(resource); // no outer or child-owned duplicate
+        let fault = HelperCleanupObservationFault::new();
+        let result = super::job_process::with_finalization_fault(stage, || {
+            run_bounded_helper_with_observation_fault_for_test(request, &fault)
+        });
+        let failure = result.err();
+        let retained = (|| {
+            let failure = failure
+                .as_ref()
+                .ok_or("resource control unexpectedly succeeded")?;
+            let cleanup = failure
+                .cleanup()
+                .ok_or("resource control returned no native owner")?;
+            if cleanup.process_id().is_none()
+                || (stage != "after-io" && cleanup.identity().is_some())
+                || cleanup.observe() != HelperCleanupStatus::Pending
+                || weak.upgrade().is_none()
+            {
+                return Err(format!(
+                    "{stage} did not retain unknown-birth native/resource authority"
+                ));
+            }
+            if stage != "after-io"
+                && !matches!(failure.cause(),
+                BoundedHelperError::LaunchFinalizationFailed { detail, .. } if detail.contains(stage))
+            {
+                return Err(format!(
+                    "{stage} did not preserve its actual launch failure"
+                ));
+            }
+            match std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .share_mode(0)
+                .open(&path)
+            {
+                Err(error) if error.raw_os_error() == Some(32) => {}
+                other => return Err(format!("{stage} sole-owner contention was {other:?}")),
+            }
+            Ok(())
+        })();
+        fault.release();
+        let settled = failure
+            .as_ref()
+            .and_then(|failure| failure.cleanup())
+            .map(|cleanup| cleanup.retry_until(Instant::now() + super::super::DRAIN_JOIN_TIMEOUT));
+        let released = (|| {
+            if settled != Some(HelperCleanupStatus::Quiescent) || weak.upgrade().is_some() {
+                return Err(format!(
+                    "{stage} original native owner/resources did not settle"
+                ));
+            }
+            // Keep the completed Failure/Cleanup Arc alive across reacquisition.
+            let reacquired = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .share_mode(0)
+                .open(&path)
+                .map_err(|error| format!("{stage} reacquisition failed: {error}"))?;
+            drop(reacquired);
+            Ok(())
+        })();
+        drop(failure);
+        let removed = std::fs::remove_file(&path)
+            .map_err(|error| format!("removing fixture {} failed: {error}", path.display()));
+        retained?;
+        released?;
+        removed?;
+    }
+    Ok(())
 }
 
 /// Native receipt for the public bounded-helper authority, retained under the
@@ -504,6 +805,25 @@ pub(super) fn bounded_helper_receipt_for_test() -> Result<(), String> {
         stdout_limit_bytes: 1024,
         stderr_limit_bytes: 1024,
     };
+    retained_resource_receipt_for_test(&fixture, budget)?;
+    for (ordinal, stream) in [(1, "stdin"), (2, "stdout"), (3, "stderr")] {
+        let request = receipt_request(&fixture, "sleep", &[], Vec::new(), budget)?;
+        FAIL_IO_WORKER.with(|fault| fault.set(Some(ordinal)));
+        let result = run_bounded_helper(request);
+        FAIL_IO_WORKER.with(|fault| fault.set(None));
+        match result {
+            Err(failure)
+                if matches!(failure.cause(), BoundedHelperError::IoWorkerStartFailed {
+                stream: actual, quiescent: true, ..
+            } if *actual == stream)
+                    && failure.cleanup().is_none() => {}
+            other => {
+                return Err(format!(
+                    "helper I/O worker {ordinal} failure receipt was {other:?}"
+                ));
+            }
+        }
+    }
     let result = run_bounded_helper(receipt_request(
         &fixture,
         "echo-stdin",
@@ -575,11 +895,16 @@ pub(super) fn bounded_helper_receipt_for_test() -> Result<(), String> {
         Vec::new(),
         output_budget,
     )?) {
-        Err(BoundedHelperError::OutputLimitExceeded {
-            stream: "stdout",
-            quiescent: true,
-            ..
-        }) => {}
+        Err(failure)
+            if failure.cleanup().is_none()
+                && matches!(
+                    failure.cause(),
+                    BoundedHelperError::OutputLimitExceeded {
+                        stream: "stdout",
+                        quiescent: true,
+                        ..
+                    }
+                ) => {}
         other => return Err(format!("bounded helper stdout cap receipt was {other:?}")),
     }
 
@@ -592,9 +917,15 @@ pub(super) fn bounded_helper_receipt_for_test() -> Result<(), String> {
         Vec::new(),
         timeout_budget,
     )?) {
-        Err(BoundedHelperError::DeadlineExceeded {
-            quiescent: true, ..
-        }) => {}
+        Err(failure)
+            if failure.cleanup().is_none()
+                && matches!(
+                    failure.cause(),
+                    BoundedHelperError::DeadlineExceeded {
+                        quiescent: true,
+                        ..
+                    }
+                ) => {}
         other => return Err(format!("bounded helper deadline receipt was {other:?}")),
     }
     Ok(())
@@ -622,6 +953,8 @@ mod tests {
                 stderr_limit_bytes: 1,
             },
             resource_limits: None,
+            #[cfg(windows)]
+            resources: BoundedHelperResources::default(),
         }
     }
 

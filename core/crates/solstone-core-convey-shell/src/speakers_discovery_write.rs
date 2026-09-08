@@ -307,11 +307,25 @@ pub async fn dismiss(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
 pub async fn scan(
     Extension(root): Extension<Arc<JournalRoot>>,
     Extension(hosted_launch): Extension<HostedLaunchContext>,
+    #[cfg(windows)] generation: Option<Extension<crate::DiscoveryGenerationContext>>,
 ) -> Response {
+    #[cfg(windows)]
+    let Some(Extension(generation)) = generation else {
+        return command(
+            "discovery generation was not admitted at Convey entry".to_owned(),
+            StatusCode::SERVICE_UNAVAILABLE,
+        );
+    };
     let scan_root = root.clone();
-    let result =
-        tokio::task::spawn_blocking(move || refresh_discovery_cache(&scan_root.0, hosted_launch.0))
-            .await;
+    let result = tokio::task::spawn_blocking(move || {
+        refresh_discovery_cache(
+            &scan_root.0,
+            hosted_launch.0,
+            #[cfg(windows)]
+            &generation.0,
+        )
+    })
+    .await;
     let (clusters, dropped_invalid) = match result {
         Ok(Ok(DiscoveryRefresh::IdentityInvalid)) => {
             return error(

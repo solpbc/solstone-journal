@@ -530,6 +530,8 @@ pub(crate) fn require_managed_process_capability() -> Result<(), &'static str> {
 /// the only place that converts this request into a real child process.
 #[derive(Clone, Debug)]
 pub struct CommandLaunchRequest {
+    #[cfg(windows)]
+    pub read_file_grants: Vec<super::ReadFileGrant>,
     pub program: OsString,
     pub arguments: Vec<OsString>,
     pub environment: BTreeMap<OsString, OsString>,
@@ -545,6 +547,8 @@ pub struct CommandLaunchRequest {
 /// with exact managed launch; the boundary captures PID/birth/UID itself.
 #[derive(Clone)]
 pub struct ManagedLaunchRequest {
+    #[cfg(windows)]
+    pub read_file_grants: Vec<super::ReadFileGrant>,
     pub command: Vec<String>,
     pub options: SpawnOptions,
 }

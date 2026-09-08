@@ -13,6 +13,7 @@ publish = false
 # Narrow test driver for the loopback installer transport target.  Production
 # builds deliberately do not expose fixture-row or injected-write seams.
 test-hooks = []
+test-fixture-pin = ["solstone-core-distribution/test-fixture-pin"]
 
 [dependencies]
 serde.workspace = true
@@ -40,6 +41,8 @@ nix = { workspace = true, features = ["time"] }
 solstone-core-distribution.workspace = true
 
 [dev-dependencies]
+minisign.workspace = true
+solstone-core-distribution.workspace = true
 socket2 = "0.6.5"
 rcgen.workspace = true
 rustls.workspace = true

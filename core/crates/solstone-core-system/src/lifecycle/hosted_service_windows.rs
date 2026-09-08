@@ -1,35 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Windows boundary for the Unix hosted-service parent contract.
-//!
-//! Journal's Windows lifecycle is owned by the Task Scheduler and its Job
-//! facade, not by the Unix parent-loss coordinator.  This module keeps the
-//! shared service graph portable while refusing any attempt to run it under
-//! the Unix hosted-parent marker.  In particular, it must never downgrade a
-//! marked service to an unhosted invocation: doing so would let it bind and
-//! launch workers without the admission contract it was told to require.
-
-use std::ffi::OsStr;
-use std::path::Path;
-
-use thiserror::Error;
+//! Hosted Windows services derive their lifetime from exact launch admission.
 
 use super::{HostedServiceKind, ParentLossReason};
-use crate::process::HostedLaunchProvenance;
+use crate::process::{
+    AdmittedWindowsLaunch, HostedLaunchProvenance, InstanceVerdict, ProcessInstanceSource,
+    SystemProcessInstanceSource,
+};
+use std::path::Path;
+use std::time::Duration;
+use thiserror::Error;
 
-const HOSTED_PARENT_ENV: &str = "SOL_SUPERVISOR_SPAWNED";
+#[derive(Debug)]
+pub struct HostedServiceParentRuntime {
+    admitted: AdmittedWindowsLaunch,
+}
 
-/// There is no Windows value for the Unix hosted-service parent runtime.
-///
-/// Its public methods preserve the shared service signatures.  Admission can
-/// never construct one on Windows, so each method is unreachable in safe
-/// Rust.  The Windows Task Scheduler/Job lifecycle owns its distinct
-/// supervision contract instead.
-pub enum HostedServiceParentRuntime {}
-
-/// Service-owned shutdown facts captured before a Unix parent-loss witness
-/// would be published.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HostedServiceShutdownEvidence {
     pub listener_stopped: bool,
@@ -38,84 +25,95 @@ pub struct HostedServiceShutdownEvidence {
 }
 
 impl HostedServiceParentRuntime {
-    pub fn child_launch_provenance(&self, _launch_id: String) -> HostedLaunchProvenance {
-        match *self {}
+    pub fn child_launch_provenance(&self, launch_id: String) -> HostedLaunchProvenance {
+        self.admitted.child_launch_provenance(launch_id)
+    }
+
+    fn parent_loss(&self) -> Option<ParentLossReason> {
+        if self.admitted.stop_requested().is_err() {
+            return Some(ParentLossReason::Unverifiable);
+        }
+        match SystemProcessInstanceSource.observe(&self.admitted.parent()) {
+            InstanceVerdict::SameLive { .. } => None,
+            InstanceVerdict::NotSameOrExited => Some(ParentLossReason::ExitedOrReused),
+            InstanceVerdict::Unverifiable => Some(ParentLossReason::Unverifiable),
+        }
     }
 
     pub async fn await_parent_loss(&self) -> ParentLossReason {
-        match *self {}
+        loop {
+            if let Some(reason) = self.parent_loss() {
+                return reason;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
     pub fn retire_expected_requested(&self) -> bool {
-        match *self {}
+        self.admitted.stop_requested().unwrap_or(false)
     }
 
     pub async fn await_parent_loss_or_retire_expected_request(&self) -> Option<ParentLossReason> {
-        match *self {}
+        loop {
+            match self.admitted.stop_requested() {
+                Ok(true) => return None,
+                Err(_) => return Some(ParentLossReason::Unverifiable),
+                Ok(false) => {}
+            }
+            if let Some(reason) = self.parent_loss() {
+                return Some(reason);
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
     pub fn finish_parent_loss(
         &self,
-        _shutdown: HostedServiceShutdownEvidence,
+        shutdown: HostedServiceShutdownEvidence,
     ) -> Result<(), HostedServiceParentLossError> {
-        match *self {}
+        if shutdown.listener_stopped
+            && shutdown.service_runner_stopped
+            && shutdown.operational_artifacts_cleaned
+        {
+            Ok(())
+        } else {
+            Err(HostedServiceParentLossError::Failed(
+                "hosted service cleanup is incomplete".into(),
+            ))
+        }
     }
 }
 
-/// The hosted Unix parent contract was requested on a platform that has no
-/// implementation for it.
 #[derive(Debug, Error)]
 pub enum HostedServiceAdmissionFailure {
-    #[error(
-        "hosted Unix service supervision is unavailable on Windows; use the Windows Task Scheduler lifecycle"
-    )]
-    UnsupportedPlatform,
+    #[error("hosted launch journal or service does not match this command")]
+    ProvenanceMismatch,
 }
 
-/// Kept as a portable service-signature error; no Windows hosted runtime can
-/// reach this operation.
 #[derive(Debug, Error)]
 pub enum HostedServiceParentLossError {
-    #[error("hosted Unix service supervision is unavailable on Windows")]
-    UnsupportedPlatform,
+    #[error("parent loss error: {0}")]
+    Failed(String),
 }
 
-/// Kept as a portable service-signature error; Windows does not install the
-/// Unix parent watcher.
 #[derive(Debug, Error)]
 pub enum HostedServiceWatchError {
-    #[error("hosted Unix service supervision is unavailable on Windows")]
-    UnsupportedPlatform,
+    #[error("parent watch error: {0}")]
+    Failed(String),
 }
 
-/// Admit no Unix hosted parent on Windows.
-///
-/// An absent marker preserves the ordinary unhosted service lifecycle.  The
-/// exact marker that means "this service must be parent-admitted" fails
-/// closed instead of running without the requested supervision.
 pub fn admit_hosted_service_parent(
-    _journal: &Path,
-    _kind: HostedServiceKind,
+    journal: &Path,
+    kind: HostedServiceKind,
+    admitted: Option<&AdmittedWindowsLaunch>,
 ) -> Result<Option<HostedServiceParentRuntime>, HostedServiceAdmissionFailure> {
-    if hosted_parent_marker_is_set(std::env::var_os(HOSTED_PARENT_ENV).as_deref()) {
-        return Err(HostedServiceAdmissionFailure::UnsupportedPlatform);
+    let Some(admitted) = admitted else {
+        return Ok(None);
+    };
+    if admitted.journal() != journal || admitted.service() != Some(kind) {
+        return Err(HostedServiceAdmissionFailure::ProvenanceMismatch);
     }
-    Ok(None)
-}
-
-fn hosted_parent_marker_is_set(value: Option<&OsStr>) -> bool {
-    value == Some(OsStr::new("1"))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn only_the_explicit_hosted_marker_requests_admission() {
-        assert!(hosted_parent_marker_is_set(Some(OsStr::new("1"))));
-        assert!(!hosted_parent_marker_is_set(None));
-        assert!(!hosted_parent_marker_is_set(Some(OsStr::new("0"))));
-        assert!(!hosted_parent_marker_is_set(Some(OsStr::new("true"))));
-    }
+    Ok(Some(HostedServiceParentRuntime {
+        admitted: admitted.clone(),
+    }))
 }

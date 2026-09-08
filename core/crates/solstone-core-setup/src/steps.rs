@@ -1557,13 +1557,46 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
 
 /// The native service artifact shared by setup and clean-uninstall.
 #[must_use]
-pub(crate) fn service_artifact_path(home: &Path) -> Option<PathBuf> {
-    if cfg!(target_os = "macos") {
-        Some(home.join("Library/LaunchAgents/org.solpbc.solstone.plist"))
-    } else if cfg!(target_os = "linux") {
-        Some(home.join(".config/systemd/user/solstone.service"))
-    } else {
-        None
+pub(crate) fn service_artifact_path(
+    home: &Path,
+) -> Result<Option<PathBuf>, solstone_core_installation_identity::IdentityError> {
+    #[cfg(windows)]
+    {
+        use solstone_core_installation_identity::{
+            IdentityError, PlatformTag, namespace_name, owner_base, root_token_from_path,
+        };
+        let _ = home;
+        let owner = owner_base()?;
+        let provider = owner.path();
+        let base = provider
+            .ancestors()
+            .nth(2)
+            .ok_or(IdentityError::InvalidInput(
+                "installation provider base has no application directory",
+            ))?;
+        let executable = std::env::current_exe()
+            .map_err(|_| IdentityError::InvalidInput("current executable is unavailable"))?;
+        let root = executable
+            .parent()
+            .and_then(solstone_core_journal::resolve_identity_root_from_executable_dir)
+            .ok_or(IdentityError::InvalidInput(
+                "installation root is unavailable",
+            ))?;
+        let namespace = namespace_name(PlatformTag::Windows, &root_token_from_path(&root)?);
+        Ok(Some(
+            base.join("journal-service")
+                .join(format!("{namespace}.xml")),
+        ))
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(if cfg!(target_os = "macos") {
+            Some(home.join("Library/LaunchAgents/org.solpbc.solstone.plist"))
+        } else if cfg!(target_os = "linux") {
+            Some(home.join(".config/systemd/user/solstone.service"))
+        } else {
+            None
+        })
     }
 }
 
@@ -1597,6 +1630,9 @@ fn step_service(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
         ));
     }
     let paths = service_artifact_path(&context.home_dir)
+        .map_err(|error| StepExecutionError::Unhandled {
+            message: error.to_string(),
+        })?
         .into_iter()
         .collect::<Vec<_>>();
     let guard = GuardFields::from_binding(
@@ -1610,7 +1646,11 @@ fn step_service(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
     let output = context
         .runner
         .run(&CommandRequest {
-            program: context.install_bin_dir.join("journal"),
+            program: if cfg!(windows) {
+                context.install_bin_dir.join("journal.exe")
+            } else {
+                context.install_bin_dir.join("journal")
+            },
             args: vec![
                 "service".into(),
                 "install".into(),

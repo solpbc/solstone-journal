@@ -16,6 +16,8 @@ mod event;
 mod model_assets;
 mod speakers_installation;
 mod vad_runtime;
+#[cfg(windows)]
+mod windows_onnx;
 // The standalone CLI is introduced in a later step; retain the completed
 // stage pieces without treating that staged integration as a lint failure.
 #[allow(dead_code)]
@@ -106,6 +108,7 @@ pub fn run_cli(
     arguments: impl IntoIterator<Item = String>,
     journal_path: &Path,
     on_day: &mut dyn FnMut(&Path),
+    #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
 ) -> Result<CliRun, CliRunError> {
     let parsed = args::parse_arguments(arguments).map_err(CliRunError::Cli)?;
     args::require_solstone(journal_path).map_err(CliRunError::Cli)?;
@@ -121,9 +124,15 @@ pub fn run_cli(
         config::confidential_audio_enabled(&config),
     )
     .map_err(CliRunError::Transcribe)?;
-    let _generation =
-        enter_speakers_analyze_generation(journal_path, SpeakersAnalyzeOwnerRole::Transcribe)
-            .map_err(CliRunError::Cli)?;
+    let _generation = enter_speakers_analyze_generation(
+        journal_path,
+        SpeakersAnalyzeOwnerRole::Transcribe,
+        #[cfg(windows)]
+        admitted,
+    )
+    .map_err(CliRunError::Cli)?;
+    #[cfg(windows)]
+    let generation_context = _generation.child_launch_context();
     let attestation_state = AttestationStateStore::new();
     if parsed.all {
         return run_all(
@@ -133,6 +142,8 @@ pub fn run_cli(
             &config,
             &attestation_state,
             on_day,
+            #[cfg(windows)]
+            &generation_context,
         );
     }
     let audio_path = args::resolve_single_audio_path(
@@ -150,6 +161,8 @@ pub fn run_cli(
         Some(&backend.backend),
         &config,
         &attestation_state,
+        #[cfg(windows)]
+        &generation_context,
     )
     .map_err(CliRunError::Transcribe)?;
     Ok(CliRun::default())
@@ -162,6 +175,7 @@ fn run_all(
     config: &solstone_core_journal_config::JournalConfigRead,
     attestation_state: &AttestationStateStore,
     on_day: &mut dyn FnMut(&Path),
+    #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<CliRun, CliRunError> {
     run_all_with(
         discover_audio_files(journal_path, on_day),
@@ -174,6 +188,8 @@ fn run_all(
                 Some(backend),
                 config,
                 attestation_state,
+                #[cfg(windows)]
+                generation,
             )
         },
     )

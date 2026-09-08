@@ -5,11 +5,16 @@
 
 use std::io;
 use std::path::{Path, PathBuf};
+#[cfg(not(windows))]
 use std::process::{Command, Stdio};
+#[cfg(not(windows))]
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(windows))]
+use std::time::Instant;
 
 use serde_json::Value;
+#[cfg(not(windows))]
 use solstone_core_system::process::{Disposition, LaunchError, launch};
 use solstone_core_system_health::{
     BoundedStderr, classify_loader_failure, read_bounded_stderr,
@@ -20,12 +25,14 @@ use crate::audio::vad_binary_candidate_from;
 
 const ERROR_SCHEMA: &str = "solstone-vad-error-v1";
 const MALFORMED_REQUEST: &str = "malformed-request";
+#[cfg(not(windows))]
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 /// Closed-stdin probe budget. Measured 2026-08-23 on this host:
 /// source-checkout max 1.203ms, installed-package max 1.809ms (14 timed runs,
 /// both exit 64 + solstone-vad-error-v1 malformed-request, no loader override).
 /// `clamp(max * 4, 1s, 10s)` => 1s.
+#[cfg(not(windows))]
 pub const VAD_RUNTIME_PROBE_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Distinct launch outcomes for the VAD helper. None of these is a missing
@@ -75,6 +82,7 @@ pub fn probe_from_executable(
 }
 
 /// Run the closed-stdin launch probe against one helper path.
+#[cfg(not(windows))]
 pub fn probe_vad_runtime(binary: &Path, timeout: Duration) -> VadRuntimeStatus {
     let path = binary.to_path_buf();
     if !binary.is_file() {
@@ -234,6 +242,7 @@ fn reports_malformed_request(bytes: &[u8]) -> bool {
     text.contains(ERROR_SCHEMA) && text.contains(MALFORMED_REQUEST)
 }
 
+#[cfg(not(windows))]
 fn split_poll_code(code: Option<i32>) -> (Option<i32>, Option<i32>) {
     match code {
         Some(value) if value >= 0 => (Some(value), None),
@@ -242,6 +251,7 @@ fn split_poll_code(code: Option<i32>) -> (Option<i32>, Option<i32>) {
     }
 }
 
+#[cfg(not(windows))]
 fn join_bounded(reader: Option<thread::JoinHandle<io::Result<BoundedStderr>>>) -> BoundedStderr {
     reader
         .and_then(|handle| handle.join().ok())
@@ -253,7 +263,9 @@ fn join_bounded(reader: Option<thread::JoinHandle<io::Result<BoundedStderr>>>) -
 mod tests {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
+    #[cfg(not(windows))]
+    use std::time::Instant;
 
     use super::{
         VadRuntimeStatus, probe_from_executable, probe_vad_runtime, vad_runtime_repair_for,
@@ -421,5 +433,65 @@ mod tests {
             ),
             "{status:?}"
         );
+    }
+}
+
+// Windows verifies the complete package before the DLL/API probe. Keep that
+// bounded admission/bootstrap work inside a separate native probe budget.
+#[cfg(windows)]
+pub const VAD_RUNTIME_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+
+#[cfg(windows)]
+pub fn probe_vad_runtime(binary: &Path, timeout: Duration) -> VadRuntimeStatus {
+    use crate::windows_onnx::{
+        ONNX_STDERR_LIMIT, ONNX_STDOUT_LIMIT, OnnxHelper, OnnxHelperError, run_onnx_helper,
+    };
+    use solstone_core_system::process::{BoundedHelperBudget, BoundedHelperError};
+    let path = binary.to_path_buf();
+    match run_onnx_helper(
+        OnnxHelper::Vad,
+        binary,
+        &[],
+        BoundedHelperBudget {
+            timeout,
+            stdin_limit_bytes: 1,
+            stdout_limit_bytes: ONNX_STDOUT_LIMIT,
+            stderr_limit_bytes: ONNX_STDERR_LIMIT,
+        },
+        solstone_core_system::process::BoundedHelperResources::new(),
+    ) {
+        Ok(output) => classify_finished(
+            path,
+            Some(output.exit_code),
+            None,
+            read_bounded_stderr(output.stdout.as_slice()).expect("in-memory stdout read"),
+            read_bounded_stderr(output.stderr.as_slice()).expect("in-memory stderr read"),
+        ),
+        Err(OnnxHelperError::Launch(failure))
+            if failure.cleanup().is_none()
+                && matches!(
+                    failure.cause(),
+                    BoundedHelperError::DeadlineExceeded {
+                        quiescent: true,
+                        ..
+                    }
+                ) =>
+        {
+            let BoundedHelperError::DeadlineExceeded { identity, .. } = failure.cause() else {
+                unreachable!()
+            };
+            VadRuntimeStatus::Timeout {
+                path,
+                timeout,
+                pid: identity.pid,
+            }
+        }
+        Err(error) => {
+            log::warn!("VAD helper probe failed: {error:?}");
+            VadRuntimeStatus::Spawn {
+                path,
+                cause: error.to_string(),
+            }
+        }
     }
 }

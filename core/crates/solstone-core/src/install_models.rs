@@ -45,9 +45,7 @@ fn rfdetr_bundled_asset_disclosure() -> String {
 }
 
 use solstone_core_assets::canonical_host_pair;
-use solstone_core_local::install::ced_readiness::{
-    CED_UNAVAILABLE_GUIDANCE, CedVerdict, evaluate_ced_readiness,
-};
+use solstone_core_local::install::ced_readiness::{CED_UNAVAILABLE_GUIDANCE, CedVerdict};
 use solstone_core_local::install::rfdetr_readiness::{RfdetrReadiness, evaluate_rfdetr_readiness};
 use solstone_core_local::install::{
     DispatchError, ced_install, coreml_install, fingerprint, fit_report,
@@ -93,6 +91,7 @@ fn probe_windows_rfdetr_help(
     };
     let spec = rfdetr_windows_help_launch(package, system_root);
     let request = BoundedHelperRequest {
+        resources: Default::default(),
         package_root: spec.package_root,
         executable: spec.executable,
         current_directory: spec.current_directory,
@@ -112,7 +111,18 @@ fn probe_windows_rfdetr_help(
     };
     match run_bounded_helper(request) {
         Ok(output) => map_rfdetr_help_probe(output.exit_code == 0, Some(output.exit_code), None),
-        Err(error) => map_rfdetr_help_probe(false, None, Some(&error.to_string())),
+        Err(error) => {
+            let reason = if error.cleanup().is_none()
+                && matches!(
+                    error.cause(),
+                    solstone_core_system::process::BoundedHelperError::DeadlineExceeded { .. }
+                ) {
+                "timeout"
+            } else {
+                "binary_unavailable"
+            };
+            serde_json::json!({"runnable": false, "reason_code": reason, "message": error.to_string()})
+        }
     }
 }
 
@@ -274,7 +284,7 @@ where
     InstallModelsHooks {
         asset_gate,
         report_override,
-        ced_verdict: evaluate_ced_readiness,
+        ced_verdict: solstone_core_check::evaluate_host_ced,
     }
 }
 
@@ -1153,7 +1163,7 @@ mod tests {
                 &digest,
                 |_library, _model| Ok(()),
             ),
-            Err(_) => evaluate_ced_readiness(journal, os, arch),
+            Err(_) => solstone_core_check::evaluate_host_ced(journal, os, arch),
         }
     }
 

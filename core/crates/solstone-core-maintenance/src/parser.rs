@@ -130,7 +130,21 @@ fn run_routine(
         };
     }
     if id == "speakers:discover-voices" {
-        return crate::bodies::speakers::discovery(forwarded, journal);
+        #[cfg(windows)]
+        let Some(generation) = services.discovery_generation else {
+            return CliRun {
+                stdout: String::new(),
+                stderr: "speaker discovery generation was not admitted at maintenance entry\n"
+                    .to_owned(),
+                exit_code: 1,
+            };
+        };
+        return crate::bodies::speakers::discovery(
+            forwarded,
+            journal,
+            #[cfg(windows)]
+            generation,
+        );
     }
     if id == "speakers:candidate-pair-suggestions" {
         return crate::bodies::speakers::candidate_pairs(forwarded, journal);

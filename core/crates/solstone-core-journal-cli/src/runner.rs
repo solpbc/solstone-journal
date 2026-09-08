@@ -53,6 +53,16 @@ pub(crate) fn sibling_native_for_executable(
 
 pub fn sibling_native_in_dir(dir: &Path, binary: &str) -> Result<PathBuf, NativeExecutableError> {
     let candidate = dir.join(binary);
+    if is_executable(&candidate) {
+        return Ok(candidate);
+    }
+    #[cfg(windows)]
+    {
+        let exe_candidate = dir.join(format!("{binary}.exe"));
+        if is_executable(&exe_candidate) {
+            return Ok(exe_candidate);
+        }
+    }
     match fs::metadata(&candidate) {
         Ok(_) if is_executable(&candidate) => Ok(candidate),
         Ok(_) => Err(NativeExecutableError::NonExecutable { path: candidate }),
@@ -74,7 +84,11 @@ pub(crate) fn native_process_args(
         .collect()
 }
 
-pub(crate) fn exec_process(program: &OsStr, args: &[OsString]) -> std::io::Result<()> {
+pub(crate) fn exec_process(
+    program: &OsStr,
+    args: &[OsString],
+    #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+) -> std::io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -83,12 +97,21 @@ pub(crate) fn exec_process(program: &OsStr, args: &[OsString]) -> std::io::Resul
         command.args(args);
         Err(command.exec())
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        let code =
+            solstone_core_system::process::forward_windows_native_command(program, args, admitted)?;
+        // The forwarding function returns only after the owned Job is quiescent.
+        // The entry-point owner retains incoming grants until process termination;
+        // Windows then closes them after all forwarding-owned descendants exited.
+        std::process::exit(code);
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = (program, args);
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
-            "native journal Python process replacement is unavailable on this platform",
+            "native journal process replacement is unavailable on this platform",
         ))
     }
 }

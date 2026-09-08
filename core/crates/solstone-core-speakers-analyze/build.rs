@@ -8,10 +8,12 @@ fn main() {
     let target_os =
         std::env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS is set by cargo");
     let rpath = match target_os.as_str() {
+        // Windows loads the signed private runtime explicitly, before any ORT API.
+        "windows" => return,
         "linux" => "$ORIGIN/../lib/solstone-core-speakers-analyze",
         "macos" => "@loader_path/../lib/solstone-core-speakers-analyze",
         other => panic!(
-            "unsupported solstone-core-speakers-analyze target OS {other:?}; expected linux or macos"
+            "unsupported solstone-core-speakers-analyze target OS {other:?}; expected linux, macos or windows"
         ),
     };
     // Keep the helper's bundled ONNX Runtime lookup relative to the installed

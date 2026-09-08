@@ -211,8 +211,8 @@ pub fn gather_setup_artifact_evidence(
         allow_legacy_launchers,
     );
     let service = service_artifact_path(home_dir)
-        .map(|path| read_service(&path))
-        .unwrap_or(Ok(None));
+        .map_err(|_| ())
+        .and_then(|path| path.map(|path| read_service(&path)).unwrap_or(Ok(None)));
     let mut solstone_wrapper = wrapper_slot(solstone);
     let mut journal_wrapper = wrapper_slot(journal);
     let mut service = service_slot(service);
@@ -329,6 +329,20 @@ fn read_service(path: &Path) -> Result<Option<PresentArtifact>, ()> {
     if !path.exists() && !path.is_symlink() {
         return Ok(None);
     }
+    #[cfg(windows)]
+    {
+        let bytes = fs::read(path).map_err(|_| ())?;
+        let xml = solstone_core_service_unit::decode_windows_task_xml(&bytes).map_err(|_| ())?;
+        let definition =
+            solstone_core_service_unit::parse_windows_task_xml(&xml).map_err(|_| ())?;
+        return Ok(Some(PresentArtifact::Guarded(definition.action.guard)));
+    }
+    #[cfg(not(windows))]
+    read_unix_service(path)
+}
+
+#[cfg(not(windows))]
+fn read_unix_service(path: &Path) -> Result<Option<PresentArtifact>, ()> {
     let content = fs::read_to_string(path).map_err(|_| ())?;
     let environment = extract_service_guards(&content)?;
     parse_service_guard_environment(&environment)
@@ -778,7 +792,9 @@ mod tests {
             )
             .unwrap();
         }
-        let service_path = service_artifact_path(&home).expect("supported test platform");
+        let service_path = service_artifact_path(&home)
+            .expect("resolve service artifact")
+            .expect("supported test platform");
         fs::create_dir_all(service_path.parent().unwrap()).unwrap();
         let service = solstone_core_installation_identity::service_guard_environment(&guard)
             .into_iter()

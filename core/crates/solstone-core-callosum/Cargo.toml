@@ -30,8 +30,13 @@ tokio = { workspace = true, optional = true, features = ["io-util", "macros", "n
 [target.'cfg(windows)'.dependencies]
 getrandom.workspace = true
 interprocess = { workspace = true, features = ["tokio"] }
+solstone-core-installation-identity = { workspace = true }
+solstone-core-journal = { workspace = true }
 widestring.workspace = true
 windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Threading"] }
+
+[dev-dependencies]
+solstone-core-installation-identity.workspace = true
 
 [target.'cfg(unix)'.dev-dependencies]
 regex.workspace = true

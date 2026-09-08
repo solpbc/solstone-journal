@@ -73,13 +73,16 @@ pub fn detect(full_png: &[u8], _journal: &Path) -> Result<Value, String> {
     let system_root = env::var_os("SystemRoot")
         .filter(|val| !val.is_empty())
         .ok_or_else(|| "SystemRoot environment variable is not set".to_owned())?;
-    let temp = TempDir::new()?;
+    let temp = std::sync::Arc::new(TempDir::new()?);
     let input = temp.path.join("input.png");
     let output = temp.path.join("output.json");
     fs::write(&input, full_png).map_err(|error| error.to_string())?;
 
     let spec = rfdetr_windows_detect_launch(&package, system_root, &input, &output);
+    let mut resources = solstone_core_system::process::BoundedHelperResources::new();
+    resources.retain(temp.clone());
     let request = BoundedHelperRequest {
+        resources,
         package_root: spec.package_root,
         executable: spec.executable,
         current_directory: spec.current_directory,

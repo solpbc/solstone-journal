@@ -15,6 +15,7 @@ futures-util = { version = "0.3.33", default-features = false, features = ["sink
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 spl-core = { workspace = true }
+solstone-core-callosum.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write.workspace = true
 solstone-core-journal-io.workspace = true

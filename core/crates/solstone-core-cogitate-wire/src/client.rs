@@ -81,6 +81,8 @@ impl CogitateOneShotClient {
             hosted_child_launch_provenance(format!("cogitate-{id}"), Duration::from_secs(3))
                 .map_err(|error| ClientError::Io(error.to_string()))?;
         let request = CommandLaunchRequest {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
             program: self.executable.clone().into_os_string(),
             arguments: self
                 .prefix_arguments

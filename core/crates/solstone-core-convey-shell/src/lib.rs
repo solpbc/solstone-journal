@@ -184,6 +184,10 @@ pub(crate) struct HostedLaunchContext(
     pub(crate) Option<Arc<solstone_core_system::lifecycle::HostedServiceParentRuntime>>,
 );
 
+#[cfg(windows)]
+#[derive(Clone)]
+pub(crate) struct DiscoveryGenerationContext(pub solstone_core_system::process::ChildLaunchContext);
+
 /// Reason the paired-device door was not made available at startup.
 #[cfg(feature = "host")]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -408,8 +412,18 @@ async fn serve_loopback(
 
 /// Run the production Convey server until its process is terminated; port zero is unsupported.
 #[cfg(feature = "host")]
-pub fn run_convey(journal_root: PathBuf, port: u16) -> Result<(), String> {
-    run_convey_with_hosted_parent(journal_root, port, None)
+pub fn run_convey(
+    journal_root: PathBuf,
+    port: u16,
+    #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
+) -> Result<(), String> {
+    run_convey_with_hosted_parent(
+        journal_root,
+        port,
+        None,
+        #[cfg(windows)]
+        generation,
+    )
 }
 
 /// Run Convey with an optional birth-admitted hosted parent lifetime.
@@ -418,6 +432,7 @@ pub fn run_convey_with_hosted_parent(
     journal_root: PathBuf,
     port: u16,
     hosted_parent: Option<Arc<solstone_core_system::lifecycle::HostedServiceParentRuntime>>,
+    #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<(), String> {
     let executable = std::env::current_exe()
         .map_err(|error| format!("convey could not inspect current executable: {error}"))?;
@@ -425,7 +440,13 @@ pub fn run_convey_with_hosted_parent(
         .parent()
         .ok_or_else(|| format!("convey executable has no parent: {}", executable.display()))?;
     let _roots = crate::thinking_sol_reads::TalentRoots::from_executable_dir(executable_dir)?;
-    run_convey_bound(journal_root, port, hosted_parent)
+    run_convey_bound(
+        journal_root,
+        port,
+        hosted_parent,
+        #[cfg(windows)]
+        generation,
+    )
 }
 
 /// Like [`run_convey`], but resolves packaged talent roots from `executable_dir`.
@@ -434,9 +455,16 @@ pub fn run_convey_from_executable_dir(
     journal_root: PathBuf,
     port: u16,
     executable_dir: &std::path::Path,
+    #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<(), String> {
     let _roots = crate::thinking_sol_reads::TalentRoots::from_executable_dir(executable_dir)?;
-    run_convey_bound(journal_root, port, None)
+    run_convey_bound(
+        journal_root,
+        port,
+        None,
+        #[cfg(windows)]
+        generation,
+    )
 }
 
 #[cfg(feature = "host")]
@@ -444,6 +472,7 @@ fn run_convey_bound(
     journal_root: PathBuf,
     port: u16,
     hosted_parent: Option<Arc<solstone_core_system::lifecycle::HostedServiceParentRuntime>>,
+    #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<(), String> {
     use solstone_core_journal_config::read_direct_door_port;
     use solstone_core_sol_link::ledger::AuthorizedClientsRead;
@@ -469,6 +498,9 @@ fn run_convey_bound(
         DeviceDoorAuthorization::from(AuthorizedClientsRead::Missing),
     );
     let loopback_router = router_with_hosted_parent(journal_root.clone(), hosted_parent.clone());
+    #[cfg(windows)]
+    let loopback_router =
+        loopback_router.layer(Extension(DiscoveryGenerationContext(generation.clone())));
     let door_router = authorization_gate::authorized_router_with_router(
         loopback_router.clone(),
         journal_root.clone(),

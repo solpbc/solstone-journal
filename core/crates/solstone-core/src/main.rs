@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::process::ExitCode;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::sync::Arc;
 use std::sync::mpsc;
 use std::thread;
@@ -56,7 +55,7 @@ mod engage;
 mod facet_candidates;
 mod health;
 mod health_logs;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod heartbeat;
 mod identity;
 mod import_sources;
@@ -69,18 +68,29 @@ mod navigate;
 mod service;
 #[cfg(unix)]
 mod service_capture;
+#[cfg(windows)]
+mod service_capture_windows;
 mod service_logs;
+#[cfg(windows)]
+mod service_windows;
 mod settings;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use solstone_core::supervisor;
 #[cfg(all(unix, feature = "journal-mcp-endpoint"))]
 use solstone_core::{OAuthStore, OAuthStoreError, TokenStore, TokenStoreError};
 #[cfg(unix)]
 use solstone_core_system::lifecycle::{
-    ADMISSION_WAIT_TERMINAL_COPY, ADMISSION_WAIT_UNVERIFIABLE_COPY, CoordinatorBootstrap,
-    DeclaredParent, HostedServiceKind, HostedServiceParentRuntime, ParentAdmissionFailure,
-    ParentLossCoordinator, acknowledge_hosted_child_admission, admit_hosted_service_parent,
+    ADMISSION_WAIT_TERMINAL_COPY, ADMISSION_WAIT_UNVERIFIABLE_COPY,
+};
+#[cfg(unix)]
+use solstone_core_system::lifecycle::{
+    CoordinatorBootstrap, ParentLossCoordinator, acknowledge_hosted_child_admission,
     arm_parent_loss_coordinator_termination_guard,
+};
+#[cfg(any(unix, windows))]
+use solstone_core_system::lifecycle::{
+    DeclaredParent, HostedServiceKind, HostedServiceParentRuntime, ParentAdmissionFailure,
+    admit_hosted_service_parent,
 };
 #[cfg(unix)]
 use solstone_core_system::process::ProcessInstance;
@@ -160,7 +170,7 @@ fn install_logger() {
         .try_init();
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn resolve_declared_parent(
     hosted_parent: bool,
 ) -> Result<Option<DeclaredParent>, ParentAdmissionFailure> {
@@ -174,12 +184,22 @@ fn resolve_declared_parent(
 /// Gate every supervisor-spawned service before it can bind or publish any
 /// readiness artifact. Unhosted commands receive `None` and retain their
 /// existing service behavior unchanged.
-#[cfg(unix)]
-fn run_hosted_service<F>(journal: &Path, kind: HostedServiceKind, run: F) -> ExitCode
+#[cfg(any(unix, windows))]
+fn run_hosted_service<F>(
+    journal: &Path,
+    kind: HostedServiceKind,
+    #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+    run: F,
+) -> ExitCode
 where
     F: FnOnce(Option<Arc<HostedServiceParentRuntime>>) -> ExitCode,
 {
-    match admit_hosted_service_parent(journal, kind) {
+    match admit_hosted_service_parent(
+        journal,
+        kind,
+        #[cfg(windows)]
+        admitted,
+    ) {
         Ok(parent) => run(parent.map(Arc::new)),
         Err(error) => {
             eprintln!(
@@ -191,7 +211,7 @@ where
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const fn kind_name(kind: HostedServiceKind) -> &'static str {
     match kind {
         HostedServiceKind::Convey => "convey",
@@ -202,7 +222,7 @@ const fn kind_name(kind: HostedServiceKind) -> &'static str {
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn run_supervisor(options: solstone_core_cli::SupervisorOptions) -> ExitCode {
     let parent = match resolve_declared_parent(options.hosted_parent) {
         Ok(parent) => parent,
@@ -243,7 +263,7 @@ fn run_supervisor(options: solstone_core_cli::SupervisorOptions) -> ExitCode {
     )
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn render_supervisor_host_outcome(outcome: supervisor::SupervisorHostOutcome) -> ExitCode {
     match outcome {
         supervisor::SupervisorHostOutcome::Refused {
@@ -258,12 +278,14 @@ fn render_supervisor_host_outcome(outcome: supervisor::SupervisorHostOutcome) ->
             eprintln!("{refusal}");
             ExitCode::from(EXIT_TEMPFAIL)
         }
+        #[cfg(unix)]
         supervisor::SupervisorHostOutcome::Refused {
             reason: supervisor::SupervisorBootRefusal::AdmissionWaitTerminal,
         } => {
             eprintln!("{ADMISSION_WAIT_TERMINAL_COPY}");
             ExitCode::from(EXIT_TEMPFAIL)
         }
+        #[cfg(unix)]
         supervisor::SupervisorHostOutcome::Refused {
             reason: supervisor::SupervisorBootRefusal::AdmissionWaitUnverifiable,
         } => {
@@ -299,7 +321,7 @@ fn render_supervisor_host_outcome(outcome: supervisor::SupervisorHostOutcome) ->
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn exit_code_for_shutdown_cause(cause: supervisor::ShutdownCause) -> u8 {
     match cause {
         supervisor::ShutdownCause::Sync(supervisor::SyncFailureKind::Conflict) => 2,
@@ -314,12 +336,12 @@ fn exit_code_for_shutdown_cause(cause: supervisor::ShutdownCause) -> u8 {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn unavailable() -> ExitCode {
     ExitCode::from(EXIT_UNAVAILABLE)
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn run_supervisor(_options: solstone_core_cli::SupervisorOptions) -> ExitCode {
     unavailable()
 }
@@ -354,7 +376,7 @@ fn run_brain_owner(_command: JournalBrainOwnerCommand) -> ExitCode {
     unavailable()
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn run_heartbeat(force: bool) -> ExitCode {
     match resolve_process_journal_path() {
         Ok(resolved) => heartbeat::run(&resolved.path, force),
@@ -362,7 +384,7 @@ fn run_heartbeat(force: bool) -> ExitCode {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn run_heartbeat(_force: bool) -> ExitCode {
     unavailable()
 }
@@ -390,7 +412,30 @@ fn run_service(outcome: ServiceParseOutcome) -> ExitCode {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn run_service(outcome: ServiceParseOutcome) -> ExitCode {
+    match outcome {
+        ServiceParseOutcome::Dispatch(ServiceAction::Logs { follow }) => {
+            service_logs::run(solstone_core_cli::ServiceLogsArgs { follow })
+        }
+        ServiceParseOutcome::Dispatch(action) => service_windows::run(action),
+        ServiceParseOutcome::Exit {
+            code,
+            stdout,
+            stderr,
+        } => {
+            if let Some(stdout) = stdout {
+                print!("{stdout}");
+            }
+            if let Some(stderr) = stderr {
+                eprint!("{}", render_service_diagnostic(&stderr));
+            }
+            ExitCode::from(code)
+        }
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
 fn run_service(outcome: ServiceParseOutcome) -> ExitCode {
     match outcome {
         ServiceParseOutcome::Dispatch(ServiceAction::Logs { follow }) => {
@@ -414,8 +459,38 @@ fn run_service(outcome: ServiceParseOutcome) -> ExitCode {
 }
 
 fn main() -> ExitCode {
-    install_logger();
     let args: Vec<_> = env::args_os().skip(1).collect();
+    #[cfg(windows)]
+    let installed_task = match service_windows::admit_task_action(&args) {
+        Ok(action) => action,
+        Err(error) => {
+            eprintln!("windows service admission failed: {error}");
+            return ExitCode::from(EXIT_HOSTED_SERVICE_ADMISSION_REFUSED);
+        }
+    };
+    #[cfg(windows)]
+    let admitted = match solstone_core_system::process::receive_windows_launch() {
+        Ok(admitted) => admitted,
+        Err(error) => {
+            eprintln!("journal process admission failed: {error}");
+            return ExitCode::from(EXIT_HOSTED_SERVICE_ADMISSION_REFUSED);
+        }
+    };
+    #[cfg(windows)]
+    if let Some(action) = installed_task {
+        if admitted.is_some() {
+            eprintln!("windows installed task cannot also be an admitted child launch");
+            return ExitCode::from(EXIT_HOSTED_SERVICE_ADMISSION_REFUSED);
+        }
+        return service_capture_windows::run_installed(&action.journal, || {
+            install_logger();
+            match evaluate_args(&action.arguments) {
+                Ok(Command::Supervisor(options)) => run_supervisor(options),
+                _ => ExitCode::from(EXIT_HOSTED_SERVICE_ADMISSION_REFUSED),
+            }
+        });
+    }
+    install_logger();
     match evaluate_args(&args) {
         Ok(Command::Version) => {
             print!("{}", version_line(env!("CARGO_PKG_VERSION")));
@@ -510,7 +585,11 @@ fn main() -> ExitCode {
         Ok(Command::Body(command)) => run_body(command),
         Ok(Command::Transfer(command)) => run_transfer(command),
         Ok(Command::RetiredMover(message)) => run_retired_mover(message),
-        Ok(Command::Transcribe(options)) => run_transcribe(options),
+        Ok(Command::Transcribe(options)) => run_transcribe(
+            options,
+            #[cfg(windows)]
+            admitted.as_ref(),
+        ),
         Ok(Command::Think(args)) => run_storage_ops_verb("think", args, |arguments, journal| {
             // Only the whole-day lifecycle (the sole caller of `sense_batch`)
             // needs a speakers-analyze generation; narrower modes (`--segment`,
@@ -518,12 +597,18 @@ fn main() -> ExitCode {
             // `--segments`, `--dry-run`) never reach it and must not be forced
             // to contend for a lease they don't need.
             if !solstone_core_think_cli::requires_daily_lifecycle(arguments) {
-                let run = solstone_core_think_cli::run_cli(arguments, journal, &BTreeMap::new());
+                let run = solstone_core_think_cli::run_cli(
+                    arguments,
+                    journal,
+                    &solstone_core_system::process::ChildLaunchContext::default(),
+                );
                 return (run.stdout, run.stderr, run.exit_code);
             }
             let generation = match solstone_core_transcribe::enter_speakers_analyze_generation(
                 journal,
                 solstone_core_transcribe::SpeakersAnalyzeOwnerRole::Think,
+                #[cfg(windows)]
+                admitted.as_ref(),
             ) {
                 Ok(generation) => generation,
                 Err(error) => {
@@ -534,7 +619,7 @@ fn main() -> ExitCode {
                     );
                 }
             };
-            let sense_child_environment = generation.inheritance_environment();
+            let sense_child_environment = generation.child_launch_context();
             let run =
                 solstone_core_think_cli::run_cli(arguments, journal, &sense_child_environment);
             drop(generation);
@@ -557,7 +642,11 @@ fn main() -> ExitCode {
         Ok(Command::Importer(args)) => run_importer(args),
         Ok(Command::Segment(args)) => run_segment(args),
         Ok(Command::Backup(args)) => run_backup(args),
-        Ok(Command::Maintenance(args)) => run_maintenance(args),
+        Ok(Command::Maintenance(args)) => run_maintenance(
+            args,
+            #[cfg(windows)]
+            admitted.as_ref(),
+        ),
         Ok(Command::TalentWorker(args)) => run_talent_worker(args),
         Ok(Command::ParentLossCoordinator(args)) => run_parent_loss_coordinator(args),
         Ok(Command::Reprocess(args)) => run_reprocess(args),
@@ -581,7 +670,11 @@ fn main() -> ExitCode {
             print!("{INSTALL_PROVIDER_HELP}");
             ExitCode::SUCCESS
         }
-        Ok(Command::Convey(options)) => run_convey(options),
+        Ok(Command::Convey(options)) => run_convey(
+            options,
+            #[cfg(windows)]
+            admitted.as_ref(),
+        ),
         Ok(Command::ConveyHelp) => {
             print!("{CONVEY_HELP}");
             ExitCode::SUCCESS
@@ -602,7 +695,11 @@ fn main() -> ExitCode {
             ExitCode::from(2)
         }
         Ok(Command::Grab(command)) => run_grab(command),
-        Ok(Command::Spl(command)) => run_spl_process(command),
+        Ok(Command::Spl(command)) => run_spl_process(
+            command,
+            #[cfg(windows)]
+            admitted.as_ref(),
+        ),
         Ok(Command::SplUsage(error)) => {
             eprint!("{SPL_USAGE}");
             eprintln!("journal spl: error: {}", error.0);
@@ -612,7 +709,11 @@ fn main() -> ExitCode {
             print!("{SPL_HELP}");
             ExitCode::SUCCESS
         }
-        Ok(Command::Mcp(command)) => run_mcp_process(command),
+        Ok(Command::Mcp(command)) => run_mcp_process(
+            command,
+            #[cfg(windows)]
+            admitted.as_ref(),
+        ),
         Ok(Command::McpUsage(error)) => {
             eprint!("{MCP_USAGE}");
             eprintln!("journal mcp: error: {}", error.0);
@@ -622,13 +723,21 @@ fn main() -> ExitCode {
             print!("{MCP_HELP}");
             ExitCode::SUCCESS
         }
-        Ok(Command::Sense(options)) => run_sense(options),
+        Ok(Command::Sense(options)) => run_sense(
+            options,
+            #[cfg(windows)]
+            admitted.as_ref(),
+        ),
         Ok(Command::SenseUsage) => render_usage_error(SENSE_USAGE, "journal sense"),
         Ok(Command::SenseHelp) => {
             print!("{SENSE_HELP}");
             ExitCode::SUCCESS
         }
-        Ok(Command::Cortex(options)) => run_cortex_service(options),
+        Ok(Command::Cortex(options)) => run_cortex_service(
+            options,
+            #[cfg(windows)]
+            admitted.as_ref(),
+        ),
         Ok(Command::CortexUsage(error)) => {
             eprint!("{CORTEX_USAGE}");
             eprintln!("journal cortex: error: {}", error.0);
@@ -939,7 +1048,10 @@ fn run_grab_request(options: GrabOptions) -> ExitCode {
     }
 }
 
-fn run_transcribe(options: TranscribeOptions) -> ExitCode {
+fn run_transcribe(
+    options: TranscribeOptions,
+    #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+) -> ExitCode {
     let journal = match resolve_process_journal_path() {
         Ok(journal) => journal,
         Err(error) => {
@@ -955,7 +1067,13 @@ fn run_transcribe(options: TranscribeOptions) -> ExitCode {
                 .unwrap_or_default()
         );
     };
-    match solstone_core_transcribe::run_cli(options.arguments, &journal.path, &mut on_day) {
+    match solstone_core_transcribe::run_cli(
+        options.arguments,
+        &journal.path,
+        &mut on_day,
+        #[cfg(windows)]
+        admitted,
+    ) {
         Ok(result) => {
             if let Some(summary) = result.summary {
                 println!("{summary}");
@@ -1057,14 +1175,45 @@ fn run_backup(args: Vec<OsString>) -> ExitCode {
     })
 }
 
-fn run_maintenance(args: Vec<OsString>) -> ExitCode {
+fn run_maintenance(
+    args: Vec<OsString>,
+    #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+) -> ExitCode {
     run_storage_ops_verb("maintenance", args, |arguments, journal| {
+        #[cfg(windows)]
+        let _speakers_generation = if solstone_core_maintenance::is_discovery_run(arguments) {
+            match solstone_core_transcribe::enter_speakers_analyze_generation(
+                journal,
+                solstone_core_transcribe::SpeakersAnalyzeOwnerRole::Maintenance,
+                admitted,
+            ) {
+                Ok(generation) => Some(generation),
+                Err(error) => {
+                    return (
+                        String::new(),
+                        format!("{error}\n"),
+                        i32::from(EXIT_TEMPFAIL),
+                    );
+                }
+            }
+        } else {
+            None
+        };
+        #[cfg(windows)]
+        if let Some(generation) = _speakers_generation {
+            let run = solstone_core_maintenance::run_cli_with_discovery_generation(
+                arguments,
+                journal,
+                &generation.child_launch_context(),
+            );
+            return (run.stdout, run.stderr, run.exit_code);
+        }
         let run = solstone_core_maintenance::run_cli(arguments, journal);
         (run.stdout, run.stderr, run.exit_code)
     })
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn run_talent_worker(args: Vec<OsString>) -> ExitCode {
     let arguments = match require_utf8_argv("talent worker", &args) {
         Ok(arguments) => arguments,
@@ -1074,6 +1223,7 @@ fn run_talent_worker(args: Vec<OsString>) -> ExitCode {
         Ok(journal) => journal.path,
         Err(error) => return print_journal_error(error),
     };
+    #[cfg(unix)]
     if let Err(error) = acknowledge_hosted_child_admission(&journal) {
         eprintln!("talent worker parent-loss admission failed: {error}");
         return ExitCode::from(EXIT_TEMPFAIL);
@@ -1081,7 +1231,7 @@ fn run_talent_worker(args: Vec<OsString>) -> ExitCode {
     solstone_core_talent_runtime::run_worker(&arguments, &journal)
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn run_talent_worker(_args: Vec<OsString>) -> ExitCode {
     unavailable()
 }
@@ -1380,8 +1530,11 @@ fn print_peer_export_summary(report: &solstone_core_transfer::PeerExportReport) 
     }
 }
 
-#[cfg(unix)]
-fn run_convey(options: ConveyOptions) -> ExitCode {
+#[cfg(any(unix, windows))]
+fn run_convey(
+    options: ConveyOptions,
+    #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+) -> ExitCode {
     let journal = match resolve_journal_config_path(options.journal_override) {
         Ok(line) => line.path,
         Err(error) => {
@@ -1389,24 +1542,48 @@ fn run_convey(options: ConveyOptions) -> ExitCode {
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
+    // Supervised Windows web helpers borrow the one supervisor generation.
+    // Validate the selected journal before service admission or readiness; the
+    // hosted runtime retains its own clone through every outstanding helper.
+    #[cfg(windows)]
+    let _speakers_generation = match solstone_core_transcribe::enter_speakers_analyze_generation(
+        &journal,
+        solstone_core_transcribe::SpeakersAnalyzeOwnerRole::Convey,
+        admitted,
+    ) {
+        Ok(generation) => generation,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
     let service_journal = journal.clone();
-    run_hosted_service(&journal, HostedServiceKind::Convey, move |parent| {
-        match solstone_core_convey_shell::run_convey_with_hosted_parent(
+    run_hosted_service(
+        &journal,
+        HostedServiceKind::Convey,
+        #[cfg(windows)]
+        admitted,
+        move |parent| match solstone_core_convey_shell::run_convey_with_hosted_parent(
             service_journal,
             options.port,
             parent,
+            #[cfg(windows)]
+            &_speakers_generation.child_launch_context(),
         ) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("{error}");
                 ExitCode::from(EXIT_TEMPFAIL)
             }
-        }
-    })
+        },
+    )
 }
 
-#[cfg(not(unix))]
-fn run_convey(_options: ConveyOptions) -> ExitCode {
+#[cfg(not(any(unix, windows)))]
+fn run_convey(
+    _options: ConveyOptions,
+    #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+) -> ExitCode {
     unavailable()
 }
 
@@ -4905,15 +5082,28 @@ fn commit_config_error_exit(error: &CommitConfigError) -> u8 {
     }
 }
 
-fn run_spl_process(command: SplCommand) -> ExitCode {
+fn run_spl_process(
+    command: SplCommand,
+    #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+) -> ExitCode {
     match command {
-        SplCommand::Service(options) => run_spl_service(options),
+        SplCommand::Service(options) => run_spl_service(
+            options,
+            #[cfg(windows)]
+            admitted,
+        ),
     }
 }
 
-fn run_mcp_process(command: McpCommand) -> ExitCode {
+fn run_mcp_process(
+    command: McpCommand,
+    #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+) -> ExitCode {
     match command {
-        McpCommand::Service => run_mcp_service(),
+        McpCommand::Service => run_mcp_service(
+            #[cfg(windows)]
+            admitted,
+        ),
         McpCommand::Status => run_mcp_status(),
         McpCommand::Token(command) => run_mcp_token(command),
         McpCommand::Pairing(command) => run_mcp_pairing(command),
@@ -4922,7 +5112,9 @@ fn run_mcp_process(command: McpCommand) -> ExitCode {
 }
 
 #[cfg(all(unix, feature = "journal-mcp-endpoint"))]
-fn run_mcp_service() -> ExitCode {
+fn run_mcp_service(
+    #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+) -> ExitCode {
     let journal = match resolve_process_journal_path() {
         Ok(journal) => journal,
         Err(error) => {
@@ -4931,19 +5123,28 @@ fn run_mcp_service() -> ExitCode {
         }
     };
     let service_journal = journal.path.clone();
-    run_hosted_service(&journal.path, HostedServiceKind::Mcp, move |parent| {
-        match solstone_core::run_native_service_with_hosted_parent(service_journal, parent) {
+    run_hosted_service(
+        &journal.path,
+        HostedServiceKind::Mcp,
+        #[cfg(windows)]
+        admitted,
+        move |parent| match solstone_core::run_native_service_with_hosted_parent(
+            service_journal,
+            parent,
+        ) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("mcp service failed: {}", error.class());
                 ExitCode::from(EXIT_TEMPFAIL)
             }
-        }
-    })
+        },
+    )
 }
 
 #[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
-fn run_mcp_service() -> ExitCode {
+fn run_mcp_service(
+    #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+) -> ExitCode {
     eprintln!("journal mcp service is not compiled into this build");
     ExitCode::from(EXIT_UNAVAILABLE)
 }
@@ -5210,8 +5411,11 @@ const fn oauth_store_error_exit(error: &OAuthStoreError) -> u8 {
     }
 }
 
-#[cfg(unix)]
-fn run_spl_service(options: ServiceOptions) -> ExitCode {
+#[cfg(any(unix, windows))]
+fn run_spl_service(
+    options: ServiceOptions,
+    #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+) -> ExitCode {
     let journal = match resolve_process_journal_path() {
         Ok(journal) => journal,
         Err(error) => {
@@ -5220,29 +5424,42 @@ fn run_spl_service(options: ServiceOptions) -> ExitCode {
         }
     };
     let service_journal = journal.path.clone();
-    run_hosted_service(&journal.path, HostedServiceKind::Spl, move |parent| {
-        let verbosity = solstone_core_spl::Verbosity::from_flags(options.verbose, options.debug);
-        match solstone_core_spl::run_native_service_with_hosted_parent(
-            service_journal,
-            verbosity,
-            parent,
-        ) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("spl service failed: {}", error.class());
-                ExitCode::from(EXIT_TEMPFAIL)
+    run_hosted_service(
+        &journal.path,
+        HostedServiceKind::Spl,
+        #[cfg(windows)]
+        admitted,
+        move |parent| {
+            let verbosity =
+                solstone_core_spl::Verbosity::from_flags(options.verbose, options.debug);
+            match solstone_core_spl::run_native_service_with_hosted_parent(
+                service_journal,
+                verbosity,
+                parent,
+            ) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(error) => {
+                    eprintln!("spl service failed: {}", error.class());
+                    ExitCode::from(EXIT_TEMPFAIL)
+                }
             }
-        }
-    })
+        },
+    )
 }
 
-#[cfg(not(unix))]
-fn run_spl_service(_options: ServiceOptions) -> ExitCode {
+#[cfg(not(any(unix, windows)))]
+fn run_spl_service(
+    _options: ServiceOptions,
+    #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+) -> ExitCode {
     unavailable()
 }
 
-#[cfg(unix)]
-fn run_sense_service(options: ServiceOptions) -> ExitCode {
+#[cfg(any(unix, windows))]
+fn run_sense_service(
+    options: ServiceOptions,
+    #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+) -> ExitCode {
     let journal = match resolve_process_journal_path() {
         Ok(journal) => journal,
         Err(error) => {
@@ -5256,6 +5473,8 @@ fn run_sense_service(options: ServiceOptions) -> ExitCode {
     let generation = match solstone_core_transcribe::enter_speakers_analyze_generation(
         &journal.path,
         solstone_core_transcribe::SpeakersAnalyzeOwnerRole::Sense,
+        #[cfg(windows)]
+        admitted,
     ) {
         Ok(generation) => generation,
         Err(error) => {
@@ -5265,35 +5484,47 @@ fn run_sense_service(options: ServiceOptions) -> ExitCode {
             return ExitCode::from(error.exit_code() as u8);
         }
     };
-    let sense_child_environment = generation.inheritance_environment();
+    let sense_child_environment = generation.child_launch_context();
     let service_journal = journal.path.clone();
-    run_hosted_service(&journal.path, HostedServiceKind::Sense, move |parent| {
-        let _generation = generation;
-        match solstone_core_sense::run_native_service_with_hosted_parent(
-            service_journal,
-            solstone_core_sense::SenseOptions {
-                verbose: options.verbose,
-                debug: options.debug,
-            },
-            sense_child_environment,
-            parent,
-        ) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("sense service failed: {}", error.class());
-                ExitCode::from(EXIT_TEMPFAIL)
+    run_hosted_service(
+        &journal.path,
+        HostedServiceKind::Sense,
+        #[cfg(windows)]
+        admitted,
+        move |parent| {
+            let _generation = generation;
+            match solstone_core_sense::run_native_service_with_hosted_parent(
+                service_journal,
+                solstone_core_sense::SenseOptions {
+                    verbose: options.verbose,
+                    debug: options.debug,
+                },
+                sense_child_environment,
+                parent,
+            ) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(error) => {
+                    eprintln!("sense service failed: {}", error.class());
+                    ExitCode::from(EXIT_TEMPFAIL)
+                }
             }
-        }
-    })
+        },
+    )
 }
 
-#[cfg(not(unix))]
-fn run_sense_service(_options: ServiceOptions) -> ExitCode {
+#[cfg(not(any(unix, windows)))]
+fn run_sense_service(
+    _options: ServiceOptions,
+    #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+) -> ExitCode {
     unavailable()
 }
 
-#[cfg(unix)]
-fn run_cortex_service(options: ServiceOptions) -> ExitCode {
+#[cfg(any(unix, windows))]
+fn run_cortex_service(
+    options: ServiceOptions,
+    #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+) -> ExitCode {
     let journal = match resolve_process_journal_path() {
         Ok(journal) => journal,
         Err(error) => {
@@ -5302,42 +5533,58 @@ fn run_cortex_service(options: ServiceOptions) -> ExitCode {
         }
     };
     let service_journal = journal.path.clone();
-    run_hosted_service(&journal.path, HostedServiceKind::Cortex, move |parent| {
-        let runtime = match tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-        {
-            Ok(runtime) => runtime,
-            Err(_) => return ExitCode::from(EXIT_TEMPFAIL),
-        };
-        match runtime.block_on(solstone_core_cortex::run_native_service_with_hosted_parent(
-            service_journal,
-            solstone_core_cortex::CortexOptions {
-                verbose: options.verbose,
-                debug: options.debug,
-            },
-            parent,
-        )) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("cortex service failed: {error}");
-                ExitCode::from(EXIT_TEMPFAIL)
+    run_hosted_service(
+        &journal.path,
+        HostedServiceKind::Cortex,
+        #[cfg(windows)]
+        admitted,
+        move |parent| {
+            let runtime = match tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(runtime) => runtime,
+                Err(_) => return ExitCode::from(EXIT_TEMPFAIL),
+            };
+            match runtime.block_on(solstone_core_cortex::run_native_service_with_hosted_parent(
+                service_journal,
+                solstone_core_cortex::CortexOptions {
+                    verbose: options.verbose,
+                    debug: options.debug,
+                },
+                parent,
+            )) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(error) => {
+                    eprintln!("cortex service failed: {error}");
+                    ExitCode::from(EXIT_TEMPFAIL)
+                }
             }
-        }
-    })
+        },
+    )
 }
 
-#[cfg(not(unix))]
-fn run_cortex_service(_options: ServiceOptions) -> ExitCode {
+#[cfg(not(any(unix, windows)))]
+fn run_cortex_service(
+    _options: ServiceOptions,
+    #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+) -> ExitCode {
     unavailable()
 }
 
-fn run_sense(options: SenseOptions) -> ExitCode {
+fn run_sense(
+    options: SenseOptions,
+    #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+) -> ExitCode {
     let Some(day) = options.day.clone() else {
-        return run_sense_service(ServiceOptions {
-            verbose: options.verbose,
-            debug: options.debug,
-        });
+        return run_sense_service(
+            ServiceOptions {
+                verbose: options.verbose,
+                debug: options.debug,
+            },
+            #[cfg(windows)]
+            admitted,
+        );
     };
     let journal = match resolve_process_journal_path() {
         Ok(journal) => journal,
@@ -5355,6 +5602,8 @@ fn run_sense(options: SenseOptions) -> ExitCode {
     let _generation = match solstone_core_transcribe::enter_speakers_analyze_generation(
         &journal.path,
         solstone_core_transcribe::SpeakersAnalyzeOwnerRole::Sense,
+        #[cfg(windows)]
+        admitted,
     ) {
         Ok(generation) => generation,
         Err(error) => {
@@ -5383,7 +5632,7 @@ fn run_sense(options: SenseOptions) -> ExitCode {
     match solstone_core_sense::batch::run_batch_with_environment(
         &journal.path,
         &request,
-        &_generation.inheritance_environment(),
+        &_generation.child_launch_context(),
     ) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {

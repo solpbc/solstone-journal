@@ -20,12 +20,13 @@ use std::path::Path;
 
 use serde_json::{Map, Value, json};
 use solstone_core_assets::canonical_host_pair;
-use solstone_core_local::install::ced_readiness::{
-    CED_UNAVAILABLE_GUIDANCE, CedVerdict, evaluate_ced_readiness,
-};
-use solstone_core_local::install::ced_runtime::{
-    CED_ANALYZE_TIMEOUT, CedAnalyzeProgram, invoke_ced_analyze,
-};
+use solstone_core_local::install::ced_readiness::{CED_UNAVAILABLE_GUIDANCE, CedVerdict};
+use solstone_core_local::install::ced_runtime::{CED_ANALYZE_TIMEOUT, CedAnalyzeProgram};
+
+#[cfg(not(windows))]
+use solstone_core_local::install::ced_readiness::evaluate_ced_readiness;
+#[cfg(not(windows))]
+use solstone_core_local::install::ced_runtime::invoke_ced_analyze;
 
 pub const SCORE_FLOOR: f64 = 0.1;
 pub const WINDOW_S: usize = 10;
@@ -52,7 +53,11 @@ pub fn tag_audio(audio: &[f32], journal_path: &Path) -> Option<Value> {
     // classify request: the verdict is the gate, not a second path
     // derivation, and transcribe invokes this once per audio file
     // (`process_one`), so the extra helper invocation is not a hot path.
-    tag_audio_with_readiness(audio, evaluate_ced_readiness(journal_path, os, arch))
+    #[cfg(windows)]
+    let readiness = solstone_core_check::evaluate_host_ced(journal_path, os, arch);
+    #[cfg(not(windows))]
+    let readiness = evaluate_ced_readiness(journal_path, os, arch);
+    tag_audio_with_readiness(audio, readiness)
 }
 
 /// Tag PCM using an already-computed CED verdict.
@@ -136,7 +141,23 @@ fn classify_windows(
             .map(|(start, end)| json!({"start_sample": start, "end_sample": end}))
             .collect::<Vec<_>>(),
     });
-    let response = match invoke_ced_analyze(program, &request, CED_ANALYZE_TIMEOUT) {
+    #[cfg(windows)]
+    let temporary = std::sync::Arc::new(temporary);
+    #[cfg(windows)]
+    let mut resources = solstone_core_check::ced_windows::BoundedHelperResources::new();
+    #[cfg(windows)]
+    resources.retain(temporary.clone());
+    #[cfg(windows)]
+    let result = solstone_core_check::ced_windows::invoke(
+        program,
+        &[],
+        &request,
+        CED_ANALYZE_TIMEOUT,
+        resources,
+    );
+    #[cfg(not(windows))]
+    let result = invoke_ced_analyze(program, &request, CED_ANALYZE_TIMEOUT);
+    let response = match result {
         Ok(response) => response,
         Err(error) => {
             log::warn!("sound tagging failed: {error}");

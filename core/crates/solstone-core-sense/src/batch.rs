@@ -4,7 +4,6 @@
 //! Historical-day scanning and dispatch for `journal sense --day`.
 
 use std::collections::BTreeMap;
-use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -120,14 +119,18 @@ fn selected_segments<'a>(
 
 /// Run one finite historical-day batch.
 pub fn run_batch(journal: &Path, request: &BatchRequest) -> Result<(), BatchError> {
-    run_batch_with_environment(journal, request, &BTreeMap::new())
+    run_batch_with_environment(
+        journal,
+        request,
+        &solstone_core_system::process::ChildLaunchContext::default(),
+    )
 }
 
 /// Run one finite historical-day batch with scoped native-child environment.
 pub fn run_batch_with_environment(
     journal: &Path,
     request: &BatchRequest,
-    child_environment: &BTreeMap<OsString, OsString>,
+    child_environment: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<(), BatchError> {
     run_batch_with_environment_and_timeout(journal, request, child_environment, None)
 }
@@ -138,7 +141,7 @@ pub fn run_batch_with_environment(
 pub fn run_batch_with_environment_and_timeout(
     journal: &Path,
     request: &BatchRequest,
-    child_environment: &BTreeMap<OsString, OsString>,
+    child_environment: &solstone_core_system::process::ChildLaunchContext,
     timeout: Option<Duration>,
 ) -> Result<(), BatchError> {
     run_batch_with_environment_and_timeout_with_marker_policy(
@@ -155,7 +158,7 @@ pub fn run_batch_with_environment_and_timeout(
 pub fn run_batch_for_whole_day_with_environment_and_timeout(
     journal: &Path,
     request: &BatchRequest,
-    child_environment: &BTreeMap<OsString, OsString>,
+    child_environment: &solstone_core_system::process::ChildLaunchContext,
     timeout: Option<Duration>,
 ) -> Result<(), BatchError> {
     run_batch_with_environment_and_timeout_with_marker_policy(
@@ -170,7 +173,7 @@ pub fn run_batch_for_whole_day_with_environment_and_timeout(
 fn run_batch_with_environment_and_timeout_with_marker_policy(
     journal: &Path,
     request: &BatchRequest,
-    child_environment: &BTreeMap<OsString, OsString>,
+    child_environment: &solstone_core_system::process::ChildLaunchContext,
     timeout: Option<Duration>,
     marker_policy: BatchMarkerPolicy,
 ) -> Result<(), BatchError> {
@@ -466,7 +469,7 @@ pub fn process_day(
         journal,
         request,
         modality_filter,
-        &BTreeMap::new(),
+        &solstone_core_system::process::ChildLaunchContext::default(),
         None,
         BatchMarkerPolicy::AdvanceStream,
     )
@@ -476,7 +479,7 @@ fn process_day_with_environment(
     journal: &Path,
     request: &BatchRequest,
     modality_filter: Option<ReprocessKind>,
-    child_environment: &BTreeMap<OsString, OsString>,
+    child_environment: &solstone_core_system::process::ChildLaunchContext,
     deadline: Option<BatchDeadline>,
     marker_policy: BatchMarkerPolicy,
 ) -> Result<(), BatchError> {

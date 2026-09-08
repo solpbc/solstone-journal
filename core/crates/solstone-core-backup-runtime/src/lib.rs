@@ -18,6 +18,7 @@
 //! ```
 
 pub mod destination;
+pub mod destination_admission;
 pub mod engine;
 pub mod hosted_runtime;
 pub mod install;
@@ -31,8 +32,16 @@ pub mod rotation;
 pub mod runner;
 pub mod s3_wipe;
 pub mod teardown;
+#[cfg(windows)]
+pub mod windows_cleanup;
+mod windows_tool;
 
 pub use destination::{DestinationStatus, validate_destination};
+#[cfg(any(test, feature = "test-hooks", feature = "test-support"))]
+pub use destination_admission::with_forced_admission_failure;
+pub use destination_admission::{
+    AdmittedDestination, DestinationAdmissionError, admit_restore_destination,
+};
 pub use engine::{
     ARCHIVE_TAG, AdmittedCapability, ArchiveCheckResult, ArchiveFileVerdict, BACKUP_EXCLUDES,
     BackupResult, BackupServices, Clock, ClosedToolError, JournalMaintenance,
@@ -77,3 +86,6 @@ pub use teardown::{TeardownResult, teardown_backup};
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
 pub mod test_support;
+
+mod restic_paths;
+pub use restic_paths::{restic_filesystem_path, restic_tree_path};

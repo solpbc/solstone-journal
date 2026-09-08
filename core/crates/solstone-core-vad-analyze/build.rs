@@ -13,11 +13,13 @@ fn main() {
     // uses $ORIGIN, Mach-O uses @loader_path. Both resolve against the
     // binary itself, not the cwd.
     let rpath = match target_os.as_str() {
+        // Windows loads the signed private runtime explicitly, before any ORT API.
+        "windows" => return,
         "linux" => "$ORIGIN/../lib/solstone-core-speakers-analyze",
         "macos" => "@loader_path/../lib/solstone-core-speakers-analyze",
         other => {
             panic!(
-                "unsupported solstone-core-vad-analyze target OS {other:?}; expected linux or macos"
+                "unsupported solstone-core-vad-analyze target OS {other:?}; expected linux, macos or windows"
             )
         }
     };

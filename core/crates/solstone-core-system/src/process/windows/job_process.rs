@@ -103,19 +103,54 @@ fn map_wait_to_exit(
     }
 }
 
+// Test-only faults fire at an actual post-CreateProcess boundary. They leave
+// the original handle untouched so the normal failure carrier must retain it.
+#[cfg(all(windows, feature = "test-hooks"))]
+thread_local! {
+    static FINALIZATION_FAULT: std::cell::Cell<Option<&'static str>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(all(windows, feature = "test-hooks"))]
+pub(super) fn with_finalization_fault<T>(stage: &'static str, run: impl FnOnce() -> T) -> T {
+    struct Restore(Option<&'static str>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            FINALIZATION_FAULT.with(|slot| slot.set(self.0));
+        }
+    }
+    let _restore = Restore(FINALIZATION_FAULT.with(|slot| slot.replace(Some(stage))));
+    run()
+}
+
+#[cfg(windows)]
+pub(super) fn finalization_boundary(_stage: &'static str) -> io::Result<()> {
+    #[cfg(feature = "test-hooks")]
+    if FINALIZATION_FAULT.with(|slot| {
+        if slot.get() == Some(_stage) {
+            slot.set(None);
+            true
+        } else {
+            false
+        }
+    }) {
+        return Err(io::Error::other(format!(
+            "injected native finalization failure: {_stage}"
+        )));
+    }
+    Ok(())
+}
+
 fn run_create_window<T>(
     pipes: &mut PipedStdio,
     pipe_api: &impl WindowsPipeApi,
     create: impl FnOnce(&PipedStdio) -> io::Result<T>,
-) -> io::Result<T> {
+) -> io::Result<(T, io::Result<()>)> {
     pipes.make_child_ends_inheritable(pipe_api)?;
     let created = create(pipes);
     let cleanup = pipes.close_child_ends(pipe_api);
     match created {
-        Ok(created) => {
-            cleanup?;
-            Ok(created)
-        }
+        // Retain the successful CreateProcess tuple even if endpoint cleanup fails.
+        Ok(created) => Ok((created, cleanup)),
         Err(error) => {
             let _ = cleanup;
             Err(error)
@@ -140,7 +175,7 @@ pub(super) struct WindowsJobProcess {
     #[cfg_attr(not(windows), allow(dead_code))]
     identity: ProcessInstance,
     #[cfg_attr(not(windows), allow(dead_code))]
-    pipes: PipedStdio,
+    pipes: Option<PipedStdio>,
     #[cfg_attr(not(windows), allow(dead_code))]
     parent_stdin_open: bool,
     hard_stop_issued: bool,
@@ -150,6 +185,16 @@ impl WindowsJobProcess {
     #[cfg(windows)]
     pub(super) fn identity(&self) -> ProcessInstance {
         self.identity
+    }
+
+    #[cfg(windows)]
+    pub(super) fn root_handle(&self) -> std::os::windows::io::BorrowedHandle<'_> {
+        // SAFETY: the CreateProcessW root handle stays owned by self throughout
+        // this borrow. It is never reopened by PID or handed to a descendant.
+        #[allow(unsafe_code)]
+        unsafe {
+            std::os::windows::io::BorrowedHandle::borrow_raw(self.root.raw())
+        }
     }
 
     fn job(&self) -> io::Result<&JobHandle> {
@@ -295,8 +340,12 @@ impl WindowsJobProcess {
     pub(super) fn take_output_files(&mut self) -> (std::fs::File, std::fs::File) {
         use std::os::windows::io::{FromRawHandle, RawHandle};
 
-        let stdout = self.pipes.parent_stdout_read.take_raw();
-        let stderr = self.pipes.parent_stderr_read.take_raw();
+        let pipes = self
+            .pipes
+            .as_mut()
+            .expect("managed launch owns piped stdio");
+        let stdout = pipes.parent_stdout_read.take_raw();
+        let stderr = pipes.parent_stderr_read.take_raw();
         // SAFETY: `take_raw` transfers each uniquely owned pipe handle to its
         // corresponding File, which becomes its sole closer.
         #[allow(unsafe_code)]
@@ -319,11 +368,37 @@ impl WindowsJobProcess {
         self.parent_stdin_open = false;
         use std::os::windows::io::{FromRawHandle, RawHandle};
 
-        let stdin = self.pipes.parent_stdin_write.take_raw();
+        let stdin = self.pipes.as_mut()?.parent_stdin_write.take_raw();
         // SAFETY: `take_raw` transfers this uniquely owned pipe handle to the
         // File, which becomes its sole closer.
         #[allow(unsafe_code)]
         Some(unsafe { std::fs::File::from_raw_handle(stdin as RawHandle) })
+    }
+
+    #[cfg(windows)]
+    pub(super) fn take_command_files(&mut self, piped: [bool; 3]) -> [Option<std::fs::File>; 3] {
+        use std::os::windows::io::FromRawHandle;
+        let input = if piped[0] {
+            self.take_input_file()
+        } else {
+            None
+        };
+        let pipes = self.pipes.as_mut().expect("command owns stdio endpoints");
+        let output = if piped[1] {
+            // SAFETY: take_raw transfers the unique synchronous pipe ownership.
+            #[allow(unsafe_code)]
+            Some(unsafe { std::fs::File::from_raw_handle(pipes.parent_stdout_read.take_raw()) })
+        } else {
+            None
+        };
+        let error = if piped[2] {
+            // SAFETY: take_raw transfers the unique synchronous pipe ownership.
+            #[allow(unsafe_code)]
+            Some(unsafe { std::fs::File::from_raw_handle(pipes.parent_stderr_read.take_raw()) })
+        } else {
+            None
+        };
+        [input, output, error]
     }
 
     #[cfg(windows)]
@@ -365,8 +440,8 @@ fn get_process_birth(process: &RootProcessHandle) -> io::Result<ProcessBirth> {
 }
 
 struct CreatedWindowsProcess {
-    root: RootProcessHandle,
-    thread: PrimaryThreadHandle,
+    root: Option<RootProcessHandle>,
+    thread: Option<PrimaryThreadHandle>,
     pid: u32,
 }
 
@@ -375,38 +450,172 @@ struct FinalizedWindowsProcess {
     identity: ProcessInstance,
 }
 
+struct FinalizeCreatedError {
+    error: io::Error,
+    created: CreatedWindowsProcess,
+}
+
+impl std::fmt::Debug for FinalizeCreatedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FinalizeCreatedError")
+            .field("error", &self.error)
+            .field("pid", &self.created.pid)
+            .finish()
+    }
+}
+impl std::fmt::Display for FinalizeCreatedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.error.fmt(f)
+    }
+}
+
 fn finalize_created_process(
     mut created: CreatedWindowsProcess,
     pipes: &mut PipedStdio,
     close_thread: impl FnOnce(&mut PrimaryThreadHandle) -> io::Result<()>,
     close_parent_stdin: impl FnOnce(&mut PipedStdio) -> io::Result<()>,
     process_birth: impl FnOnce(&RootProcessHandle) -> io::Result<ProcessBirth>,
-) -> io::Result<FinalizedWindowsProcess> {
-    close_thread(&mut created.thread).map_err(|error| {
-        io::Error::new(
-            error.kind(),
-            format!("closing the primary thread handle failed: {error}"),
-        )
-    })?;
-    close_parent_stdin(pipes).map_err(|error| {
-        io::Error::new(
-            error.kind(),
-            format!("closing the parent stdin handle failed: {error}"),
-        )
-    })?;
-    let birth = process_birth(&created.root).map_err(|error| {
-        io::Error::new(
-            error.kind(),
-            format!("capturing the root process birth token failed: {error}"),
-        )
-    })?;
-    Ok(FinalizedWindowsProcess {
-        root: created.root,
-        identity: ProcessInstance {
-            pid: created.pid,
-            birth,
-        },
-    })
+) -> Result<FinalizedWindowsProcess, FinalizeCreatedError> {
+    let finalized = (|| {
+        let thread = created
+            .thread
+            .as_mut()
+            .ok_or_else(|| io::Error::other("CreateProcessW returned no primary thread handle"))?;
+        close_thread(thread).map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!("closing the primary thread handle failed: {error}"),
+            )
+        })?;
+        close_parent_stdin(pipes).map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!("closing the parent stdin handle failed: {error}"),
+            )
+        })?;
+        let root = created
+            .root
+            .as_ref()
+            .ok_or_else(|| io::Error::other("CreateProcessW returned no root handle"))?;
+        if created.pid == 0 {
+            return Err(io::Error::other("CreateProcessW returned no process id"));
+        }
+        process_birth(root).map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!("capturing the root process birth token failed: {error}"),
+            )
+        })
+    })();
+    match finalized {
+        Ok(birth) => Ok(FinalizedWindowsProcess {
+            root: created.root.take().expect("finalization checked root"),
+            identity: ProcessInstance {
+                pid: created.pid,
+                birth,
+            },
+        }),
+        Err(error) => Err(FinalizeCreatedError { error, created }),
+    }
+}
+
+/// Native handles retained when post-create finalization did not establish birth.
+#[cfg(windows)]
+pub(super) struct UnfinalizedWindowsJob {
+    job: JobHandle,
+    created: CreatedWindowsProcess,
+    _pipes: Option<PipedStdio>,
+    _forwarding_stdio: Vec<super::handle::PipeEndHandle>,
+    hard_stop_issued: bool,
+}
+
+#[cfg(windows)]
+impl UnfinalizedWindowsJob {
+    pub(super) fn process_id(&self) -> Option<u32> {
+        (self.created.pid != 0).then_some(self.created.pid)
+    }
+    pub(super) fn is_quiescent(&self) -> io::Result<bool> {
+        if SystemWindowsJobApi.accounting(&self.job)?.active_processes != 0 {
+            return Ok(false);
+        }
+        if let Some(root) = &self.created.root {
+            return Ok(matches!(
+                SystemWindowsProcessControlApi.wait_for_process(root, Duration::ZERO)?,
+                ProcessWait::Signaled
+            ));
+        }
+        Ok(true)
+    }
+    pub(super) fn hard_stop_until(&mut self, deadline: Instant) -> io::Result<()> {
+        if !self.hard_stop_issued {
+            SystemWindowsJobApi.terminate(&self.job, JOB_HARD_STOP_EXIT_CODE)?;
+            self.hard_stop_issued = true;
+        }
+        if let Some(root) = &self.created.root {
+            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "post-create cleanup deadline expired",
+                ));
+            };
+            if !matches!(
+                SystemWindowsProcessControlApi.wait_for_process(root, remaining)?,
+                ProcessWait::Signaled
+            ) {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "post-create root did not signal",
+                ));
+            }
+        }
+        loop {
+            if self.is_quiescent()? {
+                return Ok(());
+            }
+            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "post-create Job cleanup incomplete",
+                ));
+            };
+            std::thread::sleep(remaining.min(Duration::from_millis(20)));
+        }
+    }
+}
+
+#[cfg(windows)]
+pub(super) enum NativeLaunchError {
+    BeforeCreate(io::Error),
+    AfterCreate {
+        source: io::Error,
+        owner: UnfinalizedWindowsJob,
+    },
+}
+#[cfg(windows)]
+impl From<io::Error> for NativeLaunchError {
+    fn from(error: io::Error) -> Self {
+        Self::BeforeCreate(error)
+    }
+}
+#[cfg(windows)]
+impl std::fmt::Debug for NativeLaunchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BeforeCreate(error) => f.debug_tuple("BeforeCreate").field(error).finish(),
+            Self::AfterCreate { source, owner } => f
+                .debug_struct("AfterCreate")
+                .field("source", source)
+                .field("pid", &owner.process_id())
+                .field("identity", &Option::<ProcessInstance>::None)
+                .finish(),
+        }
+    }
+}
+#[cfg(windows)]
+impl std::fmt::Display for NativeLaunchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(self, f)
+    }
 }
 
 #[cfg(windows)]
@@ -415,7 +624,7 @@ trait WindowsCreateProcessApi {
         &self,
         launch_spec: &mut super::launch_spec::WindowsLaunchSpec,
         startup: &WindowsStartupInfo,
-        pipes: Option<&PipedStdio>,
+        stdio: Option<[super::handle::RawWindowsHandle; 3]>,
         inherit_handles: bool,
     ) -> io::Result<CreatedWindowsProcess>;
 }
@@ -429,7 +638,7 @@ impl WindowsCreateProcessApi for SystemWindowsCreateProcessApi {
         &self,
         launch_spec: &mut super::launch_spec::WindowsLaunchSpec,
         startup: &WindowsStartupInfo,
-        pipes: Option<&PipedStdio>,
+        stdio: Option<[super::handle::RawWindowsHandle; 3]>,
         inherit_handles: bool,
     ) -> io::Result<CreatedWindowsProcess> {
         use std::ptr::null;
@@ -439,13 +648,6 @@ impl WindowsCreateProcessApi for SystemWindowsCreateProcessApi {
             EXTENDED_STARTUPINFO_PRESENT, PROCESS_INFORMATION,
         };
 
-        let stdio = pipes.map(|pipes| {
-            [
-                pipes.child_stdin_read().raw(),
-                pipes.child_stdout_write().raw(),
-                pipes.child_stderr_write().raw(),
-            ]
-        });
         let startup_info = startup.as_startup_info(stdio);
         let mut information = PROCESS_INFORMATION::default();
         // SAFETY: every buffer is owned and remains live through the synchronous
@@ -474,11 +676,6 @@ impl WindowsCreateProcessApi for SystemWindowsCreateProcessApi {
             (!information.hProcess.is_null()).then(|| RootProcessHandle::new(information.hProcess));
         let thread =
             (!information.hThread.is_null()).then(|| PrimaryThreadHandle::new(information.hThread));
-        let (Some(root), Some(thread)) = (root, thread) else {
-            return Err(io::Error::other(
-                "CreateProcessW returned a null process handle",
-            ));
-        };
         Ok(CreatedWindowsProcess {
             root,
             thread,
@@ -494,13 +691,33 @@ fn prepare_launch_spec(
     current_directory: Option<&std::path::Path>,
     exact_environment: bool,
 ) -> io::Result<super::launch_spec::WindowsLaunchSpec> {
+    let command = command
+        .iter()
+        .map(std::ffi::OsString::from)
+        .collect::<Vec<_>>();
+    prepare_native_launch_spec(
+        &command,
+        environment_overrides,
+        current_directory,
+        exact_environment,
+    )
+}
+
+#[cfg(windows)]
+fn prepare_native_launch_spec(
+    command: &[std::ffi::OsString],
+    environment_overrides: &std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString>,
+    current_directory: Option<&std::path::Path>,
+    exact_environment: bool,
+) -> io::Result<super::launch_spec::WindowsLaunchSpec> {
     use super::environment::{
         EmptyInheritedWindowsEnvironment, InheritedWindowsEnvironment,
         SystemInheritedWindowsEnvironment, SystemWindowsOrdinalCompare, SystemWindowsWideEncoder,
     };
-    use super::launch_spec::{WindowsLaunchAdapters, prepare_windows_launch_spec};
+    use super::launch_spec::{WindowsLaunchAdapters, prepare_windows_wide_launch_spec};
     use super::resolve::{SystemWindowsCandidateProbe, SystemWindowsDirectoryLookup};
     use super::user_path::SystemWindowsFullPathName;
+    use std::os::windows::ffi::OsStrExt;
 
     let probe = SystemWindowsCandidateProbe;
     let directories = SystemWindowsDirectoryLookup;
@@ -521,9 +738,22 @@ fn prepare_launch_spec(
         inherited_environment,
         wide_encoder: &wide_encoder,
     };
-    let mut launch_spec =
-        prepare_windows_launch_spec(command, environment_overrides, &adapters, &full_path)
-            .map_err(io::Error::other)?;
+    let (program, arguments) = command
+        .split_first()
+        .ok_or_else(|| io::Error::other("empty command"))?;
+    let program = program.encode_wide().collect::<Vec<_>>();
+    let arguments = arguments
+        .iter()
+        .map(|argument| argument.encode_wide().collect())
+        .collect::<Vec<_>>();
+    let mut launch_spec = prepare_windows_wide_launch_spec(
+        &program,
+        &arguments,
+        environment_overrides,
+        &adapters,
+        &full_path,
+    )
+    .map_err(io::Error::other)?;
     if let Some(current_directory) = current_directory {
         use std::os::windows::ffi::OsStrExt;
 
@@ -551,13 +781,15 @@ pub(super) struct WindowsJobLaunchOptions<'a> {
     /// Keep the parent input endpoint only for a bounded helper that will
     /// transfer it immediately to a writer under the same deadline.
     pub(super) retain_parent_stdin: bool,
+    /// Redirect the selected child stream to NUL, matching CommandLaunchRequest.
+    pub(super) null_stdio: [bool; 3],
 }
 
 #[cfg(windows)]
 pub(super) fn launch_windows_job_process(
     command: &[String],
     environment_overrides: &std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString>,
-) -> io::Result<WindowsJobProcess> {
+) -> Result<WindowsJobProcess, NativeLaunchError> {
     launch_windows_job_process_with_options(
         command,
         environment_overrides,
@@ -572,8 +804,21 @@ pub(super) fn launch_windows_job_process_with_options(
     command: &[String],
     environment_overrides: &std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString>,
     options: WindowsJobLaunchOptions<'_>,
-) -> io::Result<WindowsJobProcess> {
-    let mut launch_spec = prepare_launch_spec(
+) -> Result<WindowsJobProcess, NativeLaunchError> {
+    let command = command
+        .iter()
+        .map(std::ffi::OsString::from)
+        .collect::<Vec<_>>();
+    launch_windows_native_job_process(&command, environment_overrides, options)
+}
+
+#[cfg(windows)]
+pub(super) fn launch_windows_native_job_process(
+    command: &[std::ffi::OsString],
+    environment_overrides: &std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString>,
+    options: WindowsJobLaunchOptions<'_>,
+) -> Result<WindowsJobProcess, NativeLaunchError> {
+    let mut launch_spec = prepare_native_launch_spec(
         command,
         environment_overrides,
         options.current_directory,
@@ -585,6 +830,7 @@ pub(super) fn launch_windows_job_process_with_options(
     let startup_api = SystemWindowsStartupInfoApi;
     let job = create_kill_on_close_job_with_limits(&jobs, options.resource_limits)?;
     let mut pipes = PipedStdio::create(&pipe_api)?;
+    pipes.redirect_null(options.null_stdio)?;
     let mut startup = WindowsStartupInfo::new(
         &startup_api,
         &job,
@@ -592,42 +838,223 @@ pub(super) fn launch_windows_job_process_with_options(
         pipes.child_stdout_write(),
         pipes.child_stderr_write(),
     )?;
-    // Operator-approved YAGNI residual: while these exact three child stdio
+    // Operator-approved YAGNI residual: while these exact child stdio
     // handles are inheritable, a concurrent list-less bInheritHandles=TRUE
-    // child can inherit them. Its accidental hold may spend the two-second
-    // bounded drain join once for stdout and once for stderr (about four
-    // seconds total), lose tail log lines, and leave both drain threads plus
-    // their detached join waiters parked until that holder exits. Containment,
-    // Job identity, and the stop ladder do not depend on pipe EOF. Deliberately
+    // child can inherit them. Its accidental hold can exhaust the caller's
+    // shared drain deadline. Pending cleanup then retains the actual I/O workers
+    // and resources until EOF/completion; it never reports those streams reaped.
+    // Containment, Job identity, and the stop ladder do not depend on pipe EOF. Deliberately
     // add no mutex, helper, broker, or other mitigation for this residual.
     let created = run_create_window(&mut pipes, &pipe_api, |pipes| {
         SystemWindowsCreateProcessApi
-            .create_process(&mut launch_spec, &startup, Some(pipes), true)
+            .create_process(
+                &mut launch_spec,
+                &startup,
+                Some([
+                    pipes.child_stdin_read().raw(),
+                    pipes.child_stdout_write().raw(),
+                    pipes.child_stderr_write().raw(),
+                ]),
+                true,
+            )
             .map_err(|error| {
                 io::Error::new(error.kind(), format!("CreateProcessW failed: {error}"))
             })
     });
     startup.delete_with(&startup_api);
-    let finalized = finalize_created_process(
-        created?,
+    let (created, child_end_cleanup) = created?;
+    if let Err(source) = child_end_cleanup {
+        return Err(NativeLaunchError::AfterCreate {
+            source,
+            owner: UnfinalizedWindowsJob {
+                job,
+                created,
+                _pipes: Some(pipes),
+                _forwarding_stdio: Vec::new(),
+                hard_stop_issued: false,
+            },
+        });
+    }
+    let finalized = match finalize_created_process(
+        created,
         &mut pipes,
-        |thread| thread.close(),
+        |thread| {
+            finalization_boundary("primary-thread-close")?;
+            thread.close()
+        },
         |pipes| {
-            if options.retain_parent_stdin {
+            if options.retain_parent_stdin || options.null_stdio[0] {
                 Ok(())
             } else {
+                finalization_boundary("parent-stdin-close")?;
                 pipes.close_parent_stdin(&pipe_api)
             }
         },
-        get_process_birth,
-    )?;
+        |root| {
+            finalization_boundary("process-birth")?;
+            get_process_birth(root)
+        },
+    ) {
+        Ok(finalized) => finalized,
+        Err(failed) => {
+            return Err(NativeLaunchError::AfterCreate {
+                source: failed.error,
+                owner: UnfinalizedWindowsJob {
+                    job,
+                    created: failed.created,
+                    _pipes: Some(pipes),
+                    _forwarding_stdio: Vec::new(),
+                    hard_stop_issued: false,
+                },
+            });
+        }
+    };
 
     Ok(WindowsJobProcess {
         job: Some(job),
         root: finalized.root,
         identity: finalized.identity,
-        pipes,
-        parent_stdin_open: options.retain_parent_stdin,
+        pipes: Some(pipes),
+        parent_stdin_open: options.retain_parent_stdin && !options.null_stdio[0],
+        hard_stop_issued: false,
+    })
+}
+
+/// A forwarding hop owns the same Job authority while passing only copies of
+/// its three standard handles. It has no pipe-drain threads or authority handles
+/// in HANDLE_LIST. The ordinary managed/helper pipe path is unchanged.
+#[cfg(windows)]
+pub(super) fn launch_windows_forwarder(
+    command: &[std::ffi::OsString],
+    environment: &std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString>,
+) -> Result<WindowsJobProcess, NativeLaunchError> {
+    use super::handle::PipeEndHandle;
+    use std::os::windows::io::IntoRawHandle;
+    use windows_sys::Win32::Foundation::{
+        DUPLICATE_SAME_ACCESS, DuplicateHandle, INVALID_HANDLE_VALUE,
+    };
+    use windows_sys::Win32::System::Console::{
+        GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+    };
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+    fn copy_standard(which: u32) -> io::Result<PipeEndHandle> {
+        // SAFETY: GetStdHandle borrows the process standard handle; DuplicateHandle
+        // makes a private, initially non-inheritable copy without changing it.
+        #[allow(unsafe_code)]
+        let raw = unsafe { GetStdHandle(which) };
+        if raw == INVALID_HANDLE_VALUE {
+            return Err(io::Error::last_os_error());
+        }
+        if raw.is_null() {
+            let file = std::fs::OpenOptions::new()
+                .read(which == STD_INPUT_HANDLE)
+                .write(which != STD_INPUT_HANDLE)
+                .open("NUL")?;
+            return Ok(PipeEndHandle::new(file.into_raw_handle()));
+        }
+        let mut copy = std::ptr::null_mut();
+        #[allow(unsafe_code)]
+        let duplicated = unsafe {
+            DuplicateHandle(
+                GetCurrentProcess(),
+                raw,
+                GetCurrentProcess(),
+                &mut copy,
+                0,
+                0,
+                DUPLICATE_SAME_ACCESS,
+            )
+        };
+        if duplicated == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(PipeEndHandle::new(copy))
+    }
+
+    let mut spec = prepare_native_launch_spec(command, environment, None, false)?;
+    let jobs = SystemWindowsJobApi;
+    let job = create_kill_on_close_job_with_limits(&jobs, None)?;
+    let mut handles = [
+        copy_standard(STD_INPUT_HANDLE)?,
+        copy_standard(STD_OUTPUT_HANDLE)?,
+        copy_standard(STD_ERROR_HANDLE)?,
+    ];
+    let api = SystemWindowsPipeApi;
+    let startup_api = SystemWindowsStartupInfoApi;
+    let mut startup =
+        WindowsStartupInfo::new(&startup_api, &job, &handles[0], &handles[1], &handles[2])?;
+    for handle in &handles {
+        api.set_inherit(handle)?;
+    }
+    let created = SystemWindowsCreateProcessApi.create_process(
+        &mut spec,
+        &startup,
+        Some(handles.each_ref().map(PipeEndHandle::raw)),
+        true,
+    );
+    startup.delete_with(&startup_api);
+    // Close every private stdio copy even when another close fails. No incoming
+    // generation, stop, process, or Job handle was made inheritable.
+    let mut close_error = None;
+    for handle in &mut handles {
+        let close = if created.is_ok() {
+            finalization_boundary("child-end-close").and_then(|()| handle.close())
+        } else {
+            handle.close()
+        };
+        if let Err(error) = close {
+            close_error.get_or_insert(error);
+        }
+    }
+    let mut created = created?;
+    let finalize = (|| {
+        if let Some(error) = close_error {
+            return Err(error);
+        }
+        finalization_boundary("primary-thread-close")?;
+        created
+            .thread
+            .as_mut()
+            .ok_or_else(|| io::Error::other("missing forwarder primary thread handle"))?
+            .close()?;
+        let root = created
+            .root
+            .as_ref()
+            .ok_or_else(|| io::Error::other("missing forwarder root handle"))?;
+        if created.pid == 0 {
+            return Err(io::Error::other("missing forwarder process id"));
+        }
+        finalization_boundary("process-birth")?;
+        get_process_birth(root)
+    })();
+    let birth = match finalize {
+        Ok(birth) => birth,
+        Err(source) => {
+            return Err(NativeLaunchError::AfterCreate {
+                source,
+                owner: UnfinalizedWindowsJob {
+                    job,
+                    created,
+                    _pipes: None,
+                    _forwarding_stdio: handles.into(),
+                    hard_stop_issued: false,
+                },
+            });
+        }
+    };
+    Ok(WindowsJobProcess {
+        job: Some(job),
+        root: created
+            .root
+            .take()
+            .expect("finalization checked forwarder root"),
+        identity: ProcessInstance {
+            pid: created.pid,
+            birth,
+        },
+        pipes: None,
+        parent_stdin_open: false,
         hard_stop_issued: false,
     })
 }
@@ -678,9 +1105,17 @@ pub(super) fn windows_job_process_no_inheritance_premise_for_test() -> Result<()
         SystemWindowsCreateProcessApi.create_process(&mut launch_spec, &startup, None, false);
     startup.delete_with(&startup_api);
     let mut created = created.map_err(|error| error.to_string())?;
-    created.thread.close().map_err(|error| error.to_string())?;
+    created
+        .thread
+        .as_mut()
+        .ok_or("fixture primary thread missing")?
+        .close()
+        .map_err(|error| error.to_string())?;
     if jobs
-        .observe_member(created.root.raw(), &job)
+        .observe_member(
+            created.root.as_ref().ok_or("fixture root missing")?.raw(),
+            &job,
+        )
         .map_err(|error| error.to_string())?
         != JobMembership::Member
     {
@@ -691,7 +1126,10 @@ pub(super) fn windows_job_process_no_inheritance_premise_for_test() -> Result<()
     jobs.terminate(&job, JOB_HARD_STOP_EXIT_CODE)
         .map_err(|error| error.to_string())?;
     if SystemWindowsProcessControlApi
-        .wait_for_process(&created.root, JOB_HARD_STOP_TIMEOUT)
+        .wait_for_process(
+            created.root.as_ref().ok_or("fixture root missing")?,
+            JOB_HARD_STOP_TIMEOUT,
+        )
         .map_err(|error| error.to_string())?
         != ProcessWait::Signaled
     {
@@ -792,7 +1230,87 @@ fn wait_for_observer_signal(observer: &TestProcessObserver, label: &str) -> Resu
 }
 
 #[cfg(all(windows, feature = "test-hooks"))]
+fn post_create_failure_receipt_for_test() -> Result<(), String> {
+    let command = test_child_command("sleep", &["30".to_owned()])?;
+    let forwarding_command: Vec<std::ffi::OsString> = command.iter().map(Into::into).collect();
+    for forwarder in [false, true] {
+        for stage in [
+            "child-end-close",
+            "primary-thread-close",
+            "parent-stdin-close",
+            "process-birth",
+        ] {
+            if forwarder && stage == "parent-stdin-close" {
+                continue;
+            }
+            let launched = with_finalization_fault(stage, || {
+                if forwarder {
+                    launch_windows_forwarder(&forwarding_command, &Default::default())
+                } else {
+                    launch_windows_job_process_with_options(
+                        &command,
+                        &Default::default(),
+                        WindowsJobLaunchOptions {
+                            current_directory: None,
+                            resource_limits: None,
+                            exact_environment: false,
+                            retain_parent_stdin: false,
+                            null_stdio: [false; 3],
+                        },
+                    )
+                }
+            });
+            let (source, mut owner) = match launched {
+                Err(NativeLaunchError::AfterCreate { source, owner }) => (source, owner),
+                Err(other) => return Err(format!("{stage} failed before CreateProcess: {other}")),
+                Ok(mut owner) => {
+                    let _ = owner.hard_stop();
+                    return Err(format!("{stage} did not intercept the native launch"));
+                }
+            };
+            let retained = (|| {
+                if !source.to_string().contains(stage) || owner.process_id().is_none() {
+                    return Err(format!(
+                        "{stage} lost its finalization error or diagnostic pid"
+                    ));
+                }
+                let root = owner
+                    .created
+                    .root
+                    .as_ref()
+                    .ok_or("post-create root missing")?;
+                if SystemWindowsJobApi
+                    .observe_member(root.raw(), &owner.job)
+                    .map_err(|error| error.to_string())?
+                    != JobMembership::Member
+                    || owner.is_quiescent().map_err(|error| error.to_string())?
+                {
+                    return Err(format!("{stage} lost the original live Job/root tuple"));
+                }
+                // Inspect the already-retained handle for this control only. Production
+                // failure identity remains unknown; never reopen or fabricate birth.
+                get_process_birth(root).map_err(|error| error.to_string())?;
+                Ok(())
+            })();
+            let stopped = owner
+                .hard_stop_until(std::time::Instant::now() + JOB_HARD_STOP_TIMEOUT)
+                .map_err(|error| format!("{stage} retained-owner stop failed: {error}"));
+            let empty = owner.is_quiescent().map_err(|error| error.to_string());
+            retained?;
+            stopped?;
+            if !empty? {
+                return Err(format!(
+                    "{stage} retained original Job did not become empty"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(all(windows, feature = "test-hooks"))]
 pub(super) fn windows_job_process_owner_receipt_for_test() -> Result<(), String> {
+    post_create_failure_receipt_for_test()?;
     let jobs = SystemWindowsJobApi;
     let limits = JobResourceLimits {
         cpu_rate_per_10_000: 2_500,
@@ -830,10 +1348,19 @@ pub(super) fn windows_job_process_owner_receipt_for_test() -> Result<(), String>
     let mut limited_created = limited_created.map_err(|error| error.to_string())?;
     limited_created
         .thread
+        .as_mut()
+        .ok_or("limited fixture primary thread missing")?
         .close()
         .map_err(|error| error.to_string())?;
     if jobs
-        .observe_member(limited_created.root.raw(), &resource_job)
+        .observe_member(
+            limited_created
+                .root
+                .as_ref()
+                .ok_or("fixture root missing")?
+                .raw(),
+            &resource_job,
+        )
         .map_err(|error| error.to_string())?
         != JobMembership::Member
     {
@@ -842,7 +1369,13 @@ pub(super) fn windows_job_process_owner_receipt_for_test() -> Result<(), String>
     jobs.terminate(&resource_job, JOB_HARD_STOP_EXIT_CODE)
         .map_err(|error| error.to_string())?;
     if SystemWindowsProcessControlApi
-        .wait_for_process(&limited_created.root, JOB_HARD_STOP_TIMEOUT)
+        .wait_for_process(
+            limited_created
+                .root
+                .as_ref()
+                .ok_or("limited fixture root missing")?,
+            JOB_HARD_STOP_TIMEOUT,
+        )
         .map_err(|error| error.to_string())?
         != ProcessWait::Signaled
     {
@@ -865,6 +1398,7 @@ pub(super) fn windows_job_process_owner_receipt_for_test() -> Result<(), String>
             resource_limits: None,
             exact_environment: false,
             retain_parent_stdin: false,
+            null_stdio: [false; 3],
         },
     )
     .map_err(|error| error.to_string())?;
@@ -875,10 +1409,20 @@ pub(super) fn windows_job_process_owner_receipt_for_test() -> Result<(), String>
     {
         return Err("current-directory fixture did not exit successfully".to_owned());
     }
-    let current_directory_stdout =
-        read_pipe_for_test(&mut current_directory_owner.pipes.parent_stdout_read)?;
-    let current_directory_stderr =
-        read_pipe_for_test(&mut current_directory_owner.pipes.parent_stderr_read)?;
+    let current_directory_stdout = read_pipe_for_test(
+        &mut current_directory_owner
+            .pipes
+            .as_mut()
+            .unwrap()
+            .parent_stdout_read,
+    )?;
+    let current_directory_stderr = read_pipe_for_test(
+        &mut current_directory_owner
+            .pipes
+            .as_mut()
+            .unwrap()
+            .parent_stderr_read,
+    )?;
     if !current_directory_stderr.is_empty() {
         return Err(format!(
             "current-directory fixture wrote stderr: {current_directory_stderr}"
@@ -904,8 +1448,8 @@ pub(super) fn windows_job_process_owner_receipt_for_test() -> Result<(), String>
     if lines_owner.wait().map_err(|error| error.to_string())? != 0 {
         return Err("line fixture did not exit successfully".to_owned());
     }
-    let stdout = read_pipe_for_test(&mut lines_owner.pipes.parent_stdout_read)?;
-    let stderr = read_pipe_for_test(&mut lines_owner.pipes.parent_stderr_read)?;
+    let stdout = read_pipe_for_test(&mut lines_owner.pipes.as_mut().unwrap().parent_stdout_read)?;
+    let stderr = read_pipe_for_test(&mut lines_owner.pipes.as_mut().unwrap().parent_stderr_read)?;
     if !stdout.contains("stdout-line") || !stderr.contains("stderr-line") {
         return Err("stdio pipe receipt did not receive both streams".to_owned());
     }
@@ -1299,7 +1843,7 @@ mod tests {
                 pid: 7,
                 birth: ProcessBirth::windows(9),
             },
-            pipes,
+            pipes: Some(pipes),
             parent_stdin_open: false,
             hard_stop_issued: false,
         }
@@ -1307,8 +1851,8 @@ mod tests {
 
     fn created_process() -> CreatedWindowsProcess {
         CreatedWindowsProcess {
-            root: RootProcessHandle::new(8usize as RawWindowsHandle),
-            thread: PrimaryThreadHandle::new(9usize as RawWindowsHandle),
+            root: Some(RootProcessHandle::new(8usize as RawWindowsHandle)),
+            thread: Some(PrimaryThreadHandle::new(9usize as RawWindowsHandle)),
             pid: 7,
         }
     }
@@ -1330,9 +1874,18 @@ mod tests {
         assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
         assert!(owner.job.is_some());
         assert_eq!(owner.root.raw() as usize, 8);
-        assert_eq!(owner.pipes.parent_stdin_write.raw() as usize, 3);
-        assert_eq!(owner.pipes.parent_stdout_read.raw() as usize, 4);
-        assert_eq!(owner.pipes.parent_stderr_read.raw() as usize, 6);
+        assert_eq!(
+            owner.pipes.as_ref().unwrap().parent_stdin_write.raw() as usize,
+            3
+        );
+        assert_eq!(
+            owner.pipes.as_ref().unwrap().parent_stdout_read.raw() as usize,
+            4
+        );
+        assert_eq!(
+            owner.pipes.as_ref().unwrap().parent_stderr_read.raw() as usize,
+            6
+        );
     }
 
     #[test]
@@ -1425,7 +1978,8 @@ mod tests {
         })
         .expect("creation window succeeds");
 
-        assert_eq!(created, 17);
+        assert_eq!(created.0, 17);
+        assert!(created.1.is_ok());
         assert_eq!(
             *api.trace.borrow(),
             [
@@ -1460,7 +2014,10 @@ mod tests {
         let api = WindowPipeApi::new();
         api.fail_clear.set(Some(4));
         let mut pipes = PipedStdio::create(&api).expect("fake pipes");
-        let error = run_create_window(&mut pipes, &api, |_| Ok(())).expect_err("cleanup fails");
+        let (created, cleanup) =
+            run_create_window(&mut pipes, &api, |_| Ok(17)).expect("created tuple retained");
+        assert_eq!(created, 17);
+        let error = cleanup.expect_err("cleanup fails");
 
         assert_eq!(error.to_string(), "clear:4");
         assert_eq!(

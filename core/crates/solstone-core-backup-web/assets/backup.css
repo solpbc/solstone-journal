@@ -68,6 +68,7 @@
 
 .backup-operation {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.6rem;
   margin: 0 0 0.75rem;
@@ -355,13 +356,15 @@
 }
 
 .backup-panel button,
+.backup-operation button,
 .backup-panel input,
 .backup-panel select,
 .backup-panel textarea {
   font: inherit;
 }
 
-.backup-panel button {
+.backup-panel button,
+.backup-operation button {
   min-height: 2.4rem;
   border: 1px solid var(--hairline);
   border-radius: 6px;
@@ -371,14 +374,24 @@
   cursor: pointer;
 }
 
-.backup-panel button:focus-visible {
+.backup-panel button:focus-visible,
+.backup-operation button:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
-.backup-panel button:disabled {
+.backup-panel button:disabled,
+.backup-operation button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+.backup-operation button {
+  min-height: 44px;
+}
+
+.backup-shell[data-state="cleanup_pending"] .backup-spinner {
+  display: none;
 }
 
 /* primary CTA — dark ink on sol-orange (7.13:1), per the design calibration */

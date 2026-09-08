@@ -53,6 +53,14 @@ path = "tests/service_logs_cli.rs"
 name = "service_capture_cli"
 path = "tests/service_capture_cli.rs"
 
+# Existing grouped CLI tests import Unix-only socket/permission APIs. This
+# Windows receipt redirects process-global stdio and invokes fresh native child
+# test processes; keep its test-hooks closure separate without changing Unix selectors.
+[[test]]
+name = "windows_service_capture"
+path = "tests/windows_service_capture_receipt.rs"
+required-features = ["test-hooks"]
+
 [[test]]
 name = "think_verb_fidelity"
 path = "tests/think_verb_fidelity.rs"
@@ -186,6 +194,12 @@ tokio = { workspace = true, features = ["io-std", "io-util", "net", "rt-multi-th
 
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["fs", "process", "signal", "user"] }
+
+[target.'cfg(windows)'.dependencies]
+tokio = { workspace = true, features = ["process", "macros"] }
+base64 = "0.22.1"
+solstone-core-win-owner-rail = { workspace = true }
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_System_Console", "Win32_System_Pipes", "Win32_System_Threading", "Win32_System_SystemInformation"] }
 
 [dev-dependencies]
 futures-util = { version = "0.3.33", default-features = false, features = ["sink", "std"] }

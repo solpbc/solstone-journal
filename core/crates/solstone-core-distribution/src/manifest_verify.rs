@@ -697,6 +697,84 @@ fn validate_release_declaration(
     Ok(())
 }
 
+fn is_safe_name(name: &str) -> bool {
+    !name.is_empty() && !name.contains('/') && !name.contains('\\') && name != "." && name != ".."
+}
+
+fn is_sha256(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn parse_pin(text: &str) -> Result<PublicKey, ManifestVerifyError> {
+    let boxed = PublicKeyBox::from_string(text).map_err(|error| {
+        ManifestVerifyError::new(
+            ManifestVerifyRefusal::SignaturePinMismatch,
+            format!("could not parse public pin: {error}"),
+        )
+    })?;
+    PublicKey::from_box(boxed).map_err(|error| {
+        ManifestVerifyError::new(
+            ManifestVerifyRefusal::SignaturePinMismatch,
+            format!("could not parse public pin: {error}"),
+        )
+    })
+}
+
+#[cfg(not(feature = "test-fixture-pin"))]
+pub fn resolve_pin() -> Result<PublicKey, ManifestVerifyError> {
+    parse_pin(PRODUCT_PIN)
+}
+
+#[cfg(feature = "test-fixture-pin")]
+pub fn resolve_pin() -> Result<PublicKey, ManifestVerifyError> {
+    let text = match std::env::var(PIN_OVERRIDE_ENV) {
+        Ok(path) if !path.is_empty() => fs::read_to_string(&path).map_err(|error| {
+            ManifestVerifyError::new(
+                ManifestVerifyRefusal::SignaturePinMismatch,
+                format!("could not read {PIN_OVERRIDE_ENV} {path}: {error}"),
+            )
+        })?,
+        _ => FIXTURE_PIN
+            .get()
+            .cloned()
+            .unwrap_or_else(|| PRODUCT_PIN.to_owned()),
+    };
+    parse_pin(&text)
+}
+
+#[cfg(feature = "test-fixture-pin")]
+pub fn install_test_fixture_pin(path: &Path) -> Result<(), ManifestVerifyError> {
+    let text = fs::read_to_string(path).map_err(|error| {
+        ManifestVerifyError::new(
+            ManifestVerifyRefusal::SignaturePinMismatch,
+            format!("could not read fixture pin {}: {error}", path.display()),
+        )
+    })?;
+    match FIXTURE_PIN.get() {
+        Some(existing) if existing != &text => Err(ManifestVerifyError::new(
+            ManifestVerifyRefusal::SignaturePinMismatch,
+            "fixture pin was already installed with different bytes",
+        )),
+        Some(_) => Ok(()),
+        None => {
+            let _ = FIXTURE_PIN.set(text);
+            Ok(())
+        }
+    }
+}
+
+#[cfg(all(test, not(feature = "test-fixture-pin")))]
+mod tests {
+    use super::{PRODUCT_PIN, parse_pin, resolve_pin};
+
+    #[test]
+    fn default_resolve_pin_returns_the_compiled_product_pin() {
+        let resolved = resolve_pin().expect("compiled pin parses");
+        let expected = parse_pin(PRODUCT_PIN).expect("product pin parses");
+        assert_eq!(resolved, expected);
+    }
+}
+
 #[cfg(test)]
 mod release_contract_tests {
     use std::collections::BTreeMap;
@@ -809,83 +887,5 @@ mod release_contract_tests {
             validate("linux-x86_64", release),
             Err(ManifestVerifyRefusal::ReleaseDeclarationMismatch)
         );
-    }
-}
-
-fn is_safe_name(name: &str) -> bool {
-    !name.is_empty() && !name.contains('/') && !name.contains('\\') && name != "." && name != ".."
-}
-
-fn is_sha256(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
-}
-
-fn parse_pin(text: &str) -> Result<PublicKey, ManifestVerifyError> {
-    let boxed = PublicKeyBox::from_string(text).map_err(|error| {
-        ManifestVerifyError::new(
-            ManifestVerifyRefusal::SignaturePinMismatch,
-            format!("could not parse public pin: {error}"),
-        )
-    })?;
-    PublicKey::from_box(boxed).map_err(|error| {
-        ManifestVerifyError::new(
-            ManifestVerifyRefusal::SignaturePinMismatch,
-            format!("could not parse public pin: {error}"),
-        )
-    })
-}
-
-#[cfg(not(feature = "test-fixture-pin"))]
-pub fn resolve_pin() -> Result<PublicKey, ManifestVerifyError> {
-    parse_pin(PRODUCT_PIN)
-}
-
-#[cfg(feature = "test-fixture-pin")]
-pub fn resolve_pin() -> Result<PublicKey, ManifestVerifyError> {
-    let text = match std::env::var(PIN_OVERRIDE_ENV) {
-        Ok(path) if !path.is_empty() => fs::read_to_string(&path).map_err(|error| {
-            ManifestVerifyError::new(
-                ManifestVerifyRefusal::SignaturePinMismatch,
-                format!("could not read {PIN_OVERRIDE_ENV} {path}: {error}"),
-            )
-        })?,
-        _ => FIXTURE_PIN
-            .get()
-            .cloned()
-            .unwrap_or_else(|| PRODUCT_PIN.to_owned()),
-    };
-    parse_pin(&text)
-}
-
-#[cfg(feature = "test-fixture-pin")]
-pub fn install_test_fixture_pin(path: &Path) -> Result<(), ManifestVerifyError> {
-    let text = fs::read_to_string(path).map_err(|error| {
-        ManifestVerifyError::new(
-            ManifestVerifyRefusal::SignaturePinMismatch,
-            format!("could not read fixture pin {}: {error}", path.display()),
-        )
-    })?;
-    match FIXTURE_PIN.get() {
-        Some(existing) if existing != &text => Err(ManifestVerifyError::new(
-            ManifestVerifyRefusal::SignaturePinMismatch,
-            "fixture pin was already installed with different bytes",
-        )),
-        Some(_) => Ok(()),
-        None => {
-            let _ = FIXTURE_PIN.set(text);
-            Ok(())
-        }
-    }
-}
-
-#[cfg(all(test, not(feature = "test-fixture-pin")))]
-mod tests {
-    use super::{PRODUCT_PIN, parse_pin, resolve_pin};
-
-    #[test]
-    fn default_resolve_pin_returns_the_compiled_product_pin() {
-        let resolved = resolve_pin().expect("compiled pin parses");
-        let expected = parse_pin(PRODUCT_PIN).expect("product pin parses");
-        assert_eq!(resolved, expected);
     }
 }

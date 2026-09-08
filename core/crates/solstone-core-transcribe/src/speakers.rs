@@ -30,12 +30,13 @@ use solstone_core_system::process::{
     launch_command, launch_command_hosted,
 };
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use crate::speakers_installation::validate_speakers_analyze_runtime;
 
 const REQUEST_SCHEMA: &str = "solstone-speaker-analyze-request-v1";
 const RESPONSE_SCHEMA: &str = "solstone-speaker-analyze-response-v1";
 const ERROR_SCHEMA: &str = "solstone-speaker-analyze-error-v1";
+#[cfg(not(windows))]
 const TEMP_ROOT: &str = "/var/tmp";
 const TEMP_PREFIX: &str = "solstone-speakers-analyze-";
 #[cfg(unix)]
@@ -153,17 +154,28 @@ impl std::error::Error for SpeakerAnalyzeError {}
 
 /// Create the private temporary directory used for one helper invocation.
 pub(crate) fn create_speakers_analyze_temp_dir(raw_path: &Path) -> io::Result<PathBuf> {
-    create_speakers_analyze_temp_dir_in(raw_path, Path::new(TEMP_ROOT), std::process::id())
+    create_speakers_analyze_temp_dir_in(raw_path, &speakers_temp_root(), std::process::id())
 }
 
 /// Remove stale helper directories older than one day.
 pub(crate) fn sweep_stale_speakers_analyze_dirs(max_age: Duration) -> usize {
-    sweep_stale_speakers_analyze_dirs_at(Path::new(TEMP_ROOT), max_age, SystemTime::now())
+    sweep_stale_speakers_analyze_dirs_at(&speakers_temp_root(), max_age, SystemTime::now())
+}
+
+fn speakers_temp_root() -> PathBuf {
+    #[cfg(windows)]
+    {
+        std::env::temp_dir()
+    }
+    #[cfg(not(windows))]
+    {
+        PathBuf::from(TEMP_ROOT)
+    }
 }
 
 /// Run speaker analysis through the isolated sibling helper process.
 #[allow(clippy::too_many_arguments)]
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub(crate) fn analyze_speakers(
     raw_path: &Path,
     full_audio: &[f32],
@@ -173,6 +185,7 @@ pub(crate) fn analyze_speakers(
     statements_restored: &[Map<String, Value>],
     sample_rate: u32,
     min_statement_duration: f64,
+    #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<SpeakerAnalyzeResult, SpeakerAnalyzeError> {
     let installation = validate_speakers_analyze_runtime().map_err(|error| {
         SpeakerAnalyzeError::new(
@@ -185,10 +198,19 @@ pub(crate) fn analyze_speakers(
     let temporary = create_speakers_analyze_temp_dir(raw_path)
         .map_err(|error| SpeakerAnalyzeError::new(raw_path, "request", error.to_string(), None))?;
 
-    with_cleaned_temp_dir(raw_path, &temporary, || {
+    #[cfg(windows)]
+    let temporary = std::sync::Arc::new(WindowsSpeakersDirectory {
+        path: temporary,
+        cleanup: true,
+    });
+    #[cfg(windows)]
+    let temporary_path = &temporary.path;
+    #[cfg(not(windows))]
+    let temporary_path = &temporary;
+    let action = || {
         analyze_in_temp_dir(
             raw_path,
-            &temporary,
+            temporary_path,
             full_audio,
             statement_audio,
             reduced_audio,
@@ -199,21 +221,63 @@ pub(crate) fn analyze_speakers(
             &installation.wespeaker_model,
             &installation.pyannote_model,
             |request| {
+                #[cfg(windows)]
+                let mut resources = crate::windows_onnx::generation_resources(generation);
+                #[cfg(windows)]
+                resources.retain(temporary.clone());
                 invoke_speakers_analyze_helper(
                     &installation.helper,
                     request,
                     raw_path,
                     SpeakersAnalyzeBudget::default(),
+                    #[cfg(windows)]
+                    resources,
                 )
             },
         )
-    })
+    };
+    #[cfg(not(windows))]
+    {
+        with_cleaned_temp_dir(raw_path, temporary_path, action)
+    }
+    #[cfg(windows)]
+    {
+        let result = action()?;
+        let directory = std::sync::Arc::try_unwrap(temporary).map_err(|_| {
+            SpeakerAnalyzeError::new(raw_path, "cleanup", "input-remains-in-use", None)
+        })?;
+        directory.close().map_err(|error| {
+            SpeakerAnalyzeError::new(raw_path, "cleanup", error.to_string(), None)
+        })?;
+        Ok(result)
+    }
 }
 
-/// Windows has no admitted speaker-helper process transport yet. Refuse before
-/// creating a temporary sidecar so the required capability is visibly degraded.
+#[cfg(windows)]
+struct WindowsSpeakersDirectory {
+    path: PathBuf,
+    cleanup: bool,
+}
+#[cfg(windows)]
+impl WindowsSpeakersDirectory {
+    fn close(mut self) -> io::Result<()> {
+        let result = fs::remove_dir_all(&self.path);
+        self.cleanup = false;
+        result
+    }
+}
+#[cfg(windows)]
+impl Drop for WindowsSpeakersDirectory {
+    fn drop(&mut self) {
+        if self.cleanup {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+}
+
+/// Unsupported hosts refuse before creating a temporary sidecar.
 #[allow(clippy::too_many_arguments)]
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 pub(crate) fn analyze_speakers(
     raw_path: &Path,
     _full_audio: &[f32],
@@ -411,7 +475,7 @@ pub(crate) fn invoke_speakers_analyze_helper(
     invoke_child(authority, request, raw_path, budget)
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 pub(crate) fn invoke_speakers_analyze_helper(
     binary: &Path,
     request: &[u8],
@@ -425,6 +489,38 @@ pub(crate) fn invoke_speakers_analyze_helper(
         "platform-unsupported",
         None,
     ))
+}
+
+#[cfg(windows)]
+pub(crate) fn invoke_speakers_analyze_helper(
+    binary: &Path,
+    request: &[u8],
+    raw_path: &Path,
+    budget: SpeakersAnalyzeBudget,
+    resources: solstone_core_system::process::BoundedHelperResources,
+) -> Result<HelperInvocationResult, SpeakerAnalyzeError> {
+    use crate::windows_onnx::{ONNX_STDIN_LIMIT, OnnxHelper, run_onnx_helper};
+    use solstone_core_system::process::BoundedHelperBudget;
+    let output = run_onnx_helper(
+        OnnxHelper::Speakers,
+        binary,
+        request,
+        BoundedHelperBudget {
+            timeout: budget.timeout,
+            stdin_limit_bytes: ONNX_STDIN_LIMIT,
+            stdout_limit_bytes: budget.stdout_limit_bytes,
+            stderr_limit_bytes: budget.stderr_limit_bytes,
+        },
+        resources,
+    )
+    .map_err(|error| SpeakerAnalyzeError::new(raw_path, "invoke", error.to_string(), None))?;
+    // The bounded owner returns only after the complete Job is quiescent. The
+    // caller's installation generation remains borrowed across this call.
+    Ok(HelperInvocationResult {
+        returncode: output.exit_code,
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    })
 }
 
 #[cfg(unix)]

@@ -167,7 +167,14 @@ pub fn invoke_speakers_program(
         terminate_grace,
         kill_grace,
     };
-    match invoke_speakers_analyze_helper(program, request, raw_path, budget) {
+    match invoke_speakers_analyze_helper(
+        program,
+        request,
+        raw_path,
+        budget,
+        #[cfg(windows)]
+        solstone_core_system::process::BoundedHelperResources::new(),
+    ) {
         Ok(completed) => SpeakerInvoke::Completed {
             returncode: completed.returncode,
             stdout: completed.stdout,

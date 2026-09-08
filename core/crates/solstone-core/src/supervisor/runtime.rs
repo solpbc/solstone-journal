@@ -27,11 +27,16 @@ use solstone_core_system::cap::{DEFAULT_TASK_MAX_RUNTIME, DefaultCapResolver};
 use solstone_core_system::direct_door::{
     initialize_direct_door, peek_direct_door_generation, withhold_direct_door,
 };
+#[cfg(unix)]
+use solstone_core_system::lifecycle::write_retire_expected_control;
 use solstone_core_system::lifecycle::{
-    DEFAULT_INTERVAL_SECONDS, HostedServiceKind, ParentLossCoordinator, ParentLossLedger,
-    ParentLossPhase, ParentLossReason, ParentLossTerminalDisposition, ParentWatch,
-    ParentWatchStatus, PreReadySupervisorLifecycle, ShutdownRegime, SupervisorLifecycle,
-    SyncPeerObservation, SyncSnapshot, SyncTickOutcome, write_retire_expected_control,
+    DEFAULT_INTERVAL_SECONDS, HostedServiceKind, ParentLossReason, ParentWatch, ParentWatchStatus,
+    ShutdownRegime, SupervisorLifecycle, SyncPeerObservation, SyncSnapshot, SyncTickOutcome,
+};
+#[cfg(unix)]
+use solstone_core_system::lifecycle::{
+    ParentLossCoordinator, ParentLossLedger, ParentLossPhase, ParentLossTerminalDisposition,
+    PreReadySupervisorLifecycle,
 };
 use solstone_core_system::process::{
     CommandLaunchRequest, Disposition, HostedLaunchProvenance, InspectResult, InstanceVerdict,
@@ -107,7 +112,7 @@ impl std::fmt::Display for ParentLossCoordinatorBootstrapFailure {
     }
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[doc(hidden)]
 pub(crate) enum ParentLossCoordinatorBootstrapTestFault {
@@ -116,13 +121,13 @@ pub(crate) enum ParentLossCoordinatorBootstrapTestFault {
     InitialAdmissionHandshake,
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
 thread_local! {
     static PARENT_LOSS_COORDINATOR_BOOTSTRAP_TEST_FAULT: Cell<Option<ParentLossCoordinatorBootstrapTestFault>> = const { Cell::new(None) };
     static PARENT_LOSS_COORDINATOR_BOOTSTRAP_TEST_SPAWNED: RefCell<Option<ProcessInstance>> = const { RefCell::new(None) };
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
 #[doc(hidden)]
 pub(crate) fn set_parent_loss_coordinator_bootstrap_test_fault(
     fault: Option<ParentLossCoordinatorBootstrapTestFault>,
@@ -131,18 +136,18 @@ pub(crate) fn set_parent_loss_coordinator_bootstrap_test_fault(
     PARENT_LOSS_COORDINATOR_BOOTSTRAP_TEST_SPAWNED.with(|slot| *slot.borrow_mut() = None);
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
 fn parent_loss_coordinator_bootstrap_test_fault() -> Option<ParentLossCoordinatorBootstrapTestFault>
 {
     PARENT_LOSS_COORDINATOR_BOOTSTRAP_TEST_FAULT.with(Cell::get)
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(all(unix, any(test, feature = "test-hooks")))]
 fn record_parent_loss_coordinator_bootstrap_test_spawn(instance: ProcessInstance) {
     PARENT_LOSS_COORDINATOR_BOOTSTRAP_TEST_SPAWNED.with(|slot| *slot.borrow_mut() = Some(instance));
 }
 
-#[cfg(test)]
+#[cfg(all(unix, test))]
 fn parent_loss_coordinator_bootstrap_test_spawned() -> Option<ProcessInstance> {
     PARENT_LOSS_COORDINATOR_BOOTSTRAP_TEST_SPAWNED.with(|slot| *slot.borrow())
 }
@@ -169,6 +174,8 @@ impl SupervisorTiming {
 
 pub(crate) struct SupervisorState {
     pub journal: PathBuf,
+    #[cfg(windows)]
+    pub service_guard: solstone_core_installation_identity::GuardFields,
     pub is_remote_mode: bool,
     pub no_daily: bool,
     pub server: Arc<CallosumSocketServer>,
@@ -198,22 +205,21 @@ pub(crate) struct SupervisorState {
     /// `AppService::Sense`'s spawn environment and into scheduled catchup
     /// think tasks so native transcribe children borrow this supervisor's
     /// generation instead of each attempting their own acquisition.
-    pub sense_child_environment: BTreeMap<OsString, OsString>,
+    pub sense_child_environment: solstone_core_system::process::ChildLaunchContext,
     /// Windows Parakeet credentials rotate for every provider launch. This is
     /// the revision already inherited by the current Sense process tree.
     #[cfg(windows)]
     pub parakeet_sense_credentials_revision: u64,
 }
 
-/// Supervisor-held capability for the independent coordinator. The random
-/// bytes are sent once over the coordinator stdin and otherwise remain only in
-/// the two process memories; they authenticate graceful-retirement control.
+#[cfg(unix)]
 pub(crate) struct ParentLossCoordinatorSession {
     generation: u64,
     supervisor: ProcessInstance,
     capability: Vec<u8>,
 }
 
+#[cfg(unix)]
 impl ParentLossCoordinatorSession {
     pub(crate) fn write_retire_expected(&self, journal: &Path) -> Result<(), String> {
         write_retire_expected_control(journal, self.generation, self.supervisor, &self.capability)
@@ -256,6 +262,24 @@ impl ParentLossCoordinatorSession {
             }
             std::thread::sleep(remaining.min(Duration::from_millis(10)));
         }
+    }
+}
+
+#[cfg(windows)]
+pub(crate) struct ParentLossCoordinatorSession;
+
+#[cfg(windows)]
+impl ParentLossCoordinatorSession {
+    pub(crate) fn write_retire_expected(&self, _journal: &Path) -> Result<(), String> {
+        Ok(())
+    }
+
+    pub(crate) fn wait_for_retire_expected_ack(
+        &self,
+        _journal: &Path,
+        _timeout: Duration,
+    ) -> Result<bool, String> {
+        Ok(true)
     }
 }
 
@@ -320,6 +344,7 @@ impl AppService {
     }
 }
 
+#[cfg(unix)]
 fn current_supervisor_instance() -> Result<ProcessInstance, String> {
     match SystemProcessInstanceSource.inspect(std::process::id()) {
         InspectResult::Present { instance, .. } => Ok(instance),
@@ -329,6 +354,7 @@ fn current_supervisor_instance() -> Result<ProcessInstance, String> {
     }
 }
 
+#[cfg(unix)]
 async fn bootstrap_parent_loss_coordinator(
     journal: &Path,
     supervisor: ProcessInstance,
@@ -443,6 +469,7 @@ async fn bootstrap_parent_loss_coordinator(
     Err(ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake)
 }
 
+#[cfg(unix)]
 fn parent_loss_coordinator_launch_request(
     journal: &Path,
     supervisor: ProcessInstance,
@@ -452,6 +479,12 @@ fn parent_loss_coordinator_launch_request(
     #[cfg(any(test, feature = "test-hooks"))]
     if parent_loss_coordinator_bootstrap_test_fault().is_some() {
         return Ok(CommandLaunchRequest {
+            #[cfg(windows)]
+            read_file_grants: if needs_generation {
+                sense_child_environment.read_file_grants.clone()
+            } else {
+                Vec::new()
+            },
             program: OsString::from("/bin/sleep"),
             arguments: vec![OsString::from("60")],
             environment: BTreeMap::new(),
@@ -469,6 +502,12 @@ fn parent_loss_coordinator_launch_request(
     let enabled_json = serde_json::to_string(enabled)
         .map_err(|_| ParentLossCoordinatorBootstrapFailure::Launch)?;
     Ok(CommandLaunchRequest {
+        #[cfg(windows)]
+        read_file_grants: if needs_generation {
+            sense_child_environment.read_file_grants.clone()
+        } else {
+            Vec::new()
+        },
         program: executable.into_os_string(),
         arguments: vec![
             OsString::from("__parent-loss-coordinator"),
@@ -495,6 +534,7 @@ fn parent_loss_coordinator_launch_request(
     })
 }
 
+#[cfg(unix)]
 fn retire_bootstrap_coordinator(
     authority: &mut solstone_core_system::process::LaunchAuthority,
     coordinator: LaunchedProcessIdentity,
@@ -1106,7 +1146,7 @@ pub(crate) fn spawn_app_process(
     app: &mut ManagedAppProcess,
     journal: &Path,
     sink: Arc<CallosumSocketServer>,
-    sense_child_environment: &BTreeMap<OsString, OsString>,
+    sense_child_environment: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<(), String> {
     if app.service == AppService::Convey {
         if app.direct_door_generation.is_some() {
@@ -1116,12 +1156,15 @@ pub(crate) fn spawn_app_process(
             .map_err(|error| format!("failed to retain direct-door cleanup authority: {error}"))?;
         app.direct_door_generation = Some(generation);
     }
-    let ledger = ParentLossLedger::open(journal)
-        .map_err(|error| format!("could not open parent-loss lifecycle: {error}"))?;
-    let active = ledger
-        .active_generation()
-        .map_err(|error| format!("could not read parent-loss lifecycle: {error}"))?
-        .ok_or_else(|| "parent-loss coordinator has no active generation".to_owned())?;
+    #[cfg(unix)]
+    let active = {
+        let ledger = ParentLossLedger::open(journal)
+            .map_err(|error| format!("could not open parent-loss lifecycle: {error}"))?;
+        ledger
+            .active_generation()
+            .map_err(|error| format!("could not read parent-loss lifecycle: {error}"))?
+            .ok_or_else(|| "parent-loss coordinator has no active generation".to_owned())?
+    };
     let launch_id = format!(
         "{}-{}-{}",
         app.service.as_str(),
@@ -1130,19 +1173,69 @@ pub(crate) fn spawn_app_process(
             .duration_since(UNIX_EPOCH)
             .map_or(0, |value| value.as_nanos())
     );
+    #[cfg(unix)]
     let mut environment = BTreeMap::from([(
         OsString::from("SOL_SUPERVISOR_SPAWNED"),
         OsString::from("1"),
     )]);
-    // Only Sense can reach transcription (it spawns native `journal
-    // transcribe` children); Cortex talent workers cannot (denied by the
-    // cogitate CLI allowlist), and Convey/Spl/Mcp never transcribe.
-    if app.service == AppService::Sense {
-        environment.extend(sense_child_environment.clone());
+    #[cfg(windows)]
+    let mut environment = BTreeMap::new();
+    // Unix retains its Sense-only OFD path. Windows Convey also borrows the
+    // supervisor generation for its web helper installation invariant.
+    let needs_generation =
+        app.service == AppService::Sense || cfg!(windows) && app.service == AppService::Convey;
+    if needs_generation {
+        environment.extend(sense_child_environment.environment.clone());
     }
+
+    #[cfg(unix)]
+    let provenance = HostedLaunchProvenance {
+        journal: journal.to_path_buf(),
+        generation: active.generation,
+        launch_id,
+        service: Some(app.service.hosted_service_kind()),
+        parent_launch_id: None,
+        acknowledgement_timeout: PARENT_LOSS_CHILD_ADMISSION_TIMEOUT,
+    };
+    #[cfg(windows)]
+    let provenance = {
+        let owner = solstone_core_installation_identity::owner_base()
+            .map_err(|error| format!("owner storage: {error}"))?;
+        let root = crate::installation_context::identity_root_from_current_executable()
+            .map_err(|error| format!("installation root: {error}"))?;
+        let root_token = solstone_core_installation_identity::root_token_from_path(&root)
+            .map_err(|error| format!("root token: {error}"))?;
+        let binding =
+            solstone_core_installation_identity::load_installation_binding(&owner, &root_token)
+                .map_err(|error| format!("saved binding: {error}"))?;
+        let guards = solstone_core_installation_identity::service_guard_environment(
+            &solstone_core_installation_identity::GuardFields::from_binding(&binding),
+        );
+        environment.extend(
+            guards
+                .into_iter()
+                .map(|(key, value)| (key.into(), value.into())),
+        );
+        environment.insert("SOLSTONE_JOURNAL".into(), journal.as_os_str().to_owned());
+        HostedLaunchProvenance {
+            journal: journal.to_path_buf(),
+            generation: binding.generation.get(),
+            launch_id,
+            service: Some(app.service.hosted_service_kind()),
+            parent_launch_id: None,
+            acknowledgement_timeout: PARENT_LOSS_CHILD_ADMISSION_TIMEOUT,
+        }
+    };
+
     let authority = launch_managed_hosted(
         Disposition::InheritedParentScope,
         ManagedLaunchRequest {
+            #[cfg(windows)]
+            read_file_grants: if needs_generation {
+                sense_child_environment.read_file_grants.clone()
+            } else {
+                Vec::new()
+            },
             command: app.argv.clone(),
             options: SpawnOptions {
                 journal_root: journal.to_path_buf(),
@@ -1152,14 +1245,7 @@ pub(crate) fn spawn_app_process(
                 environment,
             },
         },
-        HostedLaunchProvenance {
-            journal: journal.to_path_buf(),
-            generation: active.generation,
-            launch_id,
-            service: Some(app.service.hosted_service_kind()),
-            parent_launch_id: None,
-            acknowledgement_timeout: PARENT_LOSS_CHILD_ADMISSION_TIMEOUT,
-        },
+        provenance,
     )
     .map_err(|error| error.to_string())?;
     let process = authority
@@ -1178,7 +1264,7 @@ fn start_app_process(
     app: &mut ManagedAppProcess,
     journal: &Path,
     sink: Arc<CallosumSocketServer>,
-    sense_child_environment: &BTreeMap<OsString, OsString>,
+    sense_child_environment: &solstone_core_system::process::ChildLaunchContext,
 ) {
     if let Err(error) = spawn_app_process(app, journal, sink, sense_child_environment) {
         eprintln!(
@@ -1258,7 +1344,7 @@ async fn start_app_stack(
     probe: &dyn ConveyReadinessProbe,
     lifecycle: &mut SupervisorLifecycle,
     heartbeat_interval: Duration,
-    sense_child_environment: &BTreeMap<OsString, OsString>,
+    sense_child_environment: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<(), SyncTickOutcome> {
     let services = vec![
         AppService::Convey,
@@ -1295,14 +1381,19 @@ async fn start_app_stack(
 }
 
 pub(crate) async fn boot_and_tick(
-    lifecycle: PreReadySupervisorLifecycle,
+    #[cfg(unix)] lifecycle: PreReadySupervisorLifecycle,
+    #[cfg(windows)] lifecycle: SupervisorLifecycle,
     journal: PathBuf,
     options: SupervisorOptions,
     journal_binary: Option<PathBuf>,
     parent_watch: Option<ParentWatch>,
-    sense_child_environment: BTreeMap<OsString, OsString>,
+    sense_child_environment: solstone_core_system::process::ChildLaunchContext,
+    #[cfg(windows)] service_guard: solstone_core_installation_identity::GuardFields,
 ) -> Result<SupervisorOutcome, RuntimeBootError> {
+    #[cfg(unix)]
     let mut lifecycle = lifecycle.into_lifecycle();
+    #[cfg(windows)]
+    let mut lifecycle = lifecycle;
     let mut shutdown_signals = match tick::ShutdownSignals::install() {
         Ok(signals) => signals,
         Err(error) => return Err(abort_pre_ready(&lifecycle, error)),
@@ -1332,6 +1423,8 @@ pub(crate) async fn boot_and_tick(
     }
     let parakeet_shared = Arc::new(ParakeetRuntimeShared::default());
     let queue = TaskQueue::new(TaskQueueOptions {
+        #[cfg(windows)]
+        read_file_grants: sense_child_environment.read_file_grants.clone(),
         journal_root: journal.clone(),
         cap_resolver: Arc::new(cap_resolver),
         process_state_probe: Arc::new(SystemProcessStateProbe),
@@ -1341,7 +1434,7 @@ pub(crate) async fn boot_and_tick(
         })),
         ready: false,
         before_deadline_commit: None,
-        child_environment: sense_child_environment.clone(),
+        child_environment: sense_child_environment.environment.clone(),
     });
     let clock: Arc<dyn solstone_core_system::provider_runtime::RuntimeClock> =
         Arc::new(SystemRuntimeClock::default());
@@ -1515,6 +1608,7 @@ pub(crate) async fn boot_and_tick(
         convey_port,
         fast_fixture_timing,
     );
+    #[cfg(unix)]
     let supervisor_generation = match current_supervisor_instance() {
         Ok(instance) => instance,
         Err(error) => {
@@ -1523,7 +1617,9 @@ pub(crate) async fn boot_and_tick(
             );
         }
     };
+    #[cfg(unix)]
     let supervisor_heartbeat_filename = lifecycle.heartbeat_filename().to_owned();
+    #[cfg(unix)]
     let parent_loss_coordinator = match bootstrap_parent_loss_coordinator(
         &journal,
         supervisor_generation,
@@ -1536,7 +1632,7 @@ pub(crate) async fn boot_and_tick(
     )
     .await
     {
-        Ok(session) => session,
+        Ok(session) => Some(session),
         Err(error) => {
             return Err(abort_published_setup_with_error(
                 &lifecycle,
@@ -1548,6 +1644,8 @@ pub(crate) async fn boot_and_tick(
             .await);
         }
     };
+    #[cfg(windows)]
+    let parent_loss_coordinator = None;
     let direct_port = match selected_direct_door_port(&journal, options.direct_port) {
         Ok(port) => port,
         Err(error) => {
@@ -1568,6 +1666,8 @@ pub(crate) async fn boot_and_tick(
     }
     let mut state = SupervisorState {
         journal,
+        #[cfg(windows)]
+        service_guard,
         is_remote_mode: remote,
         no_daily: options.no_daily,
         server,
@@ -1592,7 +1692,7 @@ pub(crate) async fn boot_and_tick(
         activity_retry_seed_day: None,
         wedge: WedgeState::default(),
         timing: SupervisorTiming::for_app_fixture(fast_fixture_timing),
-        parent_loss_coordinator: Some(parent_loss_coordinator),
+        parent_loss_coordinator,
         sense_child_environment,
         #[cfg(windows)]
         parakeet_sense_credentials_revision: 0,
@@ -1904,6 +2004,7 @@ mod tests {
     use super::super::tick::{SupervisorSignal, SupervisorStopReason};
 
     #[test]
+    #[cfg(unix)]
     fn resolves_journal_binary_from_executable_directory() {
         assert_eq!(
             resolve_journal_binary_from(Path::new("/foo/bar")),
@@ -1912,6 +2013,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn parent_loss_coordinator_has_an_independent_process_group() {
         let supervisor = DeclaredParent::capture_current()
             .expect("live supervisor identity")
@@ -1936,6 +2038,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn supervisor_wait_observes_live_coordinator_retirement_acknowledgement() {
         let journal = tempfile::TempDir::new().expect("temporary journal");
         let supervisor = DeclaredParent::capture_current()

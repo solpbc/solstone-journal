@@ -250,32 +250,47 @@ fn identity_error_code(error: &IdentityError) -> events::ErrorCode {
 fn identity_recovery_paths(
     home_dir: &std::path::Path,
     namespace: Option<&str>,
-) -> Vec<(PathBuf, &'static str)> {
+) -> Result<Vec<(PathBuf, &'static str)>, IdentityError> {
     let wrappers = wrapper::wrapper_paths(home_dir);
     // The `rm` flag is fixed per entry rather than probed from the filesystem, so
     // the printed remedy is the same on every host and cannot change under us
     // between rendering the message and the owner running it.
     let mut paths = vec![(wrappers.journal, "-f"), (wrappers.solstone, "-f")];
-    if let Some(service) = steps::service_artifact_path(home_dir) {
+    if let Some(service) = steps::service_artifact_path(home_dir)? {
         paths.push((service, "-f"));
     }
     if let Some(namespace) = namespace {
         paths.push((
-            installation_identity_dir(home_dir)
+            installation_identity_dir(home_dir)?
                 .join("v1")
                 .join("namespaces")
                 .join(namespace),
             "-rf",
         ));
     }
-    paths
+    Ok(paths)
 }
 
-fn installation_identity_dir(home_dir: &std::path::Path) -> PathBuf {
-    if cfg!(target_os = "macos") {
-        home_dir.join("Library/Application Support/solstone/installation-identity")
-    } else {
-        home_dir.join(".local/share/solstone/installation-identity")
+fn installation_identity_dir(home_dir: &std::path::Path) -> Result<PathBuf, IdentityError> {
+    #[cfg(windows)]
+    {
+        let _ = home_dir;
+        let owner = solstone_core_installation_identity::owner_base()?;
+        owner
+            .path()
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .ok_or(IdentityError::InvalidInput(
+                "installation provider base has no parent",
+            ))
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(if cfg!(target_os = "macos") {
+            home_dir.join("Library/Application Support/solstone/installation-identity")
+        } else {
+            home_dir.join(".local/share/solstone/installation-identity")
+        })
     }
 }
 
@@ -298,7 +313,10 @@ fn report_identity_failure<W: Write>(
     namespace: Option<&str>,
 ) -> ExitCode {
     let code = identity_error_code(error);
-    let recovery = identity_recovery_paths(home_dir, namespace);
+    let (recovery, recovery_error) = match identity_recovery_paths(home_dir, namespace) {
+        Ok(paths) => (paths, None),
+        Err(error) => (Vec::new(), Some(error)),
+    };
     // Shape follows the locked recovery copy in
     // `vpx/design-system/journal-service-install-recovery-copy.md`: the owner-visible
     // line first, the internal reason under `details:`.
@@ -320,16 +338,21 @@ fn report_identity_failure<W: Write>(
     // `service_artifact_path` -- on macOS that path is a LaunchAgent plist, so a
     // `systemctl` line here would tell a Mac owner to run a command their system
     // does not have, next to an `rm` of a plist.
-    let stop_service = if steps::service_artifact_path(home_dir).is_none() {
+    let stop_service = if !matches!(steps::service_artifact_path(home_dir), Ok(Some(_))) {
         ""
     } else if cfg!(target_os = "macos") {
         "\n    launchctl bootout gui/$(id -u)/org.solpbc.solstone"
     } else {
         "\n    systemctl --user disable --now solstone.service"
     };
-    let message = format!(
+    let mut message = format!(
         "this installation couldn't be verified.\n\ndetails: {error}\n\nto recover, stop the service, remove this installation's setup files, and run `journal setup` again:{stop_service}{steps}\n\nyour journal itself is untouched. none of these holds your memories."
     );
+    if let Some(location_error) = recovery_error {
+        message = format!(
+            "this installation couldn't be verified.\n\ndetails: {error}\n\nsetup recovery locations are unavailable: {location_error}"
+        );
+    }
     if jsonl {
         let mut emitter = JsonlEmitter::new(stdout);
         let _ = emitter.emit(
@@ -1363,7 +1386,9 @@ mod tests {
             Some(namespace.as_str()),
         );
         let text = String::from_utf8(stderr).expect("stderr");
-        for (path, flag) in identity_recovery_paths(home, Some(namespace.as_str())) {
+        for (path, flag) in
+            identity_recovery_paths(home, Some(namespace.as_str())).expect("resolve recovery paths")
+        {
             assert!(
                 text.contains(&format!("rm {flag} {}", path.display())),
                 "the remedy must name `rm {flag} {}`; got:\n{text}",
@@ -1410,9 +1435,10 @@ mod tests {
     fn the_remedy_scopes_identity_removal_to_this_installation_only() {
         let home = std::path::Path::new("/home/tester");
         let namespace = "b".repeat(64);
-        let registry = installation_identity_dir(home);
+        let registry = installation_identity_dir(home).expect("resolve identity location");
 
-        let scoped = identity_recovery_paths(home, Some(namespace.as_str()));
+        let scoped = identity_recovery_paths(home, Some(namespace.as_str()))
+            .expect("resolve recovery paths");
         let identity: Vec<_> = scoped
             .iter()
             .filter(|(path, _)| path.starts_with(&registry))
@@ -1431,7 +1457,7 @@ mod tests {
         }
 
         // ...and when the namespace cannot be resolved, omit rather than widen.
-        let unscoped = identity_recovery_paths(home, None);
+        let unscoped = identity_recovery_paths(home, None).expect("resolve recovery paths");
         assert!(
             !unscoped.iter().any(|(path, _)| path.starts_with(&registry)),
             "an unresolvable namespace must drop the identity path, not broaden it"
@@ -1962,7 +1988,9 @@ mod tests {
         let journal_one = root.join("journal-one");
         let journal_two = root.join("journal-two");
         fs::create_dir_all(&executable_dir).expect("create executable directory");
-        let service_path = service_artifact_path(&home).expect("linux service artifact");
+        let service_path = service_artifact_path(&home)
+            .expect("resolve service artifact")
+            .expect("linux service artifact");
 
         let initial_args = parsed(
             &[
@@ -2196,7 +2224,9 @@ mod tests {
         let old_bin = prefix.join("versions/2.0.0-aaaaaaaaaaaa/bin");
         let new_bin = prefix.join("versions/2.0.1-bbbbbbbbbbbb/bin");
         let journal = root.join("journal");
-        let service_path = service_artifact_path(&home).expect("linux service artifact");
+        let service_path = service_artifact_path(&home)
+            .expect("resolve service artifact")
+            .expect("linux service artifact");
         for bin in [&old_bin, &new_bin] {
             fs::create_dir_all(bin).unwrap();
             for name in ["journal", "solstone"] {

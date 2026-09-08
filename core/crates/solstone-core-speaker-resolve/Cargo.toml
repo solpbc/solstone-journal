@@ -63,3 +63,6 @@ tempfile = "3.24.0"
 
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["signal"] }
+
+[target.'cfg(windows)'.dependencies]
+solstone-core-local.workspace = true

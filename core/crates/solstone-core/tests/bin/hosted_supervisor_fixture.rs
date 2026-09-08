@@ -343,6 +343,8 @@ fn launch_darwin_fixture_child(
     provenance: solstone_core_system::process::HostedLaunchProvenance,
 ) -> Result<LaunchAuthority, String> {
     let request = CommandLaunchRequest {
+        #[cfg(windows)]
+        read_file_grants: Vec::new(),
         program: executable.as_os_str().to_os_string(),
         arguments: std::iter::once(OsString::from(mode))
             .chain(arguments)

@@ -88,6 +88,7 @@ pub(crate) fn process_one(
     explicit_backend: Option<&str>,
     config: &JournalConfigRead,
     attestation_state: &AttestationStateStore,
+    #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<ProcessOutcome, TranscribeError> {
     if should_skip_process_one_processed(audio_path, redo) {
         return Ok(ProcessOutcome::Skipped);
@@ -154,7 +155,12 @@ pub(crate) fn process_one(
     timings.add_ms("decode", elapsed_ms(decoded_at));
     let audio_seconds = full_audio.len() as f64 / f64::from(SAMPLE_RATE);
     let vad_at = Instant::now();
-    let vad = run_vad(&full_audio, min_speech_seconds(config))?;
+    let vad = run_vad(
+        &full_audio,
+        min_speech_seconds(config),
+        #[cfg(windows)]
+        generation,
+    )?;
     timings.add_ms("vad", elapsed_ms(vad_at));
     let sound_tags = tag_audio(&full_audio, journal_path);
 
@@ -353,6 +359,8 @@ pub(crate) fn process_one(
         &restored,
         SAMPLE_RATE,
         0.25,
+        #[cfg(windows)]
+        generation,
     ) {
         Ok(result) => result,
         Err(error) => {
@@ -887,6 +895,8 @@ mod tests {
                     None,
                     &config,
                     &solstone_core_spp_ratls::AttestationStateStore::new(),
+                    #[cfg(windows)]
+                    &solstone_core_system::process::ChildLaunchContext::default(),
                 ))
                 .unwrap();
         });

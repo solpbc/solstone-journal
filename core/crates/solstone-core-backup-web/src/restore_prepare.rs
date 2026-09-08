@@ -198,6 +198,10 @@ pub(crate) fn cancel(
     require_capability(lease, capability)?;
     let stage = lease.stage;
     let generation = lease.baseline_generation;
+    #[cfg(windows)]
+    if operation::worker_or_cleanup_active(operations, generation) {
+        return Err(operation::busy_response());
+    }
     if stage != RestorePrepareStage::Prepared {
         require_live_generation(lease, operations)?;
         operation::mark_cancelled(operations, generation);

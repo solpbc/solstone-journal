@@ -3,19 +3,28 @@
 
 //! Decoded-audio VAD, reduction, and sound-tagging boundaries.
 
+#[cfg(not(windows))]
 use std::env;
-use std::io::{self, Write};
+use std::io;
+#[cfg(not(windows))]
+use std::io::Write;
 use std::path::{Path, PathBuf};
+#[cfg(not(windows))]
 use std::process::{Command, Stdio};
 
 use serde_json::{Value, json};
 use solstone_core_observe_audio::{AudioReduction, VadResult, reduce_audio, write_f32le_exclusive};
+#[cfg(not(windows))]
 use solstone_core_system::process::{Disposition, LaunchError, launch};
 use solstone_core_system_health::sanitize_os_bytes_for_terminal_bounded;
 
-use crate::{TranscribeError, resolve_model_asset};
+use crate::TranscribeError;
+#[cfg(not(windows))]
+use crate::resolve_model_asset;
 
+#[cfg(not(windows))]
 const VAD_BINARY_NAME: &str = "solstone-core-vad-analyze";
+#[cfg(not(windows))]
 const VAD_BINARY_ENV: &str = "SOLSTONE_VAD_BINARY";
 const REQUEST_SCHEMA: &str = "solstone-vad-request-v1";
 const RESPONSE_SCHEMA: &str = "solstone-vad-response-v1";
@@ -28,9 +37,19 @@ const SAMPLE_RATE_HZ: f64 = 16_000.0;
 pub(crate) fn run_vad(
     audio: &[f32],
     min_speech_seconds: f64,
+    #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<VadResult, TranscribeError> {
-    let model_path = resolve_model_asset("silero_vad_v6.onnx")?;
-    let binary = resolve_vad_binary()?;
+    #[cfg(not(windows))]
+    let (model_path, binary) = (
+        resolve_model_asset("silero_vad_v6.onnx")?,
+        resolve_vad_binary()?,
+    );
+    #[cfg(windows)]
+    let (model_path, binary) = {
+        let package = solstone_core_local::install::onnx_readiness::verified_windows_onnx_package()
+            .map_err(|detail| TranscribeError::VadBinary { detail })?;
+        (package.silero_vad_model, package.vad_worker)
+    };
     let temporary = tempfile::Builder::new()
         .prefix("solstone-transcribe-vad-")
         .tempdir()
@@ -49,7 +68,27 @@ pub(crate) fn run_vad(
     }
 
     let request = vad_request(&audio_path, &model_path, min_speech_seconds)?;
-    let result = invoke_vad_helper(&binary, &request);
+    #[cfg(windows)]
+    let temporary = std::sync::Arc::new(temporary);
+    #[cfg(windows)]
+    let mut resources = crate::windows_onnx::generation_resources(generation);
+    #[cfg(windows)]
+    resources.retain(temporary.clone());
+    let result = invoke_vad_helper(
+        &binary,
+        &request,
+        #[cfg(windows)]
+        resources,
+    );
+    #[cfg(windows)]
+    let temporary = {
+        if result.is_err() {
+            return result;
+        }
+        std::sync::Arc::try_unwrap(temporary).map_err(|_| TranscribeError::VadTemporary {
+            detail: "could not remove VAD input directory: input remains in use".to_owned(),
+        })?
+    };
     let cleanup_result = temporary
         .close()
         .map_err(|error| TranscribeError::VadTemporary {
@@ -96,6 +135,7 @@ pub(crate) fn tag_audio(audio: &[f32], journal_path: &Path) -> Option<Value> {
 }
 
 /// Resolve the VAD helper using `SOLSTONE_VAD_BINARY` or the current executable's sibling.
+#[cfg(not(windows))]
 pub fn resolve_vad_binary() -> Result<PathBuf, TranscribeError> {
     let candidate = vad_binary_candidate_from(env::current_exe(), |name| env::var(name).ok())?;
     if candidate.is_file() {
@@ -112,6 +152,7 @@ pub fn resolve_vad_binary() -> Result<PathBuf, TranscribeError> {
 /// `lookup_env` is the single `SOLSTONE_VAD_BINARY` branch shared by transcription
 /// and doctor. Pass `install_bin_dir.join("solstone-core")` as the executable to
 /// use the journal-host bindir as the sibling directory.
+#[cfg(not(windows))]
 pub(crate) fn vad_binary_candidate_from<F>(
     current_executable: Result<PathBuf, io::Error>,
     lookup_env: F,
@@ -130,6 +171,7 @@ where
     Ok(vad_binary_candidate(directory, lookup_env))
 }
 
+#[cfg(not(windows))]
 fn vad_binary_candidate<F>(base_directory: &Path, lookup_env: F) -> PathBuf
 where
     F: Fn(&str) -> Option<String>,
@@ -160,6 +202,7 @@ fn vad_request(
     })
 }
 
+#[cfg(not(windows))]
 fn invoke_vad_helper(binary: &Path, request: &[u8]) -> Result<VadResult, TranscribeError> {
     let mut authority = launch(
         Disposition::InheritedParentScope,
@@ -364,16 +407,20 @@ fn parse_vad_error(exit: Option<i32>, stderr: &[u8]) -> TranscribeError {
 #[cfg(test)]
 mod tests {
     use std::io;
+    #[cfg(not(windows))]
     use std::path::PathBuf;
 
     use serde_json::json;
     use solstone_core_observe_audio::VadResult;
 
     use super::{
-        ERROR_SCHEMA, RESPONSE_SCHEMA, VAD_BINARY_ENV, VAD_BINARY_NAME, parse_vad_error,
-        parse_vad_response, should_skip_reduction, speech_ratio, vad_binary_candidate_from,
+        ERROR_SCHEMA, RESPONSE_SCHEMA, parse_vad_error, parse_vad_response, should_skip_reduction,
+        speech_ratio, vad_binary_candidate_from,
     };
     use crate::TranscribeError;
+
+    #[cfg(not(windows))]
+    use super::{VAD_BINARY_ENV, VAD_BINARY_NAME};
 
     fn vad(noisy: bool) -> VadResult {
         VadResult {
@@ -427,6 +474,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(windows))]
     fn vad_binary_env_override_is_used_verbatim() {
         let candidate = vad_binary_candidate_from(
             Ok(PathBuf::from("/runtime/bin/solstone-transcribe")),
@@ -441,6 +489,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(windows))]
     fn vad_binary_lookup_uses_current_executable_sibling_directory() {
         let candidate = vad_binary_candidate_from(
             Ok(PathBuf::from("/runtime/bin/solstone-transcribe")),
@@ -645,5 +694,74 @@ mod tests {
 
         assert!(matches!(error, TranscribeError::VadBinary { .. }));
         assert_eq!(error.exit_code(), 78);
+    }
+}
+
+#[cfg(windows)]
+pub fn resolve_vad_binary() -> Result<PathBuf, TranscribeError> {
+    solstone_core_local::install::onnx_readiness::verified_windows_onnx_package()
+        .map(|package| package.vad_worker)
+        .map_err(|detail| TranscribeError::VadBinary { detail })
+}
+
+#[cfg(windows)]
+pub(crate) fn vad_binary_candidate_from<F>(
+    current_executable: Result<PathBuf, io::Error>,
+    _lookup_env: F,
+) -> Result<PathBuf, TranscribeError>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let executable = current_executable.map_err(|error| TranscribeError::VadBinary {
+        detail: format!("could not determine current executable for VAD helper: {error}"),
+    })?;
+    let binary = resolve_vad_binary()?;
+    if !executable
+        .parent()
+        .zip(binary.parent())
+        .is_some_and(|(requested, declared)| {
+            solstone_core_local::install::windows_member_path::matches_declared_member_path(
+                requested, declared,
+            )
+        })
+    {
+        return Err(TranscribeError::VadBinary {
+            detail: "VAD helper lookup is outside the running signed app payload".to_owned(),
+        });
+    }
+    Ok(binary)
+}
+
+#[cfg(windows)]
+fn invoke_vad_helper(
+    binary: &Path,
+    request: &[u8],
+    resources: solstone_core_system::process::BoundedHelperResources,
+) -> Result<VadResult, TranscribeError> {
+    use crate::windows_onnx::{
+        ONNX_STDERR_LIMIT, ONNX_STDIN_LIMIT, ONNX_STDOUT_LIMIT, OnnxHelper, run_onnx_helper,
+    };
+    use solstone_core_system::process::BoundedHelperBudget;
+    let output = run_onnx_helper(
+        OnnxHelper::Vad,
+        binary,
+        request,
+        BoundedHelperBudget {
+            timeout: std::time::Duration::from_secs(2400),
+            stdin_limit_bytes: ONNX_STDIN_LIMIT,
+            stdout_limit_bytes: ONNX_STDOUT_LIMIT,
+            stderr_limit_bytes: ONNX_STDERR_LIMIT,
+        },
+        resources,
+    )
+    .map_err(|error| TranscribeError::VadTemporary {
+        detail: error.to_string(),
+    })?;
+    if output.exit_code == 0 {
+        json_line(&output.stdout, "VAD response")
+            .and_then(parse_vad_response)
+            .map_err(|detail| vad_contract_error(Some(0), &output.stdout, detail))
+    } else {
+        Err(parse_vad_error(Some(output.exit_code), &output.stderr))
     }
 }

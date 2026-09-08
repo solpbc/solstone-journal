@@ -8,6 +8,11 @@ mod windows;
 #[cfg(windows)]
 pub use windows::{DllLoadError, load_dll, restrict_default_dll_directories};
 
+#[cfg(windows)]
+mod onnx;
+#[cfg(windows)]
+pub use onnx::{LoadedOnnxRuntime, load_onnx_runtime};
+
 use std::path::{Component, Path, PathBuf};
 
 const LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR: u32 = 0x0000_0100;

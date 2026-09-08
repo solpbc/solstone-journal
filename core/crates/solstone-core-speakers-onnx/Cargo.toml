@@ -10,6 +10,7 @@ publish = false
 workspace = true
 
 [features]
+test-fixture-pin = ["solstone-core-distribution/test-fixture-pin"]
 default = ["runtime"]
 runtime = ["dep:ort"]
 full-tests = ["runtime"]
@@ -22,4 +23,15 @@ solstone-core-speakers.workspace = true
 ort = { workspace = true, features = ["coreml"], optional = true }
 
 [dev-dependencies]
+solstone-core-distribution.workspace = true
 serde_json.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+ort = { workspace = true, features = ["load-dynamic"], optional = true }
+solstone-core-local.workspace = true
+solstone-core-win-dll-load.workspace = true
+
+[[test]]
+name = "windows_runtime_binding"
+path = "tests/windows_runtime_binding.rs"
+required-features = ["runtime", "test-fixture-pin"]

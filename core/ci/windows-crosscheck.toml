@@ -28,15 +28,3 @@ version = "9.0.0"
 class = "native-msvc-build-oracle"
 reason = "The vendored FFmpeg build requires a Windows-native toolchain and sysroot; the Linux cross-check cannot act as that oracle."
 expected_stderr = ["failed to run custom build command for `ffmpeg-sys-next v9.0.0", "Detected cross compilation but sysroot not provided"]
-
-[[exclusions]]
-package = "solstone-core-speakers-analyze"
-class = "unsupported-runtime-bundle"
-reason = "The pinned ONNX Runtime bundle currently ships only for Linux and macOS; Windows packaging is outside prework."
-expected_stderr = ["failed to run custom build command for `solstone-core-speakers-analyze", "unsupported solstone-core-speakers-analyze target OS \"windows\""]
-
-[[exclusions]]
-package = "solstone-core-vad-analyze"
-class = "unsupported-runtime-bundle"
-reason = "The pinned ONNX Runtime bundle currently ships only for Linux and macOS; Windows packaging is outside prework."
-expected_stderr = ["failed to run custom build command for `solstone-core-vad-analyze", "unsupported solstone-core-vad-analyze target OS \"windows\""]

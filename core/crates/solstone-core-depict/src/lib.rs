@@ -199,13 +199,17 @@ impl Detector for SystemDetector {
         let system_root = env::var_os("SystemRoot")
             .filter(|val| !val.is_empty())
             .ok_or_else(rfdetr_unavailable)?;
-        let temporary = DetectorTempDir::new().map_err(|_| rfdetr_unavailable())?;
+        let temporary =
+            std::sync::Arc::new(DetectorTempDir::new().map_err(|_| rfdetr_unavailable())?);
         let input = temporary.path.join("input.png");
         let output = temporary.path.join("output.json");
         fs::write(&input, full_png).map_err(|_| rfdetr_unavailable())?;
 
         let spec = rfdetr_windows_detect_launch(&package, system_root, &input, &output);
+        let mut resources = solstone_core_system::process::BoundedHelperResources::new();
+        resources.retain(temporary.clone());
         let request = BoundedHelperRequest {
+            resources,
             package_root: spec.package_root,
             executable: spec.executable,
             current_directory: spec.current_directory,
@@ -776,7 +780,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         assert_eq!(
             rfdetr_paths_at(root.path(), "linux", "x86_64").unwrap_err(),
-            RFDETR_UNAVAILABLE_DETAIL
+            rfdetr_unavailable()
         );
 
         for key in ["linux-cpu-x64", "linux-cpu-arm64", "macos-metal-arm64"] {
@@ -849,7 +853,7 @@ mod tests {
             KEY,
         )
         .unwrap_err();
-        assert_eq!(error, RFDETR_UNAVAILABLE_DETAIL);
+        assert_eq!(error, rfdetr_unavailable());
     }
 
     #[test]
@@ -1128,7 +1132,7 @@ mod tests {
         assert!(!output.exists());
         assert!(matches!(
             run_with_clients(&image, false, &SuccessWire, &MalformedDetector),
-            Err(DepictError::Detection(detail)) if detail == RFDETR_UNAVAILABLE_DETAIL
+            Err(DepictError::Detection(detail)) if detail == rfdetr_unavailable()
         ));
         assert!(!output.exists());
         assert_eq!(

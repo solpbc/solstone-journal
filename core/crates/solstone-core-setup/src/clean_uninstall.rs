@@ -135,7 +135,10 @@ pub fn clean_uninstall_confirmation_lines(context: &CleanUninstallContext<'_>) -
         "journal setup --clean-uninstall will remove these runtime artifacts:".into(),
         String::new(),
     ];
-    if let Some(path) = service {
+    if let Err(error) = &service {
+        lines.push(format!("  service location unavailable: {error}"));
+    }
+    if let Ok(Some(path)) = service {
         lines.push(format!(
             "  [{:<7}] service: {}",
             marker(&path),
@@ -183,8 +186,12 @@ pub fn clean_uninstall_confirmation_lines(context: &CleanUninstallContext<'_>) -
 #[must_use]
 pub fn clean_uninstall_has_managed_paths(context: &CleanUninstallContext<'_>) -> bool {
     let wrappers = wrapper_paths(&context.home_dir);
+    let service = match service_artifact_path(&context.home_dir) {
+        Ok(service) => service,
+        Err(_) => return true, // Run must report this failure rather than claim nothing needs removal.
+    };
     [
-        service_artifact_path(&context.home_dir),
+        service,
         Some(wrappers.solstone),
         Some(wrappers.journal),
         context
@@ -414,7 +421,16 @@ fn remove_if_last(name: &'static str, path: PathBuf, remove: bool) -> CleanUnins
 }
 
 pub fn run_clean_uninstall(context: &mut CleanUninstallContext<'_>) -> CleanUninstallOutcome {
-    let service = service_artifact_path(&context.home_dir);
+    let service = match service_artifact_path(&context.home_dir) {
+        Ok(service) => service,
+        Err(error) => {
+            return CleanUninstallOutcome {
+                exit_code: 1,
+                message: format!("service location unavailable: {error}"),
+                results: Vec::new(),
+            };
+        }
+    };
     let wrappers = wrapper_paths(&context.home_dir);
     if !clean_uninstall_has_managed_paths(context) {
         return CleanUninstallOutcome {

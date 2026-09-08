@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use solstone_core_assets::canonical_host_pair;
 use solstone_core_local::install::capability_status::CapabilityStatus;
 use solstone_core_local::install::ced_readiness::{
-    CED_READY_DETAIL, CED_UNAVAILABLE_GUIDANCE, CedVerdict, evaluate_ced_readiness,
+    CED_READY_DETAIL, CED_UNAVAILABLE_GUIDANCE, CedVerdict,
 };
 #[cfg(test)]
 use solstone_core_local::install::rfdetr_readiness::RFDETR_UNAVAILABLE_GUIDANCE;
@@ -314,7 +314,7 @@ pub fn gather_host_inputs(journal: &Path, version: &str) -> CheckInputs {
         version: version.into(),
         ced: {
             let (os, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
-            ced_input_from(evaluate_ced_readiness(journal, os, arch))
+            ced_input_from(evaluate_host_ced(journal, os, arch))
         },
         rfdetr: {
             let (os, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
@@ -355,6 +355,7 @@ fn probe_windows_rfdetr_help(
     };
     let spec = rfdetr_windows_help_launch(package, system_root);
     let request = BoundedHelperRequest {
+        resources: Default::default(),
         package_root: spec.package_root,
         executable: spec.executable,
         current_directory: spec.current_directory,
@@ -374,7 +375,18 @@ fn probe_windows_rfdetr_help(
     };
     match run_bounded_helper(request) {
         Ok(output) => map_rfdetr_help_probe(output.exit_code == 0, Some(output.exit_code), None),
-        Err(error) => map_rfdetr_help_probe(false, None, Some(&error.to_string())),
+        Err(error) => {
+            let reason = if error.cleanup().is_none()
+                && matches!(
+                    error.cause(),
+                    solstone_core_system::process::BoundedHelperError::DeadlineExceeded { .. }
+                ) {
+                "timeout"
+            } else {
+                "binary_unavailable"
+            };
+            serde_json::json!({"runnable": false, "reason_code": reason, "message": error.to_string()})
+        }
     }
 }
 
@@ -1238,3 +1250,24 @@ mod tests {
         );
     }
 }
+
+/// Shared host entry point: Windows owns its helper through the bounded Job
+/// facade; Unix retains the existing local verdict and process runner.
+pub fn evaluate_host_ced(journal: &Path, os: &str, arch: &str) -> CedVerdict {
+    #[cfg(windows)]
+    {
+        solstone_core_local::install::ced_readiness::evaluate_ced_readiness_with_probe(
+            journal,
+            os,
+            arch,
+            ced_windows::probe,
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        solstone_core_local::install::ced_readiness::evaluate_ced_readiness(journal, os, arch)
+    }
+}
+
+#[cfg(windows)]
+pub mod ced_windows;

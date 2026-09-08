@@ -108,6 +108,9 @@ impl CallosumSocketServer {
         #[cfg(any(test, feature = "test-hooks"))] hooks: Option<Arc<ServerTestHooks>>,
         #[cfg(not(any(test, feature = "test-hooks")))] _hooks: Option<()>,
     ) -> Result<Self, CallosumSocketServerError> {
+        #[cfg(windows)]
+        crate::windows::resolve_pipe_namespace(&socket_path)
+            .map_err(CallosumSocketServerError::Io)?;
         if let Some(parent) = socket_path.parent() {
             fs::create_dir_all(parent).map_err(CallosumSocketServerError::Io)?;
         }
@@ -455,8 +458,8 @@ fn bind_windows_listener(
     use interprocess::local_socket::{ListenerOptions, ToFsName};
     use interprocess::os::windows::local_socket::{ListenerOptionsExt as _, NamedPipe};
 
-    let secret = crate::windows::create_or_read_secret(socket_path)?;
     let pipe_name = crate::windows::pipe_name(socket_path)?;
+    let secret = crate::windows::create_or_read_secret(socket_path)?;
     let descriptor = current_user_pipe_security_descriptor()?;
     let name = pipe_name.to_fs_name::<NamedPipe>()?;
     // interprocess 2.4.3 source proof:

@@ -226,6 +226,7 @@
       }
     },
     "phase_labels": {
+      "cleanup_pending": "backup needs attention",
       "setting_up": "setting up your backup…",
       "restoring": "restoring your journal…",
       "rotating": "making a new recovery key…",
@@ -238,6 +239,7 @@
       "empty": "not set up yet"
     },
     "operation_reason_labels": {
+      "cleanup_pending": "couldn't confirm that the backup task has stopped. other backup actions are waiting.",
       "backup_busy": "another backup task is already running. try again in a moment.",
       "backup_not_confirmed": "confirm your recovery key before turning on backup.",
       "backup_operation_failed": "that backup action couldn't be finished. check the recovery key and destination, then try again.",
@@ -267,6 +269,15 @@
       "hosted_entitlement_inactive": "set up backup on the services page that opens, then try again."
     },
     "action_labels": {
+      "finish_cleanup": "finish stopping backup",
+      "finishing_cleanup": "stopping backup…",
+      "cleanup_waiting": "backup actions are waiting",
+      "cleanup_blocked": "couldn't confirm that a journal task has stopped. this task must stop before backup actions can continue.",
+      "finish_task": "finish stopping task",
+      "finishing_task": "stopping task…",
+      "cleanup_checking": "checking backup availability",
+      "cleanup_contended": "try checking again in a moment.",
+      "check_cleanup": "check again",
       "start": "get started",
       "understand": "i understand",
       "save_destination": "save destination",
@@ -305,6 +316,13 @@
   let currentRecoveryDisplay = '';
   let offloadDaysExpanded = false;
   let pollTimer = null;
+  let cleanupRequestRunning = false;
+  const cleanupEligibility = new WeakMap();
+  const cleanupMutationActions = new Set([
+    'understand', 'enable-backup', 'enable-hosted', 'backup-now', 'rotate-key',
+    'teardown-confirm', 'teardown-restore-first', 'restore-hosted-unbound-start',
+    'offload-enable', 'offload-save', 'offload-disable', 'offload-restore-day',
+  ]);
   let restoreLane = null;
   const hostedRestoreAttempt = {
     stage: 'idle',
@@ -460,6 +478,46 @@
     return operation && !terminalPhases.has(operation.phase);
   }
 
+  function cleanupRequired() {
+    return state.operation?.phase === 'cleanup_pending'
+      || state.cleanup_admission === 'pending'
+      || state.cleanup_admission === 'contended';
+  }
+
+  function conflictsWithCleanup(button) {
+    if (cleanupMutationActions.has(button.getAttribute('data-action'))) return true;
+    return button.getAttribute('type') === 'submit'
+      && Boolean(button.closest('[data-confirm-form], [data-destination-form], [data-retention-form], [data-restore-form]'));
+  }
+
+  function setButtonDisabled(button, disabled) {
+    if (cleanupRequired() && conflictsWithCleanup(button)) {
+      cleanupEligibility.set(button, Boolean(disabled));
+      button.disabled = true;
+    } else {
+      cleanupEligibility.delete(button);
+      button.disabled = Boolean(disabled);
+    }
+  }
+
+  function applyCleanupFence() {
+    const pending = cleanupRequired();
+    for (const button of root.querySelectorAll('button')) {
+      if (!conflictsWithCleanup(button)) continue;
+      if (pending) {
+        if (!cleanupEligibility.has(button)) cleanupEligibility.set(button, button.disabled);
+        button.disabled = true;
+      } else if (cleanupEligibility.has(button)) {
+        button.disabled = cleanupEligibility.get(button);
+        cleanupEligibility.delete(button);
+      }
+    }
+  }
+
+  function shouldPoll() {
+    return operationActive(state.operation) || cleanupRequired();
+  }
+
   function managedMode() {
     return state.enabled || state.mode === 'operated';
   }
@@ -548,7 +606,7 @@
     if (keyControl) keyControl.hidden = Boolean(refused);
     if (keyReassurance) keyReassurance.hidden = Boolean(refused);
     primary.hidden = Boolean(refused);
-    primary.disabled = Boolean(refused) || hostedRestoreAttemptInFlight() || field.value.trim() === '';
+    setButtonDisabled(primary, Boolean(refused) || hostedRestoreAttemptInFlight() || field.value.trim() === '');
     if (attemptCancel) attemptCancel.hidden = !hostedRestoreAttempt.capability || Boolean(refused);
     outcome.textContent = hostedRestoreAttempt.message;
     outcome.hidden = !hostedRestoreAttempt.message;
@@ -610,8 +668,17 @@
       try {
         const payload = await postJson('/app/backup/restore-hosted/cancel', { capability });
         applyPayload(payload);
-      } catch (_err) {
-        // Cancellation is best-effort. A resolved or expired lease is already clean server-side.
+      } catch (err) {
+        const released = ['restore_prepare_invalid_capability', 'restore_prepare_expired',
+          'restore_prepare_generation_changed'].includes(err && err.reason_code);
+        if ((err && err.reason_code === 'backup_busy')
+          || (Object.hasOwn(state, 'cleanup_admission') && !released)) {
+          // A refusal or an unanswered Windows cancellation can still have a
+          // running worker. Recover server state before clearing the attempt.
+          pollUntilTerminal();
+          return false;
+        }
+        // A resolved or expired lease no longer owns a pending operation.
       }
     }
     resetHostedRestoreAttempt();
@@ -621,12 +688,13 @@
       setHostedRestoreOutcome('', 'neutral');
     }
     renderHostedRestoreAttempt();
+    return true;
   }
 
   async function failHostedRestoreAttempt(err, options) {
     const reason = err && err.reason_code;
     if (hostedRestoreAttempt.capability) {
-      await cancelHostedRestoreAttempt({ preserveOutcome: true });
+      if (!await cancelHostedRestoreAttempt({ preserveOutcome: true })) return;
     } else {
       resetHostedRestoreAttempt();
     }
@@ -1060,7 +1128,7 @@
 
   function updateTeardownConfirmState() {
     const button = root.querySelector('[data-action="teardown-confirm"]');
-    if (button) button.disabled = !teardownConfirmSatisfied();
+    if (button) setButtonDisabled(button, !teardownConfirmSatisfied());
   }
 
   function offloadDayHasBackupOnly(day) {
@@ -1106,18 +1174,18 @@
     const restoreFirst = root.querySelector('[data-action="teardown-restore-first"]');
     if (totals === null) {
       stakes.textContent = managementCopy.teardown_gate_unavailable_lead || '';
-      if (restoreFirst) restoreFirst.disabled = false;
+      if (restoreFirst) setButtonDisabled(restoreFirst, false);
       return;
     }
     if (totals.days === 0 && totals.bytes === 0) {
       stakes.textContent = managementCopy.teardown_gate_zero_lead || '';
-      if (restoreFirst) restoreFirst.disabled = true;
+      if (restoreFirst) setButtonDisabled(restoreFirst, true);
       return;
     }
     stakes.textContent = (managementCopy.teardown_gate_lead || '')
       .replace('{days}', totals.days.toLocaleString())
       .replace('{size}', totals.size);
-    if (restoreFirst) restoreFirst.disabled = false;
+    if (restoreFirst) setButtonDisabled(restoreFirst, false);
   }
 
   function showTeardownGate() {
@@ -1247,7 +1315,7 @@
             .filter(Boolean)
             .join(': '),
         );
-        button.disabled = !day.backup_only_segments;
+        setButtonDisabled(button, !day.backup_only_segments);
       }
       if (row) target.append(row);
     }
@@ -1323,17 +1391,17 @@
     const enableButton = root.querySelector('[data-action="offload-enable"]');
     if (enableButton) {
       enableButton.hidden = !showControls || enabled;
-      enableButton.disabled = !showControls || enabled;
+      setButtonDisabled(enableButton, !showControls || enabled);
     }
     const saveButton = root.querySelector('[data-action="offload-save"]');
     if (saveButton) {
       saveButton.hidden = !showControls || !enabled;
-      saveButton.disabled = !showControls || !enabled;
+      setButtonDisabled(saveButton, !showControls || !enabled);
     }
     const disableButton = root.querySelector('[data-offload-disable]');
     if (disableButton) {
       disableButton.hidden = !enabled;
-      disableButton.disabled = !enabled;
+      setButtonDisabled(disableButton, !enabled);
     }
     setElementHidden('[data-offload-disable-note]', !enabled);
 
@@ -1376,6 +1444,7 @@
     if (
       !operation ||
       operation.phase === 'needs_subscription' ||
+      operation.phase === 'cleanup_pending' ||
       (hostedRestoreLaneSelected() && operation.kind === 'restore_hosted' && operation.phase === 'refused')
     ) {
       banner.hidden = true;
@@ -1383,11 +1452,32 @@
     }
     banner.hidden = false;
     setText('[data-operation-phase]', labelForPhase(operation.phase));
+    const spinner = banner.querySelector('.backup-spinner');
+    if (spinner) spinner.hidden = !operationActive(operation);
     const errorLabel =
       operation.kind === 'offload_restore'
         ? offloadRestoreReasonLabel(operation.reason_code)
         : reasonLabel(operation.reason_code);
-    setText('[data-operation-error]', errorLabel);
+    setText('[data-operation-error]', operation.reason_code ? errorLabel : '');
+  }
+
+  function renderCleanup() {
+    const banner = root.querySelector('[data-cleanup-banner]');
+    const button = root.querySelector('[data-action="finish-cleanup"]');
+    if (!banner || !button) return;
+    const own = state.operation?.phase === 'cleanup_pending';
+    const contended = !own && state.cleanup_admission === 'contended';
+    banner.hidden = !cleanupRequired();
+    button.hidden = banner.hidden;
+    button.disabled = cleanupRequestRunning;
+    setText('[data-cleanup-heading]', own ? phaseLabels.cleanup_pending
+      : contended ? actionLabels.cleanup_checking : actionLabels.cleanup_waiting);
+    setText('[data-cleanup-reason]', own ? reasonLabel('cleanup_pending')
+      : contended ? actionLabels.cleanup_contended : actionLabels.cleanup_blocked);
+    button.textContent = cleanupRequestRunning
+      ? (own ? actionLabels.finishing_cleanup : actionLabels.finishing_task)
+      : own ? actionLabels.finish_cleanup
+      : contended ? actionLabels.check_cleanup : actionLabels.finish_task;
   }
 
   function renderStatus() {
@@ -1436,9 +1526,11 @@
       if (key && retention[key] != null) input.value = retention[key];
     }
     renderOperation();
+    renderCleanup();
     renderHostedRestoreOperation();
     renderHostedLocation();
     renderOffload();
+    applyCleanupFence();
   }
 
   function applyPayload(payload) {
@@ -1491,6 +1583,7 @@
     delete next.operation;
     offloadState = { status: 'ready', payload: next };
     renderOffload();
+    applyCleanupFence();
     return true;
   }
 
@@ -1596,7 +1689,7 @@
     pollTimer = window.setTimeout(async function () {
       try {
         const payload = await refreshStatus();
-        if (operationActive(payload.operation)) {
+        if (shouldPoll()) {
           pollUntilTerminal();
         } else if (payload.operation && payload.operation.kind === 'teardown') {
           resetTeardownGate();
@@ -1627,6 +1720,11 @@
         }
       } catch (_err) {
         const current = state.operation || { kind: 'status' };
+        if (cleanupRequired() || (Object.hasOwn(state, 'cleanup_admission') && operationActive(current))) {
+          renderStatus();
+          pollUntilTerminal();
+          return;
+        }
         state.operation = Object.assign({}, current, {
           phase: 'error',
           reason_code: 'failed',
@@ -1657,7 +1755,24 @@
       const button = event.target.closest('[data-action]');
       const action = button && button.getAttribute('data-action');
       if (!button || (button.disabled && action !== 'restore-hosted-unbound-start')) return;
+      if (cleanupRequired() && cleanupMutationActions.has(action)) {
+        applyCleanupFence();
+        return;
+      }
       try {
+        if (action === 'finish-cleanup') {
+          if (cleanupRequestRunning || !cleanupRequired()) return;
+          cleanupRequestRunning = true;
+          renderCleanup();
+          try {
+            applyPayload(await postJson('/app/backup/api/cleanup/retry'));
+          } finally {
+            cleanupRequestRunning = false;
+            renderCleanup();
+            if (shouldPoll()) pollUntilTerminal();
+          }
+          return;
+        }
         if (action === 'restore-hosted-unbound-start') {
           await beginHostedRestoreAttempt();
           return;
@@ -1719,7 +1834,7 @@
           if (hostedRestoreAttempt.stage === 'terminal' && hostedRestoreAttempt.refusedReason) {
             dismissHostedRestoreRefusal();
           }
-          await cancelHostedRestoreAttempt();
+          if (!await cancelHostedRestoreAttempt()) return;
           showPanel(managedMode() ? 'management' : 'intro');
         }
         if (action === 'offload-enable') {
@@ -1783,6 +1898,7 @@
     if (confirmForm) {
       confirmForm.addEventListener('submit', async function (event) {
         event.preventDefault();
+        if (cleanupRequired()) return;
         try {
           const entered = root.querySelector('[data-confirm-input]').value || '';
           const payload = await postJson('/app/backup/confirm', { recovery_key: entered });
@@ -1804,6 +1920,7 @@
     if (destinationForm) {
       destinationForm.addEventListener('submit', async function (event) {
         event.preventDefault();
+        if (cleanupRequired()) return;
         try {
           await saveDestination(destinationForm, '[data-destination-status]');
         } catch (err) {
@@ -1816,6 +1933,7 @@
     if (retentionForm) {
       retentionForm.addEventListener('submit', async function (event) {
         event.preventDefault();
+        if (cleanupRequired()) return;
         const body = {};
         for (const input of retentionForm.querySelectorAll('[data-retention-field]')) {
           body[input.getAttribute('data-retention-field')] = input.value;
@@ -1834,6 +1952,7 @@
     if (restoreForm) {
       restoreForm.addEventListener('submit', async function (event) {
         event.preventDefault();
+        if (cleanupRequired()) return;
         const body = destinationBody(restoreForm);
         body.recovery_key = restoreForm.elements.recovery_key.value || '';
         try {
@@ -1943,7 +2062,7 @@
   }
 
   function initialPanel() {
-    if (operationActive(state.operation)) {
+    if (shouldPoll()) {
       pollUntilTerminal();
       return managedMode() ? 'management' : 'destination';
     }

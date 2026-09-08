@@ -15,7 +15,7 @@
 //! is always `inf`, so neither is expressible in a request and those branches
 //! are not ported. The sampling rate is fixed at 16 kHz raw mono `f32le`.
 
-#[cfg(feature = "runtime")]
+#[cfg(all(feature = "runtime", not(windows)))]
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::ffi::OsString;
@@ -78,10 +78,10 @@ const DEFAULT_MIN_SILENCE_DURATION_MS: u32 = 1000;
 const DEFAULT_SPEECH_PAD_MS: u32 = 400;
 
 /// Where the loader records every shared object this process has mapped.
-#[cfg(feature = "runtime")]
+#[cfg(all(feature = "runtime", not(windows)))]
 const PROCESS_MAPS_PATH: &str = "/proc/self/maps";
 /// SONAME stem of the ONNX Runtime shared object the helper links against.
-#[cfg(feature = "runtime")]
+#[cfg(all(feature = "runtime", not(windows)))]
 const ONNX_RUNTIME_LIBRARY_PREFIX: &str = "libonnxruntime.so.";
 
 const OPTION_THRESHOLD: &str = "threshold";
@@ -335,7 +335,7 @@ pub fn speech_probabilities(audio: &[f32], model_path: &Path) -> Result<Vec<f32>
 /// `libonnxruntime.so.1` SONAME resolves to a versioned real path, and
 /// `/proc/self/maps` names that resolved path for every mapped object. Reading
 /// it reports the library in force rather than a compile-time expectation.
-#[cfg(feature = "runtime")]
+#[cfg(all(feature = "runtime", not(windows)))]
 pub fn loaded_onnx_runtime_version() -> Result<String, VadError> {
     let maps = fs::read_to_string(PROCESS_MAPS_PATH).map_err(|error| VadError::Internal {
         detail: format!("could not read {PROCESS_MAPS_PATH}: {error}"),
@@ -368,6 +368,7 @@ pub fn loaded_onnx_runtime_version() -> Result<String, VadError> {
 ///
 /// The SONAME symlink `libonnxruntime.so.1` shares the version prefix, so a
 /// looser test would report `1` as the runtime version.
+#[cfg(any(not(windows), test))]
 fn is_dotted_release_version(version: &str) -> bool {
     let mut components = 0;
     for component in version.split('.') {
@@ -768,6 +769,12 @@ struct SileroVadSession {
 #[cfg(feature = "runtime")]
 impl SileroVadSession {
     fn open(model_path: &Path) -> Result<Self, VadError> {
+        #[cfg(windows)]
+        let admitted_model =
+            solstone_core_speakers_onnx::windows_runtime::bootstrap_windows_vad_model(model_path)
+                .map_err(|detail| VadError::OnnxRuntime { detail })?;
+        #[cfg(windows)]
+        let model_path = admitted_model.as_path();
         let builder = Session::builder().map_err(|error| VadError::ProviderUnavailable {
             detail: format!("ONNX Runtime session builder is unavailable: {error}"),
         })?;
@@ -1714,4 +1721,10 @@ mod tests {
             assert_eq!(error.exit_code(), 64);
         }
     }
+}
+
+#[cfg(all(windows, feature = "runtime"))]
+pub fn loaded_onnx_runtime_version() -> Result<String, VadError> {
+    solstone_core_speakers_onnx::windows_runtime::loaded_windows_onnx_version()
+        .map_err(|detail| VadError::OnnxRuntime { detail })
 }

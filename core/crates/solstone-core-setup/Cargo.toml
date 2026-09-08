@@ -22,6 +22,9 @@ solstone-core-installation-identity.workspace = true
 solstone-core-system.workspace = true
 solstone-core-check.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+solstone-core-service-unit.workspace = true
+
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true
 

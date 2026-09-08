@@ -16,6 +16,11 @@ pub(crate) fn open_session(
     if providers.is_empty() {
         return Err(SpeakerOnnxError::EmptyProviderPlan);
     }
+    #[cfg(windows)]
+    let admitted_model = crate::windows_runtime::bootstrap_windows_speaker_model(model_path)
+        .map_err(|message| SpeakerOnnxError::Ort { message })?;
+    #[cfg(windows)]
+    let model_path = admitted_model.as_path();
     let dispatches = provider_dispatches(providers)?;
     Ok(Session::builder()?
         .with_execution_providers(dispatches)?

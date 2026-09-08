@@ -68,11 +68,19 @@ pub trait ProcessSpawner {
     fn spawn(&self, program: &OsStr, args: &[OsString]) -> std::io::Result<()>;
 }
 
-pub struct RealProcessSpawner;
+pub struct RealProcessSpawner {
+    #[cfg(windows)]
+    admitted: Option<solstone_core_system::process::AdmittedWindowsLaunch>,
+}
 
 impl ProcessSpawner for RealProcessSpawner {
     fn spawn(&self, program: &OsStr, args: &[OsString]) -> std::io::Result<()> {
-        runner::exec_process(program, args)
+        runner::exec_process(
+            program,
+            args,
+            #[cfg(windows)]
+            self.admitted.as_ref(),
+        )
     }
 }
 
@@ -98,7 +106,19 @@ pub fn run(args: Vec<OsString>) -> ExitCode {
             return ExitCode::from(70);
         }
     }
-    match dispatch(evaluate_args(&args), &RealProcessSpawner) {
+    #[cfg(windows)]
+    let admitted = match solstone_core_system::process::receive_windows_launch() {
+        Ok(admitted) => admitted,
+        Err(error) => {
+            eprintln!("journal process admission failed: {error}");
+            return ExitCode::from(70);
+        }
+    };
+    let spawner = RealProcessSpawner {
+        #[cfg(windows)]
+        admitted,
+    };
+    match dispatch(evaluate_args(&args), &spawner) {
         Outcome::Help(text) | Outcome::Version(text) => {
             print!("{text}");
             ExitCode::SUCCESS

@@ -18,10 +18,13 @@ use solstone_core_installation_identity::{
     root_token_from_path,
 };
 use solstone_core_journal_io::legacy_log_alias::cleanup_legacy_log_aliases;
+#[cfg(unix)]
 use solstone_core_system::lifecycle::{
-    ADMISSION_WAIT_ACTIVE_COPY, AdmissionWaitTerminalReason, ArtifactClearOutcome, DeclaredParent,
-    LifecycleError, ParentAdmissionFailure, ParentLossReason, ParentWatch, ShutdownDisposition,
-    ShutdownOutcome, ShutdownPhase, SupervisorBootAdmission, SyncTickOutcome, WriterId,
+    ADMISSION_WAIT_ACTIVE_COPY, AdmissionWaitTerminalReason, SupervisorBootAdmission,
+};
+use solstone_core_system::lifecycle::{
+    ArtifactClearOutcome, DeclaredParent, LifecycleError, ParentAdmissionFailure, ParentLossReason,
+    ParentWatch, ShutdownDisposition, ShutdownOutcome, ShutdownPhase, SyncTickOutcome, WriterId,
 };
 use solstone_core_system::process::SystemProcessInstanceSource;
 use solstone_core_system_health::format_sync_scan_failure_copy;
@@ -144,13 +147,18 @@ pub enum SupervisorHostOutcome {
 }
 
 struct HostedSupervisorAdmission {
+    #[cfg(unix)]
     lifecycle: solstone_core_system::lifecycle::PreReadySupervisorLifecycle,
+    #[cfg(windows)]
+    lifecycle: solstone_core_system::lifecycle::SupervisorLifecycle,
     _generation: Generation,
     _speakers_analyze_generation: SpeakersAnalyzeGeneration,
     parent_watch: Option<ParentWatch>,
 }
 
 struct HostedInstallationBinding {
+    #[cfg(windows)]
+    guard: solstone_core_installation_identity::GuardFields,
     generation: Generation,
     writer_id: WriterId,
 }
@@ -160,19 +168,31 @@ fn lifecycle_boot_refusal(error: LifecycleError) -> SupervisorBootRefusal {
         LifecycleError::SyncScan(failure) => {
             SupervisorBootRefusal::SyncScan(format_sync_scan_failure_copy(&failure))
         }
+        #[cfg(unix)]
         LifecycleError::AdmissionWaitTerminal(AdmissionWaitTerminalReason::ActivityRemains) => {
             SupervisorBootRefusal::AdmissionWaitTerminal
         }
         LifecycleError::AdmissionWaitMarkerLive => {
-            SupervisorBootRefusal::SyncScan(ADMISSION_WAIT_ACTIVE_COPY.to_owned())
+            #[cfg(unix)]
+            {
+                SupervisorBootRefusal::SyncScan(ADMISSION_WAIT_ACTIVE_COPY.to_owned())
+            }
+            #[cfg(not(unix))]
+            {
+                SupervisorBootRefusal::AdmissionWaitUnverifiable
+            }
         }
+        #[cfg(unix)]
         LifecycleError::AdmissionWaitTerminal(AdmissionWaitTerminalReason::ClockDiscontinuity) => {
             SupervisorBootRefusal::AdmissionWaitUnverifiable
         }
+        #[cfg(unix)]
         LifecycleError::AdmissionWaitMarkerNeedsAttention(_)
-        | LifecycleError::AdmissionHeartbeatNeedsAttention { .. }
+        | LifecycleError::AdmissionWaitMarkerCleanup(_) => {
+            SupervisorBootRefusal::AdmissionWaitUnverifiable
+        }
+        LifecycleError::AdmissionHeartbeatNeedsAttention { .. }
         | LifecycleError::AdmissionWaitProcessIdentity
-        | LifecycleError::AdmissionWaitMarkerCleanup(_)
         | LifecycleError::AdmissionWaitMarkerPublication(_)
         | LifecycleError::PostPublicationHeartbeatCleanup(_) => {
             SupervisorBootRefusal::AdmissionWaitUnverifiable
@@ -209,6 +229,8 @@ pub async fn run_hosted(
         match solstone_core_transcribe::enter_speakers_analyze_generation(
             journal,
             SpeakersAnalyzeOwnerRole::Supervisor,
+            #[cfg(windows)]
+            None,
         ) {
             Ok(generation) => generation,
             Err(error) => {
@@ -219,6 +241,7 @@ pub async fn run_hosted(
                 };
             }
         };
+    #[cfg(unix)]
     let admission = match SupervisorBootAdmission::acquire(journal, binding.writer_id.clone()) {
         Ok(admission) => admission,
         Err(error) => {
@@ -243,6 +266,7 @@ pub async fn run_hosted(
             reason: SupervisorBootRefusal::LegacyLogCleanup(error.to_string()),
         };
     }
+    #[cfg(unix)]
     let lifecycle = match admission.activate() {
         Ok(lifecycle) => lifecycle,
         Err(error) => {
@@ -251,7 +275,17 @@ pub async fn run_hosted(
             };
         }
     };
-    let sense_child_environment = speakers_analyze_generation.inheritance_environment();
+    #[cfg(windows)]
+    let lifecycle = match solstone_core_system::lifecycle::boot(journal, binding.writer_id.clone())
+    {
+        Ok(lifecycle) => lifecycle,
+        Err(error) => {
+            return SupervisorHostOutcome::Refused {
+                reason: lifecycle_boot_refusal(error),
+            };
+        }
+    };
+    let sense_child_environment = speakers_analyze_generation.child_launch_context();
     let admitted = HostedSupervisorAdmission {
         lifecycle,
         _generation: binding.generation,
@@ -265,6 +299,8 @@ pub async fn run_hosted(
         journal_binary,
         admitted.parent_watch,
         sense_child_environment,
+        #[cfg(windows)]
+        binding.guard,
     )
     .await
     {
@@ -352,18 +388,25 @@ fn classify_shutdown(cause: ShutdownCause, outcome: ShutdownOutcome) -> Supervis
 }
 
 fn load_generation(journal: &Path) -> Result<HostedInstallationBinding, SupervisorBootRefusal> {
-    let home = std::env::var_os("HOME").ok_or_else(|| {
-        SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(format!(
-            "home: {}",
-            IdentityError::InvalidInput("HOME is not set")
-        )))
-    })?;
-    let owner =
+    #[cfg(unix)]
+    let owner = {
+        let home = std::env::var_os("HOME").ok_or_else(|| {
+            SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(
+                format!("home: {}", IdentityError::InvalidInput("HOME is not set")),
+            ))
+        })?;
         crate::installation_context::owner_base_at_home(PathBuf::from(home)).map_err(|error| {
             SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(
                 format!("owner storage: {error}"),
             ))
-        })?;
+        })?
+    };
+    #[cfg(windows)]
+    let owner = solstone_core_installation_identity::owner_base().map_err(|error| {
+        SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(format!(
+            "owner storage: {error}"
+        )))
+    })?;
     let root =
         crate::installation_context::identity_root_from_current_executable().map_err(|error| {
             SupervisorBootRefusal::InstallationBinding(InstallationBindingRefusal::LoadFailed(
@@ -396,6 +439,8 @@ fn load_generation(journal: &Path) -> Result<HostedInstallationBinding, Supervis
         ))
     })?;
     Ok(HostedInstallationBinding {
+        #[cfg(windows)]
+        guard: solstone_core_installation_identity::GuardFields::from_binding(&binding),
         generation: binding.generation,
         writer_id,
     })

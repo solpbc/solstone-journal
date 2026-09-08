@@ -23,6 +23,9 @@ solstone-core-indexer-query = { workspace = true }
 solstone-core-indexer-store = { workspace = true }
 solstone-core-import-sources = { workspace = true }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_Threading"] }
+
 [dev-dependencies]
 serde_json = { workspace = true }
 sha2 = { workspace = true }

@@ -6,26 +6,36 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs::{self, File};
-use std::io::{Read, Write};
+#[cfg(not(windows))]
+use std::io::Read;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+#[cfg(not(windows))]
 use std::process::Child;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(not(windows))]
 use std::sync::mpsc;
+#[cfg(not(windows))]
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(windows))]
+use std::time::Instant;
 
 use serde_json::{Value, json};
 use solstone_core_system::lifecycle::HostedServiceParentRuntime;
+#[cfg(not(windows))]
 use solstone_core_system::process::{
     CommandLaunchRequest, Disposition, LaunchAuthority, launch_command, launch_command_hosted,
 };
 
+#[cfg(not(windows))]
 const HELPER: &str = "solstone-core-speakers-analyze";
 const REQUEST_SCHEMA: &str = "solstone-speaker-discovery-cluster-request-v1";
 const RESPONSE_SCHEMA: &str = "solstone-speaker-discovery-cluster-response-v1";
 const ALGORITHM: &str = "hdbscan-eom-euclidean-f64-prim-mst";
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+#[cfg(not(windows))]
 static HOSTED_CHILD_LAUNCH_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 const STDOUT_LIMIT: usize = 1024 * 1024;
 const STDERR_LIMIT: usize = 64 * 1024;
@@ -35,6 +45,7 @@ const TERMINATE_GRACE: Duration = Duration::from_secs(5);
 #[derive(Clone, Copy)]
 struct InvocationBudget {
     timeout: Duration,
+    #[cfg_attr(windows, allow(dead_code))]
     terminate_grace: Duration,
     stdout_limit: usize,
     stderr_limit: usize,
@@ -58,11 +69,19 @@ pub struct DiscoveryHelperError {
 pub fn discovery_cluster(
     embeddings: Vec<Vec<f32>>,
     hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
+    #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<Vec<i64>, DiscoveryHelperError> {
     let helper = sibling_helper()?;
-    run(&helper, &embeddings, hosted_parent)
+    run(
+        &helper,
+        &embeddings,
+        hosted_parent,
+        #[cfg(windows)]
+        generation,
+    )
 }
 
+#[cfg(not(windows))]
 fn sibling_helper() -> Result<PathBuf, DiscoveryHelperError> {
     let executable = std::env::current_exe().map_err(|error| invoke(error.to_string()))?;
     let path = executable
@@ -85,10 +104,105 @@ fn run(
     helper: &Path,
     embeddings: &[Vec<f32>],
     hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
+    #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<Vec<i64>, DiscoveryHelperError> {
-    run_with_budget(helper, embeddings, DEFAULT_BUDGET, hosted_parent)
+    run_with_budget(
+        helper,
+        embeddings,
+        DEFAULT_BUDGET,
+        hosted_parent,
+        #[cfg(windows)]
+        generation,
+    )
 }
 
+#[cfg(windows)]
+fn sibling_helper() -> Result<PathBuf, DiscoveryHelperError> {
+    solstone_core_local::install::onnx_readiness::verified_windows_speakers_helper()
+        .map(|(_, worker)| worker)
+        .map_err(invoke)
+}
+
+#[cfg(windows)]
+fn run_with_budget(
+    helper: &Path,
+    embeddings: &[Vec<f32>],
+    budget: InvocationBudget,
+    hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
+    #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
+) -> Result<Vec<i64>, DiscoveryHelperError> {
+    use solstone_core_system::process::{
+        BoundedHelperBudget, BoundedHelperRequest, BoundedHelperResourceLimits, run_bounded_helper,
+    };
+    let width = embeddings.first().map(Vec::len).unwrap_or(0);
+    if width == 0 || embeddings.iter().any(|row| row.len() != width) {
+        return Err(invoke("invalid-shape"));
+    }
+    let (package_root, speakers_worker) =
+        solstone_core_local::install::onnx_readiness::verified_windows_speakers_helper()
+            .map_err(invoke)?;
+    if !solstone_core_local::install::windows_member_path::matches_declared_member_path(
+        helper,
+        &speakers_worker,
+    ) {
+        return Err(invoke("helper-outside-signed-package"));
+    }
+    let system_root =
+        std::env::var_os("SystemRoot").ok_or_else(|| invoke("SystemRoot is not set"))?;
+    let dir = Arc::new(WindowsDiscoveryDirectory(temp_dir()?));
+    let result = (|| {
+        let payload = dir.0.join("embeddings.f32le");
+        write_payload(&payload, embeddings)?;
+        let payload_request = json!({"schema":REQUEST_SCHEMA,"embeddings_f32le_path":payload,"payload_format":"raw-f32le-row-major-v1","dtype":"float32-le","shape":[embeddings.len(),width],"min_cluster_size":5,"min_samples":3});
+        let mut resources = solstone_core_system::process::BoundedHelperResources::new();
+        resources.retain(Arc::new(generation.read_file_grants.clone()));
+        resources.retain(dir.clone());
+        if let Some(parent) = hosted_parent.as_ref() {
+            resources.retain(parent.clone());
+        }
+        let output = run_bounded_helper(BoundedHelperRequest {
+            resources,
+            current_directory: package_root.join("bin"),
+            package_root,
+            executable: speakers_worker,
+            arguments: vec!["discovery-cluster".to_owned()],
+            environment: BTreeMap::from([(OsString::from("SystemRoot"), system_root)]),
+            stdin: serde_json::to_vec(&payload_request).map_err(invoke)?,
+            budget: BoundedHelperBudget {
+                timeout: budget.timeout,
+                stdin_limit_bytes: 8 * 1024 * 1024,
+                stdout_limit_bytes: budget.stdout_limit,
+                stderr_limit_bytes: budget.stderr_limit,
+            },
+            resource_limits: Some(BoundedHelperResourceLimits {
+                cpu_rate_per_10_000: 10_000,
+                committed_memory_bytes: 2 * 1024 * 1024 * 1024,
+            }),
+        })
+        .map_err(|error| {
+            log::warn!("speaker discovery helper launch failed: {error:?}");
+            invoke(error)
+        })?;
+        if output.exit_code != 0 {
+            return Err(invoke(format!("exit-{}", output.exit_code)));
+        }
+        parse(&String::from_utf8_lossy(&output.stdout), embeddings.len())
+    })();
+    // The caller clone spans parsing. An incomplete native cleanup retains the
+    // request clone, including the explicitly supplied generation, after return.
+    result
+}
+
+#[cfg(windows)]
+struct WindowsDiscoveryDirectory(PathBuf);
+#[cfg(windows)]
+impl Drop for WindowsDiscoveryDirectory {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+#[cfg(not(windows))]
 fn run_with_budget(
     helper: &Path,
     embeddings: &[Vec<f32>],
@@ -105,6 +219,8 @@ fn run_with_budget(
         write_payload(&payload, embeddings)?;
         let payload_request = json!({"schema":REQUEST_SCHEMA,"embeddings_f32le_path":payload,"payload_format":"raw-f32le-row-major-v1","dtype":"float32-le","shape":[embeddings.len(),width],"min_cluster_size":5,"min_samples":3});
         let command = CommandLaunchRequest {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
             program: helper.as_os_str().to_os_string(),
             arguments: vec![OsString::from("discovery-cluster")],
             environment: BTreeMap::new(),
@@ -182,6 +298,7 @@ fn run_with_budget(
     result
 }
 
+#[cfg(not(windows))]
 fn drain<R: Read + Send + 'static>(
     mut reader: R,
     limit: usize,
@@ -209,6 +326,7 @@ fn drain<R: Read + Send + 'static>(
     })
 }
 
+#[cfg(not(windows))]
 fn join_capture(
     reader: thread::JoinHandle<Result<Vec<u8>, String>>,
 ) -> Result<Vec<u8>, DiscoveryHelperError> {
@@ -218,12 +336,14 @@ fn join_capture(
         .map_err(invoke)
 }
 
+#[cfg(not(windows))]
 fn terminate_and_reap(child: &mut LaunchAuthority, grace: Duration) {
     if child.terminate_exact(grace).is_err() {
         let _ = child.terminate(grace);
     }
 }
 
+#[cfg(not(windows))]
 fn terminate_raw_child(child: &mut Child, grace: Duration) {
     #[cfg(unix)]
     {
@@ -248,7 +368,11 @@ fn terminate_raw_child(child: &mut Child, grace: Duration) {
     let _ = child.wait();
 }
 fn temp_dir() -> Result<PathBuf, DiscoveryHelperError> {
-    let path = Path::new("/var/tmp").join(format!(
+    #[cfg(windows)]
+    let temp_root = std::env::temp_dir();
+    #[cfg(not(windows))]
+    let temp_root = PathBuf::from("/var/tmp");
+    let path = temp_root.join(format!(
         "solstone-speakers-analyze-discovery-cluster-{}-{}",
         std::process::id(),
         TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
@@ -340,6 +464,8 @@ pub fn drive_discovery_cluster_helper(
             stderr_limit: 1024,
         },
         None,
+        #[cfg(windows)]
+        &solstone_core_system::process::ChildLaunchContext::default(),
     )
     .map_err(|error| (error.stage.to_owned(), error.reason))
 }

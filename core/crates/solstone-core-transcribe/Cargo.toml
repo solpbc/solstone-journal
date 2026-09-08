@@ -10,7 +10,7 @@ license.workspace = true
 publish = false
 
 [features]
-test-hooks = []
+test-hooks = ["solstone-core-system/test-hooks"]
 
 [[test]]
 name = "transcription_transports"
@@ -18,6 +18,8 @@ path = "tests/transcription_transports.rs"
 required-features = ["test-hooks"]
 
 [dependencies]
+log.workspace = true
+thiserror.workspace = true
 chrono = { workspace = true }
 getrandom = { workspace = true }
 rustix = { workspace = true, features = ["process"] }
@@ -48,3 +50,6 @@ solstone-core-spp-ratls = { workspace = true }
 
 [lints]
 workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true

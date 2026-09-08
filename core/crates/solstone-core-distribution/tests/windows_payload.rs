@@ -101,6 +101,36 @@ fn signed_windows_payload_is_complete_and_refuses_mutation() {
     let root = fixture();
     let verified = verify_windows_payload(root.path()).expect("valid payload");
     assert_eq!(verified.manifest().source_commit, COMMIT);
+    #[cfg(windows)]
+    {
+        let verbatim_root = root.path().canonicalize().expect("canonical root");
+        let ordinary_root = std::path::Path::new(
+            verbatim_root
+                .to_str()
+                .unwrap()
+                .strip_prefix(r"\\?\")
+                .unwrap(),
+        );
+        assert_ne!(ordinary_root.as_os_str(), verbatim_root.as_os_str());
+        let ordinary = verify_windows_payload(ordinary_root).expect("ordinary payload");
+        let verbatim = verify_windows_payload(&verbatim_root).expect("verbatim payload");
+        for member in [
+            WINDOWS_SPEAKERS_ANALYZE_WORKER,
+            WINDOWS_ONNXRUNTIME_LIBRARY,
+            WINDOWS_WESPEAKER_MODEL,
+        ] {
+            let ordinary_path = ordinary.declared_path(member).unwrap();
+            let verbatim_path = verbatim.declared_path(member).unwrap();
+            assert_ne!(ordinary_path.as_os_str(), verbatim_path.as_os_str());
+            assert!(ordinary_path.is_file(), "ordinary inventory join {member}");
+            assert!(verbatim_path.is_file(), "verbatim inventory join {member}");
+            assert_eq!(
+                ordinary_path.canonicalize().unwrap(),
+                verbatim_path.canonicalize().unwrap()
+            );
+        }
+    }
+
     assert_eq!(
         verified
             .declared_path("bin/ced.dll")

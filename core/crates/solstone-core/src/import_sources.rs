@@ -217,7 +217,10 @@ impl document::PdfWorker for WindowsPdfWorker {
                 error: "Windows worker environment is unavailable".to_owned(),
                 detail: Some("SystemRoot is missing".to_owned()),
             })?;
+        let mut resources = solstone_core_system::process::BoundedHelperResources::new();
+        resources.retain(std::sync::Arc::new(request.resources.clone()));
         let output = run_bounded_helper(BoundedHelperRequest {
+            resources,
             package_root: self.package_root.clone(),
             executable: self.executable.clone(),
             current_directory: self.current_directory.clone(),
@@ -241,16 +244,18 @@ impl document::PdfWorker for WindowsPdfWorker {
                 committed_memory_bytes: document::PDF_WORKER_COMMITTED_MEMORY_BYTES,
             }),
         })
-        .map_err(|error| match error {
-            BoundedHelperError::DeadlineExceeded { .. } => document::WorkerFailure::TimedOut {
-                timeout: self.timeout,
-            },
-            BoundedHelperError::OutputLimitExceeded { stream, .. } => {
+        .map_err(|error| match error.cause() {
+            BoundedHelperError::DeadlineExceeded { .. } if error.cleanup().is_none() => {
+                document::WorkerFailure::TimedOut {
+                    timeout: self.timeout,
+                }
+            }
+            BoundedHelperError::OutputLimitExceeded { stream, .. } if error.cleanup().is_none() => {
                 document::WorkerFailure::ProtocolViolation {
                     detail: format!("PDF worker {stream} exceeds its byte limit"),
                 }
             }
-            error => document::WorkerFailure::Process {
+            _ => document::WorkerFailure::Process {
                 exit_code: Some(1),
                 error: "bounded PDF worker failed".to_owned(),
                 detail: Some(error.to_string()),

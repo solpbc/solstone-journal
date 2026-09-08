@@ -94,6 +94,8 @@ pub use parent_loss_ledger::{
     ParentLossTerminalDisposition, ParentLossUnresolvedReason, read_parent_loss_outcome,
 };
 pub use readiness::{ReadinessMarker, START_TIME_TOLERANCE_SECONDS};
+#[cfg(windows)]
+pub use readiness::{readiness_is_valid, wait_ready};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub use readiness::{readiness_is_valid, wait_ready, wait_ready_with};
 pub use shutdown::{

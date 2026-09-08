@@ -1361,23 +1361,10 @@ fn stage_layout(
     }
     let payload = load_payload(inventory_path, inventory)
         .map_err(|error| ProduceError::new(error.to_string()))?;
-    let target = inventory
-        .target
-        .iter()
-        .find(|target| target.id == target_id)
-        .ok_or_else(|| ProduceError::new(format!("missing required:\n  target {target_id}")))?;
-    if target.is_windows() {
-        if !payload.is_empty() {
-            return Err(ProduceError::new(
-                "windows payload is not implemented in this lode",
-            ));
-        }
-    } else {
-        for source in payload {
-            let dest = payload_dest(&inventory.payload_dest_prefix, &source);
-            let bytes = fs::read(repo.join(&inventory.payload_src_root).join(&source))?;
-            stage::write_staged_file_mode(stage, &dest, &bytes, 0o644)?;
-        }
+    for source in payload {
+        let dest = payload_dest(&inventory.payload_dest_prefix, &source);
+        let bytes = fs::read(repo.join(&inventory.payload_src_root).join(&source))?;
+        stage::write_staged_file_mode(stage, &dest, &bytes, 0o644)?;
     }
     Ok(())
 }
@@ -2069,7 +2056,7 @@ mod tests {
     ) {
         let root = tempfile::Builder::new()
             .prefix("solstone-distribution-windows-stage-")
-            .tempdir_in("/var/tmp")
+            .tempdir()
             .expect("temporary windows fixture");
         let distribution = root.path().join("core/distribution");
         fs::create_dir_all(&distribution).unwrap();
@@ -2096,14 +2083,14 @@ triple_windows = "x86_64-pc-windows-msvc"
 kind = "bin"
 package = "test-fixture-bin"
 bin = "test-fixture-bin"
-dest = "runtime/test-fixture-bin.exe"
+dest = "bin/test-fixture-bin.exe"
 mode = 0o755
 lane = "musl-static"
 targets = ["windows-x86_64"]
 [[entry]]
 kind = "copy"
 source = "LICENSE.txt"
-dest = "licenses/solstone/LICENSE"
+dest = "share/licenses/solstone/LICENSE"
 mode = 0o644
 targets = ["windows-x86_64"]
 "#,
@@ -2148,11 +2135,9 @@ targets = ["windows-x86_64"]
             .iter()
             .map(|record| record.dest.as_str())
             .collect::<BTreeSet<_>>();
-        assert!(dests.contains("runtime/test-fixture-bin.exe"));
-        assert!(dests.contains("licenses/solstone/LICENSE"));
-        assert!(!dests.iter().any(|dest| dest.starts_with("share/")));
+        assert!(dests.contains("bin/test-fixture-bin.exe"));
+        assert!(dests.contains("share/licenses/solstone/LICENSE"));
         assert!(!dests.iter().any(|dest| dest.starts_with("lib/")));
-        assert!(!dests.iter().any(|dest| dest.starts_with("bin/")));
     }
 
     #[test]
@@ -2175,7 +2160,7 @@ targets = ["windows-x86_64"]
     }
 
     #[test]
-    fn windows_stage_refuses_nonempty_payload() {
+    fn windows_stage_includes_common_content() {
         let (root, inventory, inventory_path, artifacts) = windows_stage_fixture();
         fs::write(
             inventory_path.parent().unwrap().join("payload.txt"),
@@ -2185,7 +2170,7 @@ targets = ["windows-x86_64"]
         fs::create_dir_all(root.path().join("payload")).unwrap();
         fs::write(root.path().join("payload/hello.md"), b"hello").unwrap();
         let stage = root.path().join("stage");
-        let error = match stage_inventory_tree(
+        let staged = stage_inventory_tree(
             root.path(),
             &inventory_path,
             &inventory,
@@ -2195,15 +2180,15 @@ targets = ["windows-x86_64"]
             None,
             None,
             &stage,
-        ) {
-            Ok(_) => panic!("windows payload refuses"),
-            Err(error) => error,
-        };
+        )
+        .expect("common Windows content");
+        assert_eq!(fs::read(stage.join("share/hello.md")).unwrap(), b"hello");
         assert!(
-            error
-                .to_string()
-                .contains("windows payload is not implemented in this lode"),
-            "{error}"
+            staged
+                .records
+                .iter()
+                .any(|record| record.dest == "share/hello.md"
+                    && record.digest == sha256_hex(b"hello"))
         );
     }
 
@@ -2236,7 +2221,7 @@ targets = ["windows-x86_64"]
         )
         .unwrap();
 
-        fs::remove_file(stage.join("licenses/solstone/LICENSE")).unwrap();
+        fs::remove_file(stage.join("share/licenses/solstone/LICENSE")).unwrap();
         let missing = record::compare_records(
             "declared",
             &declared,
@@ -2245,10 +2230,13 @@ targets = ["windows-x86_64"]
         )
         .expect_err("deleted dest is missing");
         assert!(missing.contains("missing in staged"), "{missing}");
-        assert!(missing.contains("licenses/solstone/LICENSE"), "{missing}");
+        assert!(
+            missing.contains("share/licenses/solstone/LICENSE"),
+            "{missing}"
+        );
 
-        fs::write(stage.join("licenses/solstone/LICENSE"), b"license").unwrap();
-        fs::write(stage.join("runtime/extra.exe"), b"extra").unwrap();
+        fs::write(stage.join("share/licenses/solstone/LICENSE"), b"license").unwrap();
+        fs::write(stage.join("bin/extra.exe"), b"extra").unwrap();
         let unexpected = record::compare_records(
             "declared",
             &declared,
@@ -2257,7 +2245,7 @@ targets = ["windows-x86_64"]
         )
         .expect_err("extra dest is unexpected");
         assert!(unexpected.contains("unexpected in staged"), "{unexpected}");
-        assert!(unexpected.contains("runtime/extra.exe"), "{unexpected}");
+        assert!(unexpected.contains("bin/extra.exe"), "{unexpected}");
     }
 
     fn linux_stub_artifacts(inventory: &Inventory, dir: &Path) -> BTreeMap<ArtifactId, PathBuf> {

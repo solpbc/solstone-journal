@@ -8,6 +8,9 @@ mod session;
 #[cfg(feature = "runtime")]
 mod wespeaker;
 
+#[cfg(all(windows, feature = "runtime"))]
+pub mod windows_runtime;
+
 use std::error::Error;
 use std::fmt;
 

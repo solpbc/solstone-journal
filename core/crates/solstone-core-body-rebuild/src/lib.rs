@@ -25,8 +25,11 @@ use solstone_core_body_store::{BodyBundleReplay, BodyDedupeState, validate_legac
 use solstone_core_journal_io::{
     AtomicWriteOptions, DirEntry, DirEntryKind, LockError, LockOptions, Removed,
     create_directory_with_mode, hold_lock, install_file, list_dir_entries,
-    list_dir_entries_bounded, remove_file, sync_dir, write_bytes_exclusive,
+    list_dir_entries_bounded, remove_file, write_bytes_exclusive,
 };
+
+#[cfg(unix)]
+use solstone_core_journal_io::sync_dir;
 
 #[cfg(test)]
 mod test_support;
@@ -571,14 +574,7 @@ fn collect_raw_files_with_limit(
                             "raw_directory_limit",
                         ));
                     }
-                    let relative = entry
-                        .path
-                        .strip_prefix(root)
-                        .ok()
-                        .and_then(Path::to_str)
-                        .filter(|path| valid_raw_path(path))
-                        .ok_or_else(|| error(BodyRebuildErrorKind::NativeReplay, "raw_asset_path"))?
-                        .to_owned();
+                    let relative = raw_inventory_path(root, &entry.path)?;
                     if !directories.insert(relative) {
                         return Err(error(
                             BodyRebuildErrorKind::NativeReplay,
@@ -591,15 +587,7 @@ fn collect_raw_files_with_limit(
                     if files.len() >= MAX_RAW_ASSETS {
                         return Err(error(BodyRebuildErrorKind::NativeReplay, "raw_asset_limit"));
                     }
-                    let relative = entry
-                        .path
-                        .strip_prefix(root)
-                        .ok()
-                        .and_then(Path::to_str)
-                        .filter(|path| valid_raw_path(path))
-                        .ok_or_else(|| {
-                            error(BodyRebuildErrorKind::NativeReplay, "raw_asset_path")
-                        })?;
+                    let relative = raw_inventory_path(root, &entry.path)?;
                     let remaining = total_limit.checked_sub(total).ok_or_else(|| {
                         error(BodyRebuildErrorKind::NativeReplay, "raw_bytes_limit")
                     })?;
@@ -607,7 +595,7 @@ fn collect_raw_files_with_limit(
                     total = total.checked_add(value.0).ok_or_else(|| {
                         error(BodyRebuildErrorKind::NativeReplay, "raw_bytes_limit")
                     })?;
-                    files.insert(relative.to_owned(), value);
+                    files.insert(relative, value);
                 }
                 DirEntryKind::Other => {
                     return Err(error(BodyRebuildErrorKind::NativeReplay, "raw_asset_kind"));
@@ -616,6 +604,22 @@ fn collect_raw_files_with_limit(
         }
     }
     Ok(RawInventoryTree { files, directories })
+}
+
+fn raw_inventory_path(root: &Path, path: &Path) -> Result<String, BodyRebuildError> {
+    let relative = path
+        .strip_prefix(root)
+        .ok()
+        .and_then(Path::to_str)
+        .ok_or_else(|| error(BodyRebuildErrorKind::NativeReplay, "raw_asset_path"))?;
+    #[cfg(windows)]
+    let relative = relative.replace('\\', "/");
+    #[cfg(not(windows))]
+    let relative = relative.to_owned();
+    if !valid_raw_path(&relative) {
+        return Err(error(BodyRebuildErrorKind::NativeReplay, "raw_asset_path"));
+    }
+    Ok(relative)
 }
 
 fn hash_raw_file(path: &Path, total_remaining: u64) -> Result<(u64, String), BodyRebuildError> {
@@ -828,6 +832,24 @@ fn replay_legacy_shard(
     Ok(())
 }
 
+// The publisher admits ordinary drive paths; Windows canonicalization returns
+// the equivalent verbatim drive spelling. Preserve every other namespace for
+// the publisher to reject through its existing admission rules.
+#[cfg(any(windows, test))]
+fn windows_database_publication_path(path: &Path) -> std::path::PathBuf {
+    if let Some(value) = path.to_str().and_then(|value| value.strip_prefix(r"\\?\")) {
+        let bytes = value.as_bytes();
+        if bytes.len() >= 3
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && bytes[2] == b'\\'
+        {
+            return value.into();
+        }
+    }
+    path.to_path_buf()
+}
+
 fn publish_database(journal_root: &Path, state: &BodyDedupeState) -> Result<(), BodyRebuildError> {
     publish_database_with_installer(journal_root, state, |temporary_path, database_path| {
         install_file(
@@ -846,6 +868,10 @@ fn publish_database_with_installer(
 ) -> Result<(), BodyRebuildError> {
     let temp_path = journal_root.join(TEMP_DATABASE_REL);
     let database_path = journal_root.join(DATABASE_REL);
+    #[cfg(windows)]
+    let temp_path = windows_database_publication_path(&temp_path);
+    #[cfg(windows)]
+    let database_path = windows_database_publication_path(&database_path);
     remove_if_present(journal_root, TEMP_DATABASE_REL)?;
     write_bytes_exclusive(&temp_path, &[], AtomicWriteOptions { mode: Some(0o600) })
         .map_err(|_| error(BodyRebuildErrorKind::Publication, "create_temp_database"))?;
@@ -865,6 +891,10 @@ fn publish_database_with_installer(
         for suffix in ["-wal", "-shm", "-journal"] {
             remove_if_present(journal_root, &format!("{DATABASE_REL}{suffix}"))?;
         }
+        // Unix also requires the parent-directory durability barrier. Windows
+        // install_file flushes the database and checks its native replacement;
+        // that platform contract does not include a directory-fsync step.
+        #[cfg(unix)]
         sync_dir(journal_root, IMPORTS_DIR)
             .map_err(|_| error(BodyRebuildErrorKind::Publication, "sync_imports"))?;
         Ok(())
@@ -1101,6 +1131,135 @@ mod tests {
     impl Drop for TempDir {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    #[test]
+    fn database_publication_only_converts_verbatim_drive_paths() {
+        assert_eq!(
+            windows_database_publication_path(Path::new(r"\\?\C:\Owner café\imports\database")),
+            PathBuf::from(r"C:\Owner café\imports\database")
+        );
+        for path in [
+            r"C:\Owner café\imports\database",
+            r"\\?\UNC\server\share\database",
+            r"\\?\Volume{synthetic}\database",
+            r"\\.\pipe\database",
+            r"relative\database",
+            r"\\?\C:relative\database",
+            r"\\?\1:\database",
+            r"\\?\C",
+        ] {
+            assert_eq!(
+                windows_database_publication_path(Path::new(path)),
+                PathBuf::from(path)
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn database_publication_drive_alias_keeps_identity_and_refuses_bad_paths() {
+        use solstone_core_journal_io::windows_file_identity;
+        let temporary = TempDir::new();
+        let root = temporary.path().join("journal café");
+        fs::create_dir(&root).unwrap();
+        let canonical = root.join("database café");
+        let ordinary = windows_database_publication_path(&canonical);
+        assert!(canonical.to_str().unwrap().starts_with(r"\\?\"));
+        assert!(!ordinary.to_str().unwrap().starts_with(r"\\?\"));
+        assert_ne!(canonical.as_os_str(), ordinary.as_os_str());
+        write_bytes_exclusive(
+            &ordinary,
+            b"unchanged",
+            AtomicWriteOptions { mode: Some(0o600) },
+        )
+        .expect("ordinary spelling publishes");
+        let canonical_file = File::open(&canonical).unwrap();
+        let ordinary_file = File::open(&ordinary).unwrap();
+        assert_eq!(
+            windows_file_identity(&canonical_file).unwrap(),
+            windows_file_identity(&ordinary_file).unwrap()
+        );
+        drop(canonical_file);
+        drop(ordinary_file);
+        for path in [
+            format!(r"{}\.\refused", root.display()),
+            format!(r"{}\..\escaped", root.display()),
+            format!(r"{}\database café:ads", root.display()),
+            format!(r"{}\trailing.", root.display()),
+            format!(r"{}\trailing ", root.display()),
+            r"\\?\C:relative\database".to_owned(),
+            r"\\?\1:\database".to_owned(),
+        ] {
+            let target = windows_database_publication_path(Path::new(&path));
+            assert!(
+                write_bytes_exclusive(
+                    &target,
+                    b"refused",
+                    AtomicWriteOptions { mode: Some(0o600) }
+                )
+                .is_err(),
+                "malformed publication path accepted: {path}"
+            );
+        }
+        assert!(!temporary.path().join("escaped").exists());
+        assert_eq!(fs::read(&canonical).unwrap(), b"unchanged");
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn raw_inventory_preserves_nested_unicode_paths() {
+        let temporary = TempDir::new();
+        let directory = temporary.path().join("provider café/nested");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("capture café.json"), b"synthetic").unwrap();
+        let inventory = collect_raw_files(temporary.path()).unwrap();
+        assert_eq!(
+            inventory
+                .files
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["provider café/nested/capture café.json"]
+        );
+        assert_eq!(
+            inventory
+                .directories
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["provider café", "provider café/nested"]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn raw_inventory_refuses_unix_literal_backslashes() {
+        let temporary = TempDir::new();
+        fs::write(temporary.path().join(r"literal\filename"), b"synthetic").unwrap();
+        let failure = collect_raw_files(temporary.path())
+            .err()
+            .expect("literal backslash refused");
+        assert_eq!(failure.stage(), "raw_asset_path");
+    }
+
+    #[test]
+    fn empty_history_publishes_a_queryable_database() {
+        let temporary = TempDir::new();
+        let journal = temporary.path().join("fresh recovery café");
+        fs::create_dir(&journal).expect("fresh journal creates");
+        for _ in 0..2 {
+            let report = rebuild_body_store(&journal).expect("empty history rebuild succeeds");
+            assert_eq!(report.native_bundles(), 0);
+            assert_eq!(report.legacy_bundles(), 0);
+            assert_eq!(report.rows(), 0);
+            let connection =
+                Connection::open(journal.join(DATABASE_REL)).expect("published database opens");
+            let rows: i64 = connection
+                .query_row("SELECT count(*) FROM health_dedupe", [], |row| row.get(0))
+                .expect("published schema is queryable");
+            assert_eq!(rows, 0);
         }
     }
 

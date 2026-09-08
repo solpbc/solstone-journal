@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#[cfg(not(windows))]
 use std::env;
 use std::fs;
 use std::io::{Cursor, Read};
@@ -9,13 +10,21 @@ use std::time::Duration;
 
 use bzip2_rs::DecoderReader;
 use serde_json::json;
-use solstone_core_artifact_download::{ByteDownload, download_verified_bytes, verify_sha256_bytes};
+#[cfg(not(windows))]
+use solstone_core_artifact_download::download_verified_bytes;
+use solstone_core_artifact_download::{ByteDownload, verify_sha256_bytes};
+#[cfg(windows)]
+use solstone_core_distribution::windows_payload::WINDOWS_RESTIC_WORKER;
 use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
 
 use crate::readiness::{
-    RESTIC_BUNDLE_ENV, RESTIC_SCHEMA_VERSION, RESTIC_TOOL, RESTIC_VERSION, binary_path,
-    check_restic_ready_with, file_sha256, license_path, platform_info, select_restic_asset,
-    sentinel_path, tool_dir,
+    RESTIC_SCHEMA_VERSION, RESTIC_TOOL, RESTIC_VERSION, binary_path, file_sha256, license_path,
+    sentinel_path,
+};
+
+#[cfg(not(windows))]
+use crate::readiness::{
+    RESTIC_BUNDLE_ENV, check_restic_ready_with, platform_info, select_restic_asset, tool_dir,
 };
 
 pub const RESTIC_LICENSE_TEXT: &str = "BSD 2-Clause License\n\nCopyright (c) 2014, Alexander Neumann\nAll rights reserved.\n\nRedistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:\n\n* Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.\n\n* Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.\n\nTHIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n";
@@ -29,31 +38,40 @@ pub fn ensure_restic(
     requested_dir: Option<&Path>,
     downloader: &dyn ByteDownload,
 ) -> Result<PathBuf, String> {
-    let (os, arch) = platform_info()?;
-    let tool_dir = requested_dir
-        .map(Path::to_path_buf)
-        .unwrap_or(tool_dir(&os)?);
-    if !force && let Some(path) = check_restic_ready_with(runner, Some(&tool_dir)) {
-        return Ok(path);
+    #[cfg(windows)]
+    {
+        let _ = (runner, force, requested_dir, downloader);
+        return crate::windows_tool::verify_package_and_get_tool(WINDOWS_RESTIC_WORKER)
+            .map_err(|e| e.to_string());
     }
-    let (filename, url, expected) = select_restic_asset(Some(&os), Some(&arch))?;
-    let data = match bundle_path(&filename)? {
-        Some(path) => {
-            let bytes = fs::read(path).map_err(|error| error.to_string())?;
-            verify_sha256_bytes(&bytes, &expected)
-                .map_err(|_| "restic asset SHA mismatch".to_owned())?;
-            bytes
+    #[cfg(not(windows))]
+    {
+        let (os, arch) = platform_info()?;
+        let tool_dir = requested_dir
+            .map(Path::to_path_buf)
+            .unwrap_or(tool_dir(&os)?);
+        if !force && let Some(path) = check_restic_ready_with(runner, Some(&tool_dir)) {
+            return Ok(path);
         }
-        None => download_verified_bytes(
-            downloader,
-            &url,
-            &expected,
-            DOWNLOAD_ATTEMPTS,
-            DOWNLOAD_TIMEOUT,
-        )
-        .map_err(|_| "restic download failed".to_owned())?,
-    };
-    install_from_bz2(&data, &expected, &tool_dir, &os, &arch)
+        let (filename, url, expected) = select_restic_asset(Some(&os), Some(&arch))?;
+        let data = match bundle_path(&filename)? {
+            Some(path) => {
+                let bytes = fs::read(path).map_err(|error| error.to_string())?;
+                verify_sha256_bytes(&bytes, &expected)
+                    .map_err(|_| "restic asset SHA mismatch".to_owned())?;
+                bytes
+            }
+            None => download_verified_bytes(
+                downloader,
+                &url,
+                &expected,
+                DOWNLOAD_ATTEMPTS,
+                DOWNLOAD_TIMEOUT,
+            )
+            .map_err(|_| "restic download failed".to_owned())?,
+        };
+        install_from_bz2(&data, &expected, &tool_dir, &os, &arch)
+    }
 }
 
 pub fn install_from_bz2(
@@ -87,6 +105,7 @@ pub fn install_from_bz2(
     Ok(binary)
 }
 
+#[cfg(not(windows))]
 fn bundle_path(filename: &str) -> Result<Option<PathBuf>, String> {
     if let Some(path) = env::var_os(RESTIC_BUNDLE_ENV) {
         return Ok(Some(expand_and_resolve(PathBuf::from(path))?));
@@ -98,6 +117,7 @@ fn bundle_path(filename: &str) -> Result<Option<PathBuf>, String> {
     Ok(sibling.filter(|path| path.exists()))
 }
 
+#[cfg(not(windows))]
 pub(crate) fn expand_and_resolve(path: PathBuf) -> Result<PathBuf, String> {
     let path = path
         .to_str()

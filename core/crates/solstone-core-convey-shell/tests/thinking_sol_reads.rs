@@ -1100,7 +1100,13 @@ fn run_convey_from_isolated_dir_returns_diagnostic_without_panicking() {
     let journal = isolated.path().join("journal");
     fs::create_dir_all(&journal).expect("isolated journal");
     let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        solstone_core_convey_shell::run_convey_from_executable_dir(journal, 5015, &bin)
+        solstone_core_convey_shell::run_convey_from_executable_dir(
+            journal,
+            5015,
+            &bin,
+            #[cfg(windows)]
+            &Default::default(),
+        )
     }));
     let result = caught.expect("run_convey_from_executable_dir must not panic");
     let error = result.expect_err("isolated executable dir must miss");

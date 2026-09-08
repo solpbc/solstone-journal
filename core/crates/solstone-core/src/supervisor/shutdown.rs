@@ -372,6 +372,8 @@ mod tests {
         );
         let connection = CallosumSocketConnection::new(&socket_path, serde_json::Map::new());
         let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
             journal_root: journal.path().to_path_buf(),
             cap_resolver: Arc::new(DefaultCapResolver::new(Duration::from_secs(1))),
             process_state_probe: Arc::new(SystemProcessStateProbe),
@@ -429,7 +431,7 @@ mod tests {
                 status_interval: Duration::from_secs(5),
             },
             parent_loss_coordinator: None,
-            sense_child_environment: BTreeMap::new(),
+            sense_child_environment: solstone_core_system::process::ChildLaunchContext::default(),
         };
         Fixture {
             driver: SupervisorShutdownDriver::new(

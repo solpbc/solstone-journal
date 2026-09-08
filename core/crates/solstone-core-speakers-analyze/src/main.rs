@@ -3,6 +3,7 @@
 
 use std::env;
 use std::io::{self, Read};
+#[cfg(unix)]
 use std::path::Path;
 use std::process;
 
@@ -22,6 +23,7 @@ fn install_logger() {
 
 fn main() {
     install_logger();
+    #[cfg(unix)]
     if env::var_os(solstone_core_system::lifecycle::HOSTED_GENERATION_ENV).is_some() {
         let Some(journal) = env::var_os("SOLSTONE_JOURNAL") else {
             log::error!("hosted speakers analysis child is missing SOLSTONE_JOURNAL");

@@ -26,4 +26,9 @@ solstone-core-retention.workspace = true
 nix = { workspace = true, features = ["fs"] }
 
 [dev-dependencies]
+solstone-core-backup-runtime = { workspace = true, features = ["test-support"] }
 tempfile = "3.24.0"
+minisign.workspace = true
+solstone-core-distribution = { workspace = true, features = ["test-fixture-pin"] }
+solstone-core-system.workspace = true
+solstone-core-artifact-download.workspace = true

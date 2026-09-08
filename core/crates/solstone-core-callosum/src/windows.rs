@@ -19,18 +19,134 @@ const DERIVATION_DOMAIN: &[u8] = b"solstone-callosum-windows-pipe-name-v1\0";
 const AUTH_DOMAIN: &[u8] = b"solstone-callosum-windows-client-proof-v1\0";
 
 /// Keeps the Windows namespace input explicit and unit-testable without importing installation
-/// identity. The fixed value narrows Round 19's cloned-image guarantee only: the canonical
-/// socket path remains the primary same-machine differentiator for distinct journal roots.
+/// identity.
 pub(crate) trait WindowsPipeNamespace {
-    fn namespace_bytes(&self) -> &'static [u8];
+    fn namespace_bytes(&self) -> &[u8];
 }
 
+#[cfg(test)]
 pub(crate) struct FixedWindowsPipeNamespace;
 
+#[cfg(test)]
 impl WindowsPipeNamespace for FixedWindowsPipeNamespace {
-    fn namespace_bytes(&self) -> &'static [u8] {
+    fn namespace_bytes(&self) -> &[u8] {
         b"solstone-callosum-windows-placeholder-v1"
     }
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) struct LiveWindowsPipeNamespace(pub(crate) Vec<u8>);
+
+#[cfg_attr(not(windows), allow(dead_code))]
+impl WindowsPipeNamespace for LiveWindowsPipeNamespace {
+    fn namespace_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+#[cfg(any(windows, test))]
+fn inherited_guard(
+    mut lookup: impl FnMut(&str) -> Option<std::ffi::OsString>,
+) -> io::Result<Option<solstone_core_installation_identity::GuardFields>> {
+    let mut environment = std::collections::BTreeMap::new();
+    for name in [
+        "SOLSTONE_INSTALLATION_NAMESPACE",
+        "SOLSTONE_INSTALLATION_ID",
+        "SOLSTONE_INSTALLATION_GENERATION",
+        "SOLSTONE_INSTALLATION_JOURNAL_TOKEN",
+    ] {
+        if let Some(value) = lookup(name) {
+            let value = value.into_string().map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "non-Unicode installation guard",
+                )
+            })?;
+            environment.insert(name.to_owned(), value);
+        }
+    }
+    solstone_core_installation_identity::parse_service_guard_environment(&environment).map_err(
+        |error| {
+            io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("installation guard: {error:?}"),
+            )
+        },
+    )
+}
+
+#[cfg(any(windows, test))]
+fn validate_inherited_guard(
+    inherited: Option<&solstone_core_installation_identity::GuardFields>,
+    expected: &solstone_core_installation_identity::GuardFields,
+) -> io::Result<()> {
+    if inherited.is_some_and(|guard| guard != expected) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "installation guard does not match the loaded binding",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+pub(crate) fn resolve_pipe_namespace(socket_path: &Path) -> io::Result<LiveWindowsPipeNamespace> {
+    let guard_fields = inherited_guard(|name| std::env::var_os(name))?;
+
+    let owner = solstone_core_installation_identity::owner_base()
+        .map_err(|error| io::Error::new(io::ErrorKind::Other, format!("owner base: {error}")))?;
+    let exe = std::env::current_exe()
+        .map_err(|error| io::Error::new(io::ErrorKind::Other, format!("current exe: {error}")))?;
+    let exe_dir = exe.parent().unwrap_or_else(|| Path::new("."));
+    let root = solstone_core_journal::resolve_identity_root_from_executable_dir(exe_dir)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                "could not resolve identity root".to_owned(),
+            )
+        })?;
+    let root_token = solstone_core_installation_identity::root_token_from_path(&root)
+        .map_err(|error| io::Error::new(io::ErrorKind::Other, format!("root token: {error}")))?;
+    let binding =
+        solstone_core_installation_identity::load_installation_binding(&owner, &root_token)
+            .map_err(|error| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("installation binding: {error}"),
+                )
+            })?;
+
+    validate_inherited_guard(
+        guard_fields.as_ref(),
+        &solstone_core_installation_identity::GuardFields::from_binding(&binding),
+    )?;
+    let journal_dir = socket_path
+        .parent()
+        .and_then(Path::parent)
+        .filter(|path| !path.as_os_str().is_empty())
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Callosum socket has no journal root",
+            )
+        })?;
+    let socket_token = solstone_core_installation_identity::journal_token_from_path(journal_dir)
+        .map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("Callosum journal: {error}"),
+            )
+        })?;
+    if socket_token != binding.journal_token {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Callosum journal does not match the loaded installation binding",
+        ));
+    }
+
+    Ok(LiveWindowsPipeNamespace(
+        binding.id.as_hex().as_bytes().to_vec(),
+    ))
 }
 
 pub(crate) fn secret_path(socket_path: &Path) -> io::Result<PathBuf> {
@@ -150,7 +266,8 @@ pub(crate) fn pipe_name(socket_path: &Path) -> io::Result<String> {
     let canonical_parent = std::fs::canonicalize(parent)?;
     let canonical_path = canonical_parent.join(filename);
     let units: Vec<u16> = canonical_path.as_os_str().encode_wide().collect();
-    pipe_name_from_utf16(&units, &FixedWindowsPipeNamespace)
+    let namespace = resolve_pipe_namespace(socket_path)?;
+    pipe_name_from_utf16(&units, &namespace)
 }
 
 #[cfg(windows)]
@@ -187,7 +304,7 @@ pub(crate) fn create_or_read_secret(socket_path: &Path) -> io::Result<[u8; PIPE_
 }
 
 #[cfg(windows)]
-pub(crate) mod sid {
+pub mod sid {
     #![allow(unsafe_code)]
 
     use std::io;
@@ -218,7 +335,7 @@ pub(crate) mod sid {
         }
     }
 
-    pub(crate) fn current_user_sid() -> io::Result<String> {
+    pub fn current_user_sid() -> io::Result<String> {
         let mut token = std::ptr::null_mut();
         // SAFETY: GetCurrentProcess is a valid pseudo-handle and token points to writable storage.
         if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) } == 0
@@ -294,6 +411,95 @@ mod tests {
         client_proof, pipe_name_from_utf16, secret_path, server_greeting, verify_client_proof,
     };
     use std::path::Path;
+
+    fn guard_fixture() -> solstone_core_installation_identity::GuardFields {
+        use solstone_core_installation_identity::{
+            Generation, GuardFields, InstallationId, JournalToken, NamespaceName,
+        };
+        #[cfg(unix)]
+        let journal = b"/journal".to_vec();
+        #[cfg(windows)]
+        let journal = r"C:\journal"
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect();
+        GuardFields {
+            namespace: NamespaceName::parse(&"a".repeat(64)).unwrap(),
+            id: InstallationId::parse(&"b".repeat(32)).unwrap(),
+            generation: Generation::new(1).unwrap(),
+            journal_token: JournalToken::from_raw_absolute(journal).unwrap(),
+        }
+    }
+
+    #[test]
+    fn inherited_guard_requires_a_complete_parseable_set() {
+        use solstone_core_installation_identity::service_guard_environment;
+        let expected = guard_fixture();
+        let environment = service_guard_environment(&expected);
+        assert_eq!(super::inherited_guard(|_| None).unwrap(), None);
+        assert_eq!(
+            super::inherited_guard(|name| environment.get(name).map(Into::into)).unwrap(),
+            Some(expected)
+        );
+        for name in environment.keys() {
+            let mut partial = environment.clone();
+            partial.remove(name);
+            assert!(super::inherited_guard(|key| partial.get(key).map(Into::into)).is_err());
+            let mut malformed = environment.clone();
+            malformed.insert(name.clone(), String::new());
+            assert!(super::inherited_guard(|key| malformed.get(key).map(Into::into)).is_err());
+        }
+    }
+
+    #[test]
+    fn inherited_guard_does_not_drop_non_unicode_values() {
+        #[cfg(unix)]
+        let invalid = {
+            use std::os::unix::ffi::OsStringExt;
+            std::ffi::OsString::from_vec(vec![0xff])
+        };
+        #[cfg(windows)]
+        let invalid = {
+            use std::os::windows::ffi::OsStringExt;
+            std::ffi::OsString::from_wide(&[0xd800])
+        };
+        for name in
+            solstone_core_installation_identity::service_guard_environment(&guard_fixture()).keys()
+        {
+            let result = super::inherited_guard(|key| (key == name).then(|| invalid.clone()));
+            assert_eq!(
+                result.unwrap_err().kind(),
+                std::io::ErrorKind::PermissionDenied
+            );
+        }
+    }
+
+    #[test]
+    fn inherited_guard_compares_every_binding_field() {
+        use solstone_core_installation_identity::{
+            Generation, InstallationId, JournalToken, NamespaceName,
+        };
+        let expected = guard_fixture();
+        assert!(super::validate_inherited_guard(None, &expected).is_ok());
+        assert!(super::validate_inherited_guard(Some(&expected), &expected).is_ok());
+        let mut different = expected.clone();
+        different.namespace = NamespaceName::parse(&"c".repeat(64)).unwrap();
+        assert!(super::validate_inherited_guard(Some(&different), &expected).is_err());
+        different = expected.clone();
+        different.id = InstallationId::parse(&"c".repeat(32)).unwrap();
+        assert!(super::validate_inherited_guard(Some(&different), &expected).is_err());
+        different = expected.clone();
+        different.generation = Generation::new(2).unwrap();
+        assert!(super::validate_inherited_guard(Some(&different), &expected).is_err());
+        different = expected.clone();
+        let mut path = expected.journal_token.as_bytes().to_vec();
+        #[cfg(unix)]
+        path.extend_from_slice(b"-other");
+        #[cfg(windows)]
+        path.extend("-other".encode_utf16().flat_map(u16::to_le_bytes));
+        different.journal_token = JournalToken::from_raw_absolute(path).unwrap();
+        assert!(super::validate_inherited_guard(Some(&different), &expected).is_err());
+    }
 
     #[test]
     fn pipe_name_derivation_has_a_stable_golden_value() {

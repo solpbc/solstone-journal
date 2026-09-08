@@ -288,7 +288,30 @@ fn open_library(library_path: &str) -> Result<CedLibrary, AnalyzeError> {
             path: library_path.to_owned(),
         });
     }
-    CedLibrary::open(Path::new(library_path)).map_err(|error| AnalyzeError::LibraryUnloadable {
+    #[cfg(windows)]
+    let admitted_library = {
+        let package = solstone_core_local::install::ced_readiness::verified_windows_ced_package()
+            .map_err(|detail| AnalyzeError::LibraryUnloadable {
+            path: library_path.to_owned(),
+            detail,
+        })?;
+        if !solstone_core_local::install::windows_member_path::matches_declared_member_path(
+            Path::new(library_path),
+            &package.library,
+        ) {
+            return Err(AnalyzeError::LibraryUnloadable {
+                path: library_path.to_owned(),
+                detail: "CED library is not the declared member of the signed app payload"
+                    .to_owned(),
+            });
+        }
+        package.library
+    };
+    #[cfg(windows)]
+    let selected_library = admitted_library.as_path();
+    #[cfg(not(windows))]
+    let selected_library = Path::new(library_path);
+    CedLibrary::open(selected_library).map_err(|error| AnalyzeError::LibraryUnloadable {
         path: library_path.to_owned(),
         detail: error.to_string(),
     })

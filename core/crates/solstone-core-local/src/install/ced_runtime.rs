@@ -21,15 +21,22 @@
 
 use std::ffi::OsString;
 use std::fmt;
+#[cfg(not(windows))]
 use std::fs;
+#[cfg(not(windows))]
 use std::io::{BufReader, Read, Seek, Write};
 use std::path::PathBuf;
+#[cfg(not(windows))]
 use std::process::{Child, Command, Stdio};
+#[cfg(not(windows))]
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(windows))]
+use std::time::Instant;
 
 use serde_json::Value;
 
+#[cfg(not(windows))]
 const HELPER: &str = "solstone-core-ced-analyze";
 /// The helper's `probe` argv token. Mirrors
 /// `solstone_core_ced_analyze::PROBE_COMMAND`, which this crate cannot import:
@@ -47,21 +54,21 @@ pub const CED_PROBE_COMMAND: &str = "probe";
 /// transcription pass indefinitely if the helper wedges.
 pub const CED_ANALYZE_TIMEOUT: Duration = Duration::from_secs(30);
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 static TEST_HELPER_BASE_DIR: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
-#[cfg(test)]
+#[cfg(all(test, unix))]
 static TEST_HELPER_SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Serializes tests that redirect [`CedAnalyzeProgram::SiblingHelper`]
 /// resolution to a temporary directory, so parallel `cargo test` threads
 /// cannot race the same process-wide override. Dropping the guard restores
 /// production (current-executable-relative) resolution.
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) struct TestHelperGuard {
     _serial: std::sync::MutexGuard<'static, ()>,
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 impl Drop for TestHelperGuard {
     fn drop(&mut self) {
         *TEST_HELPER_BASE_DIR
@@ -73,7 +80,7 @@ impl Drop for TestHelperGuard {
 /// Point [`CedAnalyzeProgram::SiblingHelper`] at `dir` for the guard's
 /// lifetime, so a test can drop a stub named `solstone-core-ced-analyze`
 /// there instead of needing a real compiled cross-lane binary.
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) fn set_test_helper_base_dir(dir: PathBuf) -> TestHelperGuard {
     let serial = TEST_HELPER_SERIAL
         .lock()
@@ -144,15 +151,17 @@ impl fmt::Display for CedAnalyzeError {
 
 impl std::error::Error for CedAnalyzeError {}
 
+#[cfg(not(windows))]
 struct ResolvedProgram {
     executable: PathBuf,
     args: Vec<OsString>,
 }
 
+#[cfg(not(windows))]
 fn resolve_program(program: &CedAnalyzeProgram) -> Result<ResolvedProgram, CedAnalyzeError> {
     match program {
         CedAnalyzeProgram::SiblingHelper => {
-            #[cfg(test)]
+            #[cfg(all(test, unix))]
             let base_dir = TEST_HELPER_BASE_DIR
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -220,6 +229,7 @@ pub fn invoke_ced_analyze(
 /// The helper dispatches on argv: bare is classify, `probe` is the readiness
 /// probe. A probe-schema request sent to a bare invocation is rejected as
 /// `unknown-schema`, so the probe caller MUST pass [`CED_PROBE_COMMAND`].
+#[cfg(not(windows))]
 pub fn invoke_ced_analyze_with_args(
     program: &CedAnalyzeProgram,
     leading_args: &[&str],
@@ -285,6 +295,7 @@ pub fn invoke_ced_analyze_with_args(
     })
 }
 
+#[cfg(not(windows))]
 fn helper_io(error: std::io::Error) -> CedAnalyzeError {
     CedAnalyzeError::Io {
         detail: error.to_string(),
@@ -292,8 +303,10 @@ fn helper_io(error: std::io::Error) -> CedAnalyzeError {
 }
 
 /// Own the child until it is reaped, including an I/O error or timeout.
+#[cfg(not(windows))]
 struct HelperChild(Child);
 
+#[cfg(not(windows))]
 impl Drop for HelperChild {
     fn drop(&mut self) {
         if !matches!(self.0.try_wait(), Ok(Some(_))) {
@@ -303,9 +316,10 @@ impl Drop for HelperChild {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
+    #[cfg(not(windows))]
     use std::fs;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
@@ -468,4 +482,18 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
         .unwrap_err();
         assert!(matches!(error, CedAnalyzeError::Spawn { .. }));
     }
+}
+
+/// Windows host callers must supply the check-owned signed-payload Job runner.
+/// This local crate cannot depend on system, which already depends on local.
+#[cfg(windows)]
+pub fn invoke_ced_analyze_with_args(
+    _program: &CedAnalyzeProgram,
+    _leading_args: &[&str],
+    _request: &Value,
+    _timeout: Duration,
+) -> Result<Value, CedAnalyzeError> {
+    Err(CedAnalyzeError::Unresolved {
+        detail: "CED requires the Windows host caller".to_owned(),
+    })
 }

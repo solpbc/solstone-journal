@@ -151,6 +151,8 @@ fn queue(
     process_sink: Option<Arc<ProcessCollector>>,
 ) -> TaskQueue {
     TaskQueue::new(TaskQueueOptions {
+        #[cfg(windows)]
+        read_file_grants: Vec::new(),
         journal_root: bed.root.clone(),
         cap_resolver: Arc::new(FixedCap(cap)),
         process_state_probe: Arc::new(SystemProcessStateProbe),
@@ -169,6 +171,8 @@ fn queue_with_probe(
     hook: Option<Arc<dyn Fn() + Send + Sync>>,
 ) -> TaskQueue {
     TaskQueue::new(TaskQueueOptions {
+        #[cfg(windows)]
+        read_file_grants: Vec::new(),
         journal_root: bed.root.clone(),
         cap_resolver: Arc::new(FixedCap(cap)),
         process_state_probe: probe,
@@ -182,6 +186,8 @@ fn queue_with_probe(
 
 fn queue_with_event_sink(bed: &Bed, cap: Duration, sink: Arc<dyn TaskQueueEventSink>) -> TaskQueue {
     TaskQueue::new(TaskQueueOptions {
+        #[cfg(windows)]
+        read_file_grants: Vec::new(),
         journal_root: bed.root.clone(),
         cap_resolver: Arc::new(FixedCap(cap)),
         process_state_probe: Arc::new(SystemProcessStateProbe),
@@ -946,6 +952,8 @@ fn phase_a_snapshot_does_not_wait_for_a_terminating_process_mutex() {
     caps.insert("probe-child".to_owned(), Duration::from_secs(5));
     let (probe_tx, probe_rx) = mpsc::channel();
     let queue = TaskQueue::new(TaskQueueOptions {
+        #[cfg(windows)]
+        read_file_grants: Vec::new(),
         journal_root: bed.root.clone(),
         cap_resolver: Arc::new(PartitionCaps(caps)),
         process_state_probe: Arc::new(NotifyingProbe {
