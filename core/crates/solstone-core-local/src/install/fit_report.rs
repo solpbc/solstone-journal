@@ -11,7 +11,10 @@ use solstone_core_assets::resolve;
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt;
 
-use super::{pins, rfdetr_install::rfdetr_artifact_key};
+use super::{
+    pins,
+    rfdetr_install::{rfdetr_artifact_key, rfdetr_uses_package_payload},
+};
 use crate::vulkan::{cpu_placement_suffix, select_device};
 use crate::{Backend, BackendChoice, MemorySource, NvidiaProbe, VulkanDevice};
 
@@ -145,6 +148,18 @@ pub fn build_rfdetr_fit_report_with_free_bytes(
     arch: &str,
     available: Result<u64, String>,
 ) -> FitReport {
+    if rfdetr_uses_package_payload(os_name, arch) {
+        return FitReport {
+            artifact: "rf-detr.cpp artifacts".to_string(),
+            checks: vec![FitCheck {
+                name: "platform",
+                severity: FitSeverity::Ok,
+                detail: format!(
+                    "signed rf-detr.cpp package payload is supported for {os_name}/{arch}"
+                ),
+            }],
+        };
+    }
     let platform = match rfdetr_artifact_key(os_name, arch) {
         Some(key) => FitCheck {
             name: "platform",
@@ -1013,5 +1028,34 @@ mod tests {
             local_artifact_key("linux", "arm64"),
             "aarch64-unknown-linux-gnu"
         );
+    }
+
+    #[test]
+    fn rfdetr_fit_report_windows_x64_is_ok_without_cache_bytes() {
+        let journal = tempfile::tempdir().unwrap();
+        let report = build_rfdetr_fit_report_with_free_bytes(
+            journal.path(),
+            "windows",
+            "x86_64",
+            Err("disk query failed".to_owned()),
+        );
+        assert_eq!(report.overall(), FitSeverity::Ok);
+        assert_eq!(report.checks.len(), 1);
+        assert_eq!(report.checks[0].name, "platform");
+        assert_eq!(report.checks[0].severity, FitSeverity::Ok);
+    }
+
+    #[test]
+    fn rfdetr_fit_report_unsupported_platform_blocked() {
+        let journal = tempfile::tempdir().unwrap();
+        let report = build_rfdetr_fit_report_with_free_bytes(
+            journal.path(),
+            "windows",
+            "arm64",
+            Ok(100 * 1024 * 1024 * 1024),
+        );
+        assert_eq!(report.overall(), FitSeverity::Blocked);
+        let platform = report.checks.iter().find(|c| c.name == "platform").unwrap();
+        assert_eq!(platform.severity, FitSeverity::Blocked);
     }
 }

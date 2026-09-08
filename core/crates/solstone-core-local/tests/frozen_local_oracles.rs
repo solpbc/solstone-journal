@@ -537,6 +537,12 @@ fn installer_specs_match_the_pinned_sources() {
     assert!(rfdetr_platform_supported("linux", "amd64"));
     assert!(rfdetr_platform_supported("linux", "aarch64"));
     assert!(rfdetr_platform_supported("darwin", "arm64"));
+    assert!(rfdetr_platform_supported("windows", "x86_64"));
+    assert!(rfdetr_platform_supported("windows", "amd64"));
+    assert!(!rfdetr_platform_supported("windows", "arm64"));
+    assert_eq!(rfdetr_artifact_key("windows", "x86_64"), None);
+    assert_eq!(rfdetr_artifact_key("windows", "amd64"), None);
+    assert_eq!(rfdetr_artifact_key("windows", "arm64"), None);
     for (os, arch, key) in [
         ("linux", "x86_64", "linux-cpu-x64"),
         ("linux", "aarch64", "linux-cpu-arm64"),

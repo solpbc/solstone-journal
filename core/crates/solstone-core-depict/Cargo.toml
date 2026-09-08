@@ -24,6 +24,9 @@ solstone-core-journal.workspace = true
 solstone-core-generate.workspace = true
 solstone-core-processing-record.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+solstone-core-system.workspace = true
+
 [dev-dependencies]
 sha2.workspace = true
 solstone-core-local = { workspace = true, features = ["test-hooks"] }

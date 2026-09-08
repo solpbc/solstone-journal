@@ -16,7 +16,7 @@ use solstone_core_local::install::ced_readiness::{
     CED_READY_DETAIL, CED_UNAVAILABLE_GUIDANCE, CedVerdict, evaluate_ced_readiness,
 };
 use solstone_core_local::install::rfdetr_readiness::{
-    RFDETR_READY_DETAIL, RFDETR_UNAVAILABLE_GUIDANCE, RfdetrReadiness, evaluate_rfdetr_readiness,
+    RFDETR_READY_DETAIL, RfdetrReadiness, evaluate_rfdetr_readiness,
 };
 use solstone_core_system::process::SystemProcessInstanceSource;
 use solstone_core_system_health::{
@@ -40,7 +40,7 @@ pub(super) fn run(verbose: bool, debug: bool) -> std::process::ExitCode {
     };
     let (os, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
     let ced = evaluate_ced_readiness(&journal, os, arch);
-    let rfdetr = evaluate_rfdetr_readiness(&journal, os, arch);
+    let rfdetr = evaluate_host_rfdetr(&journal, os, arch);
     let socket_path = journal.join("health").join("callosum.sock");
     let fetch = match inspect_socket(&socket_path) {
         SocketInspection::InvalidUtf8 => Err(PresentedHealthError::InvalidUtf8),
@@ -70,7 +70,7 @@ pub(super) fn run(verbose: bool, debug: bool) -> std::process::ExitCode {
     let sync_diagnosis = should_rescan_sync(&fetch)
         .then(|| no_supervisor_sync_diagnosis(&journal))
         .flatten();
-    let (stdout, stderr, code) = present_health(&ced, &rfdetr, fetch);
+    let (stdout, stderr, code) = present_health(&ced, &rfdetr, fetch, os, arch);
     let (stdout, stderr, code) = match sync_diagnosis {
         Some(message) => (
             stdout,
@@ -82,6 +82,69 @@ pub(super) fn run(verbose: bool, debug: bool) -> std::process::ExitCode {
     print!("{stdout}");
     eprint!("{stderr}");
     code
+}
+
+fn evaluate_host_rfdetr(journal: &Path, os: &str, arch: &str) -> RfdetrReadiness {
+    if solstone_core_local::install::rfdetr_install::rfdetr_uses_package_payload(os, arch) {
+        solstone_core_local::install::rfdetr_readiness::evaluate_windows_rfdetr_readiness(
+            probe_windows_rfdetr_help,
+        )
+    } else {
+        evaluate_rfdetr_readiness(journal, os, arch)
+    }
+}
+
+#[cfg(windows)]
+fn probe_windows_rfdetr_help(
+    package: &solstone_core_local::install::rfdetr_windows::WindowsRfdetrPackage,
+) -> serde_json::Value {
+    use solstone_core_local::install::rfdetr_windows::{
+        map_rfdetr_help_probe, rfdetr_windows_help_launch,
+    };
+    use solstone_core_system::process::{
+        BoundedHelperBudget, BoundedHelperRequest, BoundedHelperResourceLimits, run_bounded_helper,
+    };
+
+    let system_root = match std::env::var_os("SystemRoot") {
+        Some(val) if !val.is_empty() => val,
+        _ => {
+            return map_rfdetr_help_probe(
+                false,
+                None,
+                Some("SystemRoot environment variable is not set"),
+            );
+        }
+    };
+    let spec = rfdetr_windows_help_launch(package, system_root);
+    let request = BoundedHelperRequest {
+        package_root: spec.package_root,
+        executable: spec.executable,
+        current_directory: spec.current_directory,
+        arguments: spec.arguments,
+        environment: spec.environment,
+        stdin: spec.stdin,
+        budget: BoundedHelperBudget {
+            timeout: spec.timeout,
+            stdin_limit_bytes: spec.stdin_limit_bytes,
+            stdout_limit_bytes: spec.stdout_limit_bytes,
+            stderr_limit_bytes: spec.stderr_limit_bytes,
+        },
+        resource_limits: Some(BoundedHelperResourceLimits {
+            cpu_rate_per_10_000: spec.cpu_rate_per_10_000,
+            committed_memory_bytes: spec.committed_memory_bytes,
+        }),
+    };
+    match run_bounded_helper(request) {
+        Ok(output) => map_rfdetr_help_probe(output.exit_code == 0, Some(output.exit_code), None),
+        Err(error) => map_rfdetr_help_probe(false, None, Some(&error.to_string())),
+    }
+}
+
+#[cfg(not(windows))]
+fn probe_windows_rfdetr_help(
+    _package: &solstone_core_local::install::rfdetr_windows::WindowsRfdetrPackage,
+) -> serde_json::Value {
+    serde_json::json!({"runnable": false, "reason_code": "windows_only"})
 }
 
 fn no_supervisor_sync_diagnosis(journal: &Path) -> Option<String> {
@@ -131,10 +194,13 @@ fn ced_line(ced: &CedVerdict) -> String {
     }
 }
 
-fn rfdetr_line(rfdetr: &RfdetrReadiness) -> String {
+fn rfdetr_line(rfdetr: &RfdetrReadiness, os: &str, arch: &str) -> String {
     match rfdetr {
         RfdetrReadiness::Ready { .. } => RFDETR_READY_DETAIL.to_owned(),
-        RfdetrReadiness::Degraded { .. } => RFDETR_UNAVAILABLE_GUIDANCE.to_owned(),
+        RfdetrReadiness::Degraded { .. } => {
+            solstone_core_local::install::rfdetr_windows::rfdetr_degraded_guidance(os, arch)
+                .to_owned()
+        }
         RfdetrReadiness::Unsupported { os, arch } => {
             format!(
                 "rf-detr install: unsupported platform {os}/{arch}; skipping rf-detr object-detection assets"
@@ -147,19 +213,25 @@ fn present_health(
     ced: &CedVerdict,
     rfdetr: &RfdetrReadiness,
     fetch: Result<SupervisorStatus, PresentedHealthError>,
+    os: &str,
+    arch: &str,
 ) -> (String, String, std::process::ExitCode) {
-    let stdout = format!("{}\n{}\n", ced_line(ced), rfdetr_line(rfdetr));
+    let stdout = format!("{}\n{}\n", ced_line(ced), rfdetr_line(rfdetr, os, arch));
     match fetch {
         Ok(status) if matches!(rfdetr, RfdetrReadiness::Ready { .. }) => (
             format!("{stdout}{}", render_status(&status)),
             String::new(),
             std::process::ExitCode::SUCCESS,
         ),
-        Ok(status) => (
-            format!("{stdout}{}", render_status(&status)),
-            format!("{RFDETR_UNAVAILABLE_GUIDANCE}\n"),
-            std::process::ExitCode::FAILURE,
-        ),
+        Ok(status) => {
+            let guidance =
+                solstone_core_local::install::rfdetr_windows::rfdetr_degraded_guidance(os, arch);
+            (
+                format!("{stdout}{}", render_status(&status)),
+                format!("{guidance}\n"),
+                std::process::ExitCode::FAILURE,
+            )
+        }
         Err(PresentedHealthError::InvalidUtf8) => (
             stdout,
             "Cannot connect: callosum socket path is not valid UTF-8\n".to_owned(),
@@ -573,6 +645,7 @@ mod tests {
     use serde_json::json;
     use solstone_core_local::install::capability_status::CapabilityStatus;
     use solstone_core_local::install::ced_readiness::CED_CAPABILITY;
+    use solstone_core_local::install::rfdetr_readiness::RFDETR_UNAVAILABLE_GUIDANCE;
 
     use super::*;
 
@@ -676,7 +749,7 @@ mod tests {
             binary: PathBuf::from("rfdetr-cli"),
             model: PathBuf::from("rfdetr-nano-f16.gguf"),
         };
-        let (stdout, stderr, code) = present_health(&ced, &rfdetr, Ok(status));
+        let (stdout, stderr, code) = present_health(&ced, &rfdetr, Ok(status), "linux", "x86_64");
         assert!(stdout.starts_with(&format!("{CED_READY_DETAIL}\n")));
         assert!(stdout.contains(RFDETR_READY_DETAIL));
         assert!(stdout.contains("Services:"));
@@ -701,6 +774,8 @@ mod tests {
             Err(PresentedHealthError::NotFound {
                 path: "/journal/health/callosum.sock".to_owned(),
             }),
+            "linux",
+            "x86_64",
         );
         assert_eq!(
             stdout,
@@ -746,8 +821,28 @@ mod tests {
             cause: solstone_core_local::install::rfdetr_readiness::RfdetrDegradedCause::Absent,
             detail: "sidecar missing".to_owned(),
         };
-        let (_stdout, stderr, code) = present_health(&ced, &rfdetr, Ok(status));
+        let (_stdout, stderr, code) = present_health(&ced, &rfdetr, Ok(status), "linux", "x86_64");
         assert_eq!(stderr, format!("{RFDETR_UNAVAILABLE_GUIDANCE}\n"));
+        assert_eq!(code, std::process::ExitCode::FAILURE);
+    }
+
+    #[test]
+    fn present_health_fails_for_degraded_windows_rfdetr_with_package_guidance() {
+        use solstone_core_local::install::rfdetr_windows::RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE;
+
+        let status: SupervisorStatus = serde_json::from_value(status_value()).unwrap();
+        let ced = CedVerdict::Ready {
+            library: PathBuf::from("ced.dll"),
+            model: PathBuf::from("model.gguf"),
+        };
+        let rfdetr = RfdetrReadiness::Degraded {
+            cause: solstone_core_local::install::rfdetr_readiness::RfdetrDegradedCause::Absent,
+            detail: "package verification failed".to_owned(),
+        };
+        let (_stdout, stderr, code) =
+            present_health(&ced, &rfdetr, Ok(status), "windows", "x86_64");
+        assert_eq!(stderr, format!("{RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE}\n"));
+        assert!(!stderr.contains("journal install-models"));
         assert_eq!(code, std::process::ExitCode::FAILURE);
     }
 
@@ -762,7 +857,7 @@ mod tests {
             binary: PathBuf::from("rfdetr-cli"),
             model: PathBuf::from("rfdetr-nano-f16.gguf"),
         };
-        let (_stdout, stderr, code) = present_health(&ced, &rfdetr, Ok(status));
+        let (_stdout, stderr, code) = present_health(&ced, &rfdetr, Ok(status), "linux", "x86_64");
         assert!(stderr.is_empty());
         assert_eq!(code, std::process::ExitCode::SUCCESS);
     }
@@ -778,7 +873,7 @@ mod tests {
             binary: PathBuf::from("rfdetr-cli"),
             model: PathBuf::from("rfdetr-nano-f16.gguf"),
         };
-        let (stdout, stderr, code) = present_health(&ced, &rfdetr, Ok(status));
+        let (stdout, stderr, code) = present_health(&ced, &rfdetr, Ok(status), "windows", "x86_64");
         assert!(stdout.starts_with(
             "ced install: unsupported platform windows/x86_64; skipping ced sound-tag assets\n"
         ));

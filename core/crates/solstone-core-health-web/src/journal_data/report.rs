@@ -8,7 +8,7 @@ use std::fs;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
-use chrono::{DateTime, Duration, Local, NaiveDate, NaiveTime, TimeZone, Timelike, Utc};
+use chrono::{DateTime, Duration, NaiveDate, NaiveTime, TimeZone, Timelike, Utc};
 use serde::Serialize;
 use serde_json::{Map, Value};
 use solstone_core_entity::load_all_journal_entities;
@@ -136,7 +136,7 @@ pub(crate) fn resolve_day(value: &str) -> Result<NaiveDate, HealthError> {
 pub(crate) fn resolve_range(
     day_from: Option<&str>,
     day_to: Option<&str>,
-    now: DateTime<Utc>,
+    now: DateTime<impl TimeZone>,
 ) -> Result<(NaiveDate, NaiveDate), HealthError> {
     let (from, to) = match (day_from, day_to) {
         (None, None) => (now.date_naive() - Duration::days(6), now.date_naive()),
@@ -158,12 +158,14 @@ pub(crate) fn resolve_range(
 pub(crate) fn build_health_report(
     journal_root: &Path,
     range: (NaiveDate, NaiveDate),
-    now: DateTime<Utc>,
+    now: DateTime<impl TimeZone>,
 ) -> Result<HealthReport, HealthError> {
+    let now = now.fixed_offset();
+    let utc_now = now.with_timezone(&Utc);
     let generated_at = now.timestamp_millis();
     let facets = list_declared_facet_names(journal_root)
         .map_err(|error| HealthError::internal(error.to_string()))?;
-    let aggregate = scan_records(journal_root, &facets, range, now)?;
+    let aggregate = scan_records(journal_root, &facets, range, utc_now)?;
     let (capture_health, mut notes) =
         build_capture_health(journal_root, &aggregate, range, &facets, generated_at, now)?;
     let (synthesis_health, synthesis_notes) =
@@ -179,10 +181,10 @@ pub(crate) fn build_health_report(
     // Native has no display-power poller; this is the reference monitor's pre-poll state.
     let segment_backlog = build_segment_backlog_health(
         journal_root,
-        now,
+        utc_now,
         DisplayPowersaveReading::UNAVAILABLE,
         false,
-        Local::now().time(),
+        now.time(),
     )?;
     Ok(HealthReport {
         generated_at,
@@ -195,7 +197,7 @@ pub(crate) fn build_health_report(
         synthesis_health,
         consumer_signal,
         segment_backlog,
-        brain_health: crate::brain_action::build_cli_brain_health(journal_root, now),
+        brain_health: crate::brain_action::build_cli_brain_health(journal_root, utc_now),
         notes,
     })
 }
@@ -300,7 +302,7 @@ fn build_capture_health(
     range: (NaiveDate, NaiveDate),
     facets: &[String],
     generated_at: i64,
-    now: DateTime<Utc>,
+    now: DateTime<impl TimeZone>,
 ) -> Result<(CaptureHealth, Vec<HealthNote>), HealthError> {
     let last_seen = last_segment_per_facet(journal_root, facets, now)?;
     let cutoff = generated_at - FACET_SILENT_INFO_HOURS * HOUR_MS;
@@ -379,7 +381,7 @@ fn build_capture_health(
 fn last_segment_per_facet(
     journal_root: &Path,
     facets: &[String],
-    now: DateTime<Utc>,
+    now: DateTime<impl TimeZone>,
 ) -> Result<BTreeMap<String, Option<i64>>, HealthError> {
     let mut values_by_facet = facets
         .iter()
@@ -414,7 +416,7 @@ fn last_segment_per_facet(
 fn build_synthesis_health(
     journal_root: &Path,
     aggregate: &ScanAggregate,
-    now: DateTime<Utc>,
+    now: DateTime<impl TimeZone>,
 ) -> Result<(SynthesisHealth, Vec<HealthNote>), HealthError> {
     let generated_at = now.timestamp_millis();
     let mut notes = vec![note(
@@ -1127,18 +1129,81 @@ mod tests {
     }
 
     #[test]
-    fn default_range_uses_utc_day() {
-        let now = chrono::Utc.with_ymd_and_hms(2026, 3, 1, 0, 1, 0).unwrap();
-        let range = resolve_range(None, None, now).unwrap();
-        assert_eq!(range.0.format("%Y%m%d").to_string(), "20260223");
-        assert_eq!(range.1.format("%Y%m%d").to_string(), "20260301");
+    fn default_range_uses_the_injected_local_calendar() {
+        for (stamp, zone, expected) in [
+            (
+                "2026-09-08T00:30:00Z",
+                chrono_tz::America::Denver,
+                "20260907",
+            ),
+            ("2026-09-07T23:30:00Z", chrono_tz::Asia::Tokyo, "20260908"),
+            ("2026-09-08T00:30:00Z", chrono_tz::UTC, "20260908"),
+            (
+                "2026-03-09T05:30:00Z",
+                chrono_tz::America::Denver,
+                "20260308",
+            ),
+            (
+                "2026-11-02T06:30:00Z",
+                chrono_tz::America::Denver,
+                "20261101",
+            ),
+        ] {
+            let instant = chrono::DateTime::parse_from_rfc3339(stamp).unwrap();
+            let local = instant.with_timezone(&zone);
+            let range = resolve_range(None, None, local).unwrap();
+            assert_eq!(range.1.format("%Y%m%d").to_string(), expected);
+            assert_eq!(range.1 - range.0, Duration::days(6));
+        }
     }
 
     #[test]
-    fn utc_day_default_never_uses_host_local_calendar() {
-        let fixed = Utc.with_ymd_and_hms(2026, 4, 1, 23, 30, 0).unwrap();
-        let range = resolve_range(None, None, fixed).unwrap();
-        assert_eq!(range.1.format("%Y%m%d").to_string(), "20260401");
+    fn capture_lookback_includes_the_current_local_day_east_of_utc() {
+        let root = temporary();
+        facet(root.path(), "work");
+        activities(
+            root.path(),
+            "work",
+            "20260908",
+            &[json!({"id":"local-morning","segments":["080000_60"]})],
+        );
+        let instant = Utc.with_ymd_and_hms(2026, 9, 7, 23, 30, 0).unwrap();
+        let local = instant.with_timezone(&chrono_tz::Asia::Tokyo);
+        let facets = vec!["work".to_owned()];
+        let values = super::last_segment_per_facet(root.path(), &facets, local).unwrap();
+        assert!(values["work"].is_some());
+        let utc_control = super::last_segment_per_facet(root.path(), &facets, instant).unwrap();
+        assert_eq!(utc_control["work"], None);
+    }
+
+    #[test]
+    fn synthesis_index_guards_follow_local_journal_dates() {
+        for (zone, days) in [
+            (chrono_tz::America::Denver, ["20260907", "20260906"]),
+            (chrono_tz::Asia::Tokyo, ["20260908", "20260907"]),
+        ] {
+            let root = temporary();
+            let local = Utc
+                .with_ymd_and_hms(2026, 9, 8, 0, 30, 0)
+                .unwrap()
+                .with_timezone(&zone);
+            for day in days {
+                talent_rows(root.path(), day, &[]);
+            }
+            let (health, notes) =
+                build_synthesis_health(root.path(), &ScanAggregate::default(), local).unwrap();
+            assert_eq!(health.talent_run_failures_24h, Some(0));
+            assert!(!notes.iter().any(|n| n.message.contains("logs missing")));
+            fs::remove_file(
+                root.path()
+                    .join("talents")
+                    .join(format!("{}.jsonl", days[1])),
+            )
+            .unwrap();
+            let (health, _) =
+                build_synthesis_health(root.path(), &ScanAggregate::default(), local).unwrap();
+            assert_eq!(health.talent_run_failures_24h, None);
+        }
     }
 
     #[test]

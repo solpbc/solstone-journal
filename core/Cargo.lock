@@ -3871,6 +3871,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-local",
  "solstone-core-processing-record",
+ "solstone-core-system",
  "tempfile",
 ]
 
@@ -3897,6 +3898,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-local",
  "solstone-core-processing-record",
+ "solstone-core-system",
  "tempfile",
 ]
 
