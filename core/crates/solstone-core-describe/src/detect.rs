@@ -53,6 +53,55 @@ pub fn detections_block(result: &Value, source: &str, gate: &str) -> Result<Valu
     }))
 }
 
+pub fn windows_detect_executable<'a>(
+    package: &'a solstone_core_local::install::rfdetr_windows::WindowsRfdetrPackage,
+    _env_override: Option<&std::ffi::OsStr>,
+) -> &'a Path {
+    &package.binary
+}
+
+#[cfg(windows)]
+pub fn detect(full_png: &[u8], _journal: &Path) -> Result<Value, String> {
+    use solstone_core_local::install::rfdetr_windows::{
+        map_rfdetr_detect_completion, rfdetr_windows_detect_launch, verified_windows_rfdetr_package,
+    };
+    use solstone_core_system::process::{
+        BoundedHelperBudget, BoundedHelperRequest, BoundedHelperResourceLimits, run_bounded_helper,
+    };
+
+    let package = verified_windows_rfdetr_package().map_err(|err| err.to_string())?;
+    let system_root = env::var_os("SystemRoot")
+        .filter(|val| !val.is_empty())
+        .ok_or_else(|| "SystemRoot environment variable is not set".to_owned())?;
+    let temp = TempDir::new()?;
+    let input = temp.path.join("input.png");
+    let output = temp.path.join("output.json");
+    fs::write(&input, full_png).map_err(|error| error.to_string())?;
+
+    let spec = rfdetr_windows_detect_launch(&package, system_root, &input, &output);
+    let request = BoundedHelperRequest {
+        package_root: spec.package_root,
+        executable: spec.executable,
+        current_directory: spec.current_directory,
+        arguments: spec.arguments,
+        environment: spec.environment,
+        stdin: spec.stdin,
+        budget: BoundedHelperBudget {
+            timeout: spec.timeout,
+            stdin_limit_bytes: spec.stdin_limit_bytes,
+            stdout_limit_bytes: spec.stdout_limit_bytes,
+            stderr_limit_bytes: spec.stderr_limit_bytes,
+        },
+        resource_limits: Some(BoundedHelperResourceLimits {
+            cpu_rate_per_10_000: spec.cpu_rate_per_10_000,
+            committed_memory_bytes: spec.committed_memory_bytes,
+        }),
+    };
+    let helper_output = run_bounded_helper(request).map_err(|err| err.to_string())?;
+    map_rfdetr_detect_completion(helper_output.exit_code == 0, &output)
+}
+
+#[cfg(not(windows))]
 pub fn detect(full_png: &[u8], journal: &Path) -> Result<Value, String> {
     let (binary, model) = match env::var_os(BINARY_ENV) {
         Some(binary) => (PathBuf::from(binary), PathBuf::from("stub-model")),
@@ -162,15 +211,17 @@ impl Drop for TempDir {
     }
 }
 
-#[cfg(all(test, feature = "full-tests"))]
+#[cfg(test)]
 mod tests {
+    use std::ffi::OsStr;
     use std::fs;
+    use std::path::PathBuf;
 
-    use super::{
-        RfdetrInstallError, RfdetrInstallRecord, binary_path, detections_block, model_path,
-        paths_from_install_check, screen_gate,
-    };
+    use super::{detections_block, screen_gate, windows_detect_executable};
     use serde_json::json;
+    use solstone_core_local::install::rfdetr_windows::{
+        WindowsRfdetrPackage, map_rfdetr_detect_completion,
+    };
 
     #[test]
     fn primary_gate_precedes_secondary() {
@@ -194,6 +245,72 @@ mod tests {
         .expect("block");
         assert_eq!(result["objects"][0]["score"], 0.1);
     }
+
+    #[test]
+    fn env_override_does_not_change_chosen_executable() {
+        let pkg = WindowsRfdetrPackage {
+            package_root: PathBuf::from(r"C:\solstone"),
+            binary: PathBuf::from(r"C:\solstone\bin\rfdetr-cli.exe"),
+            model: PathBuf::from(r"C:\solstone\lib\model.gguf"),
+        };
+        let chosen = windows_detect_executable(&pkg, Some(OsStr::new("C:\\custom\\rfdetr.exe")));
+        assert_eq!(chosen, &pkg.binary);
+    }
+
+    #[test]
+    fn map_rfdetr_detect_completion_success_empty_detections_builds_block() {
+        let temp = tempfile::tempdir().unwrap();
+        let output = temp.path().join("output.json");
+        fs::write(
+            &output,
+            json!({"image":{"width":100,"height":100},"detections":[]}).to_string(),
+        )
+        .unwrap();
+
+        let raw = map_rfdetr_detect_completion(true, &output).expect("detect completion Ok");
+        let block = detections_block(&raw, "screen", "primary:media").expect("detections block");
+        assert_eq!(block["gate"], "primary:media");
+        assert_eq!(block["objects"], json!([]));
+    }
+
+    #[test]
+    fn map_rfdetr_detect_completion_failure_ignores_planted_valid_json() {
+        let temp = tempfile::tempdir().unwrap();
+        let output = temp.path().join("output.json");
+        fs::write(
+            &output,
+            json!({
+                "image": {"width": 100, "height": 100},
+                "detections": [{"class_name": "person", "score": 0.9}]
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let err = map_rfdetr_detect_completion(false, &output)
+            .expect_err("nonzero exit must not parse leftover json");
+        assert_eq!(err, "rfdetr-cli detect failed");
+    }
+
+    #[test]
+    fn map_rfdetr_detect_completion_success_with_missing_or_malformed_json_errors() {
+        let temp = tempfile::tempdir().unwrap();
+        let missing = temp.path().join("missing.json");
+        assert!(map_rfdetr_detect_completion(true, &missing).is_err());
+
+        let malformed = temp.path().join("malformed.json");
+        fs::write(&malformed, b"not json").unwrap();
+        assert!(map_rfdetr_detect_completion(true, &malformed).is_err());
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+mod full_tests {
+    use std::fs;
+
+    use super::{
+        RfdetrInstallError, RfdetrInstallRecord, binary_path, model_path, paths_from_install_check,
+    };
 
     #[test]
     fn native_install_query_covers_all_provider_worlds_at_the_given_journal() {

@@ -30,4 +30,16 @@ pub struct PulseNarrative {
     pub content: Option<String>,
     pub updated_at: Option<String>,
     pub needs: Vec<String>,
+    pub window: Option<PulseWindow>,
+}
+
+/// Counts refer to input records, which may describe overlapping activity.
+#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct PulseWindow {
+    pub segments: u64,
+    pub activities: u64,
+    pub input_segments: u64,
+    pub input_activities: u64,
+    pub since_ms: Option<i64>,
+    pub gaps: Vec<String>,
 }

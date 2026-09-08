@@ -11,24 +11,32 @@ use std::ffi::OsString;
 use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
+#[cfg(not(windows))]
 use std::process::{Child, Command, ExitStatus, Stdio};
+#[cfg(not(windows))]
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+#[cfg(not(windows))]
+use std::time::{Duration, Instant};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 use image::{DynamicImage, GenericImageView, ImageFormat, imageops::FilterType};
 use serde_json::{Map, Value, json};
+#[cfg(any(not(windows), test))]
 use solstone_core_assets::canonical_host_pair;
 use solstone_core_generate::{
     ClientError, ContentPart, GenerateRequest, GenerateResponse, OneShotClient, RefusalReason,
 };
+#[cfg(not(windows))]
 use solstone_core_journal::{
     detect_checkout_root, discover_home, read_config_journal, resolve_journal_path,
 };
 use solstone_core_journal_io::{AtomicWriteOptions, write_jsonl};
+use solstone_core_local::install::rfdetr_install::ENGINE_PROVENANCE_REF;
+#[cfg(any(not(windows), test))]
 use solstone_core_local::install::rfdetr_install::{
-    ENGINE_PROVENANCE_REF, RfdetrInstallError, RfdetrInstallRecord, binary_path,
-    check_rfdetr_model, model_path, rfdetr_artifact_key,
+    RfdetrInstallError, RfdetrInstallRecord, binary_path, check_rfdetr_model, model_path,
+    rfdetr_artifact_key,
 };
 use solstone_core_processing_record::{
     read_processing_record_header, should_reenter_analysis_output, vocab,
@@ -41,8 +49,11 @@ const MAX_VLM_DIM: u32 = 1920;
 const ENGINE_NAME: &str = "rf-detr.cpp";
 const MODEL_NAME: &str = "rfdetr-nano-f16";
 const THRESHOLD: f64 = 0.25;
+#[cfg(not(windows))]
 const RFDETR_TIMEOUT: Duration = Duration::from_secs(120);
+#[cfg(not(windows))]
 const CHILD_POLL_INTERVAL: Duration = Duration::from_millis(20);
+#[cfg(not(windows))]
 const RFDETR_UNAVAILABLE_DETAIL: &str = "Object detection is unavailable. Run `journal install-models` to check or repair the RF-DETR assets.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -172,6 +183,54 @@ impl WireClient for SystemWireClient {
 
 pub struct SystemDetector;
 
+#[cfg(windows)]
+impl Detector for SystemDetector {
+    fn detect(&self, full_png: &[u8]) -> Result<Option<Value>, String> {
+        use solstone_core_local::install::rfdetr_windows::{
+            map_rfdetr_detect_completion, rfdetr_windows_detect_launch,
+            verified_windows_rfdetr_package,
+        };
+        use solstone_core_system::process::{
+            BoundedHelperBudget, BoundedHelperRequest, BoundedHelperResourceLimits,
+            run_bounded_helper,
+        };
+
+        let package = verified_windows_rfdetr_package().map_err(|_| rfdetr_unavailable())?;
+        let system_root = env::var_os("SystemRoot")
+            .filter(|val| !val.is_empty())
+            .ok_or_else(rfdetr_unavailable)?;
+        let temporary = DetectorTempDir::new().map_err(|_| rfdetr_unavailable())?;
+        let input = temporary.path.join("input.png");
+        let output = temporary.path.join("output.json");
+        fs::write(&input, full_png).map_err(|_| rfdetr_unavailable())?;
+
+        let spec = rfdetr_windows_detect_launch(&package, system_root, &input, &output);
+        let request = BoundedHelperRequest {
+            package_root: spec.package_root,
+            executable: spec.executable,
+            current_directory: spec.current_directory,
+            arguments: spec.arguments,
+            environment: spec.environment,
+            stdin: spec.stdin,
+            budget: BoundedHelperBudget {
+                timeout: spec.timeout,
+                stdin_limit_bytes: spec.stdin_limit_bytes,
+                stdout_limit_bytes: spec.stdout_limit_bytes,
+                stderr_limit_bytes: spec.stderr_limit_bytes,
+            },
+            resource_limits: Some(BoundedHelperResourceLimits {
+                cpu_rate_per_10_000: spec.cpu_rate_per_10_000,
+                committed_memory_bytes: spec.committed_memory_bytes,
+            }),
+        };
+        let helper_output = run_bounded_helper(request).map_err(|_| rfdetr_unavailable())?;
+        let parsed = map_rfdetr_detect_completion(helper_output.exit_code == 0, &output)
+            .map_err(|_| rfdetr_unavailable())?;
+        Ok(Some(parsed))
+    }
+}
+
+#[cfg(not(windows))]
 impl Detector for SystemDetector {
     fn detect(&self, full_png: &[u8]) -> Result<Option<Value>, String> {
         let journal = current_journal_path().ok_or_else(rfdetr_unavailable)?;
@@ -206,9 +265,17 @@ impl Detector for SystemDetector {
 }
 
 fn rfdetr_unavailable() -> String {
-    RFDETR_UNAVAILABLE_DETAIL.to_owned()
+    #[cfg(windows)]
+    {
+        solstone_core_local::install::rfdetr_windows::RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE.to_owned()
+    }
+    #[cfg(not(windows))]
+    {
+        RFDETR_UNAVAILABLE_DETAIL.to_owned()
+    }
 }
 
+#[cfg(not(windows))]
 fn wait_for_child(child: &mut Child, timeout: Duration) -> Result<ExitStatus, String> {
     let deadline = Instant::now() + timeout;
     loop {
@@ -227,6 +294,7 @@ fn wait_for_child(child: &mut Child, timeout: Duration) -> Result<ExitStatus, St
     }
 }
 
+#[cfg(not(windows))]
 fn current_journal_path() -> Option<PathBuf> {
     let env_journal = env::var_os("SOLSTONE_JOURNAL");
     if let Some(path) = env_journal.as_deref().filter(|value| !value.is_empty()) {
@@ -251,16 +319,24 @@ fn current_journal_path() -> Option<PathBuf> {
     )
 }
 
+#[cfg(any(not(windows), test))]
 fn rfdetr_paths_at(
     journal: &Path,
     os_name: &str,
     arch: &str,
 ) -> Result<(PathBuf, PathBuf), String> {
     let (os_name, arch) = canonical_host_pair(os_name, arch);
+    if solstone_core_local::install::rfdetr_install::rfdetr_uses_package_payload(os_name, arch) {
+        let package =
+            solstone_core_local::install::rfdetr_windows::verified_windows_rfdetr_package()
+                .map_err(|err| err.to_string())?;
+        return Ok((package.binary, package.model));
+    }
     let key = rfdetr_artifact_key(os_name, arch).ok_or_else(rfdetr_unavailable)?;
     rfdetr_paths_from_install_check(check_rfdetr_model(journal, os_name, arch), journal, key)
 }
 
+#[cfg(any(not(windows), test))]
 fn rfdetr_paths_from_install_check(
     result: Result<RfdetrInstallRecord, RfdetrInstallError>,
     journal: &Path,
@@ -1127,5 +1203,34 @@ mod tests {
         ] {
             assert!(matches!(parse_args(&args), Err(DepictError::Help)));
         }
+    }
+
+    #[test]
+    fn map_rfdetr_detect_completion_contract_in_depict() {
+        use solstone_core_local::install::rfdetr_windows::map_rfdetr_detect_completion;
+
+        let temp = tempfile::tempdir().unwrap();
+        let output = temp.path().join("output.json");
+        fs::write(
+            &output,
+            json!({"image": {"width": 100, "height": 100}, "detections": []}).to_string(),
+        )
+        .unwrap();
+
+        let parsed = map_rfdetr_detect_completion(true, &output).expect("success parse");
+        assert_eq!(parsed["detections"], json!([]));
+
+        // planted json with failed status must return Err
+        let planted = temp.path().join("planted.json");
+        fs::write(
+            &planted,
+            json!({
+                "image": {"width": 100, "height": 100},
+                "detections": [{"class_name": "person", "score": 0.9}]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert!(map_rfdetr_detect_completion(false, &planted).is_err());
     }
 }

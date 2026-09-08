@@ -1,7 +1,7 @@
 {
   "type": "generate",
   "title": "Pulse",
-  "description": "Living situational read of your day. The shape of today, what needs you, and a one-line glance.",
+  "description": "a short summary of recently processed activity and any supported next steps.",
   "schedule": "cadence",
   "cadence_minutes": 5,
   "priority": 50,
@@ -29,7 +29,7 @@ activity evidence below. The completed entries cover recent work, so describe
 what they show without claiming to cover the whole day. State any gap that
 limits the account.
 
-Use awareness and the partner profile as background. A person's name, an old
+Use awareness only as background. A person's name, an old
 plan, or something visible on screen does not establish what the owner did today.
 Keep the source's dates and attribution. Mention an event as upcoming only
 when its date supports that. Suggest an action only when the supplied evidence
@@ -37,7 +37,11 @@ supports a need that remains open; an empty action list is fine.
 
 Notice emotional texture only when the activity evidence supports it.
 
-## Completed since last cadence
+Processing completion timestamps determine which entries are included; they do
+not establish when an activity happened. This is a bounded batch, not a whole-day
+account. Background context cannot establish a current habit or event.
+
+## Recently processed entries
 
 $completed_since
 
@@ -53,10 +57,6 @@ $anticipated
 
 $recent_entities
 
-## Partner profile
-
-$partner_profile
-
 ## Data gaps
 
 $gaps
@@ -65,8 +65,8 @@ $gaps
 
 Return a JSON object with exactly these keys:
 
-- `title` — 2-6 words, a glanceable header for the current shape of the day.
-- `one_sentence` — one sentence that can open chat or a mobile surface.
+- `title` — 2-6 words, a glanceable header for the recent activity.
+- `one_sentence` — one sentence that summarizes the supplied activity.
 - `full_details` — up to 8 sentences describing the current situation shown by the
   evidence. Lead with what matters now; use fewer sentences when little is known.
 - `needs_you` — 0-7 ranked action items as strings. Draw them from upcoming
@@ -87,7 +87,7 @@ Personal and family matters (a kid's first day of school, a doctor's
 appointment) are not "professional priorities" — don't force a work frame
 onto something that isn't work.
 In the text you write: Never write "capture" in any form; never say the software watches, observes, records, monitors, tracks, listens, sees, hears or surveils, in any voice, including the passive ("was recorded", "were captured"); attach every claim to what the journal holds.
-When the evidence holds nothing more, say so plainly: "nothing else came up today", never "no other actions were recorded."
+When the evidence holds nothing more, say so plainly: "the supplied activity shows no other open needs", never "no other actions were recorded."
 
 Be concise. Do not greet the owner. Do not include markdown outside string
 values. Do not mention that you are using a pre-hook or schema.

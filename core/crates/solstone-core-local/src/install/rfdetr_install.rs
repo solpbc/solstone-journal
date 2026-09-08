@@ -96,7 +96,14 @@ struct Sidecar {
 }
 
 pub fn rfdetr_platform_supported(os_name: &str, arch: &str) -> bool {
-    rfdetr_artifact_key(os_name, arch).is_some()
+    rfdetr_artifact_key(os_name, arch).is_some() || rfdetr_uses_package_payload(os_name, arch)
+}
+
+pub fn rfdetr_uses_package_payload(os_name: &str, arch: &str) -> bool {
+    matches!(
+        (os_name, arch.to_ascii_lowercase().as_str()),
+        ("windows", "amd64" | "x64" | "x86_64")
+    )
 }
 
 pub fn rfdetr_artifact_key(os_name: &str, arch: &str) -> Option<&'static str> {
@@ -392,10 +399,27 @@ pub fn check_rfdetr_model(
     os_name: &str,
     arch: &str,
 ) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
+    if rfdetr_uses_package_payload(os_name, arch) {
+        return check_windows_package_rfdetr();
+    }
     let Some(key) = rfdetr_artifact_key(os_name, arch) else {
         return Ok(RfdetrInstallRecord::PlatformUnavailable);
     };
     check_rfdetr_model_with_rows(journal, key, engine_spec(key)?, model_spec())
+}
+
+fn check_windows_package_rfdetr() -> Result<RfdetrInstallRecord, RfdetrInstallError> {
+    match super::rfdetr_windows::verified_windows_rfdetr_package() {
+        Ok(_) => Ok(RfdetrInstallRecord::Installed),
+        Err(error)
+            if error.contains("requires a Windows runtime")
+                || error.contains("no containing directory")
+                || error.contains("no package root") =>
+        {
+            Err(RfdetrInstallError::new("sidecar_missing", error, 65))
+        }
+        Err(error) => Err(RfdetrInstallError::new("integrity_mismatch", error, 65)),
+    }
 }
 
 fn check_rfdetr_model_with_rows(
@@ -479,6 +503,9 @@ fn install_rfdetr_with_sources(
     #[cfg(any(test, feature = "test-hooks"))] fixture_assets: Option<&Path>,
     #[cfg(not(any(test, feature = "test-hooks")))] _fixture_assets: Option<&Path>,
 ) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
+    if rfdetr_uses_package_payload(os_name, arch) {
+        return check_windows_package_rfdetr();
+    }
     let Some(key) = rfdetr_artifact_key(os_name, arch) else {
         let record = RfdetrInstallRecord::PlatformUnavailable;
         write_sidecar(journal, &record, None)?;
@@ -814,15 +841,41 @@ mod tests {
     fn unsupported_platform_only_writes_a_sidecar_on_install() {
         let journal = tempfile::tempdir().unwrap();
         assert_eq!(
-            check_rfdetr_model(journal.path(), "windows", "x86_64").unwrap(),
+            check_rfdetr_model(journal.path(), "windows", "arm64").unwrap(),
             RfdetrInstallRecord::PlatformUnavailable
         );
         assert!(!sidecar_path(journal.path()).exists());
         assert_eq!(
-            install_rfdetr(journal.path(), "windows", "x86_64", false).unwrap(),
+            install_rfdetr(journal.path(), "windows", "arm64", false).unwrap(),
             RfdetrInstallRecord::PlatformUnavailable
         );
         assert!(sidecar_path(journal.path()).is_file());
+    }
+    #[test]
+    fn windows_x64_is_package_payload_and_does_not_write_cache() {
+        let journal = tempfile::tempdir().unwrap();
+        let pre_existing = root(journal.path()).join("existing.bin");
+        fs::create_dir_all(root(journal.path())).unwrap();
+        fs::write(&pre_existing, b"do-not-touch").unwrap();
+        let mtime_before = fs::metadata(&pre_existing).unwrap().modified().unwrap();
+
+        // On non-Windows test runners, package verification fails with missing runtime / absent
+        let check_res = check_rfdetr_model(journal.path(), "windows", "x86_64");
+        assert!(check_res.is_err());
+        assert!(!sidecar_path(journal.path()).exists());
+
+        let install_res = install_rfdetr(journal.path(), "windows", "x86_64", false);
+        assert!(install_res.is_err());
+        assert!(!sidecar_path(journal.path()).exists());
+
+        let install_force_res = install_rfdetr(journal.path(), "windows", "x86_64", true);
+        assert!(install_force_res.is_err());
+        assert!(!sidecar_path(journal.path()).exists());
+
+        // Ensure pre-existing files are untouched
+        assert_eq!(fs::read(&pre_existing).unwrap(), b"do-not-touch");
+        let mtime_after = fs::metadata(&pre_existing).unwrap().modified().unwrap();
+        assert_eq!(mtime_before, mtime_after);
     }
     #[test]
     fn missing_bundled_payload_is_reported() {

@@ -16,9 +16,10 @@ use solstone_core_local::install::capability_status::CapabilityStatus;
 use solstone_core_local::install::ced_readiness::{
     CED_READY_DETAIL, CED_UNAVAILABLE_GUIDANCE, CedVerdict, evaluate_ced_readiness,
 };
+#[cfg(test)]
+use solstone_core_local::install::rfdetr_readiness::RFDETR_UNAVAILABLE_GUIDANCE;
 use solstone_core_local::install::rfdetr_readiness::{
-    RFDETR_READY_DETAIL, RFDETR_UNAVAILABLE_GUIDANCE, RfdetrDegradedCause, RfdetrReadiness,
-    evaluate_rfdetr_readiness,
+    RFDETR_READY_DETAIL, RfdetrDegradedCause, RfdetrReadiness, evaluate_rfdetr_readiness,
 };
 use solstone_core_local::{
     VulkanDevice, cpu_placement_suffix, discrete_hardware_gpu_count, is_discrete, select_device,
@@ -125,7 +126,7 @@ pub struct Check {
     /// `integrity_invalid`, `unloadable`/`unrunnable`) -- `None` for every
     /// other check and for a non-Degraded ced/rfdetr check. `detail` stays
     /// the fixed owner-facing sentence (`CED_UNAVAILABLE_GUIDANCE` /
-    /// `RFDETR_UNAVAILABLE_GUIDANCE`) regardless of which cause fired, so
+    /// `RFDETR_UNAVAILABLE_GUIDANCE` on Unix; `RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE` on Windows package platforms) regardless of which cause fired, so
     /// this is the only place the three causes are distinguishable; owner
     /// copy is a separate, out-of-bounds change.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -317,10 +318,73 @@ pub fn gather_host_inputs(journal: &Path, version: &str) -> CheckInputs {
         },
         rfdetr: {
             let (os, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
-            rfdetr_input_from(evaluate_rfdetr_readiness(journal, os, arch))
+            rfdetr_input_from(evaluate_host_rfdetr(journal, os, arch))
         },
     }
 }
+fn evaluate_host_rfdetr(journal: &Path, os: &str, arch: &str) -> RfdetrReadiness {
+    if solstone_core_local::install::rfdetr_install::rfdetr_uses_package_payload(os, arch) {
+        solstone_core_local::install::rfdetr_readiness::evaluate_windows_rfdetr_readiness(
+            probe_windows_rfdetr_help,
+        )
+    } else {
+        evaluate_rfdetr_readiness(journal, os, arch)
+    }
+}
+
+#[cfg(windows)]
+fn probe_windows_rfdetr_help(
+    package: &solstone_core_local::install::rfdetr_windows::WindowsRfdetrPackage,
+) -> Value {
+    use solstone_core_local::install::rfdetr_windows::{
+        map_rfdetr_help_probe, rfdetr_windows_help_launch,
+    };
+    use solstone_core_system::process::{
+        BoundedHelperBudget, BoundedHelperRequest, BoundedHelperResourceLimits, run_bounded_helper,
+    };
+
+    let system_root = match std::env::var_os("SystemRoot") {
+        Some(val) if !val.is_empty() => val,
+        _ => {
+            return map_rfdetr_help_probe(
+                false,
+                None,
+                Some("SystemRoot environment variable is not set"),
+            );
+        }
+    };
+    let spec = rfdetr_windows_help_launch(package, system_root);
+    let request = BoundedHelperRequest {
+        package_root: spec.package_root,
+        executable: spec.executable,
+        current_directory: spec.current_directory,
+        arguments: spec.arguments,
+        environment: spec.environment,
+        stdin: spec.stdin,
+        budget: BoundedHelperBudget {
+            timeout: spec.timeout,
+            stdin_limit_bytes: spec.stdin_limit_bytes,
+            stdout_limit_bytes: spec.stdout_limit_bytes,
+            stderr_limit_bytes: spec.stderr_limit_bytes,
+        },
+        resource_limits: Some(BoundedHelperResourceLimits {
+            cpu_rate_per_10_000: spec.cpu_rate_per_10_000,
+            committed_memory_bytes: spec.committed_memory_bytes,
+        }),
+    };
+    match run_bounded_helper(request) {
+        Ok(output) => map_rfdetr_help_probe(output.exit_code == 0, Some(output.exit_code), None),
+        Err(error) => map_rfdetr_help_probe(false, None, Some(&error.to_string())),
+    }
+}
+
+#[cfg(not(windows))]
+fn probe_windows_rfdetr_help(
+    _package: &solstone_core_local::install::rfdetr_windows::WindowsRfdetrPackage,
+) -> Value {
+    json!({"runnable": false, "reason_code": "windows_only"})
+}
+
 fn ced_input_from(verdict: CedVerdict) -> Option<CapabilityStatus> {
     match verdict {
         CedVerdict::Ready { .. } => Some(CapabilityStatus::Ready),
@@ -528,21 +592,13 @@ fn rfdetr_check(inputs: &CheckInputs) -> Option<Check> {
         RfdetrCheckInput::Degraded { cause } => {
             // ⚠ Warning, not Blocked, and deliberately identical to `ced_check`.
             // Object detection is an optional enhancement -- this check's own
-            // `RFDETR_UNAVAILABLE_GUIDANCE` says "Screen descriptions will
-            // continue" -- so a degraded RF-DETR must not set `overall`
-            // to Blocked, which renders as "Not ready -- this computer can't run
-            // the bundled local models yet." That sentence contradicts the
-            // detail beside it, and it was false on the founder's machine, where
-            // a working 2.0.0 journal reported `overall: blocked` and exit 2
-            // solely because a leftover V1-shaped RF-DETR sidecar failed its
-            // pinned-artifact comparison.
-            let mut item = check(
-                "rfdetr",
-                Severity::Warning,
-                RFDETR_UNAVAILABLE_GUIDANCE,
-                None,
-                None,
+            // guidance says "Screen descriptions will continue" -- so a degraded
+            // RF-DETR must not set `overall` to Blocked.
+            let guidance = solstone_core_local::install::rfdetr_windows::rfdetr_degraded_guidance(
+                &inputs.platform.os,
+                &inputs.platform.arch,
             );
+            let mut item = check("rfdetr", Severity::Warning, guidance, None, None);
             item.cause = Some(rfdetr_cause_str(*cause));
             Some(item)
         }
@@ -910,6 +966,26 @@ mod tests {
             degraded_rfdetr.severity, degraded_ced.severity,
             "CED and RF-DETR are both optional inference assets and must agree"
         );
+    }
+
+    #[test]
+    fn windows_degraded_rfdetr_uses_package_guidance() {
+        use solstone_core_local::install::rfdetr_windows::RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE;
+
+        let mut inputs = check_inputs(
+            None,
+            RfdetrCheckInput::Degraded {
+                cause: RfdetrDegradedCause::Absent,
+            },
+        );
+        inputs.platform.os = "windows".into();
+        inputs.platform.arch = "x86_64".into();
+
+        let rfdetr = rfdetr_check(&inputs).expect("degraded RF-DETR check on Windows");
+        assert_eq!(rfdetr.severity, Severity::Warning);
+        assert_eq!(rfdetr.detail, RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE);
+        assert!(!rfdetr.detail.contains("journal install-models"));
+        assert_eq!(rfdetr.cause, Some("absent"));
     }
 
     /// CED counterpart of `degraded_rfdetr_blocks_for_every_cause`: same

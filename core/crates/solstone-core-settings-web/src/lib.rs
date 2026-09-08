@@ -63,6 +63,7 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
     let logs_root = journal_root.clone();
     let facet_logs_root = journal_root.clone();
     let storage_root = journal_root.clone();
+    let storage_config_root = journal_root.clone();
     let storage_put_root = journal_root.clone();
     let purge_root = journal_root.clone();
     let prune_logs_root = journal_root.clone();
@@ -166,6 +167,10 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
         .route(
             "/app/settings/api/facet/{facet_name}/logs",
             get(move |path, query| logs::facet(facet_logs_root.clone(), path, query)),
+        )
+        .route(
+            "/app/settings/api/storage/config",
+            get(move || storage::get_config(storage_config_root.clone())),
         )
         .route(
             "/app/settings/api/storage",

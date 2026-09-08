@@ -2181,7 +2181,7 @@ if (document.readyState === 'loading') {
 .drawer-raw summary { cursor: pointer; padding: 0.55rem 0.75rem; font-weight: 600; }
 .drawer-raw pre { margin: 0; padding: 0.75rem; border-top: 1px solid var(--facet-border, #e5e0db); overflow-x: auto; font-family: monospace; font-size: 0.86rem; white-space: pre-wrap; }
 
-.no-data { color: #999; font-style: italic; padding: 2em; text-align: center; }
+.no-data { color: var(--ink-muted, #66594A); font-style: italic; padding: 2em; text-align: center; }
 
 /* Content tab */
 .import-content-summary { margin-bottom: 1em; padding: 0.75em 1em; background: var(--orange-wash); border-radius: 4px; font-size: 0.95em; }
@@ -2272,7 +2272,7 @@ if (document.readyState === 'loading') {
       <div class="import-content-summary" id="contentSummary"></div>
       <div class="import-content-controls">
         <input type="text" id="contentSearch" class="import-content-search" placeholder="search items…" />
-        <select id="contentMonth" class="import-content-month">
+        <select id="contentMonth" class="import-content-month" aria-label="filter by month">
           <option value="">all months</option>
         </select>
       </div>
@@ -2360,7 +2360,7 @@ function renderContentSummary(data) {
 function renderContentMonths(months) {
   const select = document.getElementById('contentMonth');
   const current = select.value;
-  select.innerHTML = '<option value="">All months</option>';
+  select.innerHTML = '<option value="">all months</option>';
   for (const [month, count] of Object.entries(months)) {
     const label = month.slice(0, 4) + '-' + month.slice(4, 6);
     const opt = document.createElement('option');
@@ -2374,7 +2374,7 @@ function renderContentMonths(months) {
 function renderContentItems(items) {
   const el = document.getElementById('contentItems');
   if (!items.length) {
-    el.innerHTML = '<div class="no-data">No items found</div>';
+    el.innerHTML = '<div class="no-data">no items found</div>';
     return;
   }
   const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -2391,10 +2391,10 @@ function renderContentItems(items) {
       html += `<div class="import-content-month-header">${monthLabel} ${year}, ${monthCount} items</div>`;
     }
     const typeLabel = {
-      conversation: 'Chat',
-      event: 'Event',
-      highlight_group: 'Highlights',
-      note: 'Note',
+      conversation: 'chat',
+      event: 'event',
+      highlight_group: 'highlights',
+      note: 'note',
     }[item.type] || item.type;
     const date = item.date ? window.JournalFormat.day(item.date) : '';
     html += `

@@ -796,13 +796,24 @@ fn maybe_detect(
     }
     let result = detect::detect(png, journal)
         .and_then(|result| detect::detections_block(&result, "screen", &gate))
-        .map_err(|_| RFDETR_UNAVAILABLE_DETAIL.to_owned());
+        .map_err(|_| rfdetr_unavailable_detail().to_owned());
     match result {
         Ok(result) => Ok(Some(result)),
         Err(detail) => {
             *disabled = Some(detail.clone());
             Err(detail)
         }
+    }
+}
+
+fn rfdetr_unavailable_detail() -> &'static str {
+    #[cfg(windows)]
+    {
+        solstone_core_local::install::rfdetr_windows::RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE
+    }
+    #[cfg(not(windows))]
+    {
+        RFDETR_UNAVAILABLE_DETAIL
     }
 }
 

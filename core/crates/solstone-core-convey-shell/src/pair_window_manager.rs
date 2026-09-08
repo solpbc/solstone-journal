@@ -37,6 +37,9 @@ pub(crate) struct RelayWindowEntry {
     pub(crate) configuration: ServiceConfigurationVersion,
 }
 
+#[cfg(test)]
+type PairCommitHook = Arc<dyn Fn(bool) + Send + Sync>;
+
 /// Process-local relay-window registrations, keyed by their local nonce value.
 pub(crate) struct PairWindowManager {
     windows: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
@@ -44,7 +47,7 @@ pub(crate) struct PairWindowManager {
     relay_access: Arc<RelayAccessCache>,
     entries: Arc<Mutex<HashMap<String, RelayWindowEntry>>>,
     #[cfg(test)]
-    pair_commit_hook: Mutex<Option<Arc<dyn Fn(bool) + Send + Sync>>>,
+    pair_commit_hook: Mutex<Option<PairCommitHook>>,
 }
 
 struct PairWindowTask {
@@ -75,7 +78,7 @@ impl PairWindowManager {
     }
 
     #[cfg(test)]
-    pub(crate) fn set_pair_commit_hook(&self, hook: Arc<dyn Fn(bool) + Send + Sync>) {
+    pub(crate) fn set_pair_commit_hook(&self, hook: PairCommitHook) {
         *self.pair_commit_hook.lock().expect("test hook") = Some(hook);
     }
 

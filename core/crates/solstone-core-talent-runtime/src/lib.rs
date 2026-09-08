@@ -419,7 +419,7 @@ pub(crate) fn generate_and_write(
         {
             Some(Ok(response)) => response,
             Some(Err(outcome)) => return outcome,
-            None => match generate.execute(&generate_request(prepared)) {
+            None => match execute_generate(prepared, generate, writer) {
                 Ok(GenerateResponse::Generated(response)) => {
                     if prepared.config.contains_key("json_schema")
                         && schema_validation_failed(response.schema_validation.as_ref())
@@ -664,6 +664,31 @@ pub(crate) fn generate_contents(prepared: &PreparedTalent) -> Vec<ContentPart> {
     }
 }
 
+// Persist the assembled talent input alongside this run. The generate worker may
+// subsequently fit the request to a provider's limits; this is not a wire trace.
+fn execute_generate(
+    prepared: &PreparedTalent,
+    generate: &OneShotClient,
+    writer: &mut impl Write,
+) -> Result<GenerateResponse, solstone_core_generate::ClientError> {
+    let request = generate_request(prepared);
+    if prepared.name == "pulse" {
+        emit_generate_input(writer, &request);
+    }
+    generate.execute(&request)
+}
+
+fn emit_generate_input(writer: &mut impl Write, request: &GenerateRequest) {
+    if let Ok(encoded) = solstone_core_generate::encode_one_shot_request(request)
+        && let Ok(input) = serde_json::from_str::<Value>(&encoded)
+    {
+        emit(
+            writer,
+            json!({"event": "generate_input", "boundary": "talent_to_generate", "input": input}),
+        );
+    }
+}
+
 fn generate_request(prepared: &PreparedTalent) -> GenerateRequest {
     GenerateRequest {
         id: None,
@@ -877,6 +902,12 @@ mod tests {
             fs::read_to_string(payload.join("pulse.schema.json")).unwrap(),
         )
         .unwrap();
+        fs::create_dir_all(context.journal.join("identity")).unwrap();
+        fs::write(
+            context.journal.join("identity/partner.md"),
+            "OLD_HABIT_SENTINEL: morning routine",
+        )
+        .unwrap();
         let day = "20260906";
         let segment = "130223_304";
         let activity_dir = context
@@ -924,6 +955,17 @@ mod tests {
             !text.contains("STALE_PRIOR_PULSE_SENTINEL"),
             "generated summaries must not become source evidence"
         );
+        assert!(!text.contains("OLD_HABIT_SENTINEL"));
+        let request = generate_request(&prepared);
+        let mut events = Vec::new();
+        emit_generate_input(&mut events, &request);
+        let event: Value = serde_json::from_slice(&events).unwrap();
+        let encoded = solstone_core_generate::encode_one_shot_request(&request).unwrap();
+        assert_eq!(
+            event["input"],
+            serde_json::from_str::<Value>(&encoded).unwrap()
+        );
+        assert_eq!(event["boundary"], "talent_to_generate");
         assert!(!text.contains("$completed_since"));
         assert!(!text.contains("$as_of"));
         let clock = text
@@ -964,6 +1006,49 @@ mod tests {
         assert_eq!(config["user_instruction"], "bAR Bar $missing");
         assert_eq!(config["transcript"], "bAR Bar");
         assert_eq!(config["prompt"], "bAR");
+    }
+
+    #[test]
+    fn pulse_execution_emits_the_request_received_by_generate_after_start() {
+        let (root, paths, context) = fixture(
+            "pulse",
+            r#"{"type":"generate","hook":{"pre":"pulse","post":"pulse"},"output":"json","accumulate":true}"#,
+        );
+        let stub = test_support::one_shot_stub(
+            root.path(),
+            r#"{"title":"T","one_sentence":"S","full_details":"D","needs_you":[]}"#,
+        );
+        let script = fs::read_to_string(&stub)
+            .unwrap()
+            .replace("cat >/dev/null", "cat > \"$0.request\"");
+        fs::write(&stub, script).unwrap();
+        let generate = OneShotClient::at_path(&stub);
+        let cogitate = CogitateOneShotClient::at_path(root.path().join("unused"));
+        let mut output = Vec::new();
+        let outcome = execute_request(
+            source_config(
+                json!({"name":"pulse", "day":"20260907", "prompt":"current request", "cadence_window":{"since_ms":0,"segments":[],"activities":[]}}),
+            ),
+            &paths,
+            &context,
+            &generate,
+            &cogitate,
+            &mut output,
+        );
+        assert!(
+            matches!(outcome, RuntimeOutcome::Finished { .. }),
+            "{outcome:?}"
+        );
+        let emitted = events(&output);
+        assert_eq!(emitted[0]["event"], "start");
+        let input = emitted
+            .iter()
+            .find(|event| event["event"] == "generate_input")
+            .unwrap();
+        let received: Value =
+            serde_json::from_slice(&fs::read(stub.with_extension("sh.request")).unwrap()).unwrap();
+        assert_eq!(input["input"], received);
+        assert_eq!(input["boundary"], "talent_to_generate");
     }
 
     #[test]

@@ -84,8 +84,11 @@ pub use serve::SplLinkServeRunner;
 #[cfg(all(feature = "client", any(test, feature = "host")))]
 #[doc(hidden)]
 pub mod serve_test_support {
+    pub use crate::client_description::ReportedDescription;
     pub use crate::serve::{
-        STATUS_PATH, StatusClock, StatusTracker, bridge_names, bridge_policy_for_port,
+        CurrentClientManager, JobSchedulerTestParams, OptionalJobScheduler, STATUS_PATH,
+        StatusClock, StatusTracker, SystemStatusClock, bridge_names, bridge_policy_for_port,
+        publish_device_description, publish_device_description_with,
     };
 }
 
@@ -168,8 +171,13 @@ impl LinkJoinPairingSeam for SplLinkJoinPairingSeam {
         &self,
         request: LinkJoinRelayRequest,
     ) -> Result<LinkJoinCredential, LinkJoinPairingError> {
+        let requested_relay_origin = request.relay_origin.clone();
         let credential = block_on_transport(pairing_entry::relay(&request))?;
-        link_credential_from_spl(credential)
+        let mut cred = link_credential_from_spl(credential)?;
+        if cred.relay_origin.is_none() {
+            cred.relay_origin = Some(requested_relay_origin);
+        }
+        Ok(cred)
     }
 }
 
@@ -210,6 +218,7 @@ fn link_credential_from_spl(
         local_endpoints: credential
             .local_endpoints
             .unwrap_or(serde_json::Value::Null),
+        relay_origin: credential.relay_origin,
         relay_device_token: credential.device_token,
         relay_device_token_expires_at: credential.device_token_expires_at,
     })
@@ -437,6 +446,7 @@ mod tests {
             local_endpoints: Some(json!([
                 {"ip": "192.168.1.10", "port": 7657, "scope": "lan"}
             ])),
+            relay_access: None,
         }
     }
 

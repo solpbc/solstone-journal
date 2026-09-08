@@ -60,13 +60,76 @@ use crate::{
     eprint_journal_path_error, resolve_process_journal_path,
 };
 
+fn evaluate_host_rfdetr(journal: &Path, os: &str, arch: &str) -> RfdetrReadiness {
+    if solstone_core_local::install::rfdetr_install::rfdetr_uses_package_payload(os, arch) {
+        solstone_core_local::install::rfdetr_readiness::evaluate_windows_rfdetr_readiness(
+            probe_windows_rfdetr_help,
+        )
+    } else {
+        evaluate_rfdetr_readiness(journal, os, arch)
+    }
+}
+
+#[cfg(windows)]
+fn probe_windows_rfdetr_help(
+    package: &solstone_core_local::install::rfdetr_windows::WindowsRfdetrPackage,
+) -> serde_json::Value {
+    use solstone_core_local::install::rfdetr_windows::{
+        map_rfdetr_help_probe, rfdetr_windows_help_launch,
+    };
+    use solstone_core_system::process::{
+        BoundedHelperBudget, BoundedHelperRequest, BoundedHelperResourceLimits, run_bounded_helper,
+    };
+
+    let system_root = match std::env::var_os("SystemRoot") {
+        Some(val) if !val.is_empty() => val,
+        _ => {
+            return map_rfdetr_help_probe(
+                false,
+                None,
+                Some("SystemRoot environment variable is not set"),
+            );
+        }
+    };
+    let spec = rfdetr_windows_help_launch(package, system_root);
+    let request = BoundedHelperRequest {
+        package_root: spec.package_root,
+        executable: spec.executable,
+        current_directory: spec.current_directory,
+        arguments: spec.arguments,
+        environment: spec.environment,
+        stdin: spec.stdin,
+        budget: BoundedHelperBudget {
+            timeout: spec.timeout,
+            stdin_limit_bytes: spec.stdin_limit_bytes,
+            stdout_limit_bytes: spec.stdout_limit_bytes,
+            stderr_limit_bytes: spec.stderr_limit_bytes,
+        },
+        resource_limits: Some(BoundedHelperResourceLimits {
+            cpu_rate_per_10_000: spec.cpu_rate_per_10_000,
+            committed_memory_bytes: spec.committed_memory_bytes,
+        }),
+    };
+    match run_bounded_helper(request) {
+        Ok(output) => map_rfdetr_help_probe(output.exit_code == 0, Some(output.exit_code), None),
+        Err(error) => map_rfdetr_help_probe(false, None, Some(&error.to_string())),
+    }
+}
+
+#[cfg(not(windows))]
+fn probe_windows_rfdetr_help(
+    _package: &solstone_core_local::install::rfdetr_windows::WindowsRfdetrPackage,
+) -> serde_json::Value {
+    serde_json::json!({"runnable": false, "reason_code": "windows_only"})
+}
+
 fn rfdetr_ready_record(
     journal: &Path,
     os_name: &str,
     arch: &str,
     record: rfdetr_install::RfdetrInstallRecord,
 ) -> Result<rfdetr_install::RfdetrInstallRecord, rfdetr_install::RfdetrInstallError> {
-    match evaluate_rfdetr_readiness(journal, os_name, arch) {
+    match evaluate_host_rfdetr(journal, os_name, arch) {
         RfdetrReadiness::Ready { .. } => Ok(record),
         RfdetrReadiness::Unsupported { .. } => {
             Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable)
@@ -147,6 +210,21 @@ fn install_required_rfdetr(
     provider: &mut RfdetrInstaller<'_>,
     stdout: &mut Vec<String>,
 ) -> Result<(), rfdetr_install::RfdetrInstallError> {
+    if rfdetr_install::rfdetr_uses_package_payload(&host.os_name, &host.arch) {
+        if options.check {
+            provider(journal, &host.os_name, &host.arch, InstallerAction::Check)?;
+        } else {
+            provider(
+                journal,
+                &host.os_name,
+                &host.arch,
+                InstallerAction::Install {
+                    force: options.force,
+                },
+            )?;
+        }
+        return Ok(());
+    }
     if rfdetr_install::rfdetr_artifact_key(&host.os_name, &host.arch).is_none() {
         stdout.push(format!(
             "rf-detr install: unsupported platform {}/{}; skipping rf-detr object-detection assets",
@@ -1203,6 +1281,28 @@ mod tests {
         .expect_err("a supported host with no launchable payload is not ready");
         assert_eq!(error.reason_code, "unrunnable");
         assert_eq!(error.exit_code, 69);
+    }
+
+    #[test]
+    fn install_required_rfdetr_does_not_skip_windows_x64() {
+        let journal = tempfile::tempdir().unwrap();
+        let host = host("windows", "x86_64", None);
+        let opts = options(InstallModelsVariant::Auto);
+        let mut called = false;
+        let mut provider = |_journal: &Path, _os: &str, _arch: &str, _action: InstallerAction| {
+            called = true;
+            Ok(rfdetr_install::RfdetrInstallRecord::Installed)
+        };
+        let mut stdout = Vec::new();
+        install_required_rfdetr(journal.path(), &host, &opts, &mut provider, &mut stdout)
+            .expect("install_required_rfdetr succeeds");
+        assert!(called, "provider was called");
+        assert!(
+            !stdout
+                .iter()
+                .any(|line| line.contains("unsupported platform windows/x86_64")),
+            "stdout should not contain unsupported platform: {stdout:?}"
+        );
     }
 
     #[test]

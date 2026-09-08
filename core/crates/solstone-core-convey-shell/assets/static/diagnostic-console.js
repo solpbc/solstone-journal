@@ -15,6 +15,7 @@
   let activeFilter = 'all';
   let drawerOpen = false;
   let drawerBound = false;
+  let drawerOpener = null;
 
   function copyText(key, fallback) {
     return window.CONVEY_COPY?.[key] || fallback || key;
@@ -369,7 +370,9 @@
     if (!root) {
       return;
     }
+    if (!drawerOpen) drawerOpener = document.activeElement;
     drawerOpen = true;
+    root.inert = false;
     root.classList.add('visible');
     root.setAttribute('aria-hidden', 'false');
     renderDrawer();
@@ -383,8 +386,14 @@
       return;
     }
     drawerOpen = false;
+    // Outside-click dismissal keeps the owner's new focus destination.
+    if (root.contains(document.activeElement) && drawerOpener?.isConnected) {
+      drawerOpener.focus();
+    }
+    root.inert = true;
     root.classList.remove('visible');
     root.setAttribute('aria-hidden', 'true');
+    drawerOpener = null;
   }
 
   function sendEntry(entryId) {
