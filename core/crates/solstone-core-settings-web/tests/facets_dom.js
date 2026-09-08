@@ -360,6 +360,7 @@ function createHarness() {
     requestAnimationFrame: window.requestAnimationFrame,
   });
   vm.runInContext(fs.readFileSync(path.join(crateDir, 'assets', 'settings.js'), 'utf8'), context, { filename: 'settings.js' });
+  vm.runInContext(fs.readFileSync(path.join(crateDir, '..', 'solstone-core-convey-shell', 'assets', 'static', 'date_format.js'), 'utf8'), context, { filename: 'date_format.js' });
   vm.runInContext(scriptMatch[1], context, { filename: 'workspace.html' });
   return { context, document, facets, requests, window, windowListeners };
 }
@@ -390,6 +391,43 @@ async function testCase(name, fn) {
 }
 
 (async () => {
+  await testCase('facet log dates keep local days after UTC midnight', async () => {
+    const previousZone = process.env.TZ;
+    process.env.TZ = 'America/Denver';
+    try {
+      const h = createHarness();
+      await run(h, `const NativeDate = Date; Date = class extends NativeDate {
+        constructor(...args) { super(...(args.length ? args : ['2026-09-08T03:00:00Z'])); }
+      };`);
+      assert.strictEqual(await run(h, "formatLogDay('20260907')"), 'today');
+      assert.strictEqual(await run(h, "formatLogDay('20260906')"), 'yesterday');
+      assert.strictEqual(await run(h, "formatLogDay('20260115')"), 'thu jan 15');
+    } finally {
+      if (previousZone === undefined) delete process.env.TZ;
+      else process.env.TZ = previousZone;
+    }
+  });
+
+  await testCase('facet history renders stored metadata as text with exact details', async () => {
+    const h = createHarness();
+    const malicious = '<img src=x onerror=alert(1)>';
+    await run(h, 'renderLogDay(' + JSON.stringify({day:malicious,entries:[
+      {action:'entity_attach',actor:malicious,params:{entity:malicious}},
+      {action:malicious,actor:'agent'},
+      {action:'constructor',actor:'agent'}
+    ]}) + ', true)');
+    const log = h.document.getElementById('logEntries');
+    assert.strictEqual(log.querySelectorAll('img').length, 0);
+    assert.strictEqual(log.querySelectorAll('.log-row').length, 3);
+    assert.ok(log.textContent.includes(malicious));
+    assert.ok(log.textContent.includes('entity_attach'));
+    assert.strictEqual(log.querySelectorAll('summary')[2].textContent, 'constructor');
+    assert.strictEqual(log.querySelector('.log-day-label').textContent, malicious);
+    const firstDetail = log.querySelector('details');
+    await run(h, 'renderLogDay({day:"20260906",entries:[{action:"entity_attach",actor:"agent"}]},false)');
+    assert.strictEqual(log.querySelector('details'), firstDetail, 'pagination preserves existing disclosures');
+  });
+
   await testCase('AC1 unified list and empty state', async () => {
     const harness = createHarness();
     await run(harness, 'loadFacetsList()');
@@ -679,9 +717,9 @@ async function testCase(name, fn) {
     );
   });
 
-  await testCase('G3-21 transcription/devices/vision/sync show an explicit loading state', async () => {
+  await testCase('G3-21 transcription/vision/sync show an explicit loading state', async () => {
     const harness = createHarness();
-    for (const id of ['transcriptionLoadState', 'devicesLoadState', 'visionLoadState', 'syncLoadState']) {
+    for (const id of ['transcriptionLoadState', 'visionLoadState', 'syncLoadState']) {
       assert.strictEqual(
         harness.document.getElementById(id).textContent,
         'loading settings…',

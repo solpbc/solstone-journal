@@ -266,21 +266,33 @@
     });
   }
 
-  function openLauncher() {
+  let launcherOpener = null;
+
+  function openLauncher(opener) {
     const launcher = document.getElementById('app-launcher');
     if (!launcher || launcherIsOpen()) return;
+    launcherOpener = opener;
     launcher.inert = false;
     launcher.removeAttribute('inert');
     launcher.hidden = false;
     setLauncherToggleExpanded(true);
   }
 
-  function closeLauncher() {
+  function closeLauncher(restoreFocus = true) {
     const launcher = document.getElementById('app-launcher');
     if (!launcher || !launcherIsOpen()) return;
     launcher.hidden = true;
     launcher.inert = true;
     setLauncherToggleExpanded(false);
+    // Release the modal's background inert state before restoring focus.
+    window.ConveyModalLayer?.reconcile();
+    if (restoreFocus) {
+      const visible = (element) => element?.isConnected && element.getClientRects().length > 0;
+      const target = visible(launcherOpener) ? launcherOpener
+        : Array.from(document.querySelectorAll('[data-app-launcher-toggle]')).find(visible);
+      target?.focus();
+    }
+    launcherOpener = null;
   }
 
   let launcherInteractionsInstalled = false;
@@ -294,7 +306,7 @@
     document.addEventListener('click', (event) => {
       const target = event.target instanceof Element ? event.target : null;
       if (target?.closest('[data-app-launcher-toggle]')) {
-        openLauncher();
+        openLauncher(target.closest('[data-app-launcher-toggle]'));
         return;
       }
       if (target?.closest('[data-app-launcher-close]')) closeLauncher();
@@ -306,7 +318,7 @@
       }
       const target = event.target instanceof Element ? event.target : null;
       if (target?.closest('[data-launcher-app] a')) {
-        closeLauncher();
+        closeLauncher(false);
       }
     });
     document.addEventListener('keydown', (event) => {

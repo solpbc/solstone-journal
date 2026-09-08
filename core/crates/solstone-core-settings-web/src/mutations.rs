@@ -13,13 +13,11 @@ use serde_json::{Value, json};
 use solstone_core_journal_config_write::{LockOptions, hold_lock};
 use tower::ServiceExt;
 
-const MUTATION_PAIRS: [(&str, &str); 17] = [
+const MUTATION_PAIRS: [(&str, &str); 15] = [
     ("PUT", "/app/settings/api/config"),
     ("POST", "/app/settings/api/config"),
     ("POST", "/app/settings/api/validate-keys"),
     ("PUT", "/app/settings/api/vision"),
-    ("PUT", "/app/settings/api/observe"),
-    ("POST", "/app/settings/api/observe"),
     ("POST", "/app/settings/api/facet"),
     ("PUT", "/app/settings/api/facet/work-life"),
     ("DELETE", "/app/settings/api/facet/work-life"),
@@ -234,7 +232,7 @@ fn ac1_mutations_replay_status_digest_config_and_key_deltas() {
     let _serialized = crate::retention_tests::executor_env_guard();
     let corpus = crate::test_support::corpus();
     let cases = mutation_cases(&corpus, "mutations");
-    assert_eq!(cases.len(), 17);
+    assert_eq!(cases.len(), 16);
     crate::retention_tests::without_executor(|| {
         for (name, case) in cases {
             let root = root_from(&case["config_before"]);
@@ -450,7 +448,7 @@ fn ac5_malformed_mutations_replay_and_keep_malformed_sections_byte_equal() {
     let _serialized = crate::retention_tests::executor_env_guard();
     let corpus = crate::test_support::corpus();
     let cases = mutation_cases(&corpus, "mutations_malformed");
-    assert_eq!(cases.len(), 17);
+    assert_eq!(cases.len(), 16);
     crate::retention_tests::without_executor(|| {
         for (name, case) in cases {
             let root = root_from(&case["config_before"]);
@@ -569,9 +567,6 @@ fn refusal_route(name: &str) -> (&'static str, &'static str) {
         | "POST config.empty-journal-name"
         | "POST config.bad-backend"
         | "POST config.non-bool-preserve" => ("POST", "/app/settings/api/config"),
-        "POST observe.non-object-tmux"
-        | "POST observe.interval-out-of-range"
-        | "POST observe.no-body" => ("POST", "/app/settings/api/observe"),
         "PUT vision.max-extractions-low"
         | "PUT vision.redact-not-list"
         | "PUT vision.unknown-category"
@@ -625,10 +620,7 @@ async fn ac3_refusals_replay_across_all_non_corrupt_phases() {
                 MUTATION_PAIRS.contains(&(method, inventory_path(path))),
                 "{phase} {name} maps to an inventory route"
             );
-            let sent = if matches!(
-                name.as_str(),
-                "POST config.no-body" | "POST observe.no-body"
-            ) {
+            let sent = if matches!(name.as_str(), "POST config.no-body") {
                 None
             } else {
                 case.get("sent")
@@ -640,10 +632,7 @@ async fn ac3_refusals_replay_across_all_non_corrupt_phases() {
                 sent,
             )
             .await;
-            if matches!(
-                name.as_str(),
-                "POST config.no-body" | "POST observe.no-body"
-            ) {
+            if matches!(name.as_str(), "POST config.no-body") {
                 // Recorded native deviation: the handler's 400 is the published
                 // contract, while Flask body extraction turns this into a 500.
                 assert_eq!(status, StatusCode::BAD_REQUEST, "{phase} {name}");
@@ -662,8 +651,8 @@ async fn ac3_refusals_replay_across_all_non_corrupt_phases() {
             total += 1;
         }
     }
-    assert_eq!(per_phase, Some(25));
-    assert_eq!(total, 25 * 5);
+    assert_eq!(per_phase, Some(22));
+    assert_eq!(total, 22 * 5);
 }
 
 #[tokio::test]
@@ -731,7 +720,7 @@ async fn ac7_always_on_activity_is_protected() {
 
 #[tokio::test]
 async fn ac8_bodyless_posts_preserve_the_corrupt_session_gate_envelope() {
-    for path in ["/app/settings/api/config", "/app/settings/api/observe"] {
+    for path in ["/app/settings/api/config"] {
         let root = crate::test_support::corrupt_root();
         let (status, body) = request(
             crate::test_support::shell_router(root.path()),
@@ -779,10 +768,6 @@ async fn ac10_config_busy_routes() {
         ),
         ("/app/settings/api/validate-keys", json!({})),
         ("/app/settings/api/vision", json!({"max_extractions":10})),
-        (
-            "/app/settings/api/observe",
-            json!({"tmux":{"enabled":true}}),
-        ),
     ] {
         let root = crate::test_support::phase_root("rich");
         let _lock = hold_lock(
@@ -838,39 +823,65 @@ async fn ac11_env_write_persists_masks_and_clears_stale_validation() {
     );
 }
 
-#[tokio::test]
-async fn ac12_explicit_seventeen_pair_inventory() {
-    assert_eq!(MUTATION_PAIRS.len(), 17);
-    let root = crate::test_support::populated_root();
-    for (method, path) in MUTATION_PAIRS {
-        let response = crate::test_support::shell_router(root.path())
-            .oneshot(body_request(method, path, Some(&json!({}))))
-            .await
-            .expect("response");
-        assert_ne!(response.status(), StatusCode::NOT_FOUND, "{method} {path}");
-    }
-    let corpus = crate::test_support::corpus();
-    for collection in ["mutations", "mutations_malformed"] {
-        for (name, case) in corpus[collection].as_object().expect("mutation collection") {
-            assert!(
-                MUTATION_PAIRS.contains(&(
-                    case["method"].as_str().expect("method"),
-                    inventory_path(case["path"].as_str().expect("path"))
-                )),
-                "{collection} {name}"
-            );
-        }
-    }
-    for (phase, cases) in corpus["phases"].as_object().expect("phases") {
-        for (name, _) in cases.as_object().expect("phase") {
-            if name.starts_with("POST ") || name.starts_with("PUT ") || name.starts_with("DELETE ")
-            {
-                let (method, path) = refusal_route(name);
-                assert!(
-                    MUTATION_PAIRS.contains(&(method, inventory_path(path))),
-                    "{phase} {name}"
-                );
+#[test]
+fn ac12_explicit_mutation_pair_inventory() {
+    let _serialized = crate::retention_tests::executor_env_guard();
+    crate::retention_tests::without_executor(|| {
+        crate::retention_tests::run_async(async {
+            assert_eq!(MUTATION_PAIRS.len(), 15);
+            let root = crate::test_support::populated_root();
+            for (method, path) in MUTATION_PAIRS {
+                let response = crate::test_support::shell_router(root.path())
+                    .oneshot(body_request(method, path, Some(&json!({}))))
+                    .await
+                    .expect("response");
+                assert_ne!(response.status(), StatusCode::NOT_FOUND, "{method} {path}");
             }
-        }
+            let corpus = crate::test_support::corpus();
+            for collection in ["mutations", "mutations_malformed"] {
+                for (name, case) in corpus[collection].as_object().expect("mutation collection") {
+                    assert!(
+                        MUTATION_PAIRS.contains(&(
+                            case["method"].as_str().expect("method"),
+                            inventory_path(case["path"].as_str().expect("path"))
+                        )),
+                        "{collection} {name}"
+                    );
+                }
+            }
+            for (phase, cases) in corpus["phases"].as_object().expect("phases") {
+                for (name, _) in cases.as_object().expect("phase") {
+                    if name.starts_with("POST ")
+                        || name.starts_with("PUT ")
+                        || name.starts_with("DELETE ")
+                    {
+                        let (method, path) = refusal_route(name);
+                        assert!(
+                            MUTATION_PAIRS.contains(&(method, inventory_path(path))),
+                            "{phase} {name}"
+                        );
+                    }
+                }
+            }
+        })
+    });
+}
+
+#[tokio::test]
+async fn device_owned_terminal_settings_have_no_journal_write_route() {
+    let root = crate::test_support::phase_root("rich");
+    let config = root.path().join("config/journal.json");
+    let before = fs::read(&config).expect("config");
+    for method in ["GET", "POST", "PUT"] {
+        let response = crate::routes(root.path().to_owned())
+            .oneshot(body_request(
+                method,
+                "/app/settings/api/observe",
+                Some(&json!({"tmux":{"enabled":false}})),
+            ))
+            .await
+            .expect("retired route response");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(fs::read(&config).expect("config after"), before);
     }
 }

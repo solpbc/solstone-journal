@@ -51,8 +51,8 @@ ENTRY_TYPES = {
 }
 COMMAND_KINDS = {"command", "callback", "top-level"}
 HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
-FINAL_ORACLE_TOTAL = 167
-FINAL_HTTP_TOTAL = 162
+FINAL_ORACLE_TOTAL = 165
+FINAL_HTTP_TOTAL = 160
 FINAL_JOURNAL_PYTHON_COMPAT_TOTAL = 2
 FINAL_TOP_LEVEL_IMPORT_TOTAL = 1
 FINAL_TOP_LEVEL_LINK_TOTAL = 3
@@ -69,7 +69,7 @@ FINAL_HTTP_GROUP_COUNTS = {
     "journal": 17,
     "link": 9,
     "profile": 4,
-    "settings": 14,
+    "settings": 12,
     "sol": 2,
     "speakers": 31,
     "support": 15,
@@ -148,6 +148,8 @@ RETIRED_JOURNAL_ORACLE_PATHS = {
     ("chat", "start"),
     ("sol", "set-name"),
     ("sol", "reset"),
+    ("settings", "observer", "set"),
+    ("settings", "observer", "show"),
 }
 
 ADDITIONAL_NATIVE_ORACLE_ENTRIES: list[dict[str, Any]] = [

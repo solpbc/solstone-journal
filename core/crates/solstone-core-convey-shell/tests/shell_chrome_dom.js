@@ -293,6 +293,10 @@ class Element {
     return !event.defaultPrevented;
   }
 
+  getClientRects() {
+    return this.isConnected && !this.hidden && this.style.display !== 'none' ? [{}] : [];
+  }
+
   focus() {
     this.ownerDocument.activeElement = this;
   }
@@ -671,6 +675,7 @@ testCase('launcher open and close lifecycle', () => {
   assert.ok(!launcher.hidden && !launcher.inert);
   harness.document.dispatchEvent(event('keydown', { key: 'Escape' }));
   assert.ok(launcher.hidden && launcher.inert);
+  assert.strictEqual(harness.document.activeElement, toggle);
   const statusIcon = harness.document.querySelector('#status-instrument .status-icon');
   renderChrome(harness, 'search');
   assert.strictEqual(harness.document.querySelector('#status-instrument .status-icon'), statusIcon);
@@ -681,6 +686,20 @@ testCase('launcher open and close lifecycle', () => {
   rerenderedToggle.dispatchEvent(event('click', { bubbles: true }));
   launcher.querySelector('[data-launcher-app] a').dispatchEvent(event('click', { bubbles: true }));
   assert.ok(launcher.hidden && launcher.inert);
+});
+
+testCase('launcher dismissal finds visible replacement after chrome rebuild', () => {
+  const harness = createHarness();
+  renderChrome(harness, 'home');
+  const previous = harness.document.querySelector('#app-rail [data-app-launcher-toggle]');
+  previous.dispatchEvent(event('click', { bubbles: true }));
+  renderChrome(harness, 'search');
+  const rail = harness.document.querySelector('#app-rail [data-app-launcher-toggle]');
+  rail.style.display = 'none';
+  const dock = harness.document.querySelector('#app-dock [data-app-launcher-toggle]');
+  harness.document.dispatchEvent(event('keydown', { key: 'Escape' }));
+  assert.ok(!previous.isConnected);
+  assert.strictEqual(harness.document.activeElement, dock);
 });
 
 testCase('launcher remains inert while closed', () => {
