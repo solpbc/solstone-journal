@@ -71,6 +71,8 @@ pub trait ProcessSpawner {
 pub struct RealProcessSpawner {
     #[cfg(windows)]
     admitted: Option<solstone_core_system::process::AdmittedWindowsLaunch>,
+    #[cfg(windows)]
+    installed: Option<solstone_core_system::process::InstalledTaskLaunchRequest>,
 }
 
 impl ProcessSpawner for RealProcessSpawner {
@@ -80,6 +82,8 @@ impl ProcessSpawner for RealProcessSpawner {
             args,
             #[cfg(windows)]
             self.admitted.as_ref(),
+            #[cfg(windows)]
+            self.installed.as_ref(),
         )
     }
 }
@@ -114,9 +118,19 @@ pub fn run(args: Vec<OsString>) -> ExitCode {
             return ExitCode::from(70);
         }
     };
+    #[cfg(windows)]
+    let installed = match runner::installed_task_request(&args, admitted.as_ref()) {
+        Ok(installed) => installed,
+        Err(error) => {
+            eprintln!("journal process admission failed: {error}");
+            return ExitCode::from(70);
+        }
+    };
     let spawner = RealProcessSpawner {
         #[cfg(windows)]
         admitted,
+        #[cfg(windows)]
+        installed,
     };
     match dispatch(evaluate_args(&args), &spawner) {
         Outcome::Help(text) | Outcome::Version(text) => {

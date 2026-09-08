@@ -84,10 +84,53 @@ pub(crate) fn native_process_args(
         .collect()
 }
 
+#[cfg(windows)]
+pub(crate) fn installed_task_request(
+    args: &[OsString],
+    admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+) -> std::io::Result<Option<solstone_core_system::process::InstalledTaskLaunchRequest>> {
+    let private_action = args.iter().any(|arg| arg == "--windows-service")
+        || (args.first().is_some_and(|arg| arg == "supervisor")
+            && args
+                .iter()
+                .any(|arg| arg.to_string_lossy().starts_with("--installation-")));
+    if !private_action {
+        return Ok(None);
+    }
+    if admitted.is_some() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "installed task cannot also be a hosted launch",
+        ));
+    }
+    let arguments = args
+        .iter()
+        .map(|arg| {
+            arg.to_str().map(str::to_owned).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "installed task arguments must be Unicode",
+                )
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let action = solstone_core_service_unit::WindowsServiceAction::parse(&arguments)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
+    Ok(Some(
+        solstone_core_system::process::InstalledTaskLaunchRequest {
+            journal: PathBuf::from(action.journal),
+            guard: action.guard,
+            arguments,
+            acknowledgement_timeout: std::time::Duration::from_secs(3),
+        },
+    ))
+}
+
 pub(crate) fn exec_process(
     program: &OsStr,
     args: &[OsString],
     #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+    #[cfg(windows)] installed: Option<&solstone_core_system::process::InstalledTaskLaunchRequest>,
 ) -> std::io::Result<()> {
     #[cfg(unix)]
     {
@@ -99,8 +142,22 @@ pub(crate) fn exec_process(
     }
     #[cfg(windows)]
     {
-        let code =
-            solstone_core_system::process::forward_windows_native_command(program, args, admitted)?;
+        let code = if let Some(request) = installed {
+            if admitted.is_some()
+                || !args
+                    .iter()
+                    .map(OsString::as_os_str)
+                    .eq(request.arguments.iter().map(OsStr::new))
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "installed task forwarding differs from original arguments",
+                ));
+            }
+            solstone_core_system::process::forward_windows_installed_task(program, request)?
+        } else {
+            solstone_core_system::process::forward_windows_native_command(program, args, admitted)?
+        };
         // The forwarding function returns only after the owned Job is quiescent.
         // The entry-point owner retains incoming grants until process termination;
         // Windows then closes them after all forwarding-owned descendants exited.
@@ -122,6 +179,10 @@ fn executable_dir(executable: &Path) -> PathBuf {
         .unwrap_or_else(|| Path::new("."))
         .to_path_buf()
 }
+
+#[cfg(all(test, windows))]
+#[path = "runner_windows_tests.rs"]
+mod installed_task_controls;
 
 fn is_executable(path: &Path) -> bool {
     let Ok(metadata) = fs::metadata(path) else {

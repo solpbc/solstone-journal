@@ -26,7 +26,7 @@ pub fn render_windows_task_xml(input: &WindowsTaskInput<'_>) -> Result<String, &
     let arguments = encode_windows_task_arguments(&input.action.arguments()?)?;
     Ok(format!(
         r#"<?xml version="1.0" encoding="UTF-16"?>
-<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+<Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
     <Description>Solstone Journal Supervisor</Description>
   </RegistrationInfo>
@@ -58,6 +58,7 @@ pub fn render_windows_task_xml(input: &WindowsTaskInput<'_>) -> Result<String, &
     <Hidden>false</Hidden>
     <RunOnlyIfIdle>false</RunOnlyIfIdle>
     <WakeToRun>false</WakeToRun>
+    <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
     <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
     <Priority>4</Priority>
     <RestartOnFailure>
@@ -66,7 +67,7 @@ pub fn render_windows_task_xml(input: &WindowsTaskInput<'_>) -> Result<String, &
     </RestartOnFailure>
   </Settings>
   <Actions Context="Author">
-    <Exec>
+    <Exec id="journal-supervisor">
       <Command>{}</Command>
       <Arguments>{}</Arguments>
       <WorkingDirectory>{}</WorkingDirectory>

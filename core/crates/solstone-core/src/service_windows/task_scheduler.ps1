@@ -54,25 +54,79 @@ function Assert-PrivateDescriptor([string]$Sddl, [string]$OwnerSid) {
     }
 }
 
+# Readback may spell the principal and trigger as SID, bare or qualified account.
+# Resolve both to the current owner; keep original XML separately for mutation CAS.
+function Get-ValidationXml([string]$RawXml, [string]$OwnerSid) {
+    if ($RawXml.Length -gt 131072) { throw 'task-xml-too-large' }
+    $settings = [Xml.XmlReaderSettings]::new()
+    $settings.DtdProcessing = [Xml.DtdProcessing]::Prohibit
+    $settings.XmlResolver = $null
+    $inputText = [IO.StringReader]::new($RawXml)
+    $reader = $null
+    try {
+        $reader = [Xml.XmlReader]::Create($inputText, $settings)
+        $document = [Xml.XmlDocument]::new()
+        $document.XmlResolver = $null
+        $document.PreserveWhitespace = $true
+        $document.Load($reader)
+    } finally {
+        if ($null -ne $reader) { $reader.Dispose() }
+        $inputText.Dispose()
+    }
+    $namespaces = [Xml.XmlNamespaceManager]::new($document.NameTable)
+    $namespaces.AddNamespace('t', 'http://schemas.microsoft.com/windows/2004/02/mit/task')
+    foreach ($path in @('/t:Task/t:Principals/t:Principal/t:UserId', '/t:Task/t:Triggers/t:LogonTrigger/t:UserId')) {
+        $nodes = $document.SelectNodes($path, $namespaces)
+        if ($nodes.Count -ne 1) { throw 'task-owner-node-shape' }
+        $node = $nodes[0]
+        if ($node.Attributes.Count -ne 0 -or $node.ChildNodes.Count -ne 1 -or
+            $node.FirstChild.NodeType -ne [Xml.XmlNodeType]::Text -or
+            $node.NamespaceURI -cne 'http://schemas.microsoft.com/windows/2004/02/mit/task' -or
+            $node.LocalName -cne 'UserId') {
+            throw 'task-owner-node-not-simple-text'
+        }
+        $name = [string]$node.FirstChild.Value
+        if ([string]::IsNullOrWhiteSpace($name)) { throw 'task-owner-empty' }
+        if ($name.StartsWith('S-', [StringComparison]::OrdinalIgnoreCase)) {
+            $sid = [Security.Principal.SecurityIdentifier]::new($name)
+        } else {
+            $sid = [Security.Principal.NTAccount]::new($name).Translate([Security.Principal.SecurityIdentifier])
+        }
+        if ($sid.Value -cne $OwnerSid) { throw 'task-owner-identity-mismatch' }
+        $nodes[0].InnerText = $OwnerSid
+    }
+    return $document.OuterXml
+}
+
+function Read-Instance($Instance) {
+    if ($null -eq $Instance) { throw 'task-run-instance-missing' }
+    $Instance.Refresh()
+    $guid = [Guid]::ParseExact([string]$Instance.InstanceGuid, 'B')
+    if ($guid -eq [Guid]::Empty) { throw 'task-run-instance-empty' }
+    return @{ guid = $guid.ToString('B'); engine_pid = [uint32]$Instance.EnginePID; current_action = [string]$Instance.CurrentAction }
+}
+
 function Read-Snapshot($Folder, [string]$Name, [string]$OwnerSid) {
     $folderSddl = [string]$Folder.GetSecurityDescriptor(7)
     Assert-PrivateDescriptor $folderSddl $OwnerSid
     try { $task = $Folder.GetTask($Name) }
     catch {
         if (Is-Missing $_.Exception) {
-            return @{ present = $false; folder_sddl = $folderSddl; task_sddl = $null; xml = $null; state = $null; last_run = $null; last_result = $null; instances = @() }
+            return @{ present = $false; folder_sddl = $folderSddl; task_sddl = $null; xml = $null; validation_xml = $null; state = $null; last_run = $null; last_result = $null; instances = @(); run_instance = $null }
         }
         throw
     }
     $taskSddl = [string]$task.GetSecurityDescriptor(7)
     Assert-PrivateDescriptor $taskSddl $OwnerSid
+    $rawXml = [string]$task.Xml
+    $validationXml = Get-ValidationXml $rawXml $OwnerSid
     $instances = @()
     foreach ($instance in $task.GetInstances(0)) {
         # InstanceGuid identifies a scheduler instance; it is not a process PID
         # and conveys no native process or descendant cleanup authority.
-        $instances += [string]$instance.InstanceGuid
+        $instances += (Read-Instance $instance)
     }
-    return @{ present = $true; folder_sddl = $folderSddl; task_sddl = $taskSddl; xml = [string]$task.Xml; state = [int]$task.State; last_run = $task.LastRunTime.ToUniversalTime().ToString("o"); last_result = [int64]$task.LastTaskResult; instances = $instances }
+    return @{ present = $true; folder_sddl = $folderSddl; task_sddl = $taskSddl; xml = $rawXml; validation_xml = $validationXml; state = [int]$task.State; last_run = $task.LastRunTime.ToUniversalTime().ToString("o"); last_result = [int64]$task.LastTaskResult; instances = $instances; run_instance = $null }
 }
 
 try {
@@ -93,7 +147,7 @@ try {
     catch {
         if (!(Is-Missing $_.Exception)) { throw }
         if ($operation -ceq 'inspect') {
-            @{ schema = 'solstone-windows-task-operation-v1'; present = $false; folder_sddl = $null; task_sddl = $null; xml = $null; state = $null; last_run = $null; last_result = $null; instances = @() } | ConvertTo-Json -Compress -Depth 6
+            @{ schema = 'solstone-windows-task-operation-v1'; present = $false; folder_sddl = $null; task_sddl = $null; xml = $null; validation_xml = $null; state = $null; last_run = $null; last_result = $null; instances = @(); run_instance = $null } | ConvertTo-Json -Compress -Depth 6
             exit 0
         }
         if ($operation -cne 'create') { throw 'task-folder-missing-before-mutation' }
@@ -101,6 +155,7 @@ try {
         # CreateFolder refuses an existing folder; never rewrite an existing ACL.
         $folder = $service.GetFolder('\').CreateFolder($folderPath, $sddl)
     }
+    $runInstance = $null
     $before = Read-Snapshot $folder $name $ownerSid
     if ($operation -ceq 'create') {
         if ($before.present) { throw 'task-already-exists' }
@@ -115,7 +170,7 @@ try {
         }
         $task = $folder.GetTask($name)
         if ($operation -ceq 'run') {
-            $null = $task.Run($null)
+            $runInstance = Read-Instance ($task.Run($null))
         } elseif ($operation -ceq 'update') {
             if ($before.instances.Count -ne 0 -or $before.state -ne 3) { throw 'task-not-idle-before-update' }
             # TASK_UPDATE | TASK_DONT_ADD_PRINCIPAL_ACE, after caller profile
@@ -129,6 +184,7 @@ try {
     $after = Read-Snapshot $folder $name $ownerSid
     if ($operation -ceq 'delete' -and $after.present) { throw 'task-delete-not-observed' }
     if (($operation -ceq 'create' -or $operation -ceq 'update' -or $operation -ceq 'run') -and !$after.present) { throw 'task-mutation-not-observed' }
+    $after.run_instance = $runInstance
     $after.schema = 'solstone-windows-task-operation-v1'
     $after | ConvertTo-Json -Compress -Depth 6
     exit 0

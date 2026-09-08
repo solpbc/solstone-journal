@@ -18,6 +18,31 @@ mod unowned_control;
 const SCHEMA: &str = "solstone-windows-task-operation-v1";
 const SCRIPT: &str = include_str!("task_scheduler.ps1");
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(super) struct TaskInstance {
+    pub guid: String,
+    pub engine_pid: u32,
+    pub current_action: String,
+}
+
+impl TaskInstance {
+    fn valid_guid(&self) -> bool {
+        let bytes = self.guid.as_bytes();
+        bytes.len() == 38
+            && bytes[0] == b'{'
+            && bytes[37] == b'}'
+            && bytes[1..37].iter().enumerate().all(|(index, byte)| {
+                if [8, 13, 18, 23].contains(&index) {
+                    *byte == b'-'
+                } else {
+                    byte.is_ascii_hexdigit()
+                }
+            })
+            && self.guid != "{00000000-0000-0000-0000-000000000000}"
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Snapshot {
@@ -26,10 +51,12 @@ pub(super) struct Snapshot {
     pub folder_sddl: Option<String>,
     pub task_sddl: Option<String>,
     pub xml: Option<String>,
+    pub validation_xml: Option<String>,
     pub state: Option<u32>,
     pub last_run: Option<String>,
     pub last_result: Option<i64>,
-    pub instances: Vec<String>,
+    pub instances: Vec<TaskInstance>,
+    pub run_instance: Option<TaskInstance>,
 }
 
 pub(super) enum Operation<'a> {
@@ -127,8 +154,18 @@ pub(super) fn execute_until(
     let snapshot: Snapshot = serde_json::from_slice(&output.stdout)
         .map_err(|_| "task operation returned invalid JSON")?;
     if snapshot.schema != SCHEMA
+        || snapshot
+            .instances
+            .iter()
+            .any(|instance| !instance.valid_guid())
+        || snapshot
+            .run_instance
+            .as_ref()
+            .is_some_and(|instance| !instance.valid_guid())
+        || (name == "run") != snapshot.run_instance.is_some()
         || (snapshot.present
             && (snapshot.xml.is_none()
+                || snapshot.validation_xml.is_none()
                 || snapshot.task_sddl.is_none()
                 || snapshot.folder_sddl.is_none()
                 || snapshot.state.is_none()
@@ -136,11 +173,13 @@ pub(super) fn execute_until(
                 || snapshot.last_result.is_none()))
         || (!snapshot.present
             && (snapshot.xml.is_some()
+                || snapshot.validation_xml.is_some()
                 || snapshot.task_sddl.is_some()
                 || snapshot.state.is_some()
                 || snapshot.last_run.is_some()
                 || snapshot.last_result.is_some()
-                || !snapshot.instances.is_empty()))
+                || !snapshot.instances.is_empty()
+                || snapshot.run_instance.is_some()))
     {
         return Err("task operation returned inconsistent evidence".to_owned());
     }

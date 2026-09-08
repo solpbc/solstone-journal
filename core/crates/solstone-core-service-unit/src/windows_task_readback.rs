@@ -171,14 +171,14 @@ fn elements(xml: &str) -> Result<BTreeMap<String, Node>, &'static str> {
     if root.attributes.get("xmlns").map(String::as_str) != Some(TASK_NAMESPACE)
         || !matches!(
             root.attributes.get("version").map(String::as_str),
-            Some("1.2" | "1.3" | "1.4")
+            Some("1.3" | "1.4")
         )
     {
         return Err("unexpected task XML namespace or version");
     }
     // Scheduler versions may raise the schema version while preserving the profile.
     root.attributes
-        .insert("version".to_owned(), "1.2".to_owned());
+        .insert("version".to_owned(), "1.3".to_owned());
     let containers: Vec<_> = nodes
         .keys()
         .filter(|key| {
@@ -244,7 +244,6 @@ pub fn parse_windows_task_xml(xml: &str) -> Result<WindowsTaskDefinition, &'stat
     }
     for (path, value) in [
         ("Task/Triggers/LogonTrigger/Enabled", "true"),
-        ("Task/Settings/UseUnifiedSchedulingEngine", "false"),
         ("Task/Settings/DisallowStartOnRemoteAppSession", "false"),
     ] {
         if let Some(node) = nodes.remove(path)
@@ -263,9 +262,7 @@ pub fn parse_windows_task_xml(xml: &str) -> Result<WindowsTaskDefinition, &'stat
 #[cfg(test)]
 mod tests {
     use super::*;
-    use solstone_core_installation_identity::{
-        Generation, InstallationId, JournalToken, NamespaceName,
-    };
+    use solstone_core_installation_identity::{Generation, InstallationId, NamespaceName};
 
     fn xml() -> String {
         let action = WindowsServiceAction {
@@ -278,7 +275,14 @@ mod tests {
                 .unwrap(),
                 id: InstallationId::parse("0123456789abcdef0123456789abcdef").unwrap(),
                 generation: Generation::new(7).unwrap(),
-                journal_token: JournalToken::from_raw_absolute(b"/journal".to_vec()).unwrap(),
+                journal_token: solstone_core_installation_identity::journal_token_from_path(
+                    std::path::Path::new(if cfg!(windows) {
+                        "C:\\journal"
+                    } else {
+                        "/journal"
+                    }),
+                )
+                .unwrap(),
             },
         };
         render_windows_task_xml(&WindowsTaskInput {
@@ -330,9 +334,30 @@ mod tests {
     }
 
     #[test]
+    fn requires_unified_engine_and_exact_exec_identity() {
+        let source = xml();
+        assert!(parse_windows_task_xml(&source).is_ok());
+        for altered in [
+            source.replace(
+                "<UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>",
+                "",
+            ),
+            source.replace(
+                "<UseUnifiedSchedulingEngine>true",
+                "<UseUnifiedSchedulingEngine>false",
+            ),
+            source.replace("id=\"journal-supervisor\"", "id=\"other-action\""),
+            source.replace(" id=\"journal-supervisor\"", ""),
+            source.replace("version=\"1.3\"", "version=\"1.2\""),
+        ] {
+            assert!(parse_windows_task_xml(&altered).is_err());
+        }
+    }
+
+    #[test]
     fn accepts_scheduler_metadata_without_weakening_action_validation() {
         let source = xml().replace("<RegistrationInfo>", "<RegistrationInfo><URI>\\solstone-owner\\install</URI><Date>2026-09-07T00:00:00</Date>")
-            .replace("version=\"1.2\"", "version=\"1.4\"")
+            .replace("version=\"1.3\"", "version=\"1.4\"")
             .replace("<LogonTrigger>", "<LogonTrigger><Enabled>true</Enabled>");
         assert!(parse_windows_task_xml(&source).is_ok());
     }

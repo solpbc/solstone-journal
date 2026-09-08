@@ -9,6 +9,7 @@ pub(crate) mod parakeet_coreml;
 pub(crate) mod parakeet_cpp;
 
 use std::env;
+#[cfg(not(windows))]
 use std::fs;
 
 use solstone_core_assets::{Platform, resolve_host_platform};
@@ -18,6 +19,7 @@ use crate::TranscribeError;
 
 const GIB: u64 = 1024 * 1024 * 1024;
 const LINUX_LOCAL_FLOOR_BYTES: u64 = 4 * GIB;
+const WINDOWS_LOCAL_FLOOR_BYTES: u64 = 4 * GIB;
 const DARWIN_ARM64_LOCAL_FLOOR_BYTES: u64 = 2 * GIB;
 pub(crate) const KNOWN_BACKENDS: [&str; 3] = ["parakeet", "parakeet-cpp", "confidential"];
 
@@ -37,13 +39,20 @@ pub(crate) struct BackendResolution {
     pub(crate) warnings: Vec<BackendWarning>,
 }
 
-/// Read currently available RAM when this host exposes the Linux meminfo view.
+/// Read available RAM through the existing Linux view or Windows system API.
 pub(crate) fn read_available_bytes() -> Option<u64> {
-    if env::consts::OS != "linux" {
-        return None;
+    #[cfg(windows)]
+    {
+        solstone_core_system::memory_admission::windows_available_physical_bytes()
     }
-    let meminfo = fs::read_to_string("/proc/meminfo").ok()?;
-    parse_available_bytes(&meminfo)
+    #[cfg(not(windows))]
+    {
+        if env::consts::OS != "linux" {
+            return None;
+        }
+        let meminfo = fs::read_to_string("/proc/meminfo").ok()?;
+        parse_available_bytes(&meminfo)
+    }
 }
 
 /// Return the local STT floor for the current OS and architecture.
@@ -90,6 +99,9 @@ pub(crate) fn resolve_default_backend(
 }
 
 fn platform_floor_bytes_for(os: &str, arch: &str) -> Option<u64> {
+    if (os, arch) == ("windows", "x86_64") {
+        return Some(WINDOWS_LOCAL_FLOOR_BYTES);
+    }
     match resolve_host_platform(os, arch).ok()? {
         Platform::MacosArm64 => Some(DARWIN_ARM64_LOCAL_FLOOR_BYTES),
         Platform::LinuxX64 | Platform::LinuxArm64 => Some(LINUX_LOCAL_FLOOR_BYTES),
@@ -131,6 +143,7 @@ fn warn_if_local_below_floor(
     .then_some(BackendWarning::ExplicitParakeetBelowFloor)
 }
 
+#[cfg(any(not(windows), test))]
 fn parse_available_bytes(meminfo: &str) -> Option<u64> {
     let available = meminfo_value_kib(meminfo, "MemAvailable")?;
     let total = meminfo_value_kib(meminfo, "MemTotal")?;
@@ -140,6 +153,7 @@ fn parse_available_bytes(meminfo: &str) -> Option<u64> {
     available.checked_mul(1024)
 }
 
+#[cfg(any(not(windows), test))]
 fn meminfo_value_kib(meminfo: &str, key: &str) -> Option<u64> {
     meminfo.lines().find_map(|line| {
         let (found_key, value) = line.split_once(':')?;
@@ -155,7 +169,7 @@ fn meminfo_value_kib(meminfo: &str, key: &str) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::{
-        BackendWarning, DARWIN_ARM64_LOCAL_FLOOR_BYTES, LINUX_LOCAL_FLOOR_BYTES,
+        BackendWarning, DARWIN_ARM64_LOCAL_FLOOR_BYTES, GIB, LINUX_LOCAL_FLOOR_BYTES,
         local_stt_backend_for, normalize_explicit_backend, parse_available_bytes,
         platform_floor_bytes_for, resolve_default_backend, warn_if_local_below_floor,
     };
@@ -214,7 +228,35 @@ mod tests {
     fn local_stt_backend_rejects_unsupported_platforms() {
         assert_eq!(local_stt_backend_for("darwin", "x86_64"), None);
         assert_eq!(local_stt_backend_for("linux", "armv7l"), None);
-        assert_eq!(local_stt_backend_for("windows", "x86_64"), None);
+        assert_eq!(local_stt_backend_for("windows", "aarch64"), None);
+    }
+
+    #[test]
+    fn windows_default_and_explicit_cpu_selection_preserve_resource_refusal() {
+        let local = local_stt_backend_for("windows", "x86_64");
+        let floor = platform_floor_bytes_for("windows", "x86_64");
+        assert_eq!(local, Some("parakeet"));
+        assert_eq!(floor, Some(4 * GIB));
+        assert_eq!(
+            resolve_default_backend(None, local, floor, floor, false, false)
+                .unwrap()
+                .backend,
+            "parakeet"
+        );
+        for available in [None, Some(0), Some(4 * GIB - 1)] {
+            assert!(matches!(
+                resolve_default_backend(None, local, available, floor, false, false),
+                Err(TranscribeError::SttSurface { .. })
+            ));
+        }
+        for explicit in ["parakeet", "parakeet-cpp"] {
+            assert_eq!(
+                resolve_default_backend(Some(explicit), local, None, floor, false, false)
+                    .unwrap()
+                    .backend,
+                explicit
+            );
+        }
     }
 
     #[test]

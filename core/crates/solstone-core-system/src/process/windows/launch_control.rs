@@ -48,7 +48,7 @@ const GUARDS: [&str; 4] = [
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct LaunchTuple {
+struct HostedTuple {
     parent: ProcessInstance,
     journal: PathBuf,
     generation: u64,
@@ -56,6 +56,79 @@ struct LaunchTuple {
     parent_launch_id: Option<String>,
     service: Option<HostedServiceKind>,
     guards: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InstalledTaskTuple {
+    parent: ProcessInstance,
+    journal: PathBuf,
+    launch_id: String,
+    guards: BTreeMap<String, String>,
+    arguments: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "launch", deny_unknown_fields)]
+enum LaunchTuple {
+    Hosted(HostedTuple),
+    InstalledTask(InstalledTaskTuple),
+}
+
+impl LaunchTuple {
+    fn parent(&self) -> ProcessInstance {
+        match self {
+            Self::Hosted(value) => value.parent,
+            Self::InstalledTask(value) => value.parent,
+        }
+    }
+    fn journal(&self) -> &std::path::Path {
+        match self {
+            Self::Hosted(value) => &value.journal,
+            Self::InstalledTask(value) => &value.journal,
+        }
+    }
+    fn launch_id(&self) -> &str {
+        match self {
+            Self::Hosted(value) => &value.launch_id,
+            Self::InstalledTask(value) => &value.launch_id,
+        }
+    }
+    fn guards(&self) -> &BTreeMap<String, String> {
+        match self {
+            Self::Hosted(value) => &value.guards,
+            Self::InstalledTask(value) => &value.guards,
+        }
+    }
+}
+
+/// Exact installed action to compare with the loaded binding and actual argv.
+/// This metadata grants no speakers generation or hosted-service authority.
+#[derive(Clone, Debug)]
+pub struct InstalledTaskLaunchRequest {
+    pub journal: PathBuf,
+    pub guard: solstone_core_installation_identity::GuardFields,
+    pub arguments: Vec<String>,
+    pub acknowledgement_timeout: Duration,
+}
+
+/// Installed-root admission received from the retained exact forwarder.
+#[derive(Debug)]
+pub struct AdmittedInstalledTaskLaunch {
+    tuple: InstalledTaskTuple,
+    _stop: Arc<OwnedHandle>,
+}
+
+impl AdmittedInstalledTaskLaunch {
+    pub fn forwarder(&self) -> ProcessInstance {
+        self.tuple.parent
+    }
+    pub fn launch_id(&self) -> &str {
+        &self.tuple.launch_id
+    }
+    pub fn journal(&self) -> &std::path::Path {
+        &self.tuple.journal
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -93,7 +166,7 @@ struct Acknowledgement {
 /// The only constructor receives an exact-parent offer over the launch pipe.
 #[derive(Clone, Debug)]
 pub struct AdmittedWindowsLaunch {
-    tuple: LaunchTuple,
+    tuple: HostedTuple,
     stop: Arc<OwnedHandle>,
     grants: Vec<ReadFileGrant>,
 }
@@ -176,19 +249,34 @@ fn guard_environment(
 }
 
 fn validate_tuple(tuple: &LaunchTuple) -> io::Result<()> {
-    if tuple.launch_id.is_empty()
-        || tuple.launch_id.len() > 256
-        || !tuple.journal.is_absolute()
-        || tuple.parent.birth.windows_filetime().is_none()
-        || tuple
-            .parent_launch_id
-            .as_ref()
-            .is_some_and(|id| id.is_empty() || id.len() > 256)
+    if tuple.launch_id().is_empty()
+        || tuple.launch_id().len() > 256
+        || !tuple.journal().is_absolute()
+        || tuple.parent().birth.windows_filetime().is_none()
     {
         return Err(refusal("invalid launch provenance"));
     }
-    let guard = solstone_core_installation_identity::parse_service_guard_environment(&tuple.guards)
-        .map_err(|error| refusal(&format!("installation guard: {error}")))?;
+    match tuple {
+        LaunchTuple::Hosted(hosted)
+            if hosted
+                .parent_launch_id
+                .as_ref()
+                .is_some_and(|id| id.is_empty() || id.len() > 256) =>
+        {
+            return Err(refusal("invalid parent launch provenance"));
+        }
+        LaunchTuple::InstalledTask(root)
+            if root.guards.len() != GUARDS.len()
+                || root.arguments.is_empty()
+                || root.arguments.iter().any(|arg| arg.contains('\0')) =>
+        {
+            return Err(refusal("invalid installed task provenance"));
+        }
+        _ => {}
+    }
+    let guard =
+        solstone_core_installation_identity::parse_service_guard_environment(tuple.guards())
+            .map_err(|error| refusal(&format!("installation guard: {error}")))?;
     if let Some(guard) = guard {
         let owner = solstone_core_installation_identity::owner_base()
             .map_err(|e| refusal(&e.to_string()))?;
@@ -201,7 +289,7 @@ fn validate_tuple(tuple: &LaunchTuple) -> io::Result<()> {
             .map_err(|e| refusal(&e.to_string()))?;
         let binding = solstone_core_installation_identity::load_installation_binding(&owner, &root)
             .map_err(|e| refusal(&e.to_string()))?;
-        let journal = solstone_core_installation_identity::journal_token_from_path(&tuple.journal)
+        let journal = solstone_core_installation_identity::journal_token_from_path(tuple.journal())
             .map_err(|e| refusal(&e.to_string()))?;
         if guard != solstone_core_installation_identity::GuardFields::from_binding(&binding)
             || journal != binding.journal_token
@@ -210,6 +298,20 @@ fn validate_tuple(tuple: &LaunchTuple) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+fn launch_deadline(timeout: Duration) -> io::Result<Instant> {
+    launch_io::require_completed_cleanup()?;
+    let deadline = Instant::now()
+        .checked_add(timeout)
+        .ok_or_else(|| refusal("launch timeout overflows"))?;
+    if timeout.is_zero() || timeout > Duration::from_secs(60) {
+        return Err(refusal(
+            "launch timeout must be greater than zero and at most 60 seconds",
+        ));
+    }
+
+    Ok(deadline)
 }
 
 pub(super) struct LaunchControl {
@@ -224,17 +326,7 @@ impl LaunchControl {
         provenance: &HostedLaunchProvenance,
         environment: &mut BTreeMap<OsString, OsString>,
     ) -> io::Result<Self> {
-        launch_io::require_completed_cleanup()?;
-        let deadline = Instant::now()
-            .checked_add(provenance.acknowledgement_timeout)
-            .ok_or_else(|| refusal("launch timeout overflows"))?;
-        if provenance.acknowledgement_timeout.is_zero()
-            || provenance.acknowledgement_timeout > Duration::from_secs(60)
-        {
-            return Err(refusal(
-                "launch timeout must be greater than zero and at most 60 seconds",
-            ));
-        }
+        let deadline = launch_deadline(provenance.acknowledgement_timeout)?;
         for name in OBSOLETE {
             if std::env::var_os(name).is_some()
                 || environment.contains_key(std::ffi::OsStr::new(name))
@@ -248,7 +340,7 @@ impl LaunchControl {
                 .cloned()
                 .or_else(|| std::env::var_os(name))
         })?;
-        let tuple = LaunchTuple {
+        let tuple = LaunchTuple::Hosted(HostedTuple {
             parent: current_windows_process_instance()?,
             journal: provenance.journal.clone(),
             generation: provenance.generation,
@@ -256,7 +348,51 @@ impl LaunchControl {
             parent_launch_id: provenance.parent_launch_id.clone(),
             service: provenance.service,
             guards,
-        };
+        });
+        Self::prepare_tuple(tuple, deadline, environment)
+    }
+
+    pub(super) fn prepare_installed(
+        request: &InstalledTaskLaunchRequest,
+        environment: &mut BTreeMap<OsString, OsString>,
+    ) -> io::Result<Self> {
+        let deadline = launch_deadline(request.acknowledgement_timeout)?;
+        if std::env::var_os(LAUNCH_ENV).is_some()
+            || OBSOLETE.iter().any(|name| std::env::var_os(name).is_some())
+        {
+            return Err(refusal(
+                "installed task forwarder cannot inherit launch admission",
+            ));
+        }
+        let guards = solstone_core_installation_identity::service_guard_environment(&request.guard);
+        let inherited = guard_environment(|name| std::env::var_os(name))?;
+        if !inherited.is_empty() && inherited != guards {
+            return Err(refusal("installed task inherited guard mismatch"));
+        }
+        let mut nonce = [0_u8; 24];
+        getrandom::fill(&mut nonce).map_err(|error| io::Error::other(error.to_string()))?;
+        let tuple = LaunchTuple::InstalledTask(InstalledTaskTuple {
+            parent: current_windows_process_instance()?,
+            journal: request.journal.clone(),
+            launch_id: nonce.iter().map(|byte| format!("{byte:02x}")).collect(),
+            guards: guards.clone(),
+            arguments: request.arguments.clone(),
+        });
+        // Complete binding validation precedes the secret pipe or environment grant.
+        validate_tuple(&tuple)?;
+        environment.extend(
+            guards
+                .into_iter()
+                .map(|(key, value)| (key.into(), value.into())),
+        );
+        Self::prepare_tuple(tuple, deadline, environment)
+    }
+
+    fn prepare_tuple(
+        tuple: LaunchTuple,
+        deadline: Instant,
+        environment: &mut BTreeMap<OsString, OsString>,
+    ) -> io::Result<Self> {
         validate_tuple(&tuple)?;
         let mut nonce = [0u8; 24];
         getrandom::fill(&mut nonce).map_err(|error| io::Error::other(error.to_string()))?;
@@ -300,6 +436,11 @@ impl LaunchControl {
         grants: &[ReadFileGrant],
         inherited_stop: Option<&AdmittedWindowsLaunch>,
     ) -> io::Result<OwnedHandle> {
+        if matches!(self.descriptor.tuple, LaunchTuple::InstalledTask(_))
+            && (!grants.is_empty() || inherited_stop.is_some())
+        {
+            return Err(refusal("installed task cannot receive hosted grants"));
+        }
         let mut kinds = BTreeSet::new();
         for grant in grants {
             if !kinds.insert(grant.kind()) {
@@ -391,10 +532,74 @@ fn duplicate_into(
 }
 
 pub fn receive_windows_launch() -> Result<Option<AdmittedWindowsLaunch>, LaunchError> {
-    receive().map_err(|error| LaunchError::Admission(error.to_string()))
+    let received = receive(None).map_err(|error| LaunchError::Admission(error.to_string()))?;
+    received
+        .map(|received| match received.tuple {
+            LaunchTuple::Hosted(tuple) => Ok(AdmittedWindowsLaunch {
+                tuple,
+                stop: received.stop,
+                grants: received.grants,
+            }),
+            LaunchTuple::InstalledTask(_) => Err(LaunchError::Admission(
+                "installed task at hosted entry".into(),
+            )),
+        })
+        .transpose()
 }
 
-fn receive() -> io::Result<Option<AdmittedWindowsLaunch>> {
+pub fn receive_windows_installed_task_launch(
+    expected: &InstalledTaskLaunchRequest,
+) -> Result<AdmittedInstalledTaskLaunch, LaunchError> {
+    let received = receive(Some(expected))
+        .map_err(|error| LaunchError::Admission(error.to_string()))?
+        .ok_or_else(|| LaunchError::Admission("missing installed task launch admission".into()))?;
+    match received.tuple {
+        LaunchTuple::InstalledTask(tuple) => Ok(AdmittedInstalledTaskLaunch {
+            tuple,
+            _stop: received.stop,
+        }),
+        LaunchTuple::Hosted(_) => Err(LaunchError::Admission(
+            "hosted launch at installed task entry".into(),
+        )),
+    }
+}
+
+struct ReceivedLaunch {
+    tuple: LaunchTuple,
+    stop: Arc<OwnedHandle>,
+    grants: Vec<ReadFileGrant>,
+}
+
+// These checks run after complete loaded-binding validation and before opening
+// the pipe, or after authenticated offer comparison and before handle adoption.
+fn validate_entry(
+    tuple: &LaunchTuple,
+    expected: Option<&InstalledTaskLaunchRequest>,
+) -> io::Result<()> {
+    match (tuple, expected) {
+        (LaunchTuple::Hosted(_), None) => Ok(()),
+        (LaunchTuple::InstalledTask(root), Some(expected))
+            if root.journal == expected.journal
+                && root.arguments == expected.arguments
+                && root.guards
+                    == solstone_core_installation_identity::service_guard_environment(
+                        &expected.guard,
+                    ) =>
+        {
+            Ok(())
+        }
+        _ => Err(refusal("launch variant or installed action mismatch")),
+    }
+}
+
+fn validate_offered_grants(tuple: &LaunchTuple, grants: &[WireGrant]) -> io::Result<()> {
+    if matches!(tuple, LaunchTuple::InstalledTask(_)) && !grants.is_empty() {
+        return Err(refusal("installed task offer contains file grants"));
+    }
+    Ok(())
+}
+
+fn receive(expected: Option<&InstalledTaskLaunchRequest>) -> io::Result<Option<ReceivedLaunch>> {
     for name in OBSOLETE {
         if std::env::var_os(name).is_some() {
             return Err(refusal("obsolete Windows launch marker"));
@@ -425,13 +630,14 @@ fn receive() -> io::Result<Option<AdmittedWindowsLaunch>> {
         .filter(|remaining| *remaining > 0 && *remaining <= 60_000)
         .ok_or_else(|| refusal("expired or invalid Windows launch deadline"))?;
     let deadline = Instant::now() + Duration::from_millis(remaining);
-    if descriptor.tuple.guards != guards {
+    if descriptor.tuple.guards() != &guards {
         return Err(refusal("launch guard tuple differs from inherited guard"));
     }
     validate_tuple(&descriptor.tuple)?;
-    launch_pipe::require_direct_parent(descriptor.tuple.parent)?;
+    validate_entry(&descriptor.tuple, expected)?;
+    launch_pipe::require_direct_parent(descriptor.tuple.parent())?;
     let pipe = launch_pipe::open(&descriptor.pipe, deadline)?;
-    if launch_pipe::peer(&pipe, true)? != descriptor.tuple.parent {
+    if launch_pipe::peer(&pipe, true)? != descriptor.tuple.parent() {
         return Err(refusal("launch pipe server identity mismatch"));
     }
     let offer: Offer = serde_json::from_slice(&launch_io::read_frame(&pipe, deadline)?)?;
@@ -439,6 +645,7 @@ fn receive() -> io::Result<Option<AdmittedWindowsLaunch>> {
     if offer.descriptor != descriptor || offer.child != child {
         return Err(refusal("launch offer provenance mismatch"));
     }
+    validate_offered_grants(&descriptor.tuple, &offer.grants)?;
     let mut kinds = BTreeSet::new();
     let mut handles = BTreeSet::new();
     handles.insert(offer.stop);
@@ -466,7 +673,7 @@ fn receive() -> io::Result<Option<AdmittedWindowsLaunch>> {
     if launch_io::read_frame(&pipe, deadline)? != b"admit" {
         return Err(refusal("launch admission commit mismatch"));
     }
-    Ok(Some(AdmittedWindowsLaunch {
+    Ok(Some(ReceivedLaunch {
         tuple: descriptor.tuple,
         stop: Arc::new(stop),
         grants,
@@ -492,3 +699,7 @@ fn adopt(value: usize, rights: u32, object_type: &str) -> io::Result<OwnedHandle
     require_handle_access(handle.as_handle(), rights, object_type)?;
     Ok(handle)
 }
+
+#[cfg(test)]
+#[path = "launch_control_tests.rs"]
+mod installed_task_controls;

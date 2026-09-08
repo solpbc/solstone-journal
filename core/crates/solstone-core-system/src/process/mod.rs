@@ -53,7 +53,11 @@ pub(crate) use platform::macos_sweep_table;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) use platform::signal_pid;
 #[cfg(windows)]
-pub use platform::{AdmittedWindowsLaunch, forward_windows_native_command, receive_windows_launch};
+pub use platform::{
+    AdmittedInstalledTaskLaunch, AdmittedWindowsLaunch, InstalledTaskLaunchRequest,
+    forward_windows_installed_task, forward_windows_native_command,
+    receive_windows_installed_task_launch, receive_windows_launch,
+};
 #[cfg(windows)]
 pub use platform::{
     BoundedHelperBudget, BoundedHelperCleanup, BoundedHelperError, BoundedHelperFailure,

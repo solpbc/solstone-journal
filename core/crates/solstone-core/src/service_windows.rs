@@ -23,7 +23,7 @@ use solstone_core_service_unit::{
 use solstone_core_system::lifecycle::wait_ready;
 mod native_process;
 mod task_scheduler;
-use task_scheduler::{Operation, Snapshot};
+use task_scheduler::{Operation, Snapshot, TaskInstance};
 
 use crate::resolve_process_journal_path;
 
@@ -163,7 +163,7 @@ fn validate_task(
     snapshot: &Snapshot,
 ) -> Result<WindowsTaskDefinition, ExitCode> {
     let xml = snapshot
-        .xml
+        .validation_xml
         .as_deref()
         .filter(|_| snapshot.present)
         .ok_or_else(|| task_error("service task is not installed"))?;
@@ -255,39 +255,133 @@ fn install_task(ctx: &ServiceContext, port: u16) -> Result<(), ExitCode> {
     Ok(())
 }
 
-fn start_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
-    let deadline = Instant::now() + READY_TIMEOUT;
-    let before = inspect_task(ctx, deadline)?;
-    validate_task(ctx, &before)?;
-    if !before.instances.is_empty() {
-        return Err(task_error(
-            "running task and supervisor readiness have no verified run correlation",
-        ));
-    }
-    let started = task_scheduler::execute_until(
-        &ctx.sid,
-        &ctx.guard.id.as_hex(),
-        Operation::Run { before: &before },
-        deadline,
-    )
-    .map_err(task_error)?;
-    validate_task(ctx, &started)?;
-    if wait_ready(
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReadyForwarder {
+    instance: solstone_core_system::process::ProcessInstance,
+    launch_id: String,
+}
+
+struct RetainedTaskRun {
+    selected: TaskInstance,
+    supervisor_instance: solstone_core_system::process::ProcessInstance,
+    supervisor: native_process::RetainedProcess,
+    forwarder: native_process::RetainedProcess,
+}
+
+fn same_task_profile(left: &Snapshot, right: &Snapshot) -> bool {
+    left.present
+        && right.present
+        && left.xml == right.xml
+        && left.task_sddl == right.task_sddl
+        && left.folder_sddl == right.folder_sddl
+}
+
+fn retain_task_run(
+    ctx: &ServiceContext,
+    before: &Snapshot,
+    selected_guid: &str,
+    deadline: Instant,
+) -> Result<RetainedTaskRun, ExitCode> {
+    let marker = wait_ready(
         &ctx.journal,
         deadline.saturating_duration_since(Instant::now()),
         POLL_INTERVAL,
     )
-    .is_none()
+    .ok_or_else(|| task_error("service startup or abnormal shutdown has no verified run target"))?;
+    let supervisor_instance: solstone_core_system::process::ProcessInstance =
+        serde_json::from_value(
+            marker
+                .extra
+                .get("windows_process_instance")
+                .cloned()
+                .ok_or_else(|| task_error("service readiness has no exact native identity"))?,
+        )
+        .map_err(task_error)?;
+    let current_instance: solstone_core_system::process::ProcessInstance = serde_json::from_slice(
+        &fs::read(ctx.journal.join("health/supervisor.process_instance")).map_err(task_error)?,
+    )
+    .map_err(task_error)?;
+    if marker.pid != supervisor_instance.pid || current_instance != supervisor_instance {
+        return Err(task_error("service readiness identity changed"));
+    }
+    let root: ReadyForwarder = serde_json::from_value(
+        marker
+            .extra
+            .get("windows_task_forwarder")
+            .cloned()
+            .ok_or_else(|| task_error("service readiness has no installed forwarder admission"))?,
+    )
+    .map_err(task_error)?;
+    if root.launch_id.len() != 48
+        || !root.launch_id.bytes().all(|byte| byte.is_ascii_hexdigit())
+        || root.instance.pid == supervisor_instance.pid
     {
-        return Err(task_error(
-            "service did not become ready before its deadline; task state requires inspection",
-        ));
+        return Err(task_error("service forwarder admission is invalid"));
     }
     let current = inspect_task(ctx, deadline)?;
     validate_task(ctx, &current)?;
-    if current.instances.len() != 1 || current.last_run != started.last_run {
-        return Err(task_error("service task run changed during startup"));
+    if !same_task_profile(before, &current) || current.instances.len() != 1 {
+        return Err(task_error("service task changed during run admission"));
     }
+    let selected = current.instances[0].clone();
+    if selected.guid != selected_guid
+        || selected.engine_pid != root.instance.pid
+        || selected.current_action != "journal-supervisor"
+    {
+        return Err(task_error(
+            "service scheduler instance does not match its admitted forwarder",
+        ));
+    }
+    let supervisor =
+        native_process::RetainedProcess::open(supervisor_instance).map_err(task_error)?;
+    let forwarder = native_process::RetainedProcess::open(root.instance).map_err(task_error)?;
+    if supervisor.exit_code().map_err(task_error)?.is_some()
+        || forwarder.exit_code().map_err(task_error)?.is_some()
+    {
+        return Err(task_error("service run exited during admission"));
+    }
+    let after = inspect_task(ctx, deadline)?;
+    validate_task(ctx, &after)?;
+    if !same_task_profile(&current, &after) || after.instances != [selected.clone()] {
+        return Err(task_error(
+            "service task instance changed while retaining native handles",
+        ));
+    }
+    Ok(RetainedTaskRun {
+        selected,
+        supervisor_instance,
+        supervisor,
+        forwarder,
+    })
+}
+
+fn start_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
+    let deadline = Instant::now() + READY_TIMEOUT;
+    let before = inspect_task(ctx, deadline)?;
+    validate_task(ctx, &before)?;
+    let selected_guid = match before.instances.as_slice() {
+        [] => {
+            let started = task_scheduler::execute_until(
+                &ctx.sid,
+                &ctx.guard.id.as_hex(),
+                Operation::Run { before: &before },
+                deadline,
+            )
+            .map_err(task_error)?;
+            validate_task(ctx, &started)?;
+            if !same_task_profile(&before, &started) {
+                return Err(task_error("service task changed during start"));
+            }
+            started
+                .run_instance
+                .ok_or_else(|| task_error("scheduler returned no task run instance"))?
+                .guid
+        }
+        [instance] => instance.guid.clone(),
+        _ => return Err(task_error("cannot identify one running service task")),
+    };
+    let _run = retain_task_run(ctx, &before, &selected_guid, deadline)?;
     println!("your journal is ready");
     Ok(())
 }
@@ -301,27 +395,17 @@ fn stop_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
         ));
     }
     validate_task(ctx, &before)?;
-    if before.instances.is_empty() && before.state == Some(3) {
-        return Err(task_error(
-            "scheduler is idle and its forwarder cleanup cannot be verified",
-        ));
-    }
-    if before.instances.len() != 1 {
-        return Err(task_error("cannot identify one running service task"));
-    }
-    let bytes =
-        fs::read(ctx.journal.join("health/supervisor.process_instance")).map_err(task_error)?;
-    let instance: solstone_core_system::process::ProcessInstance =
-        serde_json::from_slice(&bytes).map_err(task_error)?;
-    let retained = native_process::RetainedProcess::open(instance).map_err(task_error)?;
-    if retained.exit_code().map_err(task_error)?.is_some()
-        || !solstone_core_system::lifecycle::readiness_is_valid(&ctx.journal)
-    {
-        return Err(task_error(
-            "service startup or abnormal shutdown has no verified stop target",
-        ));
-    }
-    let frame = serde_json::json!({"tract":"supervisor", "event":"service_stop", "target":instance,
+    let selected = match before.instances.as_slice() {
+        [instance] => instance,
+        [] => {
+            return Err(task_error(
+                "scheduler is idle and its forwarder cleanup cannot be verified",
+            ));
+        }
+        _ => return Err(task_error("cannot identify one running service task")),
+    };
+    let run = retain_task_run(ctx, &before, &selected.guid, deadline)?;
+    let frame = serde_json::json!({"tract":"supervisor", "event":"service_stop", "target":run.supervisor_instance,
         "guard":solstone_core_installation_identity::service_guard_environment(&ctx.guard)});
     let mut line = serde_json::to_string(&frame).map_err(task_error)?;
     line.push('\n');
@@ -339,31 +423,26 @@ fn stop_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
                 "service stop deadline elapsed; cleanup remains unverified",
             ));
         }
-        if let Some(code) = retained.exit_code().map_err(task_error)? {
-            if code != 0 {
-                return Err(task_error(
-                    "supervisor exited abnormally; cleanup remains unverified",
-                ));
-            }
+        let supervisor_exit = run.supervisor.exit_code().map_err(task_error)?;
+        let forwarder_exit = run.forwarder.exit_code().map_err(task_error)?;
+        if supervisor_exit.is_some_and(|code| code != 0)
+            || forwarder_exit.is_some_and(|code| code != 0)
+        {
+            return Err(task_error(
+                "service exited abnormally; cleanup remains unverified",
+            ));
+        }
+        if supervisor_exit == Some(0) && forwarder_exit == Some(0) {
             let after = inspect_task(ctx, deadline)?;
             validate_task(ctx, &after)?;
-            if after.last_run != before.last_run
-                || after.xml != before.xml
-                || after.task_sddl != before.task_sddl
-                || after.folder_sddl != before.folder_sddl
-            {
+            if !same_task_profile(&before, &after) {
                 return Err(task_error("service task changed during stop"));
             }
             if after.instances.is_empty() && after.state == Some(3) {
-                if after.last_result != Some(0) {
-                    return Err(task_error(
-                        "service forwarding process did not complete successfully",
-                    ));
-                }
                 println!("background service stopped");
                 return Ok(());
             }
-            if after.instances != before.instances {
+            if after.instances.len() != 1 || after.instances[0].guid != run.selected.guid {
                 return Err(task_error("service task instance changed during stop"));
             }
         }
@@ -498,7 +577,15 @@ fn run_up() -> ExitCode {
         Ok(ctx) => ctx,
         Err(code) => return code,
     };
-    if let Err(code) = install_task(&ctx, 5015) {
+    let before = match inspect_task(&ctx, Instant::now() + STOP_TIMEOUT) {
+        Ok(snapshot) => snapshot,
+        Err(code) => return code,
+    };
+    if before.present {
+        if let Err(code) = validate_task(&ctx, &before) {
+            return code;
+        }
+    } else if let Err(code) = install_task(&ctx, 5015) {
         return code;
     }
     match start_task(&ctx) {
@@ -548,6 +635,7 @@ fn run_status() -> ExitCode {
 pub(crate) struct AdmittedTaskAction {
     pub(crate) arguments: Vec<OsString>,
     pub(crate) journal: PathBuf,
+    pub(crate) launch: solstone_core_system::process::InstalledTaskLaunchRequest,
 }
 
 pub(crate) fn admit_task_action(args: &[OsString]) -> Result<Option<AdmittedTaskAction>, String> {
@@ -575,6 +663,12 @@ pub(crate) fn admit_task_action(args: &[OsString]) -> Result<Option<AdmittedTask
     }
     Ok(Some(AdmittedTaskAction {
         arguments: arguments[..4].iter().map(OsString::from).collect(),
-        journal: context.journal,
+        journal: context.journal.clone(),
+        launch: solstone_core_system::process::InstalledTaskLaunchRequest {
+            journal: context.journal,
+            guard: context.guard,
+            arguments,
+            acknowledgement_timeout: Duration::from_secs(3),
+        },
     }))
 }

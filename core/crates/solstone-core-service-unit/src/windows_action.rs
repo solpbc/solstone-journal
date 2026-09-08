@@ -181,9 +181,7 @@ pub fn decode_windows_task_arguments(value: &str) -> Result<Vec<String>, &'stati
 #[cfg(test)]
 mod tests {
     use super::*;
-    use solstone_core_installation_identity::{
-        Generation, InstallationId, JournalToken, NamespaceName,
-    };
+    use solstone_core_installation_identity::{Generation, InstallationId, NamespaceName};
 
     fn action() -> WindowsServiceAction {
         WindowsServiceAction {
@@ -196,7 +194,14 @@ mod tests {
                 .unwrap(),
                 id: InstallationId::parse("0123456789abcdef0123456789abcdef").unwrap(),
                 generation: Generation::new(7).unwrap(),
-                journal_token: JournalToken::from_raw_absolute(b"/journal".to_vec()).unwrap(),
+                journal_token: solstone_core_installation_identity::journal_token_from_path(
+                    std::path::Path::new(if cfg!(windows) {
+                        "C:\\journal"
+                    } else {
+                        "/journal"
+                    }),
+                )
+                .unwrap(),
             },
         }
     }

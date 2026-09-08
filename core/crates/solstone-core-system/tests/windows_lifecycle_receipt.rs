@@ -813,3 +813,6 @@ fn windows_readiness_birth_binding_receipt() {
     assert!(refused.iter().all(|(_, outcome)| *outcome), "{refused:?}");
     println!("JOURNAL_WIN_CI_READINESS_BIRTH=executed/pass");
 }
+
+#[path = "windows_installed_transport.rs"]
+mod installed_transport;

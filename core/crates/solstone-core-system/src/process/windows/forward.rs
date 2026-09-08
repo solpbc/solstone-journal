@@ -11,7 +11,9 @@ use std::time::{Duration, Instant};
 use super::bounded::BoundedHelperResources;
 use super::bounded_cleanup::Reservation;
 use super::job_process::{JOB_HARD_STOP_TIMEOUT, launch_windows_forwarder};
-use super::launch_control::{AdmittedWindowsLaunch, LaunchControl, signal_stop};
+use super::launch_control::{
+    AdmittedWindowsLaunch, InstalledTaskLaunchRequest, LaunchControl, signal_stop,
+};
 use crate::process::SERVICE_SHUTDOWN_TIMEOUT;
 
 /// Run a native sibling with the current standard handles and retain its Job
@@ -23,9 +25,6 @@ pub fn forward_windows_native_command(
     arguments: &[OsString],
     admitted: Option<&AdmittedWindowsLaunch>,
 ) -> io::Result<i32> {
-    let mut command = Vec::with_capacity(arguments.len() + 1);
-    command.push(program.to_owned());
-    command.extend_from_slice(arguments);
     let mut environment = BTreeMap::new();
     let control = admitted
         .map(|incoming| {
@@ -42,6 +41,34 @@ pub fn forward_windows_native_command(
             LaunchControl::prepare(&provenance, &mut environment)
         })
         .transpose()?;
+    forward(program, arguments, admitted, control, environment)
+}
+
+/// Forward the exact installed action with no hosted generation grants.
+pub fn forward_windows_installed_task(
+    program: &OsStr,
+    request: &InstalledTaskLaunchRequest,
+) -> io::Result<i32> {
+    let mut environment = BTreeMap::new();
+    let control = LaunchControl::prepare_installed(request, &mut environment)?;
+    let arguments = request
+        .arguments
+        .iter()
+        .map(OsString::from)
+        .collect::<Vec<_>>();
+    forward(program, &arguments, None, Some(control), environment)
+}
+
+fn forward(
+    program: &OsStr,
+    arguments: &[OsString],
+    admitted: Option<&AdmittedWindowsLaunch>,
+    control: Option<LaunchControl>,
+    environment: BTreeMap<OsString, OsString>,
+) -> io::Result<i32> {
+    let mut command = Vec::with_capacity(arguments.len() + 1);
+    command.push(program.to_owned());
+    command.extend_from_slice(arguments);
     let mut resources = BoundedHelperResources::new();
     if let Some(incoming) = admitted {
         resources.retain(std::sync::Arc::new(incoming.read_file_grants().to_vec()));
@@ -61,6 +88,7 @@ pub fn forward_windows_native_command(
             (Some(control), Some(incoming)) => {
                 Some(control.admit(&owner, incoming.read_file_grants(), Some(incoming))?)
             }
+            (Some(control), None) => Some(control.admit(&owner, &[], None)?),
             (None, None) => None,
             _ => return Err(io::Error::other("inconsistent forwarder admission")),
         };

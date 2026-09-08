@@ -44,7 +44,7 @@ mod job;
 #[cfg(any(windows, test))]
 mod job_process;
 #[cfg(windows)]
-pub use forward::forward_windows_native_command;
+pub use forward::{forward_windows_installed_task, forward_windows_native_command};
 #[cfg(windows)]
 mod launch_control;
 #[cfg(windows)]
@@ -54,7 +54,10 @@ mod launch_pipe;
 #[cfg(any(windows, test))]
 mod launch_spec;
 #[cfg(windows)]
-pub use launch_control::{AdmittedWindowsLaunch, receive_windows_launch};
+pub use launch_control::{
+    AdmittedInstalledTaskLaunch, AdmittedWindowsLaunch, InstalledTaskLaunchRequest,
+    receive_windows_installed_task_launch, receive_windows_launch,
+};
 #[cfg(windows)]
 mod command;
 #[cfg(windows)]

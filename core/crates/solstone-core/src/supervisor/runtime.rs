@@ -1389,6 +1389,9 @@ pub(crate) async fn boot_and_tick(
     parent_watch: Option<ParentWatch>,
     sense_child_environment: solstone_core_system::process::ChildLaunchContext,
     #[cfg(windows)] service_guard: solstone_core_installation_identity::GuardFields,
+    #[cfg(windows)] installed_task: Option<
+        &solstone_core_system::process::AdmittedInstalledTaskLaunch,
+    >,
 ) -> Result<SupervisorOutcome, RuntimeBootError> {
     #[cfg(unix)]
     let mut lifecycle = lifecycle.into_lifecycle();
@@ -1735,11 +1738,30 @@ pub(crate) async fn boot_and_tick(
         let startup = classify_pre_ready_sync_error(outcome);
         return Err(abort_pre_ready_state(&mut state, &lifecycle, startup).await);
     }
+    #[cfg(not(windows))]
+    let ready_extra = serde_json::Map::new();
+    #[cfg(windows)]
+    let ready_extra = {
+        let mut extra = serde_json::Map::new();
+        if let Some(root) = installed_task {
+            if root.journal() != state.journal.as_path() {
+                let startup = RuntimeBootError::Startup("installed root journal mismatch".into());
+                return Err(abort_pre_ready_state(&mut state, &lifecycle, startup).await);
+            }
+            extra.insert(
+                "windows_task_forwarder".into(),
+                serde_json::json!({
+                    "instance": root.forwarder(), "launch_id": root.launch_id(),
+                }),
+            );
+        }
+        extra
+    };
     if let Err(error) = lifecycle.signal_ready(
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0.0, |value| value.as_secs_f64()),
-        serde_json::Map::new(),
+        ready_extra,
     ) {
         let startup = RuntimeBootError::Startup(error.to_string());
         return Err(abort_pre_ready_state(&mut state, &lifecycle, startup).await);

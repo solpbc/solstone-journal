@@ -24,6 +24,7 @@ solstone-core-indexer-store = { workspace = true }
 solstone-core-import-sources = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
+solstone-core-service-unit = { workspace = true }
 windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_Threading"] }
 
 [dev-dependencies]

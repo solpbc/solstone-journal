@@ -512,7 +512,7 @@ fn uses_parakeet_cpp(backend: &str) -> bool {
 }
 
 fn uses_parakeet_cpp_for(os: &str, backend: &str) -> bool {
-    backend == "parakeet-cpp" || (backend == "parakeet" && os == "linux")
+    backend == "parakeet-cpp" || (backend == "parakeet" && matches!(os, "linux" | "windows"))
 }
 
 struct BackendErrorContext<'a> {
@@ -1355,6 +1355,9 @@ mod tests {
         assert!(!super::uses_parakeet_cpp_for("darwin", "parakeet"));
         assert!(super::uses_parakeet_cpp_for("darwin", "parakeet-cpp"));
         assert!(!super::uses_parakeet_cpp_for("linux", "confidential"));
+        assert!(super::uses_parakeet_cpp_for("windows", "parakeet"));
+        assert!(super::uses_parakeet_cpp_for("windows", "parakeet-cpp"));
+        assert!(!super::uses_parakeet_cpp_for("windows", "confidential"));
     }
 
     #[test]

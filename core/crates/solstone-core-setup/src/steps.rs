@@ -233,7 +233,8 @@ pub struct SetupContext<'a> {
     pub already_keeps_journal_probe: fn(&SetupContext<'_>) -> Result<bool, String>,
     pub is_macos: bool,
     pub check_report_builder: &'a dyn CheckReportBuilder,
-    /// Holds the owner-wide and namespace leases across every mutating setup step.
+    /// Holds setup leases until guarded service publication on Unix, or until
+    /// complete guards are saved before service child execution on Windows.
     pub installation_admission: Option<SetupAdmission>,
     /// Guard-drifted artifacts that must be reconciled even after a prior successful step.
     pub identity_guard_repair_steps: Vec<StepName>,
@@ -1611,6 +1612,13 @@ fn skipped_result(
 }
 
 fn step_service(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutionError> {
+    step_service_with_guard(context, None)
+}
+
+fn step_service_with_guard(
+    context: &mut SetupContext<'_>,
+    saved_guard: Option<GuardFields>,
+) -> Result<StepResult, StepExecutionError> {
     if context.args.skip_service {
         return Ok(skipped_result(
             StepName::Service,
@@ -1634,14 +1642,20 @@ fn step_service(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
         })?
         .into_iter()
         .collect::<Vec<_>>();
-    let guard = GuardFields::from_binding(
-        context
-            .installation_admission
-            .as_ref()
-            .expect("setup admission is retained through service provisioning")
-            .binding(),
-    );
+    let guard = saved_guard.unwrap_or_else(|| {
+        GuardFields::from_binding(
+            context
+                .installation_admission
+                .as_ref()
+                .expect("setup admission is retained until service guards are captured")
+                .binding(),
+        )
+    });
     let service_guard = service_guard_environment(&guard);
+    // Windows service commands reload the binding under the provider locks.
+    // Save all guards before releasing those locks and waiting for the child.
+    #[cfg(windows)]
+    drop(context.installation_admission.take());
     let output = context
         .runner
         .run(&CommandRequest {
@@ -1705,7 +1719,8 @@ fn step_service(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
     ))
 }
 
-/// Returns `Ok(None)` for the two paths that deliberately rerun service installation.
+/// Unix returns `Ok(None)` when installation must rerun. Windows performs that
+/// rerun here with guards saved before releasing admission for the status child.
 fn resume_service(
     context: &mut SetupContext<'_>,
     paths: Vec<PathBuf>,
@@ -1719,11 +1734,26 @@ fn resume_service(
             SkipReason::SolAlreadyKeepsJournal,
         )));
     }
+    #[cfg(windows)]
+    let saved_guard = {
+        let guard = GuardFields::from_binding(
+            context
+                .installation_admission
+                .as_ref()
+                .expect("setup admission is retained until resume guards are captured")
+                .binding(),
+        );
+        drop(context.installation_admission.take());
+        guard
+    };
     let installed = context
         .service_ops
         .is_installed(context.runner, &context.journal_path)
         .map_err(|message| StepExecutionError::Unhandled { message })?;
     if !installed {
+        #[cfg(windows)]
+        return step_service_with_guard(context, Some(saved_guard)).map(Some);
+        #[cfg(not(windows))]
         return Ok(None);
     }
     let healthy = context
@@ -1738,8 +1768,11 @@ fn resume_service(
             SkipReason::PriorRunOk,
         )));
     }
-    // Re-publish the guarded unit before starting an unhealthy runtime. A
-    // direct restart here would make the child wait on setup's identity lease.
+    // Re-publish the guarded unit before starting an unhealthy runtime.
+    // Windows preserves the original guards across status/health and install.
+    #[cfg(windows)]
+    return step_service_with_guard(context, Some(saved_guard)).map(Some);
+    #[cfg(not(windows))]
     Ok(None)
 }
 
@@ -2590,6 +2623,56 @@ mod tests {
         assert_eq!(result.status, StepStatus::Ok);
         assert!(setup.installation_admission.is_none());
         assert_eq!(runner.requests.len(), 1);
+    }
+    #[test]
+    fn service_reinstall_uses_all_saved_guards_after_admission_release() {
+        let (args, resolved, root, home) = fixture("service-saved-guard", &["--port", "6123"]);
+        let mut runner = FakeRunner::new(vec![Ok(CommandOutput {
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+            timed_out: false,
+        })]);
+        let mut prompt = Prompt(false);
+        let mut setup = context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        );
+        let guard = GuardFields::from_binding(
+            setup
+                .installation_admission
+                .as_ref()
+                .expect("admission")
+                .binding(),
+        );
+        let expected = service_guard_environment(&guard);
+        drop(setup.installation_admission.take());
+        let result = step_service_with_guard(&mut setup, Some(guard)).expect("reinstall");
+        assert_eq!(result.status, StepStatus::Ok);
+        assert!(setup.installation_admission.is_none());
+        assert_eq!(runner.requests.len(), 1);
+        assert_eq!(
+            runner.requests[0].args,
+            vec![
+                "service".to_owned(),
+                "install".to_owned(),
+                "--port".to_owned(),
+                "6123".to_owned(),
+                "--installation-namespace".to_owned(),
+                expected["SOLSTONE_INSTALLATION_NAMESPACE"].clone(),
+                "--installation-id".to_owned(),
+                expected["SOLSTONE_INSTALLATION_ID"].clone(),
+                "--installation-generation".to_owned(),
+                expected["SOLSTONE_INSTALLATION_GENERATION"].clone(),
+                "--installation-journal-token".to_owned(),
+                expected["SOLSTONE_INSTALLATION_JOURNAL_TOKEN"].clone(),
+            ]
+        );
     }
     #[test]
     fn brain_mutates_local_provider_before_skipping_and_warning_keeps_its_distinct_shape() {

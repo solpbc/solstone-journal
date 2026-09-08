@@ -208,6 +208,9 @@ pub async fn run_hosted(
     journal: &Path,
     options: SupervisorOptions,
     parent: Option<DeclaredParent>,
+    #[cfg(windows)] installed_task: Option<
+        &solstone_core_system::process::AdmittedInstalledTaskLaunch,
+    >,
 ) -> SupervisorHostOutcome {
     let binding = match load_generation(journal) {
         Ok(binding) => binding,
@@ -301,6 +304,8 @@ pub async fn run_hosted(
         sense_child_environment,
         #[cfg(windows)]
         binding.guard,
+        #[cfg(windows)]
+        installed_task,
     )
     .await
     {

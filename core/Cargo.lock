@@ -4470,6 +4470,7 @@ dependencies = [
  "solstone-core-journal",
  "solstone-core-journal-archive",
  "solstone-core-journal-io",
+ "solstone-core-service-unit",
  "solstone-core-sol-client",
  "solstone-core-system",
  "windows-sys 0.61.2",

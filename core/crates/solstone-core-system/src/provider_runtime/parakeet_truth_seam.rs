@@ -43,6 +43,7 @@ use super::seams::{RuntimeStoreError, TruthObservationSeam};
 
 const GIB: u64 = 1024 * 1024 * 1024;
 const LINUX_LOCAL_FLOOR_BYTES: u64 = 4 * GIB;
+const WINDOWS_LOCAL_FLOOR_BYTES: u64 = 4 * GIB;
 const DARWIN_ARM64_LOCAL_FLOOR_BYTES: u64 = 2 * GIB;
 const PARAKEET_ATT_CONTEXT_ENV: &str = "PARAKEET_ATT_CONTEXT";
 const PARAKEET_ATT_CONTEXT: &str = "128";
@@ -518,6 +519,7 @@ fn regular_files_exist(binary_path: &Path, model_path: &Path) -> Result<bool, st
 
 fn platform_floor_bytes(platform: &str, machine: &str) -> Option<u64> {
     match (platform, machine) {
+        ("windows", "x86_64") => Some(WINDOWS_LOCAL_FLOOR_BYTES),
         ("darwin", "arm64") => Some(DARWIN_ARM64_LOCAL_FLOOR_BYTES),
         (platform, "x86_64" | "aarch64" | "arm64") if platform.starts_with("linux") => {
             Some(LINUX_LOCAL_FLOOR_BYTES)
@@ -531,15 +533,23 @@ fn local_stt_backend(platform: &str, machine: &str) -> Option<&'static str> {
 }
 
 fn read_available_bytes() -> Option<u64> {
-    if std::env::consts::OS != "linux" {
-        return None;
+    #[cfg(windows)]
+    {
+        crate::memory_admission::windows_available_physical_bytes()
     }
-    let meminfo = fs::read_to_string("/proc/meminfo").ok()?;
-    let available = meminfo_value_kib(&meminfo, "MemAvailable")?;
-    let total = meminfo_value_kib(&meminfo, "MemTotal")?;
-    (available > 0 && total > 0 && available <= total).then(|| available.checked_mul(1024))?
+    #[cfg(not(windows))]
+    {
+        if std::env::consts::OS != "linux" {
+            return None;
+        }
+        let meminfo = fs::read_to_string("/proc/meminfo").ok()?;
+        let available = meminfo_value_kib(&meminfo, "MemAvailable")?;
+        let total = meminfo_value_kib(&meminfo, "MemTotal")?;
+        (available > 0 && total > 0 && available <= total).then(|| available.checked_mul(1024))?
+    }
 }
 
+#[cfg(not(windows))]
 fn meminfo_value_kib(meminfo: &str, key: &str) -> Option<u64> {
     meminfo.lines().find_map(|line| {
         let (found, value) = line.split_once(':')?;
@@ -606,6 +616,49 @@ fn unavailable_observation(reason_code: &'static str) -> ProviderTruthObservatio
         has_plan: false,
         boot_required: true,
         detail: None,
+    }
+}
+
+#[cfg(test)]
+mod windows_stt_selection_tests {
+    use super::*;
+
+    #[test]
+    fn windows_default_latch_uses_cpu_floor_and_preserves_memory_refusal() {
+        let input = ParakeetAdmissionInput {
+            platform: "windows".to_owned(),
+            machine: "x86_64".to_owned(),
+            backend: None,
+            local_backend: local_stt_backend("windows", "x86_64").map(ToOwned::to_owned),
+            floor_bytes: platform_floor_bytes("windows", "x86_64"),
+            confidential_lane_active: false,
+            confidential_audio_enabled: false,
+        };
+        assert_eq!(input.local_backend.as_deref(), Some("parakeet"));
+        assert_eq!(input.floor_bytes, Some(4 * GIB));
+        assert_eq!(local_stt_backend("windows", "aarch64"), None);
+        for (available, desired, blocked) in [
+            (Some(4 * GIB), true, false),
+            (Some(4 * GIB - 1), false, true),
+            (Some(0), false, true),
+            (None, false, true),
+        ] {
+            let journal = tempfile::tempdir().unwrap();
+            let latch =
+                parakeet_stt_admission_latch(journal.path(), &input, &|| available).unwrap();
+            assert_eq!((latch.desired, latch.blocked), (desired, blocked));
+        }
+        for backend in ["parakeet", "parakeet-cpp"] {
+            let journal = tempfile::tempdir().unwrap();
+            let mut explicit = input.clone();
+            explicit.backend = Some(backend.to_owned());
+            let latch = parakeet_stt_admission_latch(journal.path(), &explicit, &|| {
+                panic!("explicit backend must preserve the existing memory-read bypass")
+            })
+            .unwrap();
+            assert!(latch.desired);
+            assert!(!latch.blocked);
+        }
     }
 }
 

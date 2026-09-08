@@ -9,6 +9,28 @@ use std::time::Duration;
 const GIB: u64 = 1024 * 1024 * 1024;
 const MIB: u64 = 1024 * 1024;
 
+/// Read currently available physical memory for Windows CPU admission.
+/// An unavailable or inconsistent reading remains unknown to the caller's policy.
+#[cfg(windows)]
+#[allow(unsafe_code)]
+pub fn windows_available_physical_bytes() -> Option<u64> {
+    use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+
+    let mut status = MEMORYSTATUSEX {
+        dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
+        ..Default::default()
+    };
+    // SAFETY: status is initialized, correctly sized, and exclusively borrowed
+    // for the synchronous call. The API retains no pointer after returning.
+    let succeeded = unsafe { GlobalMemoryStatusEx(&mut status) } != 0;
+    validated_windows_available_bytes(succeeded, status.ullTotalPhys, status.ullAvailPhys)
+}
+
+#[cfg(any(windows, test))]
+fn validated_windows_available_bytes(succeeded: bool, total: u64, available: u64) -> Option<u64> {
+    (succeeded && total > 0 && available <= total).then_some(available)
+}
+
 #[derive(Debug, Default)]
 pub struct MemoryAdmissionCache {
     resolved_floor_bytes: Option<u64>,
@@ -104,6 +126,16 @@ mod tests {
     use super::{
         GIB, MIB, MemoryAdmissionCache, resolve_memory_floor_bytes, wait_for_memory_headroom,
     };
+
+    #[test]
+    fn windows_memory_reading_preserves_failure_and_zero_headroom() {
+        use super::validated_windows_available_bytes as validate;
+        assert_eq!(validate(true, 8 * GIB, 4 * GIB), Some(4 * GIB));
+        assert_eq!(validate(true, 8 * GIB, 0), Some(0));
+        assert_eq!(validate(false, 8 * GIB, 4 * GIB), None);
+        assert_eq!(validate(true, 0, 0), None);
+        assert_eq!(validate(true, 4 * GIB, 8 * GIB), None);
+    }
 
     #[test]
     fn resolution_cache_wins_before_a_second_config_read() {

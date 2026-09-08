@@ -227,7 +227,12 @@ const fn kind_name(kind: HostedServiceKind) -> &'static str {
 }
 
 #[cfg(any(unix, windows))]
-fn run_supervisor(options: solstone_core_cli::SupervisorOptions) -> ExitCode {
+fn run_supervisor(
+    options: solstone_core_cli::SupervisorOptions,
+    #[cfg(windows)] installed_task: Option<
+        &solstone_core_system::process::AdmittedInstalledTaskLaunch,
+    >,
+) -> ExitCode {
     let parent = match resolve_declared_parent(options.hosted_parent) {
         Ok(parent) => parent,
         Err(error) => {
@@ -262,9 +267,13 @@ fn run_supervisor(options: solstone_core_cli::SupervisorOptions) -> ExitCode {
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
-    render_supervisor_host_outcome(
-        runtime.block_on(supervisor::run_hosted(&journal, options, parent)),
-    )
+    render_supervisor_host_outcome(runtime.block_on(supervisor::run_hosted(
+        &journal,
+        options,
+        parent,
+        #[cfg(windows)]
+        installed_task,
+    )))
 }
 
 #[cfg(any(unix, windows))]
@@ -473,6 +482,26 @@ fn main() -> ExitCode {
         }
     };
     #[cfg(windows)]
+    if let Some(action) = installed_task {
+        let root = match solstone_core_system::process::receive_windows_installed_task_launch(
+            &action.launch,
+        ) {
+            Ok(root) => root,
+            Err(error) => {
+                eprintln!("windows service admission failed: {error}");
+                return ExitCode::from(EXIT_HOSTED_SERVICE_ADMISSION_REFUSED);
+            }
+        };
+        // The actual root admission remains owned until capture and runtime return.
+        return service_capture_windows::run_installed(&action.journal, || {
+            install_logger();
+            match evaluate_args(&action.arguments) {
+                Ok(Command::Supervisor(options)) => run_supervisor(options, Some(&root)),
+                _ => ExitCode::from(EXIT_HOSTED_SERVICE_ADMISSION_REFUSED),
+            }
+        });
+    }
+    #[cfg(windows)]
     let admitted = match solstone_core_system::process::receive_windows_launch() {
         Ok(admitted) => admitted,
         Err(error) => {
@@ -480,20 +509,6 @@ fn main() -> ExitCode {
             return ExitCode::from(EXIT_HOSTED_SERVICE_ADMISSION_REFUSED);
         }
     };
-    #[cfg(windows)]
-    if let Some(action) = installed_task {
-        if admitted.is_some() {
-            eprintln!("windows installed task cannot also be an admitted child launch");
-            return ExitCode::from(EXIT_HOSTED_SERVICE_ADMISSION_REFUSED);
-        }
-        return service_capture_windows::run_installed(&action.journal, || {
-            install_logger();
-            match evaluate_args(&action.arguments) {
-                Ok(Command::Supervisor(options)) => run_supervisor(options),
-                _ => ExitCode::from(EXIT_HOSTED_SERVICE_ADMISSION_REFUSED),
-            }
-        });
-    }
     install_logger();
     match evaluate_args(&args) {
         Ok(Command::Version) => {
@@ -751,7 +766,11 @@ fn main() -> ExitCode {
             print!("{CORTEX_HELP}");
             ExitCode::SUCCESS
         }
-        Ok(Command::Supervisor(options)) => run_supervisor(options),
+        Ok(Command::Supervisor(options)) => run_supervisor(
+            options,
+            #[cfg(windows)]
+            None,
+        ),
         Ok(Command::SupervisorUsage) => render_usage_error(SUPERVISOR_USAGE, "journal supervisor"),
         Ok(Command::SupervisorInvalid(error)) => {
             eprint!("{SUPERVISOR_USAGE}");
