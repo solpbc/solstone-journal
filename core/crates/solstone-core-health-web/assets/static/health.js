@@ -381,6 +381,7 @@
       elements.glanceErrorsValue.textContent = state.agentErrorsOk && Number.isFinite(reported)
         ? String(reported)
         : '—';
+      elements.glanceErrorsValue.classList.toggle('has-errors', state.agentErrorsOk && reported > 0);
     }
     if (elements.glanceErrorsLabel) {
       elements.glanceErrorsLabel.textContent = data.label || 'errors today';
@@ -799,10 +800,12 @@
     const today = todayKey();
     if (!state.agentErrorsOk || !state.agentErrorsLoaded) {
       elements.glanceErrorsValue.textContent = '—';
+      elements.glanceErrorsValue.classList.remove('has-errors');
       elements.glanceErrorsLabel.textContent = 'errors today';
     } else {
       const errorsToday = state.recentErrors.filter(error => dayKeyFromTimestamp(error.ts) === today).length;
       elements.glanceErrorsValue.textContent = String(errorsToday);
+      elements.glanceErrorsValue.classList.toggle('has-errors', errorsToday > 0);
       elements.glanceErrorsLabel.textContent = (errorsToday === 1 ? 'error today' : 'errors today');
     }
   }

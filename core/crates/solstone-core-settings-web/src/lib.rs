@@ -20,7 +20,6 @@ mod http;
 mod icons;
 mod keys;
 mod logs;
-mod observe;
 mod processing;
 mod request_body;
 mod retention;
@@ -41,9 +40,6 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
     let config_post_root = journal_root.clone();
     let state_root = journal_root.clone();
     let convey_root = journal_root.clone();
-    let observe_get_root = journal_root.clone();
-    let observe_put_root = journal_root.clone();
-    let observe_post_root = journal_root.clone();
     let transcribe_root = journal_root.clone();
     let processing_root = journal_root.clone();
     let keys_root = journal_root.clone();
@@ -89,16 +85,6 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
         .route(
             "/app/settings/api/convey/status",
             get(move || convey::status(convey_root.clone())),
-        )
-        .route(
-            "/app/settings/api/observe",
-            get(move || observe::get(observe_get_root.clone()))
-                .put(move |body| {
-                    observe::update(observe_put_root.clone(), config_lock_options, body)
-                })
-                .post(move |body| {
-                    observe::update(observe_post_root.clone(), config_lock_options, body)
-                }),
         )
         .route(
             "/app/settings/api/transcribe",
