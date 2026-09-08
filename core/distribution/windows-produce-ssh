@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+# Operator transport only. A timeout stops the local SSH client; it never
+# authorizes remote cleanup. The existing remote fence carries reconciliation.
+set -u
+if [ "$#" -ne 8 ]; then
+    echo 'usage: windows-produce-ssh HOST REMOTE_DRIVER DRIVER_SHA256 REMOTE_PARAMETERS PARAMETERS_SHA256 OVERALL_SECONDS SSH_SECONDS LOCAL_EVIDENCE' >&2
+    exit 2
+fi
+producer_host=$1
+producer_driver=$2
+producer_driver_sha=$3
+producer_parameters=$4
+producer_parameters_sha=$5
+producer_budget=$6
+producer_ssh_budget=$7
+producer_evidence=$8
+if [[ ! $producer_host =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+    echo 'an SSH host alias is required' >&2
+    exit 2
+fi
+if [[ ! $producer_driver_sha =~ ^[0-9a-f]{64}$ || ! $producer_parameters_sha =~ ^[0-9a-f]{64}$ || ! $producer_budget =~ ^[1-9][0-9]{1,4}$ || ! $producer_ssh_budget =~ ^[1-9][0-9]{1,4}$ ]]; then
+    echo 'invalid source digest or explicit time budget' >&2
+    exit 2
+fi
+if (( producer_budget < 30 || producer_budget > 14400 || producer_ssh_budget < producer_budget + 120 || producer_ssh_budget > producer_budget + 600 )); then
+    echo 'SSH budget must include a bounded 120 to 600 second margin over the 30 to 14400 second native budget' >&2
+    exit 2
+fi
+if ! mkdir -- "$producer_evidence"; then
+    echo 'fresh local transport evidence directory required' >&2
+    exit 2
+fi
+python3 - "$producer_driver" "$producer_driver_sha" "$producer_parameters" "$producer_parameters_sha" "$producer_budget" > "$producer_evidence/command.base64" <<'PY'
+import base64, sys
+def literal(value):
+    if '\x00' in value or '\r' in value or '\n' in value:
+        raise ValueError('invalid remote path')
+    return "'" + value.replace("'", "''") + "'"
+driver, driver_sha, parameters, parameters_sha, budget = sys.argv[1:]
+script = f"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+$driver={literal(driver)}
+$parameters={literal(parameters)}
+if ((Get-FileHash -LiteralPath $driver -Algorithm SHA256).Hash.ToLowerInvariant() -cne '{driver_sha}') {{ throw 'remote driver differs from reviewed source' }}
+$inputFile=[IO.FileStream]::new($parameters,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+try {{
+    if ($inputFile.Length -gt 1048576) {{ throw 'operator parameters exceed size limit' }}
+    $raw=[byte[]]::new([int]$inputFile.Length)
+    $offset=0
+    while ($offset -lt $raw.Length) {{
+        $count=$inputFile.Read($raw,$offset,$raw.Length-$offset)
+        if ($count -eq 0) {{ throw 'operator parameters truncated' }}
+        $offset+=$count
+    }}
+    if ($inputFile.ReadByte() -ne -1) {{ throw 'operator parameters grew during read' }}
+}} finally {{ $inputFile.Dispose() }}
+$hasher=[Security.Cryptography.SHA256]::Create()
+try {{ $digest=([BitConverter]::ToString($hasher.ComputeHash($raw))).Replace('-','').ToLowerInvariant() }} finally {{ $hasher.Dispose() }}
+if ($digest -cne '{parameters_sha}') {{ throw 'operator parameter bytes differ' }}
+$values=([Text.UTF8Encoding]::new($false,$true)).GetString($raw) | ConvertFrom-Json
+$arguments=@{{}}
+foreach ($property in $values.PSObject.Properties) {{ $arguments[$property.Name]=$property.Value }}
+if ($arguments['OverallSeconds'] -ne {int(budget)}) {{ throw 'native total budget differs from transport binding' }}
+& $driver @arguments
+exit $LASTEXITCODE
+"""
+print(base64.b64encode(script.encode('utf-16-le')).decode())
+PY
+producer_encode_exit=$?
+if [ "$producer_encode_exit" -ne 0 ]; then
+    exit "$producer_encode_exit"
+fi
+producer_encoded=$(cat -- "$producer_evidence/command.base64")
+producer_read_exit=$?
+if [ "$producer_read_exit" -ne 0 ]; then
+    exit "$producer_read_exit"
+fi
+# No pipe masks the transport result. SSH multiplexing is disabled so this
+# invocation has its own connection and finite client lifetime.
+timeout --foreground --signal=TERM --kill-after=10s "${producer_ssh_budget}s" \
+    ssh -T -o BatchMode=yes -o ConnectTimeout=15 -o ControlMaster=no -o ControlPath=none \
+    "$producer_host" powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand "$producer_encoded" \
+    > "$producer_evidence/ssh.stdout" 2> "$producer_evidence/ssh.stderr"
+producer_transport_exit=$?
+if ! printf '%s\n' "$producer_transport_exit" > "$producer_evidence/transport.exit"; then
+    echo "transport exit=$producer_transport_exit; could not retain transport exit file" >&2
+    exit 1
+fi
+python3 - "$producer_evidence" "$producer_transport_exit" "$producer_budget" "$producer_ssh_budget" "$producer_driver_sha" "$producer_parameters_sha" <<'PY'
+from pathlib import Path
+import datetime, hashlib, json, sys
+root = Path(sys.argv[1])
+result = int(sys.argv[2])
+def digest(path):
+    with path.open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
+receipt = {
+    'recorded_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    'timeout_transport_exit': result,
+    'native_budget_seconds': int(sys.argv[3]),
+    'ssh_budget_seconds': int(sys.argv[4]),
+    'driver_sha256': sys.argv[5],
+    'parameters_sha256': sys.argv[6],
+    'remote_completion_uncertain': result != 0,
+    'remote_cleanup_authorized': False,
+    'scope': 'Local SSH transport result and redirect snapshots only. Native exits, original streams and cleanup disposition must be read from the remote driver receipt. Nonzero/timeout never authorizes removing the remote fence.',
+    'snapshots': {name: digest(root/name) for name in ['command.base64', 'ssh.stdout', 'ssh.stderr', 'transport.exit']},
+}
+with (root/'transport.json').open('x') as stream:
+    json.dump(receipt, stream, indent=2)
+    stream.write('\n')
+PY
+producer_receipt_exit=$?
+if [ "$producer_receipt_exit" -ne 0 ]; then
+    echo "transport exit=$producer_transport_exit; transport receipt failed=$producer_receipt_exit" >&2
+    exit "$producer_receipt_exit"
+fi
+exit "$producer_transport_exit"

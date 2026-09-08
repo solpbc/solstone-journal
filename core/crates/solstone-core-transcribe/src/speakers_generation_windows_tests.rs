@@ -218,7 +218,7 @@ fn run_unrelated_root_probe_until(
         // launch protocol; metadata-only deliberately copies diagnostics alone.
         resources.retain(generation.clone());
         if mode == "metadata-only" {
-            environment.extend(generation.inheritance_environment());
+            environment.extend(generation.environment.clone());
         }
     }
     let output = run_bounded_helper(BoundedHelperRequest {

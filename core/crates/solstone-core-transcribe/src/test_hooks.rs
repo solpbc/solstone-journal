@@ -10,6 +10,7 @@ use solstone_core_spp_ratls::AttestedIo;
 
 use crate::TranscribeError;
 use crate::backend::confidential::{hosted_transcribe_transport_error, send_multipart_request};
+#[cfg(unix)]
 use crate::backend::parakeet_coreml::{get_model_info_with_helper, transcribe_with_helper};
 use crate::backend::parakeet_cpp::{
     HealthState, ParakeetServer, connect, probe_health, transcribe_transport_with_timeout,
@@ -188,6 +189,7 @@ pub fn invoke_speakers_program(
 }
 
 #[doc(hidden)]
+#[cfg(unix)]
 pub struct CoremlWord {
     pub word: String,
     pub start: f64,
@@ -196,6 +198,7 @@ pub struct CoremlWord {
 }
 
 #[doc(hidden)]
+#[cfg(unix)]
 pub enum CoremlTranscribe {
     Ok {
         words: Vec<CoremlWord>,
@@ -210,6 +213,7 @@ pub enum CoremlTranscribe {
 }
 
 #[doc(hidden)]
+#[cfg(unix)]
 pub fn coreml_transcribe_with_helper(
     audio: &[f32],
     helper: &Path,
@@ -242,6 +246,7 @@ pub fn coreml_transcribe_with_helper(
 }
 
 #[doc(hidden)]
+#[cfg(unix)]
 pub enum CoremlModelInfo {
     Ok {
         model: String,
@@ -254,6 +259,7 @@ pub enum CoremlModelInfo {
 }
 
 #[doc(hidden)]
+#[cfg(unix)]
 pub fn coreml_get_model_info(
     helper: &Path,
     model_version: &str,

@@ -955,12 +955,15 @@ input:checked + .slider:before {
 }
 
 .log-action {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: #333;
   font-weight: 500;
 }
 
 .log-actor {
-  color: #888;
+  color: var(--ink-muted);
   font-size: 0.9em;
 }
 
@@ -1526,6 +1529,21 @@ input:checked + .slider:before {
 
 .activity-desc.activity-desc-editable:hover {
   background: #e8e8e8;
+}
+
+.activity-instructions {
+  font-size: 0.85em;
+  color: var(--ink-muted);
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .activity-item { flex-wrap: wrap; }
+  .activity-info { flex-basis: calc(100% - 3em); }
+  .activity-controls { margin-left: 2.25em; }
+}
+@media (pointer: coarse) {
+  .settings-preset-btn { min-width: 44px; min-height: 44px; }
 }
 
 .activity-controls {
@@ -2427,37 +2445,11 @@ button:focus:not(:focus-visible) {
     <!-- devices section -->
     <section class="settings-section" id="section-devices" role="tabpanel" aria-labelledby="tab-devices">
       <h2>devices</h2>
-      <p class="settings-section-desc">what the solstone app takes in from your terminal, and where it goes in your journal.</p>
-      <div id="devicesLoadState" class="settings-load-state" aria-live="polite">loading settings…</div>
-
-      <form class="settings-form" onsubmit="return false;">
-
+      <p class="settings-section-desc">manage the devices that add to your journal.</p>
+      <p><a href="/app/network/">view your devices →</a></p>
       <h3 class="settings-subsection-title">terminal</h3>
-      <p class="settings-subsection-desc">
-        when your screen is idle, the solstone app takes in terminal content from your active tmux sessions, and it goes into your journal.
-      </p>
-
-      <div class="settings-field">
-        <label for="field-tmux-enabled">take in terminal content</label>
-        <div style="display: flex; align-items: center; gap: 1em;">
-          <label class="toggle-switch toggle-positive">
-            <input type="checkbox" id="field-tmux-enabled">
-            <span class="slider"></span>
-          </label>
-          <span style="color: #666; font-size: 0.9em;">take in tmux sessions when screen is idle</span>
-        </div>
-      </div>
-
-      <div class="settings-field" id="tmuxCaptureIntervalField">
-        <label for="field-tmux-capture-interval">poll interval (seconds)</label>
-        <input type="number" id="field-tmux-capture-interval" style="max-width: 100px;">
-        <small id="tmuxCaptureIntervalHelp">how often to poll terminal content</small>
-      </div>
-
-      <p style="color: #888; font-size: 0.85em; margin-top: 1.5em; padding: 0.75em; background: #f8f9fa; border-radius: 4px;">
-        changes take effect the next time the solstone app restarts.
-      </p>
-      </form>
+      <p class="settings-subsection-desc">terminal sharing is controlled on the computer running the solstone app for tmux. this dashboard cannot start, stop, or change it.</p>
+      <p class="settings-subsection-desc">on that computer, use <code>solstone-tmux status</code> to check its service and sync status.</p>
     </section>
 
     <!-- Vision Section -->
@@ -4223,6 +4215,15 @@ function loadLogs(facetName, cursor = null) {
     });
 }
 
+const FACET_ACTION_LABELS = Object.freeze({
+  entity_add_aka: 'added another name', entity_attach: 'attached an entity',
+  entity_detach: 'detached an entity', entity_update: 'updated an entity',
+  facet_create: 'created this facet', facet_update: 'updated this facet',
+  facet_rename: 'renamed this facet', facet_mute: 'muted this facet', facet_unmute: 'unmuted this facet',
+  activity_create: 'created an activity', activity_update: 'updated an activity',
+  activity_add: 'added an activity', activity_remove: 'removed an activity'
+});
+
 function renderLogDay(data, isFirst) {
   const container = document.getElementById('logEntries');
 
@@ -4235,27 +4236,47 @@ function renderLogDay(data, isFirst) {
 
   // Day separator
   const dayLabel = formatLogDay(data.day);
-  container.innerHTML += `<div class="log-day"><span class="log-day-line"></span><span class="log-day-label">${dayLabel}</span><span class="log-day-line"></span></div>`;
+  const dayRow = document.createElement('div');
+  dayRow.className = 'log-day';
+  const dayStart = document.createElement('span');
+  dayStart.className = 'log-day-line';
+  const dayText = document.createElement('span');
+  dayText.className = 'log-day-label';
+  dayText.textContent = dayLabel;
+  const dayEnd = document.createElement('span');
+  dayEnd.className = 'log-day-line';
+  dayRow.append(dayStart, dayText, dayEnd);
+  container.appendChild(dayRow);
 
-  // Entries
   data.entries.forEach(entry => {
-    const icon = entry.source === 'tool' ? '\uD83E\uDD16' : '\uD83D\uDC64';
-    container.innerHTML += `<div class="log-row"><span class="log-icon">${icon}</span><span class="log-action">${entry.action}</span><span class="log-actor">${entry.actor}</span></div>`;
+    const row = document.createElement('div');
+    row.className = 'log-row';
+    const icon = document.createElement('span');
+    icon.className = 'log-icon';
+    icon.textContent = entry.source === 'tool' ? '🤖' : '👤';
+    icon.setAttribute('aria-hidden', 'true');
+    const action = document.createElement('details');
+    action.className = 'log-action';
+    const summary = document.createElement('summary');
+    summary.textContent = Object.hasOwn(FACET_ACTION_LABELS, entry.action) ? FACET_ACTION_LABELS[entry.action] : String(entry.action || '').replace(/_/g, ' ');
+    const exact = document.createElement('div');
+    exact.className = 'log-actor';
+    exact.textContent = [entry.action, entry.actor].filter(Boolean).join(' · ');
+    action.append(summary, exact);
+    if (entry.params && Object.keys(entry.params).length) {
+      const parameters = document.createElement('pre');
+      parameters.style.whiteSpace = 'pre-wrap';
+      parameters.style.overflowWrap = 'anywhere';
+      parameters.textContent = JSON.stringify(entry.params, null, 2);
+      action.appendChild(parameters);
+    }
+    row.append(icon, action);
+    container.appendChild(row);
   });
 }
 
 function formatLogDay(day) {
-  const today = new Date();
-  const todayStr = today.toISOString().slice(0,10).replace(/-/g,'');
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().slice(0,10).replace(/-/g,'');
-
-  if (day === todayStr) return 'today';
-  if (day === yesterdayStr) return 'yesterday';
-
-  const d = new Date(day.slice(0,4) + '-' + day.slice(4,6) + '-' + day.slice(6,8));
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase();
+  return window.JournalFormat.day(day).toLowerCase();
 }
 
 document.getElementById('logMoreBtn').onclick = () => {
@@ -4347,12 +4368,6 @@ function renderRefreshLoadState(message, serverMessage) {
   return `<div class="surface-state-refresh-error"><strong>${escapeHtml(message)}</strong>${serverMessage ? `<p>${escapeHtml(serverMessage)}</p>` : ''}</div>`;
 }
 
-function setObserveControlsDisabled(disabled) {
-  ['field-tmux-enabled', 'field-tmux-capture-interval'].forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) el.disabled = disabled;
-  });
-}
 
 function setSyncControlsDisabled(disabled) {
   ['field-plaud-sync-enabled', 'field-obsidian-sync-enabled'].forEach((id) => {
@@ -4571,100 +4586,6 @@ document.getElementById('field-parakeet-cpp-device')?.addEventListener('change',
     console.error('Error saving parakeet-cpp setting:', err);
     showFieldStatus(e.target, 'error', err.message);
   }
-});
-
-// ========== OBSERVER ==========
-let observeData = null;
-
-async function loadObserve() {
-  try {
-    observeData = await window.apiJson('api/observe');
-    setLoadState('devicesLoadState');
-    setObserveControlsDisabled(false);
-    populateObserve(observeData);
-  } catch (err) {
-    setObserveControlsDisabled(true);
-    setLoadState('devicesLoadState', window.SurfaceState.error({
-      heading: "couldn't load these settings",
-      desc: window.CONVEY_COPY.RELOAD_HINT,
-      serverMessage: err?.serverMessage,
-      detail: err,
-    }));
-    window.logError(err, { context: 'settings: loadObserve failed' });
-  }
-}
-
-function populateObserve(data) {
-  const tmux = data.tmux || {};
-  const defaults = data.defaults?.tmux || { enabled: true, capture_interval: 5, capture_interval_min: 1, capture_interval_max: 60 };
-
-  // Set current values
-  document.getElementById('field-tmux-enabled').checked = tmux.enabled;
-  document.getElementById('field-tmux-capture-interval').value = tmux.capture_interval;
-
-  // Configure input constraints from API defaults
-  const captureIntervalInput = document.getElementById('field-tmux-capture-interval');
-  captureIntervalInput.min = defaults.capture_interval_min;
-  captureIntervalInput.max = defaults.capture_interval_max;
-
-  // Update helper text with default value
-  const helpText = document.getElementById('tmuxCaptureIntervalHelp');
-  if (helpText) {
-    helpText.textContent = `how often to poll terminal content (default: ${defaults.capture_interval}s)`;
-  }
-
-  updateTmuxCaptureIntervalVisibility();
-}
-
-function updateTmuxCaptureIntervalVisibility() {
-  const enabled = document.getElementById('field-tmux-enabled').checked;
-  document.getElementById('tmuxCaptureIntervalField').style.opacity = enabled ? '1' : '0.5';
-  document.getElementById('field-tmux-capture-interval').disabled = !enabled;
-}
-
-async function saveObserveSetting(key, value) {
-  const tmuxData = {};
-  tmuxData[key] = value;
-
-  try {
-    const response = await fetch('api/observe', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tmux: tmuxData })
-    });
-    const result = await response.json();
-    if (result.error) throw new Error(result.error);
-    observeData = result;
-    return true;
-  } catch (err) {
-    console.error('Error saving observe setting:', err);
-    return false;
-  }
-}
-
-// Event listeners for the devices pane
-document.getElementById('field-tmux-enabled').addEventListener('change', async function() {
-  const enabled = this.checked;
-  updateTmuxCaptureIntervalVisibility();
-
-  const success = await saveObserveSetting('enabled', enabled);
-  showFieldStatus(this, success ? 'saved' : 'error', success ? 'Saved' : 'Error saving');
-});
-
-document.getElementById('field-tmux-capture-interval').addEventListener('change', async function() {
-  const defaults = observeData?.defaults?.tmux || { capture_interval: 5, capture_interval_min: 1, capture_interval_max: 60 };
-  let captureInterval = parseInt(this.value, 10);
-
-  // Clamp to valid range
-  if (isNaN(captureInterval) || captureInterval < defaults.capture_interval_min) {
-    captureInterval = defaults.capture_interval;
-  } else if (captureInterval > defaults.capture_interval_max) {
-    captureInterval = defaults.capture_interval_max;
-  }
-  this.value = captureInterval;
-
-  const success = await saveObserveSetting('capture_interval', captureInterval);
-  showFieldStatus(this, success ? 'saved' : 'error', success ? 'Saved' : 'Error saving');
 });
 
 // ========== SYNC ==========
@@ -5260,7 +5181,7 @@ function renderActivities(data) {
         <div class="activity-info">
           <div class="activity-name">${escapeHtml(a.name)}</div>
           <div class="activity-desc activity-desc-editable" data-id="${a.id}" title="double-click to edit">${escapeHtml(a.description) || '<em>no description</em>'}</div>
-          <div class="activity-instructions activity-instructions-editable" data-id="${a.id}" title="double-click to edit instructions" style="font-size:0.8em;color:#888;margin-top:2px;">${a.instructions ? escapeHtml(a.instructions) : '<em>no instructions</em>'}</div>
+          <div class="activity-instructions activity-instructions-editable" data-id="${a.id}" title="double-click to edit instructions">${a.instructions ? escapeHtml(a.instructions) : '<em>no instructions</em>'}</div>
         </div>
         <div class="activity-controls">
           <select class="activity-priority" data-id="${a.id}">
@@ -6236,7 +6157,6 @@ function initSettings() {
   settingsInitialized = true;
   initFromHash();
   loadConfig();
-  loadObserve();
   loadVision();
   loadSync();
   loadStorage();

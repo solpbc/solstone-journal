@@ -42,6 +42,23 @@ pub(crate) fn run_onnx_helper(
     if stdin.len() > budget.stdin_limit_bytes {
         return Err(BoundedHelperError::InputLimitExceeded.into());
     }
+    #[cfg(feature = "test-fixture-pin")]
+    let fixture_pin = {
+        // Require the existing environment pin explicitly. A parent-only
+        // OnceLock pin cannot be conveyed to another process, and a relative
+        // path could resolve differently under the helper's working directory.
+        let pin = std::env::var("SOLSTONE_JOURNAL_MINISIGN_PIN").map_err(|_| {
+            OnnxHelperError::Admission(
+                "test-signed ONNX launch requires an explicit UTF-8 fixture pin path".to_owned(),
+            )
+        })?;
+        if pin.is_empty() || !Path::new(&pin).is_absolute() {
+            return Err(OnnxHelperError::Admission(
+                "test-signed ONNX launch requires an absolute fixture pin path".to_owned(),
+            ));
+        }
+        pin
+    };
     let package = verified_windows_onnx_package().map_err(OnnxHelperError::Admission)?;
     let executable = match helper {
         OnnxHelper::Speakers => package.speakers_worker,
@@ -57,13 +74,25 @@ pub(crate) fn run_onnx_helper(
     }
     let system_root =
         std::env::var_os("SystemRoot").ok_or(BoundedHelperError::MissingSystemRoot)?;
+    let environment = BTreeMap::from([(OsString::from("SystemRoot"), system_root)]);
+    #[cfg(feature = "test-fixture-pin")]
+    let environment = {
+        let mut environment = environment;
+        // Isolated fixture builds use the existing signed-manifest test pin in
+        // each verifying process. The caller's OnceLock cannot cross a launch.
+        environment.insert(
+            OsString::from("SOLSTONE_JOURNAL_MINISIGN_PIN"),
+            OsString::from(fixture_pin),
+        );
+        environment
+    };
     Ok(run_bounded_helper(BoundedHelperRequest {
         resources,
         current_directory: package.package_root.join("bin"),
         package_root: package.package_root,
         executable,
         arguments: Vec::new(),
-        environment: BTreeMap::from([(OsString::from("SystemRoot"), system_root)]),
+        environment,
         stdin: stdin.to_vec(),
         budget,
         resource_limits: Some(BoundedHelperResourceLimits {

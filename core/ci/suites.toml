@@ -2586,6 +2586,20 @@ required_features = ["test-fixture-pin"]
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-distribution::distribution_build_capture"
+package = "solstone-core-distribution"
+target = "distribution_build_capture"
+set = "component"
+areas = ["repository"]
+platforms = ["linux", "macos", "windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "host-contention"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-distribution::controlled_build_receipt_race"
 package = "solstone-core-distribution"
 target = "controlled_build_receipt_race"

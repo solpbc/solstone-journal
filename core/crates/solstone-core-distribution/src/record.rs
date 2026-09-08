@@ -95,6 +95,11 @@ pub fn declared_records(
     let mut records = Vec::new();
     for entry in &inventory.entry {
         match entry {
+            Entry::WindowsNative { targets, .. } | Entry::WindowsBuildEvidence { targets, .. } => {
+                if targets.iter().any(|item| item == target_id) {
+                    return Err("Windows native members require retained admission records".into());
+                }
+            }
             Entry::Bin {
                 package,
                 bin,

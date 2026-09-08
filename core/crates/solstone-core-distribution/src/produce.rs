@@ -41,6 +41,12 @@ use crate::record;
 use crate::select::{self, ArtifactId, Selection};
 use crate::stage;
 
+pub mod windows_archives;
+pub mod windows_build;
+pub mod windows_cli;
+pub mod windows_inputs;
+pub mod windows_stage;
+
 pub const ZIG_OVERRIDE: &str = "SOLSTONE_ZIG";
 pub const ONNX_ARCHIVE_OVERRIDE: &str = "SOLSTONE_DISTRIBUTION_ONNX_ARCHIVE";
 pub const ONNX_ARCHIVE_DIR: &str = "SOLSTONE_DISTRIBUTION_ONNX_ARCHIVE_DIR";
@@ -340,7 +346,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
         OS_MACOS => {}
         OS_WINDOWS => {
             return Err(ProduceError::new(
-                "windows produce is not implemented in this lode",
+                "Windows production requires explicit local inputs and fresh logs; use produce windows-x86_64 DEST --inputs LOCAL_JSON --logs FRESH_DIRECTORY",
             ));
         }
         other => {
@@ -1118,7 +1124,23 @@ fn validate_release_configure_args(
             "release configure receipt does not enable stripping",
         ));
     }
-    if !args.iter().any(|arg| arg.contains("-O3")) {
+    if target.contains("windows") {
+        let expected = solstone_core_ffmpeg_build_support::configure_mode_args(
+            solstone_core_ffmpeg_build_support::ConfigureMode::Release,
+            true,
+        );
+        // FFmpeg appends each --extra-cflags value in order. Merely finding the
+        // release argument also admits a later /Od (or a duplicate mode). Compare
+        // the entire ordered mode-bearing token stream to the actual emitter;
+        // unrelated flags such as the build script's -w remain admissible.
+        if !expected.iter().all(|arg| args.contains(arg))
+            || windows_mode_tokens(args)? != windows_mode_tokens(&expected)?
+        {
+            return Err(incomplete_ffmpeg_evidence(
+                "Windows release configure receipt differs from the MSVC release arguments",
+            ));
+        }
+    } else if !args.iter().any(|arg| arg.contains("-O3")) {
         return Err(incomplete_ffmpeg_evidence(
             "release configure receipt does not enable -O3",
         ));
@@ -1135,6 +1157,41 @@ fn validate_release_configure_args(
         validate_controlled_component_inventory(components).map_err(incomplete_ffmpeg_evidence)?;
     }
     Ok(())
+}
+
+fn windows_mode_tokens(args: &[String]) -> Result<Vec<&str>, ProduceError> {
+    let mut mode = Vec::new();
+    for value in args
+        .iter()
+        .filter_map(|arg| arg.strip_prefix("--extra-cflags="))
+    {
+        for token in value.split_ascii_whitespace() {
+            // The controlled emitter produces plain tokens. Quoting or compiler
+            // response files could conceal an override from this token census.
+            if token.contains(['\'', '"', '@']) {
+                return Err(incomplete_ffmpeg_evidence(
+                    "Windows release C flags contain indirect or quoted arguments",
+                ));
+            }
+            let option = token.trim_start_matches(['/', '-']).to_ascii_lowercase();
+            if option.starts_with('o')
+                || option.starts_with("fp:")
+                || option.starts_with("ffast-math")
+                || option.starts_with("fno-fast-math")
+                || option.starts_with("funsafe-math")
+                || option.starts_with("fno-unsafe-math")
+                || option.starts_with("ffinite-math")
+                || option.starts_with("fno-finite-math")
+                || option.starts_with("ffp-")
+                || option.starts_with("fno-fp-")
+                || option == "gl"
+                || option == "gl-"
+            {
+                mode.push(token);
+            }
+        }
+    }
+    Ok(mode)
 }
 
 fn musl_bindgen_args(target: &crate::inventory::Target, zig_lib: &Path) -> String {
@@ -1286,6 +1343,13 @@ fn stage_layout(
 ) -> Result<(), ProduceError> {
     for entry in &inventory.entry {
         match entry {
+            Entry::WindowsNative { targets, .. } | Entry::WindowsBuildEvidence { targets, .. } => {
+                if targets.iter().any(|item| item == target_id) {
+                    return Err(ProduceError::new(
+                        "Windows native members require admitted Windows staging",
+                    ));
+                }
+            }
             Entry::Bin { .. } => {}
             Entry::Launcher {
                 source,
@@ -1832,7 +1896,11 @@ mod tests {
 
         // ...and a Windows lane still requires it. Checked at the gate directly, because
         // the evidence fixture stamps its own target into the record.
-        let error = validate_release_configure_args(&linux_args, &[], "x86_64-pc-windows-msvc")
+        let windows_args = solstone_core_ffmpeg_build_support::configure_mode_args(
+            solstone_core_ffmpeg_build_support::ConfigureMode::Release,
+            true,
+        );
+        let error = validate_release_configure_args(&windows_args, &[], "x86_64-pc-windows-msvc")
             .expect_err("a windows lane must still require the controlled inventory");
         assert!(
             error
@@ -1842,6 +1910,93 @@ mod tests {
         );
         validate_release_configure_args(&linux_args, &[], "x86_64-unknown-linux-gnu")
             .expect("the same arguments are valid on a non-windows lane");
+    }
+
+    #[test]
+    fn windows_release_admits_actual_msvc_mode_and_refuses_wrong_optimization() {
+        use solstone_core_ffmpeg_build_support::{ConfigureMode, configure_mode_args};
+        let mut args = controlled_component_args()
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect::<Vec<_>>();
+        args.extend(configure_mode_args(ConfigureMode::Release, true));
+        let components = solstone_core_ffmpeg_build_support::controlled_component_inventory()
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect::<Vec<_>>();
+        validate_release_configure_args(&args, &components, "x86_64-pc-windows-msvc").unwrap();
+        for wrong in [
+            "--extra-cflags=-O3",
+            "--extra-cflags=/Od",
+            "--extra-cflags=/O1",
+        ] {
+            let mut altered = args.clone();
+            let optimization = altered
+                .iter_mut()
+                .find(|s| s.starts_with("--extra-cflags="))
+                .unwrap();
+            *optimization = wrong.into();
+            assert!(
+                validate_release_configure_args(&altered, &components, "x86_64-pc-windows-msvc")
+                    .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn windows_release_refuses_appended_or_prepended_mode_overrides_and_duplicates() {
+        use solstone_core_ffmpeg_build_support::{ConfigureMode, configure_mode_args};
+        let mut args = controlled_component_args()
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect::<Vec<_>>();
+        args.extend(configure_mode_args(ConfigureMode::Release, true));
+        let components = solstone_core_ffmpeg_build_support::controlled_component_inventory()
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect::<Vec<_>>();
+        // Actual independent build-script additions must not be mistaken for a
+        // second optimization mode.
+        args.extend([
+            "--extra-cflags=-w".into(),
+            "--extra-cflags=-DWIN32 /wd4996".into(),
+        ]);
+        validate_release_configure_args(&args, &components, "x86_64-pc-windows-msvc").unwrap();
+        for extra in [
+            "/Od",
+            "/O1",
+            "/O2",
+            "/O2 /fp:fast",
+            "-O3",
+            "-Od",
+            "/Ob0",
+            "/fp:strict",
+            "-fp:precise",
+            "-ffast-math",
+            "/GL",
+            "/O2 /Od",
+            "\"/Od\"",
+            "@override.rsp",
+        ] {
+            for prepend in [false, true] {
+                let mut altered = args.clone();
+                let override_arg = format!("--extra-cflags={extra}");
+                if prepend {
+                    altered.insert(0, override_arg);
+                } else {
+                    altered.push(override_arg);
+                }
+                assert!(
+                    validate_release_configure_args(
+                        &altered,
+                        &components,
+                        "x86_64-pc-windows-msvc"
+                    )
+                    .is_err(),
+                    "accepted {extra}, prepend={prepend}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -2154,7 +2309,7 @@ targets = ["windows-x86_64"]
         assert!(
             error
                 .to_string()
-                .contains("windows produce is not implemented in this lode"),
+                .contains("Windows production requires explicit local inputs and fresh logs"),
             "{error}"
         );
     }

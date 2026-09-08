@@ -557,3 +557,519 @@ id = "rust-zig-no-python"
 from_subject = "debian-bookworm-no-python"
 rustc = "1.97.1"
 zig = "0.16.0"
+
+[[entry]]
+kind = "windows-native"
+component = "ced"
+member = "bin/ced.dll"
+dest = "bin/ced.dll"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "onnx"
+member = "bin/onnxruntime.dll"
+dest = "lib/solstone-core-speakers-analyze/onnxruntime.dll"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "parakeet"
+member = "bin/parakeet-server.exe"
+dest = "bin/parakeet-server.exe"
+mode = 0o755
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "parakeet"
+member = "models/tdt-0.6b-v3-q8_0.gguf"
+dest = "lib/solstone_journal_models/assets/parakeet/tdt-0.6b-v3-q8_0.gguf"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "rfdetr"
+member = "bin/rfdetr-cli.exe"
+dest = "bin/rfdetr-cli.exe"
+mode = 0o755
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "pdfium"
+member = "pdfium.dll"
+dest = "lib/solstone-core-pdf/pdfium.dll"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "restic"
+member = "restic.exe"
+dest = "bin/restic.exe"
+mode = 0o755
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "rclone"
+member = "rclone.exe"
+dest = "bin/rclone.exe"
+mode = 0o755
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "msvc"
+member = "msvcp140.dll"
+dest = "bin/msvcp140.dll"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "msvc"
+member = "vcruntime140.dll"
+dest = "bin/vcruntime140.dll"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "msvc"
+member = "vcruntime140_1.dll"
+dest = "bin/vcruntime140_1.dll"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "msvc"
+member = "vcomp140.dll"
+dest = "bin/vcomp140.dll"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "ced"
+member = "receipt.json"
+dest = "share/provenance/ced/receipt.json"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "ced"
+member = "build-evidence.json"
+dest = "share/provenance/ced/build-evidence.json"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "ced"
+member = "validation.log"
+dest = "share/provenance/ced/validation.log"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "onnx"
+member = "receipt.json"
+dest = "share/provenance/onnx/receipt.json"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "onnx"
+member = "build-evidence.json"
+dest = "share/provenance/onnx/build-evidence.json"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "onnx"
+member = "validation.log"
+dest = "share/provenance/onnx/validation.log"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "parakeet"
+member = "receipt.json"
+dest = "share/provenance/parakeet/receipt.json"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "parakeet"
+member = "build-evidence.json"
+dest = "share/provenance/parakeet/build-evidence.json"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "parakeet"
+member = "validation.log"
+dest = "share/provenance/parakeet/validation.log"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "rfdetr"
+member = "receipt.json"
+dest = "share/provenance/rfdetr/receipt.json"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "rfdetr"
+member = "build-evidence.json"
+dest = "share/provenance/rfdetr/build-evidence.json"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "rfdetr"
+member = "validation.log"
+dest = "share/provenance/rfdetr/validation.log"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "restic"
+member = "LICENSE"
+dest = "share/licenses/restic/LICENSE"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "rclone"
+member = "COPYING"
+dest = "share/licenses/rclone/COPYING"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "restic"
+member = "archive.json"
+dest = "share/provenance/restic/archive.json"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "rclone"
+member = "archive.json"
+dest = "share/provenance/rclone/archive.json"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "msvc"
+member = "archive.json"
+dest = "share/provenance/msvc/archive.json"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "pdfium"
+member = "archive.json"
+dest = "share/provenance/pdfium/archive.json"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "pdfium"
+member = "abseil.txt"
+dest = "share/licenses/pdfium/abseil.txt"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "pdfium"
+member = "agg23.txt"
+dest = "share/licenses/pdfium/agg23.txt"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "pdfium"
+member = "fast_float.txt"
+dest = "share/licenses/pdfium/fast_float.txt"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "pdfium"
+member = "freetype.txt"
+dest = "share/licenses/pdfium/freetype.txt"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "pdfium"
+member = "icu.txt"
+dest = "share/licenses/pdfium/icu.txt"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "pdfium"
+member = "lcms.txt"
+dest = "share/licenses/pdfium/lcms.txt"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "pdfium"
+member = "libjpeg_turbo.ijg"
+dest = "share/licenses/pdfium/libjpeg_turbo.ijg"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "pdfium"
+member = "libjpeg_turbo.md"
+dest = "share/licenses/pdfium/libjpeg_turbo.md"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "pdfium"
+member = "libopenjpeg.txt"
+dest = "share/licenses/pdfium/libopenjpeg.txt"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "pdfium"
+member = "libpng.txt"
+dest = "share/licenses/pdfium/libpng.txt"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "pdfium"
+member = "libtiff.txt"
+dest = "share/licenses/pdfium/libtiff.txt"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "pdfium"
+member = "llvm-libc.txt"
+dest = "share/licenses/pdfium/llvm-libc.txt"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "pdfium"
+member = "pdfium.txt"
+dest = "share/licenses/pdfium/pdfium.txt"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "pdfium"
+member = "simdutf.txt"
+dest = "share/licenses/pdfium/simdutf.txt"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "pdfium"
+member = "zlib.txt"
+dest = "share/licenses/pdfium/zlib.txt"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "ced"
+member = "LICENSE"
+dest = "share/licenses/ced/LICENSE"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "ced"
+member = "third_party/ggml/LICENSE"
+dest = "share/licenses/ced/ggml-LICENSE"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "parakeet"
+member = "LICENSE"
+dest = "share/licenses/parakeet/LICENSE"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "parakeet"
+member = "third_party/ggml/LICENSE"
+dest = "share/licenses/parakeet/ggml-LICENSE"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "onnx"
+member = "LICENSE"
+dest = "share/licenses/onnx/LICENSE"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "onnx"
+member = "ThirdPartyNotices.txt"
+dest = "share/licenses/onnx/ThirdPartyNotices.txt"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-build-evidence"
+dest = "share/provenance/cargo-evidence.json"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "rfdetr"
+member = "LICENSE"
+dest = "share/licenses/rfdetr/LICENSE"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "rfdetr"
+member = "third_party/ggml/LICENSE"
+dest = "share/licenses/rfdetr/ggml-LICENSE"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "ffmpeg"
+member = "FFmpeg-03d9533176e98bb9fbf569c1f34968e73e948dd9/COPYING.GPLv2"
+dest = "share/licenses/ffmpeg/COPYING.GPLv2"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "ffmpeg"
+member = "FFmpeg-03d9533176e98bb9fbf569c1f34968e73e948dd9/COPYING.GPLv3"
+dest = "share/licenses/ffmpeg/COPYING.GPLv3"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "ffmpeg"
+member = "FFmpeg-03d9533176e98bb9fbf569c1f34968e73e948dd9/COPYING.LGPLv2.1"
+dest = "share/licenses/ffmpeg/COPYING.LGPLv2.1"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "ffmpeg"
+member = "FFmpeg-03d9533176e98bb9fbf569c1f34968e73e948dd9/COPYING.LGPLv3"
+dest = "share/licenses/ffmpeg/COPYING.LGPLv3"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "ffmpeg"
+member = "FFmpeg-03d9533176e98bb9fbf569c1f34968e73e948dd9/LICENSE.md"
+dest = "share/licenses/ffmpeg/LICENSE.md"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "ffmpeg"
+member = "archive.json"
+dest = "share/provenance/ffmpeg/archive.json"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "copy"
+source = "core/distribution/windows-model-notices.md"
+dest = "share/licenses/models/NOTICE.md"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "rfdetr"
+member = "notices/stb-LICENSE.txt"
+dest = "share/licenses/rfdetr/stb-LICENSE.txt"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "copy"
+source = "core/distribution/windows-README.md"
+dest = "share/README.md"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "msvc"
+member = "runtime-license.docx"
+dest = "share/licenses/msvc/runtime-license.docx"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "windows-native"
+component = "msvc"
+member = "runtime-license-source.json"
+dest = "share/provenance/msvc/runtime-license-source.json"
+mode = 420
+targets = ["windows-x86_64"]

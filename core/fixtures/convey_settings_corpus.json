@@ -1284,239 +1284,6 @@
       },
       "status": 200
     },
-    "POST observe.tmux": {
-      "config_after": {
-        "convey": {
-          "bind": "127.0.0.1",
-          "password": "MUST-NOT-LEAK",
-          "password_hash": "MUST-NOT-LEAK",
-          "secret": "MUST-NOT-LEAK"
-        },
-        "describe": {
-          "categories": {},
-          "max_extractions": 42,
-          "redact": [
-            "password",
-            "secret"
-          ]
-        },
-        "env": {
-          "PLAUD_ACCESS_TOKEN": ""
-        },
-        "identity": {
-          "aliases": [
-            "ada",
-            "AAL"
-          ],
-          "bio": "first programmer",
-          "email_addresses": [
-            "ada@example.org"
-          ],
-          "name": "Ada Lovelace",
-          "preferred": "Ada",
-          "pronouns": {
-            "object": "her",
-            "possessive": "her",
-            "reflexive": "herself",
-            "subject": "she"
-          },
-          "timezone": "Europe/London"
-        },
-        "journal": {
-          "name": "Analytical Engine"
-        },
-        "observe": {
-          "tmux": {
-            "capture_interval": 9,
-            "enabled": true
-          }
-        },
-        "processing": {},
-        "providers": {
-          "active": {
-            "provider": "unused"
-          }
-        },
-        "retention": {
-          "journal_logs": {
-            "days": 14,
-            "enabled": true
-          },
-          "per_stream": {
-            "tmux": {
-              "raw_media": "processed"
-            }
-          },
-          "raw_media": "days",
-          "raw_media_days": 90
-        },
-        "service_key_validation": {
-          "bogus": {
-            "valid": true
-          },
-          "plaud": {
-            "timestamp": "2026-01-01T00:00:00Z",
-            "valid": false
-          }
-        },
-        "setup": {
-          "completed_at": 1700000000000
-        },
-        "some_future_section": {
-          "kept": true,
-          "n": 7
-        },
-        "support": {
-          "anonymous_feedback": true,
-          "enabled": true,
-          "portal_url": "https://support.example.org",
-          "proactive": false
-        },
-        "transcribe": {
-          "backend": "parakeet",
-          "confidential_audio": false,
-          "not_a_real_key": "should not survive projection",
-          "parakeet": {
-            "device": "auto",
-            "model_version": "v3",
-            "timeout_sec": 120.0
-          },
-          "preserve_all": true,
-          "whisper": {
-            "model": "large-v3"
-          }
-        }
-      },
-      "config_before": {
-        "convey": {
-          "bind": "127.0.0.1",
-          "password": "MUST-NOT-LEAK",
-          "password_hash": "MUST-NOT-LEAK",
-          "secret": "MUST-NOT-LEAK"
-        },
-        "describe": {
-          "categories": {},
-          "max_extractions": 42,
-          "redact": [
-            "password",
-            "secret"
-          ]
-        },
-        "env": {
-          "PLAUD_ACCESS_TOKEN": ""
-        },
-        "identity": {
-          "aliases": [
-            "ada",
-            "AAL"
-          ],
-          "bio": "first programmer",
-          "email_addresses": [
-            "ada@example.org"
-          ],
-          "name": "Ada Lovelace",
-          "preferred": "Ada",
-          "pronouns": {
-            "object": "her",
-            "possessive": "her",
-            "reflexive": "herself",
-            "subject": "she"
-          },
-          "timezone": "Europe/London"
-        },
-        "journal": {
-          "name": "Analytical Engine"
-        },
-        "observe": {
-          "tmux": {
-            "capture_interval": 17,
-            "enabled": false
-          }
-        },
-        "processing": {},
-        "providers": {
-          "active": {
-            "provider": "unused"
-          }
-        },
-        "retention": {
-          "journal_logs": {
-            "days": 14,
-            "enabled": true
-          },
-          "per_stream": {
-            "tmux": {
-              "raw_media": "processed"
-            }
-          },
-          "raw_media": "days",
-          "raw_media_days": 90
-        },
-        "service_key_validation": {
-          "bogus": {
-            "valid": true
-          },
-          "plaud": {
-            "timestamp": "2026-01-01T00:00:00Z",
-            "valid": false
-          }
-        },
-        "setup": {
-          "completed_at": 1700000000000
-        },
-        "some_future_section": {
-          "kept": true,
-          "n": 7
-        },
-        "support": {
-          "anonymous_feedback": true,
-          "enabled": true,
-          "portal_url": "https://support.example.org",
-          "proactive": false
-        },
-        "transcribe": {
-          "backend": "parakeet",
-          "confidential_audio": false,
-          "not_a_real_key": "should not survive projection",
-          "parakeet": {
-            "device": "auto",
-            "model_version": "v3",
-            "timeout_sec": 120.0
-          },
-          "preserve_all": true,
-          "whisper": {
-            "model": "large-v3"
-          }
-        }
-      },
-      "config_keys_added": [],
-      "config_keys_removed": [],
-      "digest": "909c7d313816cf74",
-      "method": "POST",
-      "normalized": {
-        "defaults": {
-          "tmux": {
-            "capture_interval": 5,
-            "capture_interval_max": 60,
-            "capture_interval_min": 1,
-            "enabled": true
-          }
-        },
-        "tmux": {
-          "capture_interval": 9,
-          "enabled": true
-        }
-      },
-      "normalized_paths": [],
-      "path": "/app/settings/api/observe",
-      "sent": {
-        "tmux": {
-          "capture_interval": 9,
-          "enabled": true
-        }
-      },
-      "status": 200
-    },
     "POST processing.valid": {
       "config_after": {
         "convey": {
@@ -6537,231 +6304,6 @@
       },
       "status": 200
     },
-    "POST observe.tmux": {
-      "config_after": {
-        "convey": {
-          "bind": "127.0.0.1",
-          "password": "MUST-NOT-LEAK",
-          "password_hash": "MUST-NOT-LEAK",
-          "secret": "MUST-NOT-LEAK"
-        },
-        "describe": {
-          "categories": {},
-          "max_extractions": null,
-          "redact": "not-a-list"
-        },
-        "env": {
-          "PLAUD_ACCESS_TOKEN": ""
-        },
-        "identity": {
-          "aliases": {
-            "not": "a list"
-          },
-          "bio": "first programmer",
-          "email_addresses": [
-            "ada@example.org"
-          ],
-          "name": "Ada Lovelace",
-          "preferred": "Ada",
-          "pronouns": {
-            "object": "her",
-            "possessive": "her",
-            "reflexive": "herself",
-            "subject": "she"
-          },
-          "timezone": "Europe/London"
-        },
-        "journal": {
-          "name": "Analytical Engine"
-        },
-        "observe": {
-          "tmux": {
-            "capture_interval": 9,
-            "enabled": true
-          }
-        },
-        "processing": {},
-        "providers": {
-          "active": {
-            "provider": "unused"
-          }
-        },
-        "retention": {
-          "journal_logs": {
-            "days": 14,
-            "enabled": true
-          },
-          "per_stream": {
-            "tmux": {
-              "raw_media": "processed"
-            }
-          },
-          "raw_media": "sometimes",
-          "raw_media_days": "ninety"
-        },
-        "service_key_validation": {
-          "bogus": {
-            "valid": true
-          },
-          "plaud": {
-            "timestamp": "2026-01-01T00:00:00Z",
-            "valid": false
-          }
-        },
-        "setup": {
-          "completed_at": 1700000000000
-        },
-        "some_future_section": {
-          "kept": true,
-          "n": 7
-        },
-        "support": {
-          "anonymous_feedback": true,
-          "enabled": true,
-          "portal_url": "https://support.example.org",
-          "proactive": false
-        },
-        "transcribe": {
-          "backend": "parakeet",
-          "confidential_audio": false,
-          "not_a_real_key": "should not survive projection",
-          "parakeet": {
-            "device": "auto",
-            "model_version": "v3",
-            "timeout_sec": 120.0
-          },
-          "preserve_all": true,
-          "whisper": {
-            "model": "large-v3"
-          }
-        }
-      },
-      "config_before": {
-        "convey": {
-          "bind": "127.0.0.1",
-          "password": "MUST-NOT-LEAK",
-          "password_hash": "MUST-NOT-LEAK",
-          "secret": "MUST-NOT-LEAK"
-        },
-        "describe": {
-          "categories": {},
-          "max_extractions": null,
-          "redact": "not-a-list"
-        },
-        "env": {
-          "PLAUD_ACCESS_TOKEN": ""
-        },
-        "identity": {
-          "aliases": {
-            "not": "a list"
-          },
-          "bio": "first programmer",
-          "email_addresses": [
-            "ada@example.org"
-          ],
-          "name": "Ada Lovelace",
-          "preferred": "Ada",
-          "pronouns": {
-            "object": "her",
-            "possessive": "her",
-            "reflexive": "herself",
-            "subject": "she"
-          },
-          "timezone": "Europe/London"
-        },
-        "journal": {
-          "name": "Analytical Engine"
-        },
-        "observe": {
-          "tmux": {
-            "capture_interval": "five",
-            "enabled": false
-          }
-        },
-        "processing": {},
-        "providers": {
-          "active": {
-            "provider": "unused"
-          }
-        },
-        "retention": {
-          "journal_logs": {
-            "days": 14,
-            "enabled": true
-          },
-          "per_stream": {
-            "tmux": {
-              "raw_media": "processed"
-            }
-          },
-          "raw_media": "sometimes",
-          "raw_media_days": "ninety"
-        },
-        "service_key_validation": {
-          "bogus": {
-            "valid": true
-          },
-          "plaud": {
-            "timestamp": "2026-01-01T00:00:00Z",
-            "valid": false
-          }
-        },
-        "setup": {
-          "completed_at": 1700000000000
-        },
-        "some_future_section": {
-          "kept": true,
-          "n": 7
-        },
-        "support": {
-          "anonymous_feedback": true,
-          "enabled": true,
-          "portal_url": "https://support.example.org",
-          "proactive": false
-        },
-        "transcribe": {
-          "backend": "parakeet",
-          "confidential_audio": false,
-          "not_a_real_key": "should not survive projection",
-          "parakeet": {
-            "device": "auto",
-            "model_version": "v3",
-            "timeout_sec": 120.0
-          },
-          "preserve_all": true,
-          "whisper": {
-            "model": "large-v3"
-          }
-        }
-      },
-      "config_keys_added": [],
-      "config_keys_removed": [],
-      "digest": "909c7d313816cf74",
-      "method": "POST",
-      "normalized": {
-        "defaults": {
-          "tmux": {
-            "capture_interval": 5,
-            "capture_interval_max": 60,
-            "capture_interval_min": 1,
-            "enabled": true
-          }
-        },
-        "tmux": {
-          "capture_interval": 9,
-          "enabled": true
-        }
-      },
-      "normalized_paths": [],
-      "path": "/app/settings/api/observe",
-      "sent": {
-        "tmux": {
-          "capture_interval": 9,
-          "enabled": true
-        }
-      },
-      "status": 200
-    },
     "POST processing.valid": {
       "config_after": {
         "convey": {
@@ -10433,15 +9975,6 @@
       "why": "a raise is not a refusal, and contract.py already DECLARES 400 missing_request_body for this operation -- so the reference contradicts its own published contract and the 400 is the contract being honoured, not a new behaviour. Nothing consumes the 500: neither workspace.html nor settings.js reads reason_code."
     },
     {
-      "method": "POST",
-      "native": "400 missing_request_body",
-      "path": "/app/settings/api/observe",
-      "reference": "500 settings_operation_failed, same mechanism",
-      "scope": "non-corrupt phases only",
-      "when": "the request carries no body, in any non-corrupt phase",
-      "why": "same as above"
-    },
-    {
       "method": "PUT/POST",
       "native": "stores the supplied token and clears service_key_validation.plaud",
       "path": "/app/settings/api/config",
@@ -10449,7 +9982,8 @@
       "scope": "the durable env write remains supported without fabricating a verdict",
       "when": "env.PLAUD_ACCESS_TOKEN is a non-empty value",
       "why": "native does not perform the live validation, so it clears rather than refreshes the stored verdict"
-    }
+    },
+    "Removed unsupported journal observer settings route and its route-only corpus cases. Native terminal configuration is device-owned; unrelated stored observe sections remain unchanged."
   ],
   "phases": {
     "corrupt": {
@@ -10638,19 +10172,6 @@
         "status": 500
       },
       "GET api/logs": {
-        "content_type": "application/json",
-        "digest": "026fb028003420c2",
-        "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "your settings couldn't be read.",
-          "reason_code": "corrupt_config"
-        },
-        "normalized_paths": [
-          "detail#journal_root"
-        ],
-        "status": 500
-      },
-      "GET api/observe": {
         "content_type": "application/json",
         "digest": "026fb028003420c2",
         "normalized": {
@@ -10919,51 +10440,6 @@
           "detail#journal_root"
         ],
         "sent": {},
-        "status": 500
-      },
-      "POST observe.interval-out-of-range": {
-        "digest": "026fb028003420c2",
-        "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "your settings couldn't be read.",
-          "reason_code": "corrupt_config"
-        },
-        "normalized_paths": [
-          "detail#journal_root"
-        ],
-        "sent": {
-          "tmux": {
-            "capture_interval": 999
-          }
-        },
-        "status": 500
-      },
-      "POST observe.no-body": {
-        "digest": "026fb028003420c2",
-        "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "your settings couldn't be read.",
-          "reason_code": "corrupt_config"
-        },
-        "normalized_paths": [
-          "detail#journal_root"
-        ],
-        "sent": null,
-        "status": 500
-      },
-      "POST observe.non-object-tmux": {
-        "digest": "026fb028003420c2",
-        "normalized": {
-          "detail": "your settings file at <JOURNAL_ROOT>/config/journal.json couldn't be read. your settings were not changed. repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "your settings couldn't be read.",
-          "reason_code": "corrupt_config"
-        },
-        "normalized_paths": [
-          "detail#journal_root"
-        ],
-        "sent": {
-          "tmux": 5
-        },
         "status": 500
       },
       "POST prune-logs.bad-days": {
@@ -11607,26 +11083,6 @@
         "normalized_paths": [],
         "status": 200
       },
-      "GET api/observe": {
-        "content_type": "application/json",
-        "digest": "2ffe3cd9dc9617c4",
-        "normalized": {
-          "defaults": {
-            "tmux": {
-              "capture_interval": 5,
-              "capture_interval_max": 60,
-              "capture_interval_min": 1,
-              "enabled": true
-            }
-          },
-          "tmux": {
-            "capture_interval": 5,
-            "enabled": true
-          }
-        },
-        "normalized_paths": [],
-        "status": 200
-      },
       "GET api/processing": {
         "content_type": "application/json",
         "digest": "6c3a97794f58d085",
@@ -12089,45 +11545,6 @@
         },
         "normalized_paths": [],
         "sent": {},
-        "status": 400
-      },
-      "POST observe.interval-out-of-range": {
-        "digest": "647166381667b3fb",
-        "normalized": {
-          "detail": "tmux.capture_interval must be an integer between 1 and 60",
-          "error": "that setting couldn't be saved because one value was invalid.",
-          "reason_code": "invalid_config_value"
-        },
-        "normalized_paths": [],
-        "sent": {
-          "tmux": {
-            "capture_interval": 999
-          }
-        },
-        "status": 400
-      },
-      "POST observe.no-body": {
-        "digest": "77ff02770ff2058a",
-        "normalized": {
-          "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
-          "error": "those settings couldn't be saved.",
-          "reason_code": "settings_operation_failed"
-        },
-        "normalized_paths": [],
-        "sent": null,
-        "status": 500
-      },
-      "POST observe.non-object-tmux": {
-        "digest": "b5ddeaff514399ba",
-        "normalized": {
-          "detail": "tmux must be an object",
-          "error": "that setting couldn't be saved because one value was invalid.",
-          "reason_code": "invalid_config_value"
-        },
-        "normalized_paths": [],
-        "sent": {
-          "tmux": 5
-        },
         "status": 400
       },
       "POST prune-logs.bad-days": {
@@ -12823,26 +12240,6 @@
         "normalized_paths": [],
         "status": 200
       },
-      "GET api/observe": {
-        "content_type": "application/json",
-        "digest": "fcf253c52b5b9ce6",
-        "normalized": {
-          "defaults": {
-            "tmux": {
-              "capture_interval": 5,
-              "capture_interval_max": 60,
-              "capture_interval_min": 1,
-              "enabled": true
-            }
-          },
-          "tmux": {
-            "capture_interval": "five",
-            "enabled": false
-          }
-        },
-        "normalized_paths": [],
-        "status": 200
-      },
       "GET api/processing": {
         "content_type": "application/json",
         "digest": "6c3a97794f58d085",
@@ -13316,45 +12713,6 @@
         },
         "normalized_paths": [],
         "sent": {},
-        "status": 400
-      },
-      "POST observe.interval-out-of-range": {
-        "digest": "647166381667b3fb",
-        "normalized": {
-          "detail": "tmux.capture_interval must be an integer between 1 and 60",
-          "error": "that setting couldn't be saved because one value was invalid.",
-          "reason_code": "invalid_config_value"
-        },
-        "normalized_paths": [],
-        "sent": {
-          "tmux": {
-            "capture_interval": 999
-          }
-        },
-        "status": 400
-      },
-      "POST observe.no-body": {
-        "digest": "77ff02770ff2058a",
-        "normalized": {
-          "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
-          "error": "those settings couldn't be saved.",
-          "reason_code": "settings_operation_failed"
-        },
-        "normalized_paths": [],
-        "sent": null,
-        "status": 500
-      },
-      "POST observe.non-object-tmux": {
-        "digest": "b5ddeaff514399ba",
-        "normalized": {
-          "detail": "tmux must be an object",
-          "error": "that setting couldn't be saved because one value was invalid.",
-          "reason_code": "invalid_config_value"
-        },
-        "normalized_paths": [],
-        "sent": {
-          "tmux": 5
-        },
         "status": 400
       },
       "POST prune-logs.bad-days": {
@@ -15869,26 +15227,6 @@
         ],
         "status": 200
       },
-      "GET api/observe": {
-        "content_type": "application/json",
-        "digest": "ef14ec8b34d7e0e8",
-        "normalized": {
-          "defaults": {
-            "tmux": {
-              "capture_interval": 5,
-              "capture_interval_max": 60,
-              "capture_interval_min": 1,
-              "enabled": true
-            }
-          },
-          "tmux": {
-            "capture_interval": 17,
-            "enabled": false
-          }
-        },
-        "normalized_paths": [],
-        "status": 200
-      },
       "GET api/processing": {
         "content_type": "application/json",
         "digest": "6c3a97794f58d085",
@@ -16372,45 +15710,6 @@
         },
         "normalized_paths": [],
         "sent": {},
-        "status": 400
-      },
-      "POST observe.interval-out-of-range": {
-        "digest": "647166381667b3fb",
-        "normalized": {
-          "detail": "tmux.capture_interval must be an integer between 1 and 60",
-          "error": "that setting couldn't be saved because one value was invalid.",
-          "reason_code": "invalid_config_value"
-        },
-        "normalized_paths": [],
-        "sent": {
-          "tmux": {
-            "capture_interval": 999
-          }
-        },
-        "status": 400
-      },
-      "POST observe.no-body": {
-        "digest": "77ff02770ff2058a",
-        "normalized": {
-          "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
-          "error": "those settings couldn't be saved.",
-          "reason_code": "settings_operation_failed"
-        },
-        "normalized_paths": [],
-        "sent": null,
-        "status": 500
-      },
-      "POST observe.non-object-tmux": {
-        "digest": "b5ddeaff514399ba",
-        "normalized": {
-          "detail": "tmux must be an object",
-          "error": "that setting couldn't be saved because one value was invalid.",
-          "reason_code": "invalid_config_value"
-        },
-        "normalized_paths": [],
-        "sent": {
-          "tmux": 5
-        },
         "status": 400
       },
       "POST prune-logs.bad-days": {
@@ -17190,26 +16489,6 @@
         "normalized_paths": [],
         "status": 200
       },
-      "GET api/observe": {
-        "content_type": "application/json",
-        "digest": "ef14ec8b34d7e0e8",
-        "normalized": {
-          "defaults": {
-            "tmux": {
-              "capture_interval": 5,
-              "capture_interval_max": 60,
-              "capture_interval_min": 1,
-              "enabled": true
-            }
-          },
-          "tmux": {
-            "capture_interval": 17,
-            "enabled": false
-          }
-        },
-        "normalized_paths": [],
-        "status": 200
-      },
       "GET api/processing": {
         "content_type": "application/json",
         "digest": "6c3a97794f58d085",
@@ -17686,45 +16965,6 @@
         },
         "normalized_paths": [],
         "sent": {},
-        "status": 400
-      },
-      "POST observe.interval-out-of-range": {
-        "digest": "647166381667b3fb",
-        "normalized": {
-          "detail": "tmux.capture_interval must be an integer between 1 and 60",
-          "error": "that setting couldn't be saved because one value was invalid.",
-          "reason_code": "invalid_config_value"
-        },
-        "normalized_paths": [],
-        "sent": {
-          "tmux": {
-            "capture_interval": 999
-          }
-        },
-        "status": 400
-      },
-      "POST observe.no-body": {
-        "digest": "77ff02770ff2058a",
-        "normalized": {
-          "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
-          "error": "those settings couldn't be saved.",
-          "reason_code": "settings_operation_failed"
-        },
-        "normalized_paths": [],
-        "sent": null,
-        "status": 500
-      },
-      "POST observe.non-object-tmux": {
-        "digest": "b5ddeaff514399ba",
-        "normalized": {
-          "detail": "tmux must be an object",
-          "error": "that setting couldn't be saved because one value was invalid.",
-          "reason_code": "invalid_config_value"
-        },
-        "normalized_paths": [],
-        "sent": {
-          "tmux": 5
-        },
         "status": 400
       },
       "POST prune-logs.bad-days": {
@@ -18424,26 +17664,6 @@
         "normalized_paths": [],
         "status": 200
       },
-      "GET api/observe": {
-        "content_type": "application/json",
-        "digest": "ef14ec8b34d7e0e8",
-        "normalized": {
-          "defaults": {
-            "tmux": {
-              "capture_interval": 5,
-              "capture_interval_max": 60,
-              "capture_interval_min": 1,
-              "enabled": true
-            }
-          },
-          "tmux": {
-            "capture_interval": 17,
-            "enabled": false
-          }
-        },
-        "normalized_paths": [],
-        "status": 200
-      },
       "GET api/processing": {
         "content_type": "application/json",
         "digest": "6c3a97794f58d085",
@@ -18911,45 +18131,6 @@
         },
         "normalized_paths": [],
         "sent": {},
-        "status": 400
-      },
-      "POST observe.interval-out-of-range": {
-        "digest": "647166381667b3fb",
-        "normalized": {
-          "detail": "tmux.capture_interval must be an integer between 1 and 60",
-          "error": "that setting couldn't be saved because one value was invalid.",
-          "reason_code": "invalid_config_value"
-        },
-        "normalized_paths": [],
-        "sent": {
-          "tmux": {
-            "capture_interval": 999
-          }
-        },
-        "status": 400
-      },
-      "POST observe.no-body": {
-        "digest": "77ff02770ff2058a",
-        "normalized": {
-          "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
-          "error": "those settings couldn't be saved.",
-          "reason_code": "settings_operation_failed"
-        },
-        "normalized_paths": [],
-        "sent": null,
-        "status": 500
-      },
-      "POST observe.non-object-tmux": {
-        "digest": "b5ddeaff514399ba",
-        "normalized": {
-          "detail": "tmux must be an object",
-          "error": "that setting couldn't be saved because one value was invalid.",
-          "reason_code": "invalid_config_value"
-        },
-        "normalized_paths": [],
-        "sent": {
-          "tmux": 5
-        },
         "status": 400
       },
       "POST prune-logs.bad-days": {

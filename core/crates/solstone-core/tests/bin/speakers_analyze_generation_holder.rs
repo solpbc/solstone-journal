@@ -10,17 +10,26 @@
 //! or acquires depends only on whether it inherited a live generation, never
 //! on an argv/env mode flag.
 
+#[cfg(unix)]
 use std::env;
+#[cfg(unix)]
 use std::ffi::OsStr;
+#[cfg(unix)]
 use std::fs;
+#[cfg(unix)]
 use std::path::PathBuf;
+#[cfg(unix)]
 use std::thread;
+#[cfg(unix)]
 use std::time::Duration;
 
+#[cfg(unix)]
 use solstone_core_transcribe::{SpeakersAnalyzeOwnerRole, enter_speakers_analyze_generation};
 
+#[cfg(unix)]
 const GENERATION_ID_ENV: &str = "SOL_SPEAKERS_ANALYZE_INSTALL_GENERATION_ID";
 
+#[cfg(unix)]
 fn main() {
     let mut args = env::args().skip(1);
     let journal = PathBuf::from(args.next().expect("journal path"));
@@ -59,4 +68,10 @@ fn main() {
     loop {
         thread::sleep(Duration::from_secs(3600));
     }
+}
+
+// The inherited-OFD fixture is Unix-only; Windows has authenticated native grant subjects.
+#[cfg(not(unix))]
+fn main() -> std::process::ExitCode {
+    std::process::ExitCode::from(69)
 }

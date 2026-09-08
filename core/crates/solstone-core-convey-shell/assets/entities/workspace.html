@@ -4327,9 +4327,10 @@ function renderJournalEntityHistory(entityId, rows) {
     const snapshot = event.identity_after || {};
     summary.textContent = entityTrustFormat(ENT_COPY.ENT_TRUST_HISTORY_SUMMARY, {
       kind: String(event.kind || '').replace(/_/g, ' '),
-      date: event.ts || '',
+      date: window.JournalFormat.timestamp(event.ts),
       name: snapshot.name || entityId
     });
+    summary.title = event.ts || '';
     row.appendChild(summary);
     const change = document.createElement('div');
     change.className = 'entity-trust-meta';

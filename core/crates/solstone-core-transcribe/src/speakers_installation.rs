@@ -16,15 +16,16 @@ use std::time::Duration;
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Value, json};
-use solstone_core_journal_io::{
-    JsonWriteOptions, LeaseOptions, MalformedPolicy, acquire_file_lease, read_json, write_json,
-};
+use solstone_core_journal_io::{JsonWriteOptions, MalformedPolicy, read_json, write_json};
+#[cfg(not(windows))]
+use solstone_core_journal_io::{LeaseOptions, acquire_file_lease};
 use solstone_core_system::process::{
     InspectResult, InstanceVerdict, ProcessInstance, ProcessInstanceSource,
     SystemProcessInstanceSource,
 };
 
 use crate::args::{CliError, installation_error};
+#[cfg(not(windows))]
 use crate::model_assets::resolve_model_asset_path;
 use crate::resolve_model_asset;
 
@@ -126,7 +127,9 @@ impl SpeakersAnalyzeOwnerView {
 /// through reduced-rights capabilities; the last holder releases the generation.
 #[derive(Debug)]
 pub struct SpeakersAnalyzeGeneration {
+    #[cfg(not(windows))]
     _lease: Option<solstone_core_journal_io::FileLease>,
+    #[cfg(not(windows))]
     inherited_fd: Option<i32>,
     environment: BTreeMap<OsString, OsString>,
     #[cfg(windows)]
@@ -149,6 +152,7 @@ impl SpeakersAnalyzeGeneration {
     }
 }
 
+#[cfg(not(windows))]
 impl Drop for SpeakersAnalyzeGeneration {
     fn drop(&mut self) {
         if let Some(fd) = self.inherited_fd.take() {
@@ -287,8 +291,6 @@ pub fn enter_speakers_analyze_generation(
         }
         validate_windows_borrow(journal, &proof, &id, &token, grant)?;
         return Ok(SpeakersAnalyzeGeneration {
-            _lease: None,
-            inherited_fd: None,
             environment: windows_generation_environment(&id, &token),
             read_grant: grant.clone(),
         });
@@ -346,8 +348,6 @@ pub fn enter_speakers_analyze_generation(
     // this local writable handle closes; there is no explicit unlock on Drop.
     drop(file);
     Ok(SpeakersAnalyzeGeneration {
-        _lease: None,
-        inherited_fd: None,
         environment: windows_generation_environment(&id, &token),
         read_grant: grant,
     })
@@ -700,6 +700,7 @@ fn duplicate_for_inheritance(_: &solstone_core_journal_io::FileLease) -> Result<
     Err(installation_error("generation-fd: unsupported platform"))
 }
 
+#[cfg(not(windows))]
 fn close_inherited_fd(fd: i32) {
     #[cfg(unix)]
     {

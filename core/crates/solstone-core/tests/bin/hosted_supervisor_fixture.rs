@@ -5,8 +5,11 @@
 //! direct-parent birth identity and parent death cannot be represented by an
 //! in-process mock without losing the OS relationship under test.
 
+#[cfg(unix)]
 use std::io::Read;
+#[cfg(unix)]
 use std::path::PathBuf;
+#[cfg(unix)]
 use std::process::{Command, ExitCode, Stdio};
 
 #[cfg(target_os = "macos")]
@@ -18,10 +21,13 @@ use std::net::TcpListener;
 #[cfg(target_os = "macos")]
 use std::time::Duration;
 
+#[cfg(unix)]
 use solstone_core::supervisor::{
     SupervisorHostOutcome, receipt::write_hosted_supervisor_receipt, run_hosted,
 };
+#[cfg(unix)]
 use solstone_core_cli::SupervisorOptions;
+#[cfg(unix)]
 use solstone_core_system::lifecycle::{
     CoordinatorBootstrap, DeclaredParent, HostedServiceKind, ParentLossCoordinator,
     arm_parent_loss_coordinator_termination_guard,
@@ -36,6 +42,7 @@ use solstone_core_system::process::{
     BoxedTerminateFn, CommandLaunchRequest, Disposition, LaunchAuthority, LaunchError,
     launch_command_hosted,
 };
+#[cfg(unix)]
 use solstone_core_system::process::{ProcessBirth, ProcessInstance};
 
 #[cfg(target_os = "macos")]
@@ -43,6 +50,7 @@ const DARWIN_PARENT_LIFETIME_FIXTURE_ENV: &str = "SOLSTONE_DARWIN_PARENT_LIFETIM
 #[cfg(target_os = "macos")]
 const DARWIN_PARENT_LIFETIME_MODE_ENV: &str = "SOLSTONE_DARWIN_PARENT_LIFETIME_MODE";
 
+#[cfg(unix)]
 fn options() -> SupervisorOptions {
     SupervisorOptions {
         port: 0,
@@ -58,6 +66,7 @@ fn options() -> SupervisorOptions {
     }
 }
 
+#[cfg(unix)]
 fn run_hosted_fixture(
     journal: PathBuf,
     outcome: PathBuf,
@@ -89,6 +98,7 @@ fn run_hosted_fixture(
     }
 }
 
+#[cfg(unix)]
 fn run_launcher(journal: PathBuf, child_pid: PathBuf, outcome: PathBuf, nonce: String) -> ExitCode {
     let executable = match std::env::current_exe() {
         Ok(executable) => executable,
@@ -132,6 +142,7 @@ fn run_launcher(journal: PathBuf, child_pid: PathBuf, outcome: PathBuf, nonce: S
 /// must route the coordinator's hidden sibling verb back into the production
 /// coordinator state machine. This preserves the normal `current_exe()`
 /// launch shape used by `bootstrap_parent_loss_coordinator`.
+#[cfg(unix)]
 fn run_parent_loss_coordinator(mut args: impl Iterator<Item = std::ffi::OsString>) -> ExitCode {
     if let Err(error) = arm_parent_loss_coordinator_termination_guard() {
         eprintln!("hosted fixture: coordinator could not block SIGTERM: {error}");
@@ -542,6 +553,7 @@ fn run_darwin_control(ready: PathBuf) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+#[cfg(unix)]
 fn main() -> ExitCode {
     let mut args = std::env::args_os();
     let _program = args.next();
@@ -755,4 +767,10 @@ fn main() -> ExitCode {
         }
         _ => ExitCode::from(64),
     }
+}
+
+// This fixture exercises the Unix parent-loss coordinator; Windows has separate native subjects.
+#[cfg(not(unix))]
+fn main() -> std::process::ExitCode {
+    std::process::ExitCode::from(69)
 }

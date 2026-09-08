@@ -20,8 +20,9 @@ required-features = ["test-fixture-pin"]
 test = false
 bench = false
 
-[lints]
-workspace = true
+# Unsafe code is denied except the reviewed Windows no-replace FFI leaf.
+[lints.rust]
+unsafe_code = "deny"
 
 [features]
 test-fixture-pin = []
@@ -30,20 +31,25 @@ test-hooks = []
 [dependencies]
 flate2.workspace = true
 minisign.workspace = true
+zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
+quick-xml = "0.41.0"
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 solstone-core-ffmpeg-build-support.workspace = true
 solstone-core-journal-io.workspace = true
 tar.workspace = true
+tempfile = "3"
 toml_edit = { workspace = true, features = ["serde"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
 
 [target.'cfg(not(windows))'.dependencies]
 solstone-core-artifact-download.workspace = true
 
 [dev-dependencies]
 solstone-core-journal-io = { workspace = true, features = ["test-hooks"] }
-tempfile = "3"
 
 [[test]]
 name = "distribution_cleanroom_loopback"
@@ -67,3 +73,8 @@ required-features = ["test-fixture-pin"]
 [[test]]
 name = "controlled_build_receipt_race"
 path = "tests/controlled_build_receipt_race.rs"
+
+[[test]]
+name = "distribution_build_capture"
+path = "tests/distribution_build_capture.rs"
+required-features = ["test-hooks"]

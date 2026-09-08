@@ -2259,6 +2259,7 @@ printf 'JOURNAL_WIN_CI_HEAD=%s\n' "$snapshot_sha"
 printf 'JOURNAL_WIN_CI_CARGO_LOCK_SHA256=%s\n' "$cargo_lock_sha256"
 printf 'JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=%s\n' "$cloud"
 printf '%s\n' 'JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=passed'
+printf '%s\n' 'JOURNAL_WIN_CI_BACKUP_EVIDENCE=not-run'
 printf '%s\n' 'JOURNAL_WIN_CI_ORDINARY_OWNER_REFS=passed'
 __BEFORE_ACKNOWLEDGEMENT__
 printf '%s\n' '=== JOURNAL_WIN_CI_OK: fixture ==='
@@ -2282,6 +2283,7 @@ fn run_native_receipt_driver(
     scp_log: &Path,
     ssh: &Path,
     ssh_log: &Path,
+    extra_environment: &[(&str, &str)],
 ) -> std::process::Output {
     Command::new("sh")
         .arg("scripts/win-host-ci.sh")
@@ -2291,6 +2293,10 @@ fn run_native_receipt_driver(
         .env("SSH", ssh)
         .env("SOLSTONE_SCP_LOG", scp_log)
         .env("SOLSTONE_SSH_LOG", ssh_log)
+        .env_remove("JOURNAL_WIN_CI_RUN_BACKUP")
+        .env_remove("SOLSTONE_NATIVE_RESTIC")
+        .env_remove("SOLSTONE_NATIVE_RCLONE")
+        .envs(extra_environment.iter().copied())
         .env("SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT", "solbuild")
         .env("SOLSTONE_JOURNAL_WIN_REFS_ROOT", "C:\\refs")
         .env("PATH", fixture_path(&temp.path.join("scripts")))
@@ -2304,7 +2310,7 @@ fn windows_native_driver_requires_all_source_originated_receipt_pairs() {
         let temp = windows_transport_fixture(&format!("windows-native-receipt-{}", scenario.name));
         let (scp, scp_log) = write_transport_scp_shim(&temp);
         let (ssh, ssh_log) = write_native_receipt_ssh_shim(&temp, &scenario);
-        let output = run_native_receipt_driver(&temp, &scp, &scp_log, &ssh, &ssh_log);
+        let output = run_native_receipt_driver(&temp, &scp, &scp_log, &ssh, &ssh_log, &[]);
         assert_eq!(
             output.status.success(),
             scenario.name == "valid",
@@ -2329,6 +2335,109 @@ fn windows_native_driver_requires_all_source_originated_receipt_pairs() {
             let forwarded = fs::read_to_string(&ssh_log).expect("read native receipt SSH command");
             assert!(forwarded.contains("$env:SOLSTONE_JOURNAL_WIN_REFS_ROOT = 'C:\\refs'"));
             assert!(!forwarded.contains("JOURNAL_WIN_CI_REQUIRE_REFS_PUBLICATION"));
+        }
+    }
+}
+
+#[test]
+fn windows_native_driver_binds_backup_selection_and_receipts() {
+    let valid = native_receipt_scenarios()
+        .into_iter()
+        .find(|scenario| scenario.name == "valid")
+        .expect("positive receipt fixture");
+    let round_trip = "JOURNAL_WIN_CI_BACKUP_ROUND_TRIP=executed/pass";
+    let cleanup = "JOURNAL_WIN_CI_BACKUP_JOB_CLEANUP=executed/pass";
+    for scenario in [
+        "valid",
+        "missing",
+        "duplicate",
+        "wrong-evidence",
+        "post-ack",
+        "not-selected",
+        "invalid-option",
+        "missing-input",
+        "newline-input",
+    ] {
+        let temp = windows_transport_fixture(&format!("windows-backup-{scenario}"));
+        let (scp, scp_log) = write_transport_scp_shim(&temp);
+        let (ssh, ssh_log) = write_native_receipt_ssh_shim(&temp, &valid);
+        let evidence = if scenario == "wrong-evidence" || scenario == "not-selected" {
+            "not-run"
+        } else {
+            "executed/pass"
+        };
+        let mut lines = vec![
+            format!("JOURNAL_WIN_CI_BACKUP_EVIDENCE={evidence}"),
+            cleanup.into(),
+        ];
+        if scenario != "missing" {
+            lines.push(round_trip.into());
+        }
+        if scenario == "duplicate" {
+            lines.push(round_trip.into());
+        }
+        let mut shim = fs::read_to_string(&ssh).expect("read shim");
+        let old = "printf '%s\\n' 'JOURNAL_WIN_CI_BACKUP_EVIDENCE=not-run'\n";
+        assert!(shim.contains(old));
+        shim = shim.replace(old, "");
+        let receipt = shell_receipt_lines(&lines);
+        if scenario == "post-ack" {
+            shim.push_str(&receipt);
+        } else {
+            shim = shim.replace(
+                "printf '%s\\n' '=== JOURNAL_WIN_CI_OK: fixture ==='",
+                &format!("{receipt}printf '%s\\n' '=== JOURNAL_WIN_CI_OK: fixture ==='"),
+            );
+        }
+        write_executable(&ssh, &shim);
+        let selection = match scenario {
+            "invalid-option" => "2",
+            "not-selected" => "0",
+            _ => "1",
+        };
+        let restic = match scenario {
+            "missing-input" => "",
+            "newline-input" => "C:\\tools\ninvalid",
+            _ => r"C:\tools café owner's $value;`literal`\restic.exe",
+        };
+        let output = run_native_receipt_driver(
+            &temp,
+            &scp,
+            &scp_log,
+            &ssh,
+            &ssh_log,
+            &[
+                ("JOURNAL_WIN_CI_RUN_BACKUP", selection),
+                ("SOLSTONE_NATIVE_RESTIC", restic),
+                ("SOLSTONE_NATIVE_RCLONE", r"C:\tools café\rclone.exe"),
+            ],
+        );
+        assert_eq!(
+            output.status.success(),
+            scenario == "valid",
+            "{scenario}: {}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if scenario == "valid" {
+            let forwarded = fs::read_to_string(&ssh_log).expect("forwarded command");
+            assert!(forwarded.contains(r"$env:SOLSTONE_NATIVE_RESTIC = 'C:\tools café owner''s $value;`literal`\restic.exe'"));
+            assert!(
+                String::from_utf8_lossy(&output.stdout).contains("backup_evidence=executed/pass")
+            );
+        }
+        if matches!(
+            scenario,
+            "invalid-option" | "missing-input" | "newline-input"
+        ) {
+            assert!(
+                !scp_log.exists(),
+                "invalid selection must refuse before transfer"
+            );
+            assert!(
+                !ssh_log.exists(),
+                "invalid selection must refuse before host execution"
+            );
         }
     }
 }

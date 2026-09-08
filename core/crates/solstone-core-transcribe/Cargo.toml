@@ -11,6 +11,7 @@ publish = false
 
 [features]
 test-hooks = ["solstone-core-system/test-hooks"]
+test-fixture-pin = ["solstone-core-local/test-fixture-pin"]
 
 [[test]]
 name = "transcription_transports"

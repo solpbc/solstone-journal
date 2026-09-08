@@ -66,6 +66,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "core",
+        "heartbeat_pid_windows",
+        include_str!("../../../solstone-core/src/heartbeat_pid_windows.rs"),
+    ),
+    (
+        "core",
         "identity",
         include_str!("../../../solstone-core/src/identity.rs"),
     ),

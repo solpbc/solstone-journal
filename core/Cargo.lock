@@ -3939,6 +3939,7 @@ version = "2.0.0"
 dependencies = [
  "flate2",
  "minisign",
+ "quick-xml",
  "serde",
  "serde_json",
  "sha2",
@@ -3948,6 +3949,8 @@ dependencies = [
  "tar",
  "tempfile",
  "toml_edit",
+ "windows-sys 0.61.2",
+ "zip",
 ]
 
 [[package]]

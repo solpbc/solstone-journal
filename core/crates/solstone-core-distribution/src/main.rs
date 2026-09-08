@@ -17,9 +17,10 @@ use solstone_core_distribution::onnx_windows_source;
 use solstone_core_distribution::parakeet_windows_source;
 use solstone_core_distribution::produce::{self, ProduceArgs};
 use solstone_core_distribution::publish;
+use solstone_core_distribution::rfdetr_windows_source;
 
 fn usage() -> &'static str {
-    "usage: solstone-distribution <validate|produce|publish|sign|acquire|ced-windows|ffmpeg-windows|onnx-windows|parakeet-windows|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]"
+    "usage: solstone-distribution <validate|produce|publish|sign|acquire|ced-windows|ffmpeg-windows|onnx-windows|parakeet-windows|rfdetr-windows|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]"
 }
 
 fn main() -> ExitCode {
@@ -109,6 +110,16 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Some("rfdetr-windows") => match rfdetr_windows_source::run_cli(&args.collect::<Vec<_>>()) {
+            Ok(line) => {
+                println!("{line}");
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                ExitCode::from(2)
+            }
+        },
         Some("publish") => {
             let rest = args.collect::<Vec<_>>();
             match publish::run_cli(&rest) {
@@ -133,6 +144,19 @@ fn main() -> ExitCode {
         }
         Some("produce") => {
             let target = args.next();
+            if target.as_deref() == Some("windows-x86_64") {
+                let start = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                return match produce::windows_cli::run_cli(&start, &args.collect::<Vec<_>>()) {
+                    Ok(report) => {
+                        println!("{report}");
+                        ExitCode::SUCCESS
+                    }
+                    Err(error) => {
+                        eprintln!("{error}");
+                        ExitCode::from(2)
+                    }
+                };
+            }
             let dest = args.next();
             match (target, dest) {
                 (Some(target), Some(dest)) => {

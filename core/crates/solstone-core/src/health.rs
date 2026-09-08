@@ -83,8 +83,6 @@ pub(super) fn run(verbose: bool, debug: bool) -> std::process::ExitCode {
 }
 
 use solstone_core_check::evaluate_host_rfdetr;
-#[cfg(test)]
-use solstone_core_local::install::rfdetr_readiness::RFDETR_UNAVAILABLE_GUIDANCE;
 
 fn no_supervisor_sync_diagnosis(journal: &Path) -> Option<String> {
     let now = std::time::SystemTime::now()
@@ -584,6 +582,7 @@ mod tests {
     use serde_json::json;
     use solstone_core_local::install::capability_status::CapabilityStatus;
     use solstone_core_local::install::ced_readiness::CED_CAPABILITY;
+    use solstone_core_local::install::rfdetr_readiness::RFDETR_UNAVAILABLE_GUIDANCE;
 
     use super::*;
 

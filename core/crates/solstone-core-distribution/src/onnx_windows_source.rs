@@ -49,9 +49,9 @@ const ONNX_WINDOWS_PYTHON_ARCHIVE_LABEL: &str = "tools/python-windows-x86_64.zip
 const ONNX_WINDOWS_PROTOC_ARCHIVE_LABEL: &str = "tools/protoc-windows-x86_64.zip";
 const ONNX_WINDOWS_REDUCED_OPS_CONFIG_LABEL: &str = "build/required-operators.config";
 const ONNX_WINDOWS_BUILD_EVIDENCE_SCHEMA: &str = "solstone.onnx-windows-build-evidence.v1";
-const ONNX_WINDOWS_BUILD_EVIDENCE_LABEL: &str =
+pub(crate) const ONNX_WINDOWS_BUILD_EVIDENCE_LABEL: &str =
     "provenance/windows-x86_64/onnxruntime-build-evidence.json";
-const ONNX_WINDOWS_DLL_OUTPUT_LABEL: &str = "bin/onnxruntime.dll";
+pub(crate) const ONNX_WINDOWS_DLL_OUTPUT_LABEL: &str = "bin/onnxruntime.dll";
 const ONNX_WINDOWS_OUTPUT_TREE_ENTRIES: usize = 2;
 
 const ONNX_SUBMODULES: &[(&str, &str, &str)] = &[
@@ -596,7 +596,7 @@ pub fn inspect_onnx_windows_mirror_archive(
     })
 }
 
-fn inspect_cmake_archive(
+pub(crate) fn inspect_cmake_archive(
     repo_root: &Path,
     path: &Path,
 ) -> Result<InputIdentityEntry, OnnxWindowsSourceError> {
@@ -611,7 +611,7 @@ fn inspect_cmake_archive(
     )
 }
 
-fn inspect_python_archive(
+pub(crate) fn inspect_python_archive(
     repo_root: &Path,
     path: &Path,
 ) -> Result<InputIdentityEntry, OnnxWindowsSourceError> {
@@ -626,7 +626,7 @@ fn inspect_python_archive(
     )
 }
 
-fn inspect_protoc_archive(
+pub(crate) fn inspect_protoc_archive(
     repo_root: &Path,
     path: &Path,
 ) -> Result<InputIdentityEntry, OnnxWindowsSourceError> {
@@ -662,6 +662,24 @@ fn inspect_exact_input(
         )));
     }
     Ok(input_identity(label, &bytes))
+}
+
+/// The unchanged recorded configuration, shared with pre-sign input admission.
+pub fn onnx_controlled_build_configuration() -> BuildConfiguration {
+    BuildConfiguration {
+        target_triple: crate::onnx_windows::ONNX_WINDOWS_TARGET_TRIPLE.to_owned(),
+        profile: crate::onnx_windows::ONNX_WINDOWS_BUILD_PROFILE.to_owned(),
+        flags: vec![
+            "--build_shared_lib".to_owned(),
+            "--include_ops_by_config".to_owned(),
+            "--disable_contrib_ops".to_owned(),
+            "--disable_ml_ops".to_owned(),
+            "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL".to_owned(),
+            "-Donnxruntime_USE_TELEMETRY=OFF".to_owned(),
+            "-Donnxruntime_CMAKE_DEPS_MIRROR_DIR=<verified-offline-mirror>".to_owned(),
+        ],
+        network_access_denied: true,
+    }
 }
 
 /// Bind one already-produced CPU-only ONNX Runtime DLL to the exact offline
@@ -722,20 +740,7 @@ pub fn record_onnx_windows_build(
             evidence.protoc_archive.clone(),
         ],
         builder: args.builder,
-        configuration: BuildConfiguration {
-            target_triple: crate::onnx_windows::ONNX_WINDOWS_TARGET_TRIPLE.to_owned(),
-            profile: crate::onnx_windows::ONNX_WINDOWS_BUILD_PROFILE.to_owned(),
-            flags: vec![
-                "--build_shared_lib".to_owned(),
-                "--include_ops_by_config".to_owned(),
-                "--disable_contrib_ops".to_owned(),
-                "--disable_ml_ops".to_owned(),
-                "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL".to_owned(),
-                "-Donnxruntime_USE_TELEMETRY=OFF".to_owned(),
-                "-Donnxruntime_CMAKE_DEPS_MIRROR_DIR=<verified-offline-mirror>".to_owned(),
-            ],
-            network_access_denied: true,
-        },
+        configuration: onnx_controlled_build_configuration(),
         outputs,
         supporting: vec![SupportingArtifactRef {
             label: ONNX_WINDOWS_BUILD_EVIDENCE_LABEL.to_owned(),
@@ -770,7 +775,7 @@ pub fn record_onnx_windows_build(
     })
 }
 
-fn validate_build_evidence(
+pub(crate) fn validate_build_evidence(
     evidence: &OnnxWindowsBuildEvidence,
 ) -> Result<(), OnnxWindowsSourceError> {
     if evidence.schema != ONNX_WINDOWS_BUILD_EVIDENCE_SCHEMA {

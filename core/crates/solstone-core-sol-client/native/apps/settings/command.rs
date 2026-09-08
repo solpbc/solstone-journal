@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use serde_json::{Map, Number, Value, json};
+use serde_json::{Map, Value, json};
 
 use crate::command::{CommandContext, CommandOutput};
 use crate::decode::decode_response;
@@ -240,64 +240,6 @@ pub fn keys_validate(ctx: CommandContext<'_>) -> CommandOutput {
             );
             stdout_json(&Value::Object(payload))
         }
-        Err(error) => settings_error(error),
-    }
-}
-
-#[must_use]
-pub fn observer_show(ctx: CommandContext<'_>) -> CommandOutput {
-    match request_json(ctx, HttpMethod::Get, "/app/settings/api/observe", None) {
-        Ok(value) => stdout_json(&value),
-        Err(error) => settings_error(error),
-    }
-}
-
-#[must_use]
-pub fn observer_set(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(
-        ctx.args,
-        &["--capture-interval"],
-        &[("--enabled", Some("--no-enabled"))],
-    ) {
-        Ok(parsed) => parsed,
-        Err(error) => return stderr(error),
-    };
-    let current = match request_json(ctx, HttpMethod::Get, "/app/settings/api/observe", None) {
-        Ok(current) => current,
-        Err(error) => return settings_error(error),
-    };
-    let defaults = current
-        .get("defaults")
-        .and_then(|defaults| defaults.get("tmux"))
-        .cloned()
-        .unwrap_or_else(empty_object);
-    let mut tmux = Map::new();
-    if let Some(capture_interval) = parsed.value("--capture-interval") {
-        let Ok(capture_interval_value) = capture_interval.parse::<i64>() else {
-            return stderr("Error: option --capture-interval requires an integer.");
-        };
-        let min_value = int_field(&defaults, "capture_interval_min").unwrap_or(1);
-        let max_value = int_field(&defaults, "capture_interval_max").unwrap_or(60);
-        if capture_interval_value < min_value || capture_interval_value > max_value {
-            return stderr(format!(
-                "tmux.capture_interval must be an integer between {min_value} and {max_value}"
-            ));
-        }
-        tmux.insert(
-            "capture_interval".to_string(),
-            Value::Number(Number::from(capture_interval_value)),
-        );
-    }
-    if let Some(enabled) = parsed.bool_value("--enabled") {
-        tmux.insert("enabled".to_string(), Value::Bool(enabled));
-    }
-    match request_json(
-        ctx,
-        HttpMethod::Post,
-        "/app/settings/api/observe",
-        Some(json!({"tmux": Value::Object(tmux)})),
-    ) {
-        Ok(response) => stdout_json(&object_field(&response, "tmux").unwrap_or_else(empty_object)),
         Err(error) => settings_error(error),
     }
 }
@@ -625,10 +567,6 @@ fn string_array_field(value: &Value, key: &str) -> Vec<String> {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default()
-}
-
-fn int_field(value: &Value, key: &str) -> Option<i64> {
-    value.get(key).and_then(Value::as_i64)
 }
 
 fn string_value(value: Option<&Value>) -> String {

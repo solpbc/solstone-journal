@@ -46,7 +46,7 @@ const PARAKEET_WINDOWS_SOURCE_ARCHIVE_MANIFEST: &str = "parakeet-windows-source.
 const PARAKEET_WINDOWS_SOURCE_ARCHIVE_LABEL: &str = "sources/parakeet.cpp-patched-source.tar.gz";
 const PARAKEET_WINDOWS_CMAKE_ARCHIVE_LABEL: &str = "tools/cmake-windows-x86_64.zip";
 const PARAKEET_WINDOWS_MODEL_INPUT_LABEL: &str = "models/tdt-0.6b-v3-q8_0.gguf";
-const PARAKEET_WINDOWS_BUILD_EVIDENCE_LABEL: &str =
+pub(crate) const PARAKEET_WINDOWS_BUILD_EVIDENCE_LABEL: &str =
     "provenance/windows-x86_64/parakeet-build-evidence.json";
 // The receipt names one PE server, while the retained Windows root observes
 // both output directories and the copied model as well. Keep this bound tied
@@ -421,6 +421,29 @@ pub fn inspect_parakeet_windows_source_archive(
     })
 }
 
+/// The unchanged recorded configuration, shared with pre-sign input admission.
+pub fn parakeet_controlled_build_configuration() -> BuildConfiguration {
+    BuildConfiguration {
+        target_triple: "x86_64-pc-windows-msvc".to_owned(),
+        profile: "Release".to_owned(),
+        flags: vec![
+            "-DPARAKEET_BUILD_TESTS=OFF".to_owned(),
+            "-DPARAKEET_BUILD_CLI=OFF".to_owned(),
+            "-DPARAKEET_BUILD_SERVER=ON".to_owned(),
+            "-DPARAKEET_SHARED=OFF".to_owned(),
+            "-DBUILD_SHARED_LIBS=OFF".to_owned(),
+            "-DPARAKEET_GGML_CUDA=OFF".to_owned(),
+            "-DPARAKEET_GGML_METAL=OFF".to_owned(),
+            "-DPARAKEET_GGML_VULKAN=OFF".to_owned(),
+            "-DPARAKEET_GGML_HIP=OFF".to_owned(),
+            "-DGGML_NATIVE=OFF".to_owned(),
+            "-DGGML_LLAMAFILE=OFF".to_owned(),
+            "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL".to_owned(),
+        ],
+        network_access_denied: true,
+    }
+}
+
 pub fn record_parakeet_windows_build(
     args: ParakeetWindowsBuildRecordArgs<'_>,
 ) -> Result<ParakeetWindowsBuildRecord, ParakeetWindowsSourceError> {
@@ -489,25 +512,7 @@ pub fn record_parakeet_windows_build(
             model,
         ],
         builder: args.builder,
-        configuration: BuildConfiguration {
-            target_triple: "x86_64-pc-windows-msvc".to_owned(),
-            profile: "Release".to_owned(),
-            flags: vec![
-                "-DPARAKEET_BUILD_TESTS=OFF".to_owned(),
-                "-DPARAKEET_BUILD_CLI=OFF".to_owned(),
-                "-DPARAKEET_BUILD_SERVER=ON".to_owned(),
-                "-DPARAKEET_SHARED=OFF".to_owned(),
-                "-DBUILD_SHARED_LIBS=OFF".to_owned(),
-                "-DPARAKEET_GGML_CUDA=OFF".to_owned(),
-                "-DPARAKEET_GGML_METAL=OFF".to_owned(),
-                "-DPARAKEET_GGML_VULKAN=OFF".to_owned(),
-                "-DPARAKEET_GGML_HIP=OFF".to_owned(),
-                "-DGGML_NATIVE=OFF".to_owned(),
-                "-DGGML_LLAMAFILE=OFF".to_owned(),
-                "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL".to_owned(),
-            ],
-            network_access_denied: true,
-        },
+        configuration: parakeet_controlled_build_configuration(),
         outputs,
         supporting: vec![SupportingArtifactRef {
             label: PARAKEET_WINDOWS_BUILD_EVIDENCE_LABEL.to_owned(),
@@ -1071,7 +1076,7 @@ fn require_dependency(
     Ok(())
 }
 
-fn validate_build_evidence(
+pub(crate) fn validate_build_evidence(
     evidence: &ParakeetWindowsBuildEvidence,
 ) -> Result<(), ParakeetWindowsSourceError> {
     if evidence.schema != PARAKEET_WINDOWS_BUILD_EVIDENCE_SCHEMA_V1 {

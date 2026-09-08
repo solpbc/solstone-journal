@@ -309,9 +309,36 @@ impl Target {
     }
 }
 
+/// Native input namespace only; installation destinations stay in each entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WindowsNativeComponent {
+    Ced,
+    Onnx,
+    Parakeet,
+    Rfdetr,
+    Pdfium,
+    Msvc,
+    Restic,
+    Rclone,
+    Ffmpeg,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum Entry {
+    WindowsBuildEvidence {
+        dest: String,
+        mode: u32,
+        targets: Vec<String>,
+    },
+    WindowsNative {
+        component: WindowsNativeComponent,
+        member: String,
+        dest: String,
+        mode: u32,
+        targets: Vec<String>,
+    },
     Bin {
         package: String,
         bin: String,
@@ -531,18 +558,54 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
     let mut missing_targets = BTreeSet::new();
     let mut unexpected_lanes = BTreeSet::new();
     let mut unexpected_dests = BTreeSet::new();
+    let mut native_members = BTreeSet::new();
+    let mut windows_build_evidence = false;
     for entry in &inventory.entry {
+        if let Entry::WindowsBuildEvidence { mode, targets, .. } = entry {
+            if targets.as_slice() != ["windows-x86_64"] || *mode != 0o644 || windows_build_evidence
+            {
+                return Err(InventoryError::new(
+                    "invalid or duplicate Windows build evidence entry",
+                ));
+            }
+            windows_build_evidence = true;
+        }
+        if let Entry::WindowsNative {
+            component,
+            member,
+            mode,
+            targets,
+            ..
+        } = entry
+        {
+            if targets.as_slice() != ["windows-x86_64"]
+                || !matches!(*mode, 0o644 | 0o755)
+                || member.is_empty()
+                || !member.is_ascii()
+                || member.contains(['\\', ':'])
+                || member
+                    .split('/')
+                    .any(|part| part.is_empty() || matches!(part, "." | ".."))
+            {
+                return Err(InventoryError::new("invalid Windows native entry"));
+            }
+            if !native_members.insert((*component, member.as_str())) {
+                return Err(InventoryError::new("duplicate Windows native input member"));
+            }
+        }
         let (dests, targets, lane) = entry_fields(entry);
         for target in targets {
             if !target_ids.contains(target) {
                 missing_targets.insert(target.to_owned());
             }
             for dest in &dests {
-                if !dests_by_target
-                    .entry(target.clone())
-                    .or_default()
-                    .insert((*dest).to_owned())
-                {
+                if !dests_by_target.entry(target.clone()).or_default().insert(
+                    if target == "windows-x86_64" {
+                        dest.to_ascii_lowercase()
+                    } else {
+                        (*dest).to_owned()
+                    },
+                ) {
                     return Err(InventoryError::new(format!(
                         "duplicate dest {dest} for target {target} in {}",
                         path.display()
@@ -895,7 +958,9 @@ fn entry_fields(entry: &Entry) -> (Vec<&str>, &Vec<String>, Option<&String>) {
         } => (vec![dest.as_str()], targets, Some(lane)),
         Entry::Launcher { dest, targets, .. }
         | Entry::ModelAsset { dest, targets, .. }
-        | Entry::Copy { dest, targets, .. } => (vec![dest.as_str()], targets, None),
+        | Entry::Copy { dest, targets, .. }
+        | Entry::WindowsBuildEvidence { dest, targets, .. }
+        | Entry::WindowsNative { dest, targets, .. } => (vec![dest.as_str()], targets, None),
         Entry::OnnxRuntime {
             dest_dir, targets, ..
         }
@@ -922,6 +987,54 @@ pub fn repository_inventory_path(start: &Path) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn windows_native_entries_cannot_target_unix_or_reuse_an_input() {
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        let path = repo.join("core/distribution/inventory.toml");
+        let original = super::load_inventory(&path).unwrap();
+        let native = original
+            .entry
+            .iter()
+            .find(|entry| matches!(entry, super::Entry::WindowsNative { .. }))
+            .unwrap()
+            .clone();
+        let mut duplicate = original.clone();
+        duplicate.entry.push(native.clone());
+        assert!(
+            super::validate_inventory(&path, &duplicate)
+                .unwrap_err()
+                .to_string()
+                .contains("duplicate Windows native input")
+        );
+        let mut wrong = original.clone();
+        let mut native = native;
+        if let super::Entry::WindowsNative { targets, .. } = &mut native {
+            *targets = vec!["linux-x86_64".into()];
+        }
+        wrong.entry.push(native);
+        assert!(
+            super::validate_inventory(&path, &wrong)
+                .unwrap_err()
+                .to_string()
+                .contains("invalid Windows native entry")
+        );
+        let mut collision = original;
+        let mut bin = collision.entry.iter().find(|entry| matches!(entry, super::Entry::Bin { dest, .. } if dest == "bin/journal.exe")).unwrap().clone();
+        if let super::Entry::Bin { dest, .. } = &mut bin {
+            *dest = "bin/JOURNAL.exe".into();
+        }
+        collision.entry.push(bin);
+        assert!(
+            super::validate_inventory(&path, &collision)
+                .unwrap_err()
+                .to_string()
+                .contains("duplicate dest")
+        );
+    }
+
     use super::*;
 
     use std::fs;
