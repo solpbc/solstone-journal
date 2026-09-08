@@ -12,6 +12,12 @@
     <span class="backup-op-error" data-operation-error></span>
   </div>
 
+  <div class="backup-operation" data-cleanup-banner role="status" hidden>
+    <span data-cleanup-heading></span>
+    <span class="backup-op-error" data-cleanup-reason></span>
+    <button type="button" data-action="finish-cleanup" data-copy="action_labels.finish_cleanup" hidden></button>
+  </div>
+
   <p data-backup-loading role="status">loading backup settings…</p>
   <div class="backup-panels">
     <article class="backup-panel" data-backup-panel="intro" hidden>

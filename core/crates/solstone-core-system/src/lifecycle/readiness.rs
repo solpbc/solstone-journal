@@ -2,9 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use serde::{Deserialize, Serialize};
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::path::Path;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::time::Duration;
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -22,7 +20,6 @@ pub struct ReadinessMarker {
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn parse_marker(bytes: &[u8]) -> Option<ReadinessMarker> {
     serde_json::from_slice(bytes)
         .ok()
@@ -84,9 +81,57 @@ pub fn wait_ready(
     )
 }
 
+#[cfg(windows)]
+pub fn wait_ready(
+    journal: &Path,
+    timeout: Duration,
+    poll_interval: Duration,
+) -> Option<ReadinessMarker> {
+    let start = std::time::Instant::now();
+    loop {
+        if readiness_is_valid(journal) {
+            return std::fs::read(journal.join("health/supervisor.ready"))
+                .ok()
+                .and_then(|bytes| parse_marker(&bytes));
+        }
+        if start.elapsed() >= timeout {
+            return None;
+        }
+        std::thread::sleep(poll_interval);
+    }
+}
+
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn readiness_is_valid(journal: impl AsRef<Path>) -> bool {
     readiness_is_valid_with_start_time(journal, super::state::process_start_time_epoch_seconds)
+}
+
+#[cfg(windows)]
+pub fn readiness_is_valid(journal: impl AsRef<Path>) -> bool {
+    let health = journal.as_ref().join("health");
+    let Ok(marker_bytes) = std::fs::read(health.join("supervisor.ready")) else {
+        return false;
+    };
+    let Some(marker) = parse_marker(&marker_bytes) else {
+        return false;
+    };
+    let Ok(instance_bytes) = std::fs::read(health.join("supervisor.process_instance")) else {
+        return false;
+    };
+    let Ok(instance) = serde_json::from_slice::<crate::process::ProcessInstance>(&instance_bytes)
+    else {
+        return false;
+    };
+    if marker.pid != instance.pid {
+        return false;
+    }
+    matches!(
+        crate::process::ProcessInstanceSource::observe(
+            &crate::process::SystemProcessInstanceSource,
+            &instance
+        ),
+        crate::process::InstanceVerdict::SameLive { .. }
+    )
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]

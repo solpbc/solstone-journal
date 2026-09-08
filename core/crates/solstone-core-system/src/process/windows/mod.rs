@@ -27,10 +27,14 @@ use super::{
 
 #[cfg(any(windows, test))]
 mod bounded;
+#[cfg(windows)]
+mod bounded_cleanup;
 #[cfg(any(windows, test))]
 mod command_line;
 #[cfg(any(windows, test))]
 mod environment;
+#[cfg(windows)]
+mod forward;
 #[cfg(any(windows, test))]
 mod handle;
 #[cfg(any(windows, test))]
@@ -39,8 +43,20 @@ mod identity;
 mod job;
 #[cfg(any(windows, test))]
 mod job_process;
+#[cfg(windows)]
+pub use forward::forward_windows_native_command;
+#[cfg(windows)]
+mod launch_control;
+#[cfg(windows)]
+mod launch_io;
+#[cfg(windows)]
+mod launch_pipe;
 #[cfg(any(windows, test))]
 mod launch_spec;
+#[cfg(windows)]
+pub use launch_control::{AdmittedWindowsLaunch, receive_windows_launch};
+#[cfg(windows)]
+mod command;
 #[cfg(windows)]
 mod managed;
 #[cfg(any(windows, test))]
@@ -58,7 +74,13 @@ mod user_path;
 #[cfg(windows)]
 pub use bounded::{
     BoundedHelperBudget, BoundedHelperError, BoundedHelperOutput, BoundedHelperRequest,
-    BoundedHelperResourceLimits, run_bounded_helper,
+    BoundedHelperResourceLimits, BoundedHelperResources, run_bounded_helper,
+};
+#[cfg(windows)]
+pub use bounded_cleanup::{
+    BoundedHelperCleanup, BoundedHelperFailure, HelperAdmissionStatus, HelperCleanupStatus,
+    observe_bounded_helper_admission, observe_windows_launch_cleanup,
+    retry_bounded_helper_admission_until, retry_windows_launch_cleanup_until,
 };
 #[cfg(windows)]
 pub use managed::{
@@ -620,4 +642,9 @@ pub use unavailable::{
     launch_command_hosted, launch_managed, launch_managed_hosted, launch_managed_request,
     launch_managed_with, launch_with, signal_exact_instance, terminate,
     terminate_descendants_exact, terminate_exact_instance,
+};
+
+#[cfg(all(windows, feature = "test-hooks"))]
+pub use bounded_cleanup::{
+    HelperCleanupObservationFault, run_bounded_helper_with_observation_fault_for_test,
 };

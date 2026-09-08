@@ -251,6 +251,52 @@ fn spawn_managed_queue_process(
     )))))
 }
 
+#[cfg(windows)]
+fn spawn_windows_queue_process(
+    mut command: Vec<String>,
+    options: SpawnOptions,
+    timeout: Duration,
+    grants: &[crate::process::ReadFileGrant],
+) -> Result<QueueProcessHandle, SpawnError> {
+    let Some(program) = command.first() else {
+        return Err(SpawnError::EmptyCommand);
+    };
+    let journal = std::env::current_exe()
+        .map_err(SpawnError::Spawn)?
+        .parent()
+        .ok_or_else(|| SpawnError::Spawn(io::Error::other("queue executable has no parent")))?
+        .join("journal.exe");
+    let named_journal =
+        program.eq_ignore_ascii_case("journal") || program.eq_ignore_ascii_case("journal.exe");
+    let exact_journal = !named_journal
+        && std::fs::canonicalize(program)
+            .ok()
+            .zip(std::fs::canonicalize(&journal).ok())
+            .is_some_and(|(actual, expected)| actual == expected);
+    if grants.is_empty() || !(named_journal || exact_journal) {
+        // Third-party commands keep their existing no-protocol launch contract.
+        return spawn_managed_queue_process(command, options, timeout);
+    }
+    // Bind the queue's closed journal command to this installation's binary,
+    // rather than letting a PATH override receive an installation capability.
+    command[0] = journal
+        .to_str()
+        .ok_or_else(|| SpawnError::Spawn(io::Error::other("journal command path is not Unicode")))?
+        .to_owned();
+    let authority = crate::process::launch_managed_request(
+        Disposition::IndependentBoundedHelper { timeout },
+        crate::process::ManagedLaunchRequest {
+            command,
+            options,
+            read_file_grants: grants.to_vec(),
+        },
+    )
+    .map_err(|error| SpawnError::Spawn(io::Error::other(error)))?;
+    Ok(Arc::new(Mutex::new(Box::new(ManagedQueueProcess(
+        authority,
+    )))))
+}
+
 /// A read-only active-process snapshot for a parent-death backstop.
 #[derive(Clone)]
 pub struct ActiveProcessHandle {
@@ -280,6 +326,10 @@ pub enum SubmitOutcome {
 
 /// Construction inputs owned by the queue rather than process-global state.
 pub struct TaskQueueOptions {
+    /// Windows first-party launches retain these in-process capabilities. Task
+    /// submissions, persisted queue data and configuration never carry handles.
+    #[cfg(windows)]
+    pub read_file_grants: Vec<crate::process::ReadFileGrant>,
     pub journal_root: PathBuf,
     pub cap_resolver: Arc<dyn CapResolver + Send + Sync>,
     pub process_state_probe: Arc<dyn ProcessStateProbe>,
@@ -433,6 +483,15 @@ impl Drop for WorkerLease {
 
 impl TaskQueue {
     pub fn new(options: TaskQueueOptions) -> Self {
+        #[cfg(windows)]
+        let spawner: QueueProcessSpawner = {
+            let grants = options.read_file_grants;
+            Arc::new(move |command, options, timeout| {
+                spawn_windows_queue_process(command, options, timeout, &grants)
+            })
+        };
+        #[cfg(not(windows))]
+        let spawner: QueueProcessSpawner = Arc::new(spawn_managed_queue_process);
         Self {
             inner: Arc::new(QueueInner {
                 options: QueueOptions {
@@ -457,7 +516,7 @@ impl TaskQueue {
                     termination_attempts: TerminationAttemptRegistry::default(),
                 }),
                 reaped: Condvar::new(),
-                worker_spawner: Mutex::new(Arc::new(spawn_managed_queue_process)),
+                worker_spawner: Mutex::new(spawner),
                 #[cfg(test)]
                 catchup_admission_capability: Mutex::new(Arc::new(catchup_marker_capability)),
                 #[cfg(test)]
@@ -1615,6 +1674,8 @@ mod tests {
         queue_sink: Option<Arc<dyn TaskQueueEventSink>>,
     ) -> TaskQueue {
         let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
             journal_root: PathBuf::new(),
             cap_resolver: Arc::new(FixedCap(cap)),
             process_state_probe: Arc::new(UnreachableProcessStateProbe),
@@ -2143,6 +2204,8 @@ mod tests {
         )
         .expect("stream marker");
         let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
             journal_root: journal.path().to_path_buf(),
             cap_resolver: Arc::new(FixedCap(10)),
             process_state_probe: Arc::new(UnreachableProcessStateProbe),
@@ -2199,6 +2262,8 @@ mod tests {
         let catchup_release = Arc::new(Barrier::new(2));
         let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
             journal_root: journal.path().to_path_buf(),
             cap_resolver: Arc::new(FixedCap(10)),
             process_state_probe: Arc::new(UnreachableProcessStateProbe),
@@ -2301,6 +2366,8 @@ mod tests {
         let child_spawns = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let spawn_count = Arc::clone(&child_spawns);
         let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
             journal_root: journal.path().to_path_buf(),
             cap_resolver: Arc::new(FixedCap(10)),
             process_state_probe: Arc::new(UnreachableProcessStateProbe),
@@ -2357,6 +2424,8 @@ mod tests {
         let child_spawns = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let spawn_count = Arc::clone(&child_spawns);
         let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
             journal_root: journal.path().to_path_buf(),
             cap_resolver: Arc::new(FixedCap(10)),
             process_state_probe: Arc::new(UnreachableProcessStateProbe),
@@ -2406,6 +2475,8 @@ mod tests {
         )
         .expect("stream marker");
         let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
             journal_root: journal.path().to_path_buf(),
             cap_resolver: Arc::new(FixedCap(10)),
             process_state_probe: Arc::new(UnreachableProcessStateProbe),
@@ -2458,6 +2529,8 @@ mod tests {
         let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let sink = Arc::new(RecordingEventSink::default());
         let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
             journal_root: journal.path().to_path_buf(),
             cap_resolver: Arc::new(FixedCap(10)),
             process_state_probe: Arc::new(UnreachableProcessStateProbe),
@@ -2617,6 +2690,8 @@ mod tests {
         let recorded = Arc::clone(&captured);
         let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
             journal_root: PathBuf::new(),
             cap_resolver: Arc::clone(&resolver) as Arc<dyn CapResolver + Send + Sync>,
             process_state_probe: Arc::new(UnreachableProcessStateProbe),

@@ -173,6 +173,25 @@ fn restore_segment(
             Ok(admitted) => admitted,
             Err(_) => return (err("destination_admission_failed"), false, None),
         };
+    #[cfg(windows)]
+    let admitted_journal = std::sync::Arc::new(admitted_journal);
+    #[cfg(windows)]
+    let admitted_directory = std::sync::Arc::new(admitted_directory);
+    #[cfg(windows)]
+    let retaining_runner = {
+        let mut resources = solstone_core_system::process::BoundedHelperResources::new();
+        resources.retain(admitted_journal.clone());
+        resources.retain(admitted_directory.clone());
+        solstone_core_backup_runtime::windows_cleanup::RetainingToolRunner::new(
+            services.runner,
+            resources,
+        )
+    };
+    #[cfg(windows)]
+    let services = &BackupServices {
+        runner: &retaining_runner,
+        ..*services
+    };
     let binding_current = || {
         admitted_journal.revalidate_for_target().is_ok()
             && admitted_directory.revalidate_for_target().is_ok()
@@ -240,6 +259,8 @@ fn restore_segment(
             {
                 return (err("destination_admission_failed"), false, None);
             }
+            #[cfg(windows)]
+            Err(_) if retaining_runner.cleanup_pending() => return (err("failed"), false, None),
             Err(_) => return (err("failed"), true, None),
         };
         if admitted_journal.revalidate_for_target().is_err()

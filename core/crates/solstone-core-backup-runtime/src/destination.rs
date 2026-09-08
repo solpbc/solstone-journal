@@ -113,6 +113,8 @@ mod tests {
                 timeout: request.timeout,
                 pass_fds: vec![],
                 stdin: request.stdin.clone(),
+                #[cfg(windows)]
+                resources: request.resources.clone(),
             });
             Ok(ToolOutput {
                 returncode: self.code,

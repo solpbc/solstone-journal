@@ -38,6 +38,8 @@ use solstone_core_offload::{restore_all_offload, restore_offload_day};
 
 mod assets;
 mod callosum;
+#[cfg(windows)]
+mod cleanup;
 mod config;
 mod handoff_poll;
 mod keys;
@@ -149,8 +151,12 @@ pub(crate) fn routes_with_deps(deps: BackupWebDeps) -> Router {
     let restore_hosted_activate = deps.clone();
     let restore_hosted_cancel = deps.clone();
     let offload_restore = deps.clone();
+    #[cfg(windows)]
+    let cleanup_deps = deps.clone();
+    #[cfg(windows)]
+    let cleanup_operations = deps.operations.clone();
     let handoff = deps;
-    Router::new()
+    let router = Router::new()
         .route("/app/backup/", get(assets::shell))
         .route("/app/backup/workspace", get(assets::workspace))
         .route("/app/backup/background", get(assets::background))
@@ -250,7 +256,17 @@ pub(crate) fn routes_with_deps(deps: BackupWebDeps) -> Router {
         .route(
             "/app/backup/handoff",
             post(move |body| handoff_route(handoff.clone(), body)),
-        )
+        );
+    #[cfg(windows)]
+    let router = router.route(
+        "/app/backup/api/cleanup/retry",
+        post(move || cleanup::retry(cleanup_deps.clone())),
+    );
+    #[cfg(windows)]
+    let router = router.layer(axum::middleware::from_fn(move |request, next| {
+        cleanup::admit_mutation(cleanup_operations.clone(), request, next)
+    }));
+    router
 }
 
 fn status_response(deps: &BackupWebDeps) -> axum::response::Response {
@@ -586,6 +602,16 @@ fn services<'a>(
     }
 }
 
+fn spawn_backup_worker<F>(deps: BackupWebDeps, generation: u64, work: F)
+where
+    F: FnOnce(BackupWebDeps) -> Terminal + Send + 'static,
+{
+    #[cfg(windows)]
+    cleanup::spawn_worker(deps, generation, work);
+    #[cfg(not(windows))]
+    operation::spawn_worker(deps.operations.clone(), generation, move || work(deps));
+}
+
 fn map_restore(result: RestoreOutcome) -> Terminal {
     match result.status.as_str() {
         "ok" => Terminal::restore("done", None, result.recording_failure),
@@ -629,9 +655,8 @@ async fn enable_backup(deps: BackupWebDeps) -> axum::response::Response {
         Ok(started) => started,
         Err(error) => return error,
     };
-    let worker = deps.clone();
     let generation = started.generation;
-    operation::spawn_worker(deps.operations.clone(), generation, move || {
+    spawn_backup_worker(deps.clone(), generation, move |worker| {
         let tools = match resolve_tools(&worker) {
             Ok(tools) => tools,
             Err(reason) => return Terminal::error(reason),
@@ -819,8 +844,7 @@ async fn rotate_key(deps: BackupWebDeps) -> axum::response::Response {
         Ok(started) => started,
         Err(error) => return error,
     };
-    let worker = deps.clone();
-    operation::spawn_worker(deps.operations.clone(), started.generation, move || {
+    spawn_backup_worker(deps.clone(), started.generation, move |worker| {
         let tools = match resolve_tools(&worker) {
             Ok(tools) => tools,
             Err(reason) => return Terminal::error(reason),
@@ -843,8 +867,7 @@ async fn teardown_route(deps: BackupWebDeps) -> axum::response::Response {
         Ok(started) => started,
         Err(error) => return error,
     };
-    let worker = deps.clone();
-    operation::spawn_worker(deps.operations.clone(), started.generation, move || {
+    spawn_backup_worker(deps.clone(), started.generation, move |worker| {
         let tools = match resolve_tools(&worker) {
             Ok(tools) => tools,
             Err(reason) => return Terminal::error(reason),
@@ -879,8 +902,7 @@ async fn restore_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Resp
         Ok(started) => started,
         Err(error) => return error,
     };
-    let worker = deps.clone();
-    operation::spawn_worker(deps.operations.clone(), started.generation, move || {
+    spawn_backup_worker(deps.clone(), started.generation, move |worker| {
         panic::catch_unwind(AssertUnwindSafe(|| {
             let tools = match resolve_tools(&worker) {
                 Ok(tools) => tools,
@@ -932,8 +954,7 @@ async fn restore_hosted_route(deps: BackupWebDeps, body: Bytes) -> axum::respons
         Ok(started) => started,
         Err(error) => return error,
     };
-    let worker = deps.clone();
-    operation::spawn_worker(deps.operations.clone(), started.generation, move || {
+    spawn_backup_worker(deps.clone(), started.generation, move |worker| {
         bound_restore_hosted(&worker, binding, &recovery_key)
     });
     status_response(&deps)
@@ -1085,8 +1106,7 @@ async fn offload_restore_route(deps: BackupWebDeps, body: Bytes) -> axum::respon
         Ok(started) => started,
         Err(error) => return error,
     };
-    let worker = deps.clone();
-    operation::spawn_worker(deps.operations.clone(), started.generation, move || {
+    spawn_backup_worker(deps.clone(), started.generation, move |worker| {
         let tools = match resolve_tools(&worker) {
             Ok(tools) => tools,
             Err(reason) => return Terminal::error(reason),
@@ -1274,8 +1294,7 @@ pub(crate) fn persist_and_consume_hosted(
         );
         return Err(());
     }
-    let worker = deps.clone();
-    operation::spawn_worker(deps.operations.clone(), generation, move || {
+    spawn_backup_worker(deps.clone(), generation, move |worker| {
         consume_hosted(&worker, kind, binding, restore_key)
     });
     Ok(())

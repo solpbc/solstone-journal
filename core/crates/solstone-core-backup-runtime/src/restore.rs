@@ -264,6 +264,19 @@ pub fn restore_journal(
             return unrecorded_outcome(error_draft(RESTORE_REASON_DESTINATION_ADMISSION_FAILED));
         }
     };
+    #[cfg(windows)]
+    let admitted = std::sync::Arc::new(admitted);
+    #[cfg(windows)]
+    let retaining_runner = {
+        let mut resources = solstone_core_system::process::BoundedHelperResources::new();
+        resources.retain(admitted.clone());
+        crate::windows_cleanup::RetainingToolRunner::new(services.runner, resources)
+    };
+    #[cfg(windows)]
+    let services = &BackupServices {
+        runner: &retaining_runner,
+        ..*services
+    };
     let journal = match admitted.revalidate_for_target() {
         Ok(path) => path,
         Err(_) => {
@@ -272,6 +285,10 @@ pub fn restore_journal(
     };
     let finish =
         |journal: &Path, clock: &dyn Clock, recorder: &dyn RestoreRecorder, draft: RestoreDraft| {
+            #[cfg(windows)]
+            if retaining_runner.cleanup_pending() {
+                return unrecorded_outcome(draft);
+            }
             if admitted.revalidate_for_target().is_err() {
                 unrecorded_outcome(error_draft(RESTORE_REASON_DESTINATION_ADMISSION_FAILED))
             } else {

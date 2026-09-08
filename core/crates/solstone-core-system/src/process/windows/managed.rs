@@ -5,8 +5,7 @@
 
 use std::io::{self, BufRead, BufReader, Read};
 use std::path::PathBuf;
-use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Output};
-use std::sync::mpsc;
+use std::process::{Child, Command, Output};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -26,14 +25,16 @@ use super::super::{
 };
 use super::job::JobResourceLimits;
 use super::job_process::{
-    WindowsJobLaunchOptions, WindowsJobProcess, launch_windows_job_process,
+    JOB_HARD_STOP_TIMEOUT, WindowsJobLaunchOptions, WindowsJobProcess, launch_windows_job_process,
     launch_windows_job_process_with_options,
 };
 
 /// A process whose root entered an unnamed kill-on-close Job atomically at
 /// `CreateProcessW`, together with the ordinary managed-process log contract.
 pub struct ManagedProcess {
-    owner: WindowsJobProcess,
+    owner: Option<WindowsJobProcess>,
+    reservation: Option<super::bounded_cleanup::Reservation>,
+    resources: super::bounded::BoundedHelperResources,
     name: String,
     cmd: Vec<String>,
     reference: String,
@@ -45,6 +46,7 @@ pub struct ManagedProcess {
     instance: ProcessInstance,
     exact_identity: Option<LaunchedProcessIdentity>,
     bounded_shutdown_detached: bool,
+    stop_event: Option<std::os::windows::io::OwnedHandle>,
 }
 
 impl ManagedProcess {
@@ -76,7 +78,11 @@ impl ManagedProcess {
             return Err(SpawnError::EmptyCommand);
         }
         let (name, writer, log_path) = prepare_managed_log(&cmd, &options)?;
-        let owner = launch_windows_job_process_with_options(
+        let reservation = super::bounded_cleanup::Reservation::track_until(
+            Instant::now() + JOB_HARD_STOP_TIMEOUT,
+        )
+        .map_err(|error| SpawnError::Spawn(io::Error::other(error)))?;
+        let owner = match launch_windows_job_process_with_options(
             &cmd,
             &options.environment,
             WindowsJobLaunchOptions {
@@ -89,10 +95,26 @@ impl ManagedProcess {
                 ),
                 exact_environment: true,
                 retain_parent_stdin: false,
+                null_stdio: [false; 3],
             },
+        ) {
+            Ok(owner) => owner,
+            Err(failure) => {
+                return Err(SpawnError::Spawn(io::Error::other(
+                    reservation.launch_failure(failure, Default::default()),
+                )));
+            }
+        };
+        Self::from_owned_job(
+            cmd,
+            options,
+            owner,
+            name,
+            writer,
+            log_path,
+            reservation,
+            Default::default(),
         )
-        .map_err(SpawnError::Spawn)?;
-        Self::from_owned_job(cmd, options, owner, name, writer, log_path)
     }
 
     fn spawn_with_mode(
@@ -104,69 +126,127 @@ impl ManagedProcess {
             return Err(SpawnError::EmptyCommand);
         }
         let (name, writer, log_path) = prepare_managed_log(&cmd, &options)?;
-        let owner =
-            launch_windows_job_process(&cmd, &options.environment).map_err(SpawnError::Spawn)?;
-        Self::from_owned_job(cmd, options, owner, name, writer, log_path)
+        let reservation = super::bounded_cleanup::Reservation::track_until(
+            Instant::now() + JOB_HARD_STOP_TIMEOUT,
+        )
+        .map_err(|error| SpawnError::Spawn(io::Error::other(error)))?;
+        let owner = match launch_windows_job_process(&cmd, &options.environment) {
+            Ok(owner) => owner,
+            Err(failure) => {
+                return Err(SpawnError::Spawn(io::Error::other(
+                    reservation.launch_failure(failure, Default::default()),
+                )));
+            }
+        };
+        Self::from_owned_job(
+            cmd,
+            options,
+            owner,
+            name,
+            writer,
+            log_path,
+            reservation,
+            Default::default(),
+        )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn from_owned_job(
         cmd: Vec<String>,
         options: SpawnOptions,
-        mut owner: WindowsJobProcess,
+        owner: WindowsJobProcess,
         name: String,
         writer: Arc<Mutex<DailyLogWriter>>,
         log_path: PathBuf,
+        reservation: super::bounded_cleanup::Reservation,
+        mut resources: super::bounded::BoundedHelperResources,
     ) -> Result<Self, SpawnError> {
         let instance = owner.identity();
-        let pid = instance.pid;
-        let (stdout, stderr) = owner.take_output_files();
-
-        emit(
-            &options.sink,
-            ProcessEvent::Spawned {
-                reference: options.reference.clone(),
-                name: name.clone(),
-                pid,
-                cmd: cmd.clone(),
-                log_path,
-            },
-        );
-
-        let drains = vec![
-            spawn_drain(
-                stdout,
-                OutputStream::Stdout,
-                Arc::clone(&writer),
-                options.sink.clone(),
-                options.reference.clone(),
-                name.clone(),
-                pid,
-            ),
-            spawn_drain(
-                stderr,
-                OutputStream::Stderr,
-                Arc::clone(&writer),
-                options.sink.clone(),
-                options.reference.clone(),
-                name.clone(),
-                pid,
-            ),
-        ];
-
-        Ok(Self {
-            owner,
+        resources.retain(writer.clone());
+        // Install the complete owner before callbacks or fallible worker setup.
+        // Unwind uses the same Drop transfer as ordinary incomplete cleanup.
+        let mut process = Self {
+            owner: Some(owner),
+            reservation: Some(reservation),
+            resources,
             name,
             cmd,
             reference: options.reference,
             started_at: Instant::now(),
             log_writer: writer,
-            drains,
+            drains: Vec::with_capacity(2),
             sink: options.sink,
             exit_emitted: false,
             instance,
             exact_identity: None,
             bounded_shutdown_detached: false,
-        })
+            stop_event: None,
+        };
+        let (stdout, stderr) = process.owner_mut().take_output_files();
+        for (reader, stream) in [
+            (stdout, OutputStream::Stdout),
+            (stderr, OutputStream::Stderr),
+        ] {
+            match spawn_drain(
+                reader,
+                stream,
+                process.log_writer.clone(),
+                process.sink.clone(),
+                process.reference.clone(),
+                process.name.clone(),
+                instance.pid,
+            ) {
+                Ok(worker) => process.drains.push(worker),
+                Err(error) => {
+                    let failure = process
+                        .retain_cleanup(error.to_string(), Instant::now() + DRAIN_JOIN_TIMEOUT);
+                    return Err(SpawnError::Spawn(io::Error::other(failure)));
+                }
+            }
+        }
+        emit(
+            &process.sink,
+            ProcessEvent::Spawned {
+                reference: process.reference.clone(),
+                name: process.name.clone(),
+                pid: instance.pid,
+                cmd: process.cmd.clone(),
+                log_path,
+            },
+        );
+        Ok(process)
+    }
+
+    fn owner(&self) -> &WindowsJobProcess {
+        self.owner.as_ref().expect("managed owner retained")
+    }
+    fn owner_mut(&mut self) -> &mut WindowsJobProcess {
+        self.owner.as_mut().expect("managed owner retained")
+    }
+
+    fn retain_cleanup(
+        &mut self,
+        detail: String,
+        deadline: Instant,
+    ) -> super::bounded_cleanup::BoundedHelperFailure {
+        let mut owner = self.owner.take().expect("managed owner transferred once");
+        if !self.bounded_shutdown_detached
+            && owner.is_quiescent().ok() != Some(true)
+            && Instant::now() < deadline
+        {
+            let _ = owner.hard_stop_until(deadline);
+        }
+        let mut io = super::bounded_cleanup::HelperIo::unstarted();
+        io.workers = std::mem::take(&mut self.drains);
+        io.drain_until(deadline);
+        let cause = super::bounded::BoundedHelperError::LaunchFinalizationFailed {
+            detail,
+            process_id: Some(self.instance.pid),
+        };
+        self.reservation
+            .take()
+            .expect("managed reservation transferred once")
+            .failure(cause, owner, io, std::mem::take(&mut self.resources))
     }
 
     pub fn pid(&self) -> u32 {
@@ -207,11 +287,11 @@ impl ManagedProcess {
     }
 
     pub fn poll(&mut self) -> io::Result<Option<i32>> {
-        self.owner.poll()
+        self.owner_mut().poll()
     }
 
     pub fn wait(&mut self) -> io::Result<i32> {
-        self.owner.wait()
+        self.owner_mut().wait()
     }
 
     pub fn terminate(&mut self, timeout: Duration) -> Result<TerminationOutcome, TerminationError> {
@@ -243,12 +323,26 @@ impl ManagedProcess {
             )
             .into());
         }
-        if self.owner.is_quiescent()? {
+        if self.owner().is_quiescent()? {
             return Ok(TerminationOutcome::Graceful {
-                exit_code: self.owner.poll()?,
+                exit_code: self.owner_mut().poll()?,
             });
         }
-        let exit_code = self.owner.hard_stop_until(deadline)?;
+        if let Some(stop) = self.stop_event.as_ref() {
+            super::launch_control::signal_stop(stop)?;
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let stop_deadline = Instant::now()
+                + SERVICE_SHUTDOWN_TIMEOUT.min(remaining.saturating_sub(JOB_HARD_STOP_TIMEOUT));
+            while Instant::now() < stop_deadline {
+                if self.owner().is_quiescent()? {
+                    return Ok(TerminationOutcome::Graceful {
+                        exit_code: self.owner_mut().poll()?,
+                    });
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+        }
+        let exit_code = self.owner_mut().hard_stop_until(deadline)?;
         Ok(TerminationOutcome::EscalatedAndReaped {
             exit_code: Some(exit_code),
         })
@@ -258,7 +352,7 @@ impl ManagedProcess {
     /// caller has exhausted its own deadline.
     pub fn detach_after_bounded_shutdown(&mut self) {
         self.bounded_shutdown_detached = true;
-        self.drains.clear();
+        // Drop transfers any unfinished drains and native owner to retained cleanup.
     }
 
     pub fn signal_exact(&mut self, _signal: SignalKind) -> Result<(), TerminationError> {
@@ -273,38 +367,36 @@ impl ManagedProcess {
     }
 
     pub fn cleanup(&mut self) {
-        if self.owner.poll().ok().flatten().is_none() {
-            return;
-        }
-        for drain in self.drains.drain(..) {
-            join_drain_bounded(drain);
-        }
-        self.emit_exit();
+        let _ = self.cleanup_until(Instant::now() + DRAIN_JOIN_TIMEOUT);
     }
 
     pub fn cleanup_until(&mut self, deadline: Instant) -> bool {
-        if self.owner.poll().ok().flatten().is_none() {
+        if self.owner().is_quiescent().ok() != Some(true) {
             return false;
         }
-        let mut completed = true;
-        for drain in self.drains.drain(..) {
-            completed &= join_drain_until(drain, deadline);
+        super::bounded_cleanup::drain_workers_until(&mut self.drains, deadline);
+        if !self.drains.is_empty() {
+            return false;
         }
         self.emit_exit();
-        completed
+        // Explicitly release generation and log-resource copies on completion,
+        // even when the managed facade remains alive for inspection.
+        self.resources = Default::default();
+        true
     }
 
     fn emit_exit(&mut self) {
         if self.exit_emitted {
             return;
         }
+        let exit_code = self.owner_mut().poll().ok().flatten();
         emit(
             &self.sink,
             ProcessEvent::Exited {
                 reference: self.reference.clone(),
                 name: self.name.clone(),
                 pid: self.pid(),
-                exit_code: self.owner.poll().ok().flatten(),
+                exit_code,
                 duration: self.started_at.elapsed(),
                 cmd: self.cmd.clone(),
                 log_path: self.log_path(),
@@ -332,35 +424,21 @@ fn prepare_managed_log(
 
 impl Drop for ManagedProcess {
     fn drop(&mut self) {
-        if !self.bounded_shutdown_detached && self.owner.is_quiescent().ok() != Some(true) {
-            let _ = self.owner.hard_stop();
+        if self.owner.is_none() {
+            return;
         }
-        self.cleanup();
+        let deadline = if self.bounded_shutdown_detached {
+            Instant::now()
+        } else {
+            Instant::now() + DRAIN_JOIN_TIMEOUT
+        };
+        // The process-lifetime registry retains the original Job, drain handles,
+        // and resources on incomplete cleanup, even when this error is dropped.
+        let _ = self.retain_cleanup(
+            "managed owner dropped before cleanup completed".into(),
+            deadline,
+        );
     }
-}
-
-fn join_drain_bounded(handle: JoinHandle<()>) {
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let _ = handle.join();
-        let _ = tx.send(());
-    });
-    if rx.recv_timeout(DRAIN_JOIN_TIMEOUT).is_err() {
-        eprintln!("managed process: drain join exceeded DRAIN_JOIN_TIMEOUT; detaching");
-    }
-}
-
-fn join_drain_until(handle: JoinHandle<()>, deadline: Instant) -> bool {
-    let remaining = deadline.saturating_duration_since(Instant::now());
-    if remaining.is_zero() {
-        return false;
-    }
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let _ = handle.join();
-        let _ = tx.send(());
-    });
-    rx.recv_timeout(remaining).is_ok()
 }
 
 fn spawn_drain<R>(
@@ -371,37 +449,39 @@ fn spawn_drain<R>(
     reference: String,
     name: String,
     pid: u32,
-) -> JoinHandle<()>
+) -> io::Result<JoinHandle<()>>
 where
     R: Read + Send + 'static,
 {
-    thread::spawn(move || {
-        let mut reader = BufReader::new(reader);
-        let mut line = String::new();
-        loop {
-            line.clear();
-            match reader.read_line(&mut line) {
-                Ok(0) | Err(_) => break,
-                Ok(_) => {
-                    let clean = line.trim_end_matches('\n').to_owned();
-                    let formatted = format_log_line(&name, stream, &clean);
-                    if let Ok(mut writer) = writer.lock() {
-                        writer.write(&formatted);
+    thread::Builder::new()
+        .name("managed-output".into())
+        .spawn(move || {
+            let mut reader = BufReader::new(reader);
+            let mut line = String::new();
+            loop {
+                line.clear();
+                match reader.read_line(&mut line) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {
+                        let clean = line.trim_end_matches('\n').to_owned();
+                        let formatted = format_log_line(&name, stream, &clean);
+                        if let Ok(mut writer) = writer.lock() {
+                            writer.write(&formatted);
+                        }
+                        emit(
+                            &sink,
+                            ProcessEvent::Line {
+                                reference: reference.clone(),
+                                name: name.clone(),
+                                pid,
+                                stream,
+                                line: clean,
+                            },
+                        );
                     }
-                    emit(
-                        &sink,
-                        ProcessEvent::Line {
-                            reference: reference.clone(),
-                            name: name.clone(),
-                            pid,
-                            stream,
-                            line: clean,
-                        },
-                    );
                 }
             }
-        }
-    })
+        })
 }
 
 fn format_log_line(name: &str, stream: OutputStream, line: &str) -> String {
@@ -421,9 +501,14 @@ fn emit(sink: &Option<Arc<dyn ProcessEventSink>>, event: ProcessEvent) {
     }
 }
 
-/// Retained authority over an atomically Job-contained managed process.
+enum AuthorityProcess {
+    Managed(ManagedProcess),
+    Command(super::command::CommandProcess),
+}
+
+/// Retained authority over one atomic Job, independent of extracted stdio files.
 pub struct LaunchAuthority {
-    process: ManagedProcess,
+    process: AuthorityProcess,
     disposition: Disposition,
 }
 
@@ -439,7 +524,10 @@ impl std::fmt::Debug for LaunchAuthority {
 
 impl LaunchAuthority {
     pub fn pid(&self) -> u32 {
-        self.process.pid()
+        match &self.process {
+            AuthorityProcess::Managed(process) => process.pid(),
+            AuthorityProcess::Command(process) => process.pid(),
+        }
     }
 
     pub fn disposition(&self) -> &Disposition {
@@ -447,71 +535,91 @@ impl LaunchAuthority {
     }
 
     pub fn exact_identity(&self) -> Option<LaunchedProcessIdentity> {
-        self.process.exact_identity()
+        match &self.process {
+            AuthorityProcess::Managed(process) => process.exact_identity(),
+            AuthorityProcess::Command(process) => process.exact_identity(),
+        }
     }
 
     pub fn bind_exact_identity(
         &mut self,
         identity: LaunchedProcessIdentity,
     ) -> Result<(), LaunchError> {
-        self.process
-            .bind_exact_identity(identity)
-            .map_err(|source| LaunchError::ConfirmationFailed {
-                pid: self.pid(),
-                source,
-            })
+        let result = match &mut self.process {
+            AuthorityProcess::Managed(process) => process.bind_exact_identity(identity),
+            AuthorityProcess::Command(process) => process.bind_exact_identity(identity),
+        };
+        result.map_err(|source| LaunchError::ConfirmationFailed {
+            pid: self.pid(),
+            source,
+        })
     }
 
     pub fn poll(&mut self) -> io::Result<Option<i32>> {
-        self.process.poll()
+        match &mut self.process {
+            AuthorityProcess::Managed(process) => process.poll(),
+            AuthorityProcess::Command(process) => process.poll(),
+        }
     }
 
     pub fn wait(&mut self) -> io::Result<i32> {
-        self.process.wait()
+        match &mut self.process {
+            AuthorityProcess::Managed(process) => process.wait(),
+            AuthorityProcess::Command(process) => process.wait(),
+        }
     }
 
     pub fn terminate(&mut self, timeout: Duration) -> Result<(), LaunchError> {
-        self.process
-            .terminate(timeout)
-            .map(|_| ())
-            .map_err(|error| LaunchError::Terminate(io::Error::other(error)))
+        self.terminate_exact_until(Instant::now() + timeout)
     }
 
     pub fn terminate_exact(&mut self, timeout: Duration) -> Result<(), LaunchError> {
-        self.process
-            .terminate_exact(timeout)
-            .map(|_| ())
-            .map_err(|error| LaunchError::Terminate(io::Error::other(error)))
+        self.terminate(timeout)
     }
 
     pub(crate) fn terminate_exact_until(&mut self, deadline: Instant) -> Result<(), LaunchError> {
-        self.process
-            .terminate_exact_until(deadline)
-            .map(|_| ())
-            .map_err(|error| LaunchError::Terminate(io::Error::other(error)))
+        match &mut self.process {
+            AuthorityProcess::Managed(process) => process
+                .terminate_exact_until(deadline)
+                .map(|_| ())
+                .map_err(|error| LaunchError::Terminate(io::Error::other(error))),
+            AuthorityProcess::Command(process) => process
+                .terminate_until(deadline)
+                .map_err(LaunchError::Terminate),
+        }
     }
 
-    /// Managed Windows launches own and drain their standard handles; raw child
-    /// pipe escape hatches are deliberately unavailable.
-    pub fn take_stdin(&mut self) -> Option<ChildStdin> {
-        None
+    /// A command's synchronous, noninheritable parent pipe endpoint. Extracting
+    /// it transfers only stream ownership; this authority retains the Job.
+    pub fn take_stdin(&mut self) -> Option<std::fs::File> {
+        self.take_stream(0)
+    }
+    pub fn take_stdout(&mut self) -> Option<std::fs::File> {
+        self.take_stream(1)
+    }
+    pub fn take_stderr(&mut self) -> Option<std::fs::File> {
+        self.take_stream(2)
     }
 
-    pub fn take_stdout(&mut self) -> Option<ChildStdout> {
-        None
+    fn take_stream(&mut self, index: usize) -> Option<std::fs::File> {
+        match &mut self.process {
+            AuthorityProcess::Command(process) => process.take_stream(index),
+            AuthorityProcess::Managed(_) => None,
+        }
     }
 
-    pub fn take_stderr(&mut self) -> Option<ChildStderr> {
-        None
-    }
-
-    pub fn wait_with_output(mut self) -> Result<Output, LaunchError> {
-        let _ = self.terminate(SERVICE_SHUTDOWN_TIMEOUT);
-        Err(LaunchError::OutputUnavailable)
+    pub fn wait_with_output(self) -> Result<Output, LaunchError> {
+        match self.process {
+            AuthorityProcess::Command(process) => process.output(),
+            AuthorityProcess::Managed(_) => Err(LaunchError::OutputUnavailable),
+        }
     }
 
     pub fn cleanup(&mut self) {
-        self.process.cleanup();
+        match &mut self.process {
+            AuthorityProcess::Managed(process) => process.cleanup(),
+            AuthorityProcess::Command(process) => process.cleanup(),
+        }
     }
 
     pub fn relinquish_explicitly_unowned(self) -> Result<(), LaunchError> {
@@ -519,20 +627,31 @@ impl LaunchAuthority {
             return Err(LaunchError::NotExplicitlyUnowned);
         }
         Err(LaunchError::Admission(
-            "Windows managed launch cannot relinquish its required Job authority".to_owned(),
+            "Windows launch cannot relinquish its required Job authority".to_owned(),
         ))
     }
 
     pub fn into_managed(self) -> Result<ManagedProcess, LaunchError> {
-        Ok(self.process)
+        match self.process {
+            AuthorityProcess::Managed(process) => Ok(process),
+            AuthorityProcess::Command(_) => Err(LaunchError::CapabilityUnavailable {
+                needed: "managed operational logging",
+            }),
+        }
     }
 
     pub(crate) fn cleanup_until(&mut self, deadline: Instant) -> bool {
-        self.process.cleanup_until(deadline)
+        match &mut self.process {
+            AuthorityProcess::Managed(process) => process.cleanup_until(deadline),
+            AuthorityProcess::Command(process) => process.cleanup_until(deadline),
+        }
     }
 
     pub(crate) fn detach_after_bounded_shutdown(&mut self) {
-        self.process.detach_after_bounded_shutdown();
+        match &mut self.process {
+            AuthorityProcess::Managed(process) => process.detach_after_bounded_shutdown(),
+            AuthorityProcess::Command(process) => process.detach_after_bounded_shutdown(),
+        }
     }
 }
 
@@ -572,7 +691,7 @@ where
     reject_empty_or_unowned(&disposition)?;
     let process = spawn().map_err(LaunchError::SpawnManaged)?;
     Ok(LaunchAuthority {
-        process,
+        process: AuthorityProcess::Managed(process),
         disposition,
     })
 }
@@ -605,44 +724,115 @@ where
     capability(&disposition)?;
     let process = spawn().map_err(LaunchError::SpawnManaged)?;
     Ok(LaunchAuthority {
-        process,
+        process: AuthorityProcess::Managed(process),
         disposition,
     })
 }
 
 pub fn launch_command(
-    _disposition: Disposition,
-    _request: CommandLaunchRequest,
+    disposition: Disposition,
+    request: CommandLaunchRequest,
     _terminate_fn: BoxedTerminateFn,
 ) -> Result<LaunchAuthority, LaunchError> {
-    Err(raw_launch_unavailable())
+    reject_empty_or_unowned(&disposition)?;
+    let process = super::command::CommandProcess::launch(&disposition, request, None)?;
+    Ok(LaunchAuthority {
+        process: AuthorityProcess::Command(process),
+        disposition,
+    })
 }
 
 pub fn launch_command_hosted(
-    _disposition: Disposition,
-    _request: CommandLaunchRequest,
-    _provenance: HostedLaunchProvenance,
+    disposition: Disposition,
+    request: CommandLaunchRequest,
+    provenance: HostedLaunchProvenance,
     _terminate_fn: BoxedTerminateFn,
 ) -> Result<LaunchAuthority, LaunchError> {
-    Err(raw_launch_unavailable())
+    reject_empty_or_unowned(&disposition)?;
+    let process = super::command::CommandProcess::launch(&disposition, request, Some(provenance))?;
+    Ok(LaunchAuthority {
+        process: AuthorityProcess::Command(process),
+        disposition,
+    })
 }
 
 pub fn launch_managed_request(
     disposition: Disposition,
     request: ManagedLaunchRequest,
 ) -> Result<LaunchAuthority, LaunchError> {
+    if !request.read_file_grants.is_empty() {
+        // Standalone Sense/Think owns its acquired generation too. Its native
+        // children borrow through the same launch transaction as hosted work;
+        // metadata in the environment never substitutes for a retained grant.
+        let parent = super::identity::current_windows_process_instance()
+            .map_err(|error| LaunchError::Admission(error.to_string()))?;
+        let mut nonce = [0_u8; 24];
+        getrandom::fill(&mut nonce).map_err(|error| LaunchError::Admission(error.to_string()))?;
+        let provenance = HostedLaunchProvenance {
+            journal: request.options.journal_root.clone(),
+            generation: parent.birth.windows_filetime().ok_or_else(|| {
+                LaunchError::Admission("Windows process birth is unavailable".into())
+            })?,
+            launch_id: nonce.iter().map(|byte| format!("{byte:02x}")).collect(),
+            service: None,
+            parent_launch_id: None,
+            acknowledgement_timeout: Duration::from_secs(3),
+        };
+        return launch_managed_hosted(disposition, request, provenance);
+    }
     launch_managed(disposition, move || {
         ManagedProcess::spawn_exact(request.command, request.options)
     })
 }
 
 pub fn launch_managed_hosted(
-    _disposition: Disposition,
-    _request: ManagedLaunchRequest,
-    _provenance: HostedLaunchProvenance,
+    disposition: Disposition,
+    request: ManagedLaunchRequest,
+    provenance: HostedLaunchProvenance,
 ) -> Result<LaunchAuthority, LaunchError> {
-    Err(LaunchError::CapabilityUnavailable {
-        needed: "Windows hosted launch admission",
+    reject_empty_or_unowned(&disposition)?;
+    let mut options = request.options;
+    let control =
+        super::launch_control::LaunchControl::prepare(&provenance, &mut options.environment)
+            .map_err(|error| LaunchError::Admission(error.to_string()))?;
+    let (name, writer, log_path) =
+        prepare_managed_log(&request.command, &options).map_err(LaunchError::SpawnManaged)?;
+    let mut resources = super::bounded::BoundedHelperResources::new();
+    resources.retain(Arc::new(request.read_file_grants.clone()));
+    let reservation =
+        super::bounded_cleanup::Reservation::track_until(Instant::now() + JOB_HARD_STOP_TIMEOUT)
+            .map_err(|error| LaunchError::Spawn(io::Error::other(error)))?;
+    let owner = match launch_windows_job_process(&request.command, &options.environment) {
+        Ok(owner) => owner,
+        Err(failure) => {
+            return Err(LaunchError::Spawn(io::Error::other(
+                reservation.launch_failure(failure, resources),
+            )));
+        }
+    };
+    let stop = match control.admit(&owner, &request.read_file_grants, None) {
+        Ok(stop) => stop,
+        Err(error) => {
+            return Err(LaunchError::Spawn(io::Error::other(
+                reservation.independent_failure(owner, error.to_string(), resources),
+            )));
+        }
+    };
+    let mut managed = ManagedProcess::from_owned_job(
+        request.command,
+        options,
+        owner,
+        name,
+        writer,
+        log_path,
+        reservation,
+        resources,
+    )
+    .map_err(LaunchError::SpawnManaged)?;
+    managed.stop_event = Some(stop);
+    Ok(LaunchAuthority {
+        process: AuthorityProcess::Managed(managed),
+        disposition,
     })
 }
 

@@ -63,11 +63,15 @@ pub struct ToolRequest<'a> {
     pub pass_fds: Vec<PassedHandle<'a>>,
     /// Windows-only protected input. Unix refuses `Some` and retains descriptor transport.
     pub stdin: Option<Vec<u8>>,
+    #[cfg(windows)]
+    pub resources: solstone_core_system::process::BoundedHelperResources,
 }
 impl fmt::Debug for ToolRequest<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("ToolRequest")
+        let mut debug = formatter.debug_struct("ToolRequest");
+        #[cfg(windows)]
+        debug.field("resources", &self.resources.len());
+        debug
             .field("program", &self.program)
             .field("argv", &self.argv)
             .field("env", &"<redacted>")
@@ -268,6 +272,7 @@ impl ToolRunner for SystemToolRunner {
             stdin: request.stdin.clone().unwrap_or_default(),
             budget,
             resource_limits: None,
+            resources: request.resources.clone(),
         };
 
         match solstone_core_system::process::run_bounded_helper(bounded_request) {
@@ -279,25 +284,32 @@ impl ToolRunner for SystemToolRunner {
             Ok(_) => Err(io::Error::other(
                 "backup helper did not establish quiescence",
             )),
-            Err(solstone_core_system::process::BoundedHelperError::DeadlineExceeded {
-                quiescent: true,
-                ..
-            }) => Ok(ToolOutput {
-                returncode: 124,
-                stdout: Vec::new(),
-                stderr: Vec::new(),
-            }),
-            Err(solstone_core_system::process::BoundedHelperError::DeadlineExceeded {
-                quiescent: false,
-                ..
-            }) => Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "child process exceeded deadline and failed to quiesce",
-            )),
-            Err(solstone_core_system::process::BoundedHelperError::JobNotQuiescent { .. }) => {
-                Err(io::Error::other("job object processes failed to terminate"))
+            Err(failure)
+                if matches!(
+                    failure.cause(),
+                    solstone_core_system::process::BoundedHelperError::DeadlineExceeded {
+                        quiescent: true,
+                        ..
+                    }
+                ) && failure.cleanup().is_none() =>
+            {
+                Ok(ToolOutput {
+                    returncode: 124,
+                    stdout: Vec::new(),
+                    stderr: Vec::new(),
+                })
             }
-            Err(other) => Err(io::Error::other(other.to_string())),
+            Err(failure) => {
+                let kind = if matches!(
+                    failure.cause(),
+                    solstone_core_system::process::BoundedHelperError::DeadlineExceeded { .. }
+                ) {
+                    io::ErrorKind::TimedOut
+                } else {
+                    io::ErrorKind::Other
+                };
+                Err(io::Error::new(kind, failure))
+            }
         }
     }
 }
@@ -695,6 +707,8 @@ pub(crate) fn run_restic_with_stdin(
             timeout,
             pass_fds: pass_fds.to_vec(),
             stdin,
+            #[cfg(windows)]
+            resources: Default::default(),
         })
         .map_err(RunnerError::Process)?;
     let stdout = scrub(&String::from_utf8_lossy(&output.stdout), &secrets);
@@ -1011,6 +1025,8 @@ mod tests {
             timeout: None,
             pass_fds: vec![],
             stdin: Some(b"STDIN_SECRET\n".to_vec()),
+            #[cfg(windows)]
+            resources: Default::default(),
         };
         let output = ToolOutput {
             returncode: 1,

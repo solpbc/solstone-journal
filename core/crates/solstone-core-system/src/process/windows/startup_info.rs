@@ -42,7 +42,7 @@ pub(super) struct WindowsStartupInfo {
     list: *mut c_void,
     initialized: bool,
     job_list: Box<[RawWindowsHandle; 1]>,
-    handle_list: Option<Box<[RawWindowsHandle; 3]>>,
+    handle_list: Option<Box<[RawWindowsHandle]>>,
 }
 
 impl WindowsStartupInfo {
@@ -53,7 +53,7 @@ impl WindowsStartupInfo {
         child_stdout: &PipeEndHandle,
         child_stderr: &PipeEndHandle,
     ) -> io::Result<Self> {
-        Self::new_with_handle_list(
+        Self::initialize(
             api,
             job,
             Some([child_stdin.raw(), child_stdout.raw(), child_stderr.raw()]),
@@ -64,10 +64,10 @@ impl WindowsStartupInfo {
         api: &impl WindowsStartupInfoApi,
         job: &JobHandle,
     ) -> io::Result<Self> {
-        Self::new_with_handle_list(api, job, None)
+        Self::initialize(api, job, None)
     }
 
-    fn new_with_handle_list(
+    fn initialize(
         api: &impl WindowsStartupInfoApi,
         job: &JobHandle,
         handles: Option<[RawWindowsHandle; 3]>,
@@ -82,7 +82,7 @@ impl WindowsStartupInfo {
         let job_list = Box::new([job.raw()]);
         // The Job is deliberately absent from this list: it belongs only to
         // PROC_THREAD_ATTRIBUTE_JOB_LIST, never to the inheritable handles.
-        let handle_list = handles.map(Box::new);
+        let handle_list = handles.map(|handles| handles.to_vec().into_boxed_slice());
 
         api.initialize_attribute_list(list, attribute_count, required)?;
         let mut startup = Self {

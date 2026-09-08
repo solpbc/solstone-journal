@@ -3,7 +3,11 @@
 
 mod common;
 mod events;
+mod launch_context;
 mod log;
+pub use launch_context::ChildLaunchContext;
+#[cfg(windows)]
+pub use launch_context::{ReadFileGrant, ReadFileGrantKind};
 mod observation;
 #[cfg(unix)]
 #[path = "unix/mod.rs"]
@@ -49,9 +53,14 @@ pub(crate) use platform::macos_sweep_table;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) use platform::signal_pid;
 #[cfg(windows)]
+pub use platform::{AdmittedWindowsLaunch, forward_windows_native_command, receive_windows_launch};
+#[cfg(windows)]
 pub use platform::{
-    BoundedHelperBudget, BoundedHelperError, BoundedHelperOutput, BoundedHelperRequest,
-    BoundedHelperResourceLimits, run_bounded_helper,
+    BoundedHelperBudget, BoundedHelperCleanup, BoundedHelperError, BoundedHelperFailure,
+    BoundedHelperOutput, BoundedHelperRequest, BoundedHelperResourceLimits, BoundedHelperResources,
+    HelperAdmissionStatus, HelperCleanupStatus, observe_bounded_helper_admission,
+    observe_windows_launch_cleanup, retry_bounded_helper_admission_until,
+    retry_windows_launch_cleanup_until, run_bounded_helper,
 };
 #[cfg(windows)]
 pub use platform::{
@@ -89,3 +98,8 @@ pub(crate) fn signal_aware_exit_code(status: &ExitStatus) -> i32 {
 
     -status.signal().unwrap_or(0)
 }
+
+#[cfg(all(windows, feature = "test-hooks"))]
+pub use platform::{
+    HelperCleanupObservationFault, run_bounded_helper_with_observation_fault_for_test,
+};

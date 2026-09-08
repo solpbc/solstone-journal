@@ -32,6 +32,8 @@ pub mod rotation;
 pub mod runner;
 pub mod s3_wipe;
 pub mod teardown;
+#[cfg(windows)]
+pub mod windows_cleanup;
 mod windows_tool;
 
 pub use destination::{DestinationStatus, validate_destination};

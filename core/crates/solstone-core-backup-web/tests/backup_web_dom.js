@@ -245,15 +245,28 @@ function restoreOperation(phase, reasonCode) {
 function fixture(document) {
   const root = add(document.body, 'section', { class: 'backup-shell', 'data-backup-root': '', 'data-state': 'empty' });
   const banner = add(root, 'div', { 'data-operation-banner': '', hidden: '' });
+  add(banner, 'span', { class: 'backup-spinner' });
   add(banner, 'span', { 'data-operation-phase': '' });
   add(banner, 'span', { 'data-operation-error': '' });
+  const cleanupBanner = add(root, 'div', { 'data-cleanup-banner': '', hidden: '' });
+  add(cleanupBanner, 'span', { 'data-cleanup-heading': '' });
+  add(cleanupBanner, 'span', { 'data-cleanup-reason': '' });
+  const cleanup = add(cleanupBanner, 'button', { 'data-action': 'finish-cleanup', hidden: '' });
 
   add(root, 'p', { 'data-backup-loading': '', role: 'status' });
   const panels = add(root, 'div', { class: 'backup-panels' });
-  add(panels, 'article', { 'data-backup-panel': 'intro', hidden: '' });
+  const intro = add(panels, 'article', { 'data-backup-panel': 'intro', hidden: '' });
+  const showRestore = add(intro, 'button', { 'data-action': 'show-restore' });
+  const generateKey = add(intro, 'button', { 'data-action': 'understand' });
   const management = add(panels, 'article', { 'data-backup-panel': 'management', hidden: '' });
   const managementGrid = add(management, 'div', { class: 'backup-management-grid' });
   const lastBackup = add(managementGrid, 'p', { 'data-last-backup': '' });
+  const backupNow = add(management, 'button', { 'data-action': 'backup-now' });
+  const viewKey = add(management, 'button', { 'data-action': 'view-key' });
+  const rotateKey = add(management, 'button', { 'data-action': 'rotate-key', disabled: '' });
+  rotateKey.disabled = true;
+  const retention = add(management, 'form', { 'data-retention-form': '' });
+  const saveRetention = add(retention, 'button', { type: 'submit' });
   const destination = add(panels, 'article', { 'data-backup-panel': 'destination', hidden: '' });
   const destinationByo = add(destination, 'button', { class: 'backup-mode is-selected', 'data-mode': 'byo', role: 'radio', 'aria-checked': 'true' });
   destinationByo.textContent = 'your own';
@@ -286,7 +299,7 @@ function fixture(document) {
   add(byo, 'form', { 'data-restore-form': '' });
   const panelCancel = add(restore, 'button', { 'data-action': 'cancel-restore' });
   panelCancel.textContent = 'cancel';
-  return { root, restore, destinationByo, destinationHosted, byoLane, operatedLane, operated, byo, heading, keyControl, key, keyReassurance, outcome, primary, attemptCancel, panelCancel, banner, management, managementGrid, lastBackup };
+  return { root, showRestore, generateKey, backupNow, viewKey, rotateKey, retention, saveRetention, restore, destinationByo, destinationHosted, byoLane, operatedLane, operated, byo, heading, keyControl, key, keyReassurance, outcome, primary, attemptCancel, panelCancel, banner, cleanupBanner, cleanup, management, managementGrid, lastBackup };
 }
 
 function createHarness(options = {}) {
@@ -512,6 +525,215 @@ asyncCase('an initial status failure never reveals assumed settings', async () =
   const loading = harness.root.querySelector('[data-backup-loading]');
   assert.ok(!loading.hidden);
   assert.ok(loading.textContent.includes("couldn't load backup settings"));
+});
+
+asyncCase('pending cleanup survives a status failure and exposes recovery after reload', async () => {
+  let statusReads = 0;
+  const harness = createHarness({ respond(call) {
+    if (call.url === '/app/backup/status') {
+      statusReads += 1;
+      if (statusReads === 2) return Promise.reject(new Error('temporary status failure'));
+      return response(status(restoreOperation('cleanup_pending', 'cleanup_pending')));
+    }
+  } });
+  await ready(harness);
+  assert.strictEqual(harness.root.getAttribute('data-state'), 'cleanup_pending');
+  assert.ok(!harness.cleanup.hidden && !harness.cleanup.disabled);
+  await harness.runTimer(800);
+  assert.strictEqual(harness.root.getAttribute('data-state'), 'cleanup_pending');
+  assert.ok(!harness.cleanup.hidden && !harness.cleanup.disabled);
+  await harness.runTimer(800);
+  assert.strictEqual(statusReads, 3);
+  assert.ok(harness.calls.every((call) => !call.request.method || call.request.method === 'GET'));
+});
+
+asyncCase('global cleanup survives reload and fetch failure without changing an earlier success', async () => {
+  let reads = 0;
+  const completed = restoreOperation('done');
+  const harness = createHarness({ respond(call) {
+    if (call.url === '/app/backup/status') {
+      reads += 1;
+      if (reads === 2) return Promise.reject(new Error('temporary fetch failure'));
+      return response(Object.assign(status(completed), { cleanup_admission: 'pending' }));
+    }
+    if (call.url === '/app/backup/api/cleanup/retry') {
+      return response({ operation: completed, cleanup_admission: 'ready' });
+    }
+  } });
+  await ready(harness);
+  const phase = harness.root.querySelector('[data-operation-phase]').textContent;
+  assert.strictEqual(harness.root.querySelector('[data-operation-error]').textContent, '');
+  assert.ok(harness.banner.querySelector('.backup-spinner').hidden);
+  assert.ok(!harness.cleanupBanner.hidden && !harness.cleanup.disabled);
+  assert.strictEqual(harness.cleanup.textContent, 'finish stopping task');
+  await harness.runTimer(800);
+  assert.strictEqual(harness.root.querySelector('[data-operation-phase]').textContent, phase);
+  assert.ok(!harness.cleanupBanner.hidden);
+  await harness.runTimer(800);
+  assert.strictEqual(reads, 3);
+  click(harness.cleanup);
+  await settle();
+  assert.ok(harness.cleanupBanner.hidden);
+  assert.strictEqual(harness.root.querySelector('[data-operation-phase]').textContent, phase);
+  assert.deepStrictEqual(harness.calls.filter((call) => call.request.method === 'POST')
+    .map((call) => call.url), ['/app/backup/api/cleanup/retry']);
+});
+
+asyncCase('a successful operation has no failure fallback or active spinner', async () => {
+  const harness = createHarness({ statusQueue: [status(restoreOperation('done'))] });
+  await ready(harness);
+  assert.strictEqual(harness.root.querySelector('[data-operation-error]').textContent, '');
+  assert.ok(harness.banner.querySelector('.backup-spinner').hidden);
+  assert.ok(harness.cleanupBanner.hidden);
+});
+
+asyncCase('contended admission is visible and recoverable with no invented operation', async () => {
+  const harness = createHarness({
+    statusQueue: [Object.assign(status(), { cleanup_admission: 'contended' })],
+    respond(call) {
+      if (call.url === '/app/backup/api/cleanup/retry') {
+        return response({ operation: null, cleanup_admission: 'ready' });
+      }
+    },
+  });
+  await ready(harness);
+  assert.ok(harness.banner.hidden);
+  assert.ok(!harness.cleanupBanner.hidden);
+  assert.strictEqual(harness.cleanup.textContent, 'check again');
+  click(harness.cleanup);
+  await settle();
+  assert.ok(harness.banner.hidden && harness.cleanupBanner.hidden);
+  assert.deepStrictEqual(harness.calls.map((call) => call.url), ['/app/backup/api/cleanup/retry']);
+});
+
+for (const cancelFailure of ['busy', 'fetch']) {
+asyncCase(cancelFailure + ' cancellation keeps the hosted attempt and discovers pending cleanup', async () => {
+  const sequence = hostedSequence(Object.assign(
+    status(restoreOperation('cleanup_pending', 'cleanup_pending')), { cleanup_admission: 'pending' }));
+  const harness = createHarness({ respond(call) {
+    if (call.url === '/app/backup/restore-hosted/cancel') {
+      return cancelFailure === 'busy' ? response({ reason_code: 'backup_busy' }, 400)
+        : Promise.reject(new Error('temporary cancellation fetch failure'));
+    }
+    if (call.url === '/app/backup/restore-hosted/arm') {
+      return response(Object.assign(status(restoreOperation('restoring')), { cleanup_admission: 'ready' }));
+    }
+    return sequence(call);
+  } });
+  await ready(harness);
+  click(harness.showRestore);
+  selectOperated(harness);
+  setKey(harness, 'recovery key');
+  await startToPolling(harness);
+  click(harness.panelCancel);
+  await settle();
+  assert.ok(!harness.restore.hidden);
+  assert.ok(harness.primary.disabled || harness.primary.hidden);
+  await harness.runTimer(800);
+  assert.strictEqual(harness.root.getAttribute('data-state'), 'cleanup_pending');
+  assert.ok(!harness.cleanupBanner.hidden && !harness.cleanup.disabled);
+  assert.ok(!harness.outcome.textContent.includes('cancelled'));
+  assert.strictEqual(harness.calls.filter((call) => call.url.endsWith('/activate')).length, 1);
+});
+}
+
+asyncCase('Windows active state survives a fetch failure before cleanup publication', async () => {
+  let reads = 0;
+  const harness = createHarness({ respond(call) {
+    if (call.url === '/app/backup/status') {
+      reads += 1;
+      if (reads === 2) return Promise.reject(new Error('temporary fetch failure'));
+      return response(Object.assign(status(restoreOperation(reads === 1 ? 'restoring' : 'cleanup_pending')),
+        { cleanup_admission: reads === 1 ? 'ready' : 'pending' }));
+    }
+  } });
+  await ready(harness);
+  await harness.runTimer(800);
+  assert.strictEqual(harness.root.getAttribute('data-state'), 'restoring');
+  await harness.runTimer(800);
+  assert.strictEqual(harness.root.getAttribute('data-state'), 'cleanup_pending');
+  assert.ok(!harness.cleanup.hidden);
+});
+
+for (const scope of ['own', 'global', 'contended']) {
+  asyncCase(scope + ' waiting disables conflicting controls and restores their prior eligibility', async () => {
+    const original = scope === 'own' ? restoreOperation('error', 'failed') : restoreOperation('done');
+    const waiting = scope === 'own' ? restoreOperation('cleanup_pending', 'cleanup_pending') : original;
+    const cleared = Object.assign(status(original), { enabled: true, cleanup_admission: 'ready' });
+    const harness = createHarness({
+      statusQueue: [Object.assign(status(waiting), { enabled: true, cleanup_admission: scope === 'contended' ? 'contended' : 'pending' })],
+      respond(call) {
+        if (call.url === '/app/backup/api/cleanup/retry' || call.url === '/app/backup/backup-now') {
+          return response(cleared);
+        }
+      },
+    });
+    await ready(harness);
+    assert.ok(harness.backupNow.disabled && harness.generateKey.disabled && harness.saveRetention.disabled);
+    assert.ok(harness.rotateKey.disabled, 'previously ineligible remains disabled');
+    assert.ok(!harness.viewKey.disabled && !harness.cleanup.disabled, 'read and recovery actions stay available');
+    click(harness.backupNow);
+    click(harness.generateKey);
+    harness.retention.dispatchEvent(event('submit'));
+    setKey(harness, 'synthetic recovery key');
+    assert.ok(harness.primary.disabled, 'ordinary input render cannot reopen a blocked action');
+    click(harness.primary);
+    // Programmatic activation cannot bypass the delegated pending guard.
+    harness.backupNow.disabled = false;
+    click(harness.backupNow);
+    await settle();
+    assert.ok(harness.backupNow.disabled);
+    assert.strictEqual(harness.calls.length, 0, 'no conflicting POST while waiting');
+    click(harness.cleanup);
+    await settle();
+    assert.deepStrictEqual(harness.calls.map((call) => call.url), ['/app/backup/api/cleanup/retry']);
+    assert.ok(!harness.backupNow.disabled && !harness.generateKey.disabled && !harness.saveRetention.disabled);
+    assert.ok(harness.rotateKey.disabled, 'clearing pending does not enable an otherwise ineligible action');
+    click(harness.backupNow);
+    await settle();
+    assert.deepStrictEqual(harness.calls.map((call) => call.url), ['/app/backup/api/cleanup/retry', '/app/backup/backup-now']);
+  });
+}
+
+asyncCase('cleanup recovery sends only its explicit request and preserves the original failed result', async () => {
+  let release;
+  const harness = createHarness({
+    statusQueue: [status(restoreOperation('cleanup_pending', 'cleanup_pending'))],
+    respond(call) {
+      if (call.url === '/app/backup/api/cleanup/retry') {
+        return new Promise((resolve) => { release = resolve; });
+      }
+    },
+  });
+  await ready(harness);
+  click(harness.cleanup);
+  await settle();
+  assert.ok(harness.cleanup.disabled);
+  click(harness.cleanup);
+  assert.deepStrictEqual(harness.calls.map((call) => call.url), ['/app/backup/api/cleanup/retry']);
+  assert.strictEqual(harness.calls[0].request.method, 'POST');
+  release(response(status(restoreOperation('error', 'failed'))));
+  await settle();
+  assert.ok(harness.cleanup.hidden);
+  assert.strictEqual(harness.root.querySelector('[data-operation-phase]').textContent, "couldn't finish");
+  assert.strictEqual(harness.calls.length, 1);
+});
+
+asyncCase('failed cleanup request keeps recovery available without rerunning an operation', async () => {
+  const harness = createHarness({
+    statusQueue: [status(restoreOperation('cleanup_pending', 'cleanup_pending'))],
+    respond(call) {
+      if (call.url === '/app/backup/api/cleanup/retry') {
+        return Promise.reject(new Error('temporary recovery failure'));
+      }
+    },
+  });
+  await ready(harness);
+  click(harness.cleanup);
+  await settle();
+  assert.strictEqual(harness.root.getAttribute('data-state'), 'cleanup_pending');
+  assert.ok(!harness.cleanup.hidden && !harness.cleanup.disabled);
+  assert.deepStrictEqual(harness.calls.map((call) => call.url), ['/app/backup/api/cleanup/retry']);
 });
 
 asyncCase('restore lanes start unselected, stay isolated, and use roving tabindex', async () => {

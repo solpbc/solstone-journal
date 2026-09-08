@@ -68,6 +68,8 @@ fn suffix() -> &'static str {
 
 fn stage_payload(test_name: &str, fake_tools: bool) {
     let tmp = tempfile::tempdir().expect("staging directory");
+    #[cfg(windows)]
+    let tmp = std::sync::Arc::new(tmp);
     let root = tmp.path().join(if cfg!(windows) {
         "Backup package café, owner's path"
     } else {
@@ -163,6 +165,11 @@ fn stage_payload(test_name: &str, fake_tools: bool) {
             environment,
             stdin: vec![],
             resource_limits: None,
+            resources: {
+                let mut resources = solstone_core_system::process::BoundedHelperResources::new();
+                resources.retain(tmp.clone());
+                resources
+            },
             budget: BoundedHelperBudget {
                 timeout: Duration::from_secs(240),
                 stdin_limit_bytes: 1,

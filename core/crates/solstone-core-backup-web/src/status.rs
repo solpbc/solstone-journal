@@ -56,14 +56,17 @@ fn backup_schedule(root: &Path) -> Value {
 pub fn status(root: &Path, operations: &SharedOperationSlot) -> Result<Value, ()> {
     let backup = config::backup(root)?;
     let destination = backup.get("destination").and_then(Value::as_object);
+    #[cfg(windows)]
+    let operation = crate::operation::observed_current(operations)?;
+    #[cfg(not(windows))]
     let operation = crate::operation::current(operations);
-    Ok(json!({
+    Ok(with_cleanup_admission(json!({
         "success": true, "enabled": backup.get("enabled").cloned().unwrap_or(Value::Null), "mode": backup.get("mode").cloned().unwrap_or(Value::Null),
         "destination": {"repository": destination.and_then(|d| d.get("repository")).cloned().unwrap_or(Value::Null), "backend": destination.and_then(|d| d.get("backend")).cloned().unwrap_or(Value::Null), "credentials_set": destination.and_then(|d| d.get("credentials")).is_some_and(|value| value.as_object().is_some_and(|value| !value.is_empty()))},
         "daily_key_set": backup.get("daily_key").is_some_and(|value| !value.is_null()), "recovery_key_set": backup.get("recovery_key").is_some_and(|value| !value.is_null()), "recovery_key_confirmed": backup.get("confirmed_recovery_key").and_then(Value::as_bool).unwrap_or(false),
         "retention": backup.get("retention").cloned().unwrap_or(Value::Null), "offload": backup.get("offload").cloned().unwrap_or(Value::Null), "schedule": backup_schedule(root),
         "last_backup": backup.get("last_backup").cloned().unwrap_or(Value::Null), "last_prune": backup.get("last_prune").cloned().unwrap_or(Value::Null), "last_offload": backup.get("last_offload").cloned().unwrap_or(Value::Null), "last_verification": backup.get("last_verification").cloned().unwrap_or(Value::Null), "last_restore": backup.get("last_restore").cloned().unwrap_or(Value::Null), "hosted": hosted_view(root, operation.as_ref()), "operation": operation_value(operation.as_ref())
-    }))
+    })))
 }
 
 pub fn offload(
@@ -89,12 +92,26 @@ pub fn offload(
         .as_object_mut()
         .ok_or(())?
         .insert("success".to_owned(), Value::Bool(true));
+    #[cfg(windows)]
+    let operation = crate::operation::observed_current(operations)?;
+    #[cfg(not(windows))]
     let operation = crate::operation::current(operations);
     value
         .as_object_mut()
         .ok_or(())?
         .insert("operation".to_owned(), operation_value(operation.as_ref()));
-    Ok(value)
+    Ok(with_cleanup_admission(value))
+}
+
+fn with_cleanup_admission(value: Value) -> Value {
+    #[cfg(windows)]
+    {
+        let mut value = value;
+        value["cleanup_admission"] = json!(crate::cleanup::readiness());
+        value
+    }
+    #[cfg(not(windows))]
+    value
 }
 
 #[cfg(test)]
