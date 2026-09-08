@@ -848,7 +848,12 @@ fn publish_database_with_installer(
     let database_path = journal_root.join(DATABASE_REL);
     remove_if_present(journal_root, TEMP_DATABASE_REL)?;
     write_bytes_exclusive(&temp_path, &[], AtomicWriteOptions { mode: Some(0o600) })
-        .map_err(|_| error(BodyRebuildErrorKind::Publication, "create_temp_database"))?;
+        .map_err(|source| {
+            #[cfg(test)]
+            eprintln!("BODY_REBUILD_CREATE_TEMP_DATABASE_ERROR: {source:?}");
+            let _ = source;
+            error(BodyRebuildErrorKind::Publication, "create_temp_database")
+        })?;
 
     let build_result = build_database(&temp_path, state);
     if let Err(error) = build_result {
