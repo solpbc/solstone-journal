@@ -1556,7 +1556,6 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
 }
 
 /// The native service artifact shared by setup and clean-uninstall.
-#[must_use]
 pub(crate) fn service_artifact_path(
     home: &Path,
 ) -> Result<Option<PathBuf>, solstone_core_installation_identity::IdentityError> {

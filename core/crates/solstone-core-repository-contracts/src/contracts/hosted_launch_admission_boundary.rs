@@ -106,8 +106,18 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "core",
+        "service_capture_windows",
+        include_str!("../../../solstone-core/src/service_capture_windows.rs"),
+    ),
+    (
+        "core",
         "service_logs",
         include_str!("../../../solstone-core/src/service_logs.rs"),
+    ),
+    (
+        "core",
+        "service_windows",
+        include_str!("../../../solstone-core/src/service_windows.rs"),
     ),
     (
         "core",

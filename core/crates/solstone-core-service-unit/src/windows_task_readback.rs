@@ -36,7 +36,10 @@ pub fn encode_windows_task_xml(xml: &str) -> Result<Vec<u8>, &'static str> {
 /// Read saved task artifacts losslessly. No replacement decoding or implicit
 /// UTF-8 fallback can turn malformed guard text into an unguarded artifact.
 pub fn decode_windows_task_xml(bytes: &[u8]) -> Result<String, &'static str> {
-    if bytes.len() > MAX_XML_BYTES || !bytes.starts_with(&[0xff, 0xfe]) || bytes.len() % 2 != 0 {
+    if bytes.len() > MAX_XML_BYTES
+        || !bytes.starts_with(&[0xff, 0xfe])
+        || !bytes.len().is_multiple_of(2)
+    {
         return Err("Windows task artifact is not bounded UTF-16LE with BOM");
     }
     let words: Vec<_> = bytes[2..]
@@ -233,10 +236,10 @@ pub fn parse_windows_task_xml(xml: &str) -> Result<WindowsTaskDefinition, &'stat
         .clone();
     // Scheduler-owned registration metadata does not change launch semantics.
     for field in ["Date", "Author", "URI"] {
-        if let Some(node) = nodes.remove(&format!("Task/RegistrationInfo/{field}")) {
-            if !node.attributes.is_empty() {
-                return Err("unexpected registration metadata attributes");
-            }
+        if let Some(node) = nodes.remove(&format!("Task/RegistrationInfo/{field}"))
+            && !node.attributes.is_empty()
+        {
+            return Err("unexpected registration metadata attributes");
         }
     }
     for (path, value) in [
@@ -244,10 +247,10 @@ pub fn parse_windows_task_xml(xml: &str) -> Result<WindowsTaskDefinition, &'stat
         ("Task/Settings/UseUnifiedSchedulingEngine", "false"),
         ("Task/Settings/DisallowStartOnRemoteAppSession", "false"),
     ] {
-        if let Some(node) = nodes.remove(path) {
-            if !node.attributes.is_empty() || node.text != value {
-                return Err("unexpected task scheduling setting");
-            }
+        if let Some(node) = nodes.remove(path)
+            && (!node.attributes.is_empty() || node.text != value)
+        {
+            return Err("unexpected task scheduling setting");
         }
         expected.remove(path);
     }
