@@ -58,8 +58,6 @@ pub mod test_support {
     }
 }
 
-use std::collections::BTreeMap;
-use std::ffi::OsString;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -93,7 +91,7 @@ enum CliError {
 pub fn run_cli(
     args: &[String],
     journal: &Path,
-    sense_child_environment: &BTreeMap<OsString, OsString>,
+    sense_child_environment: &solstone_core_system::process::ChildLaunchContext,
 ) -> CliRun {
     let event_clock: Arc<dyn Fn() -> i64 + Send + Sync> =
         Arc::new(|| chrono::Utc::now().timestamp_millis());
@@ -165,7 +163,7 @@ pub fn run_cli_with<E, C, N, M, P, R, B>(
     cpu_count: P,
     endpoint: R,
     bundled_slots: B,
-    sense_child_environment: &BTreeMap<OsString, OsString>,
+    sense_child_environment: &solstone_core_system::process::ChildLaunchContext,
 ) -> CliRun
 where
     E: Fn(&str) -> Option<String>,
@@ -203,7 +201,7 @@ fn run_cli_with_event_clock<E, C, N, M, P, R, B>(
     cpu_count: P,
     endpoint: R,
     bundled_slots: B,
-    sense_child_environment: &BTreeMap<OsString, OsString>,
+    sense_child_environment: &solstone_core_system::process::ChildLaunchContext,
 ) -> CliRun
 where
     E: Fn(&str) -> Option<String>,
@@ -835,7 +833,7 @@ mod tests {
             || Some(8),
             || (false, LocalEndpointResolution::Bundled),
             || Some(2),
-            &BTreeMap::new(),
+            &solstone_core_system::process::ChildLaunchContext::default(),
         )
     }
 
@@ -936,7 +934,7 @@ mod tests {
             || Some(8),
             || (false, LocalEndpointResolution::Bundled),
             || Some(4),
-            &BTreeMap::new(),
+            &solstone_core_system::process::ChildLaunchContext::default(),
         )
     }
 
@@ -2299,7 +2297,7 @@ mod tests {
             || Some(8),
             || (false, LocalEndpointResolution::Bundled),
             || Some(2),
-            &BTreeMap::new(),
+            &solstone_core_system::process::ChildLaunchContext::default(),
         );
         assert_eq!(result.exit_code, 0);
         let events = sidecar_events(journal.path(), "20260814", "cadence");
@@ -2333,7 +2331,7 @@ mod tests {
             || Some(8),
             || (false, LocalEndpointResolution::Bundled),
             || Some(2),
-            &BTreeMap::new(),
+            &solstone_core_system::process::ChildLaunchContext::default(),
         );
         assert_eq!(run.exit_code, 0);
         assert_eq!(reads.get(), 0);
@@ -2451,7 +2449,7 @@ mod tests {
                 || Some(8),
                 || (false, LocalEndpointResolution::Bundled),
                 || None,
-                &BTreeMap::new(),
+                &solstone_core_system::process::ChildLaunchContext::default(),
             )
         };
         assert_eq!(
@@ -2481,7 +2479,7 @@ mod tests {
             || Some(8),
             || (false, LocalEndpointResolution::Bundled),
             || None,
-            &BTreeMap::new(),
+            &solstone_core_system::process::ChildLaunchContext::default(),
         );
         assert_eq!(output.exit_code, 0);
     }
@@ -2559,7 +2557,7 @@ mod tests {
             || Some(8),
             || (false, LocalEndpointResolution::Bundled),
             || Some(2),
-            &BTreeMap::new(),
+            &solstone_core_system::process::ChildLaunchContext::default(),
         );
         assert_eq!(result.exit_code, 1);
         assert!(!gate_failure.path().join("identity").exists());
@@ -4121,7 +4119,7 @@ mod tests {
             || Some(8),
             || (false, LocalEndpointResolution::Bundled),
             || Some(4),
-            &BTreeMap::new(),
+            &solstone_core_system::process::ChildLaunchContext::default(),
         );
         assert_eq!(first.exit_code, 0);
         assert_eq!(first.stdout.lines().next(), Some("Day 2026-01-01"));
@@ -4148,7 +4146,7 @@ mod tests {
             || Some(8),
             || (false, LocalEndpointResolution::Bundled),
             || Some(4),
-            &BTreeMap::new(),
+            &solstone_core_system::process::ChildLaunchContext::default(),
         );
         assert_eq!(second.exit_code, 0);
         assert_eq!(

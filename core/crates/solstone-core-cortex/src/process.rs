@@ -278,6 +278,8 @@ pub(crate) fn build_talent_worker_command(
         }
     }
     Ok(CommandLaunchRequest {
+        #[cfg(windows)]
+        read_file_grants: Vec::new(),
         program: worker.into_os_string(),
         arguments: vec![OsString::from("__talent-worker")],
         environment,

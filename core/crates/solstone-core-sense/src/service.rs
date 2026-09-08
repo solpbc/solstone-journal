@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeMap;
-use std::ffi::OsString;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, mpsc};
@@ -43,7 +41,12 @@ pub fn run_native_service(
     journal: PathBuf,
     options: SenseOptions,
 ) -> Result<(), NativeServiceError> {
-    run_native_service_with_hosted_parent(journal, options, BTreeMap::new(), None)
+    run_native_service_with_hosted_parent(
+        journal,
+        options,
+        solstone_core_system::process::ChildLaunchContext::default(),
+        None,
+    )
 }
 
 /// Run Sense with an optional birth-admitted hosted parent lifetime.
@@ -54,7 +57,7 @@ pub fn run_native_service(
 pub fn run_native_service_with_hosted_parent(
     journal: PathBuf,
     options: SenseOptions,
-    child_environment: BTreeMap<OsString, OsString>,
+    child_environment: solstone_core_system::process::ChildLaunchContext,
     hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
 ) -> Result<(), NativeServiceError> {
     tokio::runtime::Builder::new_multi_thread()
@@ -68,7 +71,7 @@ pub fn run_native_service_with_hosted_parent(
 async fn run(
     journal: PathBuf,
     options: SenseOptions,
-    child_environment: BTreeMap<OsString, OsString>,
+    child_environment: solstone_core_system::process::ChildLaunchContext,
     hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
 ) -> Result<(), NativeServiceError> {
     let connection =

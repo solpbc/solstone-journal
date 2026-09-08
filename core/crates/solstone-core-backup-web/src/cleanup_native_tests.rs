@@ -65,7 +65,7 @@ fn run_owned_fixture() {
         executable,
         current_directory: package_root.clone(),
         package_root,
-        arguments: ["--exact", SELECTOR, "--ignored", "--nocapture"]
+        arguments: ["--exact", SELECTOR, "--ignored", "--show-output"]
             .map(str::to_owned)
             .to_vec(),
         environment,
@@ -98,6 +98,12 @@ fn run_owned_fixture() {
     );
     assert_eq!(output.exit_code, 0, "nested cleanup fixture failed");
     let stdout = String::from_utf8(output.stdout).expect("native libtest UTF-8 output");
+    let named_pass = format!("test {SELECTOR} ... ok");
+    assert_eq!(
+        stdout.lines().filter(|line| *line == named_pass).count(),
+        1,
+        "the named inner cleanup fixture must actually pass"
+    );
     assert_eq!(
         stdout
             .matches("test result: ok. 1 passed; 0 failed; 0 ignored;")

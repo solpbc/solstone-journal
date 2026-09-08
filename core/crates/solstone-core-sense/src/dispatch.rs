@@ -67,7 +67,7 @@ pub enum BatchMarkerPolicy {
 #[derive(Clone, Default)]
 struct BatchContext {
     describe_workers: Option<usize>,
-    child_environment: BTreeMap<OsString, OsString>,
+    child_environment: solstone_core_system::process::ChildLaunchContext,
     marker_policy: BatchMarkerPolicy,
 }
 
@@ -136,7 +136,14 @@ impl SenseDispatcher {
         debug: bool,
         outbound: mpsc::Sender<Outbound>,
     ) -> Self {
-        Self::new_with_hosted_parent(journal, verbose, debug, outbound, BTreeMap::new(), None)
+        Self::new_with_hosted_parent(
+            journal,
+            verbose,
+            debug,
+            outbound,
+            solstone_core_system::process::ChildLaunchContext::default(),
+            None,
+        )
     }
 
     /// Construct a dispatcher whose service-like children participate in the
@@ -151,7 +158,7 @@ impl SenseDispatcher {
         verbose: bool,
         debug: bool,
         outbound: mpsc::Sender<Outbound>,
-        child_environment: BTreeMap<OsString, OsString>,
+        child_environment: solstone_core_system::process::ChildLaunchContext,
         hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
     ) -> Self {
         Self::new_with_admission(
@@ -171,7 +178,7 @@ impl SenseDispatcher {
         debug: bool,
         outbound: mpsc::Sender<Outbound>,
         admission: Admission,
-        child_environment: BTreeMap<OsString, OsString>,
+        child_environment: solstone_core_system::process::ChildLaunchContext,
         hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
     ) -> Self {
         Self::new_inner(
@@ -219,7 +226,7 @@ impl SenseDispatcher {
         debug: bool,
         outbound: mpsc::Sender<Outbound>,
         describe_workers: usize,
-        child_environment: BTreeMap<OsString, OsString>,
+        child_environment: solstone_core_system::process::ChildLaunchContext,
         marker_policy: BatchMarkerPolicy,
     ) -> Self {
         Self::new_batch_inner(
@@ -254,7 +261,7 @@ impl SenseDispatcher {
             outbound,
             BatchContext {
                 describe_workers: Some(describe_workers),
-                child_environment: BTreeMap::new(),
+                child_environment: solstone_core_system::process::ChildLaunchContext::default(),
                 marker_policy,
             },
             Ok(program),
@@ -704,7 +711,7 @@ fn run_job(
         "SOL_QUEUE_WAIT_MS".into(),
         events::queue_wait_ms(job.item.queued_at).to_string().into(),
     );
-    environment.extend(worker_context.batch.child_environment.clone());
+    environment.extend(worker_context.batch.child_environment.environment.clone());
     let hosted_launch_id = format!(
         "sense-{}-{reference}-{}",
         job.item.handler,
@@ -717,7 +724,16 @@ fn run_job(
         sink: None,
         environment,
     };
-    let launch = ManagedLaunchRequest { command, options };
+    let launch = ManagedLaunchRequest {
+        #[cfg(windows)]
+        read_file_grants: worker_context
+            .batch
+            .child_environment
+            .read_file_grants
+            .clone(),
+        command,
+        options,
+    };
     let launched = match worker_context.hosted_parent.as_ref() {
         Some(parent) => launch_managed_hosted(
             Disposition::InheritedParentScope,
