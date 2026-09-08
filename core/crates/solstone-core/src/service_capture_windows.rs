@@ -445,6 +445,8 @@ pub(crate) fn native_control(journal: &Path, mode: &str) -> Result<i32, String> 
             }
         }
         "rollover" => {
+            use solstone_core_journal_io::operational_log::validate_oplog_admission;
+
             let yesterday = Local::now().fixed_offset() - chrono::Duration::days(1);
             let mut log = open_log(journal, yesterday)?;
             let old = journal
@@ -461,7 +463,12 @@ pub(crate) fn native_control(journal: &Path, mode: &str) -> Result<i32, String> 
             drop(write);
             drain(read, journal.to_path_buf(), log, yesterday.date_naive())?;
             let old_bytes = std::fs::read(&old).map_err(|error| error.to_string())?;
-            if old_bytes != b"before rollover" {
+            let old_admission = validate_oplog_admission(
+                old.file_name().ok_or("rollover old leaf missing")?,
+                &old_bytes,
+            )
+            .map_err(|error| error.to_string())?;
+            if &old_bytes[old_admission.header_len()..] != b"before rollover" {
                 return Err("rollover changed the old log".into());
             }
             let mut found = false;
@@ -475,8 +482,13 @@ pub(crate) fn native_control(journal: &Path, mode: &str) -> Result<i32, String> 
                 for entry in std::fs::read_dir(health).map_err(|error| error.to_string())? {
                     let path = entry.map_err(|error| error.to_string())?.path();
                     if path != old && path.extension().is_some_and(|extension| extension == "log") {
-                        found |= std::fs::read(path).map_err(|error| error.to_string())?
-                            == b"after rollover";
+                        let bytes = std::fs::read(&path).map_err(|error| error.to_string())?;
+                        let admission = validate_oplog_admission(
+                            path.file_name().ok_or("rollover next leaf missing")?,
+                            &bytes,
+                        )
+                        .map_err(|error| error.to_string())?;
+                        found |= &bytes[admission.header_len()..] == b"after rollover";
                     }
                 }
             }
