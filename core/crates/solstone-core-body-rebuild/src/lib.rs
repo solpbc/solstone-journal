@@ -1105,6 +1105,25 @@ mod tests {
     }
 
     #[test]
+    fn empty_history_publishes_a_queryable_database() {
+        let temporary = TempDir::new();
+        let journal = temporary.path().join("fresh recovery café");
+        fs::create_dir(&journal).expect("fresh journal creates");
+        for _ in 0..2 {
+            let report = rebuild_body_store(&journal).expect("empty history rebuild succeeds");
+            assert_eq!(report.native_bundles(), 0);
+            assert_eq!(report.legacy_bundles(), 0);
+            assert_eq!(report.rows(), 0);
+            let connection =
+                Connection::open(journal.join(DATABASE_REL)).expect("published database opens");
+            let rows: i64 = connection
+                .query_row("SELECT count(*) FROM health_dedupe", [], |row| row.get(0))
+                .expect("published schema is queryable");
+            assert_eq!(rows, 0);
+        }
+    }
+
+    #[test]
     fn raw_hashing_stops_at_the_remaining_aggregate_budget() {
         let mut oversized = std::io::Cursor::new(b"abcdef".to_vec());
         let error = hash_raw_reader(&mut oversized, 3)
