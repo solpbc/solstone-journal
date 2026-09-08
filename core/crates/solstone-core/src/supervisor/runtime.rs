@@ -127,7 +127,7 @@ thread_local! {
     static PARENT_LOSS_COORDINATOR_BOOTSTRAP_TEST_SPAWNED: RefCell<Option<ProcessInstance>> = const { RefCell::new(None) };
 }
 
-#[cfg(all(unix, any(test, feature = "test-hooks")))]
+#[cfg(all(unix, test))]
 #[doc(hidden)]
 pub(crate) fn set_parent_loss_coordinator_bootstrap_test_fault(
     fault: Option<ParentLossCoordinatorBootstrapTestFault>,
@@ -2004,21 +2004,29 @@ async fn wait_for_callosum_connection(
 #[cfg(test)]
 mod tests {
     use super::{
-        AppService, JournalBinaryPreflightError, ManagedAppProcess,
-        ParentLossCoordinatorBootstrapFailure, ParentLossCoordinatorBootstrapTestFault,
-        ParentLossCoordinatorSession, RuntimeBootError, bootstrap_parent_loss_coordinator,
-        cleanup_result, parent_loss_coordinator_bootstrap_test_spawned,
-        parent_loss_coordinator_launch_request, resolve_journal_binary_from,
-        selected_direct_door_port, set_parent_loss_coordinator_bootstrap_test_fault,
-        shutdown_regime_for, validate_journal_binary, withhold_app_direct_door,
+        AppService, ManagedAppProcess, RuntimeBootError, cleanup_result, selected_direct_door_port,
+        shutdown_regime_for, withhold_app_direct_door,
     };
+    #[cfg(unix)]
+    use super::{
+        JournalBinaryPreflightError, ParentLossCoordinatorBootstrapFailure,
+        ParentLossCoordinatorBootstrapTestFault, ParentLossCoordinatorSession,
+        bootstrap_parent_loss_coordinator, parent_loss_coordinator_bootstrap_test_spawned,
+        parent_loss_coordinator_launch_request, resolve_journal_binary_from,
+        set_parent_loss_coordinator_bootstrap_test_fault, validate_journal_binary,
+    };
+    #[cfg(unix)]
     use std::path::{Path, PathBuf};
+    #[cfg(unix)]
     use std::time::Duration;
 
+    #[cfg(unix)]
     use solstone_core_system::lifecycle::{
         CoordinatorBootstrap, DeclaredParent, ParentLossCoordinator, ParentLossLedger,
-        ParentLossReason, ParentLossTerminalDisposition, ShutdownRegime, SyncTickOutcome,
+        ParentLossTerminalDisposition,
     };
+    use solstone_core_system::lifecycle::{ParentLossReason, ShutdownRegime, SyncTickOutcome};
+    #[cfg(unix)]
     use solstone_core_system::process::{
         InstanceVerdict, ProcessInstanceSource, SystemProcessInstanceSource,
     };

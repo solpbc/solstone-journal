@@ -471,13 +471,18 @@ mod tests {
     use tempfile::tempdir;
 
     use super::super::receipt::{read_hosted_supervisor_receipt, write_hosted_supervisor_receipt};
+    #[cfg(unix)]
+    use super::lifecycle_boot_refusal;
     use super::{
         InstallationBindingRefusal, ShutdownCause, SupervisorBootRefusal, SupervisorHostOutcome,
-        SupervisorSignal, SyncFailureKind, classify_shutdown, lifecycle_boot_refusal,
+        SupervisorSignal, SyncFailureKind, classify_shutdown,
+    };
+    #[cfg(unix)]
+    use solstone_core_system::lifecycle::{
+        ADMISSION_WAIT_ACTIVE_COPY, AdmissionWaitTerminalReason, LifecycleError,
     };
     use solstone_core_system::lifecycle::{
-        ADMISSION_WAIT_ACTIVE_COPY, AdmissionWaitTerminalReason, ArtifactClearOutcome,
-        DeclaredParent, LifecycleError, ParentLossReason, ParentWatch, ParentWatchStatus,
+        ArtifactClearOutcome, DeclaredParent, ParentLossReason, ParentWatch, ParentWatchStatus,
         ShutdownDisposition, ShutdownOutcome, ShutdownPhase, ShutdownReport,
     };
     use solstone_core_system::process::{
@@ -715,6 +720,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn admission_wait_refusal_preserves_what_was_verified() {
         assert!(matches!(

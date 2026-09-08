@@ -882,6 +882,27 @@ pub fn human_output(report: &CheckReport) -> String {
     ));
     format!("{}\n", lines.join("\n"))
 }
+/// Shared host entry point: Windows owns its helper through the bounded Job
+/// facade; Unix retains the existing local verdict and process runner.
+pub fn evaluate_host_ced(journal: &Path, os: &str, arch: &str) -> CedVerdict {
+    #[cfg(windows)]
+    {
+        solstone_core_local::install::ced_readiness::evaluate_ced_readiness_with_probe(
+            journal,
+            os,
+            arch,
+            ced_windows::probe,
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        solstone_core_local::install::ced_readiness::evaluate_ced_readiness(journal, os, arch)
+    }
+}
+
+#[cfg(windows)]
+pub mod ced_windows;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1248,24 +1269,3 @@ mod tests {
         );
     }
 }
-
-/// Shared host entry point: Windows owns its helper through the bounded Job
-/// facade; Unix retains the existing local verdict and process runner.
-pub fn evaluate_host_ced(journal: &Path, os: &str, arch: &str) -> CedVerdict {
-    #[cfg(windows)]
-    {
-        solstone_core_local::install::ced_readiness::evaluate_ced_readiness_with_probe(
-            journal,
-            os,
-            arch,
-            ced_windows::probe,
-        )
-    }
-    #[cfg(not(windows))]
-    {
-        solstone_core_local::install::ced_readiness::evaluate_ced_readiness(journal, os, arch)
-    }
-}
-
-#[cfg(windows)]
-pub mod ced_windows;

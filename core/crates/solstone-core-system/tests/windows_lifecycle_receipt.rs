@@ -816,3 +816,6 @@ fn windows_readiness_birth_binding_receipt() {
 
 #[path = "windows_installed_transport.rs"]
 mod installed_transport;
+
+#[path = "windows_identity_process.rs"]
+mod identity_process;

@@ -555,13 +555,29 @@ fn exercise_parent_loss_twin(mode: DarwinFixtureMode) {
                 || instance_is_gone(coordinator),
                 "coordinator exits after durable unresolved result",
             );
+            let unresolved_before = fs::read(ledger.record_path(active.generation))
+                .expect("original unresolved record");
+            let successor = ledger
+                .reserve_generation(
+                    current_instance(std::process::id(), "post-coordinator successor"),
+                    [],
+                )
+                .expect("sealed unresolved generation permits retry after coordinator exit");
+            assert_eq!(successor.generation, active.generation + 1);
+            assert_eq!(
+                fs::read(ledger.record_path(active.generation))
+                    .expect("preserved unresolved record"),
+                unresolved_before,
+                "successor reservation preserves the original unresolved evidence"
+            );
             assert!(
                 ledger
                     .reserve_generation(
-                        current_instance(std::process::id(), "blocked successor"),
+                        current_instance(std::process::id(), "second successor"),
                         []
                     )
-                    .is_err()
+                    .is_err(),
+                "the allocated successor still prevents another reservation"
             );
             assert!(
                 late_descendant_ready.exists(),

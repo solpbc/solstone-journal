@@ -341,10 +341,10 @@ impl OwnerBase {
                     "owner platform does not match this Windows build",
                 ));
             }
-            return Ok(Self {
+            Ok(Self {
                 home: known_folder_local_app_data()?,
                 platform,
-            });
+            })
         }
         #[cfg(unix)]
         if !home.is_absolute() {
@@ -2675,7 +2675,7 @@ impl Drop for WindowsLockGuard {
 
 #[cfg(windows)]
 fn windows_units_from_bytes(bytes: &[u8]) -> Result<Vec<u16>, IdentityError> {
-    if bytes.len() % 2 != 0 {
+    if !bytes.len().is_multiple_of(2) {
         return Err(IdentityError::InvalidInput(
             "Windows path has an odd byte count",
         ));
@@ -3187,12 +3187,26 @@ fn lock_file_windows(file: File) -> Result<WindowsLockGuard, (File, io::Error)> 
     })
 }
 
+// Native acceptance observes actual kernel contention without changing retry,
+// locking or identity behavior. Disabled in ordinary production builds.
+#[cfg(all(windows, feature = "test-hooks"))]
+static WINDOWS_LOCK_CONTENTIONS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+#[doc(hidden)]
+#[cfg(all(windows, feature = "test-hooks"))]
+pub fn windows_lock_contention_count_for_test() -> u64 {
+    WINDOWS_LOCK_CONTENTIONS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 #[cfg(windows)]
 fn lock_file_windows_blocking(mut file: File) -> Result<WindowsLockGuard, IdentityError> {
     loop {
         match lock_file_windows(file) {
             Ok(lock) => return Ok(lock),
             Err((returned, error)) if error.raw_os_error() == Some(ERROR_LOCK_VIOLATION as i32) => {
+                #[cfg(feature = "test-hooks")]
+                WINDOWS_LOCK_CONTENTIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 file = returned;
                 std::thread::yield_now();
             }
@@ -4223,6 +4237,8 @@ mod tests {
 
     #[test]
     fn poisoned_owner_coordinator_refuses_before_owner_file_lock() {
+        let _serial = serial();
+        clear_control();
         let fixture = TestRoot::new();
         let request = fixture.request(b"/install/poisoned", b"/journal/poisoned");
         let root = request.root_token.clone();
@@ -5510,12 +5526,12 @@ mod windows_tests {
             Marker,
             OwnerLock,
         }
-        for point in [
-            StoragePoint::Provider,
-            StoragePoint::Namespace,
-            StoragePoint::Record,
-            StoragePoint::Marker,
-            StoragePoint::OwnerLock,
+        for (point, label) in [
+            (StoragePoint::Provider, "provider"),
+            (StoragePoint::Namespace, "namespace"),
+            (StoragePoint::Record, "record"),
+            (StoragePoint::Marker, "marker"),
+            (StoragePoint::OwnerLock, "owner-lock"),
         ] {
             let fixture = TestRoot::new();
             let root = r"C:\solstone\reparse";
@@ -5554,11 +5570,23 @@ mod windows_tests {
                     return;
                 }
             }
+            assert_ne!(
+                fs::symlink_metadata(&target)
+                    .expect("inspect actual reparse fixture")
+                    .file_attributes()
+                    & FILE_ATTRIBUTE_REPARSE_POINT,
+                0,
+                "fixture must be an actual reparse point"
+            );
             let before = snapshot_tree(&fixture.root);
 
             assert!(load_installation_binding(&fixture.owner, &fixture.root_token(root)).is_err());
             assert_tree_unchanged(&fixture.root, before);
+            fs::remove_dir_all(&fixture.root).expect("settle actual reparse fixture");
+            assert!(!fixture.root.exists());
+            println!("JOURNAL_WIN_CI_IDENTITY_REPARSE={label}:PASS");
         }
+        println!("JOURNAL_WIN_CI_IDENTITY_REPARSE=all-storage-points:PASS");
     }
 
     #[test]

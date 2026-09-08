@@ -17,7 +17,7 @@ autotests = false
 unsafe_code = "deny"
 
 [features]
-test-hooks = ["solstone-core-journal-io/test-hooks"]
+test-hooks = ["solstone-core-journal-io/test-hooks", "solstone-core-installation-identity/test-hooks"]
 
 [dependencies]
 chrono = { workspace = true }
