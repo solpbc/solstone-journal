@@ -7,6 +7,7 @@ pub mod gate;
 pub mod guard;
 pub mod mirror;
 pub mod pins;
+pub mod v2_registry;
 
 #[cfg(test)]
 mod tests;

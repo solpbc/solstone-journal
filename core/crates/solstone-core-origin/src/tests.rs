@@ -23,6 +23,7 @@ use crate::mirror::{
 use crate::pins::{
     PinsError, authority_origin_pins_from_test_path, historical_origin_pins, snapshot_versions,
     supported_release_versions, supported_release_versions_from_test_path,
+    supported_release_versions_from_test_paths,
 };
 
 fn temp(name: &str) -> PathBuf {
@@ -511,6 +512,32 @@ fn pins_fail_loudly_when_the_transparency_log_has_no_release_rows() {
     assert!(matches!(
         supported_release_versions_from_test_path(&path),
         Err(PinsError::TransparencyLogEmpty { .. })
+    ));
+}
+
+#[test]
+fn supported_versions_combine_closed_v1_log_with_offline_v2_registry() {
+    let root = temp("combined-release-sources");
+    let v1 = root.join("v1.jsonl");
+    let v2 = root.join("v2.json");
+    fs::write(&v1, "{\"version\":\"1.0.22\"}\n").unwrap();
+    fs::write(
+        &v2,
+        format!(
+            "{{\"schema\":\"{}\",\"releases\":[{{\"version\":\"2.0.0\",\"logical_target\":\"software/journal/2.0.0/release-record.json\",\"record_sha256\":\"{}\"}}]}}",
+            crate::v2_registry::REGISTRY_SCHEMA,
+            "a".repeat(64)
+        ),
+    )
+    .unwrap();
+    assert_eq!(
+        supported_release_versions_from_test_paths(&v1, &v2).unwrap(),
+        std::collections::BTreeSet::from(["1.0.22".to_owned(), "2.0.0".to_owned()])
+    );
+    fs::write(&v2, "not json").unwrap();
+    assert!(matches!(
+        supported_release_versions_from_test_paths(&v1, &v2),
+        Err(PinsError::V2Registry(_))
     ));
 }
 

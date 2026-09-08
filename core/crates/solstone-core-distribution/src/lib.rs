@@ -48,6 +48,7 @@ pub mod select;
 pub mod sign;
 pub mod stage;
 pub mod tar;
+pub mod transparency;
 pub mod windows_payload;
 pub mod windows_pe_closure;
 pub mod windows_publish;

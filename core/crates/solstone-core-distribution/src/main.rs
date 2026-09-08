@@ -20,7 +20,7 @@ use solstone_core_distribution::publish;
 use solstone_core_distribution::rfdetr_windows_source;
 
 fn usage() -> &'static str {
-    "usage: solstone-distribution <validate|produce|publish|sign|acquire|ced-windows|ffmpeg-windows|onnx-windows|parakeet-windows|rfdetr-windows|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]"
+    "usage: solstone-distribution <validate|produce|publish|sign|acquire|journal-artifacts|register-v2-origin|ced-windows|ffmpeg-windows|onnx-windows|parakeet-windows|rfdetr-windows|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]"
 }
 
 fn main() -> ExitCode {
@@ -194,6 +194,18 @@ fn main() -> ExitCode {
         }
         Some("sign") => {
             solstone_core_distribution::cli_sign::run(&args.collect::<Vec<_>>(), usage())
+        }
+        Some(command @ ("journal-artifacts" | "register-v2-origin")) => {
+            match solstone_core_distribution::transparency::run_cli(
+                command,
+                &args.collect::<Vec<_>>(),
+            ) {
+                Ok(code) => ExitCode::from(code),
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
         }
         Some("cleanroom-plan") => {
             let start = args

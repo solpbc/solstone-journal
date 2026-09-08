@@ -1,0 +1,16 @@
+{
+  "schema": "solstone-journal/transparency-tool-pin/v1",
+  "repository": "https://github.com/solpbc/solstone-transparency.git",
+  "version": "0.1.0",
+  "commit": "06ed3a26e6be12d71026d431c35d3c9d62465d9a",
+  "executables": {
+    "journal_artifacts": {
+      "path": "bin/journal-artifacts.ts",
+      "sha256": "b2d8c9dfe37ec2ad07f6138f3531b1bd8f0bfd0aedc8957cc31c669aa71a6ab8"
+    },
+    "verify_release": {
+      "path": "bin/verify-release.ts",
+      "sha256": "cd52580bed68171c1697bfe134ad23ba362f9c34cdb930453a9fd2309b09948e"
+    }
+  }
+}

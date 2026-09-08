@@ -26,6 +26,7 @@ const SNAPSHOTS: &[(&str, &str)] = &[
 
 const AUTHORITY_PATH: &str = "core/fixtures/nvattest_authority_v1.json";
 const TRANSPARENCY_LOG_PATH: &str = "transparency-head-log.jsonl";
+const V2_RELEASE_REGISTRY_PATH: &str = "core/crates/solstone-core-origin/v2-release-registry.json";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OriginPin {
@@ -87,6 +88,8 @@ pub enum PinsError {
     AuthorityTargetsEmpty { path: PathBuf },
     #[error("head pin set repeats origin key {origin_key}")]
     HeadDuplicateOriginKey { origin_key: String },
+    #[error(transparent)]
+    V2Registry(#[from] crate::v2_registry::V2RegistryError),
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,13 +126,27 @@ pub fn transparency_log_path() -> Result<PathBuf, PinsError> {
     Ok(repository_root()?.join(TRANSPARENCY_LOG_PATH))
 }
 
+pub fn v2_release_registry_path() -> Result<PathBuf, PinsError> {
+    Ok(repository_root()?.join(V2_RELEASE_REGISTRY_PATH))
+}
+
 pub fn authority_path() -> Result<PathBuf, PinsError> {
     Ok(repository_root()?.join(AUTHORITY_PATH))
 }
 
 pub fn supported_release_versions() -> Result<BTreeSet<String>, PinsError> {
-    let path = transparency_log_path()?;
-    supported_release_versions_from_path(&path)
+    let v1_path = transparency_log_path()?;
+    let v2_path = v2_release_registry_path()?;
+    supported_release_versions_from_paths(&v1_path, &v2_path)
+}
+
+fn supported_release_versions_from_paths(
+    v1_path: &Path,
+    v2_path: &Path,
+) -> Result<BTreeSet<String>, PinsError> {
+    let mut versions = supported_release_versions_from_path(v1_path)?;
+    versions.extend(crate::v2_registry::versions(v2_path)?);
+    Ok(versions)
 }
 
 fn supported_release_versions_from_path(path: &Path) -> Result<BTreeSet<String>, PinsError> {
@@ -164,6 +181,14 @@ pub(super) fn supported_release_versions_from_test_path(
     path: &Path,
 ) -> Result<BTreeSet<String>, PinsError> {
     supported_release_versions_from_path(path)
+}
+
+#[cfg(test)]
+pub(super) fn supported_release_versions_from_test_paths(
+    v1_path: &Path,
+    v2_path: &Path,
+) -> Result<BTreeSet<String>, PinsError> {
+    supported_release_versions_from_paths(v1_path, v2_path)
 }
 
 pub fn snapshot_versions() -> Result<BTreeSet<String>, PinsError> {

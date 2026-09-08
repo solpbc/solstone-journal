@@ -4695,6 +4695,7 @@ dependencies = [
  "sha2",
  "solstone-core-assets",
  "solstone-core-local",
+ "tempfile",
  "thiserror 2.0.20",
  "ureq",
 ]
