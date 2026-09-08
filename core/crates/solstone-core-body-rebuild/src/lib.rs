@@ -1169,6 +1169,9 @@ mod tests {
         fs::create_dir(&root).unwrap();
         let canonical = root.join("database café");
         let ordinary = windows_database_publication_path(&canonical);
+        assert!(canonical.to_str().unwrap().starts_with(r"\\?\"));
+        assert!(!ordinary.to_str().unwrap().starts_with(r"\\?\"));
+        assert_ne!(canonical.as_os_str(), ordinary.as_os_str());
         write_bytes_exclusive(
             &ordinary,
             b"unchanged",
