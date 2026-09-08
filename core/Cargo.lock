@@ -4467,6 +4467,7 @@ dependencies = [
  "solstone-core-import-sources",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
+ "solstone-core-installation-identity",
  "solstone-core-journal",
  "solstone-core-journal-archive",
  "solstone-core-journal-io",
