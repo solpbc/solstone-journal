@@ -69,7 +69,7 @@ fn suffix() -> &'static str {
 fn stage_payload(test_name: &str, fake_tools: bool) {
     let tmp = tempfile::tempdir().expect("staging directory");
     let root = tmp.path().join(if cfg!(windows) {
-        "Backup package café owner's path"
+        "Backup package café, owner's path"
     } else {
         "backup-package"
     });
@@ -452,11 +452,7 @@ fn backup_native_round_trip() {
         &[],
     )
     .unwrap();
-    assert_eq!(
-        via_rclone.returncode, 0,
-        "{via_rclone:?}; scrubbed stderr: {}",
-        via_rclone.stderr
-    );
+    assert_eq!(via_rclone.returncode, 0, "{via_rclone:?}");
     println!("NATIVE_BACKUP_RCLONE_PATH_NUL_OK");
 
     let blackhole = TcpListener::bind("127.0.0.1:0").unwrap();

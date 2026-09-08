@@ -102,6 +102,13 @@ pub trait ToolRunner {
 #[derive(Debug, Default)]
 pub struct SystemToolRunner;
 
+// restic's -o flag parses CSV before rclone splits the program shell string.
+// Encode only after program admission, preserving that exact logical value.
+#[cfg(any(windows, test))]
+fn encode_restic_csv_option(option: &str) -> String {
+    format!("\"{}\"", option.replace('"', "\"\""))
+}
+
 #[cfg(unix)]
 impl ToolRunner for SystemToolRunner {
     fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
@@ -246,7 +253,16 @@ impl ToolRunner for SystemToolRunner {
         let bounded_request = solstone_core_system::process::BoundedHelperRequest {
             package_root,
             executable: canonical_program,
-            arguments,
+            arguments: arguments
+                .into_iter()
+                .map(|argument| {
+                    if argument.starts_with("rclone.program=") {
+                        encode_restic_csv_option(&argument)
+                    } else {
+                        argument
+                    }
+                })
+                .collect(),
             current_directory: bin_dir,
             environment: request.env.clone(),
             stdin: request.stdin.clone().unwrap_or_default(),
@@ -818,6 +834,18 @@ mod tests {
                 stderr: vec![],
             })
         }
+    }
+
+    #[test]
+    fn restic_csv_option_preserves_shell_quotes_and_commas() {
+        assert_eq!(
+            encode_restic_csv_option(r#"rclone.program="C:\Owner café, local\rclone.exe""#),
+            r#""rclone.program=""C:\Owner café, local\rclone.exe""""#
+        );
+        assert_eq!(
+            encode_restic_csv_option(r#"rclone.program="\\?\C:\Owner's path\rclone.exe""#),
+            r#""rclone.program=""\\?\C:\Owner's path\rclone.exe""""#
+        );
     }
 
     #[test]
