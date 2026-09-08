@@ -891,10 +891,33 @@ pub fn run_owner_args(
     }
 }
 
+#[cfg(any(windows, test))]
+fn native_windows_setup_home(
+    home_env: Option<&std::ffi::OsStr>,
+    profile_home: Option<&std::path::Path>,
+) -> Result<PathBuf, solstone_core_journal::HomeError> {
+    // Match the public journal path reader. This is configuration placement,
+    // not installation identity: OwnerBase remains the provider authority.
+    solstone_core_journal::discover_home(home_env, profile_home)
+}
+
 pub fn run_owner_setup_native(args: SetupArgs) -> ExitCode {
+    #[cfg(not(windows))]
     let home_dir = env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
+    #[cfg(windows)]
+    let home_dir = {
+        let home_env = env::var_os("HOME");
+        let profile_home = home_env.is_none().then(env::home_dir).flatten();
+        match native_windows_setup_home(home_env.as_deref(), profile_home.as_deref()) {
+            Ok(home) => home,
+            Err(_) => {
+                eprintln!("setup could not determine your home directory");
+                return ExitCode::from(1);
+            }
+        }
+    };
     let executable_dir = env::current_exe()
         .ok()
         .and_then(|path| path.parent().map(std::path::Path::to_path_buf))
@@ -939,6 +962,40 @@ mod tests {
     use std::path::Path;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn native_windows_setup_home_uses_profile_when_home_is_absent() {
+        let profile = std::env::temp_dir().join("setup owner ü");
+        let home = native_windows_setup_home(None, Some(&profile)).unwrap();
+        assert_eq!(home, profile);
+        assert_eq!(
+            config_path(&home),
+            profile.join(".config/solstone/config.toml")
+        );
+        assert_eq!(user_config::default_journal(&home), profile.join("journal"));
+    }
+
+    #[test]
+    fn native_windows_setup_home_preserves_explicit_home_precedence() {
+        let explicit = std::env::temp_dir().join("explicit setup owner");
+        let profile = std::env::temp_dir().join("different profile");
+        assert_eq!(
+            native_windows_setup_home(Some(explicit.as_os_str()), Some(&profile)).unwrap(),
+            explicit
+        );
+        assert!(
+            native_windows_setup_home(Some(std::ffi::OsStr::new("~unresolved")), Some(&profile))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn native_windows_setup_home_refuses_missing_home_and_profile() {
+        assert_eq!(
+            native_windows_setup_home(None, None),
+            Err(solstone_core_journal::HomeError::Unavailable)
+        );
+    }
 
     struct Runner(VecDeque<CommandOutput>);
     impl CommandRunner for Runner {
