@@ -1796,7 +1796,8 @@ fn write_transport_scp_shim(temp: &TempDir) -> (PathBuf, PathBuf) {
     (shim, log)
 }
 
-const VALID_NATIVE_RECEIPTS: [(&str, &str); 25] = [
+const VALID_NATIVE_RECEIPTS: [(&str, &str); 26] = [
+    ("JOURNAL_WIN_CI_RUNTIME_COMPONENTS", "executed/pass"),
     (
         "JOURNAL_WIN_CI_LAUNCH_ENVIRONMENT_PREPARATION",
         "executed/pass",
@@ -2120,6 +2121,12 @@ fn native_receipt_scenarios() -> Vec<NativeReceiptScenario> {
         },
     ];
     for (short, key, diagnostic_key, wrong_value) in [
+        (
+            "runtime-components",
+            "JOURNAL_WIN_CI_RUNTIME_COMPONENTS",
+            "runtime component",
+            "fixture-invalid",
+        ),
         (
             "ntfs-execution",
             "JOURNAL_WIN_CI_CORTEX_USE_NTFS",

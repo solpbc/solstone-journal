@@ -111,3 +111,7 @@ pub(crate) fn generation_resources(
     resources.retain(std::sync::Arc::new(context.read_file_grants.clone()));
     resources
 }
+
+#[cfg(all(test, feature = "test-fixture-pin"))]
+#[path = "windows_onnx_native_tests.rs"]
+mod native_tests;

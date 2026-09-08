@@ -435,6 +435,9 @@ fn native_foundation_targets_run_before_source_markers_and_are_host_required() {
     );
 
     let marker_body = batch_label_body(&win_ci, "run_source_marker");
-    assert!(marker_body.contains("-- --ignored --exact --nocapture"));
+    assert!(marker_body.contains("-- --ignored --exact --show-output"));
+    assert!(marker_body.contains("set \"JOURNAL_WIN_CI_TARGET_EXIT=%ERRORLEVEL%\""));
+    assert!(marker_body.contains("check-win-exact-result.ps1"));
+    assert!(marker_body.contains("-TestExitCode %JOURNAL_WIN_CI_TARGET_EXIT%"));
     assert!(marker_body.contains("did not emit exactly one source-originated target marker"));
 }

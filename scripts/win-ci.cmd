@@ -137,8 +137,6 @@ call :run_source_marker "journal-io install-file publication protocol" "solstone
 call :run_source_marked_target "journal-io operational-log namespace" "solstone-core-journal-io" "windows_oplog_namespace" "test-hooks" "journal_win_ci_windows_oplog_namespace_marker" "JOURNAL_WIN_CI_TARGET_WINDOWS_OPLOG_NAMESPACE" || exit /b 1
 call :run_source_marked_target "journal-io operational-log liveness" "solstone-core-journal-io" "windows_oplog_liveness" "test-hooks" "journal_win_ci_windows_oplog_liveness_marker" "JOURNAL_WIN_CI_TARGET_WINDOWS_OPLOG_LIVENESS" || exit /b 1
 echo === checking required journal portability tests ===
-cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --list | findstr /c:"tests::config_strip_matches_python_control_whitespace: test" >nul || ( echo ERROR: required journal test config_strip_matches_python_control_whitespace is missing & exit /b 1 )
-cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --list | findstr /c:"tests::ensure_journal_dir_reports_non_directory_parent: test" >nul || ( echo ERROR: required journal test ensure_journal_dir_reports_non_directory_parent is missing & exit /b 1 )
 call :require_journal_test tests::config_strip_matches_python_control_whitespace || exit /b 1
 call :require_journal_test tests::ensure_journal_dir_reports_non_directory_parent || exit /b 1
 echo === cargo test --locked (journal library) ===
@@ -148,6 +146,23 @@ if "%JOURNAL_WIN_CI_RUN_BACKUP%"=="1" (
   call :run_native_backup || exit /b 1
   set "JOURNAL_WIN_CI_BACKUP_EVIDENCE=executed/pass"
 )
+
+call :run_exact_library "solstone-core-system" "process::platform::launch_control::installed_task_controls::installed_entry_refuses_cross_variant_and_every_changed_action_field" || exit /b 1
+call :run_exact_library "solstone-core-system" "process::platform::launch_control::installed_task_controls::installed_wire_refuses_hosted_fields_unknown_variant_and_file_grants" || exit /b 1
+call :run_exact_library "solstone-core-system" "process::platform::launch_control::installed_task_controls::guard_extraction_refuses_every_partial_set_and_non_unicode_value" || exit /b 1
+call :run_exact_library "solstone-core-journal-cli" "runner::installed_task_controls::installed_request_preserves_exact_public_action" || exit /b 1
+call :run_exact_library "solstone-core-journal-cli" "runner::installed_task_controls::installed_request_refuses_partial_non_unicode_and_rewritten_action" || exit /b 1
+call :run_exact_library "solstone-core-journal-cli" "runner::installed_task_controls::installed_forwarding_refuses_changed_argv_before_launch" || exit /b 1
+call :run_exact_library "solstone-core-service-unit" "windows_action::tests::guarded_action_round_trips_nondefault_port_and_unicode_path" || exit /b 1
+call :run_exact_library "solstone-core-service-unit" "windows_action::tests::rejects_missing_partial_duplicate_malformed_and_extra_guard_fields" || exit /b 1
+call :run_exact_library "solstone-core-service-unit" "windows_action::tests::quoting_matches_independent_literal_vectors" || exit /b 1
+call :run_exact_library "solstone-core-service-unit" "windows_task_readback::tests::accepts_scheduler_metadata_without_weakening_action_validation" || exit /b 1
+call :run_exact_library "solstone-core-service-unit" "windows_task_readback::tests::utf16_saved_artifact_retains_complete_action" || exit /b 1
+call :run_exact_library "solstone-core-service-unit" "windows_task_readback::tests::requires_unified_engine_and_exact_exec_identity" || exit /b 1
+call :run_exact_library "solstone-core-service-unit" "windows_task_readback::tests::refuses_duplicate_actions_triggers_wrong_namespace_and_privilege" || exit /b 1
+call :run_platform_receipt "Windows readiness birth" "solstone-core-system" "windows_lifecycle_receipt" "windows_readiness_birth_binding_receipt" "JOURNAL_WIN_CI_READINESS_BIRTH" || exit /b 1
+call :run_exact_target "solstone-core" "windows_service_capture" "windows_service_capture::windows_service_capture_receipt" "JOURNAL_WIN_CI_SERVICE_CAPTURE=PASS" || exit /b 1
+echo JOURNAL_WIN_CI_RUNTIME_COMPONENTS=executed/pass
 
 :: Detect another operator replacing the persistent checkout while Cargo ran.
 :: The driver-side lock normally serializes this rail; this second check keeps
@@ -178,10 +193,11 @@ set "JOURNAL_WIN_CI_PLATFORM_SELECTOR=%~4"
 set "JOURNAL_WIN_CI_PLATFORM_MARKER=%~5"
 echo === cargo test --locked %JOURNAL_WIN_CI_PLATFORM_LABEL% native receipt ===
 set "JOURNAL_WIN_CI_PLATFORM_LOG=core\target\journal-win-ci-platform-receipt-%RANDOM%%RANDOM%.log"
-cargo test --manifest-path core\Cargo.toml --locked -p %JOURNAL_WIN_CI_PLATFORM_PACKAGE% --test %JOURNAL_WIN_CI_PLATFORM_TARGET% --features test-hooks -- --ignored --exact %JOURNAL_WIN_CI_PLATFORM_SELECTOR% --nocapture > "%JOURNAL_WIN_CI_PLATFORM_LOG%" 2>&1
+cargo test --manifest-path core\Cargo.toml --locked -p %JOURNAL_WIN_CI_PLATFORM_PACKAGE% --test %JOURNAL_WIN_CI_PLATFORM_TARGET% --features test-hooks -- --ignored --exact %JOURNAL_WIN_CI_PLATFORM_SELECTOR% --show-output > "%JOURNAL_WIN_CI_PLATFORM_LOG%" 2>&1
 set "JOURNAL_WIN_CI_PLATFORM_STATUS=%ERRORLEVEL%"
 type "%JOURNAL_WIN_CI_PLATFORM_LOG%"
 if not "%JOURNAL_WIN_CI_PLATFORM_STATUS%"=="0" exit /b 1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\check-win-exact-result.ps1 -LogPath "%JOURNAL_WIN_CI_PLATFORM_LOG%" -TestName "%JOURNAL_WIN_CI_PLATFORM_SELECTOR%" -TestExitCode %JOURNAL_WIN_CI_PLATFORM_STATUS% -Marker "%JOURNAL_WIN_CI_PLATFORM_MARKER%=executed/pass" || exit /b 1
 powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_CI_PLATFORM_LOG); $marker = [regex]::Escape($env:JOURNAL_WIN_CI_PLATFORM_MARKER); $pass = [regex]::Escape($env:JOURNAL_WIN_CI_PLATFORM_MARKER + '=executed/pass'); if ([regex]::Matches($text, '(?m)^' + $marker + '=.*\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $pass + '\r?$').Count -eq 1) { exit 0 }; exit 1"
 if not "%ERRORLEVEL%"=="0" ( echo ERROR: %JOURNAL_WIN_CI_PLATFORM_LABEL% receipt did not emit exactly one source-originated pass marker & exit /b 1 )
 del /q "%JOURNAL_WIN_CI_PLATFORM_LOG%" >nul 2>&1
@@ -196,10 +212,11 @@ set "JOURNAL_WIN_CI_RECEIPT_MARKER=%~5"
 set "JOURNAL_WIN_CI_RECEIPT_FILESYSTEM=%~6"
 echo === cargo test --locked %JOURNAL_WIN_CI_RECEIPT_LABEL% native receipt ===
 set "JOURNAL_WIN_CI_RECEIPT_LOG=core\target\journal-win-ci-receipt-%RANDOM%%RANDOM%.log"
-cargo test --manifest-path core\Cargo.toml --locked -p %JOURNAL_WIN_CI_RECEIPT_PACKAGE% --test %JOURNAL_WIN_CI_RECEIPT_TARGET% --features test-hooks -- --ignored --exact %JOURNAL_WIN_CI_RECEIPT_SELECTOR% --nocapture > "%JOURNAL_WIN_CI_RECEIPT_LOG%" 2>&1
+cargo test --manifest-path core\Cargo.toml --locked -p %JOURNAL_WIN_CI_RECEIPT_PACKAGE% --test %JOURNAL_WIN_CI_RECEIPT_TARGET% --features test-hooks -- --ignored --exact %JOURNAL_WIN_CI_RECEIPT_SELECTOR% --show-output > "%JOURNAL_WIN_CI_RECEIPT_LOG%" 2>&1
 set "JOURNAL_WIN_CI_RECEIPT_STATUS=%ERRORLEVEL%"
 type "%JOURNAL_WIN_CI_RECEIPT_LOG%"
 if not "%JOURNAL_WIN_CI_RECEIPT_STATUS%"=="0" exit /b 1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\check-win-exact-result.ps1 -LogPath "%JOURNAL_WIN_CI_RECEIPT_LOG%" -TestName "%JOURNAL_WIN_CI_RECEIPT_SELECTOR%" -TestExitCode %JOURNAL_WIN_CI_RECEIPT_STATUS% -Marker "%JOURNAL_WIN_CI_RECEIPT_MARKER%=executed/pass" || exit /b 1
 powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_CI_RECEIPT_LOG); $marker = [regex]::Escape($env:JOURNAL_WIN_CI_RECEIPT_MARKER); $filesystemMarker = [regex]::Escape($env:JOURNAL_WIN_CI_RECEIPT_MARKER + '_FILESYSTEM'); $pass = [regex]::Escape($env:JOURNAL_WIN_CI_RECEIPT_MARKER + '=executed/pass'); $filesystem = [regex]::Escape($env:JOURNAL_WIN_CI_RECEIPT_MARKER + '_FILESYSTEM=' + $env:JOURNAL_WIN_CI_RECEIPT_FILESYSTEM); if ([regex]::Matches($text, '(?m)^' + $marker + '=.*\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $filesystemMarker + '=.*\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $pass + '\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $filesystem + '\r?$').Count -eq 1) { exit 0 }; exit 1"
 if not "%ERRORLEVEL%"=="0" ( echo ERROR: %JOURNAL_WIN_CI_RECEIPT_LABEL% receipt did not emit exactly one source-originated pass and runtime-filesystem marker & exit /b 1 )
 set "JOURNAL_WIN_CI_CORTEX_NAMESPACE_TOKEN="
@@ -212,7 +229,11 @@ exit /b 0
 
 :require_journal_test
 set "JOURNAL_WIN_CI_TEST=%~1"
-cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --exact "%JOURNAL_WIN_CI_TEST%" 2>&1 | findstr /c:"test result: ok. 1 passed;" >nul || ( echo ERROR: required journal test %JOURNAL_WIN_CI_TEST% is missing ignored or failed & exit /b 1 )
+set "JOURNAL_WIN_CI_TEST_LOG=core\target\journal-win-ci-required-%RANDOM%%RANDOM%.log"
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib -- --exact "%JOURNAL_WIN_CI_TEST%" --show-output > "%JOURNAL_WIN_CI_TEST_LOG%" 2>&1
+set "JOURNAL_WIN_CI_TEST_EXIT=%ERRORLEVEL%"
+type "%JOURNAL_WIN_CI_TEST_LOG%"
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\check-win-exact-result.ps1 -LogPath "%JOURNAL_WIN_CI_TEST_LOG%" -TestName "%JOURNAL_WIN_CI_TEST%" -TestExitCode %JOURNAL_WIN_CI_TEST_EXIT% || exit /b 1
 exit /b 0
 
 :run_source_marked_target
@@ -228,12 +249,14 @@ exit /b 0
 :run_source_marker
 set "JOURNAL_WIN_CI_TARGET_LOG=core\target\journal-win-ci-target-%RANDOM%%RANDOM%.log"
 if "%~4"=="" (
-  cargo test --manifest-path core\Cargo.toml --locked -p "%~2" --test "%~3" "%~5" -- --ignored --exact --nocapture > "%JOURNAL_WIN_CI_TARGET_LOG%" 2>&1
+  cargo test --manifest-path core\Cargo.toml --locked -p "%~2" --test "%~3" "%~5" -- --ignored --exact --show-output > "%JOURNAL_WIN_CI_TARGET_LOG%" 2>&1
 ) else (
-  cargo test --manifest-path core\Cargo.toml --locked -p "%~2" --test "%~3" --features "%~4" "%~5" -- --ignored --exact --nocapture > "%JOURNAL_WIN_CI_TARGET_LOG%" 2>&1
+  cargo test --manifest-path core\Cargo.toml --locked -p "%~2" --test "%~3" --features "%~4" "%~5" -- --ignored --exact --show-output > "%JOURNAL_WIN_CI_TARGET_LOG%" 2>&1
 )
-if not "%ERRORLEVEL%"=="0" ( type "%JOURNAL_WIN_CI_TARGET_LOG%" & del /q "%JOURNAL_WIN_CI_TARGET_LOG%" >nul 2>&1 & echo ERROR: %~1 source-marker test failed & exit /b 1 )
+set "JOURNAL_WIN_CI_TARGET_EXIT=%ERRORLEVEL%"
+if not "%JOURNAL_WIN_CI_TARGET_EXIT%"=="0" ( type "%JOURNAL_WIN_CI_TARGET_LOG%" & del /q "%JOURNAL_WIN_CI_TARGET_LOG%" >nul 2>&1 & echo ERROR: %~1 source-marker test failed & exit /b 1 )
 set "JOURNAL_WIN_CI_TARGET_MARKER=%~6"
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\check-win-exact-result.ps1 -LogPath "%JOURNAL_WIN_CI_TARGET_LOG%" -TestName "%~5" -TestExitCode %JOURNAL_WIN_CI_TARGET_EXIT% -Marker "%~6=executed/pass" || exit /b 1
 powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_CI_TARGET_LOG); $key = [regex]::Escape($env:JOURNAL_WIN_CI_TARGET_MARKER); $pass = [regex]::Escape($env:JOURNAL_WIN_CI_TARGET_MARKER + '=executed/pass'); if ([regex]::Matches($text, '(?m)^' + $key + '=.*\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $pass + '\r?$').Count -eq 1) { exit 0 }; exit 1"
 if not "%ERRORLEVEL%"=="0" ( type "%JOURNAL_WIN_CI_TARGET_LOG%" & del /q "%JOURNAL_WIN_CI_TARGET_LOG%" >nul 2>&1 & echo ERROR: %~1 did not emit exactly one source-originated target marker & exit /b 1 )
 type "%JOURNAL_WIN_CI_TARGET_LOG%"
@@ -275,4 +298,20 @@ type "%JOURNAL_WIN_BACKUP_LOG%"
 echo JOURNAL_WIN_BACKUP_TEST_EXIT=%JOURNAL_WIN_BACKUP_EXIT%
 echo JOURNAL_WIN_BACKUP_TEST_LOG=%JOURNAL_WIN_BACKUP_LOG%
 powershell -NoProfile -File scripts\check-win-backup-result.ps1 -LogPath "%JOURNAL_WIN_BACKUP_LOG%" -TestName "%JOURNAL_WIN_BACKUP_TEST%" -TestExitCode %JOURNAL_WIN_BACKUP_EXIT% || exit /b 1
+exit /b 0
+
+:run_exact_library
+set "JOURNAL_WIN_CI_EXACT_LOG=core\target\journal-win-ci-library-%RANDOM%%RANDOM%.log"
+cargo test --manifest-path core\Cargo.toml --locked -p "%~1" --lib -- --exact "%~2" --show-output > "%JOURNAL_WIN_CI_EXACT_LOG%" 2>&1
+set "JOURNAL_WIN_CI_EXACT_EXIT=%ERRORLEVEL%"
+type "%JOURNAL_WIN_CI_EXACT_LOG%"
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\check-win-exact-result.ps1 -LogPath "%JOURNAL_WIN_CI_EXACT_LOG%" -TestName "%~2" -TestExitCode %JOURNAL_WIN_CI_EXACT_EXIT% || exit /b 1
+exit /b 0
+
+:run_exact_target
+set "JOURNAL_WIN_CI_EXACT_LOG=core\target\journal-win-ci-runtime-%RANDOM%%RANDOM%.log"
+cargo test --manifest-path core\Cargo.toml --locked -p "%~1" --test "%~2" --features test-hooks -- --ignored --exact "%~3" --show-output > "%JOURNAL_WIN_CI_EXACT_LOG%" 2>&1
+set "JOURNAL_WIN_CI_EXACT_EXIT=%ERRORLEVEL%"
+type "%JOURNAL_WIN_CI_EXACT_LOG%"
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\check-win-exact-result.ps1 -LogPath "%JOURNAL_WIN_CI_EXACT_LOG%" -TestName "%~3" -TestExitCode %JOURNAL_WIN_CI_EXACT_EXIT% -Marker "%~4" || exit /b 1
 exit /b 0

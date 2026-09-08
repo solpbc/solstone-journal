@@ -30,6 +30,7 @@ if (-not [IO.Path]::GetFullPath($PSScriptRoot).Equals(
     throw 'execute the driver from the exact transferred product checkout'
 }
 . (Join-Path $PSScriptRoot 'rfdetr-windows-capture.ps1')
+. (Join-Path $PSScriptRoot 'windows-rust-toolchain.ps1')
 $utf8 = [Text.UTF8Encoding]::new($false, $true)
 $fence = 'C:\ProgramData\solstone\journal-win-bootstrap.lock'
 $token = [Guid]::NewGuid().ToString('N')
@@ -206,8 +207,9 @@ try {
             Set-BuildEnvironment $Matches[1] $Matches[2]
         }
     }
-    $cargo = (Get-Command cargo.exe -CommandType Application -ErrorAction Stop).Source
-    $rustc = (Get-Command rustc.exe -CommandType Application -ErrorAction Stop).Source
+    $rustTools = Select-WindowsRustToolchain $RepositoryRoot $reportRoot
+    $cargo = $rustTools.cargo
+    $rustc = $rustTools.rustc
     $cl = (Get-Command cl.exe -CommandType Application -ErrorAction Stop).Source
     $link = (Get-Command link.exe -CommandType Application -ErrorAction Stop).Source
     $msbuild = Join-Path $vs 'MSBuild\Current\Bin\MSBuild.exe'

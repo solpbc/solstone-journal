@@ -207,8 +207,10 @@ try {
     foreach ($line in (Log-Text 'build-environment') -split "`r?`n") {
         if ($line -match '^(PATH|PATHEXT|INCLUDE|LIB|LIBPATH|VCToolsInstallDir|VCToolsVersion|VCToolsRedistDir|WindowsSdkDir|WindowsSDKVersion|WindowsSDKLibVersion|WindowsSdkBinPath|WindowsSdkVerBinPath|VSINSTALLDIR|VCINSTALLDIR|VSCMD_ARG_TGT_ARCH)=(.*)$') { Set-BuildEnvironment $Matches[1] $Matches[2] }
     }
-    $cargo=(Get-Command cargo.exe -CommandType Application -ErrorAction Stop).Source
-    $rustc=(Get-Command rustc.exe -CommandType Application -ErrorAction Stop).Source
+    . (Join-Path $PSScriptRoot 'windows-rust-toolchain.ps1')
+    $rustTools=Select-WindowsRustToolchain $RecorderRepositoryRoot $reportRoot
+    $cargo=$rustTools.cargo
+    $rustc=$rustTools.rustc
     $cl=(Get-Command cl.exe -CommandType Application -ErrorAction Stop).Source
     $link=(Get-Command link.exe -CommandType Application -ErrorAction Stop).Source
     $msbuild=Join-Path $vs 'MSBuild\Current\Bin\MSBuild.exe'

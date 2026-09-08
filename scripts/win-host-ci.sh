@@ -198,12 +198,25 @@ if [ "$ssh_status" -ne 0 ]; then
 fi
 
 normalized_output=$(awk '{ sub(/\r$/, ""); print }' "$ssh_output_file")
+runtime_components_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_RUNTIME_COMPONENTS=executed\/pass$/ { count++ } END { print count + 0 }')
+runtime_components_key_count=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_RUNTIME_COMPONENTS=/ { count++ } END { print count + 0 }')
+if [ "$runtime_components_count" -ne 1 ] || [ "$runtime_components_key_count" -ne 1 ]; then
+  echo "ERROR: win-host-ci: missing exact runtime component receipt" >&2
+  exit 1
+fi
+
 ok_count=$(printf '%s\n' "$normalized_output" | awk '/^=== JOURNAL_WIN_CI_OK:/ { count++ } END { print count + 0 }')
 if [ "$ok_count" -ne 1 ]; then
   echo "ERROR: win-host-ci: expected exactly one JOURNAL_WIN_CI_OK acknowledgement, found $ok_count; rerun the complete box gate" >&2
   exit 1
 fi
 ok_line=$(printf '%s\n' "$normalized_output" | awk '/^=== JOURNAL_WIN_CI_OK:/ { print NR }')
+runtime_components_line=$(printf '%s\n' "$normalized_output" | awk '/^JOURNAL_WIN_CI_RUNTIME_COMPONENTS=executed\/pass$/ { print NR }')
+if [ "$runtime_components_line" -ge "$ok_line" ]; then
+  echo "ERROR: win-host-ci: runtime component receipt must precede completion" >&2
+  exit 1
+fi
+
 require_native_receipt() {
   receipt_key=$1
   receipt_filesystem=$2
@@ -369,4 +382,4 @@ if [ "$refs_publication" -eq 1 ]; then
   fi
 fi
 
-echo "JOURNAL_WIN_HOST_CI_VERIFIED commit=$snapshot_sha cargo_lock_sha256=$cargo_lock_sha256 cloud_sync_evidence=$expected_cloud_evidence backup_evidence=$expected_backup_evidence ordinary_owner_evidence=passed launch_environment_preparation=executed/pass launch_path_preparation=executed/pass job_list_no_handle_inheritance=executed/pass job_process_owner=executed/pass job_last_handle_negative=executed/pass managed_process_facade=executed/pass windows_payload=executed/pass windows_create_only=executed/pass windows_create_only_protocol=executed/pass windows_install_file=executed/pass windows_install_file_protocol=executed/pass windows_oplog_namespace=executed/pass windows_oplog_liveness=executed/pass ntfs_publication=executed/pass refs_publication=executed/pass ntfs_cortex_use=executed/pass refs_cortex_use=executed/pass ntfs_operational_log_discovery=executed/pass refs_operational_log_discovery=executed/pass ntfs_stale_heartbeat_cleanup=executed/pass refs_stale_heartbeat_cleanup=executed/pass"
+echo "JOURNAL_WIN_HOST_CI_VERIFIED commit=$snapshot_sha cargo_lock_sha256=$cargo_lock_sha256 cloud_sync_evidence=$expected_cloud_evidence backup_evidence=$expected_backup_evidence ordinary_owner_evidence=passed runtime_components=executed/pass launch_environment_preparation=executed/pass launch_path_preparation=executed/pass job_list_no_handle_inheritance=executed/pass job_process_owner=executed/pass job_last_handle_negative=executed/pass managed_process_facade=executed/pass windows_payload=executed/pass windows_create_only=executed/pass windows_create_only_protocol=executed/pass windows_install_file=executed/pass windows_install_file_protocol=executed/pass windows_oplog_namespace=executed/pass windows_oplog_liveness=executed/pass ntfs_publication=executed/pass refs_publication=executed/pass ntfs_cortex_use=executed/pass refs_cortex_use=executed/pass ntfs_operational_log_discovery=executed/pass refs_operational_log_discovery=executed/pass ntfs_stale_heartbeat_cleanup=executed/pass refs_stale_heartbeat_cleanup=executed/pass"

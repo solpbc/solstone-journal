@@ -5499,6 +5499,7 @@ dependencies = [
  "socket2",
  "solstone-core-assets",
  "solstone-core-callosum",
+ "solstone-core-distribution",
  "solstone-core-installation-identity",
  "solstone-core-journal",
  "solstone-core-journal-config",
