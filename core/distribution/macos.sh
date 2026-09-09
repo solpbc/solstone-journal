@@ -170,12 +170,7 @@ assert_launchers() {
 # carry no extension and the payload arrives under two different dylib names, so
 # a name-keyed census is structurally unable to enumerate this tree.
 macho_members() {
-	find "$TREE" -type f -perm -u+r -print | while IFS= read -r path; do
-		magic=$(LC_ALL=C od -An -N4 -t x1 "$path" 2>/dev/null | tr -d ' \n')
-		case $magic in
-		cffaedfe | cafebabe | cafebabf) printf '%s\n' "$path" ;;
-		esac
-	done | LC_ALL=C sort
+	macho_members_in "$TREE"
 }
 
 # ⛔ Split executables from payloads by Mach-O FILETYPE, never by the +x bit or
@@ -185,19 +180,32 @@ macho_members() {
 # is a property of the bytes and it is the same discriminator the producer's
 # Rust census uses, so the two agree by construction rather than by convention.
 macho_filetype() {
-	LC_ALL=C od -An -j12 -N4 -t u4 "$1" 2>/dev/null | tr -d ' \n'
+	mt_raw=$(LC_ALL=C /usr/bin/od -An -j12 -N4 -t u4 "$1" 2>/dev/null) || return 2
+	set -- $mt_raw
+	[ "$#" -eq 1 ] || return 2
+	printf '%s\n' "$1"
 }
 
 macho_executables() {
-	macho_members | while IFS= read -r path; do
-		[ "$(macho_filetype "$path")" = "2" ] && printf '%s\n' "$path"
-	done
+	me_members=$WORK/macho-members-for-executables
+	macho_members >"$me_members" || return 2
+	while IFS= read -r me_path; do
+		me_type=$(macho_filetype "$me_path") || return 2
+		if [ "$me_type" = "2" ]; then
+			printf '%s\n' "$me_path"
+		fi
+	done <"$me_members"
 }
 
 macho_payloads() {
-	macho_members | while IFS= read -r path; do
-		[ "$(macho_filetype "$path")" = "6" ] && printf '%s\n' "$path"
-	done
+	mp_members=$WORK/macho-members-for-payloads
+	macho_members >"$mp_members" || return 2
+	while IFS= read -r mp_path; do
+		mp_type=$(macho_filetype "$mp_path") || return 2
+		if [ "$mp_type" = "6" ]; then
+			printf '%s\n' "$mp_path"
+		fi
+	done <"$mp_members"
 }
 
 assert_signed_by_us() {
@@ -343,26 +351,39 @@ assert_tar_sets_no_quarantine() {
 gatekeeper_rung() {
 	assert_gatekeeper_enabled
 	install_tar
+	# The extracted tree is untrusted until its signed inventory has been
+	# validated. Do not let a shipped command shadow the host tools that perform
+	# that validation.
+	PATH=/usr/bin:/bin:/usr/sbin:/sbin
+	export PATH
 	assert_tar_sets_no_quarantine
+	read_signed_macho_inventory
+	assert_membership_negatives
 
 	count=0
-	for path in $(macho_executables); do
+	macho_executables >"$WORK/macho-executables" \
+		|| refuse "could not enumerate executable Mach-O members"
+	while IFS= read -r path; do
 		count=$((count + 1))
 		assert_signed_by_us "$path"
 		assert_notarized "$path"
 		# Signed and assessed is still not started. Run it.
 		assert_starts "$path"
-	done
-	[ "$count" -eq 9 ] || refuse "expected exactly 9 executables in the tree, found $count"
+	done <"$WORK/macho-executables"
+	[ "$count" -eq "$EXPECTED_EXECUTABLES" ] \
+		|| refuse "signed inventory declares $EXPECTED_EXECUTABLES executable(s), found $count"
 	printf 'gatekeeper half 1: %s executables signed, notarized, accepted and started\n' "$count"
 
 	payloads=0
-	for path in $(macho_payloads); do
+	macho_payloads >"$WORK/macho-payloads" \
+		|| refuse "could not enumerate payload Mach-O members"
+	while IFS= read -r path; do
 		payloads=$((payloads + 1))
 		assert_signed_by_us "$path"
 		assert_notarized "$path"
-	done
-	[ "$payloads" -ge 1 ] || refuse "no loaded payload found in the tree: half 2 has nothing to test"
+	done <"$WORK/macho-payloads"
+	[ "$payloads" -eq "$EXPECTED_PAYLOADS" ] \
+		|| refuse "signed inventory declares $EXPECTED_PAYLOADS loaded payload(s), found $payloads"
 
 	# Half 2 is not "the dylib is signed" — it is "the dylib LOADS". Under the
 	# hardened runtime a binary refuses a library signed by another team, so
@@ -406,19 +427,27 @@ gatekeeper_negatives() {
 	# hardened-runtime helper to refuse to start. This is the exact failure a
 	# binaries-only signing census ships.
 	stripped=0
-	for path in $(macho_members_in "$broken"); do
-		if [ "$(macho_filetype "$path")" = "6" ]; then
+	macho_members_in "$broken" >"$WORK/broken-members" \
+		|| refuse "could not enumerate the payload-signature control"
+	while IFS= read -r path; do
+		filetype=$(macho_filetype "$path") \
+			|| refuse "could not read Mach-O type in the payload-signature control"
+		if [ "$filetype" = "6" ]; then
 			/usr/bin/codesign --remove-signature "$path" >/dev/null 2>&1 || true
 			stripped=$((stripped + 1))
 		fi
-	done
+	done <"$WORK/broken-members"
 	[ "$stripped" -ge 1 ] || refuse "CONTROL FAILED: no payload was stripped, so control 2 changed nothing"
-	for path in $(macho_members_in "$broken"); do
-		if [ "$(macho_filetype "$path")" = "6" ]; then
+	macho_members_in "$broken" >"$WORK/broken-members-after-strip" \
+		|| refuse "could not re-enumerate the payload-signature control"
+	while IFS= read -r path; do
+		filetype=$(macho_filetype "$path") \
+			|| refuse "could not re-read Mach-O type in the payload-signature control"
+		if [ "$filetype" = "6" ]; then
 			/usr/bin/codesign -dv --verbose=2 "$path" 2>&1 | grep -Fq 'not signed at all' \
 				|| refuse "CONTROL FAILED: $path still carries a signature after --remove-signature"
 		fi
-	done
+	done <"$WORK/broken-members-after-strip"
 	saved_tree=$TREE
 	TREE=$broken
 	if speakers_probe "$WORK/broken-response.json" 2>"$WORK/broken.err"; then
@@ -450,13 +479,182 @@ gatekeeper_negatives() {
 }
 
 macho_members_in() {
-	root=$1
-	find "$root" -type f -print | while IFS= read -r path; do
-		magic=$(LC_ALL=C od -An -N4 -t x1 "$path" 2>/dev/null | tr -d ' \n')
-		case $magic in
-		cffaedfe | cafebabe | cafebabf) printf '%s\n' "$path" ;;
+	mm_root=$1
+	mm_candidates=$(/usr/bin/mktemp "$WORK/macho-candidates.XXXXXX") || return 2
+	mm_members=$(/usr/bin/mktemp "$WORK/macho-members.XXXXXX") || {
+		/bin/rm -f "$mm_candidates"
+		return 2
+	}
+	if ! /usr/bin/find "$mm_root" -type f -print >"$mm_candidates"; then
+		/bin/rm -f "$mm_candidates" "$mm_members"
+		return 2
+	fi
+	: >"$mm_members"
+	mm_status=0
+	while IFS= read -r mm_path; do
+		mm_raw=$(LC_ALL=C /usr/bin/od -An -N4 -t x1 "$mm_path" 2>/dev/null) || {
+			mm_status=2
+			break
+		}
+		set -- $mm_raw
+		# A readable short file is simply not Mach-O. Only a failed read makes
+		# the census incomplete.
+		[ "$#" -eq 4 ] || continue
+		mm_magic=$1$2$3$4
+		case $mm_magic in
+		cffaedfe | cafebabe | cafebabf) printf '%s\n' "$mm_path" >>"$mm_members" ;;
 		esac
-	done | LC_ALL=C sort
+	done <"$mm_candidates"
+	if [ "$mm_status" -eq 0 ]; then
+		LC_ALL=C /usr/bin/sort "$mm_members" || mm_status=2
+	fi
+	/bin/rm -f "$mm_candidates" "$mm_members"
+	return "$mm_status"
+}
+
+write_relative_macho_members() {
+	root=$1
+	out=$2
+	macho_members_in "$root" >"$out.full" || return 2
+	: >"$out.raw"
+	while IFS= read -r path; do
+		case $path in
+		"$root"/*) printf '%s\n' "${path#"$root"/}" >>"$out.raw" ;;
+		*) return 2 ;;
+		esac
+	done <"$out.full"
+	LC_ALL=C /usr/bin/sort "$out.raw" >"$out" || return 2
+}
+
+tree_matches_signed_inventory() {
+	root=$1
+	label=$2
+	write_relative_macho_members "$root" "$WORK/$label" || return 2
+	/usr/bin/cmp -s "$WORK/signed-members.sorted" "$WORK/$label"
+}
+
+read_signed_macho_inventory() {
+	signing=$(one_artifact .signing.json)
+	EXPECTED_EXECUTABLES=$(/usr/bin/plutil -extract executable_count raw -o - "$signing" 2>/dev/null) \
+		|| refuse "could not read executable_count from ${signing##*/}"
+	EXPECTED_PAYLOADS=$(/usr/bin/plutil -extract payload_count raw -o - "$signing" 2>/dev/null) \
+		|| refuse "could not read payload_count from ${signing##*/}"
+	case $EXPECTED_EXECUTABLES in
+	'' | *[!0-9]*) refuse "invalid executable_count in ${signing##*/}: $EXPECTED_EXECUTABLES" ;;
+	esac
+	case $EXPECTED_PAYLOADS in
+	'' | *[!0-9]*) refuse "invalid payload_count in ${signing##*/}: $EXPECTED_PAYLOADS" ;;
+	esac
+	[ "$EXPECTED_EXECUTABLES" -ge 1 ] \
+		|| refuse "the signed inventory declares no executable to test"
+	[ "$EXPECTED_PAYLOADS" -ge 1 ] \
+		|| refuse "the signed inventory declares no loaded payload to test"
+
+	member_total=$((EXPECTED_EXECUTABLES + EXPECTED_PAYLOADS))
+	member_executables=0
+	member_payloads=0
+	: >"$WORK/signed-members.raw"
+	i=0
+	while [ "$i" -lt "$member_total" ]; do
+		member_path=$(/usr/bin/plutil -extract "members.$i.path" raw -o - "$signing" 2>/dev/null) \
+				|| refuse "could not read members.$i.path from ${signing##*/}"
+		member_kind=$(/usr/bin/plutil -extract "members.$i.kind" raw -o - "$signing" 2>/dev/null) \
+				|| refuse "could not read members.$i.kind from ${signing##*/}"
+		member_digest=$(/usr/bin/plutil -extract "members.$i.sha256" raw -o - "$signing" 2>/dev/null) \
+				|| refuse "could not read members.$i.sha256 from ${signing##*/}"
+		case "/$member_path/" in
+		*'/../'* | *'/./'* | *'//'*) refuse "unsafe signed member path: $member_path" ;;
+		esac
+		case $member_path in
+		'' | /*) refuse "unsafe signed member path: $member_path" ;;
+		esac
+		case $member_digest in
+		*[!0-9a-f]*) refuse "invalid signed member digest: $member_path" ;;
+		esac
+		[ "${#member_digest}" -eq 64 ] \
+			|| refuse "invalid signed member digest length: $member_path"
+		case $member_kind in
+		executable) member_executables=$((member_executables + 1)) ;;
+		payload) member_payloads=$((member_payloads + 1)) ;;
+		*) refuse "unknown signed member kind for $member_path: $member_kind" ;;
+		esac
+		member_file=$TREE/$member_path
+		if [ ! -f "$member_file" ] || [ -L "$member_file" ]; then
+			refuse "signed member is missing or not a regular file: $member_path"
+		fi
+		actual_digest=$(/usr/bin/shasum -a 256 "$member_file") \
+			|| refuse "could not hash signed member: $member_path"
+		actual_digest=${actual_digest%% *}
+		[ "$actual_digest" = "$member_digest" ] \
+			|| refuse "signed member digest mismatch: $member_path"
+		printf '%s\n' "$member_path" >>"$WORK/signed-members.raw"
+		i=$((i + 1))
+	done
+	if /usr/bin/plutil -extract "members.$member_total.path" raw -o - "$signing" >/dev/null 2>&1; then
+		refuse "members contains more entries than executable_count + payload_count"
+	fi
+	[ "$member_executables" -eq "$EXPECTED_EXECUTABLES" ] \
+		|| refuse "member kinds disagree with executable_count"
+	[ "$member_payloads" -eq "$EXPECTED_PAYLOADS" ] \
+		|| refuse "member kinds disagree with payload_count"
+	LC_ALL=C /usr/bin/sort "$WORK/signed-members.raw" >"$WORK/signed-members.sorted" \
+		|| refuse "could not sort the signed member inventory"
+	duplicates=$(/usr/bin/uniq -d "$WORK/signed-members.sorted" || true)
+	[ -z "$duplicates" ] || refuse "duplicate path in signed inventory: $duplicates"
+	if tree_matches_signed_inventory "$TREE" observed-members; then
+		:
+	else
+		status=$?
+		[ "$status" -eq 1 ] || refuse "could not enumerate the extracted Mach-O members"
+		/usr/bin/diff -u "$WORK/signed-members.sorted" "$WORK/observed-members" >&2 || true
+		refuse "extracted Mach-O membership differs from the signed inventory"
+	fi
+	printf 'signed inventory: %s executable(s), %s payload(s), exact paths and digests\n' \
+		"$EXPECTED_EXECUTABLES" "$EXPECTED_PAYLOADS"
+}
+
+assert_membership_negatives() {
+	control=$WORK/membership-control
+	/bin/rm -rf "$control"
+	/bin/cp -R "$TREE" "$control" || refuse "could not create the membership control"
+	IFS= read -r first_member <"$WORK/signed-members.sorted"
+	[ -n "$first_member" ] || refuse "the signed inventory has no member for its controls"
+	/bin/rm -- "$control/$first_member" || refuse "could not remove the missing-member control"
+	if tree_matches_signed_inventory "$control" control-missing; then
+		refuse "control failed: signed inventory accepted a missing shipped member"
+	else
+		status=$?
+		[ "$status" -eq 1 ] || refuse "missing-member control could not enumerate its tree"
+	fi
+	/bin/cp "$TREE/$first_member" "$control/$first_member" \
+		|| refuse "could not restore the missing-member control"
+	unexpected=$control/bin/solstone-unexpected-member-control
+	[ ! -e "$unexpected" ] || refuse "unexpected-member control path already exists"
+	/bin/cp "$TREE/$first_member" "$unexpected" \
+		|| refuse "could not create the unexpected-member control"
+	if tree_matches_signed_inventory "$control" control-unexpected; then
+		refuse "control failed: signed inventory accepted an unexpected shipped member"
+	else
+		status=$?
+		[ "$status" -eq 1 ] || refuse "unexpected-member control could not enumerate its tree"
+	fi
+	/bin/rm -f "$unexpected"
+	member_mode=$(/usr/bin/stat -f '%Lp' "$control/$first_member") \
+		|| refuse "could not read the unreadable-member control mode"
+	/bin/chmod 000 "$control/$first_member" \
+		|| refuse "could not create the unreadable-member control"
+	if tree_matches_signed_inventory "$control" control-unreadable; then
+		/bin/chmod "$member_mode" "$control/$first_member" || true
+		refuse "control failed: signed inventory accepted an unreadable shipped member"
+	else
+		status=$?
+		/bin/chmod "$member_mode" "$control/$first_member" \
+			|| refuse "could not restore the unreadable-member control mode"
+		[ "$status" -eq 2 ] \
+			|| refuse "unreadable-member control was not rejected as an enumeration failure"
+	fi
+	/bin/rm -rf "$control"
+	printf 'membership controls ok: missing, unexpected, and unreadable Mach-O members refused\n'
 }
 
 # --- speakers ---------------------------------------------------------------
