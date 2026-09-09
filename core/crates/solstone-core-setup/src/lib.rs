@@ -15,6 +15,8 @@ pub mod clean_uninstall;
 pub mod events;
 pub mod identity_evidence;
 #[cfg(unix)]
+pub mod legacy_health;
+#[cfg(unix)]
 mod legacy_launcher;
 #[cfg(not(unix))]
 #[path = "legacy_launcher_nonunix.rs"]

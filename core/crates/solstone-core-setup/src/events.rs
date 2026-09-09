@@ -99,6 +99,8 @@ pub enum ErrorCode {
     InstallationIdentityRefused,
     #[serde(rename = "installation_identity_unavailable")]
     InstallationIdentityUnavailable,
+    #[serde(rename = "legacy_supervisor_lock_refused")]
+    LegacySupervisorLockRefused,
     #[serde(rename = "service_up_failed")]
     ServiceUpFailed,
     #[serde(rename = "setup_unhandled_exception")]
