@@ -84,12 +84,12 @@ impl ShutdownDriver for SupervisorShutdownDriver {
                         // The coordinator remains the sole terminal authority.
                         // Continue shutdown rather than converting a bounded
                         // acknowledgement wait into an indefinite supervisor.
-                        eprintln!(
+                        log::warn!(
                             "supervisor: parent-loss retirement acknowledgement timed out; continuing shutdown"
                         );
                     }
                     Err(error) => {
-                        eprintln!(
+                        log::warn!(
                             "supervisor: could not read parent-loss retirement acknowledgement: {error}; continuing shutdown"
                         );
                     }
@@ -97,7 +97,7 @@ impl ShutdownDriver for SupervisorShutdownDriver {
                 Err(error) => {
                     // A normal shutdown cannot authorize graceful retirement
                     // without the coordinator's private-generation material.
-                    eprintln!(
+                    log::warn!(
                         "supervisor: could not request expected parent-loss retirement: {error}"
                     );
                     disposition = ShutdownDisposition::ForcedAfterGraceTimeout;
@@ -119,7 +119,7 @@ impl ShutdownDriver for SupervisorShutdownDriver {
                 ) {
                     disposition = ShutdownDisposition::ForcedAfterGraceTimeout;
                 }
-                eprintln!(
+                log::warn!(
                     "supervisor: failed to terminate {} during shutdown: {error}",
                     app.service.as_str()
                 );

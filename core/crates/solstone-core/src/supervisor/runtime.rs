@@ -680,7 +680,7 @@ fn write_backoff_record(journal: &Path, app: &ManagedAppProcess) {
         },
         JsonWriteOptions::default(),
     ) {
-        eprintln!(
+        log::warn!(
             "supervisor: failed to write {}.backoff: {error}",
             app.service.as_str()
         );
@@ -699,7 +699,7 @@ fn selected_direct_door_port(journal: &Path, requested: Option<u16>) -> Result<u
 
 pub(crate) fn apply_app_exit(app: &mut ManagedAppProcess, journal: &Path, exit: AppExit) {
     if let Err(error) = withhold_app_direct_door(app, journal) {
-        eprintln!("supervisor: failed to withhold direct-door record: {error}");
+        log::warn!("supervisor: failed to withhold direct-door record: {error}");
     }
     app.record_exit(exit);
     if app.backoff.is_some() {
@@ -782,13 +782,13 @@ fn reconcile_schedules(schedule_config_path: &Path) -> BTreeSet<String> {
     match register_default_entries(schedule_config_path) {
         Ok(added) if added.is_empty() => {}
         Ok(added) => {
-            eprintln!(
+            log::info!(
                 "supervisor: built-in schedules registered: [{}]",
                 added.join(", ")
             );
             fresh.extend(added);
         }
-        Err(error) => eprintln!(
+        Err(error) => log::warn!(
             "supervisor: built-in schedule registration skipped; scheduler runs the file as is: {error}"
         ),
     }
@@ -798,7 +798,7 @@ fn reconcile_schedules(schedule_config_path: &Path) -> BTreeSet<String> {
     ) {
         Ok(summary) if summary.removed.is_empty() && summary.added.is_empty() => {}
         Ok(summary) => {
-            eprintln!(
+            log::info!(
                 "supervisor: maintenance schedules reconciled (removed: [{}]; added: [{}])",
                 summary.removed.join(", "),
                 summary.added.join(", ")
@@ -810,7 +810,7 @@ fn reconcile_schedules(schedule_config_path: &Path) -> BTreeSet<String> {
                     .map(|id| solstone_core_maintenance::schedule_sync::schedule_name(id)),
             );
         }
-        Err(error) => eprintln!(
+        Err(error) => log::warn!(
             "supervisor: maintenance schedule reconciliation skipped; scheduler runs the file as is: {error}"
         ),
     }
@@ -1021,7 +1021,7 @@ impl SupervisorState {
                     }
                     Ok(None) => false,
                     Err(error) => {
-                        eprintln!(
+                        log::warn!(
                             "supervisor: failed to poll {} during reap: {error}",
                             app.service.as_str()
                         );
@@ -1057,7 +1057,7 @@ impl SupervisorState {
                     }
                     Ok(None) => false,
                     Err(error) => {
-                        eprintln!(
+                        log::warn!(
                             "supervisor: failed to poll {} during reap: {error}",
                             app.service.as_str()
                         );
@@ -1267,7 +1267,7 @@ fn start_app_process(
     sense_child_environment: &solstone_core_system::process::ChildLaunchContext,
 ) {
     if let Err(error) = spawn_app_process(app, journal, sink, sense_child_environment) {
-        eprintln!(
+        log::warn!(
             "supervisor: failed to start {}: {error}",
             app.service.as_str()
         );
@@ -1294,7 +1294,7 @@ async fn wait_for_convey_ready(
                 }
                 Ok(None) => None,
                 Err(error) => {
-                    eprintln!(
+                    log::warn!(
                         "supervisor: failed to poll convey during startup: {error}; continuing into supervise loop"
                     );
                     return Ok(false);
@@ -1304,7 +1304,7 @@ async fn wait_for_convey_ready(
         };
         if let Some(exit_code) = exited {
             apply_app_exit(app, journal, AppExit::Process { code: exit_code });
-            eprintln!(
+            log::warn!(
                 "supervisor: convey exited during startup (exit {exit_code}); continuing into supervise loop"
             );
             return Ok(false);
@@ -1317,7 +1317,7 @@ async fn wait_for_convey_ready(
             last_heartbeat = Instant::now();
         }
         if start.elapsed() >= probe.wait_window() {
-            eprintln!(
+            log::warn!(
                 "supervisor: convey was not ready during startup; continuing into supervise loop"
             );
             return Ok(false);
@@ -1775,7 +1775,7 @@ pub(crate) async fn boot_and_tick(
         chrono::Local::now().date_naive(),
         SystemTime::now(),
     ) {
-        eprintln!("supervisor: startup catchup reconciliation failed: {error}");
+        log::warn!("supervisor: startup catchup reconciliation failed: {error}");
     }
     state.last_retry_expiry_drain = Instant::now();
     let stop_reason = tick::run(

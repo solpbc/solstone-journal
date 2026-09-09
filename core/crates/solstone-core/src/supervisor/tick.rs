@@ -269,13 +269,13 @@ pub(crate) async fn run(
                 });
                 match seeded {
                     Ok(()) => state.activity_retry_seed_day = Some(today),
-                    Err(error) => eprintln!("supervisor: activity retry recovery failed: {error}"),
+                    Err(error) => log::warn!("supervisor: activity retry recovery failed: {error}"),
                 }
             }
             if let Err(error) =
                 run_activity_retry_drain(&state.journal, &state.queue, wall.timestamp_millis())
             {
-                eprintln!("supervisor: activity retry drain failed: {error}");
+                log::warn!("supervisor: activity retry drain failed: {error}");
             }
         }
         if !state.no_daily {
@@ -290,7 +290,7 @@ pub(crate) async fn run(
             ) {
                 Ok(did_drain) => did_drain,
                 Err(error) => {
-                    eprintln!("supervisor: daily catchup drain failed: {error}");
+                    log::warn!("supervisor: daily catchup drain failed: {error}");
                     false
                 }
             };
@@ -308,7 +308,7 @@ pub(crate) async fn run(
                 tick,
                 wall_now,
             ) {
-                eprintln!("supervisor: retry-expiry catchup drain failed: {error}");
+                log::warn!("supervisor: retry-expiry catchup drain failed: {error}");
             }
         }
         if let Some(scheduler) = state.scheduler.as_mut() {
@@ -460,7 +460,7 @@ pub(crate) fn handle_daily_tasks(
         return Ok(false);
     }
     let Some(previous_day) = daily.last_day else {
-        eprintln!("supervisor: daily state not initialized; skipping daily processing");
+        log::warn!("supervisor: daily state not initialized; skipping daily processing");
         daily.last_day = Some(today);
         return Ok(false);
     };
@@ -691,7 +691,7 @@ fn reconcile_app_processes(state: &mut SupervisorState) -> Vec<AppProcessSample>
                 &sense_child_environment,
             )
         {
-            eprintln!(
+            log::warn!(
                 "supervisor: failed to restart {}: {error}",
                 app.service.as_str()
             );
@@ -705,7 +705,7 @@ fn reconcile_app_processes(state: &mut SupervisorState) -> Vec<AppProcessSample>
             match &poll {
                 Ok(Some(exit_code)) => {
                     process.cleanup();
-                    eprintln!(
+                    log::warn!(
                         "supervisor: {} exited with {}; scheduling restart",
                         app.service.as_str(),
                         exit_code
@@ -714,7 +714,7 @@ fn reconcile_app_processes(state: &mut SupervisorState) -> Vec<AppProcessSample>
                 }
                 Ok(None) => {}
                 Err(error) => {
-                    eprintln!(
+                    log::warn!(
                         "supervisor: failed to poll {}: {error}",
                         app.service.as_str()
                     );
@@ -817,7 +817,7 @@ fn record_schedule_completions(state: &mut SupervisorState) {
         if let Err(error) =
             scheduler.record_completion(&name, ended_at, &record.exit_status, &record.reference)
         {
-            eprintln!("supervisor: failed to record schedule completion for {name}: {error}");
+            log::warn!("supervisor: failed to record schedule completion for {name}: {error}");
         }
     }
 }
@@ -937,7 +937,7 @@ fn synchronize_parakeet_sense_credentials(state: &mut SupervisorState) -> bool {
         .expect("app process inventory is complete");
     if let Some(process) = sense.process.as_mut() {
         if let Err(error) = process.terminate(Duration::from_secs(5)) {
-            eprintln!(
+            log::warn!(
                 "supervisor: failed to replace Sense for Parakeet credential rotation: {error}"
             );
             return false;
@@ -1152,7 +1152,7 @@ fn handle_supervisor_request(state: &mut SupervisorState, message: &CallosumEnve
     let cmd = match decode_supervisor_cmd(message) {
         Ok(cmd) => cmd,
         Err(error) => {
-            eprintln!("supervisor: {error}");
+            log::warn!("supervisor: {error}");
             return;
         }
     };
@@ -1178,7 +1178,7 @@ fn handle_supervisor_request(state: &mut SupervisorState, message: &CallosumEnve
         daily_catchup_provenance: None,
     };
     if state.queue.submit(ExecutionRequest::Bus(request)) == SubmitOutcome::Rejected {
-        eprintln!("supervisor: request rejected");
+        log::warn!("supervisor: request rejected");
     }
 }
 
@@ -1207,7 +1207,7 @@ fn handle_supervisor_drain(state: &mut SupervisorState, message: &CallosumEnvelo
         run_catchup_drain(&state.journal, &state.queue, &BTreeSet::new(), &[], now)
     };
     if let Err(error) = result {
-        eprintln!("supervisor: catchup drain request failed: {error}");
+        log::warn!("supervisor: catchup drain request failed: {error}");
     }
 }
 
@@ -1216,18 +1216,20 @@ fn handle_segment_observed(state: &mut SupervisorState, message: &CallosumEnvelo
         return;
     }
     let Some(segment) = message_string(message, "segment") else {
-        eprintln!("supervisor: observed message missing segment");
+        log::warn!("supervisor: observed message missing segment");
         return;
     };
     let day = message_string(message, "day")
         .map(str::to_owned)
         .unwrap_or_else(|| chrono::Local::now().format("%Y%m%d").to_string());
     if message_truthy(message, "batch") {
-        eprintln!("supervisor: batch observed segment held for daily catchup: {day}/{segment}");
+        log::debug!("supervisor: batch observed segment held for daily catchup: {day}/{segment}");
         return;
     }
     if processing_is_deferred(&state.journal) || no_thinking_engine_chosen(&state.journal) {
-        eprintln!("supervisor: observed segment held by processing configuration: {day}/{segment}");
+        log::debug!(
+            "supervisor: observed segment held by processing configuration: {day}/{segment}"
+        );
         return;
     }
     let stream = message_string(message, "stream").map(str::to_owned);
@@ -1266,7 +1268,7 @@ fn handle_activity_recorded(state: &mut SupervisorState, message: &CallosumEnvel
         message_string(message, "facet"),
         message_string(message, "day"),
     ) else {
-        eprintln!("supervisor: activity.recorded message missing id, facet, or day");
+        log::warn!("supervisor: activity.recorded message missing id, facet, or day");
         return;
     };
     let _ = submit_task(
@@ -1298,11 +1300,11 @@ fn handle_think_daily_complete(state: &mut SupervisorState, message: &CallosumEn
     {
         match nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None) {
             Ok(()) | Err(nix::errno::Errno::EPERM) => {
-                eprintln!("supervisor: heartbeat already running with pid {pid}");
+                log::debug!("supervisor: heartbeat already running with pid {pid}");
                 return;
             }
             Err(nix::errno::Errno::ESRCH) => {}
-            Err(error) => eprintln!("supervisor: could not check heartbeat pid {pid}: {error}"),
+            Err(error) => log::warn!("supervisor: could not check heartbeat pid {pid}: {error}"),
         }
     }
     #[cfg(windows)]
@@ -1311,12 +1313,12 @@ fn handle_think_daily_complete(state: &mut SupervisorState, message: &CallosumEn
     {
         match crate::heartbeat_pid_windows::recorded_pid_may_be_running(pid) {
             Ok(true) => {
-                eprintln!("supervisor: heartbeat already running with pid {pid}");
+                log::debug!("supervisor: heartbeat already running with pid {pid}");
                 return;
             }
             Ok(false) => {}
             Err(error) => {
-                eprintln!("supervisor: could not check heartbeat pid {pid}: {error}");
+                log::warn!("supervisor: could not check heartbeat pid {pid}: {error}");
                 return;
             }
         }
@@ -1343,7 +1345,7 @@ fn handle_segment_event_log(journal: &Path, message: &CallosumEnvelope) {
     let day_dir = match day_path(journal, Some(day), false) {
         Ok(path) => path,
         Err(error) => {
-            eprintln!("supervisor: could not resolve event-log day {day}: {error}");
+            log::warn!("supervisor: could not resolve event-log day {day}: {error}");
             return;
         }
     };
@@ -1356,7 +1358,7 @@ fn handle_segment_event_log(journal: &Path, message: &CallosumEnvelope) {
     }
     let result = append_durable_event(&segment_dir, &DurableEvent::Callosum(message.clone()));
     if let Err(error) = result {
-        eprintln!("supervisor: failed to append segment event log: {error}");
+        log::warn!("supervisor: failed to append segment event log: {error}");
     }
 }
 
@@ -1402,15 +1404,15 @@ fn handle_cortex_outcome(state: &mut SupervisorState, message: &CallosumEnvelope
     };
 
     let Some(port) = read_local_port(&state.journal) else {
-        eprintln!("supervisor: local wedge recycle deferred; local service port unavailable");
+        log::debug!("supervisor: local wedge recycle deferred; local service port unavailable");
         return;
     };
     if !local_probe_is_ready(state) {
-        eprintln!("supervisor: local wedge recycle deferred; local health is not ready");
+        log::debug!("supervisor: local wedge recycle deferred; local health is not ready");
         return;
     }
     if let Err(error) = request_local_provider_recycle(state, failure_use_ids, port) {
-        eprintln!("supervisor: local wedge recycle request failed: {error:?}");
+        log::warn!("supervisor: local wedge recycle request failed: {error:?}");
         return;
     }
     let mut sink = SupervisorProviderSink(state.server.clone());
@@ -1429,7 +1431,7 @@ fn local_endpoint_is_bundled(journal: &Path) -> bool {
     let config = match read_journal_config(journal) {
         Ok(read) => read.config.unwrap_or_default(),
         Err(error) => {
-            eprintln!("supervisor: could not read local endpoint configuration: {error}");
+            log::warn!("supervisor: could not read local endpoint configuration: {error}");
             return false;
         }
     };
@@ -1530,7 +1532,7 @@ fn sync_tick(state: &mut SupervisorState, lifecycle: &mut SupervisorLifecycle) -
         }
         SyncTickOutcome::Conflict(result) => {
             update_completed_sync_state(state, lifecycle);
-            eprintln!("supervisor: sync conflict");
+            log::error!("supervisor: sync conflict");
             if let Some(conflict) = sync_conflict_event(result) {
                 let mut fields = Map::from_iter([
                     ("hostname".into(), json!(conflict.hostname)),
@@ -1555,20 +1557,20 @@ fn sync_tick(state: &mut SupervisorState, lifecycle: &mut SupervisorLifecycle) -
             }
         }
         SyncTickOutcome::RenewalFailure(error) => {
-            eprintln!("supervisor: sync renewal failure");
-            eprintln!("supervisor: sync renewal failure detail: {error:?}");
+            log::error!("supervisor: sync renewal failure");
+            log::error!("supervisor: sync renewal failure detail: {error:?}");
         }
         SyncTickOutcome::CompleteScanFailure(error) => {
-            eprintln!("supervisor: sync complete scan failure");
-            eprintln!("supervisor: sync complete scan failure detail: {error:?}");
+            log::error!("supervisor: sync complete scan failure");
+            log::error!("supervisor: sync complete scan failure detail: {error:?}");
         }
         SyncTickOutcome::RetainedObservationFailure(error) => {
-            eprintln!("supervisor: sync retained observation failure");
-            eprintln!("supervisor: sync retained observation failure detail: {error:?}");
+            log::error!("supervisor: sync retained observation failure");
+            log::error!("supervisor: sync retained observation failure detail: {error:?}");
         }
         SyncTickOutcome::StaleHeartbeatCollectionFailure(error) => {
-            eprintln!("supervisor: stale heartbeat collection failure");
-            eprintln!("supervisor: stale heartbeat collection failure detail: {error:?}");
+            log::error!("supervisor: stale heartbeat collection failure");
+            log::error!("supervisor: stale heartbeat collection failure detail: {error:?}");
         }
     }
     outcome
