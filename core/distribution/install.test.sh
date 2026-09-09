@@ -80,6 +80,7 @@ make_tree_tar() {
 		'#!/bin/sh' \
 		'# fixture-build: ok' \
 		'[ -z "${SOLSTONE_SETUP_ARGS_LOG:-}" ] || printf "%s\n" "$*" >"$SOLSTONE_SETUP_ARGS_LOG"' \
+		'[ -z "${SOLSTONE_SETUP_PATH_LOG:-}" ] || printf "%s\n" "$PATH" >"$SOLSTONE_SETUP_PATH_LOG"' \
 		'exit 0' >"$_stage/bin/journal"
 	chmod 755 "$_stage/bin/journal"
 	tar -C "$_stage" -czf "$_dest" bin
@@ -308,12 +309,24 @@ expect_refuse verifier-missing verifier-missing-names-install-command \
 	"$INSTALL_SOURCE" --prefix "$BASE/verifier-prefix" --archive "$SIGNED_ARCHIVE" --sha256 "$SIGNED_SHA" --release "$SIGNED_REL" --manifest "$SIGNED_MANIFEST" --minisig "$SIGNED_MINISIG"
 
 HAPPY_OUT=$BASE/happy.out
-if ! env HOME="$HOME" SOLSTONE_PROFILE="$HOME/.profile" \
+SETUP_PATH_LOG=$BASE/happy-setup-path
+AMBIENT_PRODUCT_BIN=$BASE/ambient-product-bin
+mkdir -p "$AMBIENT_PRODUCT_BIN"
+printf '%s\n' '#!/bin/sh' 'exit 99' >"$AMBIENT_PRODUCT_BIN/journal"
+cp "$AMBIENT_PRODUCT_BIN/journal" "$AMBIENT_PRODUCT_BIN/solstone"
+chmod 755 "$AMBIENT_PRODUCT_BIN/journal" "$AMBIENT_PRODUCT_BIN/solstone"
+if ! env PATH="$AMBIENT_PRODUCT_BIN:$PATH" HOME="$HOME" SOLSTONE_PROFILE="$HOME/.profile" \
+	SOLSTONE_SETUP_PATH_LOG="$SETUP_PATH_LOG" \
 	"$INSTALL" --prefix "$PREFIX" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >"$HAPPY_OUT"; then
 	fail "happy-path install"
 else
 	pass "happy-path install"
 fi
+SETUP_VERSION_DIR=$(readlink "$PREFIX/current")
+case $(cat "$SETUP_PATH_LOG" 2>/dev/null) in
+"$PREFIX/$SETUP_VERSION_DIR/bin:"*) pass "setup PATH selects candidate before ambient product commands" ;;
+*) fail "setup PATH did not select candidate first: $(cat "$SETUP_PATH_LOG" 2>/dev/null)" ;;
+esac
 if grep -F "installed solstone-journal 1.0.22 at $PREFIX" "$HAPPY_OUT" >/dev/null \
 	&& grep -F "lane=release" "$HAPPY_OUT" >/dev/null \
 	&& grep -F "current ->" "$HAPPY_OUT" >/dev/null \

@@ -1130,9 +1130,9 @@ run_setup() {
 	_dest=$1
 	[ -x "$_dest/bin/journal" ] || return 1
 	if [ "$NO_PATH" -eq 1 ]; then
-		"$_dest/bin/journal" setup --yes --skip-path --installer-transaction
+		PATH="$_dest/bin:$PATH" "$_dest/bin/journal" setup --yes --skip-path --installer-transaction
 	else
-		"$_dest/bin/journal" setup --yes --installer-transaction
+		PATH="$_dest/bin:$PATH" "$_dest/bin/journal" setup --yes --installer-transaction
 	fi
 }
 

@@ -896,11 +896,29 @@ bootstrap_rung() {
 	home=$WORK/home
 	rm -rf "$prefix" "$home"
 	mkdir -p "$prefix" "$home"
-	HOME=$home sh "$INSTALL_SH" --prefix "$prefix" \
+	bootstrap_host_path=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
+	printf 'bootstrap prefix: %s\nbootstrap home: %s\nbootstrap installer PATH: %s\n' \
+		"$prefix" "$home" "$bootstrap_host_path"
+	HOME=$home PATH="$bootstrap_host_path" /bin/sh "$INSTALL_SH" --prefix "$prefix" \
 		--archive "$archive" --sha256 "$sha" --release "$release" \
 		--manifest "$manifest" --minisig "$minisig" \
 		|| refuse "bootstrap install failed"
 	[ -L "$prefix/current" ] || refuse "bootstrap did not flip current"
+	bootstrap_version_dir=$(readlink "$prefix/current") \
+		|| refuse "bootstrap current target could not be read"
+	case $bootstrap_version_dir in
+	versions/*) ;;
+	*) refuse "bootstrap current target was not a version directory" ;;
+	esac
+	bootstrap_setup_path=$prefix/$bootstrap_version_dir/bin:$bootstrap_host_path
+	printf 'bootstrap setup PATH (effective): %s\n' "$bootstrap_setup_path"
+	resolved_bootstrap=$(HOME=$home PATH="$bootstrap_setup_path" /bin/sh -c \
+		'command -v journal; command -v solstone') \
+		|| refuse "bootstrap PATH did not resolve both launchers"
+	[ "$resolved_bootstrap" = "$prefix/$bootstrap_version_dir/bin/journal
+$prefix/$bootstrap_version_dir/bin/solstone" ] \
+		|| refuse "bootstrap PATH did not resolve the candidate runtime first"
+	printf 'bootstrap PATH resolved:\n%s\n' "$resolved_bootstrap"
 
 	# A fresh LOGIN shell, in both shells a Mac actually gives people. zsh is
 	# the macOS default and never reads .profile, so proving only `sh -l` here
