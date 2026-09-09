@@ -5,7 +5,7 @@
 
 use std::fs;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::wrapper::{WrapperCommand, parse_wrapper};
 
@@ -83,6 +83,7 @@ fn validate_path_value(
 pub(crate) enum LegacyLauncherFamily {
     Python,
     NativeRoot,
+    AppOwnedChild,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -160,6 +161,9 @@ pub(crate) fn classify(
             return Ok(None);
         };
         (LegacyLauncherFamily::NativeRoot, installation_bin)
+    } else if let Some(installation_bin) = app_owned_child_launcher(command, &bytes, &resolved_home)
+    {
+        (LegacyLauncherFamily::AppOwnedChild, installation_bin)
     } else if let Some(managed) = managed_v1_wrapper(command, &bytes, &resolved_home) {
         managed
     } else {
@@ -175,6 +179,90 @@ pub(crate) fn classify(
         mode: metadata.permissions().mode(),
         bytes,
     }))
+}
+
+/// Recognizes the exact wrapper written by the 1.3.31 macOS app runtime.
+///
+/// The wrapper itself is deliberately not sufficient evidence: its literal
+/// target must be the named command in one content-addressed generation under
+/// the app's owner-scoped runtime root. This keeps the crossover exception
+/// narrower than ordinary owner-authored shell scripts and lets `sol` and
+/// `journal` prove that they came from the same app-managed generation.
+fn app_owned_child_launcher(command: &str, bytes: &[u8], resolved_home: &Path) -> Option<PathBuf> {
+    if !matches!(command, "sol" | "journal") {
+        return None;
+    }
+    let text = std::str::from_utf8(bytes).ok()?;
+    let prefix = "#!/bin/sh\n# managed-version: app-owned-child\nexec '";
+    let suffix = "' \"$@\"\n";
+    let encoded_target = text.strip_prefix(prefix)?.strip_suffix(suffix)?;
+    let target = PathBuf::from(unescape_shell_single_quoted(encoded_target)?);
+    if !target.is_absolute() || target.file_name().and_then(|name| name.to_str()) != Some(command) {
+        return None;
+    }
+
+    let runtime_root = resolved_home.join("Library/Application Support/sol/runtime");
+    let relative = target.strip_prefix(&runtime_root).ok()?;
+    let components = relative.components().collect::<Vec<_>>();
+    let [
+        Component::Normal(generation),
+        Component::Normal(bin),
+        Component::Normal(binary),
+    ] = components.as_slice()
+    else {
+        return None;
+    };
+    if !app_owned_generation_name(generation) || *bin != "bin" || *binary != command {
+        return None;
+    }
+
+    let metadata = fs::metadata(&target).ok()?;
+    if !metadata.is_file() || metadata.permissions().mode() & 0o111 == 0 {
+        return None;
+    }
+    let resolved_target = fs::canonicalize(&target).ok()?;
+    let generation_root = runtime_root.join(generation);
+    if !resolved_target.starts_with(&generation_root) {
+        return None;
+    }
+    target.parent().map(Path::to_path_buf)
+}
+
+fn app_owned_generation_name(value: &std::ffi::OsStr) -> bool {
+    let Some(value) = value.to_str() else {
+        return false;
+    };
+    let Some((version, build_and_hash)) = value.split_once("_py") else {
+        return false;
+    };
+    let Some((python_build, hash)) = build_and_hash.split_once('_') else {
+        return false;
+    };
+    let version_segments = version.split('.').collect::<Vec<_>>();
+    version_segments.len() == 3
+        && version_segments
+            .iter()
+            .all(|segment| !segment.is_empty() && segment.bytes().all(|byte| byte.is_ascii_digit()))
+        && python_build.len() == 8
+        && python_build.bytes().all(|byte| byte.is_ascii_digit())
+        && hash.len() == 16
+        && hash
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn unescape_shell_single_quoted(value: &str) -> Option<String> {
+    let mut output = String::with_capacity(value.len());
+    let mut remaining = value;
+    while let Some(index) = remaining.find('\'') {
+        output.push_str(&remaining[..index]);
+        remaining = remaining.get(index..)?;
+        let escaped = remaining.strip_prefix("'\\''")?;
+        output.push('\'');
+        remaining = escaped;
+    }
+    output.push_str(remaining);
+    Some(output)
 }
 
 fn managed_v1_wrapper(
@@ -390,6 +478,96 @@ mod tests {
         near.push('\n');
         write_executable(&target, &near);
         assert!(classify(&home, &public, "solstone").unwrap().is_none());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recognizes_the_exact_v1_3_31_app_owned_children_and_rejects_near_twins() {
+        let root = root("app-owned-child");
+        let home = root.join("home");
+        let generation =
+            home.join("Library/Application Support/sol/runtime/0.6.24_py20260510_bbd54541379bee6d");
+        let bin = generation.join("bin");
+        let tools = generation.join("tools/solstone/bin");
+        fs::create_dir_all(&bin).unwrap();
+        fs::create_dir_all(&tools).unwrap();
+        for command in ["sol", "journal"] {
+            let executable = tools.join(command);
+            write_executable(&executable, "#!/bin/sh\nexit 0\n");
+            symlink(&executable, bin.join(command)).unwrap();
+            let public = home.join(".local/bin").join(command);
+            write_executable(
+                &public,
+                &format!(
+                    "#!/bin/sh\n# managed-version: app-owned-child\nexec '{}' \"$@\"\n",
+                    bin.join(command).display()
+                ),
+            );
+            let found = classify(&home, &public, command).unwrap().unwrap();
+            assert_eq!(found.family, LegacyLauncherFamily::AppOwnedChild);
+            assert_eq!(found.installation_bin, bin);
+        }
+
+        let other_generation =
+            home.join("Library/Application Support/sol/runtime/0.6.25_py20260510_0123456789abcdef");
+        let other_tools = other_generation.join("tools/solstone/bin");
+        let other_bin = other_generation.join("bin");
+        fs::create_dir_all(&other_tools).unwrap();
+        fs::create_dir_all(&other_bin).unwrap();
+        let other_executable = other_tools.join("journal");
+        write_executable(&other_executable, "#!/bin/sh\nexit 0\n");
+        symlink(&other_executable, other_bin.join("journal")).unwrap();
+        let sol = classify(&home, &home.join(".local/bin/sol"), "sol")
+            .unwrap()
+            .unwrap();
+        let mismatched_wrapper = home.join(".local/bin/journal-mismatched");
+        write_executable(
+            &mismatched_wrapper,
+            &format!(
+                "#!/bin/sh\n# managed-version: app-owned-child\nexec '{}' \"$@\"\n",
+                other_bin.join("journal").display()
+            ),
+        );
+        let journal_other = classify(&home, &mismatched_wrapper, "journal")
+            .unwrap()
+            .unwrap();
+        assert!(!sol.same_installation(&journal_other));
+
+        let journal = home.join(".local/bin/journal");
+        let exact = fs::read_to_string(&journal).unwrap();
+        for near_twin in [
+            exact.replace("app-owned-child", "app-owned-child-edited"),
+            exact.replace(" \"$@\"", " \"$@\" extra"),
+            format!("{exact}# extra\n"),
+        ] {
+            write_executable(&journal, &near_twin);
+            assert!(classify(&home, &journal, "journal").unwrap().is_none());
+        }
+
+        let foreign = root.join("foreign/bin/journal");
+        write_executable(&foreign, "#!/bin/sh\nexit 0\n");
+        write_executable(
+            &journal,
+            &format!(
+                "#!/bin/sh\n# managed-version: app-owned-child\nexec '{}' \"$@\"\n",
+                foreign.display()
+            ),
+        );
+        assert!(classify(&home, &journal, "journal").unwrap().is_none());
+
+        let escaping_generation =
+            home.join("Library/Application Support/sol/runtime/0.6.26_py20260510_fedcba9876543210");
+        let escaping_target = escaping_generation.join("bin/journal");
+        fs::create_dir_all(escaping_target.parent().unwrap()).unwrap();
+        symlink(&foreign, &escaping_target).unwrap();
+        write_executable(
+            &journal,
+            &format!(
+                "#!/bin/sh\n# managed-version: app-owned-child\nexec '{}' \"$@\"\n",
+                escaping_target.display()
+            ),
+        );
+        assert!(classify(&home, &journal, "journal").unwrap().is_none());
         let _ = fs::remove_dir_all(root);
     }
 

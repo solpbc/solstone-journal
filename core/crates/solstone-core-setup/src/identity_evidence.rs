@@ -736,6 +736,52 @@ mod tests {
     }
 
     #[test]
+    fn exact_v1_3_31_app_owned_children_form_one_legacy_transition() {
+        let root = std::env::temp_dir().join(format!(
+            "solstone-identity-v1-app-owned-child-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let home = root.join("home");
+        let generation =
+            home.join("Library/Application Support/sol/runtime/0.6.24_py20260510_bbd54541379bee6d");
+        let bin = generation.join("bin");
+        let tools = generation.join("tools/solstone/bin");
+        fs::create_dir_all(home.join(".local/bin")).unwrap();
+        fs::create_dir_all(&bin).unwrap();
+        fs::create_dir_all(&tools).unwrap();
+        for command in ["sol", "journal"] {
+            let executable = tools.join(command);
+            fs::write(&executable, "#!/bin/sh\nexit 0\n").unwrap();
+            fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+            symlink(&executable, bin.join(command)).unwrap();
+            let public = home.join(".local/bin").join(command);
+            fs::write(
+                &public,
+                format!(
+                    "#!/bin/sh\n# managed-version: app-owned-child\nexec '{}' \"$@\"\n",
+                    bin.join(command).display()
+                ),
+            )
+            .unwrap();
+            fs::set_permissions(&public, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        let namespace = fields().namespace;
+        let setup = gather_setup_artifact_evidence(&home, &namespace, true);
+        assert_eq!(setup.artifacts(), &ArtifactBindingEvidence::LegacyUnguarded);
+        assert!(setup.legacy_transition());
+
+        let journal = home.join(".local/bin/journal");
+        let exact = fs::read_to_string(&journal).unwrap();
+        fs::write(&journal, exact.replace(" \"$@\"", " \"$@\" extra")).unwrap();
+        let malformed = gather_setup_artifact_evidence(&home, &namespace, true);
+        assert_eq!(malformed.artifacts(), &ArtifactBindingEvidence::Malformed);
+        assert!(!malformed.legacy_transition());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn legacy_classify_error_refuses_before_valid_wrapper_fallback() {
         let root = std::env::temp_dir().join(format!(
             "solstone-identity-classify-error-{}",

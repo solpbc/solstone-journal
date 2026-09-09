@@ -1600,6 +1600,69 @@ mod tests {
     }
 
     #[test]
+    fn exact_v1_3_31_journal_and_sol_are_backed_up_and_replaced_together() {
+        let root = root("v1-app-owned-companion");
+        let mut env = environment(&root);
+        env.legacy_replacement = true;
+        fs::create_dir_all(&env.curdir).unwrap();
+        fs::create_dir_all(&env.executable_dir).unwrap();
+        for command in ["solstone", "journal"] {
+            write_executable(&env.executable_dir.join(command), "runtime");
+        }
+
+        let generation = env
+            .home_dir
+            .join("Library/Application Support/sol/runtime/0.6.24_py20260510_bbd54541379bee6d");
+        let legacy_bin = generation.join("bin");
+        let legacy_tools = generation.join("tools/solstone/bin");
+        let public_bin = env.home_dir.join(".local/bin");
+        fs::create_dir_all(&legacy_bin).unwrap();
+        fs::create_dir_all(&legacy_tools).unwrap();
+        fs::create_dir_all(&public_bin).unwrap();
+        for command in ["sol", "journal"] {
+            let executable = legacy_tools.join(command);
+            write_executable(&executable, "#!/bin/sh\nexit 0\n");
+            symlink(&executable, legacy_bin.join(command)).unwrap();
+            write_executable(
+                &public_bin.join(command),
+                &format!(
+                    "#!/bin/sh\n# managed-version: app-owned-child\nexec '{}' \"$@\"\n",
+                    legacy_bin.join(command).display()
+                ),
+            );
+        }
+
+        provision_wrappers(&env, Path::new("/journal"), &binding()).unwrap();
+
+        assert!(
+            fs::read_to_string(public_bin.join("solstone"))
+                .unwrap()
+                .contains(WRAPPER_MARKER)
+        );
+        assert!(
+            fs::read_to_string(public_bin.join("journal"))
+                .unwrap()
+                .contains(WRAPPER_MARKER)
+        );
+        assert!(!public_bin.join("sol").exists());
+        let backups = fs::read_dir(env.backup_dir())
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert!(
+            backups
+                .iter()
+                .any(|name| name.starts_with("journal.old-symlink-"))
+        );
+        assert!(
+            backups
+                .iter()
+                .any(|name| name.starts_with("sol.old-symlink-"))
+        );
+    }
+
+    #[test]
     fn legacy_referent_change_is_refused_without_rewriting_the_public_link() {
         let root = root("legacy-referent-race");
         let home = root.join("home");
