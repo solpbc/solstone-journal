@@ -28,6 +28,19 @@ use std::process::Command;
 use crate::inventory::Apple;
 use crate::macho::{self, MachoInfo};
 
+const CED_HELPER: &str = "bin/solstone-core-ced-analyze";
+const DISABLE_LIBRARY_VALIDATION_ENTITLEMENTS: &str = concat!(
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" ",
+    "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n",
+    "<plist version=\"1.0\">\n",
+    "<dict>\n",
+    "  <key>com.apple.security.cs.disable-library-validation</key>\n",
+    "  <true/>\n",
+    "</dict>\n",
+    "</plist>\n",
+);
+
 #[derive(Debug)]
 pub struct AppleError {
     pub message: String,
@@ -223,6 +236,7 @@ pub struct SignedMember {
     pub team_identifier: String,
     pub hardened_runtime: bool,
     pub trusted_timestamp: bool,
+    pub library_validation_disabled: bool,
 }
 
 pub(crate) trait ArchiveMemberSigner {
@@ -243,8 +257,8 @@ impl ArchiveMemberSigner for RealArchiveMemberSigner<'_> {
         path: &Path,
         relative_member_path: &str,
     ) -> Result<SignedMember, AppleError> {
-        codesign_at(path, self.apple)?;
-        verify_signed(relative_member_path, path, false, self.apple)
+        codesign_at(path, false, self.apple)?;
+        verify_signed(relative_member_path, path, false, false, self.apple)
     }
 }
 
@@ -301,6 +315,7 @@ impl ArchiveMemberSigner for FakeArchiveMemberSigner {
             team_identifier: "fake".to_owned(),
             hardened_runtime: true,
             trusted_timestamp: true,
+            library_validation_disabled: false,
         })
     }
 }
@@ -326,18 +341,24 @@ pub fn sign_tree(stage: &Path, apple: &Apple) -> Result<Vec<SignedMember>, Apple
         .filter(|member| member.payload)
         .chain(members.iter().filter(|member| !member.payload))
     {
-        codesign_at(&member.path, apple)?;
+        let library_validation_disabled = member.relative == CED_HELPER;
+        codesign_at(&member.path, library_validation_disabled, apple)?;
         signed.push(verify_signed(
             &member.relative,
             &member.path,
             member.payload,
+            library_validation_disabled,
             apple,
         )?);
     }
     Ok(signed)
 }
 
-fn codesign_at(path: &Path, apple: &Apple) -> Result<(), AppleError> {
+fn codesign_at(
+    path: &Path,
+    library_validation_disabled: bool,
+    apple: &Apple,
+) -> Result<(), AppleError> {
     let keychain = apple.keychain_path().to_string_lossy().into_owned();
     let codesign = if apple.codesign_path.is_empty() {
         "codesign".to_owned()
@@ -345,20 +366,33 @@ fn codesign_at(path: &Path, apple: &Apple) -> Result<(), AppleError> {
         apple.codesign_path.clone()
     };
     let display = path.to_string_lossy().into_owned();
-    run(
-        &codesign,
-        &[
-            "--force",
-            "--options",
-            "runtime",
-            "--timestamp",
-            "--keychain",
-            &keychain,
-            "--sign",
-            &apple.app_identity,
-            &display,
-        ],
-    )?;
+    let entitlement_file = if library_validation_disabled {
+        let file = tempfile::NamedTempFile::new().map_err(|error| {
+            AppleError::new(format!("could not create CED entitlement file: {error}"))
+        })?;
+        fs::write(file.path(), DISABLE_LIBRARY_VALIDATION_ENTITLEMENTS).map_err(|error| {
+            AppleError::new(format!("could not write CED entitlement file: {error}"))
+        })?;
+        Some(file)
+    } else {
+        None
+    };
+    let entitlement_path = entitlement_file
+        .as_ref()
+        .map(|file| file.path().to_string_lossy().into_owned());
+    let mut args = vec![
+        "--force",
+        "--options",
+        "runtime",
+        "--timestamp",
+        "--keychain",
+        &keychain,
+    ];
+    if let Some(path) = entitlement_path.as_deref() {
+        args.extend(["--entitlements", path]);
+    }
+    args.extend(["--sign", &apple.app_identity, &display]);
+    run(&codesign, &args)?;
     Ok(())
 }
 
@@ -373,6 +407,7 @@ pub fn verify_signed(
     relative: &str,
     path: &Path,
     payload: bool,
+    expected_library_validation_disabled: bool,
     apple: &Apple,
 ) -> Result<SignedMember, AppleError> {
     let codesign = if apple.codesign_path.is_empty() {
@@ -399,7 +434,11 @@ pub fn verify_signed(
     let trusted_timestamp = report
         .lines()
         .any(|line| line.starts_with("Timestamp=") && !line.contains("none"));
-
+    let entitlement_report = run(&codesign, &["-d", "--entitlements", ":-", &display])?;
+    let library_validation_disabled = entitlement_is_true(
+        &entitlement_report,
+        "com.apple.security.cs.disable-library-validation",
+    );
     let mut missing = Vec::new();
     if authority != apple.app_identity {
         missing.push(format!("Authority={authority:?}"));
@@ -412,6 +451,11 @@ pub fn verify_signed(
     }
     if !trusted_timestamp {
         missing.push("trusted timestamp".to_owned());
+    }
+    if library_validation_disabled != expected_library_validation_disabled {
+        missing.push(format!(
+            "com.apple.security.cs.disable-library-validation={library_validation_disabled} (want {expected_library_validation_disabled})"
+        ));
     }
     if !missing.is_empty() {
         return Err(AppleError::new(format!(
@@ -427,7 +471,15 @@ pub fn verify_signed(
         team_identifier,
         hardened_runtime,
         trusted_timestamp,
+        library_validation_disabled,
     })
+}
+
+fn entitlement_is_true(report: &str, key: &str) -> bool {
+    let marker = format!("<key>{key}</key>");
+    report
+        .split_once(&marker)
+        .is_some_and(|(_, after)| after.trim_start().starts_with("<true/>"))
 }
 
 fn field(report: &str, key: &str) -> Option<String> {
@@ -708,6 +760,29 @@ mod tests {
         );
         assert_eq!(field(adhoc, "Authority=").as_deref(), None);
         assert_eq!(field(adhoc, "TeamIdentifier=").as_deref(), None);
+    }
+
+    #[test]
+    fn entitlement_parser_requires_the_named_true_value() {
+        let enabled = concat!(
+            "Executable=/tmp/helper\n",
+            "<plist version=\"1.0\"><dict>\n",
+            "<key>com.apple.security.cs.disable-library-validation</key>\n",
+            "<true/>\n",
+            "</dict></plist>\n",
+        );
+        assert!(entitlement_is_true(
+            enabled,
+            "com.apple.security.cs.disable-library-validation"
+        ));
+        assert!(!entitlement_is_true(
+            &enabled.replace("<true/>", "<false/>"),
+            "com.apple.security.cs.disable-library-validation"
+        ));
+        assert!(!entitlement_is_true(
+            enabled,
+            "com.apple.security.cs.allow-dyld-environment-variables"
+        ));
     }
 
     #[test]

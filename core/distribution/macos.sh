@@ -57,6 +57,17 @@ ARTIFACTS=${SOLSTONE_MACOS_ARTIFACTS:-/var/tmp/solstone-distribution-out/macos-a
 # ⚠ A rung pinned to a fixed path therefore reports a healthy artifact as hung,
 # for as long as that host lives.
 WORK=${SOLSTONE_MACOS_WORK:-$(mktemp -d /var/tmp/solstone-macos-rung.XXXXXX)}
+# macOS exposes /var as a symlink to /private/var. A launchd service records the
+# literal path it receives while setup's identity guard canonicalizes its binary
+# target; mixing the two spellings makes a service we just installed look
+# foreign on the next check. Normalize the parent before any receipt, wrapper or
+# service identity is written.
+work_name=${WORK##*/}
+[ -n "$work_name" ] || refuse "work root must name a directory"
+work_parent=$(/usr/bin/dirname "$WORK")
+work_parent=$(CDPATH='' cd -P -- "$work_parent" && pwd -P) \
+	|| refuse "work root parent is unavailable: $work_parent"
+WORK=$work_parent/$work_name
 TREE=$WORK/tree
 JOURNAL=$WORK/journal
 
@@ -562,6 +573,8 @@ read_signed_macho_inventory() {
 				|| refuse "could not read members.$i.kind from ${signing##*/}"
 		member_digest=$(/usr/bin/plutil -extract "members.$i.sha256" raw -o - "$signing" 2>/dev/null) \
 				|| refuse "could not read members.$i.sha256 from ${signing##*/}"
+		member_library_validation=$(/usr/bin/plutil -extract "members.$i.library_validation_disabled" raw -o - "$signing" 2>/dev/null) \
+				|| refuse "could not read members.$i.library_validation_disabled from ${signing##*/}"
 		case "/$member_path/" in
 		*'/../'* | *'/./'* | *'//'*) refuse "unsafe signed member path: $member_path" ;;
 		esac
@@ -578,6 +591,12 @@ read_signed_macho_inventory() {
 		payload) member_payloads=$((member_payloads + 1)) ;;
 		*) refuse "unknown signed member kind for $member_path: $member_kind" ;;
 		esac
+		case $member_path:$member_library_validation in
+		bin/solstone-core-ced-analyze:true) ;;
+		bin/solstone-core-ced-analyze:*) refuse "CED helper lacks its fetched-engine library-validation exception" ;;
+		*:false) ;;
+		*) refuse "unexpected library-validation exception: $member_path" ;;
+		esac
 		member_file=$TREE/$member_path
 		if [ ! -f "$member_file" ] || [ -L "$member_file" ]; then
 			refuse "signed member is missing or not a regular file: $member_path"
@@ -587,6 +606,24 @@ read_signed_macho_inventory() {
 		actual_digest=${actual_digest%% *}
 		[ "$actual_digest" = "$member_digest" ] \
 			|| refuse "signed member digest mismatch: $member_path"
+		/usr/bin/codesign -d --entitlements :- "$member_file" \
+			>"$WORK/entitlements.stdout" 2>"$WORK/entitlements.stderr" \
+			|| refuse "could not read signed member entitlements: $member_path"
+		cat "$WORK/entitlements.stdout" "$WORK/entitlements.stderr" \
+			>"$WORK/entitlements.raw"
+		/usr/bin/sed -n '/^<?xml/,/<\/plist>$/p' "$WORK/entitlements.raw" \
+			>"$WORK/entitlements.plist" \
+			|| refuse "could not isolate signed member entitlements: $member_path"
+		if [ -s "$WORK/entitlements.plist" ] \
+			&& actual_library_validation=$(/usr/libexec/PlistBuddy -c \
+				'Print :com.apple.security.cs.disable-library-validation' \
+				"$WORK/entitlements.plist" 2>/dev/null); then
+			:
+		else
+			actual_library_validation=false
+		fi
+		[ "$actual_library_validation" = "$member_library_validation" ] \
+			|| refuse "signed member entitlement differs from inventory: $member_path"
 		printf '%s\n' "$member_path" >>"$WORK/signed-members.raw"
 		i=$((i + 1))
 	done
@@ -718,6 +755,9 @@ talent_rung() {
 	install_tar
 	assert_launchers
 	rm -rf "$JOURNAL"
+	home=$WORK/home
+	rm -rf "$home"
+	mkdir -p "$home"
 	day=$(date +%Y%m%d)
 	segment=$JOURNAL/chronicle/$day/default/031700_697
 	target_segment=$JOURNAL/chronicle/20990101/default/120000_001
@@ -727,6 +767,9 @@ talent_rung() {
 	printf '%s\n' '# Audio Transcript' '' \
 		'No future scheduled activity appears in this synthetic macOS rung segment.' \
 		>"$target_segment/talents/audio.md"
+	printf '%s\n' \
+		'{"density":"idle","content_type":"idle","activity_summary":"","facets":[]}' \
+		>"$target_segment/talents/sense.json"
 	printf '%s\n' \
 		'{"start":"00:00:00","source":"mic","speaker":1,"text":"No future scheduled activity appears in this synthetic macOS rung segment."}' \
 		>"$target_segment/capture_audio.jsonl"
@@ -749,59 +792,48 @@ talent_rung() {
 	endpoint=http://$(cat "$JOURNAL/generation.addr")
 	printf '%s\n' "{\"setup\":{\"completed_at\":1},\"providers\":{\"active\":{\"provider\":\"local\"},\"local\":{\"endpoint_url\":\"$endpoint\",\"served_model_id\":\"macos-rung\"}}}" \
 		>"$JOURNAL/config/journal.json"
-	export SOLSTONE_JOURNAL=$JOURNAL
-	unset SOL_SKIP_SUPERVISOR_CHECK || true
+	HOME=$home SOLSTONE_JOURNAL=$JOURNAL \
+		journal setup -y --journal "$JOURNAL" --accept-existing-journal \
+			--skip-models --skip-brain --skip-skills --skip-service --skip-wrapper \
+			>"$JOURNAL/setup.out" 2>"$JOURNAL/setup.err" || {
+			cat "$JOURNAL/setup.out" "$JOURNAL/setup.err" >&2 || true
+			kill "$SERVER_PID" 2>/dev/null || true
+			refuse "talent fixture setup failed"
+		}
+	# Setup establishes the installation identity and deliberately normalizes
+	# provider defaults. Restore this rung's bounded loopback provider after it
+	# has done so; no owner configuration is involved in this isolated journal.
+	printf '%s\n' "{\"setup\":{\"completed_at\":1},\"providers\":{\"active\":{\"provider\":\"local\"},\"local\":{\"endpoint_url\":\"$endpoint\",\"served_model_id\":\"macos-rung\"}}}" \
+		>"$JOURNAL/config/journal.json"
+	export HOME="$home"
+	export SOLSTONE_JOURNAL="$JOURNAL"
+	# Exercise the exact Cortex child boundary without starting Cortex itself.
+	# The supervisor owns the generation lease, while `journal think` dispatches
+	# through that supervisor; starting one and then invoking the other directly
+	# would test lease contention rather than the extracted talent. Cortex uses
+	# this same native worker plus the same line-delimited request shape.
 	[ ! -e "$JOURNAL/chronicle/20990101/talents/daily_schedule.json" ] \
 		|| refuse "daily_schedule output was pre-seeded"
-	# ⛔ NOT 5015. The Docker cleanroom owns its whole network namespace; this
-	# rung runs on a real Mac where the founder's own journal is live on the
-	# default port, and binding it would both fail the rung (convey exits 75)
-	# and disturb a running install. Measured: the first run of this rung died
-	# with `convey exited during startup (exit 75)` for exactly that reason.
-	port=${SOLSTONE_MACOS_CONVEY_PORT:-51015}
-	solstone-core supervisor --journal "$JOURNAL" --no-spl --no-daily "$port" \
-		>"$JOURNAL/supervisor.log" 2>&1 &
-	SUPERVISOR_PID=$!
-	attempt=0
-	while [ ! -S "$JOURNAL/health/callosum.sock" ]; do
-		attempt=$((attempt + 1))
-		if ! kill -0 "$SUPERVISOR_PID" 2>/dev/null || [ "$attempt" -ge 30 ]; then
-			cat "$JOURNAL/supervisor.log" >&2 || true
-			refuse "supervisor did not become ready"
-		fi
-		sleep 1
-	done
-	attempt=0
-	while [ "$(cat "$JOURNAL/health/convey.port" 2>/dev/null || true)" != "$port" ]; do
-		attempt=$((attempt + 1))
-		if ! kill -0 "$SUPERVISOR_PID" 2>/dev/null || [ "$attempt" -ge 30 ]; then
-			cat "$JOURNAL/supervisor.log" >&2 || true
-			refuse "convey did not become ready on port $port"
-		fi
-		sleep 1
-	done
-	if ! journal think --day 20990101 --refresh >"$JOURNAL/think.out" 2>"$JOURNAL/think.err"; then
-		cat "$JOURNAL/think.out" "$JOURNAL/think.err" "$JOURNAL/supervisor.log" \
+	printf '%s\n' \
+		'{"use_id":"macos-tree-daily-schedule","name":"daily_schedule","day":"20990101","ts":1}' \
+		>"$JOURNAL/talent.request"
+	if ! "$TREE/bin/solstone-core" __talent-worker \
+		<"$JOURNAL/talent.request" \
+		>"$JOURNAL/talent.out" 2>"$JOURNAL/talent.err"; then
+		cat "$JOURNAL/talent.out" "$JOURNAL/talent.err" \
 			"$JOURNAL/generation.err" >&2 || true
-		kill "$SUPERVISOR_PID" 2>/dev/null || true
 		kill "$SERVER_PID" 2>/dev/null || true
-		refuse "journal think failed from the extracted tree"
+		refuse "daily_schedule worker failed from the extracted tree"
 	fi
-	kill "$SUPERVISOR_PID" 2>/dev/null || true
 	kill "$SERVER_PID" 2>/dev/null || true
-	wait "$SUPERVISOR_PID" 2>/dev/null || true
 	wait "$SERVER_PID" 2>/dev/null || true
 	[ -f "$JOURNAL/chronicle/20990101/talents/daily_schedule.json" ] \
 		|| refuse "daily_schedule output missing"
 	daily=$(tr -d '[:space:]' <"$JOURNAL/chronicle/20990101/talents/daily_schedule.json")
 	[ "$daily" = '{"primary":"03:00","fallback":"04:00"}' ] \
 		|| refuse "daily_schedule output mismatch: $daily"
-	set -- "$JOURNAL"/talents/daily_schedule/*.jsonl
-	if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
-		refuse "daily_schedule terminal event log missing"
-	fi
-	grep -Fq '"event":"finish"' "$1" \
-		|| refuse "daily_schedule did not reach a terminal finish event"
+	grep -Fq '"event":"finish"' "$JOURNAL/talent.out" \
+		|| refuse "daily_schedule worker did not reach a terminal finish event"
 	printf 'rung=talent ok\n'
 }
 
@@ -858,12 +890,15 @@ bootstrap_rung() {
 	archive=$(one_artifact .tar.gz)
 	sha=$(one_artifact .sha256)
 	release=$(one_artifact .release)
+	manifest=$(one_artifact .manifest.json)
+	minisig=$(one_artifact .manifest.json.minisig)
 	prefix=$WORK/prefix
 	home=$WORK/home
 	rm -rf "$prefix" "$home"
 	mkdir -p "$prefix" "$home"
 	HOME=$home sh "$INSTALL_SH" --prefix "$prefix" \
 		--archive "$archive" --sha256 "$sha" --release "$release" \
+		--manifest "$manifest" --minisig "$minisig" \
 		|| refuse "bootstrap install failed"
 	[ -L "$prefix/current" ] || refuse "bootstrap did not flip current"
 

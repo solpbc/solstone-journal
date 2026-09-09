@@ -389,7 +389,7 @@ impl MacosSigning {
                 ","
             };
             out.push_str(&format!(
-                "    {{\"path\": {:?}, \"kind\": {:?}, \"sha256\": {:?}, \"authority\": {:?}, \"team_identifier\": {:?}, \"hardened_runtime\": {}, \"trusted_timestamp\": {}}}{comma}\n",
+                "    {{\"path\": {:?}, \"kind\": {:?}, \"sha256\": {:?}, \"authority\": {:?}, \"team_identifier\": {:?}, \"hardened_runtime\": {}, \"trusted_timestamp\": {}, \"library_validation_disabled\": {}}}{comma}\n",
                 member.relative,
                 if member.payload { "payload" } else { "executable" },
                 member.sha256,
@@ -397,6 +397,7 @@ impl MacosSigning {
                 member.team_identifier,
                 member.hardened_runtime,
                 member.trusted_timestamp,
+                member.library_validation_disabled,
             ));
         }
         out.push_str("  ],\n");
