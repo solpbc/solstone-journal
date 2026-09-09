@@ -1620,6 +1620,22 @@ fn step_service_with_guard(
     saved_guard: Option<GuardFields>,
 ) -> Result<StepResult, StepExecutionError> {
     if context.args.skip_service {
+        #[cfg(unix)]
+        if let Err(message) =
+            crate::legacy_health::upgrade_legacy_supervisor_lock(&context.journal_path)
+        {
+            return Ok(StepResult::failed(
+                StepName::Service,
+                vec![context.journal_path.join("health/supervisor.lock")],
+                (context.now)(),
+                StepError {
+                    code: ErrorCode::LegacySupervisorLockRefused,
+                    message,
+                    details: String::new(),
+                    exit_code: 1,
+                },
+            ));
+        }
         return Ok(skipped_result(
             StepName::Service,
             Vec::new(),
@@ -1725,7 +1741,13 @@ fn resume_service(
     context: &mut SetupContext<'_>,
     paths: Vec<PathBuf>,
 ) -> Result<Option<StepResult>, StepExecutionError> {
-    if context.sol_already_keeps_journal() && !context.args.skip_service {
+    // A prior service result cannot skip app-owned runtime convergence. The app
+    // deliberately passes --skip-service, so the service step must still run
+    // its legacy health admission without probing or starting an OS service.
+    if context.args.skip_service {
+        return Ok(None);
+    }
+    if context.sol_already_keeps_journal() {
         narrate(context, SOL_ALREADY_KEEPS_JOURNAL_NARRATION);
         return Ok(Some(skipped_result(
             StepName::Service,
@@ -2623,6 +2645,177 @@ mod tests {
         assert_eq!(result.status, StepStatus::Ok);
         assert!(setup.installation_admission.is_none());
         assert_eq!(runner.requests.len(), 1);
+    }
+    #[cfg(unix)]
+    #[test]
+    fn skip_service_converges_only_a_quiescent_legacy_supervisor_lock() {
+        use nix::fcntl::{Flock, FlockArg};
+        use std::os::unix::fs::PermissionsExt;
+
+        let (args, resolved, root, home) = fixture(
+            "skip-service-legacy-lock",
+            &[
+                "--skip-service",
+                "--skip-models",
+                "--skip-skills",
+                "--skip-brain",
+            ],
+        );
+        let health = resolved.journal_path.join("health");
+        fs::create_dir_all(&health).unwrap();
+        let lock = health.join("supervisor.lock");
+        fs::write(&lock, b"").unwrap();
+        fs::set_permissions(&lock, fs::Permissions::from_mode(0o644)).unwrap();
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        let result = step_service(&mut context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        ))
+        .unwrap();
+        assert_eq!(result.status, StepStatus::Skipped);
+        assert_eq!(result.reason.as_deref(), Some("--skip-service"));
+        assert_eq!(
+            fs::metadata(&lock).unwrap().permissions().mode() & 0o7777,
+            0o600
+        );
+        assert!(runner.requests.is_empty());
+
+        fs::set_permissions(&lock, fs::Permissions::from_mode(0o644)).unwrap();
+        let held = Flock::lock(
+            fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&lock)
+                .unwrap(),
+            FlockArg::LockExclusiveNonblock,
+        )
+        .unwrap();
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        let result = step_service(&mut context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        ))
+        .unwrap();
+        assert_eq!(result.status, StepStatus::Failed);
+        assert!(matches!(
+            result.error,
+            Some(StepErrorPayload::Failure(StepError {
+                code: ErrorCode::LegacySupervisorLockRefused,
+                ..
+            }))
+        ));
+        assert_eq!(
+            fs::metadata(&lock).unwrap().permissions().mode() & 0o7777,
+            0o644
+        );
+        drop(held);
+    }
+    #[cfg(unix)]
+    #[test]
+    fn prior_ok_service_cannot_bypass_skip_service_lock_admission() {
+        use nix::fcntl::{Flock, FlockArg};
+        use std::os::unix::fs::PermissionsExt;
+
+        let setup_case = |name: &str| {
+            let (args, resolved, root, home) = fixture(
+                name,
+                &[
+                    "--skip-service",
+                    "--skip-models",
+                    "--skip-skills",
+                    "--skip-brain",
+                ],
+            );
+            let health = resolved.journal_path.join("health");
+            fs::create_dir_all(&health).unwrap();
+            let lock = health.join("supervisor.lock");
+            fs::write(&lock, b"").unwrap();
+            fs::set_permissions(&lock, fs::Permissions::from_mode(0o644)).unwrap();
+            let mut prior = SetupManifest::initial(now(), "non_interactive".into(), Map::new());
+            prior.steps.push(json!({
+                "name": "service",
+                "status": "ok",
+                "paths": [lock],
+            }));
+            write_manifest(&manifest_path(&resolved.journal_path), &prior);
+            (args, resolved, root, home, lock)
+        };
+        let service_spec = [StepSpec {
+            name: StepName::Service,
+            executor: Some(step_service),
+            plan: plan_service,
+        }];
+
+        let (args, resolved, root, home, lock) = setup_case("prior-skip-service-quiescent");
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        let mut failing_ops = FailingServiceOps;
+        let mut setup = context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        );
+        setup.service_ops = &mut failing_ops;
+        let outcome = run_setup(&mut setup, &service_spec);
+        assert_eq!(outcome.exit_code, 0);
+        assert_eq!(
+            fs::metadata(&lock).unwrap().permissions().mode() & 0o7777,
+            0o600
+        );
+        let written = read_manifest(&manifest_path(&resolved.journal_path)).unwrap();
+        assert_eq!(written.steps[0]["reason"], "--skip-service");
+
+        let (args, resolved, root, home, lock) = setup_case("prior-skip-service-active");
+        let held = Flock::lock(
+            fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&lock)
+                .unwrap(),
+            FlockArg::LockExclusiveNonblock,
+        )
+        .unwrap();
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        let mut failing_ops = FailingServiceOps;
+        let mut setup = context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        );
+        setup.service_ops = &mut failing_ops;
+        let outcome = run_setup(&mut setup, &service_spec);
+        assert_eq!(outcome.exit_code, 1);
+        assert_eq!(
+            fs::metadata(&lock).unwrap().permissions().mode() & 0o7777,
+            0o644
+        );
+        let written = read_manifest(&manifest_path(&resolved.journal_path)).unwrap();
+        assert_eq!(
+            written.steps[0]["error"]["code"],
+            "legacy_supervisor_lock_refused"
+        );
+        drop(held);
     }
     #[test]
     fn service_reinstall_uses_all_saved_guards_after_admission_release() {

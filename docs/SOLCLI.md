@@ -330,6 +330,7 @@ wants completed health failures should compute `failed - errors`.
 | `doctor_timeout` | Doctor exceeds its timeout. |
 | `journal_dir_invalid` | The requested journal path is a regular file. |
 | `journal_existing_blocked` | Non-interactive setup refuses to auto-claim an existing journal. |
+| `legacy_supervisor_lock_refused` | Setup found a legacy supervisor lock but could not confirm it was inactive and safe to upgrade. |
 | `service_up_failed` | Service installation succeeded but service startup failed. |
 | `setup_unhandled_exception` | A setup step raised an unexpected exception. |
 | `step_subprocess_failed` | A setup subprocess exited non-zero. |
