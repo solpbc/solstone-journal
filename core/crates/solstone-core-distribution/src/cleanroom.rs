@@ -324,6 +324,15 @@ fn generation_completion(
     prompt: &str,
     expected_fragment: &str,
 ) -> Result<(&'static str, &'static str), &'static str> {
+    if prompt.contains("# Segment Sense")
+        && prompt.contains("meeting_detected")
+        && prompt.contains("emotional_register")
+    {
+        return Ok((
+            "sense",
+            r#"{"density":"idle","content_type":"idle","activity_summary":"Held a quiet synthetic cleanroom interval.","entities":[],"facets":[],"speculative_facet":null,"meeting_detected":false,"speakers":[],"recommend":{"screen_record":false,"speaker_attribution":false},"emotional_register":"neutral"}"#,
+        ));
+    }
     if prompt.contains("Maintenance Window Analysis")
         && prompt.contains("primary")
         && prompt.contains("fallback")
@@ -594,6 +603,15 @@ mod tests {
         assert_eq!(
             generation_completion("unknown", anchor),
             Err("unexpected-talent")
+        );
+        assert_eq!(
+            generation_completion(
+                "# Segment Sense meeting_detected emotional_register",
+                anchor
+            )
+            .expect("sense response")
+            .0,
+            "sense"
         );
     }
 }
