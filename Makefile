@@ -1277,6 +1277,10 @@ test:
 check-journal-device-sim:
 	python3 -m unittest discover -s tools/journal_device_sim/tests -p 'test_*.py' -v
 
+.PHONY: check-talent-fault-sim
+check-talent-fault-sim:
+	python3 -m unittest discover -s tools/talent_fault_sim/tests -p 'test_*.py' -v
+
 # Focused installer-facing proof for the shell record parser and route-lock handoff.
 # It is deliberately reachable by name but is not part of the routine CI/test gates.
 check-distribution-route-protocol:
