@@ -292,7 +292,7 @@
       "why": "hybrid form is refused WITH a repair",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: `solstone call journal identity` is not a `solstone call` verb; `identity` is an approved host command family \u2014 run it directly as `journal identity partner`",
+        "reason": "policy_deny: `solstone call journal identity` is not a `solstone call` verb; `identity` is an approved host command family — run it directly as `journal identity partner`",
         "argv": null
       }
     },
@@ -305,7 +305,7 @@
       "why": "hybrid form, flags survive into the repair",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: `solstone call journal health` is not a `solstone call` verb; `health` is an approved host command family \u2014 run it directly as `journal health --json`",
+        "reason": "policy_deny: `solstone call journal health` is not a `solstone call` verb; `health` is an approved host command family — run it directly as `journal health --json`",
         "argv": null
       }
     },
@@ -318,7 +318,7 @@
       "why": "hybrid form",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: `solstone call journal talent` is not a `solstone call` verb; `talent` is an approved host command family \u2014 run it directly as `journal talent show read`",
+        "reason": "policy_deny: `solstone call journal talent` is not a `solstone call` verb; `talent` is an approved host command family — run it directly as `journal talent show read`",
         "argv": null
       }
     },
@@ -829,204 +829,6 @@
         "allowed": false,
         "reason": "policy_deny: `journal search` is not a host command; run `solstone call journal search 'two words'` instead",
         "argv": null
-      }
-    },
-    {
-      "id": "support_create_normal_noapproval",
-      "command": "solstone call support create --body x",
-      "access_tier": "normal",
-      "outbound_approval": null,
-      "citation": "cogitate_policy.py:243-251",
-      "why": "submit verb denied for a non-submit tier",
-      "expect": {
-        "allowed": false,
-        "reason": "policy_deny: 'solstone call support create' requires access_tier 'outbound'; this run is 'normal'",
-        "argv": null
-      }
-    },
-    {
-      "id": "support_reply_normal_noapproval",
-      "command": "solstone call support reply --body x",
-      "access_tier": "normal",
-      "outbound_approval": null,
-      "citation": "cogitate_policy.py:243-251",
-      "why": "submit verb denied for a non-submit tier",
-      "expect": {
-        "allowed": false,
-        "reason": "policy_deny: 'solstone call support reply' requires access_tier 'outbound'; this run is 'normal'",
-        "argv": null
-      }
-    },
-    {
-      "id": "support_attach_normal_noapproval",
-      "command": "solstone call support attach --body x",
-      "access_tier": "normal",
-      "outbound_approval": null,
-      "citation": "cogitate_policy.py:243-251",
-      "why": "submit verb denied for a non-submit tier",
-      "expect": {
-        "allowed": false,
-        "reason": "policy_deny: 'solstone call support attach' requires access_tier 'outbound'; this run is 'normal'",
-        "argv": null
-      }
-    },
-    {
-      "id": "support_feedback_normal_noapproval",
-      "command": "solstone call support feedback --body x",
-      "access_tier": "normal",
-      "outbound_approval": null,
-      "citation": "cogitate_policy.py:243-251",
-      "why": "submit verb denied for a non-submit tier",
-      "expect": {
-        "allowed": false,
-        "reason": "policy_deny: 'solstone call support feedback' requires access_tier 'outbound'; this run is 'normal'",
-        "argv": null
-      }
-    },
-    {
-      "id": "support_close_normal_noapproval",
-      "command": "solstone call support close --body x",
-      "access_tier": "normal",
-      "outbound_approval": null,
-      "citation": "cogitate_policy.py:243-251",
-      "why": "submit verb denied for a non-submit tier",
-      "expect": {
-        "allowed": false,
-        "reason": "policy_deny: 'solstone call support close' requires access_tier 'outbound'; this run is 'normal'",
-        "argv": null
-      }
-    },
-    {
-      "id": "support_resolved_normal_noapproval",
-      "command": "solstone call support resolved --body x",
-      "access_tier": "normal",
-      "outbound_approval": null,
-      "citation": "cogitate_policy.py:243-251",
-      "why": "submit verb denied for a non-submit tier",
-      "expect": {
-        "allowed": false,
-        "reason": "policy_deny: 'solstone call support resolved' requires access_tier 'outbound'; this run is 'normal'",
-        "argv": null
-      }
-    },
-    {
-      "id": "support_still-need-help_normal_noapproval",
-      "command": "solstone call support still-need-help --body x",
-      "access_tier": "normal",
-      "outbound_approval": null,
-      "citation": "cogitate_policy.py:243-251",
-      "why": "submit verb denied for a non-submit tier",
-      "expect": {
-        "allowed": false,
-        "reason": "policy_deny: 'solstone call support still-need-help' requires access_tier 'outbound'; this run is 'normal'",
-        "argv": null
-      }
-    },
-    {
-      "id": "support_create_outbound_noapproval",
-      "command": "solstone call support create --body x",
-      "access_tier": "outbound",
-      "outbound_approval": null,
-      "citation": "cogitate_policy.py:253-259",
-      "why": "submit tier without a per-send approval",
-      "expect": {
-        "allowed": false,
-        "reason": "policy_deny: 'solstone call support create' requires a per-send owner approval; this run was not launched with one",
-        "argv": null
-      }
-    },
-    {
-      "id": "support_create_outbound_approved",
-      "command": "solstone call support create --body x",
-      "access_tier": "outbound",
-      "outbound_approval": "owner-token",
-      "citation": "cogitate_policy.py:243-261",
-      "why": "submit tier WITH approval",
-      "expect": {
-        "allowed": true,
-        "reason": "ok",
-        "argv": [
-          "solstone",
-          "call",
-          "support",
-          "create",
-          "--body",
-          "x"
-        ]
-      }
-    },
-    {
-      "id": "support_create_synthesis",
-      "command": "solstone call support create --body x",
-      "access_tier": "synthesis",
-      "outbound_approval": "owner-token",
-      "citation": "cogitate_policy.py:243-251",
-      "why": "synthesis has solstone but not submit; approval does not help",
-      "expect": {
-        "allowed": false,
-        "reason": "policy_deny: 'solstone call support create' requires access_tier 'outbound'; this run is 'synthesis'",
-        "argv": null
-      }
-    },
-    {
-      "id": "support_create_system_read",
-      "command": "solstone call support create --body x",
-      "access_tier": "system-read",
-      "outbound_approval": "owner-token",
-      "citation": "cogitate_policy.py:243-251",
-      "why": "system-read has solstone but not submit",
-      "expect": {
-        "allowed": false,
-        "reason": "policy_deny: 'solstone call support create' requires access_tier 'outbound'; this run is 'system-read'",
-        "argv": null
-      }
-    },
-    {
-      "id": "support_read_verb_normal",
-      "command": "solstone call support list",
-      "access_tier": "normal",
-      "outbound_approval": null,
-      "citation": "cogitate_policy.py:264-271",
-      "why": "a non-send support verb is not gated",
-      "expect": {
-        "allowed": true,
-        "reason": "ok",
-        "argv": [
-          "solstone",
-          "call",
-          "support",
-          "list"
-        ]
-      }
-    },
-    {
-      "id": "support_send_verb_not_at_head",
-      "command": "solstone call entities note solstone call support create",
-      "access_tier": "normal",
-      "outbound_approval": null,
-      "citation": "cogitate_policy.py:265-266",
-      "why": "the send-verb scan walks every offset, not just the command head",
-      "expect": {
-        "allowed": false,
-        "reason": "policy_deny: 'solstone call support create' requires access_tier 'outbound'; this run is 'normal'",
-        "argv": null
-      }
-    },
-    {
-      "id": "support_send_verb_trailing_short",
-      "command": "solstone call support",
-      "access_tier": "normal",
-      "outbound_approval": null,
-      "citation": "cogitate_policy.py:265-266",
-      "why": "range(len(argv)-3) means a 3-token argv is never scanned",
-      "expect": {
-        "allowed": true,
-        "reason": "ok",
-        "argv": [
-          "solstone",
-          "call",
-          "support"
-        ]
       }
     }
   ],
@@ -5258,7 +5060,7 @@
         "input_bytes": 22,
         "cap": 10,
         "citation": "openhands.py:629 - Python slices CODE POINTS; a byte-slicing port panics here",
-        "expect": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\n... [truncated]",
+        "expect": "éééééééééé\n... [truncated]",
         "expect_chars": 26,
         "expect_bytes": 36
       },
@@ -5268,7 +5070,7 @@
         "input_bytes": 17,
         "cap": 10,
         "citation": "openhands.py:629 - the cut lands mid-multibyte-sequence by byte count",
-        "expect": "aaaaaaaa\u65e5\u672c\n... [truncated]",
+        "expect": "aaaaaaaa日本\n... [truncated]",
         "expect_chars": 26,
         "expect_bytes": 30
       },

@@ -417,17 +417,6 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
-id = "package::solstone-core-support-drafts"
-package = "solstone-core-support-drafts"
-set = "component"
-areas = ["core"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-runtime = "none"
-
-[[package_suites]]
 id = "package::solstone-core-check"
 package = "solstone-core-check"
 set = "component"
@@ -1488,18 +1477,6 @@ areas = ["commands"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
-runtime = "none"
-
-[[package_suites]]
-id = "package::solstone-core-support-portal"
-package = "solstone-core-support-portal"
-set = "component"
-areas = ["support"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "extended"
-serial_group = "local-services"
 default_full = false
 runtime = "none"
 
@@ -4644,32 +4621,6 @@ prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true
 required_features = ["test-hooks"]
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-support-portal::support_portal_transport"
-package = "solstone-core-support-portal"
-target = "support_portal_transport"
-set = "component"
-areas = ["support"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-support-web::support_web_transport"
-package = "solstone-core-support-web"
-target = "support_web_transport"
-set = "component"
-areas = ["support"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
 runtime = "none"
 
 [[suites]]

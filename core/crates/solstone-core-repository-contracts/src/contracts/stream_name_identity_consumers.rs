@@ -360,11 +360,6 @@ fn expected_consumers() -> BTreeSet<(String, String)> {
             "solstone-core-streams-cli/src/lib.rs",
             "run_cli_with_lock_options",
         ),
-        // support-drafts writes to a fixed unbound stream name
-        (
-            "solstone-core-support-drafts/src/lib.rs",
-            "append_validated_draft_event_at_local_time",
-        ),
     ]
     .into_iter()
     .map(|(path, name)| (path.to_owned(), name.to_owned()))

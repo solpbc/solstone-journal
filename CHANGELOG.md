@@ -12,7 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - chat is gone. you have a working chat today. this upgrade takes it away. the chat bar in your journal, the chat page, and `solstone chat` are gone. on iphone, the ask bar on the day home is gone too, and nothing takes its place. that screen is your day.
 - chats you already have in your journal stay on your disk, untouched. they are no longer shown, and they no longer come up in search.
 - solstone is a personal memory platform. to ask questions of your journal, use your own agent, or the command line.
-- filing support through the chat bar is gone. compose, review, and send now happen on the support page. the review card shows every field and every diagnostic value before anything leaves your machine.
+- filing support through the chat bar and the journal's support agent are gone. "report this" and the support page now show one local review card with the journal version, operating system, app and route, an error code when there is one, and editable recent error lines. continuing opens the support website with the draft, and the journal sends nothing to support on its own. upgrading also removes the retired support credential from the journal.
 - chat requests to your phone are paused, not gone.
 - the timeline view is gone. your journal no longer picks a headline event out of every five-minute slice, or picks the few events it judged most important to stand for a day, a month, or a year. the timeline entries it already wrote stay on your disk, untouched, and nothing reads them. a link that used to open a day in the timeline opens it in the transcripts view now.
 

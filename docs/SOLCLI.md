@@ -426,7 +426,6 @@ not the codebase. See [APPS.md](APPS.md).
 | `entities` | `core/native-sol/apps/entities/native/authority.toml` | list, move, detect, attach, update, aka, record-merge-candidate, merge-candidates, accept-merge-candidate, dismiss-merge-candidate, merge, undo-merge, ambiguities, resolve-ambiguity, entity-history, restore-version, network, history, overview, observations, observe, search |
 | `speakers` | `core/native-sol/apps/speakers/native/authority.toml` | list, show, detect-owner, confirm-owner, clusters, suggest |
 | `transcripts` | `core/native-sol/apps/transcripts/native/authority.toml` | list, read, segments |
-| `support` | `core/native-sol/apps/support/native/authority.toml` | register, search, article, create, list, show, reply, attach, feedback, announcements, diagnose |
 | `sol` | `core/native-sol/apps/sol/native/authority.toml` | set-owner, sol-init |
 | `settings` | `core/native-sol/apps/settings/native/authority.toml` | personal service keys (show/set/delete). Thinking provider selection lives in the Thinking app; local provider install lives at `journal install-provider local`. |
 | `awareness` | `core/native-sol/apps/awareness/native/authority.toml` | status, imports, log, log-read |

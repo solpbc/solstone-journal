@@ -232,7 +232,7 @@ fn ac1_mutations_replay_status_digest_config_and_key_deltas() {
     let _serialized = crate::retention_tests::executor_env_guard();
     let corpus = crate::test_support::corpus();
     let cases = mutation_cases(&corpus, "mutations");
-    assert_eq!(cases.len(), 16);
+    assert_eq!(cases.len(), 15);
     crate::retention_tests::without_executor(|| {
         for (name, case) in cases {
             let root = root_from(&case["config_before"]);
@@ -448,7 +448,7 @@ fn ac5_malformed_mutations_replay_and_keep_malformed_sections_byte_equal() {
     let _serialized = crate::retention_tests::executor_env_guard();
     let corpus = crate::test_support::corpus();
     let cases = mutation_cases(&corpus, "mutations_malformed");
-    assert_eq!(cases.len(), 16);
+    assert_eq!(cases.len(), 15);
     crate::retention_tests::without_executor(|| {
         for (name, case) in cases {
             let root = root_from(&case["config_before"]);

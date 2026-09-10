@@ -359,14 +359,12 @@ fn slot_reacquire_branches_match_the_provider_sequence() {
 
 #[test]
 fn sol_wrapper_relays_every_policy_refusal_family() {
-    const REFUSAL_IDS: [&str; 7] = [
+    const REFUSAL_IDS: [&str; 5] = [
         "shell_pipe",
         "empty_command",
         "restricted_cat",
         "hybrid_health",
         "bare_journal_search",
-        "support_create_normal_noapproval",
-        "support_create_outbound_noapproval",
     ];
 
     let journal = temp_journal();

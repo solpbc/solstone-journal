@@ -86,7 +86,6 @@ Check if solstone is running and how much data exists.
 
 ```bash
 solstone call journal storage-summary
-solstone call support diagnose
 ```
 
 ## Per-app command map
@@ -163,9 +162,5 @@ If `solstone` is not found on PATH or returns an error:
   `journal setup` in their solstone project.
 - `"journal not found"` or empty output — the journal directory doesn't exist or
   has no data yet. solstone may be installed but not initialized.
-- Connection errors from `solstone call support` — every support command needs the
-  local solstone service reachable. Portal-backed commands (`search`, `article`)
-  can additionally fail when the journal host is offline.
-
 Do not retry failed commands. Report the error clearly so the user can
 investigate.

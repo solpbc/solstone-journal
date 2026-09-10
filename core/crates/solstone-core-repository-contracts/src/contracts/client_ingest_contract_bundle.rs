@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
-const BUNDLE_SEMVER: &str = "10.0.0";
+const BUNDLE_SEMVER: &str = "11.0.0";
 const BUNDLE_DIRECTORY: &str = "docs/openapi/client-ingest-contract";
 const AUTHORITY_PATH: &str =
     "core/crates/solstone-core-repository-contracts/src/contracts/client_ingest_authority.json";

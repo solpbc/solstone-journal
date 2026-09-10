@@ -95,12 +95,7 @@ This codebase has one active logging framework: **`log`**, wired to `env_logger`
 in `solstone-core`'s entry point (`Builder::from_env(Env::default().default_filter_or("warn"))`).
 `RUST_LOG` is the control; `warn` is the compiled-in default when it is unset.
 
-`tracing` appeared in exactly one crate (`solstone-core-support-portal`) with no `tracing_subscriber` or
-`log`-bridge (`tracing-log`/`LogTracer`) installed anywhere in the workspace. **Those calls emitted
-nothing at all, at any `RUST_LOG` setting** — not a wrong level, a silent void. This was not a style
-inconsistency; it was a production defect the "two frameworks" framing had been treating as a
-preference question. Resolved by converting the three call sites to `log` and dropping the crate's
-`tracing` dependency. Unless a future need is concrete enough to justify installing a real `tracing`
+Unless a future need is concrete enough to justify installing a real `tracing`
 subscriber (structured spans, async-aware context) workspace-wide, new code uses `log`.
 
 ### A binary must install its own logger — nothing does it for you
@@ -193,8 +188,6 @@ given one):
   to the two that hadn't been converted.
 - `solstone-core-transfer`: one `eprintln!` (best-effort indexer-rescan notification, Callosum socket
   unavailable) → `warn!`. Library-only crate; runs inside `solstone-core`.
-- `solstone-core-support-portal`: the three silent `tracing::` calls → `log::`, plus the swallowed error
-  in the "acknowledgement failed" arm now carries the actual error instead of discarding it.
 - `solstone-core-depict`: added `install_logger()` (matching the three-crate precedent above) and
   converted the one genuine diagnostic — a swallowed `SEGMENT_META` JSON parse failure that falls back to
   continuing without it — to `warn!`. The other `depict` call sites are its request/response protocol

@@ -154,6 +154,26 @@ fn apply_permanent_chat_removal_divergence(expected: &mut Value) {
         .remove("chat_bar");
 }
 
+/// Permanent narrow divergence introduced by the 2026-09-10 support-client
+/// excision. Support remains an app, but its single frozen background route
+/// is gone. Require exactly that one row and route before clearing it.
+fn apply_permanent_support_background_removal_divergence(expected: &mut Value) {
+    let apps = expected["apps"]
+        .as_array_mut()
+        .expect("shell apps are an array");
+    let mut support = apps
+        .iter_mut()
+        .filter(|app| app["name"] == "support")
+        .collect::<Vec<_>>();
+    assert_eq!(support.len(), 1, "frozen shell contains one support app");
+    assert_eq!(
+        support[0]["background_url"],
+        Value::String("/app/support/background".to_owned()),
+        "frozen support app contains the retired background route"
+    );
+    support[0]["background_url"] = Value::Null;
+}
+
 #[test]
 fn permanent_chat_removal_divergence_requires_exactly_one_chat_row() {
     for (case, mut expected) in [
@@ -646,6 +666,7 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
                     apply_permanent_tokens_removal_divergence(&mut expected);
                     apply_permanent_sol_removal_divergence(&mut expected);
                     apply_permanent_chat_removal_divergence(&mut expected);
+                    apply_permanent_support_background_removal_divergence(&mut expected);
                     apply_permanent_starred_removal_divergence(&mut expected);
                     strip_permanent_launcher_metadata_from_actual(&mut actual);
                 }
@@ -719,7 +740,7 @@ async fn registry_and_unconverted_refusal_contract_are_stable() {
         .iter()
         .filter_map(|app| app["background_url"].as_str())
         .collect();
-    assert_eq!(backgrounds, ["/app/support/background"]);
+    assert!(backgrounds.is_empty());
 
     let (status, content_type, _, body) =
         get(router(journal.0.clone()), "/app/activities/workspace").await;

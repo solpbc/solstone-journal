@@ -22,6 +22,8 @@ if you connect a hosted provider, solstone sends — for each task it runs — t
 
 **what the product collects: nothing extra.** no telemetry, no analytics, no usage tracking, no crash phone-home. nothing about how you use solstone is reported back to sol pbc — this is verifiable in the code.
 
+**a support report stays local until you choose to send it.** "report this" and the support page build a draft on your machine from only the journal version, your operating system name and version, the app and route you were on, an error code when there is one, and recent error lines you can edit or delete. continuing opens `support.solstone.app` with that draft in the URL fragment, which browsers do not send to the server; the first network request that contains the report is the one you make from the website after its form is open. the journal does not register you with support, poll for tickets, or contact the support service in the background.
+
 **on the two paths above, there is no sol pbc endpoint in the model path.** with a local model nothing leaves your machine; with your own hosted provider the call goes straight from your machine to that provider, and sol pbc never sees or holds it.
 
 **anything involving sol pbc is a service you switch on.** solstone offers optional services sol pbc operates. one of them, confidential processing, is a third way to run sol's thinking: while you have it turned on — and only then — the model path runs on a sol pbc endpoint, verified by attestation before anything is sent, processed in memory, and not retained. these services are off unless you enable them, and each is disclosed on its own terms at the point you turn it on. this page is about the two paths above.

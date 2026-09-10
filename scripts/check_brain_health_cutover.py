@@ -41,7 +41,6 @@ COMMAND_LIST_RE = re.compile(
 BRAIN_READER_ALLOWLIST = {
     "solstone/apps/health/routes.py",
     "solstone/apps/home/routes.py",
-    "solstone/apps/support/diagnostics.py",
     "solstone/apps/thinking/routes.py",
     "solstone/think/brain_cli.py",
     "solstone/think/brain_health.py",

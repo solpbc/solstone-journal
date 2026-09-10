@@ -1313,6 +1313,20 @@ fn emit_doctor_warning(context: &mut SetupContext<'_>, text: &str, fix_hint: &st
     );
 }
 
+fn remove_retired_support_state(journal: &Path) -> Result<(), std::io::Error> {
+    let portal = journal.join("apps/support/portal");
+    let metadata = match fs::symlink_metadata(&portal) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    if metadata.file_type().is_dir() {
+        fs::remove_dir_all(portal)
+    } else {
+        fs::remove_file(portal)
+    }
+}
+
 fn step_journal(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutionError> {
     if context.journal_path.exists() && !context.journal_path.is_dir() {
         return Err(StepExecutionError::DeadEnd {
@@ -1378,6 +1392,11 @@ fn step_journal(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
         cleanup_legacy_log_aliases(&context.journal_path).map_err(|error| {
             StepExecutionError::Unhandled {
                 message: format!("legacy log alias cleanup failed: {error}"),
+            }
+        })?;
+        remove_retired_support_state(&context.journal_path).map_err(|error| {
+            StepExecutionError::Unhandled {
+                message: format!("retired support portal state cleanup failed: {error}"),
             }
         })?;
     }
@@ -3500,6 +3519,34 @@ mod tests {
             alias.symlink_metadata().is_err(),
             "retired alias was removed"
         );
+    }
+
+    #[test]
+    fn existing_journal_removes_retired_support_state() {
+        let (args, resolved, root, home) = fixture(
+            "journal-retired-support-state",
+            &["--accept-existing-journal"],
+        );
+        let portal = resolved.journal_path.join("apps/support/portal");
+        fs::create_dir_all(resolved.journal_path.join("config"))
+            .expect("existing journal config directory");
+        fs::create_dir_all(&portal).expect("retired portal state directory");
+        fs::write(portal.join("keypair.pem"), "retired private key").expect("retired private key");
+
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        step_journal(&mut context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        ))
+        .expect("existing journal setup");
+
+        assert!(!portal.exists(), "retired support portal state was removed");
     }
 
     #[test]

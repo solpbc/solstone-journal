@@ -36,18 +36,6 @@ Other: `for-range`, `full`, `pipeline`, `summary`
 
 Guidance: `solstone/apps/health/talent/health/SKILL.md`
 
-## support — `sol call support`
-
-Triggers: `file bug`, `request feature`, `submit feedback`, `search KB`, `announcements`, `tickets`, `close ticket`, `confirm resolution`, `still need help`, `closed history`
-
-Read: `list`, `search`, `show`
-
-Write: `attach`, `create`
-
-Other: `announcements`, `article`, `close`, `diagnose`, `feedback`, `history`, `register`, `reply`, `resolved`, `still-need-help`
-
-Guidance: `solstone/apps/support/talent/support/SKILL.md`
-
 ## transcripts — `sol call transcripts`
 
 Triggers: `transcript`, `recording`, `audio`, `what was said`, `conversation`, `segment`, `screen capture`

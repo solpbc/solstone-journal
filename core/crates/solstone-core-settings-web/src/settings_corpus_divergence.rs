@@ -34,6 +34,21 @@ pub fn apply_permanent_sol_initiated_settings_divergence(expected: &mut Value) {
     recompute_case_digests(expected);
 }
 
+/// Permanent narrow divergence introduced by the 2026-09-10 support-client
+/// excision. The frozen corpus contains exactly two support mutation probes
+/// and retained support objects throughout its captured config projections.
+/// Remove only that named probe and object key; never generalize this rule.
+pub fn apply_permanent_support_settings_divergence(expected: &mut Value) {
+    assert_eq!(
+        count_keys(expected, "POST support.toggle"),
+        2,
+        "frozen settings corpus contains exactly two support mutation probes"
+    );
+    strip_named_key(expected, "POST support.toggle");
+    strip_named_key(expected, "support");
+    recompute_case_digests(expected);
+}
+
 fn count_keys(value: &Value, key: &str) -> usize {
     match value {
         Value::Object(map) => {
@@ -61,6 +76,23 @@ fn strip_probe_keys(value: &mut Value) {
         Value::Array(items) => {
             for child in items {
                 strip_probe_keys(child);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn strip_named_key(value: &mut Value, key: &str) {
+    match value {
+        Value::Object(map) => {
+            map.remove(key);
+            for child in map.values_mut() {
+                strip_named_key(child, key);
+            }
+        }
+        Value::Array(items) => {
+            for child in items {
+                strip_named_key(child, key);
             }
         }
         _ => {}
