@@ -6,7 +6,9 @@ use std::path::PathBuf;
 
 use serde_json::{Map, Value};
 use solstone_core_indexer_store::scan::{RescanFileStatus, rescan_file};
-use solstone_core_journal_io::{AtomicWriteOptions, MalformedPolicy, read_jsonl, write_jsonl};
+use solstone_core_journal_io::{
+    AtomicWriteError, AtomicWriteOptions, MalformedPolicy, atomic_replace, read_jsonl, write_jsonl,
+};
 
 use crate::contract::{CommitDisposition, CommitPlan};
 use crate::{ExecutionContext, PreparedTalent, StageError};
@@ -83,15 +85,20 @@ pub fn write_output_if_configured(prepared: &PreparedTalent, output: &str) -> Re
 
 pub fn write_output(path: PathBuf, output: &str) -> Result<bool, std::io::Error> {
     let bytes = output.as_bytes();
-    if path.exists() && fs::read(&path)? == bytes {
+    if let Ok(existing) = fs::read(&path)
+        && existing == bytes
+    {
         return Ok(false);
     }
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    // Python uses a plain unlocked write here; do not add atomicity or a lock.
-    fs::write(path, bytes)?;
-    Ok(true)
+    match atomic_replace(&path, bytes, AtomicWriteOptions::default()) {
+        Ok(()) => Ok(true),
+        #[cfg(windows)]
+        Err(AtomicWriteError::PublicationUncertain { .. }) => Ok(true),
+        Err(AtomicWriteError::Io { source, .. }) => Err(source),
+    }
 }
 
 pub fn apply(
@@ -116,12 +123,7 @@ pub fn apply(
             value,
         }) => {
             crate::story::apply_story(&context.journal, &talent, &facet, &day, &record_id, &value)
-                .map_err(|detail| StageError {
-                    phase: "commit",
-                    stage: "story",
-                    talent,
-                    detail,
-                })?;
+                .map_err(|detail| StageError::new("commit", "story", talent, detail))?;
             Ok(CommitDisposition::CommittedNoOutput)
         }
         CommitPlan::Write(WriteIntent::DailySchedule {
@@ -129,21 +131,18 @@ pub fn apply(
             output_path,
         }) => {
             crate::daily_schedule::apply_result(&context.journal, &output).map_err(|detail| {
-                StageError {
-                    phase: "write-intent",
-                    stage: "daily_schedule",
-                    talent: "daily_schedule".to_owned(),
-                    detail,
-                }
+                StageError::new("write-intent", "daily_schedule", "daily_schedule", detail)
             })?;
             let Some(output_path) = output_path else {
                 return Ok(CommitDisposition::CommittedNoOutput);
             };
-            write_output(PathBuf::from(output_path), &output).map_err(|error| StageError {
-                phase: "write-intent",
-                stage: "daily_schedule",
-                talent: "daily_schedule".to_owned(),
-                detail: error.to_string(),
+            write_output(PathBuf::from(output_path), &output).map_err(|error| {
+                StageError::new(
+                    "write-intent",
+                    "daily_schedule",
+                    "daily_schedule",
+                    error.to_string(),
+                )
             })?;
             Ok(CommitDisposition::Written)
         }
@@ -154,32 +153,26 @@ pub fn apply(
             activity,
         }) => {
             crate::participation::apply_result(&context.journal, &output, &facet, &day, &activity)
-                .map_err(|detail| StageError {
-                    phase: "write-intent",
-                    stage: "participation",
-                    talent: "participation".to_owned(),
-                    detail,
+                .map_err(|detail| {
+                    StageError::new("write-intent", "participation", "participation", detail)
                 })?;
             Ok(CommitDisposition::CommittedNoOutput)
         }
         CommitPlan::Write(WriteIntent::Schedule { output, day }) => {
             crate::schedule::apply_result(&context.journal, &output, &day).map_err(|detail| {
-                StageError {
-                    phase: "write-intent",
-                    stage: "schedule",
-                    talent: "schedule".to_owned(),
-                    detail,
-                }
+                StageError::new("write-intent", "schedule", "schedule", detail)
             })?;
             Ok(CommitDisposition::CommittedNoOutput)
         }
         CommitPlan::Write(WriteIntent::FacetNewsletter { output, facet, day }) => {
             crate::facet_newsletter::apply_result(&context.journal, &output, &facet, &day)
-                .map_err(|detail| StageError {
-                    phase: "write-intent",
-                    stage: "facet_newsletter",
-                    talent: "facet_newsletter".to_owned(),
-                    detail,
+                .map_err(|detail| {
+                    StageError::new(
+                        "write-intent",
+                        "facet_newsletter",
+                        "facet_newsletter",
+                        detail,
+                    )
                 })?;
             Ok(CommitDisposition::CommittedNoOutput)
         }
@@ -196,31 +189,37 @@ pub fn apply(
                 &segment,
                 stream.as_deref(),
             )
-            .map_err(|detail| StageError {
-                phase: "write-intent",
-                stage: "entities:detection",
-                talent: "entities:detection".to_owned(),
-                detail,
+            .map_err(|detail| {
+                StageError::new(
+                    "write-intent",
+                    "entities:detection",
+                    "entities:detection",
+                    detail,
+                )
             })?;
             Ok(CommitDisposition::CommittedNoOutput)
         }
         CommitPlan::Write(WriteIntent::EntitiesReview { output, facet, day }) => {
             crate::entities::review::apply_result(&context.journal, &output, &facet, &day)
-                .map_err(|detail| StageError {
-                    phase: "write-intent",
-                    stage: "entities:entities_review",
-                    talent: "entities:entities_review".to_owned(),
-                    detail,
+                .map_err(|detail| {
+                    StageError::new(
+                        "write-intent",
+                        "entities:entities_review",
+                        "entities:entities_review",
+                        detail,
+                    )
                 })?;
             Ok(CommitDisposition::CommittedNoOutput)
         }
         CommitPlan::Write(WriteIntent::EntityObserver { output, facet, day }) => {
             crate::entities::observer::apply_result(&context.journal, &output, &facet, &day)
-                .map_err(|detail| StageError {
-                    phase: "write-intent",
-                    stage: "entities:entity_observer",
-                    talent: "entities:entity_observer".to_owned(),
-                    detail,
+                .map_err(|detail| {
+                    StageError::new(
+                        "write-intent",
+                        "entities:entity_observer",
+                        "entities:entity_observer",
+                        detail,
+                    )
                 })?;
             Ok(CommitDisposition::CommittedNoOutput)
         }
@@ -239,11 +238,13 @@ pub fn apply(
                 &stream,
                 &state,
             )
-            .map_err(|detail| StageError {
-                phase: "write-intent",
-                stage: "speaker_attribution",
-                talent: "speaker_attribution".to_owned(),
-                detail,
+            .map_err(|detail| {
+                StageError::new(
+                    "write-intent",
+                    "speaker_attribution",
+                    "speaker_attribution",
+                    detail,
+                )
             })?;
             Ok(CommitDisposition::CommittedNoOutput)
         }
@@ -291,12 +292,7 @@ fn index_warning(message: &str) {
 }
 
 fn stage_error(stage: &str, detail: String) -> StageError {
-    StageError {
-        phase: "write-intent",
-        stage: "day-accumulator",
-        talent: stage.to_owned(),
-        detail,
-    }
+    StageError::new("write-intent", "day-accumulator", stage, detail)
 }
 
 #[cfg(test)]
@@ -360,7 +356,7 @@ mod tests {
     }
 
     #[test]
-    fn criterion_6_output_guard_is_plain_and_bidirectional() {
+    fn criterion_6_output_guard_is_atomic_and_bidirectional() {
         let root = tempfile::Builder::new()
             .prefix("solstone-talent-output-guard-")
             .tempdir_in("/var/tmp")

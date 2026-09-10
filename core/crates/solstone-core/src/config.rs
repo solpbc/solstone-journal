@@ -850,6 +850,7 @@ pub(crate) fn run(command: ConfigCommand) -> ExitCode {
         ConfigCommand::Journal(options) => journal(options),
     }
 }
+
 fn wrapper_status(alias: &Path) -> (&'static str, Option<String>) {
     if !alias.exists() && !alias.is_symlink() {
         ("absent", None)
@@ -859,11 +860,21 @@ fn wrapper_status(alias: &Path) -> (&'static str, Option<String>) {
         fs::read_to_string(alias)
             .ok()
             .and_then(|text| parse_wrapper(WrapperCommand::Solstone, &text))
-            .map_or(("foreign", None), |wrapper| {
+            .map_or(("unmanaged", None), |wrapper| {
                 ("managed", Some(wrapper.journal))
             })
     }
 }
+
+fn wrapper_next(status: &str, alias: &Path) -> Option<String> {
+    (status == "unmanaged").then(|| {
+        format!(
+            "move {} aside, then run 'journal setup' from the solstone source checkout",
+            alias.display()
+        )
+    })
+}
+
 fn show_source(source: Source, embedded: Option<&str>, env_journal: Option<&str>) -> &'static str {
     match source {
         Source::Env if embedded == env_journal => "wrapper-embedded",
@@ -875,7 +886,8 @@ fn show_source(source: Source, embedded: Option<&str>, env_journal: Option<&str>
 }
 fn show() -> ExitCode {
     let h = home();
-    let wrapper = wrapper_status(&wrapper_paths(&h).solstone);
+    let wrapper_path = wrapper_paths(&h).solstone;
+    let wrapper = wrapper_status(&wrapper_path);
     let cfg = read_config_journal(&h).ok().flatten();
     let root = env::current_dir()
         .ok()
@@ -897,6 +909,9 @@ fn show() -> ExitCode {
         source,
         wrapper.0
     );
+    if let Some(next) = wrapper_next(wrapper.0, &wrapper_path) {
+        println!("next: {next}");
+    }
     ExitCode::SUCCESS
 }
 fn journal(o: ConfigJournalOptions) -> ExitCode {
@@ -1541,16 +1556,28 @@ mod tests {
         fs::remove_file(&alias).unwrap();
 
         fs::write(&alias, "not a wrapper").unwrap();
-        assert_eq!(wrapper_status(&alias), ("foreign", None));
+        assert_eq!(wrapper_status(&alias), ("unmanaged", None));
         fs::remove_file(&alias).unwrap();
         fs::create_dir(&alias).unwrap();
-        assert_eq!(wrapper_status(&alias), ("foreign", None));
+        assert_eq!(wrapper_status(&alias), ("unmanaged", None));
         fs::remove_dir(&alias).unwrap();
 
         let legacy = legacy_wrapper("solstone", Path::new("/legacy"), Path::new("/bin/solstone"))
             .replace("# managed-version: 7", "# managed-version: 5");
         fs::write(&alias, legacy).unwrap();
-        assert_eq!(wrapper_status(&alias), ("foreign", None));
+        assert_eq!(wrapper_status(&alias), ("unmanaged", None));
+    }
+
+    #[test]
+    fn only_unmanaged_wrapper_status_has_a_recovery_action() {
+        let alias = Path::new("/home/owner/.local/bin/solstone");
+        for status in ["absent", "legacy-symlink", "managed"] {
+            assert_eq!(wrapper_next(status, alias), None);
+        }
+        let next =
+            wrapper_next("unmanaged", alias).expect("unmanaged wrapper should name recovery");
+        assert!(next.contains(&alias.display().to_string()));
+        assert!(next.contains("journal setup"));
     }
 
     #[test]

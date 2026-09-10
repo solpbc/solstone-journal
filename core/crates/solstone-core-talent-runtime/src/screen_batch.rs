@@ -24,8 +24,9 @@ pub(crate) fn generate_if_needed(
     prepared: &PreparedTalent,
     context: &ExecutionContext,
     client: &OneShotClient,
+    writer: Option<&mut dyn std::io::Write>,
 ) -> Option<Result<String, RuntimeOutcome>> {
-    generate_if_needed_with(prepared, context, client, |input| {
+    generate_if_needed_with(prepared, context, client, writer, |input| {
         inspect_exact_text_admission(input).map_err(|error| error.detail)
     })
 }
@@ -34,6 +35,7 @@ pub(crate) fn generate_if_needed_with<I>(
     prepared: &PreparedTalent,
     context: &ExecutionContext,
     client: &OneShotClient,
+    mut writer: Option<&mut dyn std::io::Write>,
     mut inspect: I,
 ) -> Option<Result<String, RuntimeOutcome>>
 where
@@ -88,34 +90,31 @@ where
     };
 
     let mut outputs = Vec::with_capacity(batches.len());
-    for batch in batches {
+    for (batch_idx, batch) in batches.into_iter().enumerate() {
         let request = generate_request(&batch);
-        let mut last_response = None;
-        for attempt in 0..=super::VALIDATION_RETRY_ATTEMPTS {
-            match client.execute(&request) {
-                Ok(response) => {
-                    if attempt < super::VALIDATION_RETRY_ATTEMPTS
-                        && super::is_bounded_retry_eligible(
-                            &response,
-                            batch.config.contains_key("json_schema"),
-                        )
-                    {
-                        continue;
-                    }
-                    last_response = Some(response);
-                    break;
-                }
-                Err(error) => {
-                    return Some(Err(RuntimeOutcome::StageFailed(stage_error(
+        let response = match super::execute_bounded_attempts(
+            batch.config.contains_key("json_schema"),
+            Some(batch_idx),
+            |_attempt| {
+                client.execute(&request).map_err(|error| {
+                    RuntimeOutcome::StageFailed(stage_error(
                         "generate",
                         "screen_batch",
                         prepared,
                         format!("{error}"),
-                    ))));
+                    ))
+                })
+            },
+            |event| {
+                if let Some(writer) = writer.as_deref_mut() {
+                    super::emit(writer, event);
                 }
-            }
-        }
-        match last_response.expect("loop executed at least once") {
+            },
+        ) {
+            Ok(response) => response,
+            Err(outcome) => return Some(Err(outcome)),
+        };
+        match response {
             GenerateResponse::Generated(response) => {
                 if batch.config.contains_key("json_schema")
                     && super::schema_validation_failed(response.schema_validation.as_ref())
@@ -1120,7 +1119,9 @@ mod tests {
             })
         };
 
-        let outcome = generate_if_needed_with(&prepared, &context, &client, inspect);
+        let mut writer = Vec::new();
+        let outcome =
+            generate_if_needed_with(&prepared, &context, &client, Some(&mut writer), inspect);
         let Some(Ok(merged)) = outcome else {
             panic!("expected Some(Ok(..)), got {outcome:?}");
         };
@@ -1129,6 +1130,34 @@ mod tests {
             parsed["narrative"],
             "Narrative 1\n\nNarrative 2\n\nNarrative 3"
         );
+
+        let attempts: Vec<Value> = writer
+            .split(|&b| b == b'\n')
+            .filter(|line| !line.is_empty())
+            .map(|line| serde_json::from_slice(line).unwrap())
+            .filter(|e: &Value| e["event"] == "generate_attempt")
+            .collect();
+        assert_eq!(attempts.len(), 4);
+        assert_eq!(attempts[0]["batch"], 0);
+        assert_eq!(attempts[0]["ordinal"], 0);
+        assert_eq!(attempts[0]["status"], "success");
+        assert_eq!(attempts[0]["retry"], false);
+
+        assert_eq!(attempts[1]["batch"], 1);
+        assert_eq!(attempts[1]["ordinal"], 0);
+        assert_eq!(attempts[1]["status"], "retry_eligible");
+        assert_eq!(attempts[1]["cause"], "schema_validation_failed");
+        assert_eq!(attempts[1]["retry"], true);
+
+        assert_eq!(attempts[2]["batch"], 1);
+        assert_eq!(attempts[2]["ordinal"], 1);
+        assert_eq!(attempts[2]["status"], "success");
+        assert_eq!(attempts[2]["retry"], false);
+
+        assert_eq!(attempts[3]["batch"], 2);
+        assert_eq!(attempts[3]["ordinal"], 0);
+        assert_eq!(attempts[3]["status"], "success");
+        assert_eq!(attempts[3]["retry"], false);
 
         let count_path = root.path().join("sequenced-one-shot-stub.sh.count");
         let count: usize = fs::read_to_string(count_path)
@@ -1232,13 +1261,39 @@ mod tests {
             })
         };
 
-        let outcome = generate_if_needed_with(&prepared, &context, &client, inspect);
+        let mut writer = Vec::new();
+        let outcome =
+            generate_if_needed_with(&prepared, &context, &client, Some(&mut writer), inspect);
         let Some(Err(RuntimeOutcome::SchemaValidationFailed { talent, validation })) = outcome
         else {
             panic!("expected Some(Err(SchemaValidationFailed)), got {outcome:?}");
         };
         assert_eq!(talent, "screen");
         assert_eq!(validation["errors"][0]["constraint"], "minLength");
+
+        let attempts: Vec<Value> = writer
+            .split(|&b| b == b'\n')
+            .filter(|line| !line.is_empty())
+            .map(|line| serde_json::from_slice(line).unwrap())
+            .filter(|e: &Value| e["event"] == "generate_attempt")
+            .collect();
+        assert_eq!(attempts.len(), 3);
+        assert_eq!(attempts[0]["batch"], 0);
+        assert_eq!(attempts[0]["ordinal"], 0);
+        assert_eq!(attempts[0]["status"], "success");
+        assert_eq!(attempts[0]["retry"], false);
+
+        assert_eq!(attempts[1]["batch"], 1);
+        assert_eq!(attempts[1]["ordinal"], 0);
+        assert_eq!(attempts[1]["status"], "retry_eligible");
+        assert_eq!(attempts[1]["cause"], "schema_validation_failed");
+        assert_eq!(attempts[1]["retry"], true);
+
+        assert_eq!(attempts[2]["batch"], 1);
+        assert_eq!(attempts[2]["ordinal"], 1);
+        assert_eq!(attempts[2]["status"], "exhausted");
+        assert_eq!(attempts[2]["cause"], "schema_validation_failed");
+        assert_eq!(attempts[2]["retry"], false);
 
         let count_path = root.path().join("sequenced-one-shot-stub.sh.count");
         let count: usize = fs::read_to_string(count_path)
@@ -1265,6 +1320,109 @@ mod tests {
                 .path()
                 .join("sequenced-one-shot-stub.sh.request_4")
                 .exists()
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn screen_batch_later_batch_exhaustion_does_not_publish_output() {
+        use crate::test_support;
+
+        let root = TempDir::new().unwrap();
+        let journal = root.path().join("journal");
+        fs::create_dir_all(journal.join("config")).unwrap();
+        fs::write(
+            journal.join("config/journal.json"),
+            r#"{"providers":{"active":{"provider":"local","model":"local-model"}},"services":{"confidential":{}}}"#,
+        )
+        .unwrap();
+        let context = ExecutionContext {
+            journal: journal.clone(),
+        };
+
+        let first = unit(
+            "10:00:00",
+            observation(json!([{
+                "id":"%1", "index":0, "active":true, "geometry":[0,0,80,24],
+                "op":"snapshot", "lines":["alpha_batch1"]
+            }])),
+            5_100,
+        );
+        let second = unit(
+            "10:00:01",
+            observation(json!([{
+                "id":"%1", "index":0, "active":true, "geometry":[0,0,80,24],
+                "op":"splice", "start_line":0, "delete_count":1, "lines":["beta_batch2"]
+            }])),
+            5_100,
+        );
+        let third = unit(
+            "10:00:02",
+            observation(json!([{
+                "id":"%1", "index":0, "active":true, "geometry":[0,0,80,24],
+                "op":"splice", "start_line":0, "delete_count":1, "lines":["gamma_batch3"]
+            }])),
+            5_100,
+        );
+        let transcript = format!("prefix\n{first}{second}{third}");
+        let mut prepared = prepared(&transcript);
+        prepared.config.insert(
+            "_screen_batch_cuts".into(),
+            cuts_value(&test_cuts(&transcript)),
+        );
+        prepared
+            .config
+            .insert("json_schema".into(), json!({"type": "object"}));
+
+        let out_path = journal.join("screen_output.json");
+        fs::write(&out_path, "original unpublished text").unwrap();
+        prepared.config.insert(
+            "output_path".into(),
+            Value::String(out_path.display().to_string()),
+        );
+
+        let stub = test_support::sequenced_one_shot_stub(
+            root.path(),
+            &[
+                test_support::generated_response_value(
+                    r#"{"narrative":"Narrative 1","entities":[]}"#,
+                    json!({"valid": true, "errors": []}),
+                ),
+                test_support::generated_response_value(
+                    "attempt 1 invalid",
+                    json!({"valid": false, "errors": [{"path": "/body", "constraint": "required"}]}),
+                ),
+                test_support::generated_response_value(
+                    "attempt 2 invalid",
+                    json!({"valid": false, "errors": [{"path": "/body", "constraint": "minLength"}]}),
+                ),
+            ],
+        );
+        let client = OneShotClient::at_path(&stub);
+        let inspect = |input: &GenerateInput| {
+            let len = input.contents.to_string().len() as u32;
+            Ok(ExactTextCount {
+                input_tokens: len,
+                window: 16_384,
+                slots: 1,
+            })
+        };
+
+        let mut writer = Vec::new();
+        let outcome =
+            generate_if_needed_with(&prepared, &context, &client, Some(&mut writer), inspect);
+        let Some(Err(failure)) = outcome else {
+            panic!("expected batch generation failure, got {outcome:?}");
+        };
+        assert!(matches!(
+            failure,
+            RuntimeOutcome::SchemaValidationFailed { .. }
+        ));
+
+        // Pre-existing file content must NOT be overwritten
+        assert_eq!(
+            fs::read_to_string(&out_path).unwrap(),
+            "original unpublished text"
         );
     }
 }
