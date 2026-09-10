@@ -193,6 +193,7 @@ def verify(
     expected_output,
     excerpt,
     journal,
+    first_cause="schema_validation_failed",
 ):
     errors = []
     if len(calls) != expected_calls:
@@ -237,12 +238,33 @@ def verify(
         attempts = [e for e in events if e.get("event") == "generate_attempt"]
         if len(attempts) != expected_calls:
             errors.append("attempt_evidence_count")
-        if expected_calls == 2 and not any(
-            e.get("reason_code")
-            in ("schema_validation_failed", "incomplete_json_length")
-            for e in attempts
-        ):
-            errors.append("intermediate_failure_missing")
+        for ordinal, attempt in enumerate(attempts):
+            retry = ordinal < expected_calls - 1
+            cause = (
+                first_cause
+                if retry
+                else (
+                    reason
+                    if reason in ("schema_validation_failed", "incomplete_json_length")
+                    else None
+                )
+            )
+            if attempt.get("ordinal") != ordinal or attempt.get("batch") is not None:
+                errors.append("attempt_identity")
+            if (
+                attempt.get("terminal") is not False
+                or attempt.get("retry") is not retry
+            ):
+                errors.append("attempt_retry_decision")
+            if attempt.get("cause") != cause:
+                errors.append(
+                    "intermediate_failure_missing" if retry else "attempt_final_cause"
+                )
+            status = (
+                "retry_eligible" if retry else ("exhausted" if cause else "success")
+            )
+            if attempt.get("status") != status:
+                errors.append("attempt_status")
     return errors
 
 
@@ -436,6 +458,9 @@ def run(args):
                 (OLD if reason else GOOD).encode(),
                 excerpt,
                 journal,
+                first_cause="incomplete_json_length"
+                if name == "length_recovers"
+                else "schema_validation_failed",
             )
             after_stat = destination.stat()
             after_identity = (after_stat.st_dev, after_stat.st_ino)

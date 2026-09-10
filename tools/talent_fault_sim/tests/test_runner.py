@@ -25,8 +25,24 @@ class OracleTests(unittest.TestCase):
     def setUp(self):
         self.journal = Path("/disposable/journal")
         self.events = [
-            {"event": "generate_attempt", "reason_code": "schema_validation_failed"},
-            {"event": "generate_attempt", "reason_code": None},
+            {
+                "event": "generate_attempt",
+                "ordinal": 0,
+                "batch": None,
+                "terminal": False,
+                "status": "retry_eligible",
+                "cause": "schema_validation_failed",
+                "retry": True,
+            },
+            {
+                "event": "generate_attempt",
+                "ordinal": 1,
+                "batch": None,
+                "terminal": False,
+                "status": "success",
+                "cause": None,
+                "retry": False,
+            },
             {"event": "finish", "output": GOOD},
         ]
         self.calls = [{"contents": [{"type": "text", "text": "fixture phrase"}]}] * 2
@@ -58,13 +74,27 @@ class OracleTests(unittest.TestCase):
         self.assertIn("artifact_bytes", self.check(output=GOOD.encode() + b"\r\n"))
         self.assertIn("attempt_evidence_count", self.check(events=self.events[1:]))
         events = copy.deepcopy(self.events)
-        events[0]["reason_code"] = None
+        events[0]["cause"] = None
         self.assertIn("intermediate_failure_missing", self.check(events=events))
         events[-1] = {"event": "error", "terminal": True, "reason_code": "wrong"}
         self.assertIn(
             "terminal_cause",
             self.check(events=events, reason="schema_validation_failed"),
         )
+
+    def test_attempt_identity_and_retry_negative_controls(self):
+        for field, value, error in (
+            ("ordinal", 7, "attempt_identity"),
+            ("batch", 2, "attempt_identity"),
+            ("terminal", True, "attempt_retry_decision"),
+            ("retry", False, "attempt_retry_decision"),
+            ("status", "success", "attempt_status"),
+            ("cause", "incomplete_json_length", "intermediate_failure_missing"),
+        ):
+            with self.subTest(field=field):
+                events = copy.deepcopy(self.events)
+                events[0][field] = value
+                self.assertIn(error, self.check(events=events))
 
     def test_cogitate_identity_and_premature_finish_controls(self):
         events = [
