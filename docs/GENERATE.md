@@ -166,7 +166,7 @@ unify them with this contract:
 
 | set | size | case | serves |
 |---|---|---|---|
-| this fixture (`reason_codes`) | **46** | snake | ✅ **this contract**: generate refusals, with `retryable` and `blocking` on every row |
+| this fixture (`reason_codes`) | **48** | snake | ✅ **this contract**: generate refusals, with `retryable` and `blocking` on every row |
 | `KNOWN_REASON_CODES` (provider runtime) | 43 | kebab | local-provider process health |
 | `DETERMINISTIC_FAILURE_REASON_CODES` (cogitate) | 10 | snake | talent failures that have reached a known terminal class — a named subset, not a second generate list |
 

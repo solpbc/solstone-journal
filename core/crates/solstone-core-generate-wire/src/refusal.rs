@@ -352,6 +352,8 @@ mod tests {
     fn bundled_exact_admission_public_codes_are_classified() {
         for (reason_code, retryable, blocking) in [
             ("context_budget_exceeded", true, false),
+            ("context_fitted_overflow", true, false),
+            ("context_preserved_overflow", true, false),
             ("local_endpoint_contract_failed", true, false),
         ] {
             let refusal = refusal_for(

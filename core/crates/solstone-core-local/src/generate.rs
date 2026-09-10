@@ -21,6 +21,7 @@ const SAFETY_MARGIN_TOKENS: u32 = 256;
 const ESTIMATED_IMAGE_TOKENS: u32 = 2_500;
 const OUTPUT_RESERVE_DIVISOR: u32 = 4;
 const MIN_COMPLETION_TOKENS: u32 = 256;
+const LINUX_TEXT_OVERFLOW_SHRINK_ATTEMPTS: u32 = 2;
 const TOKENIZE_TIMEOUT: Duration = Duration::from_secs(5);
 const TRUNCATION_MARKER: &str = "[earlier input truncated to fit the on-device model's context]";
 const LOCAL_SCHEMA_MAX_ITEMS: u64 = 192;
@@ -244,17 +245,26 @@ where
     };
 
     let window = resolve_context_window(&input, &server, transport);
-    let prepared = match if cfg!(target_os = "linux") && count_image_parts(&input.contents) == 0 {
-        prepare_exact_text_request(&input, &server, window, |body| {
+    let prepared = if cfg!(target_os = "linux") && count_image_parts(&input.contents) == 0 {
+        match prepare_exact_text_request(&input, &server, window, |body| {
             count_input_tokens(transport, &server.base_url, body)
-        })
+        }) {
+            Ok(prepared) => prepared,
+            Err(error) if error.reason_code == "context_budget_exceeded" => {
+                match prepare_linux_text_overflow_fallback(&input, &server, window, transport) {
+                    Ok(prepared) => prepared,
+                    Err(error) => return GenerateResult::Failure(error.into_failure()),
+                }
+            }
+            Err(error) => return GenerateResult::Failure(error.into_failure()),
+        }
     } else {
-        prepare_bundled_request(&input, &server, window, |text| {
+        match prepare_bundled_request(&input, &server, window, |text| {
             count_tokens(transport, &server.base_url, text)
-        })
-    } {
-        Ok(prepared) => prepared,
-        Err(error) => return GenerateResult::Failure(error.into_failure()),
+        }) {
+            Ok(prepared) => prepared,
+            Err(error) => return GenerateResult::Failure(error.into_failure()),
+        }
     };
     let context_for = |admission_slot, queue_wait_ms, timed_out| InferenceContext {
         server: &server,
@@ -474,6 +484,11 @@ pub fn inspect_exact_text_admission(
 
 /// Build an unmodified text request and admit it using the provider's native
 /// count of the exact OpenAI chat body. Input is never clipped or reordered.
+///
+/// Exact text admission is the first-tier admission path for text-only Linux requests.
+/// Callers that can trim (such as [`generate_with`]) fall back to [`prepare_bundled_request`]
+/// only when this function returns `context_budget_exceeded`. A `local_endpoint_contract_failed`
+/// error is terminal and must not fall back. This function itself never trims.
 pub fn prepare_exact_text_request<F>(
     input: &GenerateInput,
     server: &ConnectedServer,
@@ -622,6 +637,64 @@ where
         input_budget,
         request_budget,
     })
+}
+
+fn prepare_linux_text_overflow_fallback<T: GenerateTransport>(
+    input: &GenerateInput,
+    server: &ConnectedServer,
+    context: ContextWindow,
+    transport: &mut T,
+) -> Result<PreparedRequest, GenerateError> {
+    let mut effective = context;
+    for attempt in 0..=LINUX_TEXT_OVERFLOW_SHRINK_ATTEMPTS {
+        let prepared = prepare_bundled_request(input, server, effective, |text| {
+            count_tokens(transport, &server.base_url, text)
+        })?;
+        let loud_input_tokens = count_input_tokens(transport, &server.base_url, &prepared.body)
+            .map_err(|detail| {
+                failure_error(
+                    "local_endpoint_contract_failed",
+                    format!(
+                        "Managed local input-token recount failed after fallback trim: {detail}"
+                    ),
+                )
+            })?;
+        let required = SAFETY_MARGIN_TOKENS
+            .checked_add(MIN_COMPLETION_TOKENS)
+            .and_then(|reserve| loud_input_tokens.checked_add(reserve))
+            .ok_or_else(|| {
+                failure_error(
+                    "context_fitted_overflow",
+                    "Local request token arithmetic overflowed during fallback recount.".into(),
+                )
+            })?;
+        if required <= context.window {
+            return Ok(prepared);
+        }
+        if attempt == LINUX_TEXT_OVERFLOW_SHRINK_ATTEMPTS {
+            return Err(failure_error(
+                "context_fitted_overflow",
+                "Managed local input-token recount still exceeds the context window after fallback shrink attempts.".into(),
+            ));
+        }
+        let remaining = effective.window.saturating_sub(loud_input_tokens);
+        let next = if remaining == 0 {
+            (effective.window / 2).max(1)
+        } else {
+            loud_input_tokens.saturating_add(remaining / 2)
+        };
+        if next >= effective.window {
+            return Err(failure_error(
+                "context_fitted_overflow",
+                "Fallback window shrink could not make further progress.".into(),
+            ));
+        }
+        effective.window = next;
+    }
+    Err(failure_error(
+        "context_fitted_overflow",
+        "Managed local input-token recount exceeded all shrink attempts.".into(),
+    ))
 }
 
 pub fn build_request_body(
@@ -1956,6 +2029,10 @@ mod tests {
         completion_posts: usize,
         count_posts: usize,
         input_tokens: u32,
+        input_token_queue: std::collections::VecDeque<u32>,
+        tokenize_divisor: Option<u32>,
+        tokenize_posts: usize,
+        count_error: Option<String>,
         count_bodies: Vec<Value>,
         completion_bodies: Vec<Value>,
     }
@@ -1967,6 +2044,10 @@ mod tests {
                 completion_posts: 0,
                 count_posts: 0,
                 input_tokens: 1,
+                input_token_queue: std::collections::VecDeque::new(),
+                tokenize_divisor: None,
+                tokenize_posts: 0,
+                count_error: None,
                 count_bodies: Vec::new(),
                 completion_bodies: Vec::new(),
             }
@@ -1993,14 +2074,39 @@ mod tests {
             if path == "/v1/chat/completions/input_tokens" {
                 self.count_posts += 1;
                 self.count_bodies.push(body.clone());
+                if let Some(err) = &self.count_error {
+                    return Err(err.clone());
+                }
+                let count = self
+                    .input_token_queue
+                    .pop_front()
+                    .unwrap_or(self.input_tokens);
                 return Ok(HttpResponse {
                     status: 200,
                     body: json!({
                         "object": "response.input_tokens",
-                        "input_tokens": self.input_tokens,
+                        "input_tokens": count,
                     })
                     .to_string(),
                 });
+            }
+            if path == "/tokenize" {
+                self.tokenize_posts += 1;
+                if let Some(divisor) = self.tokenize_divisor {
+                    if divisor >= 1 {
+                        let text = body.get("content").and_then(Value::as_str).unwrap_or("");
+                        let token_count = estimate_tokens(text) / divisor;
+                        let tokens = vec![0; token_count as usize];
+                        return Ok(HttpResponse {
+                            status: 200,
+                            body: json!({
+                                "tokens": tokens,
+                            })
+                            .to_string(),
+                        });
+                    }
+                }
+                return Err("scripted transport tokenize not enabled".into());
             }
             if path != "/v1/chat/completions" {
                 return Err("scripted transport has no supported endpoint".into());
@@ -2022,21 +2128,36 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn linux_text_overflow_counts_once_and_never_posts_inference() {
-        let mut transport = ScriptedTransport::new([]);
-        transport.input_tokens = FLOOR_CONTEXT_TOKENS - 511;
-        let outcome = generate_with(input(json!("all source bytes")), &mut transport, |_| {
-            ConnectOutcome::Ready { server: server() }
-        });
-        let GenerateResult::Failure(failure) = outcome else {
-            panic!("oversized exact text request unexpectedly succeeded");
-        };
-        assert_eq!(
-            failure.reason_code.as_deref(),
-            Some("context_budget_exceeded")
+    fn linux_text_overflow_falls_back_to_bundled_trim() {
+        let mut transport = ScriptedTransport::new([ok_http(json!({
+            "choices": [{"message": {"content": "fitted response"}, "finish_reason": "stop"}]
+        }))]);
+        transport.input_token_queue = std::collections::VecDeque::from([
+            FLOOR_CONTEXT_TOKENS - 511, // exact count overflows
+            1_000,                      // loud recount of fitted body fits
+        ]);
+        let root = tempfile::tempdir().expect("journal");
+        let huge_transcript = format!(
+            "## Entry 1\n{}\n## Entry 2\n{}",
+            "a".repeat(30_000),
+            "b".repeat(30_000)
         );
-        assert_eq!(transport.count_posts, 1);
-        assert_eq!(transport.completion_posts, 0);
+        let mut request = input(json!([huge_transcript, "keep this user instruction"]));
+        request.journal_path = root.path().display().to_string();
+        request.max_output_tokens = 512;
+        let result = generate_with(request, &mut transport, |_| ConnectOutcome::Ready {
+            server: server(),
+        });
+        let GenerateResult::Success(success) = result else {
+            panic!("expected success after fallback trim, got: {result:?}");
+        };
+        assert!(success.input_budget.is_some());
+        assert_eq!(transport.completion_posts, 1);
+        assert!(transport.count_posts >= 2);
+        let completion_body = &transport.completion_bodies[0];
+        let completion_body_str = serde_json::to_string(completion_body).unwrap();
+        assert!(completion_body_str.contains(TRUNCATION_MARKER));
+        assert!(completion_body_str.contains("keep this user instruction"));
     }
 
     #[cfg(target_os = "linux")]
@@ -2060,6 +2181,105 @@ mod tests {
             transport.count_bodies.last(),
             transport.completion_bodies.first()
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_text_count_failure_does_not_fall_back_to_bundled() {
+        let mut transport = ScriptedTransport::new([]);
+        transport.count_error = Some("native endpoint unavailable".into());
+        let outcome = generate_with(input(json!("small text")), &mut transport, |_| {
+            ConnectOutcome::Ready { server: server() }
+        });
+        let GenerateResult::Failure(failure) = outcome else {
+            panic!("expected failure on native count error");
+        };
+        assert_eq!(
+            failure.reason_code.as_deref(),
+            Some("local_endpoint_contract_failed")
+        );
+        assert_eq!(transport.completion_posts, 0);
+        assert_eq!(transport.tokenize_posts, 0);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_text_overflow_shrinks_and_reverifies_when_tokenize_undercounts() {
+        let mut transport = ScriptedTransport::new([ok_http(json!({
+            "choices": [{"message": {"content": "shrunk response"}, "finish_reason": "stop"}]
+        }))]);
+        transport.tokenize_divisor = Some(4);
+        transport.input_token_queue = std::collections::VecDeque::from([
+            FLOOR_CONTEXT_TOKENS - 511, // exact count overflows
+            FLOOR_CONTEXT_TOKENS - 511, // first fitted loud recount still overflows
+            1_000,                      // second fitted loud recount fits
+        ]);
+        let root = tempfile::tempdir().expect("journal");
+        let huge_transcript = format!(
+            "## Entry 1\n{}\n## Entry 2\n{}",
+            "x".repeat(30_000),
+            "y".repeat(30_000)
+        );
+        let mut request = input(json!([huge_transcript, "instruction"]));
+        request.journal_path = root.path().display().to_string();
+        request.max_output_tokens = 512;
+        let result = generate_with(request, &mut transport, |_| ConnectOutcome::Ready {
+            server: server(),
+        });
+        assert!(matches!(result, GenerateResult::Success(_)));
+        assert!(transport.tokenize_posts >= 1);
+        assert!(transport.count_posts >= 3);
+        assert_eq!(transport.completion_posts, 1);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_text_overflow_shrink_loop_stops_after_two_extra_attempts() {
+        let mut transport = ScriptedTransport::new([]);
+        transport.tokenize_divisor = Some(4);
+        transport.input_tokens = FLOOR_CONTEXT_TOKENS - 511;
+        let huge_transcript = format!(
+            "## Entry 1\n{}\n## Entry 2\n{}",
+            "x".repeat(30_000),
+            "y".repeat(30_000)
+        );
+        let outcome = generate_with(
+            input(json!([huge_transcript, "instruction"])),
+            &mut transport,
+            |_| ConnectOutcome::Ready { server: server() },
+        );
+        let GenerateResult::Failure(failure) = outcome else {
+            panic!("expected failure when shrink loop exhausts attempts");
+        };
+        assert_eq!(
+            failure.reason_code.as_deref(),
+            Some("context_fitted_overflow")
+        );
+        assert_eq!(transport.completion_posts, 0);
+        assert!(transport.count_posts <= 4);
+        assert!(transport.tokenize_posts >= 1);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_text_overflow_preserved_content_is_unfittable() {
+        let mut transport = ScriptedTransport::new([]);
+        transport.input_tokens = FLOOR_CONTEXT_TOKENS - 511;
+        let huge_preserved = "z".repeat(60_000);
+        let outcome = generate_with(
+            input(json!(["small transcript", huge_preserved])),
+            &mut transport,
+            |_| ConnectOutcome::Ready { server: server() },
+        );
+        let GenerateResult::Failure(failure) = outcome else {
+            panic!("expected failure on un-fittable preserved content");
+        };
+        assert_eq!(
+            failure.reason_code.as_deref(),
+            Some("context_preserved_overflow")
+        );
+        assert_eq!(transport.completion_posts, 0);
+        assert_eq!(transport.count_posts, 1);
     }
 
     fn generate_against(

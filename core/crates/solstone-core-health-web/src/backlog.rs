@@ -114,6 +114,9 @@ fn reason(day: &Map<String, Value>) -> &'static str {
         .or_else(|| day.get("reason").and_then(Value::as_str));
     match marker {
         Some("catchup_backoff") => return "waiting to retry automatically. no action needed yet",
+        Some("context_preserved_overflow" | "context_fitted_overflow") => {
+            return "this day's remaining content still will not fit the on-device model after trimming. it will keep retrying";
+        }
         Some("segment_repair_progressing") => return "repairing itself. check back soon",
         Some("segment_repair_degraded") => {
             return "repair is having trouble keeping up. may need a hand";
@@ -322,6 +325,20 @@ mod tests {
             let with_fallback =
                 json!({"days":[{"day":"20240101","error":error}],"errors":[{"day":"20240101"}]});
             assert_eq!(stuck_rows(with_fallback.as_object()).len(), 1);
+        }
+    }
+
+    #[test]
+    fn context_overflow_stuck_rows_render_specific_retry_sentence() {
+        let expected = "this day's remaining content still will not fit the on-device model after trimming. it will keep retrying";
+        let generic = "a processing step keeps failing. try again";
+        for code in ["context_preserved_overflow", "context_fitted_overflow"] {
+            let backlog = json!({"days":[{"day":"20260904","state":"stuck","reason_code":code}]});
+            let rows = stuck_rows(backlog.as_object());
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0]["reason"], expected, "{code}");
+            assert_ne!(rows[0]["reason"], generic, "{code}");
+            assert_eq!(rows[0]["reason_code"], code);
         }
     }
 }

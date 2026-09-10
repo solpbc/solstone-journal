@@ -595,6 +595,18 @@
     },
     {
       "blocking": false,
+      "code": "context_fitted_overflow",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
+      "code": "context_preserved_overflow",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
       "code": "context_window_exceeded",
       "overrides_live_taxonomy": false,
       "retryable": true
