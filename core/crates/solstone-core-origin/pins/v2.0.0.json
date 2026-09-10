@@ -1,0 +1,235 @@
+{
+  "schema_version": 1,
+  "release_version": "2.0.0",
+  "non_origin_upstream_hosts": [
+    "github.com",
+    "huggingface.co"
+  ],
+  "origin_pins": [
+    {
+      "origin_key": "assets/ced-engine/v0.1.0/ced-v0.1.0-lib-linux-cpu-arm64.tar.gz",
+      "sha256": "a87de0a8b086429aa5d6544a6f881a70e62726d07901734640ac85dbf146181e",
+      "unit": "ced-engine"
+    },
+    {
+      "origin_key": "assets/ced-engine/v0.1.0/ced-v0.1.0-lib-linux-cpu-x64.tar.gz",
+      "sha256": "915e0573bc4e17197a7a893d0eb98e1a851abb64451b2e1a8ad51f5f99040360",
+      "unit": "ced-engine"
+    },
+    {
+      "origin_key": "assets/ced-engine/v0.1.0/ced-v0.1.0-lib-macos-metal-arm64.tar.gz",
+      "sha256": "4c913ba0ece1d06ba2210da9fcaee3d8199ca3c62697c331810f224444e4054b",
+      "unit": "ced-engine"
+    },
+    {
+      "origin_key": "assets/ced-model/b5e9a4aad6438763c8da16079d77563fbed35c65/ced-tiny-q8_0.gguf",
+      "sha256": "48bee4e2fc3cc85d7806e03471db24e77fda6c2a2e81ffe9ef67caebaf2bd674",
+      "unit": "ced-model"
+    },
+    {
+      "origin_key": "runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-amd64-sol1.tar.gz",
+      "sha256": "3727630e6ac79953f5c652fddcfd7100da98c55d773c0aec115a55f40f3aafea",
+      "unit": "llama-server-cuda"
+    },
+    {
+      "origin_key": "runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-arm64-sol1.tar.gz",
+      "sha256": "6de68319db40e8c0eb45dc4bd3a45a16971dbdc128f2b621b19bef5dae87d064",
+      "unit": "llama-server-cuda"
+    },
+    {
+      "origin_key": "assets/llama-server-vulkan/b10068/llama-b10068-bin-macos-arm64.tar.gz",
+      "sha256": "13aa2d40c76ad1dcb8ebeec5f0d2814bf3b2f84a66935c7d4dc6f7cca8e38d68",
+      "unit": "llama-server-vulkan"
+    },
+    {
+      "origin_key": "assets/llama-server-vulkan/b10068/llama-b10068-bin-ubuntu-vulkan-arm64.tar.gz",
+      "sha256": "c3c49e6e124a574165ca28317be021b1a12a2ea06977e3eb7daee3eb443eb186",
+      "unit": "llama-server-vulkan"
+    },
+    {
+      "origin_key": "assets/llama-server-vulkan/b10068/llama-b10068-bin-ubuntu-vulkan-x64.tar.gz",
+      "sha256": "713641920dce6c8efb953ebc9ffa309977e200cec5e182e6ad0e8b086203cdc3",
+      "unit": "llama-server-vulkan"
+    },
+    {
+      "origin_key": "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_K_M.gguf",
+      "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+      "unit": "local-model"
+    },
+    {
+      "origin_key": "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/mmproj-F16.gguf",
+      "sha256": "cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864",
+      "unit": "local-model"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/Decoder.mlmodelc/analytics/coremldata.bin",
+      "sha256": "4238c4e81ecd0dc94bd7dfbb60f7e2cc824107c1ffe0387b8607b72833dba350",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/Decoder.mlmodelc/coremldata.bin",
+      "sha256": "18647af085d87bd8f3121c8a9b4d4564c1ede038dab63d295b4e745cf2d7fb99",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/Decoder.mlmodelc/metadata.json",
+      "sha256": "a39e93cd8371b8ded92635c7804fcd0590f0d1dd9415c6d19a0484be073077d9",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/Decoder.mlmodelc/model.mil",
+      "sha256": "ef2a0a281695398a62fde86ac269c68f73d5b578d7ed3b31f2ba91a2d1ea1f35",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/Decoder.mlmodelc/weights/weight.bin",
+      "sha256": "48adf0f0d47c406c8253d4f7fef967436a39da14f5a65e66d5a4b407be355d41",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/Encoder.mlmodelc/analytics/coremldata.bin",
+      "sha256": "42e638870d73f26b332918a3496ce36793fbb413a81cbd3d16ba01328637a105",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/Encoder.mlmodelc/coremldata.bin",
+      "sha256": "d48034a167a82e88fc3df64f60af963ab3983538271175b8319e7d5720a0fb86",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/Encoder.mlmodelc/metadata.json",
+      "sha256": "da24da9cca943fb29d7fa8e376d57fca7cb3aa08ca51b956b0b0e56813f087e9",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/Encoder.mlmodelc/model.mil",
+      "sha256": "ed7b19156ca29fa7dfd6891deb9fda4b0e8893f68597c985d135736546a43808",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/Encoder.mlmodelc/weights/weight.bin",
+      "sha256": "e2020f323703477a5b21d7c2d282c403e371afb5962e79877e3033e73ba6f421",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/JointDecision.mlmodelc/analytics/coremldata.bin",
+      "sha256": "bc69ef031ed427e888b1f3889d13eb373655edd5ac9927de20b5dae281b636b7",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/JointDecision.mlmodelc/coremldata.bin",
+      "sha256": "f56ded0404498e666ffcd84dda0c393924fc3581345ad03e41429ff560cb97b6",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/JointDecision.mlmodelc/metadata.json",
+      "sha256": "3044edab5e4ee331d37cef7100074653c944a0e58184ab618aab183a0e0707bc",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/JointDecision.mlmodelc/model.mil",
+      "sha256": "2cb084d7e0dc86ad3ddaa53a9631cdd5d97f19839218845b0e65ca065a4d1a5e",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/JointDecision.mlmodelc/weights/weight.bin",
+      "sha256": "4e0e63d840032f7f07ddb1d64446051166281e5491bf22da8a945c41f6eedb3e",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/Preprocessor.mlmodelc/analytics/coremldata.bin",
+      "sha256": "c9beeb989c8d66f8be11df59bc6df277ec76cee404f6865b46243835ef562f6d",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/Preprocessor.mlmodelc/coremldata.bin",
+      "sha256": "dbde3f2300842c1fd51ef3ff948a0bcffe65ffd2dca10707f2509f32c1d65b1d",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/Preprocessor.mlmodelc/metadata.json",
+      "sha256": "2a98699e22d279dd37fa1d238aeb1c6db1df0d6fad687775324157689d8f3acf",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/Preprocessor.mlmodelc/model.mil",
+      "sha256": "4b8518a956450fec57f06c2a21bdffc26973f7f1fa6842fb38fe917f896b6b93",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/Preprocessor.mlmodelc/weights/weight.bin",
+      "sha256": "129b76e3aeafa8afa3ea76d995b964b145fe83700d579f6ff42c4c38fa0968ea",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/config.json",
+      "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/parakeet_v3_vocab.json",
+      "sha256": "7ec60e05f1b24480736ec0eed40900f4626bce1fa9a60fd700ec7e2a59198735",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/parakeet_vocab.json",
+      "sha256": "7ec60e05f1b24480736ec0eed40900f4626bce1fa9a60fd700ec7e2a59198735",
+      "unit": "parakeet-coreml"
+    },
+    {
+      "origin_key": "assets/parakeet-model/bf0af9f425fa01809cadec671b3cb672709d13e9/tdt-0.6b-v3-q8_0.gguf",
+      "sha256": "4d69a4a6683f4f2d952bad794c1357ca6eb628027695b4699c5a9ad4cd07d757",
+      "unit": "parakeet-model"
+    },
+    {
+      "origin_key": "assets/parakeet-server/v0.5.0/parakeet-v0.5.0-bin-linux-cpu-arm64.tar.gz",
+      "sha256": "a7c9064c64b84f6b041252d5d2334d4a47693636e9c7c6ab2c535fcef11cf88b",
+      "unit": "parakeet-server"
+    },
+    {
+      "origin_key": "assets/parakeet-server/v0.5.0/parakeet-v0.5.0-bin-linux-cpu-x64.tar.gz",
+      "sha256": "636a9fc48ac023096037790f9b77d7e5043b200dd6399ec0438bd648c35d79b9",
+      "unit": "parakeet-server"
+    },
+    {
+      "origin_key": "assets/parakeet-server/v0.5.0/parakeet-v0.5.0-bin-linux-vulkan-arm64.tar.gz",
+      "sha256": "b95483070eb87ed144b9f39826a69fb67ea516c68aacc4fcf13a121a746ad7e4",
+      "unit": "parakeet-server"
+    },
+    {
+      "origin_key": "assets/parakeet-server/v0.5.0/parakeet-v0.5.0-bin-linux-vulkan-x64.tar.gz",
+      "sha256": "36c8d4b93594ec18928c9c76b02e04b2d738e859deda8b5e3944bb34fc0646eb",
+      "unit": "parakeet-server"
+    },
+    {
+      "origin_key": "providers/nvattest/libnvat-linux-aarch64-1.2.2-sol.2-archive.tar.xz",
+      "sha256": "7a13a15192f5005a700dbe154da28cbc2a2b5f3f387113c8cd89a36083a2bd80",
+      "unit": "nvattest"
+    },
+    {
+      "origin_key": "providers/nvattest/libnvat-linux-aarch64-1.2.2-sol.2-archive.manifest.json",
+      "sha256": "0d46ffdf21a9c5a61370fbf77aed0c275dae93f3609511f4573515a7260ddc39",
+      "unit": "nvattest"
+    },
+    {
+      "origin_key": "providers/nvattest/libnvat-linux-x86_64-1.2.2-sol.2-archive.tar.xz",
+      "sha256": "3e2d207a3bb6eab9c47fc9cf65d7990f0d11541ff8691dce18e786e2ce9b26c7",
+      "unit": "nvattest"
+    },
+    {
+      "origin_key": "providers/nvattest/libnvat-linux-x86_64-1.2.2-sol.2-archive.manifest.json",
+      "sha256": "a013d18a74d89f3ee99a0a3648c582df08446a30f5b8f5bbb48929a08fad4a8f",
+      "unit": "nvattest"
+    },
+    {
+      "origin_key": "providers/nvattest/libnvat-macos-arm64-1.2.2-sol.2-archive.tar.xz",
+      "sha256": "f2b01f60ee52f9c38c9e5e0f3cea6e8078a1efa165fad1f5c59994563120e365",
+      "unit": "nvattest"
+    },
+    {
+      "origin_key": "providers/nvattest/libnvat-macos-arm64-1.2.2-sol.2-archive.manifest.json",
+      "sha256": "dca5342f87bba1244f8ee78848207410ae5ee8976df42fe10d804f1c99167094",
+      "unit": "nvattest"
+    }
+  ]
+}

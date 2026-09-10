@@ -84,7 +84,7 @@ fn mlx_shaped_unknown_key_refuses_by_default() {
 }
 
 #[test]
-fn head_only_key_names_head_unreleased() {
+fn current_key_names_release_and_head_owners() {
     let assessment = assess_prune_with_current_support(
         "assets/ced-model/b5e9a4aad6438763c8da16079d77563fbed35c65/ced-tiny-q8_0.gguf",
     )
@@ -92,7 +92,10 @@ fn head_only_key_names_head_unreleased() {
     assert_eq!(
         assessment,
         PruneAssessment::PinnedBy {
-            owners: vec![PinOwner::HeadUnreleased],
+            owners: vec![
+                PinOwner::Release("2.0.0".to_owned()),
+                PinOwner::HeadUnreleased
+            ],
         }
     );
 }

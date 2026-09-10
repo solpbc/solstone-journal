@@ -145,9 +145,15 @@ mod tests {
 
     #[test]
     fn empty_and_populated_registries_are_read_only_inputs() {
-        let empty = Path::new(env!("CARGO_MANIFEST_DIR")).join("v2-release-registry.json");
-        assert!(versions(&empty).unwrap().is_empty());
         let dir = tempfile::tempdir().unwrap();
+        let empty = dir.path().join("empty-registry.json");
+        fs::write(
+            &empty,
+            format!("{{\"schema\":\"{REGISTRY_SCHEMA}\",\"releases\":[]}}"),
+        )
+        .unwrap();
+        assert!(versions(&empty).unwrap().is_empty());
+
         let populated = dir.path().join("registry.json");
         fs::write(
             &populated,
