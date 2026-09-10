@@ -667,14 +667,14 @@ mod tests {
         result
     }
 
-    async fn yield_until(predicate: impl Fn() -> bool, what: &str) {
-        for _ in 0..256 {
-            if predicate() {
-                return;
+    async fn wait_until(predicate: impl Fn() -> bool, what: &str) {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while !predicate() {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
             }
-            tokio::task::yield_now().await;
-        }
-        panic!("{what}");
+        })
+        .await
+        .unwrap_or_else(|_| panic!("{what}"));
     }
 
     fn assert_only_segment_changed(
@@ -1052,7 +1052,7 @@ mod tests {
             &root.path().join("chronicle/20260731/field/090000_300"),
             "audio",
         );
-        yield_until(
+        wait_until(
             || !marker.exists(),
             "reprocess watcher did not settle the analyzing marker",
         )
