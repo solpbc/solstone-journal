@@ -10,6 +10,7 @@ from pathlib import Path
 from tools.local_thinking_install.fixtures import write_prior_mlx_status
 from tools.local_thinking_install.harness import (
     classify_bootstrap_response,
+    find_or_build_helper,
     is_leftover_mlx,
     wait_until_mlx_replaced,
 )
@@ -74,21 +75,28 @@ class TestBootstrapClassifier(unittest.TestCase):
         self.assertIn("downloading", note)
 
     def test_leftover_mlx_status_detection(self) -> None:
+        helper_bin = find_or_build_helper()
         with tempfile.TemporaryDirectory() as tmp_dir:
             journal_dir = Path(tmp_dir)
             write_prior_mlx_status(journal_dir)
-            self.assertTrue(is_leftover_mlx(journal_dir))
+            self.assertTrue(is_leftover_mlx(helper_bin, journal_dir))
             # Test that wait_until_mlx_replaced returns False when MLX status is never replaced
-            self.assertFalse(wait_until_mlx_replaced(journal_dir, timeout_seconds=0.1, poll_interval=0.02))
+            self.assertFalse(wait_until_mlx_replaced(helper_bin, journal_dir, timeout_seconds=0.1, poll_interval=0.02))
 
             # Simulate overwrite with native target
             status_file = journal_dir / "health" / "providers" / "local.json"
             status_file.write_text(
-                '{"schema_version":1,"provider":"local","target_fingerprint_sha256":"native-metal-sha"}',
+                '{"schema_version":1,"provider":"local","revision":2,"install_state":"installed","attempt_id":"018e4f1a2b3c4d5e0000000000000002","target_fingerprint_sha256":"native-metal-sha","target_fingerprint_json":"{\\"provider\\":\\"local\\",\\"runtime\\":\\"metal\\"}","started_at":null,"last_transition_at":null,"last_progress_at":null,"completed_at":null,"progress_bytes_received":null,"progress_bytes_total":null,"install_error":null,"error_code":null,"owner":null}',
                 encoding="utf-8",
             )
-            self.assertFalse(is_leftover_mlx(journal_dir))
-            self.assertTrue(wait_until_mlx_replaced(journal_dir, timeout_seconds=0.1, poll_interval=0.02))
+            self.assertFalse(is_leftover_mlx(helper_bin, journal_dir))
+
+    def test_missing_status_is_leftover_mlx(self) -> None:
+        helper_bin = find_or_build_helper()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            journal_dir = Path(tmp_dir)
+            # Empty journal directory without health/providers/local.json
+            self.assertTrue(is_leftover_mlx(helper_bin, journal_dir))
 
     def test_500_generic_error_is_unexpected(self) -> None:
         resp = HttpResponse(

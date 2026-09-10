@@ -28,8 +28,14 @@ def _parse_args(args: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--candidate-dir",
         type=Path,
-        required=True,
+        default=None,
         help="Absolute directory path containing solstone-core-journal and solstone-core binaries.",
+    )
+    parser.add_argument(
+        "--candidate-bin",
+        type=Path,
+        default=None,
+        help="Absolute path to solstone-core-journal candidate binary (candidate-dir derived from parent).",
     )
     parser.add_argument(
         "--run-dir",
@@ -56,45 +62,26 @@ def _parse_args(args: list[str]) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv or sys.argv[1:])
 
-    candidate_dir = args.candidate_dir
+    if args.candidate_bin and args.candidate_dir:
+        sys.stderr.write("Error: Specify either --candidate-dir or --candidate-bin, not both.\n")
+        return 2
+
+    if not args.candidate_bin and not args.candidate_dir:
+        sys.stderr.write("Error: Must specify either --candidate-dir or --candidate-bin.\n")
+        return 2
+
+    candidate_dir = args.candidate_bin.parent if args.candidate_bin else args.candidate_dir
     run_dir = args.run_dir
 
     if not candidate_dir.is_absolute():
         sys.stderr.write(
-            f"Error: --candidate-dir must be an absolute path (got '{candidate_dir}').\n"
+            f"Error: Candidate path must be absolute (got '{candidate_dir}').\n"
         )
         return 2
 
     if not run_dir.is_absolute():
         sys.stderr.write(
             f"Error: --run-dir must be an absolute path (got '{run_dir}').\n"
-        )
-        return 2
-
-    if not candidate_dir.exists() or not candidate_dir.is_dir():
-        sys.stderr.write(
-            f"Error: --candidate-dir directory not found at '{candidate_dir}'.\n"
-        )
-        return 2
-
-    # Verify candidate contains required binaries
-    journal_bin = candidate_dir / "solstone-core-journal"
-    if not journal_bin.exists() and (candidate_dir / "solstone-core-journal.exe").exists():
-        journal_bin = candidate_dir / "solstone-core-journal.exe"
-
-    core_bin = candidate_dir / "solstone-core"
-    if not core_bin.exists() and (candidate_dir / "solstone-core.exe").exists():
-        core_bin = candidate_dir / "solstone-core.exe"
-
-    if not journal_bin.exists():
-        sys.stderr.write(
-            f"Error: candidate solstone-core-journal not found in '{candidate_dir}'.\n"
-        )
-        return 2
-
-    if not core_bin.exists():
-        sys.stderr.write(
-            f"Error: candidate solstone-core not found in '{candidate_dir}'.\n"
         )
         return 2
 

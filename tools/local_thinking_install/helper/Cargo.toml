@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+[package]
+name = "solstone-local-thinking-install-helper"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+publish = false
+
+[dependencies]
+serde_json = "1.0"
+solstone-core-installation-identity = { path = "../../../core/crates/solstone-core-installation-identity" }
+solstone-core-local = { path = "../../../core/crates/solstone-core-local" }

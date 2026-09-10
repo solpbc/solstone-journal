@@ -52,8 +52,13 @@ def write_prior_mlx_status(journal_dir: Path) -> None:
 def setup_case_journal(case_dir: Path, case_name: str) -> Path:
     """Prepare an isolated journal directory for the named case."""
     journal_dir = case_dir / "journal"
-    journal_dir.mkdir(parents=True, exist_ok=True)
+    journal_dir.mkdir(parents=True, exist_ok=False)
     write_established_config(journal_dir)
     if case_name == "prior_mlx":
         write_prior_mlx_status(journal_dir)
+        initial_copy = case_dir / "mlx-fixture.initial.json"
+        initial_copy.write_text(
+            (journal_dir / "health" / "providers" / "local.json").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
     return journal_dir

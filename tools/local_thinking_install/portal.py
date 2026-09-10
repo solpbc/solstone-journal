@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import signal
+import socket
 import subprocess
 import time
 import urllib.error
@@ -46,42 +47,65 @@ class HttpResponse:
     error_detail: str | None
 
 
+def find_free_port() -> int:
+    """Find an unused TCP port by binding to 127.0.0.1:0."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
 class PortalProcess:
     """Manages the lifecycle of a real supervisor portal process tree."""
 
     def __init__(
         self,
-        candidate_dir: Path,
+        staged_journal_bin: Path,
         journal_dir: Path,
         log_file: Path,
+        direct_port: int,
+        case_dir: Path | None = None,
     ) -> None:
-        self.candidate_dir = candidate_dir.resolve()
+        self.staged_journal_bin = staged_journal_bin.resolve()
         self.journal_dir = journal_dir.resolve()
         self.log_file = log_file.resolve()
+        self.direct_port = direct_port
+        self.case_dir = case_dir.resolve() if case_dir else None
         self.process: subprocess.Popen[bytes] | None = None
-        self.port: int | None = None
+        self.convey_port: int | None = None
 
     def start(self, timeout_seconds: float = 60.0) -> int:
-        """Start supervisor process and wait until convey HTTP port answers."""
-        journal_bin = self.candidate_dir / "solstone-core-journal"
-        if not journal_bin.exists() and (self.candidate_dir / "solstone-core-journal.exe").exists():
-            journal_bin = self.candidate_dir / "solstone-core-journal.exe"
+        """Start supervisor process with --direct-port and positional 0 convey port.
 
-        if not journal_bin.exists():
-            raise PortalStartupError(f"Journal binary missing: {journal_bin}")
-        if not os.access(journal_bin, os.X_OK):
-            raise PortalStartupError(f"Journal binary not executable: {journal_bin}")
+        Waits for journal/health/convey.port and probes convey readiness.
+        Returns the discovered convey port.
+        """
+        if not self.staged_journal_bin.exists():
+            raise PortalStartupError(f"Journal binary missing: {self.staged_journal_bin}")
+        if not os.access(self.staged_journal_bin, os.X_OK):
+            raise PortalStartupError(f"Journal binary not executable: {self.staged_journal_bin}")
 
+        staged_bin_dir = self.staged_journal_bin.parent
         env = dict(os.environ)
         env["SOLSTONE_JOURNAL"] = str(self.journal_dir)
-        env["PATH"] = f"{self.candidate_dir}:{os.environ.get('PATH', '')}"
+        env["PATH"] = f"{staged_bin_dir}:{os.environ.get('PATH', '')}"
         if "TMPDIR" not in env:
             env["TMPDIR"] = "/var/tmp"
 
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
         log_fp = open(self.log_file, "wb")
 
-        cmd = [str(journal_bin), "supervisor", "0", "--no-daily"]
+        cmd = [
+            str(self.staged_journal_bin),
+            "supervisor",
+            "0",
+            "--no-daily",
+            "--no-schedule",
+            "--no-spl",
+            "--direct-port",
+            str(self.direct_port),
+            "--journal",
+            str(self.journal_dir),
+        ]
         try:
             self.process = subprocess.Popen(
                 cmd,
@@ -98,62 +122,93 @@ class PortalProcess:
             log_fp.close()
 
         deadline = time.monotonic() + timeout_seconds
-        port_file = self.journal_dir / "health" / "convey.port"
+        convey_port_file = self.journal_dir / "health" / "convey.port"
 
-        while time.monotonic() < deadline:
-            if self.process.poll() is not None:
+        try:
+            while time.monotonic() < deadline:
+                if self.process.poll() is not None:
+                    raise PortalStartupError(
+                        f"Supervisor exited prematurely with code {self.process.returncode}. See log: {self.log_file}"
+                    )
+
+                if convey_port_file.exists():
+                    try:
+                        raw_port = convey_port_file.read_text(encoding="utf-8").strip()
+                        if raw_port:
+                            self.convey_port = int(raw_port)
+                    except (ValueError, OSError):
+                        self.convey_port = None
+
+                if self.convey_port is not None:
+                    probe_ready, last_probe_resp = self._probe_ready(self.convey_port)
+                    if probe_ready:
+                        if self.case_dir:
+                            ports_path = self.case_dir / "ports.json"
+                            ports_path.write_text(
+                                json.dumps(
+                                    {
+                                        "convey_port": self.convey_port,
+                                        "direct_port": self.direct_port,
+                                    },
+                                    indent=2,
+                                ),
+                                encoding="utf-8",
+                            )
+                            if last_probe_resp:
+                                probe_path = self.case_dir / "probe_readiness.json"
+                                probe_path.write_text(
+                                    json.dumps(
+                                        {
+                                            "status": last_probe_resp.status,
+                                            "body": last_probe_resp.body,
+                                            "headers": last_probe_resp.headers,
+                                        },
+                                        indent=2,
+                                    ),
+                                    encoding="utf-8",
+                                )
+                        return self.convey_port
+
+                time.sleep(0.1)
+
+            raise PortalStartupError(
+                f"Timed out after {timeout_seconds}s waiting for health/convey.port and convey readiness"
+            )
+        except Exception:
+            self.stop()
+            raise
+
+    def _probe_ready(self, port: int) -> tuple[bool, HttpResponse | None]:
+        url = f"http://127.0.0.1:{port}/app/thinking/api/local/availability"
+        resp = send_http_request(url, method="GET", timeout=1.0)
+        if resp.status == 200:
+            return True, resp
+        if resp.status == 302:
+            location = resp.headers.get("location", "")
+            if "/init" in location:
                 raise PortalStartupError(
-                    f"Supervisor exited prematurely with code {self.process.returncode}. See log: {self.log_file}"
+                    f"Session gate redirected to /init (location: {location}); journal is not established"
                 )
 
-            if port_file.exists():
-                try:
-                    port_raw = port_file.read_text(encoding="utf-8").strip()
-                    if port_raw.isdigit():
-                        candidate_port = int(port_raw)
-                        if self._probe_ready(candidate_port):
-                            self.port = candidate_port
-                            return candidate_port
-                except Exception:
-                    pass
-
-            time.sleep(0.2)
-
-        self.stop()
-        raise PortalStartupError(
-            f"Timed out after {timeout_seconds}s waiting for convey readiness on {port_file}"
-        )
-
-    def _probe_ready(self, port: int) -> bool:
-        url = f"http://127.0.0.1:{port}/app/thinking/api/local/availability"
-        opener = urllib.request.build_opener(NoRedirectHandler)
-        req = urllib.request.Request(url, method="GET")
-        try:
-            with opener.open(req, timeout=1.0) as resp:
-                if resp.status == 200:
-                    return True
-                if resp.status == 302:
-                    location = resp.headers.get("Location", "")
-                    if "/init" in location:
-                        raise PortalStartupError(
-                            "Session gate redirected to /init; journal is not established"
-                        )
-        except urllib.error.HTTPError as err:
-            if err.code == 302 and "/init" in err.headers.get("Location", ""):
+        state_url = f"http://127.0.0.1:{port}/app/thinking/api/state"
+        state_resp = send_http_request(state_url, method="GET", timeout=1.0)
+        if state_resp.status == 200:
+            return True, state_resp
+        if state_resp.status == 302:
+            location = state_resp.headers.get("location", "")
+            if "/init" in location:
                 raise PortalStartupError(
-                    "Session gate redirected to /init; journal is not established"
-                ) from err
-            if err.code in (200, 404, 500):
-                return True
-        except Exception:
-            return False
-        return False
+                    f"Session gate redirected to /init (location: {location}); journal is not established"
+                )
 
-    def stop(self, timeout_seconds: float = 5.0) -> None:
-        """Terminate supervisor process tree."""
+        return False, resp
+
+    def stop(self, timeout_seconds: float = 5.0) -> str | None:
+        """Terminate supervisor process tree. Does not swallow errors."""
         if self.process is None:
-            return
+            return None
         pid = self.process.pid
+        err_msg: str | None = None
         try:
             if hasattr(os, "killpg"):
                 try:
@@ -180,10 +235,11 @@ class PortalProcess:
                 else:
                     self.process.kill()
                 self.process.wait()
-        except Exception:
-            pass
+        except Exception as error:
+            err_msg = f"Error stopping supervisor process {pid}: {error}"
         finally:
             self.process = None
+        return err_msg
 
 
 def send_http_request(

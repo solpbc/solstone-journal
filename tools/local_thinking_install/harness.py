@@ -7,29 +7,42 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import shlex
+import shutil
 import subprocess
+import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 from .fixtures import setup_case_journal
-from .portal import HttpResponse, PortalProcess, PortalStartupError, send_http_request
+from .portal import HttpResponse, PortalProcess, PortalStartupError, find_free_port, send_http_request
 
 SPAWN_UNAVAILABLE_SNIPPET = "local install can't be started from this build yet"
+MODEL_TOTAL_BYTES = 2_740_937_888 + 672_423_616  # 3,413,361,504
+
+
+class PrerequisiteError(Exception):
+    """Raised when candidate directory fails prerequisite checks."""
 
 
 @dataclass
 class CaseResult:
     name: str
     convey_port: int | None
+    direct_port: int | None
     http_status: int
     reason_code: str | None
     detail: str | None
     classification: str
     note: str
     post_admit_outcome: str | None = None
-    prior_mlx_discriminator: str | None = None
+    prior_mlx_discriminator: dict[str, Any] | None = None
+    cleanup_error: str | None = None
+    generate_answer: str | None = None
+    metal_evidence: str | None = None
 
 
 @dataclass
@@ -49,19 +62,185 @@ def compute_sha256(path: Path) -> str:
     return hasher.hexdigest()
 
 
+def find_or_build_helper() -> Path:
+    """Locate or build the tools-only Cargo helper binary."""
+    helper_dir = Path(__file__).resolve().parent / "helper"
+    target_bin = helper_dir / "target" / "debug" / "solstone-local-thinking-install-helper"
+    if target_bin.exists() and os.access(target_bin, os.X_OK):
+        return target_bin
+
+    env = dict(os.environ)
+    if "BINDGEN_EXTRA_CLANG_ARGS" not in env:
+        for p in ("/usr/lib/clang", "/usr/lib64/clang"):
+            if os.path.exists(p):
+                for root, dirs, _ in os.walk(p):
+                    if "include" in dirs and os.path.exists(os.path.join(root, "include", "limits.h")):
+                        env["BINDGEN_EXTRA_CLANG_ARGS"] = f"-I{os.path.join(root, 'include')}"
+                        break
+                if "BINDGEN_EXTRA_CLANG_ARGS" in env:
+                    break
+
+    cmd = ["cargo", "build", "--manifest-path", str(helper_dir / "Cargo.toml")]
+    proc = subprocess.run(cmd, env=env, capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError(f"Failed to build local thinking install helper: {proc.stderr}")
+    if not target_bin.exists():
+        raise RuntimeError(f"Helper binary not found after build at {target_bin}")
+    return target_bin
+
+
+def helper_admit(helper_bin: Path, root_dir: Path, journal_dir: Path) -> dict[str, Any]:
+    cmd = [
+        str(helper_bin),
+        "admit",
+        "--root",
+        str(root_dir.resolve()),
+        "--journal",
+        str(journal_dir.resolve()),
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    try:
+        data = json.loads(proc.stdout)
+        if proc.returncode == 2:
+            return {"ok": False, "error": "namespace_exists", "data": data}
+        return data
+    except Exception:
+        return {"ok": False, "error": f"Helper failed (exit {proc.returncode}): {proc.stderr}"}
+
+
+def helper_inspect_status(helper_bin: Path, journal_dir: Path) -> dict[str, Any]:
+    cmd = [
+        str(helper_bin),
+        "inspect-status",
+        "--journal",
+        str(journal_dir.resolve()),
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    try:
+        return json.loads(proc.stdout)
+    except Exception:
+        return {"ok": False, "error": f"Helper failed (exit {proc.returncode}): {proc.stderr}"}
+
+
+def helper_namespace_path(helper_bin: Path, root_dir: Path) -> dict[str, Any]:
+    cmd = [
+        str(helper_bin),
+        "namespace-path",
+        "--root",
+        str(root_dir.resolve()),
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    try:
+        return json.loads(proc.stdout)
+    except Exception:
+        return {"ok": False, "error": f"Helper failed (exit {proc.returncode}): {proc.stderr}"}
+
+
+def validate_candidate_dir(candidate_dir: Path) -> None:
+    if not candidate_dir.exists() or not candidate_dir.is_dir():
+        raise PrerequisiteError(f"Candidate directory does not exist: {candidate_dir}")
+
+    missing: list[str] = []
+    req_bins = (
+        "solstone-core-journal",
+        "solstone-core",
+        "solstone-core-sol",
+        "solstone-core-speakers-analyze",
+    )
+    for name in req_bins:
+        bin_path = candidate_dir / name
+        if not bin_path.exists():
+            missing.append(name)
+        elif not os.access(bin_path, os.X_OK):
+            missing.append(f"{name} (not executable)")
+
+    if missing:
+        if any("solstone-core-speakers-analyze" in m for m in missing):
+            raise PrerequisiteError(
+                f"Missing candidate binaries ({', '.join(missing)}). "
+                "Run `make build` and `make build-sandbox-processing` "
+                "(ONNX payload under `core/target/lib/solstone-core-speakers-analyze`; "
+                "transcription models already in `core/models/assets`)."
+            )
+        raise PrerequisiteError(f"Missing candidate binaries: {', '.join(missing)}")
+
+
+def setup_disposable_source_root(
+    case_dir: Path,
+    candidate_dir: Path,
+    repo_root: Path,
+) -> Path:
+    source_root = case_dir / "source-root"
+    if source_root.exists():
+        raise FileExistsError(f"Disposable source-root already exists: {source_root}")
+    source_root.mkdir(parents=True, exist_ok=False)
+
+    (source_root / "pyproject.toml").write_text(
+        '[project]\nname = "local-thinking-install-harness"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+    (source_root / ".git").mkdir(parents=True, exist_ok=True)
+
+    anchors = [
+        "core/payload/solstone/talent/journal/contract/bundle.json",
+        "core/payload/solstone/think/contract/layout.json",
+        "core/payload/solstone/think/templates/segment_preamble.md",
+    ]
+    for anchor in anchors:
+        src = repo_root / anchor
+        if not src.exists():
+            raise FileNotFoundError(f"Missing repository layout anchor: {src}")
+        dest = source_root / anchor
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+
+    debug_dir = source_root / "core" / "target" / "debug"
+    debug_dir.mkdir(parents=True, exist_ok=True)
+
+    req_bins = [
+        "solstone-core-journal",
+        "solstone-core",
+        "solstone-core-sol",
+        "solstone-core-speakers-analyze",
+    ]
+    for b in req_bins:
+        src_b = candidate_dir / b
+        dest_b = debug_dir / b
+        shutil.copy2(src_b, dest_b)
+        os.chmod(dest_b, 0o755)
+
+    if (candidate_dir / "solstone").exists():
+        shutil.copy2(candidate_dir / "solstone", debug_dir / "solstone")
+        os.chmod(debug_dir / "solstone", 0o755)
+
+    candidate_lib = candidate_dir.parent / "lib" / "solstone-core-speakers-analyze"
+    if candidate_lib.exists():
+        dest_lib = source_root / "core" / "target" / "lib" / "solstone-core-speakers-analyze"
+        dest_lib.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(candidate_lib, dest_lib, dirs_exist_ok=True)
+
+    return source_root
+
+
+def cleanup_namespace(helper_bin: Path, source_root: Path) -> str | None:
+    try:
+        ns_info = helper_namespace_path(helper_bin, source_root)
+        ns_path_str = ns_info.get("namespace_path")
+        if not ns_path_str:
+            return f"Failed to get namespace path: {ns_info.get('error')}"
+        ns_path = Path(ns_path_str)
+        if "namespaces" not in ns_path.parts:
+            return f"Refusing to delete unsafe namespace path: {ns_path}"
+        if ns_path.exists():
+            shutil.rmtree(ns_path)
+        return None
+    except Exception as err:
+        return f"Cleanup failed: {err}"
+
+
 def collect_provenance(candidate_dir: Path) -> dict[str, Any]:
     journal_bin = candidate_dir / "solstone-core-journal"
-    if not journal_bin.exists() and (candidate_dir / "solstone-core-journal.exe").exists():
-        journal_bin = candidate_dir / "solstone-core-journal.exe"
-
     core_bin = candidate_dir / "solstone-core"
-    if not core_bin.exists() and (candidate_dir / "solstone-core.exe").exists():
-        core_bin = candidate_dir / "solstone-core.exe"
-
-    if not journal_bin.exists():
-        raise FileNotFoundError(f"Candidate solstone-core-journal missing at {journal_bin}")
-    if not core_bin.exists():
-        raise FileNotFoundError(f"Candidate solstone-core missing at {core_bin}")
 
     journal_sha = compute_sha256(journal_bin)
     core_sha = compute_sha256(core_bin)
@@ -94,7 +273,6 @@ def classify_bootstrap_response(
     resp: HttpResponse,
     case_name: str,
 ) -> tuple[str, str]:
-    """Classify the HTTP POST response from /app/thinking/api/local/bootstrap."""
     if resp.status == 500:
         detail_str = ""
         if isinstance(resp.json_data, dict):
@@ -144,147 +322,397 @@ def classify_bootstrap_response(
     )
 
 
-def is_leftover_mlx(journal_dir: Path) -> bool:
-    """Check if journal local provider status still holds the legacy MLX record."""
-    status_file = journal_dir / "health" / "providers" / "local.json"
-    if not status_file.exists():
-        return False
-    try:
-        data = json.loads(status_file.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            return False
-        if data.get("target_fingerprint_sha256") == "legacy-mlx":
-            return True
-        target_fp = data.get("target_fingerprint_json")
-        if target_fp and '"runtime":"mlx"' in target_fp:
-            return True
-    except Exception:
-        pass
-    return False
+def is_leftover_mlx(helper_bin: Path, journal_dir: Path) -> bool:
+    inspect_status = helper_inspect_status(helper_bin, journal_dir)
+    if not inspect_status.get("ok"):
+        return True
+    sha = inspect_status.get("target_fingerprint_sha256")
+    fp_json = inspect_status.get("target_fingerprint_json") or ""
+    return bool(sha == "legacy-mlx" or '"runtime":"mlx"' in fp_json)
 
 
 def wait_until_mlx_replaced(
+    helper_bin: Path,
     journal_dir: Path,
     timeout_seconds: float = 15.0,
     poll_interval: float = 0.2,
 ) -> bool:
-    """Poll health/providers/local.json until the legacy MLX fingerprint is replaced."""
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
-        if not is_leftover_mlx(journal_dir):
-            return True
+        inspect = helper_inspect_status(helper_bin, journal_dir)
+        if inspect.get("ok"):
+            sha = inspect.get("target_fingerprint_sha256")
+            fp_json = inspect.get("target_fingerprint_json") or ""
+            is_mlx = (sha == "legacy-mlx" or '"runtime":"mlx"' in fp_json)
+            attempt_id = inspect.get("attempt_id")
+            if not is_mlx and attempt_id != "018e4f1a2b3c4d5e0000000000000001":
+                if sys.platform == "darwin":
+                    if inspect.get("native"):
+                        return True
+                else:
+                    return True
         time.sleep(poll_interval)
-    return not is_leftover_mlx(journal_dir)
+    return False
 
 
-def check_metal_evidence(journal_dir: Path, log_file: Path) -> bool:
-    """Verify Metal execution evidence in runtime argv, health records, or supervisor log."""
-    if log_file.exists():
+def run_generate_proof(
+    staged_core_bin: Path,
+    journal_dir: Path,
+    case_dir: Path,
+) -> tuple[bool, str, str]:
+    request_payload = {
+        "schema": "solstone-generate-request-v2",
+        "id": "portal-bootstrap-proof",
+        "context": "portal.bootstrap.validation",
+        "contents": [
+            {
+                "type": "text",
+                "text": "What is two plus two? Answer with the number only.",
+            }
+        ],
+        "max_output_tokens": 128,
+        "timeout_s": 120,
+        "enforce_responsiveness": False,
+        "temperature": 0.3,
+        "json_output": False,
+        "json_schema": None,
+        "attempt_index": 0,
+        "exclusive_admission": False,
+        "system_instruction": None,
+        "thinking_budget": None,
+        "transport_retries": None,
+    }
+    input_bytes = json.dumps(request_payload).encode("utf-8")
+    env = dict(os.environ)
+    env["SOLSTONE_JOURNAL"] = str(journal_dir.resolve())
+    env["PATH"] = f"{staged_core_bin.parent}:{os.environ.get('PATH', '')}"
+
+    try:
+        proc = subprocess.run(
+            [str(staged_core_bin), "generate", "--one-shot"],
+            input=input_bytes,
+            capture_output=True,
+            env=env,
+            timeout=130.0,
+            check=False,
+        )
+    except Exception as err:
+        return False, "", f"Failed to execute solstone-core generate: {err}"
+
+    stdout_text = proc.stdout.decode("utf-8", errors="replace")
+    stderr_text = proc.stderr.decode("utf-8", errors="replace")
+
+    (case_dir / "generate_stdout.json").write_text(stdout_text, encoding="utf-8")
+    (case_dir / "generate_stderr.log").write_text(stderr_text, encoding="utf-8")
+
+    if proc.returncode != 0:
+        return False, "", f"solstone-core generate exited {proc.returncode}: {stderr_text[:200]}"
+
+    try:
+        resp_data = json.loads(stdout_text)
+        if resp_data.get("outcome") == "generated":
+            text = (resp_data.get("text") or "").strip()
+            if text:
+                return True, text, ""
+            return False, "", "Response outcome was generated but text was empty"
+        return False, "", f"Response outcome was {resp_data.get('outcome')}"
+    except Exception as err:
+        return False, "", f"Failed to parse generate response JSON: {err}"
+
+
+def check_metal_evidence_darwin(journal_dir: Path) -> tuple[bool, str]:
+    runtime_status_file = journal_dir / "health" / "providers" / "runtime" / "local.json"
+    if not runtime_status_file.exists():
+        return False, "health/providers/runtime/local.json not found"
+
+    try:
+        runtime_data = json.loads(runtime_status_file.read_text(encoding="utf-8"))
+        process_info = runtime_data.get("process") or {}
+        pid = process_info.get("pid")
+        if not pid:
+            return False, "No PID in runtime health record"
+    except Exception as err:
+        return False, f"Failed to read runtime health record: {err}"
+
+    # Get cmdline tokens
+    if sys.platform == "darwin":
+        ps_proc = subprocess.run(
+            ["ps", "-p", str(pid), "-www", "-o", "args="],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if ps_proc.returncode != 0 or not ps_proc.stdout.strip():
+            return False, f"Process {pid} is not running"
+        tokens = shlex.split(ps_proc.stdout.strip())
+    else:
+        cmdline_file = Path(f"/proc/{pid}/cmdline")
+        if not cmdline_file.exists():
+            return False, f"Process {pid} /proc cmdline not found"
         try:
-            log_content = log_file.read_text(encoding="utf-8", errors="replace")
-            if "--n-gpu-layers 999" in log_content and "--mmproj" in log_content:
-                return True
+            cmdline_bytes = cmdline_file.read_bytes()
+            tokens = [t.decode("utf-8", errors="replace") for t in cmdline_bytes.split(b"\x00") if t]
+        except Exception as err:
+            return False, f"Failed to read /proc/{pid}/cmdline: {err}"
+
+    if not any("llama-server" in t for t in tokens):
+        return False, f"Process {pid} tokens do not contain llama-server: {tokens[:5]}"
+
+    has_gpu_layers_999 = any(
+        tokens[i] == "--n-gpu-layers" and i + 1 < len(tokens) and tokens[i + 1] == "999"
+        for i in range(len(tokens))
+    )
+    if not has_gpu_layers_999:
+        return False, f"Runtime argv tokens missing adjacent --n-gpu-layers 999: {tokens}"
+
+    if "--kv-unified" not in tokens:
+        return False, f"Runtime argv tokens missing --kv-unified: {tokens}"
+    if "--mmproj" not in tokens:
+        return False, f"Runtime argv tokens missing --mmproj: {tokens}"
+
+    chronicle_dir = journal_dir / "chronicle"
+    oplog_files = list(chronicle_dir.glob("*/health/oplog--*"))
+    metal_log_found = False
+    excerpt = ""
+    for oplog in oplog_files:
+        try:
+            content = oplog.read_text(encoding="utf-8", errors="replace")
+            if "ggml_metal" in content or "offloaded" in content:
+                metal_log_found = True
+                for line in content.splitlines():
+                    if "ggml_metal" in line or "offloaded" in line:
+                        excerpt = f"{oplog}: {line.strip()}"
+                        break
+                break
         except Exception:
             pass
 
-    health_dir = journal_dir / "health"
-    if health_dir.exists():
-        for json_file in health_dir.rglob("*.json"):
-            try:
-                content = json_file.read_text(encoding="utf-8", errors="replace")
-                if "--n-gpu-layers" in content and "--mmproj" in content:
-                    return True
-            except Exception:
-                pass
+    if not metal_log_found:
+        return False, "No ggml_metal/offloaded evidence found in managed oplogs"
 
-    return False
+    return True, excerpt
 
 
 def run_post_admit_checks(
     port: int,
+    staged_core_bin: Path,
     journal_dir: Path,
-    log_file: Path,
+    case_name: str,
+    case_dir: Path,
+    helper_bin: Path,
     install_timeout_seconds: float = 3600.0,
-) -> str:
-    """Execute fixed-candidate path after admission (status poll -> activate -> verify)."""
+) -> tuple[str, str | None, str | None]:
     poll_url = f"http://127.0.0.1:{port}/app/thinking/api/local/bootstrap/status?model=local%2Fqwen3.5-4b"
     deadline = time.monotonic() + install_timeout_seconds
     terminal_state = None
+
+    progress_file = case_dir / "progress.jsonl"
+    progress_samples: list[dict[str, Any]] = []
 
     while time.monotonic() < deadline:
         resp = send_http_request(poll_url, method="GET")
         if resp.status == 200 and isinstance(resp.json_data, dict):
             state = resp.json_data.get("install_state")
+            bytes_rx = resp.json_data.get("progress_bytes_received")
+            bytes_tot = resp.json_data.get("progress_bytes_total")
+
+            if case_name == "fresh":
+                sample = {
+                    "t": time.time(),
+                    "install_state": state,
+                    "progress_bytes_received": bytes_rx,
+                    "progress_bytes_total": bytes_tot,
+                }
+                progress_samples.append(sample)
+                with open(progress_file, "a", encoding="utf-8") as pf:
+                    pf.write(json.dumps(sample) + "\n")
+
             if state in ("installed", "failed"):
                 terminal_state = state
                 break
         time.sleep(1.0)
 
     if terminal_state != "installed":
-        return f"terminal_state_{terminal_state or 'timeout'}"
+        return f"terminal_state_{terminal_state or 'timeout'}", None, None
 
-    # Activate local provider lane via convey thinking update_providers
+    # Validate progress samples for green fresh case
+    if case_name == "fresh":
+        dl_samples = [s for s in progress_samples if s["install_state"] == "downloading"]
+        if not dl_samples:
+            return "fresh_missing_download_progress", None, None
+
+        has_model_total = any(s.get("progress_bytes_total") == MODEL_TOTAL_BYTES for s in dl_samples)
+        if not has_model_total:
+            return "fresh_missing_expected_bytes_total", None, None
+
+        rx_values = [s["progress_bytes_received"] for s in dl_samples if s.get("progress_bytes_received") is not None]
+        if not rx_values:
+            return "fresh_missing_bytes_received", None, None
+
+        for i in range(len(rx_values) - 1):
+            if rx_values[i + 1] <= rx_values[i]:
+                return "fresh_progress_bytes_not_strictly_increasing", None, None
+
+    # Switch lane to local via PUT /app/thinking/api/providers
     activate_url = f"http://127.0.0.1:{port}/app/thinking/api/providers"
-    activate_payload = {"lane": "local", "model": "local/qwen3.5-4b"}
     activate_resp = send_http_request(
         activate_url,
         method="PUT",
-        data=activate_payload,
+        data={"lane": "local"},
     )
     if activate_resp.status not in (200, 202):
-        activate_resp = send_http_request(
-            activate_url,
-            method="POST",
-            data=activate_payload,
-        )
-    if activate_resp.status not in (200, 202):
-        return f"activate_failed_{activate_resp.status}"
+        return f"activate_failed_{activate_resp.status}", None, None
 
-    # Verify Metal execution evidence
-    if check_metal_evidence(journal_dir, log_file):
-        return "passed"
+    # Poll /app/thinking/api/local/runtime until phase == "ready"
+    runtime_url = f"http://127.0.0.1:{port}/app/thinking/api/local/runtime"
+    runtime_ready = False
+    runtime_deadline = time.monotonic() + install_timeout_seconds
+    while time.monotonic() < runtime_deadline:
+        r_resp = send_http_request(runtime_url, method="GET")
+        if r_resp.status == 200 and isinstance(r_resp.json_data, dict):
+            if r_resp.json_data.get("phase") == "ready":
+                runtime_ready = True
+                break
+        time.sleep(1.0)
 
-    return "inference_not_proven"
+    if not runtime_ready:
+        return "runtime_not_ready", None, None
+
+    # Run generate proof
+    gen_ok, gen_text, gen_err = run_generate_proof(staged_core_bin, journal_dir, case_dir)
+    if not gen_ok:
+        return f"generate_failed: {gen_err}", None, None
+
+    # Check Metal evidence on Darwin
+    metal_evidence_str = "skipped_not_darwin"
+    if sys.platform == "darwin":
+        metal_ok, metal_detail = check_metal_evidence_darwin(journal_dir)
+        if not metal_ok:
+            return f"metal_evidence_failed: {metal_detail}", gen_text, None
+        metal_evidence_str = metal_detail
+
+    # Terminal inspect status
+    final_inspect = helper_inspect_status(helper_bin, journal_dir)
+    if not final_inspect.get("ok"):
+        return f"final_status_unreadable: {final_inspect.get('error')}", gen_text, metal_evidence_str
+
+    if case_name == "prior_mlx":
+        if is_leftover_mlx(helper_bin, journal_dir):
+            return "prior_mlx_still_leftover_at_finish", gen_text, metal_evidence_str
+
+    return "passed", gen_text, metal_evidence_str
 
 
 def run_scenario(
     candidate_dir: Path,
     case_dir: Path,
     case_name: str,
+    repo_root: Path,
+    helper_bin: Path,
     portal_timeout_seconds: float = 60.0,
     install_timeout_seconds: float = 3600.0,
 ) -> CaseResult:
-    """Run an isolated portal test case for the given scenario."""
-    journal_dir = setup_case_journal(case_dir, case_name)
-    log_file = case_dir / "supervisor.log"
-    portal = PortalProcess(candidate_dir, journal_dir, log_file)
-
-    prior_mlx_note = None
-    if case_name == "prior_mlx":
-        prior_mlx_note = (
-            "Prior MLX record loaded in health/providers/local.json with runtime:mlx. "
-            "Native target discrimination expects status_targets_native to treat this as non-native."
-        )
-
-    try:
-        port = portal.start(timeout_seconds=portal_timeout_seconds)
-    except PortalStartupError as err:
+    if case_dir.exists():
         return CaseResult(
             name=case_name,
             convey_port=None,
+            direct_port=None,
+            http_status=0,
+            reason_code="case_dir_exists",
+            detail=f"Case directory already exists: {case_dir}. Exclusive case dirs required.",
+            classification="harness_infra",
+            note=f"Case directory already exists: {case_dir}",
+        )
+
+    case_dir.mkdir(parents=True, exist_ok=False)
+    journal_dir = setup_case_journal(case_dir, case_name)
+    source_root = setup_disposable_source_root(case_dir, candidate_dir, repo_root)
+    log_file = case_dir / "supervisor.log"
+
+    prior_mlx_discriminator = None
+    if case_name == "prior_mlx":
+        initial_inspect = helper_inspect_status(helper_bin, journal_dir)
+        prior_mlx_discriminator = initial_inspect
+        if not initial_inspect.get("ok") or initial_inspect.get("native") is not False:
+            cleanup_namespace(helper_bin, source_root)
+            return CaseResult(
+                name=case_name,
+                convey_port=None,
+                direct_port=None,
+                http_status=0,
+                reason_code="fixture_error",
+                detail=f"Prior MLX initial status verification failed: {initial_inspect}",
+                classification="harness_infra",
+                note="Prior MLX initial inspection did not return {ok: true, native: false}",
+                prior_mlx_discriminator=prior_mlx_discriminator,
+            )
+
+    admit_result = helper_admit(helper_bin, source_root, journal_dir)
+    if not admit_result.get("ok"):
+        cleanup_namespace(helper_bin, source_root)
+        return CaseResult(
+            name=case_name,
+            convey_port=None,
+            direct_port=None,
+            http_status=0,
+            reason_code="admission_failed",
+            detail=str(admit_result.get("error")),
+            classification="harness_infra",
+            note=f"Setup admission refused: {admit_result.get('error')}",
+            prior_mlx_discriminator=prior_mlx_discriminator,
+        )
+
+    direct_port = find_free_port()
+    staged_journal_bin = source_root / "core" / "target" / "debug" / "solstone-core-journal"
+    staged_core_bin = source_root / "core" / "target" / "debug" / "solstone-core"
+    portal = PortalProcess(
+        staged_journal_bin=staged_journal_bin,
+        journal_dir=journal_dir,
+        log_file=log_file,
+        direct_port=direct_port,
+        case_dir=case_dir,
+    )
+
+    convey_port: int | None = None
+    try:
+        convey_port = portal.start(timeout_seconds=portal_timeout_seconds)
+    except PortalStartupError as err:
+        portal_stop_err = portal.stop()
+        ns_cleanup_err = cleanup_namespace(helper_bin, source_root)
+        cleanup_errors = [e for e in (portal_stop_err, ns_cleanup_err) if e]
+        return CaseResult(
+            name=case_name,
+            convey_port=None,
+            direct_port=direct_port,
             http_status=0,
             reason_code="startup_error",
             detail=str(err),
             classification="harness_infra",
             note=f"Portal failed to start: {err}",
-            prior_mlx_discriminator=prior_mlx_note,
+            prior_mlx_discriminator=prior_mlx_discriminator,
+            cleanup_error="; ".join(cleanup_errors) if cleanup_errors else None,
         )
 
+    res: CaseResult | None = None
     try:
         bootstrap_url = (
-            f"http://127.0.0.1:{port}/app/thinking/api/local/bootstrap?model=local%2Fqwen3.5-4b"
+            f"http://127.0.0.1:{convey_port}/app/thinking/api/local/bootstrap?model=local%2Fqwen3.5-4b"
         )
         resp = send_http_request(bootstrap_url, method="POST", timeout=10.0)
+
+        (case_dir / "bootstrap.json").write_text(
+            json.dumps(
+                {
+                    "url": bootstrap_url,
+                    "status": resp.status,
+                    "reason_code": resp.json_data.get("reason_code") if isinstance(resp.json_data, dict) else None,
+                    "detail": resp.error_detail,
+                    "body": resp.body,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
 
         reason_code = None
         detail = resp.error_detail
@@ -293,37 +721,47 @@ def run_scenario(
 
         classification, note = classify_bootstrap_response(resp, case_name)
         post_admit_outcome = None
+        gen_answer = None
+        metal_ev = None
 
-        # Check for false in-flight if prior_mlx still retains legacy MLX status
         if classification == "admitted" and case_name == "prior_mlx":
-            replaced = wait_until_mlx_replaced(
-                journal_dir, timeout_seconds=15.0, poll_interval=0.2
-            )
+            replaced = wait_until_mlx_replaced(helper_bin, journal_dir, timeout_seconds=15.0, poll_interval=0.2)
             if not replaced:
                 classification = "false_in_flight"
                 note = "Portal echoed stale MLX in-flight record instead of admitting a native spawn"
 
         if classification == "admitted":
-            post_admit_outcome = run_post_admit_checks(
-                port,
+            post_admit_outcome, gen_answer, metal_ev = run_post_admit_checks(
+                port=convey_port,
+                staged_core_bin=staged_core_bin,
                 journal_dir=journal_dir,
-                log_file=log_file,
+                case_name=case_name,
+                case_dir=case_dir,
+                helper_bin=helper_bin,
                 install_timeout_seconds=install_timeout_seconds,
             )
 
-        return CaseResult(
+        res = CaseResult(
             name=case_name,
-            convey_port=port,
+            convey_port=convey_port,
+            direct_port=direct_port,
             http_status=resp.status,
             reason_code=reason_code,
             detail=detail,
             classification=classification,
             note=note,
             post_admit_outcome=post_admit_outcome,
-            prior_mlx_discriminator=prior_mlx_note,
+            prior_mlx_discriminator=prior_mlx_discriminator,
+            generate_answer=gen_answer,
+            metal_evidence=metal_ev,
         )
+        return res
     finally:
-        portal.stop()
+        portal_stop_err = portal.stop()
+        ns_cleanup_err = cleanup_namespace(helper_bin, source_root)
+        cleanup_errors = [e for e in (portal_stop_err, ns_cleanup_err) if e]
+        if cleanup_errors and res is not None:
+            res.cleanup_error = "; ".join(cleanup_errors)
 
 
 def run_harness(
@@ -332,11 +770,33 @@ def run_harness(
     portal_timeout_seconds: float = 60.0,
     install_timeout_seconds: float = 3600.0,
 ) -> HarnessReport:
-    """Execute the full local thinking install harness across isolated cases."""
     candidate_dir = candidate_dir.resolve()
     run_dir = run_dir.resolve()
-    run_dir.mkdir(parents=True, exist_ok=True)
+    repo_root = Path(__file__).resolve().parent.parent.parent
 
+    try:
+        validate_candidate_dir(candidate_dir)
+    except PrerequisiteError as err:
+        provenance: dict[str, Any] = {"candidate_dir": str(candidate_dir), "error": str(err)}
+        run_dir.mkdir(parents=True, exist_ok=True)
+        report = HarnessReport(
+            provenance=provenance,
+            cases=[],
+            overall_outcome="harness_infra",
+            timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            all_passed=False,
+        )
+        receipt_json = run_dir / "receipt.json"
+        receipt_json.write_text(json.dumps(asdict(report), indent=2), encoding="utf-8")
+        receipt_txt = run_dir / "RECEIPT.txt"
+        receipt_txt.write_text(
+            f"OVERALL OUTCOME: HARNESS_INFRA\n\nPrerequisite error: {err}\n", encoding="utf-8"
+        )
+        return report
+
+    helper_bin = find_or_build_helper()
+
+    run_dir.mkdir(parents=True, exist_ok=True)
     provenance = collect_provenance(candidate_dir)
     provenance_path = run_dir / "provenance.json"
     provenance_path.write_text(json.dumps(provenance, indent=2), encoding="utf-8")
@@ -347,11 +807,12 @@ def run_harness(
     results: list[CaseResult] = []
     for case_name in ("fresh", "prior_mlx"):
         case_dir = cases_dir / case_name
-        case_dir.mkdir(parents=True, exist_ok=True)
         result = run_scenario(
             candidate_dir=candidate_dir,
             case_dir=case_dir,
             case_name=case_name,
+            repo_root=repo_root,
+            helper_bin=helper_bin,
             portal_timeout_seconds=portal_timeout_seconds,
             install_timeout_seconds=install_timeout_seconds,
         )
@@ -371,7 +832,9 @@ def run_harness(
     elif all_admitted:
         if all(r.post_admit_outcome == "passed" for r in results):
             overall_outcome = "passed"
-        elif any(r.post_admit_outcome == "inference_not_proven" for r in results):
+        elif any(r.post_admit_outcome and "metal" in r.post_admit_outcome for r in results):
+            overall_outcome = "inference_not_proven"
+        elif any(r.post_admit_outcome and "generate" in r.post_admit_outcome for r in results):
             overall_outcome = "inference_not_proven"
         elif any(r.post_admit_outcome and r.post_admit_outcome.startswith("terminal_state_failed") for r in results):
             overall_outcome = "install_failed"
@@ -390,7 +853,6 @@ def run_harness(
         all_passed=(overall_outcome == "passed"),
     )
 
-    # Write receipt files
     receipt_json_path = run_dir / "receipt.json"
     receipt_json_path.write_text(
         json.dumps(asdict(report), indent=2), encoding="utf-8"
@@ -403,10 +865,10 @@ def run_harness(
         "============================================================",
         f"Timestamp:        {report.timestamp}",
         f"Overall Outcome:  {report.overall_outcome.upper()}",
-        f"Candidate Dir:    {provenance['candidate_dir']}",
-        f"Journal Binary:   {provenance['solstone_core_journal_path']}",
-        f"Journal SHA256:   {provenance['solstone_core_journal_sha256'][:16]}...",
-        f"Core SHA256:      {provenance['solstone_core_sha256'][:16]}...",
+        f"Candidate Dir:    {provenance.get('candidate_dir')}",
+        f"Journal Binary:   {provenance.get('solstone_core_journal_path')}",
+        f"Journal SHA256:   {str(provenance.get('solstone_core_journal_sha256', ''))[:16]}...",
+        f"Core SHA256:      {str(provenance.get('solstone_core_sha256', ''))[:16]}...",
         "------------------------------------------------------------",
         "CASE RESULTS:",
     ]
@@ -414,6 +876,7 @@ def run_harness(
         receipt_txt_lines.extend([
             f"  Case:           {c.name}",
             f"  Convey Port:    {c.convey_port}",
+            f"  Direct Port:    {c.direct_port}",
             f"  HTTP Status:    {c.http_status}",
             f"  Reason Code:    {c.reason_code or 'none'}",
             f"  Classification: {c.classification}",
@@ -421,8 +884,14 @@ def run_harness(
         ])
         if c.post_admit_outcome:
             receipt_txt_lines.append(f"  Post-Admit:     {c.post_admit_outcome}")
+        if c.generate_answer:
+            receipt_txt_lines.append(f"  Generate Ans:   {c.generate_answer}")
+        if c.metal_evidence:
+            receipt_txt_lines.append(f"  Metal Evidence: {c.metal_evidence}")
         if c.prior_mlx_discriminator:
-            receipt_txt_lines.append(f"  Discriminator:  {c.prior_mlx_discriminator}")
+            receipt_txt_lines.append(f"  Discriminator:  {json.dumps(c.prior_mlx_discriminator)}")
+        if c.cleanup_error:
+            receipt_txt_lines.append(f"  Cleanup Error:  {c.cleanup_error}")
         receipt_txt_lines.append("------------------------------------------------------------")
 
     receipt_txt_lines.append(
