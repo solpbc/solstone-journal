@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use solstone_core_generate::{GenerateResponse, OneShotClient};
 use solstone_core_generate_wire::{LaneOutcome, bundled_input, resolve_lane};
-use solstone_core_local::{ExactTextCount, inspect_exact_text_admission};
+use solstone_core_local::{ExactTextCount, GenerateInput, inspect_exact_text_admission};
 
 use crate::{ExecutionContext, PreparedTalent, RuntimeOutcome, generate_request, stage_error};
 
@@ -25,6 +25,20 @@ pub(crate) fn generate_if_needed(
     context: &ExecutionContext,
     client: &OneShotClient,
 ) -> Option<Result<String, RuntimeOutcome>> {
+    generate_if_needed_with(prepared, context, client, |input| {
+        inspect_exact_text_admission(input).map_err(|error| error.detail)
+    })
+}
+
+pub(crate) fn generate_if_needed_with<I>(
+    prepared: &PreparedTalent,
+    context: &ExecutionContext,
+    client: &OneShotClient,
+    mut inspect: I,
+) -> Option<Result<String, RuntimeOutcome>>
+where
+    I: FnMut(&GenerateInput) -> Result<ExactTextCount, String>,
+{
     if prepared.name != "screen"
         || !cfg!(target_os = "linux")
         || !journal_uses_bundled_local(&context.journal)
@@ -47,7 +61,7 @@ pub(crate) fn generate_if_needed(
         Ok(input) => input,
         Err(_) => return None,
     };
-    let full_count = match inspect_exact_text_admission(&full_input) {
+    let full_count = match inspect(&full_input) {
         Ok(count) => count,
         // The ordinary execution path preserves the typed refusal taxonomy.
         Err(_) => return None,
@@ -59,7 +73,7 @@ pub(crate) fn generate_if_needed(
         let request = generate_request(candidate);
         let input = bundled_input(&request, &context.journal)
             .map_err(|error| format!("could not build managed request: {error:?}"))?;
-        inspect_exact_text_admission(&input).map_err(|error| error.detail)
+        inspect(&input)
     }) {
         Ok(None) => return None,
         Ok(Some(batches)) => batches,
@@ -75,8 +89,34 @@ pub(crate) fn generate_if_needed(
 
     let mut outputs = Vec::with_capacity(batches.len());
     for batch in batches {
-        match client.execute(&generate_request(&batch)) {
-            Ok(GenerateResponse::Generated(response)) => {
+        let request = generate_request(&batch);
+        let mut last_response = None;
+        for attempt in 0..=super::VALIDATION_RETRY_ATTEMPTS {
+            match client.execute(&request) {
+                Ok(response) => {
+                    if attempt < super::VALIDATION_RETRY_ATTEMPTS
+                        && super::is_bounded_retry_eligible(
+                            &response,
+                            batch.config.contains_key("json_schema"),
+                        )
+                    {
+                        continue;
+                    }
+                    last_response = Some(response);
+                    break;
+                }
+                Err(error) => {
+                    return Some(Err(RuntimeOutcome::StageFailed(stage_error(
+                        "generate",
+                        "screen_batch",
+                        prepared,
+                        format!("{error}"),
+                    ))));
+                }
+            }
+        }
+        match last_response.expect("loop executed at least once") {
+            GenerateResponse::Generated(response) => {
                 if batch.config.contains_key("json_schema")
                     && super::schema_validation_failed(response.schema_validation.as_ref())
                 {
@@ -87,7 +127,7 @@ pub(crate) fn generate_if_needed(
                 }
                 outputs.push(response.text.clone());
             }
-            Ok(GenerateResponse::Refused(response)) => {
+            GenerateResponse::Refused(response) => {
                 return Some(Err(RuntimeOutcome::GenerateRefused {
                     error: stage_error(
                         "generate",
@@ -97,14 +137,6 @@ pub(crate) fn generate_if_needed(
                     ),
                     response: Box::new(response),
                 }));
-            }
-            Err(error) => {
-                return Some(Err(RuntimeOutcome::StageFailed(stage_error(
-                    "generate",
-                    "screen_batch",
-                    prepared,
-                    format!("{error}"),
-                ))));
             }
         }
     }
@@ -989,6 +1021,250 @@ mod tests {
             merge_outputs(&[json!({"narrative":too_long,"entities":[]}).to_string()])
                 .unwrap_err()
                 .contains("screen_output_unmergeable")
+        );
+    }
+
+    fn cuts_value(cuts: &[BatchCut]) -> Value {
+        Value::Array(
+            cuts.iter()
+                .map(|cut| {
+                    json!({
+                        "byte_offset": cut.byte_offset,
+                        "observation_byte_offset": cut.observation_byte_offset,
+                        "reset_carry": cut.reset_carry,
+                    })
+                })
+                .collect(),
+        )
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn screen_batch_retries_schema_validation_failure_on_individual_batch() {
+        use crate::test_support;
+
+        let root = TempDir::new().unwrap();
+        let journal = root.path().join("journal");
+        fs::create_dir_all(journal.join("config")).unwrap();
+        fs::write(
+            journal.join("config/journal.json"),
+            r#"{"providers":{"active":{"provider":"local","model":"local-model"}},"services":{"confidential":{}}}"#,
+        )
+        .unwrap();
+        let context = ExecutionContext { journal };
+
+        let first = unit(
+            "10:00:00",
+            observation(json!([{
+                "id":"%1", "index":0, "active":true, "geometry":[0,0,80,24],
+                "op":"snapshot", "lines":["alpha_batch1"]
+            }])),
+            5_100,
+        );
+        let second = unit(
+            "10:00:01",
+            observation(json!([{
+                "id":"%1", "index":0, "active":true, "geometry":[0,0,80,24],
+                "op":"splice", "start_line":0, "delete_count":1, "lines":["beta_batch2"]
+            }])),
+            5_100,
+        );
+        let third = unit(
+            "10:00:02",
+            observation(json!([{
+                "id":"%1", "index":0, "active":true, "geometry":[0,0,80,24],
+                "op":"splice", "start_line":0, "delete_count":1, "lines":["gamma_batch3"]
+            }])),
+            5_100,
+        );
+        let transcript = format!("prefix\n{first}{second}{third}");
+        let mut prepared = prepared(&transcript);
+        prepared.config.insert(
+            "_screen_batch_cuts".into(),
+            cuts_value(&test_cuts(&transcript)),
+        );
+        prepared
+            .config
+            .insert("json_schema".into(), json!({"type": "object"}));
+
+        // 4 responses: Batch 1 success, Batch 2 fail (schema validation failed), Batch 2 success (retry), Batch 3 success
+        let stub = test_support::sequenced_one_shot_stub(
+            root.path(),
+            &[
+                test_support::generated_response_value(
+                    r#"{"narrative":"Narrative 1","entities":[]}"#,
+                    json!({"valid": true, "errors": []}),
+                ),
+                test_support::generated_response_value(
+                    "attempt 1 invalid json",
+                    json!({"valid": false, "errors": [{"path": "/body", "constraint": "required"}]}),
+                ),
+                test_support::generated_response_value(
+                    r#"{"narrative":"Narrative 2","entities":[]}"#,
+                    json!({"valid": true, "errors": []}),
+                ),
+                test_support::generated_response_value(
+                    r#"{"narrative":"Narrative 3","entities":[]}"#,
+                    json!({"valid": true, "errors": []}),
+                ),
+            ],
+        );
+        let client = OneShotClient::at_path(&stub);
+
+        let inspect = |input: &GenerateInput| {
+            let len = input.contents.to_string().len() as u32;
+            Ok(ExactTextCount {
+                input_tokens: len,
+                window: 16_384,
+                slots: 1,
+            })
+        };
+
+        let outcome = generate_if_needed_with(&prepared, &context, &client, inspect);
+        let Some(Ok(merged)) = outcome else {
+            panic!("expected Some(Ok(..)), got {outcome:?}");
+        };
+        let parsed: Value = serde_json::from_str(&merged).unwrap();
+        assert_eq!(
+            parsed["narrative"],
+            "Narrative 1\n\nNarrative 2\n\nNarrative 3"
+        );
+
+        let count_path = root.path().join("sequenced-one-shot-stub.sh.count");
+        let count: usize = fs::read_to_string(count_path)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert_eq!(count, 4);
+
+        // Verify batch 1 ran once, batch 2 ran twice (requests 2 and 3), batch 3 ran once (request 4)
+        let req1 =
+            fs::read_to_string(root.path().join("sequenced-one-shot-stub.sh.request_1")).unwrap();
+        let req2 =
+            fs::read_to_string(root.path().join("sequenced-one-shot-stub.sh.request_2")).unwrap();
+        let req3 =
+            fs::read_to_string(root.path().join("sequenced-one-shot-stub.sh.request_3")).unwrap();
+        let req4 =
+            fs::read_to_string(root.path().join("sequenced-one-shot-stub.sh.request_4")).unwrap();
+
+        assert!(req1.contains("alpha_batch1"));
+        assert!(req2.contains("beta_batch2"));
+        assert!(req3.contains("beta_batch2"));
+        assert!(req4.contains("gamma_batch3"));
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn screen_batch_exhausted_retry_aborts_remaining_batches() {
+        use crate::test_support;
+
+        let root = TempDir::new().unwrap();
+        let journal = root.path().join("journal");
+        fs::create_dir_all(journal.join("config")).unwrap();
+        fs::write(
+            journal.join("config/journal.json"),
+            r#"{"providers":{"active":{"provider":"local","model":"local-model"}},"services":{"confidential":{}}}"#,
+        )
+        .unwrap();
+        let context = ExecutionContext { journal };
+
+        let first = unit(
+            "10:00:00",
+            observation(json!([{
+                "id":"%1", "index":0, "active":true, "geometry":[0,0,80,24],
+                "op":"snapshot", "lines":["alpha_batch1"]
+            }])),
+            5_100,
+        );
+        let second = unit(
+            "10:00:01",
+            observation(json!([{
+                "id":"%1", "index":0, "active":true, "geometry":[0,0,80,24],
+                "op":"splice", "start_line":0, "delete_count":1, "lines":["beta_batch2"]
+            }])),
+            5_100,
+        );
+        let third = unit(
+            "10:00:02",
+            observation(json!([{
+                "id":"%1", "index":0, "active":true, "geometry":[0,0,80,24],
+                "op":"splice", "start_line":0, "delete_count":1, "lines":["gamma_batch3"]
+            }])),
+            5_100,
+        );
+        let transcript = format!("prefix\n{first}{second}{third}");
+        let mut prepared = prepared(&transcript);
+        prepared.config.insert(
+            "_screen_batch_cuts".into(),
+            cuts_value(&test_cuts(&transcript)),
+        );
+        prepared
+            .config
+            .insert("json_schema".into(), json!({"type": "object"}));
+
+        // 3 responses: Batch 1 success, Batch 2 fail attempt 1, Batch 2 fail attempt 2
+        let stub = test_support::sequenced_one_shot_stub(
+            root.path(),
+            &[
+                test_support::generated_response_value(
+                    r#"{"narrative":"Narrative 1","entities":[]}"#,
+                    json!({"valid": true, "errors": []}),
+                ),
+                test_support::generated_response_value(
+                    "attempt 1 invalid json",
+                    json!({"valid": false, "errors": [{"path": "/body", "constraint": "required"}]}),
+                ),
+                test_support::generated_response_value(
+                    "attempt 2 invalid json",
+                    json!({"valid": false, "errors": [{"path": "/body", "constraint": "minLength"}]}),
+                ),
+            ],
+        );
+        let client = OneShotClient::at_path(&stub);
+
+        let inspect = |input: &GenerateInput| {
+            let len = input.contents.to_string().len() as u32;
+            Ok(ExactTextCount {
+                input_tokens: len,
+                window: 16_384,
+                slots: 1,
+            })
+        };
+
+        let outcome = generate_if_needed_with(&prepared, &context, &client, inspect);
+        let Some(Err(RuntimeOutcome::SchemaValidationFailed { talent, validation })) = outcome
+        else {
+            panic!("expected Some(Err(SchemaValidationFailed)), got {outcome:?}");
+        };
+        assert_eq!(talent, "screen");
+        assert_eq!(validation["errors"][0]["constraint"], "minLength");
+
+        let count_path = root.path().join("sequenced-one-shot-stub.sh.count");
+        let count: usize = fs::read_to_string(count_path)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert_eq!(count, 3);
+
+        // Verify batch 1 ran once, batch 2 ran twice (requests 2 and 3), and batch 3 was never called (no request_4)
+        let req1 =
+            fs::read_to_string(root.path().join("sequenced-one-shot-stub.sh.request_1")).unwrap();
+        let req2 =
+            fs::read_to_string(root.path().join("sequenced-one-shot-stub.sh.request_2")).unwrap();
+        let req3 =
+            fs::read_to_string(root.path().join("sequenced-one-shot-stub.sh.request_3")).unwrap();
+
+        assert!(req1.contains("alpha_batch1"));
+        assert!(req2.contains("beta_batch2"));
+        assert!(req3.contains("beta_batch2"));
+
+        assert!(
+            !root
+                .path()
+                .join("sequenced-one-shot-stub.sh.request_4")
+                .exists()
         );
     }
 }

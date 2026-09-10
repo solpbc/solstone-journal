@@ -87,7 +87,48 @@ pub fn refused_one_shot_stub(
     detail: &str,
 ) -> PathBuf {
     let path = root.join("refused-one-shot-stub.sh");
-    let response = serde_json::json!({
+    let response = refused_response_value(reason_code, retryable, blocking, provider, detail);
+    fs::write(
+        &path,
+        format!("#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{}'\n", response),
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(&path).unwrap().permissions();
+    permissions.set_mode(0o700);
+    fs::set_permissions(&path, permissions).unwrap();
+    path
+}
+
+/// Construct a Generated response JSON value for stubs.
+pub fn generated_response_value(
+    text: &str,
+    schema_validation: serde_json::Value,
+) -> serde_json::Value {
+    serde_json::json!({
+        "schema": "solstone-generate-response-v2",
+        "id": null,
+        "outcome": "generated",
+        "text": text,
+        "model": "test-model",
+        "usage": {},
+        "finish_reason": "stop",
+        "thinking": null,
+        "schema_validation": schema_validation,
+        "input_budget": null,
+        "request_budget": null,
+        "inference": null,
+    })
+}
+
+/// Construct a Refused response JSON value for stubs.
+pub fn refused_response_value(
+    reason_code: Option<&str>,
+    retryable: bool,
+    blocking: bool,
+    provider: &str,
+    detail: &str,
+) -> serde_json::Value {
+    serde_json::json!({
         "schema": "solstone-generate-response-v2",
         "id": null,
         "outcome": "refused",
@@ -98,14 +139,34 @@ pub fn refused_one_shot_stub(
         "reset_at_ms": null,
         "provider": provider,
         "detail": detail,
-    });
-    fs::write(
-        &path,
-        format!("#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{}'\n", response),
-    )
-    .unwrap();
-    let mut permissions = fs::metadata(&path).unwrap().permissions();
+    })
+}
+
+/// Install a one-shot v2 sequenced response stub and return its executable path.
+pub fn sequenced_one_shot_stub(root: &std::path::Path, responses: &[serde_json::Value]) -> PathBuf {
+    let script_path = root.join("sequenced-one-shot-stub.sh");
+    for (index, response) in responses.iter().enumerate() {
+        let resp_path = root.join(format!("sequenced-one-shot-stub.sh.response_{}", index + 1));
+        fs::write(&resp_path, serde_json::to_string(response).unwrap()).unwrap();
+    }
+    let script = String::from(
+        "#!/bin/sh\n\
+        count_file=\"$0.count\"\n\
+        count=$(cat \"$count_file\" 2>/dev/null || echo 0)\n\
+        count=$((count + 1))\n\
+        echo \"$count\" > \"$count_file\"\n\
+        cat > \"$0.request_$count\"\n\
+        resp_file=\"$0.response_$count\"\n\
+        if [ -f \"$resp_file\" ]; then\n\
+            cat \"$resp_file\"\n\
+            printf '\\n'\n\
+        else\n\
+            exit 93\n\
+        fi\n",
+    );
+    fs::write(&script_path, script).unwrap();
+    let mut permissions = fs::metadata(&script_path).unwrap().permissions();
     permissions.set_mode(0o700);
-    fs::set_permissions(&path, permissions).unwrap();
-    path
+    fs::set_permissions(&script_path, permissions).unwrap();
+    script_path
 }

@@ -419,38 +419,64 @@ pub(crate) fn generate_and_write(
         {
             Some(Ok(response)) => response,
             Some(Err(outcome)) => return outcome,
-            None => match execute_generate(prepared, generate, writer) {
-                Ok(GenerateResponse::Generated(response)) => {
-                    if prepared.config.contains_key("json_schema")
-                        && schema_validation_failed(response.schema_validation.as_ref())
-                    {
-                        return RuntimeOutcome::SchemaValidationFailed {
-                            talent: prepared.name.clone(),
-                            validation: response.schema_validation.clone().unwrap_or(Value::Null),
+            None => {
+                let request = generate_request(prepared);
+                if prepared.name == "pulse" {
+                    emit_generate_input(writer, &request);
+                }
+                let mut last_response = None;
+                for attempt in 0..=VALIDATION_RETRY_ATTEMPTS {
+                    match generate.execute(&request) {
+                        Ok(response) => {
+                            if attempt < VALIDATION_RETRY_ATTEMPTS
+                                && is_bounded_retry_eligible(
+                                    &response,
+                                    prepared.config.contains_key("json_schema"),
+                                )
+                            {
+                                continue;
+                            }
+                            last_response = Some(response);
+                            break;
+                        }
+                        Err(error) => {
+                            return RuntimeOutcome::StageFailed(stage_error(
+                                "generate",
+                                "runtime",
+                                prepared,
+                                format!("{error}"),
+                            ));
+                        }
+                    }
+                }
+                match last_response.expect("loop executed at least once") {
+                    GenerateResponse::Generated(response) => {
+                        if prepared.config.contains_key("json_schema")
+                            && schema_validation_failed(response.schema_validation.as_ref())
+                        {
+                            return RuntimeOutcome::SchemaValidationFailed {
+                                talent: prepared.name.clone(),
+                                validation: response
+                                    .schema_validation
+                                    .clone()
+                                    .unwrap_or(Value::Null),
+                            };
+                        }
+                        response.text.clone()
+                    }
+                    GenerateResponse::Refused(response) => {
+                        return RuntimeOutcome::GenerateRefused {
+                            error: stage_error(
+                                "generate",
+                                "runtime",
+                                prepared,
+                                response.detail.clone(),
+                            ),
+                            response: Box::new(response),
                         };
                     }
-                    response.text.clone()
                 }
-                Ok(GenerateResponse::Refused(response)) => {
-                    return RuntimeOutcome::GenerateRefused {
-                        error: stage_error(
-                            "generate",
-                            "runtime",
-                            prepared,
-                            response.detail.clone(),
-                        ),
-                        response: Box::new(response),
-                    };
-                }
-                Err(error) => {
-                    return RuntimeOutcome::StageFailed(stage_error(
-                        "generate",
-                        "runtime",
-                        prepared,
-                        format!("{error}"),
-                    ));
-                }
-            },
+            }
         },
         EngineKind::Cogitate => match cogitate_output(prepared, context, cogitate, writer) {
             Ok(output) => output,
@@ -590,6 +616,9 @@ fn cogitate_refused(prepared: &PreparedTalent, terminal: &Value) -> RuntimeOutco
         .and_then(|value| value.get("reason_code"))
         .and_then(Value::as_str)
         .or_else(|| terminal.get("reason_code").and_then(Value::as_str));
+    // CogitateRefused is intentionally out of reach of bounded validation retry:
+    // converse providers do not produce incomplete_json_length, and schema validation
+    // is generate-Generated only.
     RuntimeOutcome::CogitateRefused {
         error: stage_error("cogitate", "runtime", prepared, detail.clone()),
         response: Box::new(RefusedResponse {
@@ -611,6 +640,20 @@ fn cogitate_refused(prepared: &PreparedTalent, terminal: &Value) -> RuntimeOutco
     }
 }
 
+pub(crate) const VALIDATION_RETRY_ATTEMPTS: usize = 1;
+
+pub(crate) fn is_bounded_retry_eligible(response: &GenerateResponse, schema_checked: bool) -> bool {
+    match response {
+        GenerateResponse::Generated(response) => {
+            schema_checked && schema_validation_failed(response.schema_validation.as_ref())
+        }
+        GenerateResponse::Refused(response) => {
+            response.reason_code.as_ref().map(ReasonCodeValue::as_wire)
+                == Some("incomplete_json_length")
+        }
+    }
+}
+
 fn reason_code_value(code: &str) -> ReasonCodeValue {
     match ReasonCode::new(code) {
         Ok(code) => ReasonCodeValue::Known(code),
@@ -621,7 +664,7 @@ fn reason_code_value(code: &str) -> ReasonCodeValue {
     }
 }
 
-fn schema_validation_failed(validation: Option<&Value>) -> bool {
+pub(crate) fn schema_validation_failed(validation: Option<&Value>) -> bool {
     validation.is_some_and(|validation| {
         validation.get("valid") == Some(&Value::Bool(false))
             || validation
@@ -666,18 +709,6 @@ pub(crate) fn generate_contents(prepared: &PreparedTalent) -> Vec<ContentPart> {
 
 // Persist the assembled talent input alongside this run. The generate worker may
 // subsequently fit the request to a provider's limits; this is not a wire trace.
-fn execute_generate(
-    prepared: &PreparedTalent,
-    generate: &OneShotClient,
-    writer: &mut impl Write,
-) -> Result<GenerateResponse, solstone_core_generate::ClientError> {
-    let request = generate_request(prepared);
-    if prepared.name == "pulse" {
-        emit_generate_input(writer, &request);
-    }
-    generate.execute(&request)
-}
-
 fn emit_generate_input(writer: &mut impl Write, request: &GenerateRequest) {
     if let Ok(encoded) = solstone_core_generate::encode_one_shot_request(request)
         && let Ok(input) = serde_json::from_str::<Value>(&encoded)
@@ -828,6 +859,7 @@ fn emit_outcome(writer: &mut impl Write, outcome: RuntimeOutcome) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use solstone_core_generate::GeneratedResponse;
     use std::fs;
     use std::io::Cursor;
 
@@ -2128,5 +2160,408 @@ mod tests {
         assert_eq!(paths.apps_root, share.join("solstone/apps"));
         fs::remove_file(share.join(solstone_core_journal::LAYOUT_LAYOUT_ANCHOR)).unwrap();
         assert!(runtime_paths_from_executable_dir(&bin).is_err());
+    }
+
+    fn stub_invocations(stub: &std::path::Path) -> usize {
+        let count_path = stub.parent().unwrap().join(format!(
+            "{}.count",
+            stub.file_name().unwrap().to_str().unwrap()
+        ));
+        fs::read_to_string(count_path)
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0)
+    }
+
+    // AC1: is_bounded_retry_eligible directly tested on all branches
+    #[test]
+    fn bounded_retry_eligibility_predicate_table() {
+        let generated = |valid: bool| {
+            GenerateResponse::Generated(Box::new(GeneratedResponse {
+                id: None,
+                text: "test".into(),
+                model: "test-model".into(),
+                finish_reason: "stop".into(),
+                usage: json!({}),
+                thinking: None,
+                schema_validation: Some(if valid {
+                    json!({"valid": true, "errors": []})
+                } else {
+                    json!({"valid": false, "errors": [{"path": "/field", "constraint": "required"}]})
+                }),
+                input_budget: None,
+                request_budget: None,
+                inference: None,
+                hints_applied: Vec::new(),
+            }))
+        };
+        let refused = |code: Option<&str>| {
+            GenerateResponse::Refused(RefusedResponse {
+                id: None,
+                reason: RefusalReason::ProviderResponseInvalid,
+                reason_code: code.map(reason_code_value),
+                retryable: false,
+                blocking: false,
+                reset_at_ms: None,
+                provider: Some("openai".into()),
+                detail: "failed".into(),
+            })
+        };
+
+        // Generated + schema_checked true + failing validation -> true
+        assert!(is_bounded_retry_eligible(&generated(false), true));
+        // Generated + schema_checked false + failing validation -> false
+        assert!(!is_bounded_retry_eligible(&generated(false), false));
+        // Generated valid schema -> false regardless of schema_checked
+        assert!(!is_bounded_retry_eligible(&generated(true), true));
+        assert!(!is_bounded_retry_eligible(&generated(true), false));
+
+        // Refused incomplete_json_length -> true
+        assert!(is_bounded_retry_eligible(
+            &refused(Some("incomplete_json_length")),
+            false
+        ));
+        assert!(is_bounded_retry_eligible(
+            &refused(Some("incomplete_json_length")),
+            true
+        ));
+
+        // Refused context_budget_exceeded -> false (named negative case)
+        assert!(!is_bounded_retry_eligible(
+            &refused(Some("context_budget_exceeded")),
+            true
+        ));
+        // Other reason codes / None / unknown -> false
+        assert!(!is_bounded_retry_eligible(
+            &refused(Some("provider_response_invalid")),
+            true
+        ));
+        assert!(!is_bounded_retry_eligible(&refused(None), true));
+        assert!(!is_bounded_retry_eligible(
+            &refused(Some("unknown_future_code")),
+            true
+        ));
+    }
+
+    // AC2: direct path schema fail then success -> Finished after exactly 2 calls, text from attempt 2
+    #[test]
+    fn generate_and_write_retries_schema_validation_failure_to_success() {
+        let (root, paths, context) = fixture(
+            "schema_retry",
+            r#"{"type":"generate", "schema":"test.schema.json", "output":"json", "load":{"transcripts":false}}"#,
+        );
+        fs::write(
+            paths.talent_root.join("test.schema.json"),
+            r#"{"type":"object"}"#,
+        )
+        .unwrap();
+        let stub = test_support::sequenced_one_shot_stub(
+            root.path(),
+            &[
+                test_support::generated_response_value(
+                    "attempt 1 invalid",
+                    json!({"valid": false, "errors": [{"path": "/body", "constraint": "required"}]}),
+                ),
+                test_support::generated_response_value(
+                    r#"{"body":"attempt 2 valid"}"#,
+                    json!({"valid": true, "errors": []}),
+                ),
+            ],
+        );
+        let client = OneShotClient::at_path(&stub);
+        let mut output = Vec::new();
+        let outcome = execute_request(
+            json!({"name":"schema_retry", "day":"20260101", "prompt":"hello", "json_schema":{"type":"object"}})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &paths,
+            &context,
+            &client,
+            &unused_cogitate(root.path()),
+            &mut output,
+        );
+        let RuntimeOutcome::Finished {
+            output: finished_output,
+            ..
+        } = outcome
+        else {
+            panic!("expected Finished, got {outcome:?}");
+        };
+        assert_eq!(finished_output, r#"{"body":"attempt 2 valid"}"#);
+        assert_eq!(stub_invocations(&stub), 2);
+    }
+
+    // AC3: direct path double schema fail -> SchemaValidationFailed after exactly 2 calls
+    #[test]
+    fn generate_and_write_exhausts_schema_validation_retries() {
+        let (root, paths, context) = fixture(
+            "schema_exhaust",
+            r#"{"type":"generate", "schema":"test.schema.json", "output":"json", "load":{"transcripts":false}}"#,
+        );
+        fs::write(
+            paths.talent_root.join("test.schema.json"),
+            r#"{"type":"object"}"#,
+        )
+        .unwrap();
+        let stub = test_support::sequenced_one_shot_stub(
+            root.path(),
+            &[
+                test_support::generated_response_value(
+                    "attempt 1 invalid",
+                    json!({"valid": false, "errors": [{"path": "/body", "constraint": "required"}]}),
+                ),
+                test_support::generated_response_value(
+                    "attempt 2 invalid",
+                    json!({"valid": false, "errors": [{"path": "/body", "constraint": "minLength"}]}),
+                ),
+            ],
+        );
+        let client = OneShotClient::at_path(&stub);
+        let mut output = Vec::new();
+        let outcome = execute_request(
+            json!({"name":"schema_exhaust", "day":"20260101", "prompt":"hello", "json_schema":{"type":"object"}})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &paths,
+            &context,
+            &client,
+            &unused_cogitate(root.path()),
+            &mut output,
+        );
+        let RuntimeOutcome::SchemaValidationFailed { talent, validation } = outcome else {
+            panic!("expected SchemaValidationFailed, got {outcome:?}");
+        };
+        assert_eq!(talent, "schema_exhaust");
+        assert_eq!(validation["errors"][0]["constraint"], "minLength");
+        assert_eq!(stub_invocations(&stub), 2);
+    }
+
+    // AC4: incomplete_json_length retry to success and double incomplete_json_length exhaustion
+    #[test]
+    fn generate_and_write_retries_incomplete_json_length_and_exhausts() {
+        // Success on attempt 2
+        let (root, paths, context) = fixture(
+            "json_len_success",
+            r#"{"type":"generate", "load":{"transcripts":false}}"#,
+        );
+        let stub = test_support::sequenced_one_shot_stub(
+            root.path(),
+            &[
+                test_support::refused_response_value(
+                    Some("incomplete_json_length"),
+                    true,
+                    false,
+                    "test-provider",
+                    "incomplete output",
+                ),
+                test_support::generated_response_value("attempt 2 success", Value::Null),
+            ],
+        );
+        let client = OneShotClient::at_path(&stub);
+        let mut output = Vec::new();
+        let outcome = execute_request(
+            json!({"name":"json_len_success", "day":"20260101", "prompt":"hello"})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &paths,
+            &context,
+            &client,
+            &unused_cogitate(root.path()),
+            &mut output,
+        );
+        let RuntimeOutcome::Finished {
+            output: finished_output,
+            ..
+        } = outcome
+        else {
+            panic!("expected Finished, got {outcome:?}");
+        };
+        assert_eq!(finished_output, "attempt 2 success");
+        assert_eq!(stub_invocations(&stub), 2);
+
+        // Exhaustion on attempt 2
+        let (root2, paths2, context2) = fixture(
+            "json_len_exhaust",
+            r#"{"type":"generate", "load":{"transcripts":false}}"#,
+        );
+        let stub2 = test_support::sequenced_one_shot_stub(
+            root2.path(),
+            &[
+                test_support::refused_response_value(
+                    Some("incomplete_json_length"),
+                    true,
+                    false,
+                    "test-provider",
+                    "first refusal",
+                ),
+                test_support::refused_response_value(
+                    Some("incomplete_json_length"),
+                    true,
+                    false,
+                    "test-provider",
+                    "second refusal",
+                ),
+            ],
+        );
+        let client2 = OneShotClient::at_path(&stub2);
+        let mut output2 = Vec::new();
+        let outcome2 = execute_request(
+            json!({"name":"json_len_exhaust", "day":"20260101", "prompt":"hello"})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &paths2,
+            &context2,
+            &client2,
+            &unused_cogitate(root2.path()),
+            &mut output2,
+        );
+        let RuntimeOutcome::GenerateRefused { response, .. } = outcome2 else {
+            panic!("expected GenerateRefused, got {outcome2:?}");
+        };
+        assert_eq!(response.detail, "second refusal");
+        assert_eq!(stub_invocations(&stub2), 2);
+    }
+
+    // AC4a: attempt 1 incomplete_json_length, attempt 2 provider_response_invalid -> terminal carries attempt 2
+    #[test]
+    fn generate_and_write_mixed_failure_preserves_latest_refusal_details() {
+        let (root, paths, context) = fixture(
+            "mixed_fail",
+            r#"{"type":"generate", "load":{"transcripts":false}}"#,
+        );
+        let stub = test_support::sequenced_one_shot_stub(
+            root.path(),
+            &[
+                test_support::refused_response_value(
+                    Some("incomplete_json_length"),
+                    true,
+                    false,
+                    "test-provider",
+                    "attempt 1 detail",
+                ),
+                test_support::refused_response_value(
+                    Some("provider_response_invalid"),
+                    false,
+                    true,
+                    "test-provider",
+                    "attempt 2 detail",
+                ),
+            ],
+        );
+        let client = OneShotClient::at_path(&stub);
+        let mut output = Vec::new();
+        let outcome = execute_request(
+            json!({"name":"mixed_fail", "day":"20260101", "prompt":"hello"})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &paths,
+            &context,
+            &client,
+            &unused_cogitate(root.path()),
+            &mut output,
+        );
+        let RuntimeOutcome::GenerateRefused { response, .. } = outcome else {
+            panic!("expected GenerateRefused, got {outcome:?}");
+        };
+        assert_eq!(
+            response.reason_code.as_ref().map(ReasonCodeValue::as_wire),
+            Some("provider_response_invalid")
+        );
+        assert_eq!(response.detail, "attempt 2 detail");
+        assert_eq!(stub_invocations(&stub), 2);
+    }
+
+    // AC4b: first-attempt success executes exactly 1 call
+    #[test]
+    fn generate_and_write_first_attempt_success_invokes_client_once() {
+        let (root, paths, context) = fixture(
+            "first_success",
+            r#"{"type":"generate", "load":{"transcripts":false}}"#,
+        );
+        let stub = test_support::sequenced_one_shot_stub(
+            root.path(),
+            &[test_support::generated_response_value(
+                "immediate success",
+                Value::Null,
+            )],
+        );
+        let client = OneShotClient::at_path(&stub);
+        let mut output = Vec::new();
+        let outcome = execute_request(
+            json!({"name":"first_success", "day":"20260101", "prompt":"hello"})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &paths,
+            &context,
+            &client,
+            &unused_cogitate(root.path()),
+            &mut output,
+        );
+        assert!(
+            matches!(outcome, RuntimeOutcome::Finished { .. }),
+            "{outcome:?}"
+        );
+        assert_eq!(stub_invocations(&stub), 1);
+    }
+
+    // AC4c: pulse execution with retry emits generate_input exactly once
+    #[test]
+    fn pulse_execution_emits_generate_input_exactly_once_across_retries() {
+        let (root, paths, context) = fixture(
+            "pulse",
+            r#"{"type":"generate","schema":"pulse.schema.json","hook":{"pre":"pulse","post":"pulse"},"output":"json","accumulate":true}"#,
+        );
+        fs::write(
+            paths.talent_root.join("pulse.schema.json"),
+            r#"{"type":"object"}"#,
+        )
+        .unwrap();
+        let stub = test_support::sequenced_one_shot_stub(
+            root.path(),
+            &[
+                test_support::generated_response_value(
+                    "attempt 1 invalid",
+                    json!({"valid": false, "errors": [{"path": "/title", "constraint": "required"}]}),
+                ),
+                test_support::generated_response_value(
+                    r#"{"title":"T","one_sentence":"S","full_details":"D","needs_you":[]}"#,
+                    json!({"valid": true, "errors": []}),
+                ),
+            ],
+        );
+        let generate = OneShotClient::at_path(&stub);
+        let cogitate = CogitateOneShotClient::at_path(root.path().join("unused"));
+        let mut output = Vec::new();
+        let outcome = execute_request(
+            source_config(
+                json!({"name":"pulse", "day":"20260907", "prompt":"current request", "json_schema":{"type":"object"}, "cadence_window":{"since_ms":0,"segments":[],"activities":[]}}),
+            ),
+            &paths,
+            &context,
+            &generate,
+            &cogitate,
+            &mut output,
+        );
+        assert!(
+            matches!(outcome, RuntimeOutcome::Finished { .. }),
+            "{outcome:?}"
+        );
+        assert_eq!(stub_invocations(&stub), 2);
+        let emitted = events(&output);
+        let input_events: Vec<_> = emitted
+            .iter()
+            .filter(|event| event.get("event").and_then(Value::as_str) == Some("generate_input"))
+            .collect();
+        assert_eq!(
+            input_events.len(),
+            1,
+            "generate_input must be emitted exactly once"
+        );
     }
 }
