@@ -728,6 +728,131 @@ mod tests {
     }
 
     #[test]
+    fn day_index_folds_generate_attempts_and_terminal_finish() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let (active, identity) = store
+            .claim("conversation", "use-attempt-finish", &request())
+            .unwrap()
+            .unwrap();
+        store
+            .append_active(
+                &active,
+                &serde_json::from_value(json!({
+                    "event": "generate_attempt",
+                    "ordinal": 0,
+                    "status": "retry_eligible",
+                    "cause": "schema_validation_failed",
+                    "retry": true,
+                    "terminal": false
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        assert!(!store.has_finish(&active));
+        store
+            .append_active(
+                &active,
+                &serde_json::from_value(json!({
+                    "event": "generate_attempt",
+                    "ordinal": 1,
+                    "status": "success",
+                    "retry": false,
+                    "terminal": false
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        assert!(!store.has_finish(&active));
+        store
+            .append_active(
+                &active,
+                &serde_json::from_value(json!({"event":"finish","ts":1200})).unwrap(),
+            )
+            .unwrap();
+        assert!(store.has_finish(&active));
+        store.complete(
+            "use-attempt-finish",
+            "conversation",
+            identity,
+            Some(&request()),
+        );
+        let index = fs::read_to_string(store.talents().join("19700101.jsonl")).unwrap();
+        let row: Value = serde_json::from_str(index.trim()).unwrap();
+        assert_eq!(row["status"], "completed");
+        assert!(row["error_message"].is_null());
+        assert!(row["reason_code"].is_null());
+    }
+
+    #[test]
+    fn day_index_folds_exhausted_retries_into_terminal_error() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let (active, identity) = store
+            .claim("conversation", "use-exhausted-error", &request())
+            .unwrap()
+            .unwrap();
+        store
+            .append_active(
+                &active,
+                &serde_json::from_value(json!({
+                    "event": "generate_attempt",
+                    "ordinal": 0,
+                    "status": "retry_eligible",
+                    "cause": "schema_validation_failed",
+                    "retry": true,
+                    "terminal": false
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        assert!(!store.has_finish(&active));
+        store
+            .append_active(
+                &active,
+                &serde_json::from_value(json!({
+                    "event": "generate_attempt",
+                    "ordinal": 1,
+                    "status": "exhausted",
+                    "cause": "schema_validation_failed",
+                    "retry": false,
+                    "terminal": false
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        assert!(!store.has_finish(&active));
+        store
+            .append_active(
+                &active,
+                &serde_json::from_value(json!({
+                    "event": "error",
+                    "terminal": true,
+                    "error": "talent output failed schema validation",
+                    "reason_code": "schema_validation_failed",
+                    "ts": 1200
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        assert!(store.has_finish(&active));
+        store.complete(
+            "use-exhausted-error",
+            "conversation",
+            identity,
+            Some(&request()),
+        );
+        let index = fs::read_to_string(store.talents().join("19700101.jsonl")).unwrap();
+        let row: Value = serde_json::from_str(index.trim()).unwrap();
+        assert_eq!(row["status"], "error");
+        assert_eq!(
+            row["error_message"],
+            "talent output failed schema validation"
+        );
+        assert_eq!(row["reason_code"], "schema_validation_failed");
+    }
+
+    #[test]
     fn duplicate_claim_leaves_request_file_byte_identical() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();

@@ -405,6 +405,65 @@ fn emit_start(writer: &mut impl Write, prepared: &PreparedTalent) {
     emit(writer, Value::Object(event));
 }
 
+pub(crate) fn execute_bounded_attempts<F, E>(
+    schema_checked: bool,
+    batch: Option<usize>,
+    mut execute: F,
+    mut emit_attempt: E,
+) -> Result<GenerateResponse, RuntimeOutcome>
+where
+    F: FnMut(usize) -> Result<GenerateResponse, RuntimeOutcome>,
+    E: FnMut(Value),
+{
+    let mut last_response = None;
+    for ordinal in 0..=VALIDATION_RETRY_ATTEMPTS {
+        let response = execute(ordinal)?;
+        let cause = match &response {
+            GenerateResponse::Generated(generated) => {
+                if schema_checked && schema_validation_failed(generated.schema_validation.as_ref())
+                {
+                    Some("schema_validation_failed")
+                } else {
+                    None
+                }
+            }
+            GenerateResponse::Refused(refused) => {
+                refused.reason_code.as_ref().map(ReasonCodeValue::as_wire)
+            }
+        };
+        let is_eligible = is_bounded_retry_eligible(&response, schema_checked);
+        if is_eligible && ordinal < VALIDATION_RETRY_ATTEMPTS {
+            emit_attempt(json!({
+                "event": "generate_attempt",
+                "terminal": false,
+                "ordinal": ordinal,
+                "batch": batch,
+                "status": "retry_eligible",
+                "cause": cause,
+                "retry": true,
+            }));
+            continue;
+        }
+        let status = if cause.is_none() {
+            "success"
+        } else {
+            "exhausted"
+        };
+        emit_attempt(json!({
+            "event": "generate_attempt",
+            "terminal": false,
+            "ordinal": ordinal,
+            "batch": batch,
+            "status": status,
+            "cause": cause,
+            "retry": false,
+        }));
+        last_response = Some(response);
+        break;
+    }
+    Ok(last_response.expect("loop executed at least once"))
+}
+
 pub(crate) fn generate_and_write(
     prepared: &mut PreparedTalent,
     context: &ExecutionContext,
@@ -415,65 +474,59 @@ pub(crate) fn generate_and_write(
     stage: Option<(&'static contract::StageSpec, PrePostState)>,
 ) -> RuntimeOutcome {
     let response = match engine {
-        EngineKind::Generate => match screen_batch::generate_if_needed(prepared, context, generate)
-        {
-            Some(Ok(response)) => response,
-            Some(Err(outcome)) => return outcome,
-            None => {
-                let request = generate_request(prepared);
-                if prepared.name == "pulse" {
-                    emit_generate_input(writer, &request);
-                }
-                let mut last_response = None;
-                for attempt in 0..=VALIDATION_RETRY_ATTEMPTS {
-                    match generate.execute(&request) {
-                        Ok(response) => {
-                            if attempt < VALIDATION_RETRY_ATTEMPTS
-                                && is_bounded_retry_eligible(
-                                    &response,
-                                    prepared.config.contains_key("json_schema"),
-                                )
-                            {
-                                continue;
-                            }
-                            last_response = Some(response);
-                            break;
-                        }
-                        Err(error) => {
-                            return RuntimeOutcome::StageFailed(stage_error(
-                                "generate",
-                                "runtime",
-                                prepared,
-                                format!("{error}"),
-                            ));
-                        }
+        EngineKind::Generate => {
+            match screen_batch::generate_if_needed(prepared, context, generate, Some(writer)) {
+                Some(Ok(response)) => response,
+                Some(Err(outcome)) => return outcome,
+                None => {
+                    let request = generate_request(prepared);
+                    if prepared.name == "pulse" {
+                        emit_generate_input(writer, &request);
                     }
-                }
-                match last_response.expect("loop executed at least once") {
-                    GenerateResponse::Generated(response) => {
-                        if prepared.config.contains_key("json_schema")
-                            && schema_validation_failed(response.schema_validation.as_ref())
-                        {
-                            return RuntimeOutcome::SchemaValidationFailed {
-                                talent: prepared.name.clone(),
-                                validation: response
-                                    .schema_validation
-                                    .clone()
-                                    .unwrap_or(Value::Null),
+                    let response = match execute_bounded_attempts(
+                        prepared.config.contains_key("json_schema"),
+                        None,
+                        |_attempt| {
+                            generate.execute(&request).map_err(|error| {
+                                RuntimeOutcome::StageFailed(stage_error(
+                                    "generate",
+                                    "runtime",
+                                    prepared,
+                                    format!("{error}"),
+                                ))
+                            })
+                        },
+                        |event| emit(writer, event),
+                    ) {
+                        Ok(response) => response,
+                        Err(outcome) => return outcome,
+                    };
+                    match response {
+                        GenerateResponse::Generated(response) => {
+                            if prepared.config.contains_key("json_schema")
+                                && schema_validation_failed(response.schema_validation.as_ref())
+                            {
+                                return RuntimeOutcome::SchemaValidationFailed {
+                                    talent: prepared.name.clone(),
+                                    validation: response
+                                        .schema_validation
+                                        .clone()
+                                        .unwrap_or(Value::Null),
+                                };
+                            }
+                            response.text.clone()
+                        }
+                        GenerateResponse::Refused(response) => {
+                            return RuntimeOutcome::GenerateRefused {
+                                error: stage_error(
+                                    "generate",
+                                    "runtime",
+                                    prepared,
+                                    response.detail.clone(),
+                                ),
+                                response: Box::new(response),
                             };
                         }
-                        response.text.clone()
-                    }
-                    GenerateResponse::Refused(response) => {
-                        return RuntimeOutcome::GenerateRefused {
-                            error: stage_error(
-                                "generate",
-                                "runtime",
-                                prepared,
-                                response.detail.clone(),
-                            ),
-                            response: Box::new(response),
-                        };
                     }
                 }
             }
@@ -1177,9 +1230,23 @@ mod tests {
         assert!(
             kinds.contains(&"tool_start")
                 && kinds.contains(&"tool_end")
-                && kinds.iter().filter(|event| **event == "finish").count() >= 1,
+                && kinds.contains(&"cogitate_child"),
             "{kinds:?}"
         );
+        let child_finish = output_events
+            .iter()
+            .find(|event| event["event"] == "cogitate_child")
+            .unwrap();
+        assert_eq!(child_finish["child_event"], "finish");
+        assert_eq!(child_finish["terminal"], false);
+
+        emit_outcome(&mut output, outcome);
+        let final_events = events(&output);
+        let finish = final_events
+            .iter()
+            .find(|event| event["event"] == "finish")
+            .unwrap();
+        assert_eq!(finish["usage"]["input_tokens"], 1);
         assert_eq!(fs::read_to_string(&output_path).unwrap(), "week notes");
 
         let mut failed_output = Vec::new();
@@ -1306,12 +1373,14 @@ mod tests {
             Ok(&unused_cogitate(root.path())),
         );
         let output_events = events(&output);
-        assert_eq!(output_events.len(), 2);
+        assert_eq!(output_events.len(), 3);
         assert_eq!(output_events[0]["event"], "start");
         assert_eq!(output_events[0]["name"], "plain");
         assert!(output_events[0].get("model").is_some());
         assert!(output_events[0].get("provider").is_some());
-        assert_eq!(output_events[1]["event"], "finish");
+        assert_eq!(output_events[1]["event"], "generate_attempt");
+        assert_eq!(output_events[1]["status"], "success");
+        assert_eq!(output_events[2]["event"], "finish");
         assert_eq!(
             fs::read_to_string(context.journal.join("chronicle/20260101/talents/plain.md"))
                 .unwrap(),
@@ -1366,9 +1435,10 @@ mod tests {
             Ok(&unused_cogitate(root.path())),
         );
         let enabled_events = events(&enabled_output);
-        assert_eq!(enabled_events.len(), 2);
+        assert_eq!(enabled_events.len(), 3);
         assert_eq!(enabled_events[0]["event"], "start");
-        assert_eq!(enabled_events[1]["event"], "finish");
+        assert_eq!(enabled_events[1]["event"], "generate_attempt");
+        assert_eq!(enabled_events[2]["event"], "finish");
         assert_eq!(fs::read_to_string(output_path).unwrap(), "generated");
     }
 
@@ -1417,11 +1487,15 @@ mod tests {
             Ok(&unused_cogitate(root.path())),
         );
         let output_events = events(&output);
-        assert_eq!(output_events.len(), 2);
+        assert_eq!(output_events.len(), 4);
         assert_eq!(output_events[0]["event"], "start");
-        assert_eq!(output_events[1]["event"], "error");
+        assert_eq!(output_events[1]["event"], "generate_attempt");
+        assert_eq!(output_events[1]["status"], "retry_eligible");
+        assert_eq!(output_events[2]["event"], "generate_attempt");
+        assert_eq!(output_events[2]["status"], "exhausted");
+        assert_eq!(output_events[3]["event"], "error");
         assert_eq!(
-            output_events[1]["error"],
+            output_events[3]["error"],
             "talent output failed schema validation"
         );
         assert_eq!(fs::read(&activity_path).unwrap(), before);
@@ -1564,10 +1638,11 @@ mod tests {
         assert!(matches!(source_outcome, RuntimeOutcome::Finished { .. }));
         emit_outcome(&mut source_output, source_outcome);
         let source_events = events(&source_output);
-        assert_eq!(source_events.len(), 2);
+        assert_eq!(source_events.len(), 3);
         assert_eq!(source_events[0]["event"], "start");
-        assert_eq!(source_events[1]["event"], "finish");
-        assert_eq!(source_events[1]["output"], "generated");
+        assert_eq!(source_events[1]["event"], "generate_attempt");
+        assert_eq!(source_events[2]["event"], "finish");
+        assert_eq!(source_events[2]["output"], "generated");
     }
 
     #[test]
@@ -2290,6 +2365,23 @@ mod tests {
         };
         assert_eq!(finished_output, r#"{"body":"attempt 2 valid"}"#);
         assert_eq!(stub_invocations(&stub), 2);
+        let attempts: Vec<_> = events(&output)
+            .into_iter()
+            .filter(|e| e["event"] == "generate_attempt")
+            .collect();
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(attempts[0]["ordinal"], 0);
+        assert_eq!(attempts[0]["status"], "retry_eligible");
+        assert_eq!(attempts[0]["cause"], "schema_validation_failed");
+        assert_eq!(attempts[0]["retry"], true);
+        assert_eq!(attempts[0]["terminal"], false);
+        assert!(attempts[0].get("prompt").is_none());
+        assert!(attempts[0].get("output").is_none());
+        assert_eq!(attempts[1]["ordinal"], 1);
+        assert_eq!(attempts[1]["status"], "success");
+        assert_eq!(attempts[1]["cause"], Value::Null);
+        assert_eq!(attempts[1]["retry"], false);
+        assert_eq!(attempts[1]["terminal"], false);
     }
 
     // AC3: direct path double schema fail -> SchemaValidationFailed after exactly 2 calls
@@ -2336,6 +2428,21 @@ mod tests {
         assert_eq!(talent, "schema_exhaust");
         assert_eq!(validation["errors"][0]["constraint"], "minLength");
         assert_eq!(stub_invocations(&stub), 2);
+        let attempts: Vec<_> = events(&output)
+            .into_iter()
+            .filter(|e| e["event"] == "generate_attempt")
+            .collect();
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(attempts[0]["ordinal"], 0);
+        assert_eq!(attempts[0]["status"], "retry_eligible");
+        assert_eq!(attempts[0]["cause"], "schema_validation_failed");
+        assert_eq!(attempts[0]["retry"], true);
+        assert_eq!(attempts[0]["terminal"], false);
+        assert_eq!(attempts[1]["ordinal"], 1);
+        assert_eq!(attempts[1]["status"], "exhausted");
+        assert_eq!(attempts[1]["cause"], "schema_validation_failed");
+        assert_eq!(attempts[1]["retry"], false);
+        assert_eq!(attempts[1]["terminal"], false);
     }
 
     // AC4: incomplete_json_length retry to success and double incomplete_json_length exhaustion
@@ -2381,6 +2488,21 @@ mod tests {
         };
         assert_eq!(finished_output, "attempt 2 success");
         assert_eq!(stub_invocations(&stub), 2);
+        let attempts: Vec<_> = events(&output)
+            .into_iter()
+            .filter(|e| e["event"] == "generate_attempt")
+            .collect();
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(attempts[0]["ordinal"], 0);
+        assert_eq!(attempts[0]["status"], "retry_eligible");
+        assert_eq!(attempts[0]["cause"], "incomplete_json_length");
+        assert_eq!(attempts[0]["retry"], true);
+        assert_eq!(attempts[0]["terminal"], false);
+        assert_eq!(attempts[1]["ordinal"], 1);
+        assert_eq!(attempts[1]["status"], "success");
+        assert_eq!(attempts[1]["cause"], Value::Null);
+        assert_eq!(attempts[1]["retry"], false);
+        assert_eq!(attempts[1]["terminal"], false);
 
         // Exhaustion on attempt 2
         let (root2, paths2, context2) = fixture(
@@ -2424,6 +2546,21 @@ mod tests {
         };
         assert_eq!(response.detail, "second refusal");
         assert_eq!(stub_invocations(&stub2), 2);
+        let attempts2: Vec<_> = events(&output2)
+            .into_iter()
+            .filter(|e| e["event"] == "generate_attempt")
+            .collect();
+        assert_eq!(attempts2.len(), 2);
+        assert_eq!(attempts2[0]["ordinal"], 0);
+        assert_eq!(attempts2[0]["status"], "retry_eligible");
+        assert_eq!(attempts2[0]["cause"], "incomplete_json_length");
+        assert_eq!(attempts2[0]["retry"], true);
+        assert_eq!(attempts2[0]["terminal"], false);
+        assert_eq!(attempts2[1]["ordinal"], 1);
+        assert_eq!(attempts2[1]["status"], "exhausted");
+        assert_eq!(attempts2[1]["cause"], "incomplete_json_length");
+        assert_eq!(attempts2[1]["retry"], false);
+        assert_eq!(attempts2[1]["terminal"], false);
     }
 
     // AC4a: attempt 1 incomplete_json_length, attempt 2 provider_response_invalid -> terminal carries attempt 2
@@ -2474,6 +2611,21 @@ mod tests {
         );
         assert_eq!(response.detail, "attempt 2 detail");
         assert_eq!(stub_invocations(&stub), 2);
+        let attempts: Vec<_> = events(&output)
+            .into_iter()
+            .filter(|e| e["event"] == "generate_attempt")
+            .collect();
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(attempts[0]["ordinal"], 0);
+        assert_eq!(attempts[0]["status"], "retry_eligible");
+        assert_eq!(attempts[0]["cause"], "incomplete_json_length");
+        assert_eq!(attempts[0]["retry"], true);
+        assert_eq!(attempts[0]["terminal"], false);
+        assert_eq!(attempts[1]["ordinal"], 1);
+        assert_eq!(attempts[1]["status"], "exhausted");
+        assert_eq!(attempts[1]["cause"], "provider_response_invalid");
+        assert_eq!(attempts[1]["retry"], false);
+        assert_eq!(attempts[1]["terminal"], false);
     }
 
     // AC4b: first-attempt success executes exactly 1 call
@@ -2508,6 +2660,18 @@ mod tests {
             "{outcome:?}"
         );
         assert_eq!(stub_invocations(&stub), 1);
+        let attempts: Vec<_> = events(&output)
+            .into_iter()
+            .filter(|e| e["event"] == "generate_attempt")
+            .collect();
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0]["ordinal"], 0);
+        assert_eq!(attempts[0]["status"], "success");
+        assert_eq!(attempts[0]["cause"], Value::Null);
+        assert_eq!(attempts[0]["retry"], false);
+        assert_eq!(attempts[0]["terminal"], false);
+        assert!(attempts[0].get("prompt").is_none());
+        assert!(attempts[0].get("output").is_none());
     }
 
     // AC4c: pulse execution with retry emits generate_input exactly once
@@ -2564,4 +2728,60 @@ mod tests {
             "generate_input must be emitted exactly once"
         );
     }
-}
+
+    #[test]
+    fn generate_attempt_evidence_records_ordinal_status_cause_and_retry() {
+        let (root, paths, context) = fixture(
+            "plain",
+            r#"{
+"type":"generate", "output":"md", "json_schema":{"type":"object"}, "load":{"transcripts":false}
+}"#,
+        );
+        let stub = test_support::sequenced_one_shot_stub(
+            root.path(),
+            &[
+                test_support::generated_response_value(
+                    "invalid schema output",
+                    json!({"valid": false, "errors": [{"path": "/field", "constraint": "required"}]}),
+                ),
+                test_support::generated_response_value(
+                    r#"{"field":"value"}"#,
+                    json!({"valid": true, "errors": []}),
+                ),
+            ],
+        );
+        let generate = OneShotClient::at_path(&stub);
+        let cogitate = CogitateOneShotClient::at_path(root.path().join("unused"));
+        let mut output = Vec::new();
+        let outcome = execute_request(
+            json!({"name":"plain", "day":"20260101", "prompt":"test"})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &paths,
+            &context,
+            &generate,
+            &cogitate,
+            &mut output,
+        );
+        assert!(matches!(outcome, RuntimeOutcome::Finished { .. }));
+        emit_outcome(&mut output, outcome);
+        let recorded = events(&output);
+        let attempt_events: Vec<_> = recorded
+            .iter()
+            .filter(|e| e["event"] == "generate_attempt")
+            .collect();
+        assert_eq!(attempt_events.len(), 2);
+        assert_eq!(attempt_events[0]["ordinal"], 0);
+        assert_eq!(attempt_events[0]["status"], "retry_eligible");
+        assert_eq!(attempt_events[0]["cause"], "schema_validation_failed");
+        assert_eq!(attempt_events[0]["retry"], true);
+        assert_eq!(attempt_events[0]["terminal"], false);
+
+        assert_eq!(attempt_events[1]["ordinal"], 1);
+        assert_eq!(attempt_events[1]["status"], "success");
+        assert!(attempt_events[1]["cause"].is_null());
+        assert_eq!(attempt_events[1]["retry"], false);
+        assert_eq!(attempt_events[1]["terminal"], false);
+    }
+
