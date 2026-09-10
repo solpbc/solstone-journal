@@ -785,6 +785,52 @@ mod tests {
     }
 
     #[test]
+    fn day_index_folds_cogitate_child_events_and_parent_finish() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let (active, identity) = store
+            .claim("conversation", "use-cogitate-child", &request())
+            .unwrap()
+            .unwrap();
+        store
+            .append_active(
+                &active,
+                &serde_json::from_value(json!({
+                    "event": "cogitate_child",
+                    "child_event": "finish",
+                    "terminal": false,
+                    "result": "child completed"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        assert!(!store.has_finish(&active));
+        store
+            .append_active(
+                &active,
+                &serde_json::from_value(json!({
+                    "event": "finish",
+                    "degraded": {"reason": "fallback"},
+                    "ts": 1200
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        assert!(store.has_finish(&active));
+        store.complete(
+            "use-cogitate-child",
+            "conversation",
+            identity,
+            Some(&request()),
+        );
+        let index = fs::read_to_string(store.talents().join("19700101.jsonl")).unwrap();
+        let row: Value = serde_json::from_str(index.trim()).unwrap();
+        assert_eq!(row["status"], "completed");
+        assert_eq!(row["degraded"]["reason"], "fallback");
+        assert!(row["error_message"].is_null());
+    }
+
+    #[test]
     fn day_index_folds_exhausted_retries_into_terminal_error() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();

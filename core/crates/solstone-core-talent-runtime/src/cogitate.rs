@@ -3,7 +3,7 @@
 
 use serde_json::{Map, Value, json};
 use solstone_core_cogitate::{ReadScopeConfig, ReadScopeError, resolve_read_scope};
-use solstone_core_cogitate_wire::{CogitateRequest, REQUEST_SCHEMA};
+use solstone_core_cogitate_wire::{CogitateOneShotClient, CogitateRequest, REQUEST_SCHEMA};
 
 use crate::{ExecutionContext, PreparedTalent, RuntimeOutcome, StageError};
 
@@ -132,6 +132,68 @@ pub fn cogitate_request(
         .map_err(|error| failed(prepared, error.to_string()))
 }
 
+pub(crate) fn execute_request_with_writer(
+    prepared: &PreparedTalent,
+    context: &ExecutionContext,
+    client: &CogitateOneShotClient,
+    emit_event: &mut impl FnMut(&Value),
+) -> Result<String, RuntimeOutcome> {
+    let request = cogitate_request(prepared, context)?;
+    let run = client.execute(&request).map_err(|error| {
+        RuntimeOutcome::StageFailed(crate::stage_error(
+            "cogitate",
+            "runtime",
+            prepared,
+            format!("{error:?}"),
+        ))
+    })?;
+    for event in &run.events {
+        emit_event(event);
+    }
+    let Some(terminal) = run.events.iter().rev().find(|event| {
+        matches!(
+            event.get("event").and_then(Value::as_str),
+            Some("finish" | "error")
+        )
+    }) else {
+        return Err(RuntimeOutcome::StageFailed(crate::stage_error(
+            "cogitate",
+            "runtime",
+            prepared,
+            "cogitate one-shot produced no terminal event",
+        )));
+    };
+    match terminal.get("event").and_then(Value::as_str) {
+        Some("error")
+            if terminal
+                .get("provider_failure")
+                .is_some_and(Value::is_object) =>
+        {
+            Err(crate::cogitate_refused(prepared, terminal))
+        }
+        Some("error") => Err(RuntimeOutcome::StageFailed(crate::stage_error(
+            "cogitate",
+            "runtime",
+            prepared,
+            terminal
+                .get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("cogitate run failed"),
+        ))),
+        Some("finish") => Ok(terminal
+            .get("result")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned()),
+        _ => Err(RuntimeOutcome::StageFailed(crate::stage_error(
+            "cogitate",
+            "runtime",
+            prepared,
+            "cogitate one-shot produced no terminal event",
+        ))),
+    }
+}
+
 fn read_scope_for(prepared: &PreparedTalent) -> Result<Vec<String>, RuntimeOutcome> {
     let Some(day) = non_empty(prepared.config.get("day")) else {
         return Ok(Vec::new());
@@ -209,12 +271,7 @@ fn failed_config(config: &Map<String, Value>, detail: impl Into<String>) -> Runt
 }
 
 fn failed_named(talent: &str, detail: impl Into<String>) -> RuntimeOutcome {
-    RuntimeOutcome::StageFailed(StageError {
-        phase: "cogitate",
-        stage: "runtime",
-        talent: talent.to_owned(),
-        detail: detail.into(),
-    })
+    RuntimeOutcome::StageFailed(StageError::new("cogitate", "runtime", talent, detail))
 }
 
 #[cfg(test)]

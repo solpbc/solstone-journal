@@ -43,7 +43,7 @@ pub mod writers;
 #[cfg(test)]
 mod test_support;
 
-use cogitate::{EngineKind, cogitate_request, from_prepared_config};
+use cogitate::{EngineKind, from_prepared_config};
 use contract::{CommitDisposition, GateDecision, PrePostState, resolve_hook};
 
 /// Config key honored only by steward and speaker_attribution pre-steps.
@@ -130,6 +130,26 @@ pub struct StageError {
     pub stage: &'static str,
     pub talent: String,
     pub detail: String,
+    pub usage: Option<Box<Value>>,
+    pub degraded: Option<Box<Value>>,
+}
+
+impl StageError {
+    pub fn new(
+        phase: &'static str,
+        stage: &'static str,
+        talent: impl Into<String>,
+        detail: impl Into<String>,
+    ) -> Self {
+        Self {
+            phase,
+            stage,
+            talent: talent.into(),
+            detail: detail.into(),
+            usage: None,
+            degraded: None,
+        }
+    }
 }
 
 impl std::fmt::Display for StageError {
@@ -147,6 +167,8 @@ pub enum RuntimeOutcome {
     Finished {
         output: String,
         disposition: CommitDisposition,
+        usage: Option<Box<Value>>,
+        degraded: Option<Box<Value>>,
     },
     Skipped {
         stage: String,
@@ -277,18 +299,18 @@ fn run_lines(
             (Ok(generate), Ok(cogitate)) => {
                 execute_request(request, paths, context, generate, cogitate, writer)
             }
-            (Err(error), _) => RuntimeOutcome::StageFailed(StageError {
-                phase: "generate",
-                stage: "runtime",
+            (Err(error), _) => RuntimeOutcome::StageFailed(StageError::new(
+                "generate",
+                "runtime",
                 talent,
-                detail: format!("{error}"),
-            }),
-            (_, Err(error)) => RuntimeOutcome::StageFailed(StageError {
-                phase: "cogitate",
-                stage: "runtime",
+                format!("{error}"),
+            )),
+            (_, Err(error)) => RuntimeOutcome::StageFailed(StageError::new(
+                "cogitate",
+                "runtime",
                 talent,
-                detail: format!("{error:?}"),
-            }),
+                format!("{error:?}"),
+            )),
         };
         emit_outcome(writer, outcome);
     }
@@ -464,6 +486,61 @@ where
     Ok(last_response.expect("loop executed at least once"))
 }
 
+struct CogitateOutput {
+    result: String,
+    usage: Option<Box<Value>>,
+    degraded: Option<Box<Value>>,
+}
+
+fn cogitate_output(
+    prepared: &PreparedTalent,
+    context: &ExecutionContext,
+    cogitate: &CogitateOneShotClient,
+    writer: &mut impl Write,
+) -> Result<CogitateOutput, RuntimeOutcome> {
+    let mut usage = None;
+    let mut degraded = None;
+    let mut intermediate_writer = |event: &Value| {
+        if let Some(obj) = event.as_object()
+            && let Some(event_type) = obj.get("event").and_then(Value::as_str)
+            && (event_type == "finish" || event_type == "error")
+        {
+            if let Some(u) = obj.get("usage") {
+                usage = Some(Box::new(u.clone()));
+            }
+            if let Some(d) = obj.get("degraded") {
+                degraded = Some(Box::new(d.clone()));
+            }
+            let mut rewritten = obj.clone();
+            rewritten.insert(
+                "event".to_owned(),
+                Value::String("cogitate_child".to_owned()),
+            );
+            rewritten.insert(
+                "child_event".to_owned(),
+                Value::String(event_type.to_owned()),
+            );
+            rewritten.insert("terminal".to_owned(), Value::Bool(false));
+            emit(writer, Value::Object(rewritten));
+            return;
+        }
+        emit(writer, event.clone());
+    };
+    match cogitate::execute_request_with_writer(
+        prepared,
+        context,
+        cogitate,
+        &mut intermediate_writer,
+    ) {
+        Ok(result) => Ok(CogitateOutput {
+            result,
+            usage,
+            degraded,
+        }),
+        Err(outcome) => Err(outcome),
+    }
+}
+
 pub(crate) fn generate_and_write(
     prepared: &mut PreparedTalent,
     context: &ExecutionContext,
@@ -473,10 +550,10 @@ pub(crate) fn generate_and_write(
     engine: EngineKind,
     stage: Option<(&'static contract::StageSpec, PrePostState)>,
 ) -> RuntimeOutcome {
-    let response = match engine {
+    let (response, usage, degraded) = match engine {
         EngineKind::Generate => {
             match screen_batch::generate_if_needed(prepared, context, generate, Some(writer)) {
-                Some(Ok(response)) => response,
+                Some(Ok(response)) => (response, None, None),
                 Some(Err(outcome)) => return outcome,
                 None => {
                     let request = generate_request(prepared);
@@ -514,7 +591,12 @@ pub(crate) fn generate_and_write(
                                         .unwrap_or(Value::Null),
                                 };
                             }
-                            response.text.clone()
+                            let usage = if response.usage.is_null() {
+                                None
+                            } else {
+                                Some(Box::new(response.usage.clone()))
+                            };
+                            (response.text.clone(), usage, None)
                         }
                         GenerateResponse::Refused(response) => {
                             return RuntimeOutcome::GenerateRefused {
@@ -530,9 +612,9 @@ pub(crate) fn generate_and_write(
                     }
                 }
             }
-        },
+        }
         EngineKind::Cogitate => match cogitate_output(prepared, context, cogitate, writer) {
-            Ok(output) => output,
+            Ok(output) => (output.result, output.usage, output.degraded),
             Err(outcome) => return outcome,
         },
     };
@@ -550,18 +632,44 @@ pub(crate) fn generate_and_write(
                     return RuntimeOutcome::Finished {
                         output: response,
                         disposition: CommitDisposition::RejectedNoMutation,
+                        usage,
+                        degraded,
                     };
                 }
-                Err(error) => return RuntimeOutcome::StageFailed(error),
+                Err(mut error) => {
+                    if error.usage.is_none() {
+                        error.usage = usage;
+                    }
+                    if error.degraded.is_none() {
+                        error.degraded = degraded;
+                    }
+                    return RuntimeOutcome::StageFailed(error);
+                }
             };
             let plan = match (commit.commit)(parsed, prepared, &state) {
                 Ok(plan) => plan,
-                Err(error) => return RuntimeOutcome::StageFailed(error),
+                Err(mut error) => {
+                    if error.usage.is_none() {
+                        error.usage = usage;
+                    }
+                    if error.degraded.is_none() {
+                        error.degraded = degraded;
+                    }
+                    return RuntimeOutcome::StageFailed(error);
+                }
             };
             disposition = match stage.writes_as_intent {
                 Some(apply) => match apply(plan, context) {
                     Ok(value) => value,
-                    Err(error) => return RuntimeOutcome::StageFailed(error),
+                    Err(mut error) => {
+                        if error.usage.is_none() {
+                            error.usage = usage;
+                        }
+                        if error.degraded.is_none() {
+                            error.degraded = degraded;
+                        }
+                        return RuntimeOutcome::StageFailed(error);
+                    }
                 },
                 None => CommitDisposition::CommittedNoOutput,
             };
@@ -569,127 +677,48 @@ pub(crate) fn generate_and_write(
             disposition = match writers::write_output_if_configured(prepared, &response) {
                 Ok(_) => CommitDisposition::Written,
                 Err(error) => {
-                    return RuntimeOutcome::StageFailed(stage_error(
-                        "write", "runtime", prepared, error,
-                    ));
+                    let mut err = stage_error("write", "runtime", prepared, error);
+                    err.usage = usage;
+                    err.degraded = degraded;
+                    return RuntimeOutcome::StageFailed(err);
                 }
             };
         }
         let output = match stage.output_override {
             Some(override_output) => match override_output(&response, prepared, &state) {
                 Ok(output) => output,
-                Err(error) => return RuntimeOutcome::StageFailed(error),
+                Err(mut error) => {
+                    if error.usage.is_none() {
+                        error.usage = usage;
+                    }
+                    if error.degraded.is_none() {
+                        error.degraded = degraded;
+                    }
+                    return RuntimeOutcome::StageFailed(error);
+                }
             },
             None => response,
         };
         return RuntimeOutcome::Finished {
             output,
             disposition,
+            usage,
+            degraded,
         };
     }
     match writers::write_output_if_configured(prepared, &response) {
         Ok(_) => RuntimeOutcome::Finished {
             output: response,
             disposition: CommitDisposition::Written,
+            usage,
+            degraded,
         },
-        Err(error) => RuntimeOutcome::StageFailed(stage_error("write", "runtime", prepared, error)),
-    }
-}
-
-fn cogitate_output(
-    prepared: &PreparedTalent,
-    context: &ExecutionContext,
-    client: &CogitateOneShotClient,
-    writer: &mut impl Write,
-) -> Result<String, RuntimeOutcome> {
-    let request = cogitate_request(prepared, context)?;
-    let run = client.execute(&request).map_err(|error| {
-        RuntimeOutcome::StageFailed(stage_error(
-            "cogitate",
-            "runtime",
-            prepared,
-            format!("{error:?}"),
-        ))
-    })?;
-    for event in &run.events {
-        emit(writer, event.clone());
-    }
-    let Some(terminal) = run.events.iter().rev().find(|event| {
-        matches!(
-            event.get("event").and_then(Value::as_str),
-            Some("finish" | "error")
-        )
-    }) else {
-        return Err(RuntimeOutcome::StageFailed(stage_error(
-            "cogitate",
-            "runtime",
-            prepared,
-            "cogitate one-shot produced no terminal event",
-        )));
-    };
-    match terminal.get("event").and_then(Value::as_str) {
-        Some("error")
-            if terminal
-                .get("provider_failure")
-                .is_some_and(Value::is_object) =>
-        {
-            Err(cogitate_refused(prepared, terminal))
+        Err(error) => {
+            let mut err = stage_error("write", "runtime", prepared, error);
+            err.usage = usage;
+            err.degraded = degraded;
+            RuntimeOutcome::StageFailed(err)
         }
-        Some("error") => Err(RuntimeOutcome::StageFailed(stage_error(
-            "cogitate",
-            "runtime",
-            prepared,
-            terminal
-                .get("error")
-                .and_then(Value::as_str)
-                .unwrap_or("cogitate run failed"),
-        ))),
-        Some("finish") => Ok(terminal
-            .get("result")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_owned()),
-        _ => Err(RuntimeOutcome::StageFailed(stage_error(
-            "cogitate",
-            "runtime",
-            prepared,
-            "cogitate one-shot produced no terminal event",
-        ))),
-    }
-}
-
-fn cogitate_refused(prepared: &PreparedTalent, terminal: &Value) -> RuntimeOutcome {
-    let detail = terminal
-        .get("error")
-        .and_then(Value::as_str)
-        .unwrap_or("cogitate run failed")
-        .to_owned();
-    let failure = terminal.get("provider_failure");
-    let code = failure
-        .and_then(|value| value.get("reason_code"))
-        .and_then(Value::as_str)
-        .or_else(|| terminal.get("reason_code").and_then(Value::as_str));
-    // CogitateRefused is intentionally out of reach of bounded validation retry:
-    // converse providers do not produce incomplete_json_length, and schema validation
-    // is generate-Generated only.
-    RuntimeOutcome::CogitateRefused {
-        error: stage_error("cogitate", "runtime", prepared, detail.clone()),
-        response: Box::new(RefusedResponse {
-            id: None,
-            reason: RefusalReason::Unknown,
-            reason_code: code.map(reason_code_value),
-            retryable: failure
-                .and_then(|value| value.get("retryable"))
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
-            blocking: failure
-                .and_then(|value| value.get("blocking"))
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
-            reset_at_ms: None,
-            provider: None,
-            detail,
-        }),
     }
 }
 
@@ -835,21 +864,51 @@ fn value_to_string(value: &Value) -> String {
     }
 }
 
+pub(crate) fn cogitate_refused(prepared: &PreparedTalent, terminal: &Value) -> RuntimeOutcome {
+    let detail = terminal
+        .get("error")
+        .and_then(Value::as_str)
+        .unwrap_or("cogitate run failed")
+        .to_owned();
+    let failure = terminal.get("provider_failure");
+    let code = failure
+        .and_then(|value| value.get("reason_code"))
+        .and_then(Value::as_str)
+        .or_else(|| terminal.get("reason_code").and_then(Value::as_str));
+    // CogitateRefused is intentionally out of reach of bounded validation retry:
+    // converse providers do not produce incomplete_json_length, and schema validation
+    // is generate-Generated only.
+    RuntimeOutcome::CogitateRefused {
+        error: stage_error("cogitate", "runtime", prepared, detail.clone()),
+        response: Box::new(RefusedResponse {
+            id: None,
+            reason: RefusalReason::Unknown,
+            reason_code: code.map(reason_code_value),
+            retryable: failure
+                .and_then(|value| value.get("retryable"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            blocking: failure
+                .and_then(|value| value.get("blocking"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            reset_at_ms: None,
+            provider: None,
+            detail,
+        }),
+    }
+}
+
 pub fn stage_error(
     phase: &'static str,
     stage: &'static str,
     prepared: &PreparedTalent,
     detail: impl Into<String>,
 ) -> StageError {
-    StageError {
-        phase,
-        stage,
-        talent: prepared.name.clone(),
-        detail: detail.into(),
-    }
+    StageError::new(phase, stage, prepared.name.clone(), detail)
 }
 
-fn emit(writer: &mut impl Write, event: Value) {
+fn emit(writer: &mut (impl Write + ?Sized), event: Value) {
     let _ = serde_json::to_writer(&mut *writer, &event);
     let _ = writer.write_all(b"\n");
 }
@@ -859,10 +918,22 @@ fn emit_outcome(writer: &mut impl Write, outcome: RuntimeOutcome) {
         RuntimeOutcome::Finished {
             output,
             disposition,
-        } => emit(
-            writer,
-            json!({"event":"finish", "output": output, "disposition": format!("{disposition:?}")}),
-        ),
+            usage,
+            degraded,
+        } => {
+            let mut event = json!({
+                "event": "finish",
+                "output": output,
+                "disposition": format!("{disposition:?}"),
+            });
+            if let Some(usage) = usage {
+                event["usage"] = *usage;
+            }
+            if let Some(degraded) = degraded {
+                event["degraded"] = *degraded;
+            }
+            emit(writer, event);
+        }
         RuntimeOutcome::Skipped {
             stage,
             talent,
@@ -887,10 +958,22 @@ fn emit_outcome(writer: &mut impl Write, outcome: RuntimeOutcome) {
             writer,
             json!({"event":"error", "terminal":true, "error":error.to_string(), "reason_code":"talent_prepare_failed"}),
         ),
-        RuntimeOutcome::StageFailed(error) => emit(
-            writer,
-            json!({"event":"error", "terminal":true, "name":error.talent, "error":error.to_string(), "reason_code":"talent_stage_failed"}),
-        ),
+        RuntimeOutcome::StageFailed(error) => {
+            let mut event = json!({
+                "event": "error",
+                "terminal": true,
+                "name": error.talent,
+                "error": error.to_string(),
+                "reason_code": "talent_stage_failed",
+            });
+            if let Some(usage) = error.usage {
+                event["usage"] = *usage;
+            }
+            if let Some(degraded) = error.degraded {
+                event["degraded"] = *degraded;
+            }
+            emit(writer, event);
+        }
         RuntimeOutcome::GenerateRefused { error, response }
         | RuntimeOutcome::CogitateRefused { error, response } => emit(
             writer,
@@ -1272,6 +1355,79 @@ mod tests {
             matches!(failed, RuntimeOutcome::StageFailed(_)),
             "{failed:?}"
         );
+    }
+
+    #[test]
+    fn cogitate_execute_request_write_failure_emits_error_with_usage_and_no_finish() {
+        let (root, paths, context) = fixture(
+            "weekly_reflection",
+            r#"{
+"type":"cogitate", "schedule":"weekly", "output":"md", "load":{"transcripts":false}
+}"#,
+        );
+        let output_path = context.journal.join("unwritable_output_dir");
+        fs::create_dir_all(&output_path).unwrap();
+
+        let cogitate = configure_cogitate_client(CogitateOneShotClient::at_path(
+            test_support::cogitate_one_shot_stub(
+                root.path(),
+                &[
+                    r#"{"event":"finish","terminal":true,"result":"week notes","usage":{"input_tokens":42},"degraded":{"reason":"fallback"}}"#,
+                ],
+            ),
+        ));
+        let generate =
+            OneShotClient::at_path(test_support::generate_one_shot_stub(root.path(), "unused"));
+        let mut output = Vec::new();
+        let outcome = execute_request(
+            json!({
+                "name":"weekly_reflection",
+                "use_id":"use-fail-write",
+                "day":"20260809",
+                "prompt":"Running scheduled weekly reflection.",
+                "output_path": output_path.display().to_string()
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+            &paths,
+            &context,
+            &generate,
+            &cogitate,
+            &mut output,
+        );
+        let RuntimeOutcome::StageFailed(err) = &outcome else {
+            panic!("expected StageFailed on write error, got {outcome:?}");
+        };
+        assert_eq!(err.phase, "write");
+        assert_eq!(err.stage, "runtime");
+        assert_eq!(err.usage.as_ref().unwrap()["input_tokens"], 42);
+        assert_eq!(err.degraded.as_ref().unwrap()["reason"], "fallback");
+
+        let output_events = events(&output);
+        let child_finish = output_events
+            .iter()
+            .find(|event| event["event"] == "cogitate_child")
+            .unwrap();
+        assert_eq!(child_finish["child_event"], "finish");
+        assert_eq!(child_finish["terminal"], false);
+
+        emit_outcome(&mut output, outcome);
+        let final_events = events(&output);
+
+        assert!(
+            final_events.iter().all(|event| event["event"] != "finish"),
+            "expected no finish event, got: {final_events:?}"
+        );
+
+        let terminal_errors: Vec<_> = final_events
+            .iter()
+            .filter(|event| event["event"] == "error" && event["terminal"] == true)
+            .collect();
+        assert_eq!(terminal_errors.len(), 1);
+        assert_eq!(terminal_errors[0]["usage"]["input_tokens"], 42);
+        assert_eq!(terminal_errors[0]["degraded"]["reason"], "fallback");
+        assert_eq!(terminal_errors[0]["reason_code"], "talent_stage_failed");
     }
 
     #[test]
@@ -2784,4 +2940,61 @@ mod tests {
         assert_eq!(attempt_events[1]["retry"], false);
         assert_eq!(attempt_events[1]["terminal"], false);
     }
+    #[test]
+    fn cogitate_rewrites_child_terminal_events_and_propagates_usage_and_degraded() {
+        let (root, paths, context) = fixture(
+            "weekly_reflection",
+            r#"{
+"type":"cogitate", "output":"md", "load":{"transcripts":false}
+}"#,
+        );
+        let cogitate = configure_cogitate_client(CogitateOneShotClient::at_path(
+            test_support::cogitate_one_shot_stub(
+                root.path(),
+                &[
+                    r#"{"event":"tool_start","tool":"test"}"#,
+                    r#"{"event":"finish","terminal":true,"result":"reflection complete","usage":{"input_tokens":42,"output_tokens":17},"degraded":{"reason":"fallback_model"}}"#,
+                ],
+            ),
+        ));
+        let generate =
+            OneShotClient::at_path(test_support::generate_one_shot_stub(root.path(), "unused"));
+        let mut output = Vec::new();
+        let outcome = execute_request(
+            json!({
+                "name":"weekly_reflection",
+                "use_id":"use-cogitate-1",
+                "day":"20260809",
+                "prompt":"Weekly reflection."
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+            &paths,
+            &context,
+            &generate,
+            &cogitate,
+            &mut output,
+        );
+        assert!(matches!(outcome, RuntimeOutcome::Finished { .. }));
+        emit_outcome(&mut output, outcome);
+        let recorded = events(&output);
 
+        // Child finish rewritten to cogitate_child non-terminal
+        let child_events: Vec<_> = recorded
+            .iter()
+            .filter(|e| e["event"] == "cogitate_child")
+            .collect();
+        assert_eq!(child_events.len(), 1);
+        assert_eq!(child_events[0]["child_event"], "finish");
+        assert_eq!(child_events[0]["terminal"], false);
+
+        // Only one top-level finish event emitted by parent runtime
+        let finish_events: Vec<_> = recorded.iter().filter(|e| e["event"] == "finish").collect();
+        assert_eq!(finish_events.len(), 1);
+        assert_eq!(finish_events[0]["output"], "reflection complete");
+        assert_eq!(finish_events[0]["usage"]["input_tokens"], 42);
+        assert_eq!(finish_events[0]["usage"]["output_tokens"], 17);
+        assert_eq!(finish_events[0]["degraded"]["reason"], "fallback_model");
+    }
+}
