@@ -115,8 +115,10 @@ pub fn run_cli(
     args::validate_selection(&parsed).map_err(CliRunError::Cli)?;
     let config = config::read_transcribe_config(journal_path)
         .map_err(|error| CliRunError::Runtime(format!("failed to read journal config: {error}")))?;
+    let requested_backend =
+        requested_backend(parsed.backend.as_deref(), &config).map_err(CliRunError::Runtime)?;
     let backend = backend::resolve_default_backend(
-        parsed.backend.as_deref(),
+        requested_backend,
         backend::local_stt_backend(),
         backend::read_available_bytes(),
         backend::platform_floor_bytes(),
@@ -166,6 +168,18 @@ pub fn run_cli(
     )
     .map_err(CliRunError::Transcribe)?;
     Ok(CliRun::default())
+}
+
+/// Resolve the effective request without touching host policy: command-line
+/// choice wins, then journal configuration, then the resource-aware default.
+fn requested_backend<'a>(
+    cli_backend: Option<&'a str>,
+    config: &'a solstone_core_journal_config::JournalConfigRead,
+) -> Result<Option<&'a str>, String> {
+    match cli_backend {
+        Some(backend) => Ok(Some(backend)),
+        None => config::transcribe_backend(config),
+    }
 }
 
 fn run_all(
@@ -583,8 +597,11 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    use super::{ModelAssetError, TranscribeError, discover_audio_files, run_all_with};
+    use super::{
+        ModelAssetError, TranscribeError, discover_audio_files, requested_backend, run_all_with,
+    };
     use crate::speakers::SpeakerAnalyzeError;
+    use solstone_core_journal_config::read_journal_config;
 
     /// The discovery order is the contract: `--all` used to build one global sorted
     /// list. Streaming per day must produce exactly the same sequence, because a
@@ -638,6 +655,45 @@ mod tests {
             discover_audio_files(temporary.path(), &mut |_| {}).count(),
             0
         );
+    }
+
+    #[test]
+    fn cli_backend_precedes_config_and_config_precedes_auto_selection() {
+        let temporary = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temporary.path().join("config")).unwrap();
+        fs::write(
+            temporary.path().join("config/journal.json"),
+            br#"{"transcribe":{"backend":"parakeet-cpp"}}"#,
+        )
+        .unwrap();
+        let config = read_journal_config(temporary.path()).unwrap();
+
+        assert_eq!(
+            requested_backend(Some("parakeet"), &config).unwrap(),
+            Some("parakeet")
+        );
+        assert_eq!(
+            requested_backend(None, &config).unwrap(),
+            Some("parakeet-cpp")
+        );
+    }
+
+    #[test]
+    fn cli_backend_can_recover_from_invalid_config_without_silent_auto_fallback() {
+        let temporary = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temporary.path().join("config")).unwrap();
+        fs::write(
+            temporary.path().join("config/journal.json"),
+            br#"{"transcribe":{"backend":"paid-cloud"}}"#,
+        )
+        .unwrap();
+        let config = read_journal_config(temporary.path()).unwrap();
+
+        assert_eq!(
+            requested_backend(Some("parakeet"), &config).unwrap(),
+            Some("parakeet")
+        );
+        assert!(requested_backend(None, &config).is_err());
     }
 
     fn write_audio(temporary: &tempfile::TempDir, name: &str) -> std::path::PathBuf {

@@ -1239,12 +1239,16 @@ pub struct ConfigJournalOptions {
     pub dry_run: bool,
 }
 
-pub const CONFIG_USAGE: &str = "usage: journal config [-h] {show,journal} ...\n";
+pub const CONFIG_USAGE: &str = concat!(
+    "usage: journal config [-h] {show,journal} ...\n",
+    "       journal config journal PATH [--move | --switch | --merge | --force] [--yes | --dry-run]\n"
+);
 pub const CONFIG_HELP: &str = concat!(
-    "usage: journal config [-h] {show,journal} ...\n\n",
+    "usage: journal config [-h] {show,journal} ...\n",
+    "       journal config journal PATH [--move | --switch | --merge | --force] [--yes | --dry-run]\n\n",
     "positional arguments:\n  {show,journal}\n",
     "    show          show the configured journal path and source\n",
-    "    journal       rewrite the wrapper's embedded journal path\n"
+    "    journal PATH  change the journal path used by this installation\n"
 );
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3469,7 +3473,10 @@ fn parse_journal_config(args: &[OsString]) -> Result<JournalConfigCommand, Usage
 fn parse_config(args: &[OsString]) -> Result<ConfigCommand, UsageError> {
     match args {
         [show] if show == OsStr::new("show") => Ok(ConfigCommand::Show),
-        [journal, path, rest @ ..] if journal == OsStr::new("journal") => {
+        [journal, path, rest @ ..]
+            if journal == OsStr::new("journal")
+                && path.to_str().is_some_and(|path| !path.starts_with('-')) =>
+        {
             let path = path.to_str().ok_or(UsageError)?.to_owned();
             let mut action = None;
             let mut yes = false;
@@ -5139,6 +5146,21 @@ mod tests {
 
     fn args(values: &[&str]) -> Vec<OsString> {
         values.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn config_help_and_missing_path_usage_name_the_required_path() {
+        assert!(CONFIG_HELP.contains("journal config journal PATH"));
+        assert!(CONFIG_HELP.contains("journal PATH"));
+        assert!(CONFIG_USAGE.contains("journal config journal PATH"));
+        assert_eq!(
+            evaluate_args(&args(&["config", "journal"])),
+            Ok(Command::ConfigUsage)
+        );
+        assert_eq!(
+            evaluate_args(&args(&["config", "journal", "--move"])),
+            Ok(Command::ConfigUsage)
+        );
     }
 
     fn scalar_input(recipe: &ScalarRecipe) -> Option<String> {

@@ -9,6 +9,31 @@ use std::time::Duration;
 const GIB: u64 = 1024 * 1024 * 1024;
 const MIB: u64 = 1024 * 1024;
 
+/// Read currently available physical memory for local-work admission.
+///
+/// An unavailable or inconsistent reading remains unknown to the caller's
+/// policy. macOS counts free and inactive pages because both are immediately
+/// available to a new allocation without swapping.
+#[cfg(windows)]
+pub fn available_physical_bytes() -> Option<u64> {
+    windows_available_physical_bytes()
+}
+
+#[cfg(target_os = "macos")]
+pub fn available_physical_bytes() -> Option<u64> {
+    macos_available_physical_bytes()
+}
+
+#[cfg(target_os = "linux")]
+pub fn available_physical_bytes() -> Option<u64> {
+    linux_available_physical_bytes()
+}
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+pub fn available_physical_bytes() -> Option<u64> {
+    None
+}
+
 /// Read currently available physical memory for Windows CPU admission.
 /// An unavailable or inconsistent reading remains unknown to the caller's policy.
 #[cfg(windows)]
@@ -24,6 +49,72 @@ pub fn windows_available_physical_bytes() -> Option<u64> {
     // for the synchronous call. The API retains no pointer after returning.
     let succeeded = unsafe { GlobalMemoryStatusEx(&mut status) } != 0;
     validated_windows_available_bytes(succeeded, status.ullTotalPhys, status.ullAvailPhys)
+}
+
+/// Read free plus inactive pages from Darwin's host VM statistics.
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn macos_available_physical_bytes() -> Option<u64> {
+    let mut statistics = std::mem::MaybeUninit::<libc::vm_statistics64>::zeroed();
+    let mut count = libc::HOST_VM_INFO64_COUNT;
+    // SAFETY: the output buffer is correctly sized for HOST_VM_INFO64, count
+    // describes that buffer, and both pointers remain valid for the call.
+    let result = unsafe {
+        libc::host_statistics64(
+            libc::mach_host_self(),
+            libc::HOST_VM_INFO64,
+            statistics.as_mut_ptr().cast(),
+            &mut count,
+        )
+    };
+    if result != libc::KERN_SUCCESS || count < libc::HOST_VM_INFO64_COUNT {
+        return None;
+    }
+    // SAFETY: host_statistics64 succeeded and reported the complete structure.
+    let statistics = unsafe { statistics.assume_init() };
+    // SAFETY: vm_page_size is initialized by the Darwin runtime before main.
+    let page_size = unsafe { libc::vm_page_size } as u64;
+    validated_macos_available_bytes(
+        page_size,
+        u64::from(statistics.free_count),
+        u64::from(statistics.inactive_count),
+    )
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn validated_macos_available_bytes(page_size: u64, free: u64, inactive: u64) -> Option<u64> {
+    (page_size > 0)
+        .then(|| free.checked_add(inactive)?.checked_mul(page_size))
+        .flatten()
+}
+
+#[cfg(target_os = "linux")]
+fn linux_available_physical_bytes() -> Option<u64> {
+    let meminfo = std::fs::read_to_string("/proc/meminfo").ok()?;
+    parse_linux_available_bytes(&meminfo)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn parse_linux_available_bytes(meminfo: &str) -> Option<u64> {
+    let available = linux_meminfo_value_kib(meminfo, "MemAvailable")?;
+    let total = linux_meminfo_value_kib(meminfo, "MemTotal")?;
+    if available == 0 || total == 0 || available > total {
+        return None;
+    }
+    available.checked_mul(1024)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn linux_meminfo_value_kib(meminfo: &str, key: &str) -> Option<u64> {
+    meminfo.lines().find_map(|line| {
+        let (found_key, value) = line.split_once(':')?;
+        if found_key != key {
+            return None;
+        }
+        let mut parts = value.split_whitespace();
+        let kib = parts.next()?.parse().ok()?;
+        matches!(parts.next(), Some("kB")).then_some(kib)
+    })
 }
 
 #[cfg(any(windows, test))]
@@ -124,8 +215,41 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        GIB, MIB, MemoryAdmissionCache, resolve_memory_floor_bytes, wait_for_memory_headroom,
+        GIB, MIB, MemoryAdmissionCache, parse_linux_available_bytes, resolve_memory_floor_bytes,
+        validated_macos_available_bytes, wait_for_memory_headroom,
     };
+
+    #[test]
+    fn macos_available_bytes_are_free_plus_inactive_pages() {
+        assert_eq!(
+            validated_macos_available_bytes(16_384, 10, 20),
+            Some(30 * 16_384)
+        );
+        assert_eq!(validated_macos_available_bytes(0, 10, 20), None);
+        assert_eq!(validated_macos_available_bytes(u64::MAX, 1, 1), None);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn running_macos_reports_available_physical_memory() {
+        assert!(super::available_physical_bytes().is_some());
+    }
+
+    #[test]
+    fn linux_available_bytes_require_valid_available_and_total() {
+        assert_eq!(
+            parse_linux_available_bytes("MemTotal: 2048 kB\nMemAvailable: 1024 kB\n"),
+            Some(1024 * 1024)
+        );
+        assert_eq!(
+            parse_linux_available_bytes("MemTotal: 1024 kB\nMemAvailable: 2048 kB\n"),
+            None
+        );
+        assert_eq!(
+            parse_linux_available_bytes("MemTotal: 1024 kB\nMemAvailable: 0 kB\n"),
+            None
+        );
+    }
 
     #[test]
     fn windows_memory_reading_preserves_failure_and_zero_headroom() {

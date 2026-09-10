@@ -29,6 +29,8 @@ use solstone_core_local::plan::VulkanDevice;
 #[cfg(not(windows))]
 use solstone_core_local::select_device;
 
+use crate::stt_backend_choice::configured_stt_backend;
+
 use super::admission::{ParakeetAdmissionInput, parakeet_stt_admission_latch};
 use super::model::{
     ProviderFence, ProviderName, ProviderRuntimeState, ProviderTruthObservation, ReasonCode,
@@ -193,13 +195,14 @@ fn observe_parakeet_truth(
         .and_then(Value::as_object)
         .cloned()
         .unwrap_or_default();
+    let configured_backend = match configured_stt_backend(&journal_config) {
+        Ok(backend) => backend.map(ToOwned::to_owned),
+        Err(_) => return unavailable_observation("truth-observation-failed"),
+    };
     let admission_input = ParakeetAdmissionInput {
         platform: config.platform.clone(),
         machine: config.machine.clone(),
-        backend: transcribe
-            .get("backend")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned),
+        backend: configured_backend,
         local_backend: local_stt_backend(&config.platform, &config.machine).map(ToOwned::to_owned),
         floor_bytes: platform_floor_bytes(&config.platform, &config.machine),
         confidential_lane_active: confidential_channel_plausible(&journal_config),
@@ -208,7 +211,7 @@ fn observe_parakeet_truth(
     let latch = match parakeet_stt_admission_latch(
         &config.journal_path,
         &admission_input,
-        &read_available_bytes,
+        &crate::memory_admission::available_physical_bytes,
     ) {
         Ok(latch) => latch,
         Err(RuntimeStoreError::Corrupt) => return corrupt_observation(),
@@ -530,33 +533,6 @@ fn platform_floor_bytes(platform: &str, machine: &str) -> Option<u64> {
 
 fn local_stt_backend(platform: &str, machine: &str) -> Option<&'static str> {
     platform_floor_bytes(platform, machine).map(|_| "parakeet")
-}
-
-fn read_available_bytes() -> Option<u64> {
-    #[cfg(windows)]
-    {
-        crate::memory_admission::windows_available_physical_bytes()
-    }
-    #[cfg(not(windows))]
-    {
-        if std::env::consts::OS != "linux" {
-            return None;
-        }
-        let meminfo = fs::read_to_string("/proc/meminfo").ok()?;
-        let available = meminfo_value_kib(&meminfo, "MemAvailable")?;
-        let total = meminfo_value_kib(&meminfo, "MemTotal")?;
-        (available > 0 && total > 0 && available <= total).then(|| available.checked_mul(1024))?
-    }
-}
-
-#[cfg(not(windows))]
-fn meminfo_value_kib(meminfo: &str, key: &str) -> Option<u64> {
-    meminfo.lines().find_map(|line| {
-        let (found, value) = line.split_once(':')?;
-        (found == key)
-            .then(|| value.split_whitespace().next()?.parse().ok())
-            .flatten()
-    })
 }
 
 fn confidential_channel_plausible(config: &Map<String, Value>) -> bool {

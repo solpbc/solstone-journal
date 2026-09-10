@@ -9,11 +9,11 @@ pub(crate) mod parakeet_coreml;
 pub(crate) mod parakeet_cpp;
 
 use std::env;
-#[cfg(not(windows))]
-use std::fs;
 
 use solstone_core_assets::{Platform, resolve_host_platform};
-use solstone_core_system::stt_backend_choice::{STT_SURFACE, resolve_stt_backend_choice};
+use solstone_core_system::stt_backend_choice::{
+    STT_BACKENDS, STT_SURFACE, resolve_stt_backend_choice,
+};
 
 use crate::TranscribeError;
 
@@ -21,7 +21,7 @@ const GIB: u64 = 1024 * 1024 * 1024;
 const LINUX_LOCAL_FLOOR_BYTES: u64 = 4 * GIB;
 const WINDOWS_LOCAL_FLOOR_BYTES: u64 = 4 * GIB;
 const DARWIN_ARM64_LOCAL_FLOOR_BYTES: u64 = 2 * GIB;
-pub(crate) const KNOWN_BACKENDS: [&str; 3] = ["parakeet", "parakeet-cpp", "confidential"];
+pub(crate) const KNOWN_BACKENDS: [&str; 3] = STT_BACKENDS;
 
 /// Non-fatal backend-selection information for the caller to log.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -39,20 +39,9 @@ pub(crate) struct BackendResolution {
     pub(crate) warnings: Vec<BackendWarning>,
 }
 
-/// Read available RAM through the existing Linux view or Windows system API.
+/// Read available RAM through the shared host probe.
 pub(crate) fn read_available_bytes() -> Option<u64> {
-    #[cfg(windows)]
-    {
-        solstone_core_system::memory_admission::windows_available_physical_bytes()
-    }
-    #[cfg(not(windows))]
-    {
-        if env::consts::OS != "linux" {
-            return None;
-        }
-        let meminfo = fs::read_to_string("/proc/meminfo").ok()?;
-        parse_available_bytes(&meminfo)
-    }
+    solstone_core_system::memory_admission::available_physical_bytes()
 }
 
 /// Return the local STT floor for the current OS and architecture.
@@ -143,35 +132,12 @@ fn warn_if_local_below_floor(
     .then_some(BackendWarning::ExplicitParakeetBelowFloor)
 }
 
-#[cfg(any(not(windows), test))]
-fn parse_available_bytes(meminfo: &str) -> Option<u64> {
-    let available = meminfo_value_kib(meminfo, "MemAvailable")?;
-    let total = meminfo_value_kib(meminfo, "MemTotal")?;
-    if available == 0 || total == 0 || available > total {
-        return None;
-    }
-    available.checked_mul(1024)
-}
-
-#[cfg(any(not(windows), test))]
-fn meminfo_value_kib(meminfo: &str, key: &str) -> Option<u64> {
-    meminfo.lines().find_map(|line| {
-        let (found_key, value) = line.split_once(':')?;
-        if found_key != key {
-            return None;
-        }
-        let mut parts = value.split_whitespace();
-        let kib = parts.next()?.parse().ok()?;
-        matches!(parts.next(), Some("kB")).then_some(kib)
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
         BackendWarning, DARWIN_ARM64_LOCAL_FLOOR_BYTES, GIB, LINUX_LOCAL_FLOOR_BYTES,
-        local_stt_backend_for, normalize_explicit_backend, parse_available_bytes,
-        platform_floor_bytes_for, resolve_default_backend, warn_if_local_below_floor,
+        local_stt_backend_for, normalize_explicit_backend, platform_floor_bytes_for,
+        resolve_default_backend, warn_if_local_below_floor,
     };
     use crate::TranscribeError;
 
@@ -197,6 +163,22 @@ mod tests {
             platform_floor_bytes_for("macos", "aarch64"),
             Some(DARWIN_ARM64_LOCAL_FLOOR_BYTES)
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn running_macos_default_selects_coreml_when_memory_is_available() {
+        let resolution = resolve_default_backend(
+            None,
+            super::local_stt_backend(),
+            super::read_available_bytes(),
+            super::platform_floor_bytes(),
+            false,
+            false,
+        )
+        .expect("this Mac has enough available memory for CoreML transcription");
+
+        assert_eq!(resolution.backend, "parakeet");
     }
 
     #[test]
@@ -325,18 +307,6 @@ mod tests {
             vec![BackendWarning::UnknownExplicitBackend {
                 backend: "not-a-backend".to_owned(),
             }]
-        );
-    }
-
-    #[test]
-    fn meminfo_available_bytes_require_valid_available_and_total() {
-        assert_eq!(
-            parse_available_bytes("MemTotal: 2048 kB\nMemAvailable: 1024 kB\n"),
-            Some(1024 * 1024)
-        );
-        assert_eq!(
-            parse_available_bytes("MemTotal: 1024 kB\nMemAvailable: 2048 kB\n"),
-            None
         );
     }
 }

@@ -7,12 +7,31 @@ use std::path::Path;
 use std::time::Duration;
 
 use solstone_core_journal_config::{ConfigLoadError, JournalConfigRead, read_journal_config};
+use solstone_core_system::stt_backend_choice::{STT_BACKENDS, configured_stt_backend};
 
 /// Read the journal configuration used by the transcription stage.
 pub(crate) fn read_transcribe_config(
     journal_path: &Path,
 ) -> Result<JournalConfigRead, ConfigLoadError> {
     read_journal_config(journal_path)
+}
+
+/// Read and validate the journal's optional transcription backend.
+///
+/// An invalid configured value is a hard error: silently treating it as
+/// unset could execute a different privacy or resource lane than the journal
+/// says it selected.
+pub(crate) fn transcribe_backend(config: &JournalConfigRead) -> Result<Option<&str>, String> {
+    config.config.as_ref().map_or(Ok(None), |config| {
+        configured_stt_backend(config).map_err(|_| invalid_backend_message())
+    })
+}
+
+fn invalid_backend_message() -> String {
+    format!(
+        "invalid transcribe.backend in journal config; choose one of: {}",
+        STT_BACKENDS.join(", ")
+    )
 }
 
 /// Whether confidential audio handling is enabled for transcription.
@@ -92,7 +111,7 @@ fn parakeet_coreml_config(
 mod tests {
     use super::{
         confidential_audio_enabled, min_speech_seconds, parakeet_coreml_model_version,
-        parakeet_coreml_timeout, parakeet_cpp_device, read_transcribe_config,
+        parakeet_coreml_timeout, parakeet_cpp_device, read_transcribe_config, transcribe_backend,
     };
     use solstone_core_journal_config::JournalConfigRead;
     use std::fs;
@@ -114,6 +133,17 @@ mod tests {
         let config = read_config("{\"confidential_audio\":false}");
 
         assert!(!confidential_audio_enabled(&config));
+    }
+
+    #[test]
+    fn configured_backend_accepts_known_values_and_rejects_invalid_values() {
+        assert_eq!(
+            transcribe_backend(&read_config(r#"{"backend":"parakeet"}"#)).unwrap(),
+            Some("parakeet")
+        );
+        assert!(transcribe_backend(&read_config(r#"{"backend":"cloud"}"#)).is_err());
+        assert!(transcribe_backend(&read_config(r#"{"backend":7}"#)).is_err());
+        assert_eq!(transcribe_backend(&read_config("{}")).unwrap(), None);
     }
 
     #[test]

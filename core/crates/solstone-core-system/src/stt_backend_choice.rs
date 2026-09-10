@@ -10,6 +10,36 @@
 //! already-shared decision a fourth way.
 
 pub const STT_SURFACE: &str = "surface";
+pub const STT_BACKENDS: [&str; 3] = ["parakeet", "parakeet-cpp", "confidential"];
+
+/// Whether a configured or CLI-supplied backend names a supported STT lane.
+pub fn is_known_stt_backend(backend: &str) -> bool {
+    STT_BACKENDS.contains(&backend)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InvalidSttBackend;
+
+/// Read the configured STT backend from an already-loaded journal config.
+///
+/// Invalid values remain distinct from an unset value so callers fail closed
+/// instead of selecting a different lane than the journal names.
+pub fn configured_stt_backend(
+    config: &serde_json::Map<String, serde_json::Value>,
+) -> Result<Option<&str>, InvalidSttBackend> {
+    let Some(value) = config
+        .get("transcribe")
+        .and_then(serde_json::Value::as_object)
+        .and_then(|transcribe| transcribe.get("backend"))
+    else {
+        return Ok(None);
+    };
+    value
+        .as_str()
+        .filter(|backend| is_known_stt_backend(backend))
+        .map(Some)
+        .ok_or(InvalidSttBackend)
+}
 
 /// Mirrors Python's `resolve_stt_backend_choice` field-for-field and
 /// branch-for-branch. No config, environment, or machine state is read here
@@ -227,6 +257,7 @@ fn decision_table() -> Vec<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn decision_table_matches_expected_choice() {
@@ -244,6 +275,26 @@ mod tests {
                 ),
                 expected,
                 "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn configured_backend_distinguishes_unset_known_and_invalid_values() {
+        assert_eq!(configured_stt_backend(&serde_json::Map::new()), Ok(None));
+        assert_eq!(
+            configured_stt_backend(
+                json!({"transcribe":{"backend":"parakeet"}})
+                    .as_object()
+                    .expect("object")
+            ),
+            Ok(Some("parakeet"))
+        );
+        for invalid in [json!("paid-cloud"), json!(7)] {
+            let root = json!({"transcribe":{"backend":invalid}});
+            assert_eq!(
+                configured_stt_backend(root.as_object().expect("object")),
+                Err(InvalidSttBackend)
             );
         }
     }
