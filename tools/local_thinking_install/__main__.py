@@ -85,12 +85,14 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    run_dir.mkdir(parents=True, exist_ok=True)
+    if run_dir.exists():
+        sys.stderr.write("Error: --run-dir must not already exist.\n")
+        return 2
 
     def handle_signal(signum: int, _frame: object) -> None:
         sys.stderr.write(f"\nReceived signal {signum}, aborting run...\n")
         receipt_txt = run_dir / "RECEIPT.txt"
-        if not receipt_txt.exists():
+        if run_dir.is_dir() and not receipt_txt.exists():
             receipt_txt.write_text(
                 f"OVERALL OUTCOME: INTERRUPTED (signal {signum})\n", encoding="utf-8"
             )
@@ -112,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as error:
         sys.stderr.write(f"Harness execution error: {error}\n")
         receipt_txt = run_dir / "RECEIPT.txt"
-        if not receipt_txt.exists():
+        if run_dir.is_dir() and not receipt_txt.exists():
             receipt_txt.write_text(
                 f"OVERALL OUTCOME: HARNESS_INFRA ({error})\n", encoding="utf-8"
             )

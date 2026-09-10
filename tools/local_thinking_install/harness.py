@@ -66,8 +66,6 @@ def find_or_build_helper() -> Path:
     """Locate or build the tools-only Cargo helper binary."""
     helper_dir = Path(__file__).resolve().parent / "helper"
     target_bin = helper_dir / "target" / "debug" / "solstone-local-thinking-install-helper"
-    if target_bin.exists() and os.access(target_bin, os.X_OK):
-        return target_bin
 
     env = dict(os.environ)
     if "BINDGEN_EXTRA_CLANG_ARGS" not in env:
@@ -80,7 +78,7 @@ def find_or_build_helper() -> Path:
                 if "BINDGEN_EXTRA_CLANG_ARGS" in env:
                     break
 
-    cmd = ["cargo", "build", "--manifest-path", str(helper_dir / "Cargo.toml")]
+    cmd = ["cargo", "build", "--locked", "--manifest-path", str(helper_dir / "Cargo.toml")]
     proc = subprocess.run(cmd, env=env, capture_output=True, text=True, check=False)
     if proc.returncode != 0:
         raise RuntimeError(f"Failed to build local thinking install helper: {proc.stderr}")
@@ -98,11 +96,13 @@ def helper_admit(helper_bin: Path, root_dir: Path, journal_dir: Path) -> dict[st
         "--journal",
         str(journal_dir.resolve()),
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=30)
     try:
         data = json.loads(proc.stdout)
         if proc.returncode == 2:
             return {"ok": False, "error": "namespace_exists", "data": data}
+        if proc.returncode != 0:
+            return {"ok": False, "error": f"Helper exit {proc.returncode}: {data}"}
         return data
     except Exception:
         return {"ok": False, "error": f"Helper failed (exit {proc.returncode}): {proc.stderr}"}
@@ -115,9 +115,12 @@ def helper_inspect_status(helper_bin: Path, journal_dir: Path) -> dict[str, Any]
         "--journal",
         str(journal_dir.resolve()),
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=30)
     try:
-        return json.loads(proc.stdout)
+        data = json.loads(proc.stdout)
+        if proc.returncode != 0:
+            return {"ok": False, "error": f"Helper exit {proc.returncode}: {data}"}
+        return data
     except Exception:
         return {"ok": False, "error": f"Helper failed (exit {proc.returncode}): {proc.stderr}"}
 
@@ -129,9 +132,12 @@ def helper_namespace_path(helper_bin: Path, root_dir: Path) -> dict[str, Any]:
         "--root",
         str(root_dir.resolve()),
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=30)
     try:
-        return json.loads(proc.stdout)
+        data = json.loads(proc.stdout)
+        if proc.returncode != 0:
+            return {"ok": False, "error": f"Helper exit {proc.returncode}: {data}"}
+        return data
     except Exception:
         return {"ok": False, "error": f"Helper failed (exit {proc.returncode}): {proc.stderr}"}
 
@@ -146,6 +152,7 @@ def validate_candidate_dir(candidate_dir: Path) -> None:
         "solstone-core",
         "solstone-core-sol",
         "solstone-core-speakers-analyze",
+        "solstone-core-vad-analyze",
     )
     for name in req_bins:
         bin_path = candidate_dir / name
@@ -181,18 +188,11 @@ def setup_disposable_source_root(
     )
     (source_root / ".git").mkdir(parents=True, exist_ok=True)
 
-    anchors = [
-        "core/payload/solstone/talent/journal/contract/bundle.json",
-        "core/payload/solstone/think/contract/layout.json",
-        "core/payload/solstone/think/templates/segment_preamble.md",
-    ]
-    for anchor in anchors:
-        src = repo_root / anchor
-        if not src.exists():
-            raise FileNotFoundError(f"Missing repository layout anchor: {src}")
-        dest = source_root / anchor
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dest)
+    for relative in ("core/payload", "core/models/assets"):
+        src = repo_root / relative
+        if not src.is_dir():
+            raise FileNotFoundError(f"Missing complete candidate payload: {src}")
+        shutil.copytree(src, source_root / relative)
 
     debug_dir = source_root / "core" / "target" / "debug"
     debug_dir.mkdir(parents=True, exist_ok=True)
@@ -202,6 +202,7 @@ def setup_disposable_source_root(
         "solstone-core",
         "solstone-core-sol",
         "solstone-core-speakers-analyze",
+        "solstone-core-vad-analyze",
     ]
     for b in req_bins:
         src_b = candidate_dir / b
@@ -214,6 +215,8 @@ def setup_disposable_source_root(
         os.chmod(debug_dir / "solstone", 0o755)
 
     candidate_lib = candidate_dir.parent / "lib" / "solstone-core-speakers-analyze"
+    if not candidate_lib.is_dir():
+        raise FileNotFoundError(f"Missing staged ONNX library: {candidate_lib}")
     if candidate_lib.exists():
         dest_lib = source_root / "core" / "target" / "lib" / "solstone-core-speakers-analyze"
         dest_lib.parent.mkdir(parents=True, exist_ok=True)
@@ -222,16 +225,20 @@ def setup_disposable_source_root(
     return source_root
 
 
-def cleanup_namespace(helper_bin: Path, source_root: Path) -> str | None:
+def cleanup_namespace(admission: dict[str, Any], source_root: Path) -> str | None:
+    """Remove only the namespace this invocation successfully admitted."""
     try:
-        ns_info = helper_namespace_path(helper_bin, source_root)
-        ns_path_str = ns_info.get("namespace_path")
-        if not ns_path_str:
-            return f"Failed to get namespace path: {ns_info.get('error')}"
-        ns_path = Path(ns_path_str)
-        if "namespaces" not in ns_path.parts:
-            return f"Refusing to delete unsafe namespace path: {ns_path}"
+        if admission.get("ok") is not True or admission.get("root") != str(source_root.resolve()):
+            return "Refusing cleanup without matching successful admission"
+        ns_path = Path(admission["namespace_path"])
+        ns_hex = admission["namespace_hex"]
+        if (len(ns_hex) != 64 or any(c not in "0123456789abcdef" for c in ns_hex)
+                or ns_path.name != ns_hex or ns_path.parent.name != "namespaces"
+                or not ns_path.is_absolute() or ns_path.is_symlink()):
+            return f"Refusing unsafe namespace path: {ns_path}"
         if ns_path.exists():
+            backup = source_root.parent / "identity-before-cleanup"
+            shutil.copytree(ns_path, backup)
             shutil.rmtree(ns_path)
         return None
     except Exception as err:
@@ -277,7 +284,9 @@ def classify_bootstrap_response(
         detail_str = ""
         if isinstance(resp.json_data, dict):
             detail_str = str(resp.json_data.get("detail") or resp.json_data.get("error") or "")
-        if SPAWN_UNAVAILABLE_SNIPPET in detail_str or SPAWN_UNAVAILABLE_SNIPPET in resp.body:
+        if (isinstance(resp.json_data, dict)
+                and resp.json_data.get("reason_code") == "settings_operation_failed"
+                and SPAWN_UNAVAILABLE_SNIPPET in detail_str):
             return (
                 "bootstrap_refused",
                 "Spawn unavailable in production build (baseline refusal)",
@@ -410,7 +419,12 @@ def run_generate_proof(
 
     try:
         resp_data = json.loads(stdout_text)
+        if (resp_data.get("schema") != "solstone-generate-response-v2"
+                or resp_data.get("id") != "portal-bootstrap-proof"):
+            return False, "", "Wrong generate response identity"
         if resp_data.get("outcome") == "generated":
+            if resp_data.get("model") != "local/qwen3.5-4b" or not resp_data.get("inference"):
+                return False, "", "Response lacks bundled local model/inference evidence"
             text = (resp_data.get("text") or "").strip()
             if text:
                 return True, text, ""
@@ -455,7 +469,8 @@ def check_metal_evidence_darwin(journal_dir: Path) -> tuple[bool, str]:
         except Exception as err:
             return False, f"Failed to read /proc/{pid}/cmdline: {err}"
 
-    if not any("llama-server" in t for t in tokens):
+    (journal_dir.parent / "runtime-process.json").write_text(json.dumps({"health": runtime_data, "argv": tokens}, indent=2))
+    if not tokens or not Path(tokens[0]).resolve().is_relative_to(journal_dir.resolve()) or "llama-server" not in Path(tokens[0]).name:
         return False, f"Process {pid} tokens do not contain llama-server: {tokens[:5]}"
 
     has_gpu_layers_999 = any(
@@ -472,24 +487,15 @@ def check_metal_evidence_darwin(journal_dir: Path) -> tuple[bool, str]:
 
     chronicle_dir = journal_dir / "chronicle"
     oplog_files = list(chronicle_dir.glob("*/health/oplog--*"))
-    metal_log_found = False
-    excerpt = ""
+    evidence = []
     for oplog in oplog_files:
-        try:
-            content = oplog.read_text(encoding="utf-8", errors="replace")
-            if "ggml_metal" in content or "offloaded" in content:
-                metal_log_found = True
-                for line in content.splitlines():
-                    if "ggml_metal" in line or "offloaded" in line:
-                        excerpt = f"{oplog}: {line.strip()}"
-                        break
-                break
-        except Exception:
-            pass
-
-    if not metal_log_found:
-        return False, "No ggml_metal/offloaded evidence found in managed oplogs"
-
+        content = oplog.read_text(encoding="utf-8", errors="replace")
+        evidence.extend(f"{oplog}: {line.strip()}" for line in content.splitlines()
+                        if "ggml_metal" in line or "offloaded" in line)
+    excerpt = "\n".join(evidence)
+    (journal_dir.parent / "metal-evidence.log").write_text(excerpt)
+    if "ggml_metal" not in excerpt or "offloaded" not in excerpt:
+        return False, "Missing Metal initialization or layer-offload evidence in managed oplogs"
     return True, excerpt
 
 
@@ -516,17 +522,15 @@ def run_post_admit_checks(
             bytes_rx = resp.json_data.get("progress_bytes_received")
             bytes_tot = resp.json_data.get("progress_bytes_total")
 
-            if case_name == "fresh":
-                sample = {
-                    "t": time.time(),
-                    "install_state": state,
-                    "progress_bytes_received": bytes_rx,
-                    "progress_bytes_total": bytes_tot,
-                }
-                progress_samples.append(sample)
-                with open(progress_file, "a", encoding="utf-8") as pf:
-                    pf.write(json.dumps(sample) + "\n")
-
+            sample = {
+                "t": time.time(),
+                "install_state": state,
+                "progress_bytes_received": bytes_rx,
+                "progress_bytes_total": bytes_tot,
+            }
+            progress_samples.append(sample)
+            with open(progress_file, "a", encoding="utf-8") as pf:
+                pf.write(json.dumps(sample) + "\n")
             if state in ("installed", "failed"):
                 terminal_state = state
                 break
@@ -537,7 +541,8 @@ def run_post_admit_checks(
 
     # Validate progress samples for green fresh case
     if case_name == "fresh":
-        dl_samples = [s for s in progress_samples if s["install_state"] == "downloading"]
+        dl_samples = [s for s in progress_samples if s["install_state"] == "downloading"
+                      and s.get("progress_bytes_total") == MODEL_TOTAL_BYTES]
         if not dl_samples:
             return "fresh_missing_download_progress", None, None
 
@@ -549,9 +554,12 @@ def run_post_admit_checks(
         if not rx_values:
             return "fresh_missing_bytes_received", None, None
 
-        for i in range(len(rx_values) - 1):
-            if rx_values[i + 1] <= rx_values[i]:
-                return "fresh_progress_bytes_not_strictly_increasing", None, None
+        if any(v < 0 or v > MODEL_TOTAL_BYTES for v in rx_values):
+            return "fresh_progress_out_of_bounds", None, None
+        if any(b < a for a, b in zip(rx_values, rx_values[1:])):
+            return "fresh_progress_decreased", None, None
+        if len(set(rx_values)) < 2:
+            return "fresh_progress_did_not_advance", None, None
 
     # Switch lane to local via PUT /app/thinking/api/providers
     activate_url = f"http://127.0.0.1:{port}/app/thinking/api/providers"
@@ -593,8 +601,14 @@ def run_post_admit_checks(
 
     # Terminal inspect status
     final_inspect = helper_inspect_status(helper_bin, journal_dir)
+    (case_dir / "final-install-status.json").write_text(json.dumps(final_inspect, indent=2))
     if not final_inspect.get("ok"):
         return f"final_status_unreadable: {final_inspect.get('error')}", gen_text, metal_evidence_str
+
+    if sys.platform == "darwin" and final_inspect.get("native") is not True:
+        return "final_status_not_native", gen_text, metal_evidence_str
+    if final_inspect.get("install_state") != "installed":
+        return "final_status_not_installed", gen_text, metal_evidence_str
 
     if case_name == "prior_mlx":
         if is_leftover_mlx(helper_bin, journal_dir):
@@ -634,7 +648,6 @@ def run_scenario(
         initial_inspect = helper_inspect_status(helper_bin, journal_dir)
         prior_mlx_discriminator = initial_inspect
         if not initial_inspect.get("ok") or initial_inspect.get("native") is not False:
-            cleanup_namespace(helper_bin, source_root)
             return CaseResult(
                 name=case_name,
                 convey_port=None,
@@ -649,7 +662,6 @@ def run_scenario(
 
     admit_result = helper_admit(helper_bin, source_root, journal_dir)
     if not admit_result.get("ok"):
-        cleanup_namespace(helper_bin, source_root)
         return CaseResult(
             name=case_name,
             convey_port=None,
@@ -662,6 +674,7 @@ def run_scenario(
             prior_mlx_discriminator=prior_mlx_discriminator,
         )
 
+    (case_dir / "admission.json").write_text(json.dumps(admit_result, indent=2))
     direct_port = find_free_port()
     staged_journal_bin = source_root / "core" / "target" / "debug" / "solstone-core-journal"
     staged_core_bin = source_root / "core" / "target" / "debug" / "solstone-core"
@@ -676,9 +689,9 @@ def run_scenario(
     convey_port: int | None = None
     try:
         convey_port = portal.start(timeout_seconds=portal_timeout_seconds)
-    except PortalStartupError as err:
+    except BaseException as err:
         portal_stop_err = portal.stop()
-        ns_cleanup_err = cleanup_namespace(helper_bin, source_root)
+        ns_cleanup_err = cleanup_namespace(admit_result, source_root) if not portal_stop_err else "Namespace retained because process cleanup failed"
         cleanup_errors = [e for e in (portal_stop_err, ns_cleanup_err) if e]
         return CaseResult(
             name=case_name,
@@ -758,7 +771,7 @@ def run_scenario(
         return res
     finally:
         portal_stop_err = portal.stop()
-        ns_cleanup_err = cleanup_namespace(helper_bin, source_root)
+        ns_cleanup_err = cleanup_namespace(admit_result, source_root) if not portal_stop_err else "Namespace retained because process cleanup failed"
         cleanup_errors = [e for e in (portal_stop_err, ns_cleanup_err) if e]
         if cleanup_errors and res is not None:
             res.cleanup_error = "; ".join(cleanup_errors)
@@ -772,6 +785,7 @@ def run_harness(
 ) -> HarnessReport:
     candidate_dir = candidate_dir.resolve()
     run_dir = run_dir.resolve()
+    run_dir.mkdir(parents=True, exist_ok=False)
     repo_root = Path(__file__).resolve().parent.parent.parent
 
     try:
@@ -798,6 +812,13 @@ def run_harness(
 
     run_dir.mkdir(parents=True, exist_ok=True)
     provenance = collect_provenance(candidate_dir)
+    provenance["helper_sha256"] = compute_sha256(helper_bin)
+    harness_root = Path(__file__).resolve().parent
+    provenance["harness_files"] = {
+        str(p.relative_to(harness_root)): compute_sha256(p)
+        for p in sorted(harness_root.rglob("*")) if p.is_file()
+        and "target" not in p.parts and "__pycache__" not in p.parts
+    }
     provenance_path = run_dir / "provenance.json"
     provenance_path.write_text(json.dumps(provenance, indent=2), encoding="utf-8")
 
@@ -821,7 +842,7 @@ def run_harness(
     all_admitted = all(r.classification == "admitted" for r in results)
     all_refused = all(r.classification == "bootstrap_refused" for r in results)
     has_false_in_flight = any(r.classification == "false_in_flight" for r in results)
-    has_infra_error = any(r.classification == "harness_infra" for r in results)
+    has_infra_error = any(r.classification == "harness_infra" or r.cleanup_error for r in results)
 
     if has_infra_error:
         overall_outcome = "harness_infra"

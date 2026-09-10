@@ -203,43 +203,40 @@ class PortalProcess:
 
         return False, resp
 
-    def stop(self, timeout_seconds: float = 5.0) -> str | None:
-        """Terminate supervisor process tree. Does not swallow errors."""
+    def stop(self, timeout_seconds: float = 15.0) -> str | None:
+        """Stop the owned process group and verify no fixture processes remain."""
         if self.process is None:
             return None
-        pid = self.process.pid
-        err_msg: str | None = None
+        process = self.process
+        pid = process.pid
         try:
-            if hasattr(os, "killpg"):
-                try:
-                    pgid = os.getpgid(pid)
-                    os.killpg(pgid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-            else:
-                self.process.terminate()
-
-            deadline = time.monotonic() + timeout_seconds
-            while time.monotonic() < deadline:
-                if self.process.poll() is not None:
-                    break
-                time.sleep(0.1)
-
-            if self.process.poll() is None:
-                if hasattr(os, "killpg"):
-                    try:
-                        pgid = os.getpgid(pid)
-                        os.killpg(pgid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
-                else:
-                    self.process.kill()
-                self.process.wait()
-        except Exception as error:
-            err_msg = f"Error stopping supervisor process {pid}: {error}"
-        finally:
+            # start_new_session makes this PID the group ID, even after its exit.
+            try:
+                os.killpg(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                process.wait(timeout=timeout_seconds)
+            except subprocess.TimeoutExpired:
+                os.killpg(pid, signal.SIGKILL)
+                process.wait(timeout=5)
+            inventory = subprocess.run(
+                ["ps", "-axo", "pid=,ppid=,command="], capture_output=True,
+                text=True, check=True, timeout=10,
+            )
+            markers = (str(self.journal_dir), str(self.staged_journal_bin.parent))
+            remaining = [line for line in inventory.stdout.splitlines()
+                         if any(marker in line for marker in markers)]
+            receipt = {"supervisor_pid": pid, "exit_code": process.returncode,
+                       "remaining_fixture_processes": remaining}
+            if self.case_dir:
+                (self.case_dir / "process-cleanup.json").write_text(json.dumps(receipt, indent=2))
+            if remaining:
+                return f"Fixture processes remain: {remaining}"
             self.process = None
-        return err_msg
+            return None
+        except Exception as error:
+            return f"Error stopping supervisor process {pid}: {error}"
 
 
 def send_http_request(
