@@ -6,7 +6,9 @@ use std::path::PathBuf;
 
 use serde_json::{Map, Value};
 use solstone_core_indexer_store::scan::{RescanFileStatus, rescan_file};
-use solstone_core_journal_io::{AtomicWriteOptions, MalformedPolicy, read_jsonl, write_jsonl};
+use solstone_core_journal_io::{
+    AtomicWriteError, AtomicWriteOptions, MalformedPolicy, atomic_replace, read_jsonl, write_jsonl,
+};
 
 use crate::contract::{CommitDisposition, CommitPlan};
 use crate::{ExecutionContext, PreparedTalent, StageError};
@@ -83,15 +85,20 @@ pub fn write_output_if_configured(prepared: &PreparedTalent, output: &str) -> Re
 
 pub fn write_output(path: PathBuf, output: &str) -> Result<bool, std::io::Error> {
     let bytes = output.as_bytes();
-    if path.exists() && fs::read(&path)? == bytes {
+    if let Ok(existing) = fs::read(&path)
+        && existing == bytes
+    {
         return Ok(false);
     }
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    // Python uses a plain unlocked write here; do not add atomicity or a lock.
-    fs::write(path, bytes)?;
-    Ok(true)
+    match atomic_replace(&path, bytes, AtomicWriteOptions::default()) {
+        Ok(()) => Ok(true),
+        #[cfg(windows)]
+        Err(AtomicWriteError::PublicationUncertain { .. }) => Ok(true),
+        Err(AtomicWriteError::Io { source, .. }) => Err(source),
+    }
 }
 
 pub fn apply(
@@ -349,7 +356,7 @@ mod tests {
     }
 
     #[test]
-    fn criterion_6_output_guard_is_plain_and_bidirectional() {
+    fn criterion_6_output_guard_is_atomic_and_bidirectional() {
         let root = tempfile::Builder::new()
             .prefix("solstone-talent-output-guard-")
             .tempdir_in("/var/tmp")
