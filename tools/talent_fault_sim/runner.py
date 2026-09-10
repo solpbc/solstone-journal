@@ -20,6 +20,11 @@ SEGMENT = "090000_60"
 STREAM = "field.audio"
 GOOD = '{"body":"The team discussed a remote control."}'
 OLD = "previous complete artifact\n"
+COGITATE_USAGE = {
+    "input_tokens": 11,
+    "output_tokens": 7,
+    "model_version": "fault-fixture",
+}
 
 
 def digest(data):
@@ -71,7 +76,7 @@ def scenarios():
             "event": "finish",
             "terminal": True,
             "result": GOOD,
-            "usage": {"input_tokens": 11, "output_tokens": 7},
+            "usage": COGITATE_USAGE,
             "model": "fault-fixture",
         }
     ]
@@ -80,6 +85,7 @@ def scenarios():
             "event": "error",
             "terminal": True,
             "error": "injected provider refusal",
+            "usage": COGITATE_USAGE,
             "provider_failure": {
                 "reason_code": "provider_request_rejected",
                 "retryable": False,
@@ -227,12 +233,8 @@ def verify(
         errors.append("terminal_result")
     if output != expected_output:
         errors.append("artifact_bytes")
-    if (
-        engine == "cogitate"
-        and reason != "provider_request_rejected"
-        and len(terminals) == 1
-    ):
-        if terminals[0].get("usage") != {"input_tokens": 11, "output_tokens": 7}:
+    if engine == "cogitate" and len(terminals) == 1:
+        if terminals[0].get("usage") != COGITATE_USAGE:
             errors.append("terminal_usage")
     if engine == "generate":
         attempts = [e for e in events if e.get("event") == "generate_attempt"]

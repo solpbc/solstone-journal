@@ -102,7 +102,11 @@ class OracleTests(unittest.TestCase):
                 "event": "error",
                 "terminal": True,
                 "reason_code": "talent_stage_failed",
-                "usage": {"input_tokens": 11, "output_tokens": 7},
+                "usage": {
+                    "input_tokens": 11,
+                    "output_tokens": 7,
+                    "model_version": "fault-fixture",
+                },
             }
         ]
         calls = [{"journal_root": str(self.journal)}]
@@ -111,6 +115,23 @@ class OracleTests(unittest.TestCase):
         missing_usage = copy.deepcopy(events)
         missing_usage[0].pop("usage")
         self.assertIn("terminal_usage", verify(missing_usage, calls, *args))
+        wrong_model = copy.deepcopy(events)
+        wrong_model[0]["usage"]["model_version"] = "wrong-model"
+        self.assertIn("terminal_usage", verify(wrong_model, calls, *args))
+        refused = copy.deepcopy(events)
+        refused[0]["reason_code"] = "provider_request_rejected"
+        refusal_args = (
+            "cogitate",
+            1,
+            "provider_request_rejected",
+            b"old",
+            b"old",
+            "",
+            self.journal,
+        )
+        self.assertEqual(verify(refused, calls, *refusal_args), [])
+        refused[0].pop("usage")
+        self.assertIn("terminal_usage", verify(refused, calls, *refusal_args))
         self.assertIn(
             "wrong_child_journal", verify(events, [{"journal_root": "/wrong"}], *args)
         )
