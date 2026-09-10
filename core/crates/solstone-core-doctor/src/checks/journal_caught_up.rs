@@ -46,12 +46,21 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                 .iter()
                 .filter(|day| day.capped_daily.is_some())
                 .count();
-            let detail = if capped == 0 {
-                "caught up".to_owned()
+            if capped == 0 {
+                Ok(make_result(
+                    check,
+                    Status::Ok,
+                    "caught up".to_owned(),
+                    None::<String>,
+                ))
             } else {
-                format!("caught up; {capped} day(s) completed with capped daily unit(s)")
-            };
-            Ok(make_result(check, Status::Ok, detail, None::<String>))
+                Ok(make_result(
+                    check,
+                    Status::Warn,
+                    format!("caught up; {capped} day(s) completed with capped daily unit(s)"),
+                    None::<String>,
+                ))
+            }
         }
         Ok(view) => {
             let mut detail = format!(
