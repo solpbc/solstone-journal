@@ -54,6 +54,7 @@ pub fn windows_available_physical_bytes() -> Option<u64> {
 /// Read free plus inactive pages from Darwin's host VM statistics.
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
+#[allow(deprecated)]
 fn macos_available_physical_bytes() -> Option<u64> {
     let mut statistics = std::mem::MaybeUninit::<libc::vm_statistics64>::zeroed();
     let mut count = libc::HOST_VM_INFO64_COUNT;
@@ -67,10 +68,16 @@ fn macos_available_physical_bytes() -> Option<u64> {
             &mut count,
         )
     };
-    if result != libc::KERN_SUCCESS || count < libc::HOST_VM_INFO64_COUNT {
+    // New SDKs can define vm_statistics64 with fields that an older running
+    // kernel does not return. Only the first three natural_t fields are needed
+    // here (free, active, inactive), so accept that stable prefix rather than
+    // requiring the SDK's full current structure size.
+    const REQUIRED_FIELD_COUNT: libc::mach_msg_type_number_t = 3;
+    if result != libc::KERN_SUCCESS || count < REQUIRED_FIELD_COUNT {
         return None;
     }
-    // SAFETY: host_statistics64 succeeded and reported the complete structure.
+    // SAFETY: the buffer was zero-initialized, and the returned prefix includes
+    // every field read below.
     let statistics = unsafe { statistics.assume_init() };
     // SAFETY: vm_page_size is initialized by the Darwin runtime before main.
     let page_size = unsafe { libc::vm_page_size } as u64;
