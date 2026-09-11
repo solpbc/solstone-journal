@@ -199,6 +199,8 @@ async function main() {
     '  init();\n})();',
     `  window.__thinkingRuns = {
     state,
+    localCopy,
+    localIsReady,
     bind,
     bindThinkingSectionTabs,
     bindThinkingRuns,
@@ -383,6 +385,25 @@ async function main() {
   assert.strictEqual(format.stream('_default'), 'default');
   const thinking = window.__thinkingRuns;
   assert(thinking, 'test exports present');
+  const savedProviders = thinking.state.providers;
+  thinking.state.providers = {
+    active_lane: {lane: 'none'},
+    provider_status: {local: {generate_ready: false, cogitate_ready: false, issues: [], selected: false}},
+    local_runtime: {status: 'ok', phase: 'ready', reason_code: 'probe-ready'},
+  };
+  thinking.state.install = {install_state: 'installed'};
+  thinking.state.localAvailability = {available: true};
+  assert.strictEqual(thinking.localCopy().activate, true, 'verified installed artifacts offer activation before a provider is selected');
+  assert.strictEqual(thinking.localIsReady(), true, 'the lane switch accepts installed local artifacts');
+  thinking.state.localAvailability = {available: false, reason_code: 'local_probe_failed'};
+  assert.strictEqual(thinking.localCopy().activate, false, 'a stale ready runtime cannot override a failed artifact check');
+  assert.strictEqual(thinking.localIsReady(), false, 'failed checks cannot offer lane switching');
+  thinking.state.localAvailability = {available: true};
+  thinking.state.providers.active_lane.lane = 'local';
+  assert.strictEqual(thinking.localIsReady(), false, 'an active lane still needs Generate and Cogitate readiness');
+  thinking.state.providers = savedProviders;
+  thinking.state.localAvailability = null;
+  thinking.state.install = null;
   assert.strictEqual(source.includes('window.selectedFacet'), false, 'Thinking does not read the shared selected facet');
   assert.strictEqual(source.includes('facet.switch'), false, 'Thinking does not register the retired facet event');
   thinking.bind();

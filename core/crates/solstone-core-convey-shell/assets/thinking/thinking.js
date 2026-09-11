@@ -2271,6 +2271,11 @@
         detail: '',
       };
     }
+    // An unselected provider has no Generate/Cogitate readiness yet. A successful
+    // artifact check is enough to offer selection; activation owns runtime start.
+    if (avail?.available === true && state.providers.active_lane?.lane !== 'local') {
+      return {status: 'ready', reason: 'ready', summary: '', detail: ''};
+    }
     const readiness = state.providers.provider_status?.local;
     if (readiness) {
       const ready = !!(readiness.generate_ready && readiness.cogitate_ready);
@@ -2293,6 +2298,7 @@
 
   function localIsReady() {
     if (state.localAvailability?.available === false) return false;
+    if (state.localAvailability?.available === true && state.providers.active_lane?.lane !== 'local') return true;
     const readiness = state.providers.provider_status?.local;
     return !!(readiness?.generate_ready && readiness?.cogitate_ready);
   }
