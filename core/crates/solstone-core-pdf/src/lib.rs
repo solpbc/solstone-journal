@@ -1221,6 +1221,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn file_hashing_fits_a_one_mib_stack() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf_corpus/text.pdf");
+        let expected = format!(
+            "{:x}",
+            Sha256::digest(fs::read(&path).expect("read PDF fixture"))
+        );
+        let actual = std::thread::Builder::new()
+            .stack_size(1024 * 1024)
+            .spawn(move || sha256_file(&path).expect("hash PDF fixture"))
+            .expect("spawn worker with Windows-sized stack")
+            .join()
+            .expect("hashing worker finished");
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
     fn whitespace_matches_python_isspace_exception() {
         assert_eq!(
             non_whitespace_chars(" a\t\u{001c}\u{001d}\u{001e}\u{001f}b\u{00a0}"),
