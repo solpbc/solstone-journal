@@ -86,9 +86,11 @@ pub fn build_windows_product(
         .map_err(|e| e.to_string())?;
     fs::create_dir(log_directory)
         .map_err(|e| format!("fresh Cargo log directory required: {e}"))?;
-    let ffmpeg_archive = super::select_ffmpeg_input(checkout, Some(ffmpeg_archive.as_os_str()))
+    // The shared selector returns a verbatim canonical path on Windows. Keep
+    // the supplied ordinary drive spelling for the bound reader and child.
+    super::select_ffmpeg_input(checkout, Some(ffmpeg_archive.as_os_str()))
         .map_err(|e| e.to_string())?;
-    let ffmpeg_source_sha256 = sha256_hex(&read_bounded(&ffmpeg_archive, 256 * 1024 * 1024)?);
+    let ffmpeg_source_sha256 = sha256_hex(&read_bounded(ffmpeg_archive, 256 * 1024 * 1024)?);
     let ffmpeg_run_id = super::ffmpeg_build_run_id();
     let argv = cargo_argv(inventory)?;
     let stdout_path = log_directory.join("cargo.stdout");
@@ -109,7 +111,7 @@ pub fn build_windows_product(
         .env_remove("FFMPEG_DIR")
         .env("FFMPEG_MARCH", "")
         .env("FFMPEG_MTUNE", "")
-        .env("SOLSTONE_FFMPEG_SOURCE_ARCHIVE", &ffmpeg_archive)
+        .env("SOLSTONE_FFMPEG_SOURCE_ARCHIVE", ffmpeg_archive)
         .env(super::OFFLINE, "1")
         .env(
             solstone_core_ffmpeg_build_support::BUILD_RUN_ID_ENV,
@@ -158,14 +160,11 @@ pub fn build_windows_product(
         &artifacts,
     )
     .map_err(|e| e.to_string())?;
-    let expected_parent = target_dir
-        .join(TRIPLE)
-        .join("release")
+    let release_root = retain_release_root(&target_root)?;
+    let expected_parent = release_root
+        .canonical_path()
         .canonicalize()
         .map_err(|e| format!("resolve current release output directory: {e}"))?;
-    if expected_parent != target_root.canonical_path().join(TRIPLE).join("release") {
-        return Err("Cargo release directory escaped the retained fresh target root".into());
-    }
     let mut bytes = BTreeMap::new();
     let mut files = Vec::new();
     for bin in &selection.bins {
@@ -182,7 +181,12 @@ pub fn build_windows_product(
                 path.display()
             ));
         }
-        let data = read_bounded(&bin.path, PE_LIMIT)?;
+        let data = read_bounded(
+            &release_root
+                .canonical_path()
+                .join(format!("{}.exe", bin.bin)),
+            PE_LIMIT,
+        )?;
         let info = crate::pe_dependencies::inspect_dependencies(&data)
             .map_err(|e| format!("{}: {e}", path.display()))?;
         if info.is_dll {
@@ -230,6 +234,9 @@ pub fn build_windows_product(
             "fresh FFmpeg configuration is not bound to the admitted source archive".into(),
         );
     }
+    release_root
+        .revalidate_canonical_binding()
+        .map_err(|e| format!("release output binding changed: {e}"))?;
     let evidence = WindowsCargoEvidence {
         source,
         target: TRIPLE.into(),
@@ -446,6 +453,18 @@ fn drain_build_stream<R: Read>(
     Ok(())
 }
 
+fn retain_release_root(
+    target: &solstone_core_journal_io::JournalRoot,
+) -> Result<solstone_core_journal_io::JournalRoot, String> {
+    target
+        .revalidate_canonical_binding()
+        .map_err(|e| format!("fresh target binding changed: {e}"))?;
+    solstone_core_journal_io::JournalRoot::open(
+        &target.canonical_path().join(TRIPLE).join("release"),
+    )
+    .map_err(|e| format!("retain fresh release output directory: {e}"))
+}
+
 pub(super) fn read_bounded(path: &Path, limit: u64) -> Result<Vec<u8>, String> {
     let parent = path.parent().ok_or("input has no parent")?;
     let leaf = path.file_name().ok_or("input has no filename")?;
@@ -556,6 +575,18 @@ mod tests {
         fs::create_dir_all(binary.parent().unwrap()).unwrap();
         fs::write(&binary, b"controlled bytes").unwrap();
         assert_eq!(read_bounded(&binary, 16).unwrap(), b"controlled bytes");
+        let target = solstone_core_journal_io::JournalRoot::open(&root).unwrap();
+        let release = root.join(TRIPLE).join("release");
+        fs::create_dir_all(&release).unwrap();
+        let retained = retain_release_root(&target).unwrap();
+        let command = retained.canonical_path().join("worker.exe");
+        fs::write(&command, b"current output").unwrap();
+        assert_eq!(
+            command.canonicalize().unwrap().parent(),
+            Some(retained.canonical_path().canonicalize().unwrap().as_path()),
+        );
+        assert_eq!(read_bounded(&command, 14).unwrap(), b"current output");
+        retained.revalidate_canonical_binding().unwrap();
     }
 
     #[test]
