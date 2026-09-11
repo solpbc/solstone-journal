@@ -5,6 +5,11 @@
       "version": "2.0.0",
       "logical_target": "software/journal/2.0.0/release-record.json",
       "record_sha256": "90f29deec1cd61c978409cff2ab27448b76b7be866d548e50df5a05ef872e8f4"
+    },
+    {
+      "version": "2.0.1",
+      "logical_target": "software/journal/2.0.1/release-record.json",
+      "record_sha256": "a7a930a252c8ce9d270f29a1f3d30a4047722480ae52d7f56d5021f48f022bde"
     }
   ]
 }

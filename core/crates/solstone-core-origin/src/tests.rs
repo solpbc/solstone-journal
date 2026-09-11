@@ -94,6 +94,7 @@ fn current_key_names_release_and_head_owners() {
         PruneAssessment::PinnedBy {
             owners: vec![
                 PinOwner::Release("2.0.0".to_owned()),
+                PinOwner::Release("2.0.1".to_owned()),
                 PinOwner::HeadUnreleased
             ],
         }
