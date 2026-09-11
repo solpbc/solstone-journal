@@ -38,7 +38,8 @@ $nativeNames=@('cl','link','MSBuild','rustc','cargo','ninja','cmake','ctest','vp
     'rfdetr-cli','solstone-distribution','git','bash','sh','make','nasm','perl')
 
 function Require-PlainPath([string]$Path) {
-    if ($Path -notmatch '^[A-Za-z]:\\' -or $Path -match '["''%!&|<>^`$()\x00-\x1f]') {
+    # Parentheses in Program Files (x86) are literal inside the quoted batches.
+    if ($Path -notmatch '^[A-Za-z]:\\' -or $Path -match '["''%!&|<>^`$\x00-\x1f]') {
         throw "plain absolute drive path required by the fixed build commands: $Path"
     }
 }

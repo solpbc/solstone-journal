@@ -19,6 +19,7 @@ $allCaptures=[Collections.Generic.List[object]]::new()
 $caseReports=[Collections.Generic.List[object]]::new()
 $predicateReports=[Collections.Generic.List[object]]::new()
 $budgetReports=[Collections.Generic.List[object]]::new()
+$pathReports=[Collections.Generic.List[object]]::new()
 $terminalFailures=[Collections.Generic.List[string]]::new()
 $settlements=[Collections.Generic.List[object]]::new()
 $fixtureFences=[Collections.Generic.List[object]]::new()
@@ -62,10 +63,33 @@ try {
         [void][Management.Automation.Language.Parser]::ParseFile($file,[ref]$tokens,[ref]$errors)
         if ($errors.Count -ne 0) { throw ($errors | Out-String) }
     }
-    foreach ($name in @('Write-NewText','Write-NewJson','Digest','Invoke-Native','Test-ExactSingleTest')) {
+    foreach ($name in @('Require-PlainPath','Write-NewText','Write-NewJson','Digest','Invoke-Native','Test-ExactSingleTest')) {
         $functionNodes=@($ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq $name },$true))
         if ($functionNodes.Count -ne 1) { throw "expected one actual driver function: $name" }
         . ([ScriptBlock]::Create($functionNodes[0].Extent.Text))
+    }
+    Require-PlainPath 'C:\Program Files (x86)\Microsoft Visual Studio\vcvarsall.bat'
+    foreach ($suffix in @('"','%','!','&','|','<','>','^','`','$',"'","`n")) {
+        $refused=$false
+        try { Require-PlainPath ('C:\bad'+$suffix+'path') } catch { $refused=$true }
+        $pathReports.Add([ordered]@{suffix=$suffix;refused=$refused})
+        if (-not $refused) { throw 'unsafe batch path admitted' }
+    }
+    $quotedRoot=Join-Path $FixtureRoot 'Program Files (x86)'
+    New-Item -ItemType Directory -Path $quotedRoot -ErrorAction Stop | Out-Null
+    $quotedChild=Join-Path $quotedRoot 'path control.cmd'
+    $quotedBatch=Join-Path $FixtureRoot 'quoted-call.cmd'
+    Write-NewText $quotedChild "@echo off`r`necho QUOTED_PATH_CONTROL`r`nexit /b 37`r`n"
+    Write-NewText $quotedBatch "@echo off`r`ncall `"$quotedChild`" x64`r`nexit /b %errorlevel%`r`n"
+    $quotedCapture=Invoke-RfdetrCapture -Command (Join-Path $env:SystemRoot 'System32\cmd.exe') `
+        -Arguments @('/d','/s','/c',"`"$quotedBatch`"") -Cwd $FixtureRoot `
+        -StdoutPath (Join-Path $FixtureRoot 'quoted-call.stdout') -StderrPath (Join-Path $FixtureRoot 'quoted-call.stderr') `
+        -TimeoutMilliseconds 10000 -Environment @{} -CmdArgumentLine ('/d /s /c ""{0}""' -f $quotedBatch)
+    $allCaptures.Add([ordered]@{name='quoted-path';capture=$quotedCapture})
+    $pathReports.Add([ordered]@{path=$quotedChild;completed=$quotedCapture.completed;actual_exit=$quotedCapture.exit_code})
+    if (-not $quotedCapture.completed -or $quotedCapture.exit_code -ne 37 -or
+        [IO.File]::ReadAllText((Join-Path $FixtureRoot 'quoted-call.stdout')) -cne "QUOTED_PATH_CONTROL`r`n") {
+        throw 'quoted parenthesized path did not preserve actual child execution'
     }
     $selector='fixture::exact_test'
     $named="test $selector ... ok"
@@ -200,7 +224,7 @@ try {
             }
         }
     }
-    $report=[ordered]@{actual_exit_code=$controlExit;cases=@($caseReports.ToArray());predicate_cases=@($predicateReports.ToArray());budget_cases=@($budgetReports.ToArray());settlements=@($settlements.ToArray());
+    $report=[ordered]@{actual_exit_code=$controlExit;cases=@($caseReports.ToArray());predicate_cases=@($predicateReports.ToArray());budget_cases=@($budgetReports.ToArray());path_cases=@($pathReports.ToArray());settlements=@($settlements.ToArray());
         failures=@($terminalFailures.ToArray());pending_fixture_reconciliation=$fixturePending;
         driver_sha256=(Get-FileHash -LiteralPath $driver -Algorithm SHA256).Hash.ToLowerInvariant();
         controls_sha256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant();

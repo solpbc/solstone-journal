@@ -1080,3 +1080,17 @@ source = "core/distribution/licenses/velopack/LICENSE"
 dest = "share/licenses/velopack/LICENSE"
 mode = 0o644
 targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "copy"
+source = "core/distribution/windows-rust-NOTICES.txt"
+dest = "share/licenses/rust/NOTICES.txt"
+mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "copy"
+source = "core/distribution/windows-rust-sources.json"
+dest = "share/provenance/rust-sources.json"
+mode = 0o644
+targets = ["windows-x86_64"]

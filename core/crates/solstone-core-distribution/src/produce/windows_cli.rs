@@ -20,6 +20,17 @@ use super::windows_stage::{AdmittedWindowsNativeInputs, stage_windows_payload};
 
 const USAGE: &str = "produce windows-x86_64 DEST --inputs LOCAL_JSON --logs FRESH_DIRECTORY (absolute paths required)";
 
+fn validate_rust_notices(index: &[u8], notices: &[u8], lock: &str) -> Result<(), String> {
+    let index: serde_json::Value = serde_json::from_slice(index).map_err(|e| e.to_string())?;
+    if index["schema"].as_str() != Some("solstone.windows-rust-notices.v1")
+        || index["cargo_lock_sha256"].as_str() != Some(lock)
+        || index["notices_sha256"].as_str() != Some(&crate::digest::sha256_hex(notices))
+    {
+        return Err("Windows Rust notices do not match the current lock and notice bytes".into());
+    }
+    Ok(())
+}
+
 #[derive(Debug)]
 struct InputPath(PathBuf);
 
@@ -219,6 +230,17 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
         .nth(3)
         .ok_or("missing repository root")?;
     let before = capture_source(repo)?;
+    validate_rust_notices(
+        &read_bounded(
+            &repo.join("core/distribution/windows-rust-sources.json"),
+            4 * 1024 * 1024,
+        )?,
+        &read_bounded(
+            &repo.join("core/distribution/windows-rust-NOTICES.txt"),
+            16 * 1024 * 1024,
+        )?,
+        &before.lock_sha256,
+    )?;
     let input_bytes = read_bounded(&args.inputs, 1024 * 1024)?;
     let inputs: LocalInputs = serde_json::from_slice(&input_bytes).map_err(|e| e.to_string())?;
     let native = inputs.admit(repo)?;
@@ -260,6 +282,22 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stale_lock_or_changed_rust_notices_refuse_before_production() {
+        let notices = b"original upstream notices";
+        let index = serde_json::to_vec(&serde_json::json!({
+            "schema": "solstone.windows-rust-notices.v1",
+            "cargo_lock_sha256": "current-lock",
+            "notices_sha256": crate::digest::sha256_hex(notices),
+        }))
+        .unwrap();
+        assert!(validate_rust_notices(&index, notices, "current-lock").is_ok());
+        assert!(validate_rust_notices(&index, notices, "changed-lock").is_err());
+        assert!(validate_rust_notices(&index, b"replaced", "current-lock").is_err());
+        assert!(validate_rust_notices(b"{}", notices, "current-lock").is_err());
+        assert!(validate_rust_notices(b"not-json", notices, "current-lock").is_err());
+    }
 
     fn arguments(root: &Path) -> Vec<String> {
         [
