@@ -153,7 +153,7 @@ fn readiness_status(
     }
     if probe["runnable"] != true {
         return (
-            "host-ineligible".into(),
+            "proof-unavailable".into(),
             probe["reason_code"]
                 .as_str()
                 .unwrap_or("binary_unavailable")
@@ -199,4 +199,25 @@ fn fit(
         "prompt_cache_mib":prompt_cache_mib,
         "tier":tier,
     })
+}
+
+#[cfg(test)]
+mod probe_tests {
+    use super::*;
+
+    #[test]
+    fn failed_binary_probe_is_unavailable_not_a_hardware_verdict() {
+        let ready = json!({"status": "ready"});
+        for reason in ["binary_unavailable", "binary_exit"] {
+            let probe = json!({"runnable": false, "reason_code": reason});
+            let (state, code, component) = readiness_status(&ready, &ready, &ready, &probe);
+            assert_eq!(state, "proof-unavailable", "{reason}");
+            assert_eq!(code, reason);
+            assert_eq!(component, Some("binary_probe"));
+        }
+        assert_eq!(
+            readiness_status(&ready, &ready, &ready, &json!({"runnable": true})),
+            ("ready".into(), "ready".into(), None)
+        );
+    }
 }
