@@ -10,6 +10,14 @@ fn install_logger() {
 }
 
 fn main() -> ExitCode {
+    #[cfg(windows)]
+    if env::args_os().all(|arg| arg.to_str().is_some()) {
+        // The SDK reads Unicode args during construction. Leave non-Unicode
+        // arguments to the journal's existing OsString boundary below.
+        velopack::VelopackApp::build()
+            .set_auto_apply_on_startup(false)
+            .run();
+    }
     install_logger();
     solstone_core_journal_cli::run(env::args_os().skip(1).collect())
 }

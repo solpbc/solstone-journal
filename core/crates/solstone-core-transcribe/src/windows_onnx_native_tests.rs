@@ -55,10 +55,11 @@ fn installed_onnx_callers_infer_with_real_generation() {
     let marker = payload
         .declared_path("share/windows-native-test-only")
         .unwrap();
-    assert_eq!(
-        std::fs::read(marker).unwrap(),
-        b"windows-onnx-consumer-fixture-v1"
-    );
+    let marker_bytes = std::fs::read(marker).unwrap();
+    assert!(matches!(
+        marker_bytes.as_slice(),
+        b"windows-onnx-consumer-fixture-v1" | b"windows-complete-checkpoint-fixture-v1"
+    ));
     let poison = absolute_input("SOLSTONE_WINDOWS_ONNX_POISON");
     assert_eq!(std::fs::read(&poison).unwrap(), b"not a helper or runtime");
     for name in [

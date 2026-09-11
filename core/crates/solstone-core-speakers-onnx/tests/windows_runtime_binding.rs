@@ -20,10 +20,11 @@ fn preinitialized_other_runtime_is_refused_before_inference() {
     let marker = payload
         .declared_path("share/windows-native-test-only")
         .expect("isolated fixture marker");
-    assert_eq!(
-        std::fs::read(marker).unwrap(),
-        b"windows-onnx-consumer-fixture-v1"
-    );
+    let marker_bytes = std::fs::read(marker).unwrap();
+    assert!(matches!(
+        marker_bytes.as_slice(),
+        b"windows-onnx-consumer-fixture-v1" | b"windows-complete-checkpoint-fixture-v1"
+    ));
     let other = PathBuf::from(std::env::var_os("ORT_DYLIB_PATH").expect("alternate ORT module"));
     assert!(other.is_absolute() && other.is_file());
     assert!(

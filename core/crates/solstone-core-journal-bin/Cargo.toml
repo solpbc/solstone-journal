@@ -20,6 +20,9 @@ log.workspace = true
 solstone-core-journal-cli = { workspace = true }
 solstone-core-setup.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+velopack.workspace = true
+
 [dev-dependencies]
 solstone-core-journal.workspace = true
 solstone-core-installation-identity.workspace = true

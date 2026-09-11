@@ -45,10 +45,11 @@ fn installed_rfdetr_production_paths_refuse_tamper_and_ignore_overrides() {
     let marker = payload
         .declared_path("share/windows-native-test-only")
         .expect("isolated fixture marker");
-    assert_eq!(
-        std::fs::read(marker).unwrap(),
-        b"windows-rfdetr-consumer-fixture-v1"
-    );
+    let marker_bytes = std::fs::read(marker).unwrap();
+    assert!(matches!(
+        marker_bytes.as_slice(),
+        b"windows-rfdetr-consumer-fixture-v1" | b"windows-complete-checkpoint-fixture-v1"
+    ));
     let poison = input_path("SOLSTONE_WINDOWS_RF_POISON");
     assert_eq!(
         std::fs::read(&poison).unwrap(),

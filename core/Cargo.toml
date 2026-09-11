@@ -148,6 +148,8 @@ license = "AGPL-3.0-only"
 unsafe_code = "forbid"
 
 [workspace.dependencies]
+# Windows journal installer callbacks; no automatic apply or owner runtime dependency.
+velopack = { version = "=1.2.0", default-features = false }
 solstone-core-cli = { path = "crates/solstone-core-cli" }
 solstone-core-check = { path = "crates/solstone-core-check" }
 solstone-core-entity = { path = "crates/solstone-core-entity" }

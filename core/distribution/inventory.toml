@@ -1073,3 +1073,10 @@ member = "runtime-license-source.json"
 dest = "share/provenance/msvc/runtime-license-source.json"
 mode = 420
 targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "copy"
+source = "core/distribution/licenses/velopack/LICENSE"
+dest = "share/licenses/velopack/LICENSE"
+mode = 0o644
+targets = ["windows-x86_64"]
