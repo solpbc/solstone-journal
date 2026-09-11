@@ -3,7 +3,8 @@ target = "x86_64-pc-windows-msvc"
 
 [baseline]
 # Re-derived on 2026-09-10 using cargo metadata --no-deps --format-version 1
-# after removing the support-portal and support-drafts crates. Count workspace members, then those with any
+# after removing two retired support crates. Count workspace members, then those
+# with any
 # target whose kind includes `lib`; one package is counted once.
 workspace_packages = 134
 library_packages = 128
