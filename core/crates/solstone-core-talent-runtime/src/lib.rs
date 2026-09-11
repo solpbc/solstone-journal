@@ -434,12 +434,26 @@ pub(crate) fn execute_bounded_attempts<F, E>(
     mut emit_attempt: E,
 ) -> Result<GenerateResponse, RuntimeOutcome>
 where
-    F: FnMut(usize) -> Result<GenerateResponse, RuntimeOutcome>,
+    F: FnMut(usize) -> Result<GenerateResponse, StageError>,
     E: FnMut(Value),
 {
     let mut last_response = None;
     for ordinal in 0..=VALIDATION_RETRY_ATTEMPTS {
-        let response = execute(ordinal)?;
+        let response = match execute(ordinal) {
+            Ok(response) => response,
+            Err(error) => {
+                emit_attempt(json!({
+                    "event": "generate_attempt",
+                    "terminal": false,
+                    "ordinal": ordinal,
+                    "batch": batch,
+                    "status": "error",
+                    "cause": "talent_stage_failed",
+                    "retry": false,
+                }));
+                return Err(RuntimeOutcome::StageFailed(error));
+            }
+        };
         let cause = match &response {
             GenerateResponse::Generated(generated) => {
                 if schema_checked && schema_validation_failed(generated.schema_validation.as_ref())
@@ -466,7 +480,7 @@ where
             }));
             continue;
         }
-        let status = if cause.is_none() {
+        let status = if matches!(&response, GenerateResponse::Generated(_)) && cause.is_none() {
             "success"
         } else {
             "exhausted"
@@ -503,14 +517,10 @@ fn cogitate_output(
     let mut intermediate_writer = |event: &Value| {
         if let Some(obj) = event.as_object()
             && let Some(event_type) = obj.get("event").and_then(Value::as_str)
-            && (event_type == "finish" || event_type == "error")
+            && cogitate::is_terminal_event(event)
         {
-            if let Some(u) = obj.get("usage") {
-                usage = Some(Box::new(u.clone()));
-            }
-            if let Some(d) = obj.get("degraded") {
-                degraded = Some(Box::new(d.clone()));
-            }
+            usage = obj.get("usage").cloned().map(Box::new);
+            degraded = obj.get("degraded").cloned().map(Box::new);
             let mut rewritten = obj.clone();
             rewritten.insert(
                 "event".to_owned(),
@@ -537,6 +547,19 @@ fn cogitate_output(
             usage,
             degraded,
         }),
+        Err(RuntimeOutcome::StageFailed(mut error)) => {
+            error.usage = usage;
+            error.degraded = degraded;
+            Err(RuntimeOutcome::StageFailed(error))
+        }
+        Err(RuntimeOutcome::CogitateRefused {
+            mut error,
+            response,
+        }) => {
+            error.usage = usage;
+            error.degraded = degraded;
+            Err(RuntimeOutcome::CogitateRefused { error, response })
+        }
         Err(outcome) => Err(outcome),
     }
 }
@@ -565,12 +588,7 @@ pub(crate) fn generate_and_write(
                         None,
                         |_attempt| {
                             generate.execute(&request).map_err(|error| {
-                                RuntimeOutcome::StageFailed(stage_error(
-                                    "generate",
-                                    "runtime",
-                                    prepared,
-                                    format!("{error}"),
-                                ))
+                                stage_error("generate", "runtime", prepared, format!("{error}"))
                             })
                         },
                         |event| emit(writer, event),
@@ -975,9 +993,8 @@ fn emit_outcome(writer: &mut impl Write, outcome: RuntimeOutcome) {
             emit(writer, event);
         }
         RuntimeOutcome::GenerateRefused { error, response }
-        | RuntimeOutcome::CogitateRefused { error, response } => emit(
-            writer,
-            json!({
+        | RuntimeOutcome::CogitateRefused { error, response } => {
+            let mut event = json!({
                 "event": "error",
                 "terminal": true,
                 "name": error.talent,
@@ -987,8 +1004,15 @@ fn emit_outcome(writer: &mut impl Write, outcome: RuntimeOutcome) {
                 "retryable": response.retryable,
                 "blocking": response.blocking,
                 "provider": response.provider,
-            }),
-        ),
+            });
+            if let Some(usage) = error.usage {
+                event["usage"] = *usage;
+            }
+            if let Some(degraded) = error.degraded {
+                event["degraded"] = *degraded;
+            }
+            emit(writer, event);
+        }
     }
 }
 
@@ -2996,5 +3020,224 @@ mod tests {
         assert_eq!(finish_events[0]["usage"]["input_tokens"], 42);
         assert_eq!(finish_events[0]["usage"]["output_tokens"], 17);
         assert_eq!(finish_events[0]["degraded"]["reason"], "fallback_model");
+    }
+
+    #[test]
+    fn bounded_attempts_record_client_failure_at_either_ordinal() {
+        for (fail_at, batch) in [(0, None), (1, Some(3))] {
+            let mut calls = 0;
+            let mut recorded = Vec::new();
+            let outcome = execute_bounded_attempts(
+                true,
+                batch,
+                |ordinal| {
+                    calls += 1;
+                    if ordinal == fail_at {
+                        Err(StageError::new(
+                            "generate",
+                            "runtime",
+                            "plain",
+                            "broken protocol",
+                        ))
+                    } else {
+                        solstone_core_generate::decode_one_shot_response(
+                            &test_support::generated_response_value("bad", json!({"valid":false}))
+                                .to_string(),
+                        )
+                        .map_err(|error| StageError::new("generate", "runtime", "plain", error))
+                    }
+                },
+                |event| recorded.push(event),
+            );
+            assert_eq!(calls, fail_at + 1);
+            assert_eq!(recorded.len(), fail_at + 1);
+            for (ordinal, event) in recorded.iter().enumerate() {
+                assert_eq!(event["ordinal"], ordinal);
+                assert_eq!(event["batch"], json!(batch));
+                assert_eq!(event["terminal"], false);
+                assert_eq!(event["retry"], ordinal < fail_at);
+            }
+            assert_eq!(recorded[fail_at]["status"], "error");
+            assert_eq!(recorded[fail_at]["cause"], "talent_stage_failed");
+            let RuntimeOutcome::StageFailed(error) = outcome.unwrap_err() else {
+                panic!("client failure lost")
+            };
+            assert_eq!(error.detail, "broken protocol");
+        }
+    }
+
+    #[test]
+    fn uncoded_refusal_is_failed_without_retry() {
+        let mut calls = 0;
+        let mut recorded = Vec::new();
+        let response = execute_bounded_attempts(
+            true,
+            None,
+            |_| {
+                calls += 1;
+                Ok(GenerateResponse::Refused(RefusedResponse {
+                    id: None,
+                    reason: RefusalReason::ProviderResponseInvalid,
+                    reason_code: None,
+                    retryable: true,
+                    blocking: false,
+                    reset_at_ms: None,
+                    provider: None,
+                    detail: "uncoded refusal".into(),
+                }))
+            },
+            |event| recorded.push(event),
+        )
+        .unwrap();
+        assert!(matches!(response, GenerateResponse::Refused(_)));
+        assert_eq!(calls, 1);
+        assert_eq!(recorded.len(), 1);
+        assert_eq!(recorded[0]["status"], "exhausted");
+        assert!(recorded[0]["cause"].is_null());
+        assert_eq!(recorded[0]["retry"], false);
+    }
+
+    #[test]
+    fn cogitate_progress_does_not_replace_terminal_or_its_metadata() {
+        let progress = json!({"event":"error", "terminal":false, "error":"progress warning", "usage":{"input_tokens":999}, "degraded":{"reason":"progress"}});
+        let finish = json!({"event":"finish", "result":"done", "usage":{"input_tokens":42,"model_version":"actual-model"}, "degraded":{"reason":"fallback"}});
+        for child_events in [
+            vec![progress.clone(), finish.clone()],
+            vec![finish.clone(), progress.clone()],
+            vec![progress.clone()],
+        ] {
+            let (root, paths, context) = fixture(
+                "plain",
+                "{\n\"type\":\"cogitate\", \"output\":\"md\", \"load\":{\"transcripts\":false}\n}",
+            );
+            let lines: Vec<_> = child_events.iter().map(Value::to_string).collect();
+            let lines: Vec<_> = lines.iter().map(String::as_str).collect();
+            let cogitate = configure_cogitate_client(CogitateOneShotClient::at_path(
+                test_support::cogitate_one_shot_stub(root.path(), &lines),
+            ));
+            let mut output = Vec::new();
+            let outcome = execute_request(
+                json!({"name":"plain","use_id":"progress","day":"20260101","prompt":"test"})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+                &paths,
+                &context,
+                &OneShotClient::at_path(root.path().join("unused")),
+                &cogitate,
+                &mut output,
+            );
+            emit_outcome(&mut output, outcome);
+            let recorded = events(&output);
+            assert!(recorded.iter().any(|event| event["event"] == "error"
+                && event["terminal"] == false
+                && event["error"] == "progress warning"));
+            let terminals: Vec<_> = recorded
+                .iter()
+                .filter(|event| cogitate::is_terminal_event(event))
+                .collect();
+            assert_eq!(terminals.len(), 1);
+            if child_events.len() == 1 {
+                assert_eq!(terminals[0]["event"], "error");
+                assert!(
+                    terminals[0]["error"]
+                        .as_str()
+                        .unwrap()
+                        .contains("no terminal event")
+                );
+                assert!(terminals[0].get("usage").is_none());
+            } else {
+                assert_eq!(terminals[0]["event"], "finish");
+                assert_eq!(terminals[0]["usage"], finish["usage"]);
+                assert_eq!(terminals[0]["degraded"], finish["degraded"]);
+                assert_eq!(terminals[0]["output"], "done");
+            }
+        }
+    }
+
+    #[test]
+    fn cogitate_child_errors_keep_usage_on_the_runtime_terminal() {
+        for refusal in [false, true] {
+            let (root, paths, context) = fixture(
+                "plain",
+                "{\n\"type\":\"cogitate\", \"load\":{\"transcripts\":false}\n}",
+            );
+            let mut child = json!({"event":"error","error":"child failed", "usage":{"input_tokens":42,"output_tokens":17,"model_version":"actual-model"}, "degraded":{"reason":"fallback"}});
+            if refusal {
+                child["provider_failure"] =
+                    json!({"reason_code":"provider_response_invalid","retryable":true});
+            }
+            let line = child.to_string();
+            let cogitate = configure_cogitate_client(CogitateOneShotClient::at_path(
+                test_support::cogitate_one_shot_stub(root.path(), &[&line]),
+            ));
+            let mut output = Vec::new();
+            let outcome = execute_request(
+                json!({"name":"plain","use_id":"failure","day":"20260101","prompt":"test"})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+                &paths,
+                &context,
+                &OneShotClient::at_path(root.path().join("unused")),
+                &cogitate,
+                &mut output,
+            );
+            assert!(matches!(
+                outcome,
+                RuntimeOutcome::StageFailed(_) | RuntimeOutcome::CogitateRefused { .. }
+            ));
+            emit_outcome(&mut output, outcome);
+            let recorded = events(&output);
+            let terminals: Vec<_> = recorded
+                .iter()
+                .filter(|event| cogitate::is_terminal_event(event))
+                .collect();
+            assert_eq!(terminals.len(), 1);
+            assert_eq!(terminals[0]["event"], "error");
+            assert_eq!(terminals[0]["usage"], child["usage"]);
+            assert_eq!(terminals[0]["degraded"], child["degraded"]);
+            assert_eq!(
+                recorded
+                    .iter()
+                    .filter(|e| e["event"] == "cogitate_child")
+                    .count(),
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn cogitate_usage_survives_domain_commit_failure() {
+        let (root, paths, context) = fixture(
+            "conversation",
+            "{\n\"type\":\"cogitate\", \"hook\":{\"post\":\"story\"}, \"load\":{\"transcripts\":false}\n}",
+        );
+        let work = context.journal.join("facets/work");
+        fs::create_dir_all(&work).unwrap();
+        fs::write(work.join("facet.json"), r#"{"title":"Work"}"#).unwrap();
+        fs::write(work.join("activities"), b"not a directory").unwrap();
+        let child = json!({"event":"finish", "result":json!({"body":"body","topics":["work"],"confidence":1,"commitments":[],"closures":[],"decisions":[],"relations":[]}).to_string(), "usage":{"input_tokens":42,"model_version":"actual-model"}, "degraded":{"reason":"fallback"}});
+        let line = child.to_string();
+        let cogitate = configure_cogitate_client(CogitateOneShotClient::at_path(
+            test_support::cogitate_one_shot_stub(root.path(), &[&line]),
+        ));
+        let mut output = Vec::new();
+        let outcome = execute_request(json!({"name":"conversation","use_id":"domain-failure","day":"20260101","facet":"work","activity":{"id":"activity-1"},"prompt":"test"}).as_object().unwrap().clone(), &paths, &context, &OneShotClient::at_path(root.path().join("unused")), &cogitate, &mut output);
+        let RuntimeOutcome::StageFailed(ref error) = outcome else {
+            panic!("expected commit failure: {outcome:?}")
+        };
+        assert_eq!(error.phase, "commit");
+        assert_eq!(error.stage, "story");
+        emit_outcome(&mut output, outcome);
+        let recorded = events(&output);
+        let terminals: Vec<_> = recorded
+            .iter()
+            .filter(|event| cogitate::is_terminal_event(event))
+            .collect();
+        assert_eq!(terminals.len(), 1);
+        assert_eq!(terminals[0]["event"], "error");
+        assert_eq!(terminals[0]["usage"], child["usage"]);
+        assert_eq!(terminals[0]["degraded"], child["degraded"]);
     }
 }

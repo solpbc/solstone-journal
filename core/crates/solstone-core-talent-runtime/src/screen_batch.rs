@@ -97,12 +97,7 @@ where
             Some(batch_idx),
             |_attempt| {
                 client.execute(&request).map_err(|error| {
-                    RuntimeOutcome::StageFailed(stage_error(
-                        "generate",
-                        "screen_batch",
-                        prepared,
-                        format!("{error}"),
-                    ))
+                    stage_error("generate", "screen_batch", prepared, format!("{error}"))
                 })
             },
             |event| {

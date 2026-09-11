@@ -132,6 +132,15 @@ pub fn cogitate_request(
         .map_err(|error| failed(prepared, error.to_string()))
 }
 
+pub(crate) fn is_terminal_event(event: &Value) -> bool {
+    event.get("event").and_then(Value::as_str) == Some("finish")
+        || (event.get("event").and_then(Value::as_str) == Some("error")
+            && event
+                .get("terminal")
+                .and_then(Value::as_bool)
+                .unwrap_or(true))
+}
+
 pub(crate) fn execute_request_with_writer(
     prepared: &PreparedTalent,
     context: &ExecutionContext,
@@ -150,12 +159,12 @@ pub(crate) fn execute_request_with_writer(
     for event in &run.events {
         emit_event(event);
     }
-    let Some(terminal) = run.events.iter().rev().find(|event| {
-        matches!(
-            event.get("event").and_then(Value::as_str),
-            Some("finish" | "error")
-        )
-    }) else {
+    let Some(terminal) = run
+        .events
+        .iter()
+        .rev()
+        .find(|event| is_terminal_event(event))
+    else {
         return Err(RuntimeOutcome::StageFailed(crate::stage_error(
             "cogitate",
             "runtime",

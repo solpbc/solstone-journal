@@ -223,8 +223,14 @@ impl CortexStore {
                         runtime_seconds =
                             runtime(start_ts, event.get("ts").and_then(Value::as_i64));
                     }
-                    Some("error") => {
+                    Some("error")
+                        if event
+                            .get("terminal")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(true) =>
+                    {
                         status = "error";
+                        degraded = event.get("degraded").cloned().unwrap_or(Value::Null);
                         error_message = event
                             .get("error")
                             .and_then(Value::as_str)
@@ -725,6 +731,56 @@ mod tests {
         assert_eq!(row["status"], "completed");
         assert!(row["error_message"].is_null());
         assert!(row["reason_code"].is_null());
+    }
+
+    #[test]
+    fn day_index_uses_terminal_metadata_and_ignores_trailing_progress() {
+        for (terminal_type, final_degraded) in [
+            ("finish", json!({"reason":"final"})),
+            ("error", json!({"reason":"final"})),
+            ("error", Value::Null),
+        ] {
+            let directory = tempdir().unwrap();
+            let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+            let (active, identity) = store
+                .claim("conversation", "one", &request())
+                .unwrap()
+                .unwrap();
+            let mut terminal = json!({"event":terminal_type,"error":"final error","reason_code":"final_cause","ts":1200});
+            if !final_degraded.is_null() {
+                terminal["degraded"] = final_degraded.clone();
+            }
+            for event in [
+                json!({"event":"finish","degraded":{"reason":"earlier"},"ts":1100}),
+                json!({"event":"cogitate_child","child_event":"finish","terminal":false,"degraded":{"reason":"child"},"ts":1150}),
+                terminal,
+                json!({"event":"error","terminal":false,"error":"progress error","reason_code":"progress_cause","degraded":{"reason":"progress"},"ts":99000}),
+            ] {
+                store
+                    .append_active(&active, &serde_json::from_value(event).unwrap())
+                    .unwrap();
+            }
+            store.complete("one", "conversation", identity, Some(&request()));
+            let index = fs::read_to_string(store.talents().join("19700101.jsonl")).unwrap();
+            let row: Value = serde_json::from_str(index.trim()).unwrap();
+            assert_eq!(
+                row["status"],
+                if terminal_type == "finish" {
+                    "completed"
+                } else {
+                    "error"
+                }
+            );
+            assert_eq!(row["degraded"], final_degraded);
+            assert_eq!(row["runtime_seconds"], 0.2);
+            if terminal_type == "error" {
+                assert_eq!(row["error_message"], "final error");
+                assert_eq!(row["reason_code"], "final_cause");
+            } else {
+                assert!(row["error_message"].is_null());
+                assert!(row["reason_code"].is_null());
+            }
+        }
     }
 
     #[test]

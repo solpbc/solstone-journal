@@ -85,9 +85,7 @@ pub fn write_output_if_configured(prepared: &PreparedTalent, output: &str) -> Re
 
 pub fn write_output(path: PathBuf, output: &str) -> Result<bool, std::io::Error> {
     let bytes = output.as_bytes();
-    if let Ok(existing) = fs::read(&path)
-        && existing == bytes
-    {
+    if path.exists() && fs::read(&path)? == bytes {
         return Ok(false);
     }
     if let Some(parent) = path.parent() {
@@ -96,7 +94,9 @@ pub fn write_output(path: PathBuf, output: &str) -> Result<bool, std::io::Error>
     match atomic_replace(&path, bytes, AtomicWriteOptions::default()) {
         Ok(()) => Ok(true),
         #[cfg(windows)]
-        Err(AtomicWriteError::PublicationUncertain { .. }) => Ok(true),
+        Err(error @ AtomicWriteError::PublicationUncertain { .. }) => {
+            Err(std::io::Error::other(error))
+        }
         Err(AtomicWriteError::Io { source, .. }) => Err(source),
     }
 }
