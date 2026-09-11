@@ -414,6 +414,28 @@ pub fn local_bootstrap(ctx: CommandContext<'_>) -> CommandOutput {
 }
 
 #[must_use]
+pub fn local_bootstrap_cancel(ctx: CommandContext<'_>) -> CommandOutput {
+    let parsed = match parse_args(ctx.args, &["--attempt-id"], &[]) {
+        Ok(parsed) => parsed,
+        Err(error) => return stderr(error, 1),
+    };
+    let params = parsed
+        .value("--attempt-id")
+        .map(|attempt_id| vec![QueryParam::single("attempt_id", attempt_id)])
+        .unwrap_or_default();
+    match request_json(
+        ctx,
+        HttpMethod::Post,
+        "/app/thinking/api/local/bootstrap/cancel",
+        params,
+        None,
+    ) {
+        Ok(value) => stdout_json_value(&value),
+        Err(error) => thinking_error(error),
+    }
+}
+
+#[must_use]
 pub fn local_bootstrap_status(ctx: CommandContext<'_>) -> CommandOutput {
     request_model_query(
         ctx,

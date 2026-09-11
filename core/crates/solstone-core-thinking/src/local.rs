@@ -58,8 +58,10 @@ pub fn availability(journal: &Path, model: &str) -> Value {
         input.insert("backend".to_owned(), Value::String("metal".to_owned()));
         metal_candidate::inspect(&input).unwrap_or_else(|_| {
             json!({
-                "host":{"platform_supported":false},
-                "artifacts":{"binary_installed":false,"model_installed":false},
+                "status": "proof-unavailable",
+                "reason_code": "gpu_probe_failed",
+                "host": {"platform_supported": true},
+                "artifacts": {"binary_installed": false, "model_installed": false},
             })
         })
     } else {
@@ -79,7 +81,8 @@ fn availability_payload(model: &str, readiness: Value) -> Value {
     let host = &readiness["host"];
     let artifacts = &readiness["artifacts"];
     let readiness_status = readiness["status"].as_str().unwrap_or("");
-    let platform_supported = host["platform_supported"].as_bool().unwrap_or(false);
+    let readiness_reason = readiness["reason_code"].as_str().unwrap_or("");
+    let platform_supported = host["platform_supported"].as_bool().unwrap_or(true);
     let binary_present = artifacts
         .get("binary_installed")
         .and_then(Value::as_bool)
@@ -90,21 +93,45 @@ fn availability_payload(model: &str, readiness: Value) -> Value {
     let available_memory_gb = memory.available_bytes().map(bytes_to_gb);
     let min_ram_gb = 8;
     let download_bytes = 3_413_361_504_u64;
-    let (available, reason) = if !platform_supported {
+    let (available, reason, reason_code) = if readiness_reason == "gpu_probe_failed" {
+        (false, "inability to probe GPU hardware", "gpu_probe_failed")
+    } else if readiness_reason == "gpu_unavailable" || !platform_supported {
         (
             false,
             "local thinking needs supported hardware on this computer.",
+            "gpu_unavailable",
         )
     } else if readiness_status == "host-ineligible" {
-        (false, "local runtime cannot start on this computer")
+        (
+            false,
+            "local runtime cannot start on this computer",
+            "host_ineligible",
+        )
     } else if !binary_present {
-        (false, "local runtime is not installed")
+        (false, "local runtime is not installed", "binary_missing")
     } else if !model_present {
-        (false, "local model files are not installed")
+        (
+            false,
+            "local model files are not installed",
+            "model_missing",
+        )
     } else {
-        (true, "")
+        (true, "", "")
     };
-    json!({"model":model,"platform_supported":platform_supported,"total_memory_gb":total_memory_gb,"available_memory_gb":available_memory_gb,"min_ram_gb":min_ram_gb,"binary_present":binary_present,"model_present":model_present,"available":available,"reason":reason,"warning":"","download_bytes":download_bytes})
+    json!({
+        "model": model,
+        "platform_supported": platform_supported,
+        "total_memory_gb": total_memory_gb,
+        "available_memory_gb": available_memory_gb,
+        "min_ram_gb": min_ram_gb,
+        "binary_present": binary_present,
+        "model_present": model_present,
+        "available": available,
+        "reason": reason,
+        "reason_code": reason_code,
+        "warning": "",
+        "download_bytes": download_bytes
+    })
 }
 
 pub fn bootstrap_status(journal: &Path, _model: &str) -> Value {
@@ -118,14 +145,38 @@ pub fn bootstrap_status(journal: &Path, _model: &str) -> Value {
                 status.install_state = "failed".to_owned();
                 status.install_error = Some("install_interrupted".to_owned());
             }
-            json!({"name":status.provider,"install_state":status.install_state,"last_transition_at":status.last_transition_at,"last_progress_at":status.last_progress_at,"progress_bytes_received":if is_in_flight(&status.install_state) { status.progress_bytes_received } else { None },"progress_bytes_total":if is_in_flight(&status.install_state) { status.progress_bytes_total } else { None },"install_error":status.install_error})
+            json!({
+                "name": status.provider,
+                "install_state": status.install_state,
+                "attempt_id": if is_in_flight(&status.install_state) { status.attempt_id } else { None },
+                "last_transition_at": status.last_transition_at,
+                "last_progress_at": status.last_progress_at,
+                "progress_bytes_received": if is_in_flight(&status.install_state) { status.progress_bytes_received } else { None },
+                "progress_bytes_total": if is_in_flight(&status.install_state) { status.progress_bytes_total } else { None },
+                "install_error": status.install_error
+            })
         }
-        Err(_) => idle_bootstrap_status(),
+        Err(solstone_core_local::install::status::StatusError::Io(err))
+            if err.kind() == std::io::ErrorKind::NotFound =>
+        {
+            idle_bootstrap_status()
+        }
+        Err(_) => json!({
+            "name": "local",
+            "install_state": "unavailable",
+            "reason_code": "status_unreadable",
+            "attempt_id": null,
+            "last_transition_at": null,
+            "last_progress_at": null,
+            "progress_bytes_received": null,
+            "progress_bytes_total": null,
+            "install_error": "status_unreadable"
+        }),
     }
 }
 
 fn idle_bootstrap_status() -> Value {
-    json!({"name":"local","install_state":"idle","last_transition_at":null,"last_progress_at":null,"progress_bytes_received":null,"progress_bytes_total":null,"install_error":null})
+    json!({"name":"local","install_state":"idle","attempt_id":null,"last_transition_at":null,"last_progress_at":null,"progress_bytes_received":null,"progress_bytes_total":null,"install_error":null})
 }
 
 pub fn runtime(journal: &Path) -> Value {
@@ -200,13 +251,11 @@ pub enum BootstrapResponse {
     Busy(String),
     /// A BYO local endpoint is configured; the bundled model can't bootstrap.
     ByoEndpointActive,
-    /// The host can't run the bundled model at all (proof unavailable / host
-    /// ineligible), carrying the reference's reason code as the detail.
+    /// The host can't run the bundled model at all (host ineligible),
+    /// carrying the reason code as the detail.
     HostIneligible(String),
-    /// A fresh install is eligible to start, but this wave ships no native
-    /// install-spawn primitive (Fact 8) -- report a truthful failure rather
-    /// than a false in-progress response.
-    SpawnUnavailable,
+    /// An install should start.
+    Start,
     /// A readiness/lease/status inspector itself failed.
     Unavailable(String),
 }
@@ -249,7 +298,7 @@ fn classify_bootstrap(journal: &Path, readiness: &Value) -> BootstrapResponse {
         return BootstrapResponse::Installed;
     }
     let readiness_status = readiness["status"].as_str().unwrap_or("");
-    if matches!(readiness_status, "proof-unavailable" | "host-ineligible") {
+    if readiness_status == "host-ineligible" {
         return BootstrapResponse::HostIneligible(
             readiness["reason_code"]
                 .as_str()
@@ -257,26 +306,48 @@ fn classify_bootstrap(journal: &Path, readiness: &Value) -> BootstrapResponse {
                 .to_owned(),
         );
     }
+    if readiness_status == "proof-unavailable" {
+        return BootstrapResponse::Unavailable(
+            readiness["reason_code"]
+                .as_str()
+                .unwrap_or("proof_unavailable")
+                .to_owned(),
+        );
+    }
     let held = match is_held(journal, "local") {
         Ok(held) => held,
         Err(error) => return BootstrapResponse::Unavailable(error.to_string()),
     };
-    let install_state = read_status(journal, "local")
-        .map(|status| {
+    let status_res = read_status(journal, "local");
+    let (install_state, is_stale_mlx) = match status_res {
+        Ok(status) => {
             if cfg!(target_os = "macos") && !metal_candidate::status_targets_native(&status) {
-                "idle".to_owned()
+                ("idle".to_owned(), true)
             } else {
-                status.install_state
+                (status.install_state, false)
             }
-        })
-        .unwrap_or_else(|_| "idle".to_owned());
+        }
+        Err(solstone_core_local::install::status::StatusError::Io(err))
+            if err.kind() == std::io::ErrorKind::NotFound =>
+        {
+            ("idle".to_owned(), false)
+        }
+        Err(err) => return BootstrapResponse::Unavailable(err.to_string()),
+    };
     if is_in_flight(&install_state) {
-        return BootstrapResponse::InFlight(install_state);
+        if held {
+            return BootstrapResponse::InFlight(install_state);
+        } else {
+            return BootstrapResponse::Start;
+        }
+    }
+    if is_stale_mlx {
+        return BootstrapResponse::Start;
     }
     if held {
         return BootstrapResponse::Busy(install_state);
     }
-    BootstrapResponse::SpawnUnavailable
+    BootstrapResponse::Start
 }
 
 #[derive(Debug)]
@@ -463,16 +534,34 @@ mod tests {
         let response = start_bootstrap(&journal, &config, default_model());
         // A brand-new journal has no install artifacts and no lease/status
         // records, so the only truthful outcomes are "the host can't run
-        // this yet" or "an install would need to start" -- never a claim
+        // this yet", "an install should start", or an inspection issue -- never a claim
         // that installation already happened or is already progressing.
         assert!(
             matches!(
                 response,
                 BootstrapResponse::HostIneligible(_)
-                    | BootstrapResponse::SpawnUnavailable
+                    | BootstrapResponse::Start
                     | BootstrapResponse::Unavailable(_)
             ),
             "unexpected response for a fresh journal: {response:?}"
+        );
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn bootstrap_reports_unavailable_on_proof_unavailable() {
+        let journal = temporary_journal("proof-unavail");
+        let response = classify_bootstrap(
+            &journal,
+            &json!({
+                "ready": false,
+                "status": "proof-unavailable",
+                "reason_code": "readiness_unavailable",
+            }),
+        );
+        assert_eq!(
+            response,
+            BootstrapResponse::Unavailable("readiness_unavailable".to_owned())
         );
         let _ = fs::remove_dir_all(journal);
     }
@@ -482,6 +571,27 @@ mod tests {
         let journal = temporary_journal("already-installed");
         let response = classify_bootstrap(&journal, &json!({"ready": true}));
         assert_eq!(response, BootstrapResponse::Installed);
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn stale_in_flight_with_free_lease_allows_start() {
+        let journal = temporary_journal("stale-inflight");
+        let _ = solstone_core_local::install::status::write_status(
+            &journal,
+            solstone_core_local::install::status::transition(
+                solstone_core_local::install::status::idle_status("local"),
+                "downloading",
+                None,
+                None,
+            )
+            .unwrap(),
+        );
+        let response = classify_bootstrap(
+            &journal,
+            &json!({"ready": false, "status": "missing-artifacts"}),
+        );
+        assert_eq!(response, BootstrapResponse::Start);
         let _ = fs::remove_dir_all(journal);
     }
 

@@ -666,7 +666,10 @@ fn run_with_lease(
         .as_str()
         .expect("resolved fingerprint SHA-256")
         .to_owned();
-    let owner = object.get("owner").cloned();
+    let owner = object
+        .get("owner")
+        .cloned()
+        .or_else(|| Some(json!({"pid": std::process::id()})));
     let mut state = status::begin_or_replace(
         &journal,
         provider,
@@ -690,6 +693,8 @@ fn run_with_lease(
                     cleanup_legacy_cuda_oci_dirs(&root, &root.join(digest));
                 }
             }
+            status::assert_current(&journal, &state)
+                .map_err(|error| failure("state", "attempt_superseded", error, 74))?;
             let terminal = status::transition(state, "installed", None, None)
                 .and_then(|value| status::write_status(&journal, value))
                 .map_err(|error| failure("state", "terminal_write_failed", error, 74))?;
@@ -1298,22 +1303,72 @@ fn install_model(
     ) {
         files.push(name);
     }
+    const MODEL_BYTES_TOTAL: u64 = 3_413_361_504;
+    let mut progress_at = Instant::now();
+    let mut cumulative_bytes: u64 = 0;
+
     for name in files {
+        status::assert_current(journal, status_value)
+            .map_err(|error| failure("state", "attempt_superseded", error, 74))?;
         let artifact = select_artifact("local-model", None, None, None, Some(name))?;
-        download_artifact(
-            artifact,
-            &root.join(name),
+        let dest = root.join(name);
+        let base_bytes = cumulative_bytes;
+        let url = archive::origin_url(policy.origin_base_url, artifact.origin_key);
+        let fetched = archive::ensure_verified_url(
+            &url,
+            artifact.sha256,
+            Some(artifact.size_bytes),
+            &dest,
             policy,
-            |_received, _total| {},
-            "model_download_failed",
-        )?;
+            |received, _file_total| {
+                let current_received = base_bytes.saturating_add(received);
+                if let Ok(Some(next)) = status::bump_progress(
+                    status_value.clone(),
+                    Some(current_received),
+                    Some(MODEL_BYTES_TOTAL),
+                    &mut progress_at,
+                ) && let Ok(written) = status::write_status(journal, next)
+                {
+                    *status_value = written;
+                }
+            },
+        )
+        .map_err(|error| {
+            failure(
+                "download",
+                download_artifact_reason_code(&error, "model_download_failed"),
+                error,
+                74,
+            )
+        })?;
+
+        cumulative_bytes = cumulative_bytes.saturating_add(artifact.size_bytes);
+        if !fetched
+            && let Ok(Some(next)) = status::bump_progress(
+                status_value.clone(),
+                Some(cumulative_bytes),
+                Some(MODEL_BYTES_TOTAL),
+                &mut progress_at,
+            )
+            && let Ok(written) = status::write_status(journal, next)
+        {
+            *status_value = written;
+        }
     }
+
+    status::assert_current(journal, status_value)
+        .map_err(|error| failure("state", "attempt_superseded", error, 74))?;
+
     *status_value = status::write_status(
         journal,
         status::transition(status_value.clone(), "verifying", None, None)
             .map_err(|error| failure("state", "transition_failed", error, 74))?,
     )
     .map_err(|error| failure("state", "status_write_failed", error, 74))?;
+
+    status::assert_current(journal, status_value)
+        .map_err(|error| failure("state", "attempt_superseded", error, 74))?;
+
     let built = manifest::build_manifest(
         "local",
         "local-model",
@@ -1331,6 +1386,97 @@ fn install_model(
     manifest::write_manifest(&manifest::artifact_manifest_path(&root), &built)
         .map_err(|error| failure("io", "manifest_write_failed", error, 74))?;
     Ok(())
+}
+
+pub fn cancel_local_bootstrap(
+    journal: &Path,
+    provider: &str,
+    expected_attempt_id: Option<&str>,
+) -> Result<status::InstallStatus, DispatchError> {
+    let current = status::read_status(journal, provider)
+        .map_err(|error| failure("state", "read_status_failed", error, 74))?;
+
+    if !status::is_in_flight(&current.install_state) {
+        return Ok(current);
+    }
+
+    let attempt_id = current.attempt_id.as_deref().ok_or_else(|| {
+        failure(
+            "state",
+            "attempt_missing",
+            "in-flight attempt_id missing",
+            74,
+        )
+    })?;
+
+    if let Some(expected) = expected_attempt_id {
+        if expected != attempt_id {
+            return Err(failure(
+                "conflict",
+                "attempt_mismatch",
+                format!("attempt '{expected}' does not match in-flight attempt '{attempt_id}'"),
+                65,
+            ));
+        }
+    } else {
+        return Err(failure(
+            "conflict",
+            "attempt_required",
+            "attempt_id is required to cancel in-flight install",
+            65,
+        ));
+    }
+
+    // Terminate writer process if owner pid exists and is not self
+    if let Some(owner) = &current.owner
+        && let Some(pid_u64) = owner.get("pid").and_then(Value::as_u64)
+    {
+        let pid = pid_u64 as i32;
+        if pid != std::process::id() as i32 {
+            #[cfg(unix)]
+            {
+                use nix::sys::signal::{Signal, kill};
+                use nix::unistd::Pid;
+                let nix_pid = Pid::from_raw(pid);
+                if kill(nix_pid, None).is_ok() {
+                    let _ = kill(nix_pid, Signal::SIGTERM);
+                    let deadline = Instant::now() + std::time::Duration::from_millis(2000);
+                    while Instant::now() < deadline {
+                        if kill(nix_pid, None).is_err() {
+                            break;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = pid;
+            }
+        }
+    }
+
+    // Wait until lease is free or timeout (up to 2s)
+    let lease_deadline = Instant::now() + std::time::Duration::from_millis(2000);
+    while Instant::now() < lease_deadline {
+        if !lease::is_held(journal, provider).unwrap_or(false) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    // If status on disk is still in-flight for this attempt, record interrupted
+    if let Ok(latest) = status::read_status(journal, provider)
+        && status::is_in_flight(&latest.install_state)
+        && latest.attempt_id.as_deref() == Some(attempt_id)
+    {
+        let target_fp = latest.target_fingerprint_sha256.as_deref();
+        let _ = status::record_interrupted(journal, attempt_id, target_fp);
+    }
+
+    let updated = status::read_status(journal, provider)
+        .map_err(|error| failure("state", "read_status_failed", error, 74))?;
+    Ok(updated)
 }
 
 fn find_file(root: &Path, name: &str) -> Option<PathBuf> {

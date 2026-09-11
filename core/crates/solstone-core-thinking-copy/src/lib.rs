@@ -571,6 +571,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ),
             ("retry", CopyValue::String("try setup again")),
             ("install", CopyValue::String("install local model")),
+            ("cancel", CopyValue::String("cancel")),
             (
                 "notice_inflight",
                 CopyValue::String("local thinking will stay in your journal once setup finishes."),
@@ -648,6 +649,22 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                                 "reason",
                                 CopyValue::String(
                                     "local thinking needs supported hardware on this computer.",
+                                ),
+                            ),
+                        ]),
+                    ),
+                    (
+                        "gpu_probe_failed",
+                        CopyValue::Object(&[
+                            ("pill", CopyValue::String("couldn't check")),
+                            (
+                                "verdict",
+                                CopyValue::String("couldn't check this computer's GPU"),
+                            ),
+                            (
+                                "reason",
+                                CopyValue::String(
+                                    "couldn't check whether this computer can run a local model.",
                                 ),
                             ),
                         ]),

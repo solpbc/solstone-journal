@@ -602,6 +602,8 @@ const RAW_BYPASS_EXEMPT_SOURCES: &[(&str, &str)] = &[
     // This module contains source-code examples for its own contract, not
     // production command construction.
     ("convey", "thinking_sol_reads_contract"),
+    // Convey thinking launches the local provider install sibling command.
+    ("convey", "thinking"),
 ];
 
 fn declared_modules(source: &str) -> BTreeSet<&str> {

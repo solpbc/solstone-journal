@@ -151,6 +151,18 @@ params = [
 ]
 
 [[entries]]
+path = ["thinking", "local", "bootstrap-cancel"]
+kind = "command"
+help = "Cancel local model setup."
+operation_id = "thinking.local.bootstrap-cancel"
+entry_type = "http"
+method = "POST"
+route = "/app/thinking/api/local/bootstrap/cancel"
+contract_operation_id = "thinking.local.bootstrap-cancel"
+handler = "local_bootstrap_cancel"
+params = []
+
+[[entries]]
 path = ["thinking", "local", "bootstrap-status"]
 kind = "command"
 help = "Show local setup status."

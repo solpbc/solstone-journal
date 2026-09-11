@@ -50,8 +50,17 @@
   const confidentialTerminalPhases = new Set(['not_verified', 'repair_needed', 'early_access']);
   const installInFlightStates = new Set(['resolving', 'downloading', 'verifying', 'installing']);
   const installTerminalStates = new Set(['idle', 'installed', 'failed']);
-  const localSetupMissingReasons = new Set(['local_model_missing', 'model_missing', 'binary_missing', 'runtime_missing']);
   const localServerUnhealthyReasons = new Set(['local_server_unhealthy', 'server_unhealthy']);
+  const localSetupMissingReasons = new Set([
+    'local_model_missing',
+    'model_missing',
+    'binary_missing',
+    'runtime_missing',
+    'artifact-not-ready',
+    'manifest-missing',
+    'manifest_missing',
+    'manifest_pin_mismatch',
+  ]);
   const pollIntervalMs = 1500;
   const confidentialPollMaxMs = 15 * 60 * 1000;
   const views = new Set(['main', 'byo-setup', 'confidential-setup', 'local-setup', 'lane-switch']);
@@ -143,7 +152,14 @@
   function setButtonState(id, visible, disabled) {
     const button = $(id);
     if (!button) return;
-    button.hidden = !visible;
+    const willHide = !visible;
+    if (willHide && document.activeElement === button) {
+      const fallback = $('localSetupMessage') || $('localRefresh') || $('localSetupTitle');
+      if (fallback && typeof fallback.focus === 'function') {
+        fallback.focus();
+      }
+    }
+    button.hidden = willHide;
     button.disabled = !!disabled;
   }
 
@@ -163,7 +179,7 @@
 
   function formatInstallBytes(received, total) {
     if (received === null || received === undefined || total === null || total === undefined) return '';
-    const gb = 1024 * 1024 * 1024;
+    const gb = 1e9;
     return `${(Number(received) / gb).toFixed(1)} GB of ${(Number(total) / gb).toFixed(1)} GB`;
   }
 
@@ -181,6 +197,8 @@
         activate: false,
         bootstrap: false,
         bootstrapLabel: text?.install || '',
+        cancel: true,
+        cancelLabel: text?.cancel || 'cancel',
         tone: '',
       };
     }
@@ -311,13 +329,12 @@
   function handleInstallPollError({
     generation,
     currentGeneration,
-    clearInstallStatus,
+    clearInstallStatus: _clearInstallStatus,
     stopPoll,
     showError,
     error,
   }) {
     if (generation !== currentGeneration()) return false;
-    clearInstallStatus();
     stopPoll();
     showError(error?.message || '');
     return true;
@@ -2241,39 +2258,45 @@
   }
 
   function localReadiness() {
+    const avail = state.localAvailability;
+    const availCode = avail?.reason_code;
+    if (avail?.available === false) {
+      return {
+        status: 'blocked',
+        reason: availCode || 'availability_unavailable',
+        summary: avail.reason || '',
+        detail: '',
+      };
+    }
     const readiness = state.providers.provider_status?.local;
     if (readiness) {
       const ready = !!(readiness.generate_ready && readiness.cogitate_ready);
-      const issue = Array.isArray(readiness.issues) ? readiness.issues[0] : '';
+      let issue = Array.isArray(readiness.issues) ? readiness.issues[0] : '';
+      if (!ready && availCode && availCode !== 'ready') {
+        issue = availCode;
+      }
       return {
         status: ready ? 'ready' : 'blocked',
-        reason: ready ? 'ready' : (issue || ''),
-        summary: issue || '',
+        reason: ready ? 'ready' : (issue || availCode || ''),
+        summary: issue || avail?.reason || '',
         detail: '',
       };
     }
-    if (state.localAvailability?.available === true) {
+    if (avail?.available === true) {
       return {status: 'ready', reason: 'ready', summary: '', detail: ''};
-    }
-    if (state.localAvailability?.available === false) {
-      return {
-        status: 'blocked',
-        reason: 'availability_unavailable',
-        summary: state.localAvailability.reason || '',
-        detail: '',
-      };
     }
     return {status: '', reason: '', summary: '', detail: ''};
   }
 
   function localIsReady() {
+    if (state.localAvailability?.available === false) return false;
     const readiness = state.providers.provider_status?.local;
     return !!(readiness?.generate_ready && readiness?.cogitate_ready);
   }
 
   function localIsGpuBlocked() {
     const reason = localReadiness().reason;
-    return reason === 'gpu_unavailable' || reason === 'gpu_probe_failed';
+    return reason === 'gpu_unavailable';
   }
 
   function activeLanePayload() {
@@ -3006,15 +3029,16 @@
     // Disposition: gpu_probe_failed is retained for readiness outcomes even though
     // provider issues do not emit it.
     if (reason === 'gpu_probe_failed') {
+      const copyProbe = copy.local_recovery?.states?.gpu_probe_failed;
       return {
-        pill: 'unavailable',
+        pill: copyProbe?.pill || "couldn't check",
         title: 'local',
-        sub: "this computer can't run one yet",
+        sub: copyProbe?.verdict || "couldn't check this computer's GPU",
         message: '',
-        notice: `couldn't check this computer's GPU. you can still use ${activeLaneLabel('byo')}.`,
+        notice: copyProbe?.reason || `couldn't check this computer's GPU. you can still use ${activeLaneLabel('byo')}.`,
         activate: false,
         bootstrap: false,
-        tone: 'bad',
+        tone: '',
       };
     }
     // Disposition: local_model_installing has no producer in this repository —
@@ -3142,8 +3166,10 @@
         : "you're pointed at your own URL. clear it to run the bundled model",
     );
     setHidden('localOverrideNotice', !local.endpointOverride);
-    setButtonState('localBootstrap', local.bootstrap, !local.bootstrap);
+    setButtonState('localBootstrap', local.bootstrap, !local.bootstrap || bootstrapPending);
     setButtonText('localBootstrap', local.bootstrapLabel || copy.local_install?.install || '');
+    setButtonState('localCancel', !!local.cancel, !local.cancel || cancelPending);
+    setButtonText('localCancel', local.cancelLabel || copy.local_install?.cancel || 'cancel');
     setButtonState('localRuntimeRetry', local.retryRuntime, !local.retryRuntime);
     setButtonText('localRuntimeRetry', local.retryRuntimeLabel || copy.local_recovery?.retry || '');
     setButtonState('localActivate', local.activate, !local.activate);
@@ -3151,7 +3177,7 @@
     const links = $('localSetupLinks');
     if (links) {
       links.textContent = '';
-      if (local.tone === 'bad' && state.install?.install_state !== 'failed') {
+      if (local.tone === 'bad' && state.install?.install_state !== 'failed' && local.reason !== 'gpu_probe_failed') {
         const requirements = document.createElement('a');
         requirements.className = 'textlink';
         requirements.href = 'https://support.solstone.app/kb/solstone-memory-and-local-models';
@@ -3734,21 +3760,53 @@
     await Promise.all([refreshProviders(), refreshLocalAvailability()]);
   }
 
+  let bootstrapPending = false;
   async function startLocalBootstrap() {
-    const model = $('localModelSelect')?.value || '';
-    const status = await api(`api/local/bootstrap?model=${encodeURIComponent(model)}`, {method: 'POST'});
-    state.install = status || null;
-    renderAll();
-    if (installIsInFlight(status)) {
-      startInstallPoll(status);
-    } else {
-      await refreshInstallStatus({autoResume: true});
+    if (bootstrapPending) return;
+    bootstrapPending = true;
+    renderLocal();
+    try {
+      const model = $('localModelSelect')?.value || '';
+      const status = await api(`api/local/bootstrap?model=${encodeURIComponent(model)}`, {method: 'POST'});
+      state.install = status || null;
+      renderAll();
+      if (installIsInFlight(status)) {
+        startInstallPoll(status);
+      } else {
+        await refreshInstallStatus({autoResume: true});
+      }
+      await Promise.all([
+        refreshProviders(),
+        refreshLocalAvailability(),
+        refreshLocalRuntime({autoResume: true}),
+      ]);
+    } finally {
+      bootstrapPending = false;
+      renderLocal();
     }
-    await Promise.all([
-      refreshProviders(),
-      refreshLocalAvailability(),
-      refreshLocalRuntime({autoResume: true}),
-    ]);
+  }
+
+  let cancelPending = false;
+  async function cancelLocalBootstrap() {
+    if (cancelPending) return;
+    const attemptId = state.install?.attempt_id || '';
+    if (!attemptId) return;
+    cancelPending = true;
+    renderLocal();
+    try {
+      const url = `api/local/bootstrap/cancel?attempt_id=${encodeURIComponent(attemptId)}`;
+      const status = await api(url, {method: 'POST'});
+      state.install = status || null;
+      renderAll();
+      if (installIsInFlight(status)) {
+        startInstallPoll(status);
+      }
+    } catch (err) {
+      setMessage('localSetupMessage', err.message, 'error');
+    } finally {
+      cancelPending = false;
+      renderLocal();
+    }
   }
 
   async function retryLocalRuntime() {
@@ -3901,6 +3959,7 @@
       ]).catch((err) => setMessage('localSetupMessage', err.message, 'error'));
     });
     $('localBootstrap')?.addEventListener('click', () => startLocalBootstrap().catch((err) => setMessage('localSetupMessage', err.message, 'error')));
+    $('localCancel')?.addEventListener('click', () => cancelLocalBootstrap().catch((err) => setMessage('localSetupMessage', err.message, 'error')));
     $('localRuntimeRetry')?.addEventListener('click', () => retryLocalRuntime().catch((err) => setMessage('localSetupMessage', err.message, 'error')));
     $('localActivate')?.addEventListener('click', () => activateLane('local').catch((err) => setMessage('localSetupMessage', err.message, 'error')));
     $('localModelSelect')?.addEventListener('change', () => {

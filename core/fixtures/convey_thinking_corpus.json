@@ -281,6 +281,7 @@
               }
             ],
             "local_install": {
+              "cancel": "cancel",
               "failed_reason": "local setup stopped before it finished.",
               "failed_verdict": "local setup didn't finish",
               "install": "install local model",
@@ -322,6 +323,11 @@
                   "pill": "needs attention",
                   "reason": "the local model stopped before it became ready.",
                   "verdict": "local thinking couldn't start"
+                },
+                "gpu_probe_failed": {
+                  "pill": "couldn't check",
+                  "reason": "couldn't check whether this computer can run a local model.",
+                  "verdict": "couldn't check this computer's GPU"
                 },
                 "ready": {
                   "pill": "on",
@@ -2510,6 +2516,7 @@
               }
             ],
             "local_install": {
+              "cancel": "cancel",
               "failed_reason": "local setup stopped before it finished.",
               "failed_verdict": "local setup didn't finish",
               "install": "install local model",
@@ -2551,6 +2558,11 @@
                   "pill": "needs attention",
                   "reason": "the local model stopped before it became ready.",
                   "verdict": "local thinking couldn't start"
+                },
+                "gpu_probe_failed": {
+                  "pill": "couldn't check",
+                  "reason": "couldn't check whether this computer can run a local model.",
+                  "verdict": "couldn't check this computer's GPU"
                 },
                 "ready": {
                   "pill": "on",
@@ -4737,6 +4749,7 @@
               }
             ],
             "local_install": {
+              "cancel": "cancel",
               "failed_reason": "local setup stopped before it finished.",
               "failed_verdict": "local setup didn't finish",
               "install": "install local model",
@@ -4778,6 +4791,11 @@
                   "pill": "needs attention",
                   "reason": "the local model stopped before it became ready.",
                   "verdict": "local thinking couldn't start"
+                },
+                "gpu_probe_failed": {
+                  "pill": "couldn't check",
+                  "reason": "couldn't check whether this computer can run a local model.",
+                  "verdict": "couldn't check this computer's GPU"
                 },
                 "ready": {
                   "pill": "on",
@@ -6944,6 +6962,7 @@
               }
             ],
             "local_install": {
+              "cancel": "cancel",
               "failed_reason": "local setup stopped before it finished.",
               "failed_verdict": "local setup didn't finish",
               "install": "install local model",
@@ -6985,6 +7004,11 @@
                   "pill": "needs attention",
                   "reason": "the local model stopped before it became ready.",
                   "verdict": "local thinking couldn't start"
+                },
+                "gpu_probe_failed": {
+                  "pill": "couldn't check",
+                  "reason": "couldn't check whether this computer can run a local model.",
+                  "verdict": "couldn't check this computer's GPU"
                 },
                 "ready": {
                   "pill": "on",
@@ -9335,6 +9359,7 @@
               }
             ],
             "local_install": {
+              "cancel": "cancel",
               "failed_reason": "local setup stopped before it finished.",
               "failed_verdict": "local setup didn't finish",
               "install": "install local model",
@@ -9376,6 +9401,11 @@
                   "pill": "needs attention",
                   "reason": "the local model stopped before it became ready.",
                   "verdict": "local thinking couldn't start"
+                },
+                "gpu_probe_failed": {
+                  "pill": "couldn't check",
+                  "reason": "couldn't check whether this computer can run a local model.",
+                  "verdict": "couldn't check this computer's GPU"
                 },
                 "ready": {
                   "pill": "on",
@@ -12869,6 +12899,7 @@
               }
             ],
             "local_install": {
+              "cancel": "cancel",
               "failed_reason": "local setup stopped before it finished.",
               "failed_verdict": "local setup didn't finish",
               "install": "install local model",
@@ -12910,6 +12941,11 @@
                   "pill": "needs attention",
                   "reason": "the local model stopped before it became ready.",
                   "verdict": "local thinking couldn't start"
+                },
+                "gpu_probe_failed": {
+                  "pill": "couldn't check",
+                  "reason": "couldn't check whether this computer can run a local model.",
+                  "verdict": "couldn't check this computer's GPU"
                 },
                 "ready": {
                   "pill": "on",

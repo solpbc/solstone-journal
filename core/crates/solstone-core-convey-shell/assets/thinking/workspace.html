@@ -1039,7 +1039,7 @@
       <button type="button" class="backlink" data-open-view="main">‹ thinking</button>
       <div class="panelbody">
         <h2>local</h2>
-        <p class="intro">run a thinking model right in your journal. nothing leaves this computer.</p>
+        <p class="intro" id="localSetupIntro">run a thinking model right in your journal.</p>
       </div>
 
       <div class="app-onoff" id="localSetupCard" aria-live="polite" aria-atomic="true">
@@ -1054,7 +1054,7 @@
         <label for="localModelSelect">model</label>
         <select id="localModelSelect"></select>
       </div>
-      <div class="message" id="localSetupMessage"></div>
+      <div class="message" id="localSetupMessage" aria-live="polite"></div>
       <div class="notice" id="localOverrideNotice" hidden>
         <span id="localOverrideNoticeText">you're pointed at your own URL. clear it to run the bundled model</span>
         <div class="inline-actions">
@@ -1064,11 +1064,12 @@
       <div class="actions">
         <button type="button" class="btn" id="localRefresh">check again</button>
         <button type="button" class="btn" id="localBootstrap"></button>
+        <button type="button" class="btn ghost" id="localCancel" hidden>cancel</button>
         <button type="button" class="btn" id="localRuntimeRetry">try starting local again</button>
         <button type="button" class="btn primary" id="localActivate">turn on local</button>
       </div>
       <p class="micro" id="localSetupLinks"></p>
-      <div class="notice" id="localNotice"></div>
+      <div class="notice" id="localNotice" aria-live="polite"></div>
     </section>
 
     <section class="view" data-view="lane-switch" hidden>

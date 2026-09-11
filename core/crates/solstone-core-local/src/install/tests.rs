@@ -2471,3 +2471,74 @@ fn status_write_is_atomic_and_revisioned() {
     assert_eq!(on_disk["revision"], 1);
     let _ = fs::remove_dir_all(root);
 }
+
+#[test]
+fn assert_current_rejects_modified_attempt_and_prevents_publication() {
+    let root = temp("assert-current");
+    let initial = status::begin(
+        &root,
+        "{}".to_owned(),
+        "sha256-a".to_owned(),
+        Some(json!({"pid": std::process::id()})),
+        "resolving",
+    )
+    .unwrap();
+    assert!(status::assert_current(&root, &initial).is_ok());
+
+    // Supersede attempt
+    let next_attempt = status::begin_or_replace(
+        &root,
+        "local",
+        "{}".to_owned(),
+        "sha256-b".to_owned(),
+        Some(json!({"pid": std::process::id()})),
+        "resolving",
+    )
+    .unwrap();
+    assert!(status::assert_current(&root, &initial).is_err());
+    assert!(status::assert_current(&root, &next_attempt).is_ok());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn cancel_local_bootstrap_requires_and_matches_attempt_id() {
+    let root = temp("cancel-attempt");
+    let initial = status::begin(
+        &root,
+        "{}".to_owned(),
+        "sha256-cancel".to_owned(),
+        Some(json!({"pid": 999_999_999})),
+        "resolving",
+    )
+    .unwrap();
+    let attempt_id = initial.attempt_id.as_deref().unwrap();
+
+    // Cancel without attempt_id fails
+    let err = super::cancel_local_bootstrap(&root, "local", None).unwrap_err();
+    assert_eq!(
+        err.envelope.error.as_ref().unwrap().reason_code,
+        "attempt_required"
+    );
+
+    // Cancel with mismatched attempt_id fails
+    let err = super::cancel_local_bootstrap(&root, "local", Some("wrong-attempt-id")).unwrap_err();
+    assert_eq!(
+        err.envelope.error.as_ref().unwrap().reason_code,
+        "attempt_mismatch"
+    );
+
+    // Status is still in-flight
+    let current = status::read_status(&root, "local").unwrap();
+    assert!(status::is_in_flight(&current.install_state));
+
+    // Cancel with matching attempt_id succeeds and sets interrupted / failed
+    let canceled = super::cancel_local_bootstrap(&root, "local", Some(attempt_id)).unwrap();
+    assert_eq!(canceled.install_state, "failed");
+    assert_eq!(canceled.error_code.as_deref(), Some("install_interrupted"));
+
+    // Calling cancel on non-in-flight status is a no-op returning current status
+    let no_op = super::cancel_local_bootstrap(&root, "local", Some(attempt_id)).unwrap();
+    assert_eq!(no_op.install_state, "failed");
+
+    let _ = fs::remove_dir_all(root);
+}
