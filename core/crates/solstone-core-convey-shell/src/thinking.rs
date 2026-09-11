@@ -491,9 +491,9 @@ async fn start_local_bootstrap(
         solstone_core_thinking::local::BootstrapResponse::Installed => {
             json_response(json!({"install_state":"installed"}))
         }
-        solstone_core_thinking::local::BootstrapResponse::InFlight(state) => {
-            json_response(json!({"install_state":state}))
-        }
+        solstone_core_thinking::local::BootstrapResponse::InFlight(_) => json_response(
+            solstone_core_thinking::local::bootstrap_status(&journal.0, model),
+        ),
         solstone_core_thinking::local::BootstrapResponse::Busy(state) => json_response_with_status(
             StatusCode::CONFLICT,
             json!({"install_state":state,"reason_code":"install_busy"}),
@@ -505,94 +505,13 @@ async fn start_local_bootstrap(
             invalid_request(reason)
         }
         solstone_core_thinking::local::BootstrapResponse::Start => {
-            if let Ok(current) =
-                solstone_core_local::install::status::read_status(&journal.0, "local")
-                && solstone_core_local::install::status::is_in_flight(&current.install_state)
-                && solstone_core_local::install::lease::is_held(&journal.0, "local")
-                    .unwrap_or(false)
+            let root = journal.0.clone();
+            match tokio::task::spawn_blocking(move || crate::thinking_install::start(&root, model))
+                .await
             {
-                let payload = solstone_core_thinking::local::bootstrap_status(&journal.0, model);
-                return json_response(payload);
-            }
-
-            let Some(current_exe) = std::env::current_exe().ok() else {
-                return thinking_failure();
-            };
-            let Some(parent) = current_exe.parent() else {
-                return thinking_failure();
-            };
-            let binary =
-                match solstone_core_journal_cli::sibling_native_in_dir(parent, "solstone-core") {
-                    Ok(b) => b,
-                    Err(_) => return thinking_failure(),
-                };
-            let log_path = journal.0.join("health/providers/local-install.log");
-            if let Some(log_dir) = log_path.parent() {
-                let _ = std::fs::create_dir_all(log_dir);
-            }
-            let log_file = match std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&log_path)
-            {
-                Ok(file) => file,
-                Err(_) => return thinking_failure(),
-            };
-            let log_err = match log_file.try_clone() {
-                Ok(file) => file,
-                Err(_) => return thinking_failure(),
-            };
-            let mut cmd = std::process::Command::new(&binary);
-            cmd.args(["install-provider", "local"])
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::from(log_file))
-                .stderr(std::process::Stdio::from(log_err));
-            #[cfg(unix)]
-            {
-                use std::os::unix::process::CommandExt;
-                cmd.process_group(0);
-            }
-            let mut child = match cmd.spawn() {
-                Ok(child) => child,
-                Err(_) => return thinking_failure(),
-            };
-
-            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(2000);
-            loop {
-                if let Ok(Some(_exit)) = child.try_wait() {
-                    return thinking_failure_with_detail(
-                        "installer process exited before starting",
-                    );
-                }
-                let status_payload =
-                    solstone_core_thinking::local::bootstrap_status(&journal.0, model);
-                let state_str = status_payload
-                    .get("install_state")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
-                let has_attempt = status_payload
-                    .get("attempt_id")
-                    .and_then(Value::as_str)
-                    .is_some();
-                let lease_held = solstone_core_local::install::lease::is_held(&journal.0, "local")
-                    .unwrap_or(false);
-
-                if solstone_core_local::install::status::is_in_flight(state_str)
-                    && has_attempt
-                    && lease_held
-                {
-                    return json_response(status_payload);
-                }
-
-                if std::time::Instant::now() >= deadline {
-                    if solstone_core_local::install::status::is_in_flight(state_str) && lease_held {
-                        return json_response(status_payload);
-                    }
-                    return thinking_failure_with_detail(
-                        "installer failed to admit in-flight status",
-                    );
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                Ok(Ok(payload)) => json_response(payload),
+                Ok(Err(error)) => thinking_failure_with_detail(error),
+                Err(_) => thinking_failure(),
             }
         }
         solstone_core_thinking::local::BootstrapResponse::Unavailable(_) => thinking_failure(),
@@ -612,17 +531,28 @@ async fn cancel_local_bootstrap(
                 .map(ToOwned::to_owned)
         })
     });
-    match solstone_core_local::install::cancel_local_bootstrap(
-        &journal.0,
-        "local",
-        attempt_id.as_deref(),
-    ) {
-        Ok(status) => json_response(json!(status)),
-        Err(err) => thinking_failure_with_detail(
+    let Some(attempt_id) = attempt_id.filter(|id| !id.is_empty()) else {
+        return invalid_request("attempt_id is required");
+    };
+    let root = journal.0.clone();
+    match tokio::task::spawn_blocking(move || {
+        solstone_core_local::install::cancel_local_bootstrap(
+            &root,
+            "local",
+            &attempt_id,
+            crate::thinking_install::stop,
+        )
+        .map_err(Box::new)
+    })
+    .await
+    {
+        Ok(Ok(status)) => json_response(json!(status)),
+        Ok(Err(err)) => thinking_failure_with_detail(
             err.envelope
                 .error
                 .map_or("cancel failed".to_string(), |e| e.message),
         ),
+        Err(_) => thinking_failure(),
     }
 }
 

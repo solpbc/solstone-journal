@@ -88,6 +88,9 @@ class PortalProcess:
         env = dict(os.environ)
         env["SOLSTONE_JOURNAL"] = str(self.journal_dir)
         env["PATH"] = f"{staged_bin_dir}:{os.environ.get('PATH', '')}"
+        # The pinned server hides Metal initialization at its default info level.
+        # Capture backend/offload evidence without changing the production plan.
+        env["LLAMA_ARG_LOG_VERBOSITY"] = "5"
         if "TMPDIR" not in env:
             env["TMPDIR"] = "/var/tmp"
 

@@ -2514,14 +2514,15 @@ fn cancel_local_bootstrap_requires_and_matches_attempt_id() {
     let attempt_id = initial.attempt_id.as_deref().unwrap();
 
     // Cancel without attempt_id fails
-    let err = super::cancel_local_bootstrap(&root, "local", None).unwrap_err();
+    let err = super::cancel_local_bootstrap(&root, "local", "", |_| Ok(())).unwrap_err();
     assert_eq!(
         err.envelope.error.as_ref().unwrap().reason_code,
-        "attempt_required"
+        "attempt_mismatch"
     );
 
     // Cancel with mismatched attempt_id fails
-    let err = super::cancel_local_bootstrap(&root, "local", Some("wrong-attempt-id")).unwrap_err();
+    let err =
+        super::cancel_local_bootstrap(&root, "local", "wrong-attempt-id", |_| Ok(())).unwrap_err();
     assert_eq!(
         err.envelope.error.as_ref().unwrap().reason_code,
         "attempt_mismatch"
@@ -2532,13 +2533,91 @@ fn cancel_local_bootstrap_requires_and_matches_attempt_id() {
     assert!(status::is_in_flight(&current.install_state));
 
     // Cancel with matching attempt_id succeeds and sets interrupted / failed
-    let canceled = super::cancel_local_bootstrap(&root, "local", Some(attempt_id)).unwrap();
+    let canceled = super::cancel_local_bootstrap(&root, "local", attempt_id, |_| Ok(())).unwrap();
     assert_eq!(canceled.install_state, "failed");
-    assert_eq!(canceled.error_code.as_deref(), Some("install_interrupted"));
+    assert_eq!(canceled.error_code.as_deref(), Some("install_cancelled"));
 
     // Calling cancel on non-in-flight status is a no-op returning current status
-    let no_op = super::cancel_local_bootstrap(&root, "local", Some(attempt_id)).unwrap();
+    let no_op = super::cancel_local_bootstrap(&root, "local", attempt_id, |_| Ok(())).unwrap();
     assert_eq!(no_op.install_state, "failed");
 
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn cancellation_fences_attempt_and_requires_writer_lease_release() {
+    let journal = temp("cancel-fencing");
+    let held = lease::acquire(&journal, "local").unwrap().unwrap();
+    let initial = status::begin(
+        &journal,
+        "{}".into(),
+        "target".into(),
+        Some(json!({"pid":42})),
+        "downloading",
+    )
+    .unwrap();
+    let attempt = initial.attempt_id.as_deref().unwrap();
+    let stale = super::cancel_local_bootstrap(&journal, "local", "stale", |_| {
+        panic!("stale attempt must not signal")
+    });
+    assert!(stale.is_err());
+    let refused =
+        super::cancel_local_bootstrap(&journal, "local", attempt, |_| Err("unverifiable".into()));
+    assert!(refused.is_err());
+    let still_live = super::cancel_local_bootstrap(&journal, "local", attempt, |_| Ok(()));
+    assert_eq!(still_live.unwrap_err().exit_code, 75);
+    assert_eq!(status::read_status(&journal, "local").unwrap(), initial);
+    drop(held);
+    let cancelled = super::cancel_local_bootstrap(&journal, "local", attempt, |_| {
+        panic!("free lease needs no signal")
+    })
+    .unwrap();
+    assert_eq!(cancelled.install_state, "failed");
+    assert_eq!(
+        cancelled.install_error.as_deref(),
+        Some("install_cancelled")
+    );
+    assert!(super::cancel_local_bootstrap(&journal, "local", "stale", |_| Ok(())).is_err());
+    assert_eq!(
+        super::cancel_local_bootstrap(&journal, "local", attempt, |_| panic!(
+            "terminal attempt must not signal"
+        ))
+        .unwrap(),
+        cancelled
+    );
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn cancellation_does_not_overwrite_a_replacement_attempt() {
+    let journal = temp("cancel-replacement");
+    let held = lease::acquire(&journal, "local").unwrap().unwrap();
+    let initial = status::begin(
+        &journal,
+        "{}".into(),
+        "target".into(),
+        Some(json!({"pid":42})),
+        "downloading",
+    )
+    .unwrap();
+    let attempt = initial.attempt_id.as_deref().unwrap();
+    let result = super::cancel_local_bootstrap(&journal, "local", attempt, |_| {
+        drop(held);
+        status::begin_or_replace(
+            &journal,
+            "local",
+            "{}".into(),
+            "next".into(),
+            None,
+            "downloading",
+        )
+        .unwrap();
+        Ok(())
+    });
+    assert!(result.is_err());
+    assert_ne!(
+        status::read_status(&journal, "local").unwrap().attempt_id,
+        initial.attempt_id
+    );
+    fs::remove_dir_all(journal).unwrap();
 }

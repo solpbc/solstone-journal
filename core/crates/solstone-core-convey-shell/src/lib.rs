@@ -155,6 +155,7 @@ mod status_mark;
 mod system;
 #[cfg(feature = "host")]
 mod thinking;
+mod thinking_install;
 #[cfg(feature = "host")]
 mod thinking_sol_reads;
 #[cfg(all(test, feature = "host"))]

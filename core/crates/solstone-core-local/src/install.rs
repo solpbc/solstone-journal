@@ -666,10 +666,7 @@ fn run_with_lease(
         .as_str()
         .expect("resolved fingerprint SHA-256")
         .to_owned();
-    let owner = object
-        .get("owner")
-        .cloned()
-        .or_else(|| Some(json!({"pid": std::process::id()})));
+    let owner = object.get("owner").cloned();
     let mut state = status::begin_or_replace(
         &journal,
         provider,
@@ -1314,6 +1311,7 @@ fn install_model(
         let dest = root.join(name);
         let base_bytes = cumulative_bytes;
         let url = archive::origin_url(policy.origin_base_url, artifact.origin_key);
+        let mut progress_error = None;
         let fetched = archive::ensure_verified_url(
             &url,
             artifact.sha256,
@@ -1322,14 +1320,21 @@ fn install_model(
             policy,
             |received, _file_total| {
                 let current_received = base_bytes.saturating_add(received);
-                if let Ok(Some(next)) = status::bump_progress(
-                    status_value.clone(),
-                    Some(current_received),
-                    Some(MODEL_BYTES_TOTAL),
-                    &mut progress_at,
-                ) && let Ok(written) = status::write_status(journal, next)
-                {
-                    *status_value = written;
+                if progress_error.is_none() {
+                    match status::bump_progress(
+                        status_value.clone(),
+                        Some(current_received),
+                        Some(MODEL_BYTES_TOTAL),
+                        &mut progress_at,
+                    )
+                    .and_then(|next| {
+                        next.map(|next| status::write_status(journal, next))
+                            .transpose()
+                    }) {
+                        Ok(Some(written)) => *status_value = written,
+                        Ok(None) => {}
+                        Err(error) => progress_error = Some(error),
+                    }
                 }
             },
         )
@@ -1342,19 +1347,27 @@ fn install_model(
             )
         })?;
 
+        if let Some(error) = progress_error {
+            return Err(failure("state", "status_write_failed", error, 74));
+        }
         cumulative_bytes = cumulative_bytes.saturating_add(artifact.size_bytes);
         if !fetched
-            && let Ok(Some(next)) = status::bump_progress(
+            && let Some(next) = status::bump_progress(
                 status_value.clone(),
                 Some(cumulative_bytes),
                 Some(MODEL_BYTES_TOTAL),
                 &mut progress_at,
             )
-            && let Ok(written) = status::write_status(journal, next)
+            .map_err(|error| failure("state", "progress_failed", error, 74))?
         {
-            *status_value = written;
+            *status_value = status::write_status(journal, next)
+                .map_err(|error| failure("state", "status_write_failed", error, 74))?;
         }
     }
+    // Verification begins only after every pinned file has completed its fetch.
+    // Preserve the exact final byte count even if the last callback was coalesced.
+    status_value.progress_bytes_received = Some(cumulative_bytes);
+    status_value.progress_bytes_total = Some(MODEL_BYTES_TOTAL);
 
     status::assert_current(journal, status_value)
         .map_err(|error| failure("state", "attempt_superseded", error, 74))?;
@@ -1388,95 +1401,64 @@ fn install_model(
     Ok(())
 }
 
+/// Cancel only the named attempt. The composition layer owns process observation;
+/// this domain owns the lease and status compare-and-write.
 pub fn cancel_local_bootstrap(
     journal: &Path,
     provider: &str,
-    expected_attempt_id: Option<&str>,
+    expected_attempt_id: &str,
+    stop_writer: impl FnOnce(&Value) -> Result<(), String>,
 ) -> Result<status::InstallStatus, DispatchError> {
+    let check = |current: &status::InstallStatus| {
+        if current.attempt_id.as_deref() == Some(expected_attempt_id) {
+            Ok(())
+        } else {
+            Err(failure(
+                "conflict",
+                "attempt_mismatch",
+                "install attempt changed",
+                65,
+            ))
+        }
+    };
     let current = status::read_status(journal, provider)
         .map_err(|error| failure("state", "read_status_failed", error, 74))?;
-
+    check(&current)?;
     if !status::is_in_flight(&current.install_state) {
         return Ok(current);
     }
-
-    let attempt_id = current.attempt_id.as_deref().ok_or_else(|| {
-        failure(
-            "state",
-            "attempt_missing",
-            "in-flight attempt_id missing",
-            74,
-        )
-    })?;
-
-    if let Some(expected) = expected_attempt_id {
-        if expected != attempt_id {
-            return Err(failure(
-                "conflict",
-                "attempt_mismatch",
-                format!("attempt '{expected}' does not match in-flight attempt '{attempt_id}'"),
-                65,
-            ));
-        }
-    } else {
-        return Err(failure(
-            "conflict",
-            "attempt_required",
-            "attempt_id is required to cancel in-flight install",
-            65,
-        ));
-    }
-
-    // Terminate writer process if owner pid exists and is not self
-    if let Some(owner) = &current.owner
-        && let Some(pid_u64) = owner.get("pid").and_then(Value::as_u64)
+    if lease::is_held(journal, provider)
+        .map_err(|error| failure("state", "lease_unavailable", error, 74))?
     {
-        let pid = pid_u64 as i32;
-        if pid != std::process::id() as i32 {
-            #[cfg(unix)]
-            {
-                use nix::sys::signal::{Signal, kill};
-                use nix::unistd::Pid;
-                let nix_pid = Pid::from_raw(pid);
-                if kill(nix_pid, None).is_ok() {
-                    let _ = kill(nix_pid, Signal::SIGTERM);
-                    let deadline = Instant::now() + std::time::Duration::from_millis(2000);
-                    while Instant::now() < deadline {
-                        if kill(nix_pid, None).is_err() {
-                            break;
-                        }
-                        std::thread::sleep(std::time::Duration::from_millis(50));
-                    }
-                }
-            }
-            #[cfg(not(unix))]
-            {
-                let _ = pid;
-            }
-        }
+        let owner = current.owner.as_ref().ok_or_else(|| {
+            failure(
+                "state",
+                "owner_unavailable",
+                "installer identity is unavailable",
+                74,
+            )
+        })?;
+        stop_writer(owner).map_err(|error| failure("state", "cancel_failed", error, 74))?;
     }
-
-    // Wait until lease is free or timeout (up to 2s)
-    let lease_deadline = Instant::now() + std::time::Duration::from_millis(2000);
-    while Instant::now() < lease_deadline {
-        if !lease::is_held(journal, provider).unwrap_or(false) {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(50));
-    }
-
-    // If status on disk is still in-flight for this attempt, record interrupted
-    if let Ok(latest) = status::read_status(journal, provider)
-        && status::is_in_flight(&latest.install_state)
-        && latest.attempt_id.as_deref() == Some(attempt_id)
-    {
-        let target_fp = latest.target_fingerprint_sha256.as_deref();
-        let _ = status::record_interrupted(journal, attempt_id, target_fp);
-    }
-
-    let updated = status::read_status(journal, provider)
+    // No terminal write while the installer can still publish progress or success.
+    let _held = lease::acquire(journal, provider)
+        .map_err(|error| failure("state", "lease_unavailable", error, 74))?
+        .ok_or_else(|| failure("busy", "install_busy", "installer still owns its lease", 75))?;
+    let latest = status::read_status(journal, provider)
         .map_err(|error| failure("state", "read_status_failed", error, 74))?;
-    Ok(updated)
+    check(&latest)?;
+    if !status::is_in_flight(&latest.install_state) {
+        return Ok(latest);
+    }
+    let cancelled = status::transition(
+        latest,
+        "failed",
+        Some("install_cancelled".into()),
+        Some("install_cancelled".into()),
+    )
+    .map_err(|error| failure("state", "transition_failed", error, 74))?;
+    status::write_status(journal, cancelled)
+        .map_err(|error| failure("state", "status_write_failed", error, 74))
 }
 
 fn find_file(root: &Path, name: &str) -> Option<PathBuf> {

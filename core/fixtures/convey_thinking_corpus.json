@@ -91,7 +91,7 @@
       },
       {
         "body_bytes": 14061,
-        "body_sha256": "bd5b56fff89bd7770a715b0de0c7731a4cf9322f18aca136e1adc46d1359cac6",
+        "body_sha256": "52d039a9ad46b7a461c6e246a907735b033feadeb3d32442a1366afba099b2d3",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -282,9 +282,11 @@
             ],
             "local_install": {
               "cancel": "cancel",
+              "cancelled_verdict": "installation cancelled",
               "failed_reason": "local setup stopped before it finished.",
               "failed_verdict": "local setup didn't finish",
               "install": "install local model",
+              "interrupted_verdict": "installation stopped",
               "notice_inflight": "local thinking will stay in your journal once setup finishes.",
               "phases": {
                 "downloading": "downloading",
@@ -294,7 +296,8 @@
               },
               "pill_failed": "couldn't finish",
               "pill_inflight": "setting up",
-              "retry": "try setup again"
+              "retry": "try setup again",
+              "stopped_reason": "you can try setup again when you're ready."
             },
             "local_recovery": {
               "retry": "try starting local again",
@@ -324,10 +327,10 @@
                   "reason": "the local model stopped before it became ready.",
                   "verdict": "local thinking couldn't start"
                 },
-                "gpu_probe_failed": {
+                "local_probe_failed": {
                   "pill": "couldn't check",
-                  "reason": "couldn't check whether this computer can run a local model.",
-                  "verdict": "couldn't check this computer's GPU"
+                  "reason": "try checking again in a moment.",
+                  "verdict": "couldn't check local setup"
                 },
                 "ready": {
                   "pill": "on",
@@ -469,6 +472,7 @@
             "configuration_guidance": null,
             "key_validation": {},
             "local": {
+              "attempt_id": null,
               "install_error": null,
               "install_state": "idle",
               "last_progress_at": null,
@@ -624,7 +628,7 @@
       },
       {
         "body_bytes": 3138,
-        "body_sha256": "708e0bad94dec89e0c27fccefe7d193a1ed666b571c4277a500ce9adb22b0000",
+        "body_sha256": "3bd3d013ac70df5227408aaf9590c0a2a0dcd7fdf8ee6d44181d625ffc105a31",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -690,6 +694,7 @@
           "configuration_guidance": null,
           "key_validation": {},
           "local": {
+            "attempt_id": null,
             "install_error": null,
             "install_state": "idle",
             "last_progress_at": null,
@@ -845,7 +850,7 @@
       },
       {
         "body_bytes": 3138,
-        "body_sha256": "708e0bad94dec89e0c27fccefe7d193a1ed666b571c4277a500ce9adb22b0000",
+        "body_sha256": "3bd3d013ac70df5227408aaf9590c0a2a0dcd7fdf8ee6d44181d625ffc105a31",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -911,6 +916,7 @@
           "configuration_guidance": null,
           "key_validation": {},
           "local": {
+            "attempt_id": null,
             "install_error": null,
             "install_state": "idle",
             "last_progress_at": null,
@@ -1082,7 +1088,7 @@
       },
       {
         "body_bytes": 3138,
-        "body_sha256": "708e0bad94dec89e0c27fccefe7d193a1ed666b571c4277a500ce9adb22b0000",
+        "body_sha256": "3bd3d013ac70df5227408aaf9590c0a2a0dcd7fdf8ee6d44181d625ffc105a31",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -1148,6 +1154,7 @@
           "configuration_guidance": null,
           "key_validation": {},
           "local": {
+            "attempt_id": null,
             "install_error": null,
             "install_state": "idle",
             "last_progress_at": null,
@@ -1349,7 +1356,7 @@
       },
       {
         "body_bytes": 266,
-        "body_sha256": "eeea5af31d7065ff56fa0ae6137fead4d8879199ff4142a0a2f1d9bb443ff528",
+        "body_sha256": "ae800e6dc3ca9ec62bd0efe66cff4addc49d8915e50fad3799dc7a613b72d5d9",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -1362,6 +1369,7 @@
           "model_present": false,
           "platform_supported": "<HOST_DEPENDENT>",
           "reason": "<HOST_DEPENDENT>",
+          "reason_code": "<HOST_DEPENDENT>",
           "total_memory_gb": "<HOST_DEPENDENT>",
           "warning": "<HOST_DEPENDENT>"
         },
@@ -1371,6 +1379,7 @@
           "available_memory_gb": "host",
           "platform_supported": "host",
           "reason": "host",
+          "reason_code": "host",
           "total_memory_gb": "host",
           "warning": "host"
         },
@@ -1395,11 +1404,12 @@
         "why": "unknown model refusal on the availability route"
       },
       {
-        "body_bytes": 170,
-        "body_sha256": "2597d3360f5032bee40d5ad2e3a1cae2579cfba3375758567b393b868129cb03",
+        "body_bytes": 188,
+        "body_sha256": "35d0ec60b0bf56f7cb2308e60d3ceb5a6c3452c0a64e91badf8397c990715e78",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
+          "attempt_id": null,
           "install_error": null,
           "install_state": "idle",
           "last_progress_at": null,
@@ -2326,7 +2336,7 @@
       },
       {
         "body_bytes": 13952,
-        "body_sha256": "550943f2fe259e148f3f7cc777607cb4dabaeb30da1df8fdf4ebb12978fd7abe",
+        "body_sha256": "a9a518dd4fe3a82fb87c22457e3fe82c1d0bbd3fc316a293d7acbfa3c45b06e7",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -2517,9 +2527,11 @@
             ],
             "local_install": {
               "cancel": "cancel",
+              "cancelled_verdict": "installation cancelled",
               "failed_reason": "local setup stopped before it finished.",
               "failed_verdict": "local setup didn't finish",
               "install": "install local model",
+              "interrupted_verdict": "installation stopped",
               "notice_inflight": "local thinking will stay in your journal once setup finishes.",
               "phases": {
                 "downloading": "downloading",
@@ -2529,7 +2541,8 @@
               },
               "pill_failed": "couldn't finish",
               "pill_inflight": "setting up",
-              "retry": "try setup again"
+              "retry": "try setup again",
+              "stopped_reason": "you can try setup again when you're ready."
             },
             "local_recovery": {
               "retry": "try starting local again",
@@ -2559,10 +2572,10 @@
                   "reason": "the local model stopped before it became ready.",
                   "verdict": "local thinking couldn't start"
                 },
-                "gpu_probe_failed": {
+                "local_probe_failed": {
                   "pill": "couldn't check",
-                  "reason": "couldn't check whether this computer can run a local model.",
-                  "verdict": "couldn't check this computer's GPU"
+                  "reason": "try checking again in a moment.",
+                  "verdict": "couldn't check local setup"
                 },
                 "ready": {
                   "pill": "on",
@@ -2713,6 +2726,7 @@
               }
             },
             "local": {
+              "attempt_id": null,
               "install_error": null,
               "install_state": "idle",
               "last_progress_at": null,
@@ -2862,7 +2876,7 @@
       },
       {
         "body_bytes": 2968,
-        "body_sha256": "0a038bcbe8896bfc6c3c203493241f0e35065db0203377bac80319ea02b31ccd",
+        "body_sha256": "dfab6ea3b65bcc66a89006b65ab301d46ece250821c81321511b740e05fc3b4b",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -2932,6 +2946,7 @@
             }
           },
           "local": {
+            "attempt_id": null,
             "install_error": null,
             "install_state": "idle",
             "last_progress_at": null,
@@ -3081,7 +3096,7 @@
       },
       {
         "body_bytes": 2968,
-        "body_sha256": "0a038bcbe8896bfc6c3c203493241f0e35065db0203377bac80319ea02b31ccd",
+        "body_sha256": "dfab6ea3b65bcc66a89006b65ab301d46ece250821c81321511b740e05fc3b4b",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -3151,6 +3166,7 @@
             }
           },
           "local": {
+            "attempt_id": null,
             "install_error": null,
             "install_state": "idle",
             "last_progress_at": null,
@@ -3316,7 +3332,7 @@
       },
       {
         "body_bytes": 2968,
-        "body_sha256": "0a038bcbe8896bfc6c3c203493241f0e35065db0203377bac80319ea02b31ccd",
+        "body_sha256": "dfab6ea3b65bcc66a89006b65ab301d46ece250821c81321511b740e05fc3b4b",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -3386,6 +3402,7 @@
             }
           },
           "local": {
+            "attempt_id": null,
             "install_error": null,
             "install_state": "idle",
             "last_progress_at": null,
@@ -3582,7 +3599,7 @@
       },
       {
         "body_bytes": 266,
-        "body_sha256": "eeea5af31d7065ff56fa0ae6137fead4d8879199ff4142a0a2f1d9bb443ff528",
+        "body_sha256": "ae800e6dc3ca9ec62bd0efe66cff4addc49d8915e50fad3799dc7a613b72d5d9",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -3595,6 +3612,7 @@
           "model_present": false,
           "platform_supported": "<HOST_DEPENDENT>",
           "reason": "<HOST_DEPENDENT>",
+          "reason_code": "<HOST_DEPENDENT>",
           "total_memory_gb": "<HOST_DEPENDENT>",
           "warning": "<HOST_DEPENDENT>"
         },
@@ -3604,6 +3622,7 @@
           "available_memory_gb": "host",
           "platform_supported": "host",
           "reason": "host",
+          "reason_code": "host",
           "total_memory_gb": "host",
           "warning": "host"
         },
@@ -3628,11 +3647,12 @@
         "why": "unknown model refusal on the availability route"
       },
       {
-        "body_bytes": 170,
-        "body_sha256": "2597d3360f5032bee40d5ad2e3a1cae2579cfba3375758567b393b868129cb03",
+        "body_bytes": 188,
+        "body_sha256": "35d0ec60b0bf56f7cb2308e60d3ceb5a6c3452c0a64e91badf8397c990715e78",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
+          "attempt_id": null,
           "install_error": null,
           "install_state": "idle",
           "last_progress_at": null,
@@ -4559,7 +4579,7 @@
       },
       {
         "body_bytes": 13909,
-        "body_sha256": "fba84ac82598fdd273c45909e4688441cb1ce062900c97d915a8a28c3bbab41b",
+        "body_sha256": "8ffd553ebff217ff4638904146b89255ba6c77e2cdb5091efdc1ec74d45c9403",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -4750,9 +4770,11 @@
             ],
             "local_install": {
               "cancel": "cancel",
+              "cancelled_verdict": "installation cancelled",
               "failed_reason": "local setup stopped before it finished.",
               "failed_verdict": "local setup didn't finish",
               "install": "install local model",
+              "interrupted_verdict": "installation stopped",
               "notice_inflight": "local thinking will stay in your journal once setup finishes.",
               "phases": {
                 "downloading": "downloading",
@@ -4762,7 +4784,8 @@
               },
               "pill_failed": "couldn't finish",
               "pill_inflight": "setting up",
-              "retry": "try setup again"
+              "retry": "try setup again",
+              "stopped_reason": "you can try setup again when you're ready."
             },
             "local_recovery": {
               "retry": "try starting local again",
@@ -4792,10 +4815,10 @@
                   "reason": "the local model stopped before it became ready.",
                   "verdict": "local thinking couldn't start"
                 },
-                "gpu_probe_failed": {
+                "local_probe_failed": {
                   "pill": "couldn't check",
-                  "reason": "couldn't check whether this computer can run a local model.",
-                  "verdict": "couldn't check this computer's GPU"
+                  "reason": "try checking again in a moment.",
+                  "verdict": "couldn't check local setup"
                 },
                 "ready": {
                   "pill": "on",
@@ -4934,6 +4957,7 @@
             "configuration_guidance": null,
             "key_validation": {},
             "local": {
+              "attempt_id": null,
               "install_error": null,
               "install_state": "idle",
               "last_progress_at": null,
@@ -5087,7 +5111,7 @@
       },
       {
         "body_bytes": 2986,
-        "body_sha256": "0439dfffa31d4d848e4e4907ccdf04cb0961488430be05979c97efed36b63ee6",
+        "body_sha256": "eab18b825991f115b8d56fdabb308d30112d9293caca0fe5214e377c30c3e312",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -5150,6 +5174,7 @@
           "configuration_guidance": null,
           "key_validation": {},
           "local": {
+            "attempt_id": null,
             "install_error": null,
             "install_state": "idle",
             "last_progress_at": null,
@@ -5303,7 +5328,7 @@
       },
       {
         "body_bytes": 2986,
-        "body_sha256": "0439dfffa31d4d848e4e4907ccdf04cb0961488430be05979c97efed36b63ee6",
+        "body_sha256": "eab18b825991f115b8d56fdabb308d30112d9293caca0fe5214e377c30c3e312",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -5366,6 +5391,7 @@
           "configuration_guidance": null,
           "key_validation": {},
           "local": {
+            "attempt_id": null,
             "install_error": null,
             "install_state": "idle",
             "last_progress_at": null,
@@ -5535,7 +5561,7 @@
       },
       {
         "body_bytes": 2986,
-        "body_sha256": "0439dfffa31d4d848e4e4907ccdf04cb0961488430be05979c97efed36b63ee6",
+        "body_sha256": "eab18b825991f115b8d56fdabb308d30112d9293caca0fe5214e377c30c3e312",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -5598,6 +5624,7 @@
           "configuration_guidance": null,
           "key_validation": {},
           "local": {
+            "attempt_id": null,
             "install_error": null,
             "install_state": "idle",
             "last_progress_at": null,
@@ -5795,7 +5822,7 @@
       },
       {
         "body_bytes": 266,
-        "body_sha256": "eeea5af31d7065ff56fa0ae6137fead4d8879199ff4142a0a2f1d9bb443ff528",
+        "body_sha256": "ae800e6dc3ca9ec62bd0efe66cff4addc49d8915e50fad3799dc7a613b72d5d9",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -5808,6 +5835,7 @@
           "model_present": false,
           "platform_supported": "<HOST_DEPENDENT>",
           "reason": "<HOST_DEPENDENT>",
+          "reason_code": "<HOST_DEPENDENT>",
           "total_memory_gb": "<HOST_DEPENDENT>",
           "warning": "<HOST_DEPENDENT>"
         },
@@ -5817,6 +5845,7 @@
           "available_memory_gb": "host",
           "platform_supported": "host",
           "reason": "host",
+          "reason_code": "host",
           "total_memory_gb": "host",
           "warning": "host"
         },
@@ -5841,11 +5870,12 @@
         "why": "unknown model refusal on the availability route"
       },
       {
-        "body_bytes": 170,
-        "body_sha256": "2597d3360f5032bee40d5ad2e3a1cae2579cfba3375758567b393b868129cb03",
+        "body_bytes": 188,
+        "body_sha256": "35d0ec60b0bf56f7cb2308e60d3ceb5a6c3452c0a64e91badf8397c990715e78",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
+          "attempt_id": null,
           "install_error": null,
           "install_state": "idle",
           "last_progress_at": null,
@@ -6772,7 +6802,7 @@
       },
       {
         "body_bytes": 13932,
-        "body_sha256": "d91b6d6c603487abd0d195f764e941848e3b0398fd52c65a137a7309493940cf",
+        "body_sha256": "352175590d1df65e470f68806c47cbf46f96773c16952e6cc61c4c3a9e18eddc",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -6963,9 +6993,11 @@
             ],
             "local_install": {
               "cancel": "cancel",
+              "cancelled_verdict": "installation cancelled",
               "failed_reason": "local setup stopped before it finished.",
               "failed_verdict": "local setup didn't finish",
               "install": "install local model",
+              "interrupted_verdict": "installation stopped",
               "notice_inflight": "local thinking will stay in your journal once setup finishes.",
               "phases": {
                 "downloading": "downloading",
@@ -6975,7 +7007,8 @@
               },
               "pill_failed": "couldn't finish",
               "pill_inflight": "setting up",
-              "retry": "try setup again"
+              "retry": "try setup again",
+              "stopped_reason": "you can try setup again when you're ready."
             },
             "local_recovery": {
               "retry": "try starting local again",
@@ -7005,10 +7038,10 @@
                   "reason": "the local model stopped before it became ready.",
                   "verdict": "local thinking couldn't start"
                 },
-                "gpu_probe_failed": {
+                "local_probe_failed": {
                   "pill": "couldn't check",
-                  "reason": "couldn't check whether this computer can run a local model.",
-                  "verdict": "couldn't check this computer's GPU"
+                  "reason": "try checking again in a moment.",
+                  "verdict": "couldn't check local setup"
                 },
                 "ready": {
                   "pill": "on",
@@ -7147,6 +7180,7 @@
             "configuration_guidance": null,
             "key_validation": {},
             "local": {
+              "attempt_id": null,
               "install_error": null,
               "install_state": "idle",
               "last_progress_at": null,
@@ -7298,7 +7332,7 @@
       },
       {
         "body_bytes": 3009,
-        "body_sha256": "93a0d00b9a52b4fa5e4c48118872c46ff1aef04ed416c5ceef16cc0731b2098a",
+        "body_sha256": "b7a1e463694f641c29aa45f53ae92d9c1740c3c009fea03432fc860ab1fcfe78",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -7361,6 +7395,7 @@
           "configuration_guidance": null,
           "key_validation": {},
           "local": {
+            "attempt_id": null,
             "install_error": null,
             "install_state": "idle",
             "last_progress_at": null,
@@ -7512,7 +7547,7 @@
       },
       {
         "body_bytes": 3009,
-        "body_sha256": "93a0d00b9a52b4fa5e4c48118872c46ff1aef04ed416c5ceef16cc0731b2098a",
+        "body_sha256": "b7a1e463694f641c29aa45f53ae92d9c1740c3c009fea03432fc860ab1fcfe78",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -7575,6 +7610,7 @@
           "configuration_guidance": null,
           "key_validation": {},
           "local": {
+            "attempt_id": null,
             "install_error": null,
             "install_state": "idle",
             "last_progress_at": null,
@@ -7742,7 +7778,7 @@
       },
       {
         "body_bytes": 3009,
-        "body_sha256": "93a0d00b9a52b4fa5e4c48118872c46ff1aef04ed416c5ceef16cc0731b2098a",
+        "body_sha256": "b7a1e463694f641c29aa45f53ae92d9c1740c3c009fea03432fc860ab1fcfe78",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -7805,6 +7841,7 @@
           "configuration_guidance": null,
           "key_validation": {},
           "local": {
+            "attempt_id": null,
             "install_error": null,
             "install_state": "idle",
             "last_progress_at": null,
@@ -7998,7 +8035,7 @@
       },
       {
         "body_bytes": 266,
-        "body_sha256": "eeea5af31d7065ff56fa0ae6137fead4d8879199ff4142a0a2f1d9bb443ff528",
+        "body_sha256": "ae800e6dc3ca9ec62bd0efe66cff4addc49d8915e50fad3799dc7a613b72d5d9",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -8011,6 +8048,7 @@
           "model_present": false,
           "platform_supported": "<HOST_DEPENDENT>",
           "reason": "<HOST_DEPENDENT>",
+          "reason_code": "<HOST_DEPENDENT>",
           "total_memory_gb": "<HOST_DEPENDENT>",
           "warning": "<HOST_DEPENDENT>"
         },
@@ -8020,6 +8058,7 @@
           "available_memory_gb": "host",
           "platform_supported": "host",
           "reason": "host",
+          "reason_code": "host",
           "total_memory_gb": "host",
           "warning": "host"
         },
@@ -8044,11 +8083,12 @@
         "why": "unknown model refusal on the availability route"
       },
       {
-        "body_bytes": 170,
-        "body_sha256": "2597d3360f5032bee40d5ad2e3a1cae2579cfba3375758567b393b868129cb03",
+        "body_bytes": 188,
+        "body_sha256": "35d0ec60b0bf56f7cb2308e60d3ceb5a6c3452c0a64e91badf8397c990715e78",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
+          "attempt_id": null,
           "install_error": null,
           "install_state": "idle",
           "last_progress_at": null,
@@ -8549,7 +8589,7 @@
       },
       {
         "body_bytes": 3009,
-        "body_sha256": "93a0d00b9a52b4fa5e4c48118872c46ff1aef04ed416c5ceef16cc0731b2098a",
+        "body_sha256": "b7a1e463694f641c29aa45f53ae92d9c1740c3c009fea03432fc860ab1fcfe78",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -8612,6 +8652,7 @@
           "configuration_guidance": null,
           "key_validation": {},
           "local": {
+            "attempt_id": null,
             "install_error": null,
             "install_state": "idle",
             "last_progress_at": null,
@@ -9169,7 +9210,7 @@
       },
       {
         "body_bytes": 13873,
-        "body_sha256": "8f9a8904eb42c454509c7ce66b5594f1da47774ecce63122d3709507acb30f0c",
+        "body_sha256": "b91e621432713cc5e895b148a3b46856ec5b8620f2eb00ca3b636dc344cb0e46",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -9360,9 +9401,11 @@
             ],
             "local_install": {
               "cancel": "cancel",
+              "cancelled_verdict": "installation cancelled",
               "failed_reason": "local setup stopped before it finished.",
               "failed_verdict": "local setup didn't finish",
               "install": "install local model",
+              "interrupted_verdict": "installation stopped",
               "notice_inflight": "local thinking will stay in your journal once setup finishes.",
               "phases": {
                 "downloading": "downloading",
@@ -9372,7 +9415,8 @@
               },
               "pill_failed": "couldn't finish",
               "pill_inflight": "setting up",
-              "retry": "try setup again"
+              "retry": "try setup again",
+              "stopped_reason": "you can try setup again when you're ready."
             },
             "local_recovery": {
               "retry": "try starting local again",
@@ -9402,10 +9446,10 @@
                   "reason": "the local model stopped before it became ready.",
                   "verdict": "local thinking couldn't start"
                 },
-                "gpu_probe_failed": {
+                "local_probe_failed": {
                   "pill": "couldn't check",
-                  "reason": "couldn't check whether this computer can run a local model.",
-                  "verdict": "couldn't check this computer's GPU"
+                  "reason": "try checking again in a moment.",
+                  "verdict": "couldn't check local setup"
                 },
                 "ready": {
                   "pill": "on",
@@ -9544,6 +9588,7 @@
             "configuration_guidance": null,
             "key_validation": {},
             "local": {
+              "attempt_id": null,
               "install_error": null,
               "install_state": "idle",
               "last_progress_at": null,
@@ -9695,7 +9740,7 @@
       },
       {
         "body_bytes": 2952,
-        "body_sha256": "d86984566e7f9bceac432cdc406e65a2506197694268172cc5fae300b8a02f72",
+        "body_sha256": "8a35a9aeaa951737dd035027b98d7a5f5fbff75397bad2a63792b218b368e7bc",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -9758,6 +9803,7 @@
           "configuration_guidance": null,
           "key_validation": {},
           "local": {
+            "attempt_id": null,
             "install_error": null,
             "install_state": "idle",
             "last_progress_at": null,
@@ -9909,7 +9955,7 @@
       },
       {
         "body_bytes": 2952,
-        "body_sha256": "d86984566e7f9bceac432cdc406e65a2506197694268172cc5fae300b8a02f72",
+        "body_sha256": "8a35a9aeaa951737dd035027b98d7a5f5fbff75397bad2a63792b218b368e7bc",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -9972,6 +10018,7 @@
           "configuration_guidance": null,
           "key_validation": {},
           "local": {
+            "attempt_id": null,
             "install_error": null,
             "install_state": "idle",
             "last_progress_at": null,
@@ -10139,7 +10186,7 @@
       },
       {
         "body_bytes": 2952,
-        "body_sha256": "d86984566e7f9bceac432cdc406e65a2506197694268172cc5fae300b8a02f72",
+        "body_sha256": "8a35a9aeaa951737dd035027b98d7a5f5fbff75397bad2a63792b218b368e7bc",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -10202,6 +10249,7 @@
           "configuration_guidance": null,
           "key_validation": {},
           "local": {
+            "attempt_id": null,
             "install_error": null,
             "install_state": "idle",
             "last_progress_at": null,
@@ -10397,7 +10445,7 @@
       },
       {
         "body_bytes": 266,
-        "body_sha256": "eeea5af31d7065ff56fa0ae6137fead4d8879199ff4142a0a2f1d9bb443ff528",
+        "body_sha256": "ae800e6dc3ca9ec62bd0efe66cff4addc49d8915e50fad3799dc7a613b72d5d9",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -10410,6 +10458,7 @@
           "model_present": false,
           "platform_supported": "<HOST_DEPENDENT>",
           "reason": "<HOST_DEPENDENT>",
+          "reason_code": "<HOST_DEPENDENT>",
           "total_memory_gb": "<HOST_DEPENDENT>",
           "warning": "<HOST_DEPENDENT>"
         },
@@ -10419,6 +10468,7 @@
           "available_memory_gb": "host",
           "platform_supported": "host",
           "reason": "host",
+          "reason_code": "host",
           "total_memory_gb": "host",
           "warning": "host"
         },
@@ -10443,11 +10493,12 @@
         "why": "unknown model refusal on the availability route"
       },
       {
-        "body_bytes": 170,
-        "body_sha256": "2597d3360f5032bee40d5ad2e3a1cae2579cfba3375758567b393b868129cb03",
+        "body_bytes": 188,
+        "body_sha256": "35d0ec60b0bf56f7cb2308e60d3ceb5a6c3452c0a64e91badf8397c990715e78",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
+          "attempt_id": null,
           "install_error": null,
           "install_state": "idle",
           "last_progress_at": null,
@@ -10948,7 +10999,7 @@
       },
       {
         "body_bytes": 3048,
-        "body_sha256": "ef9724f2c3b879e389639806398778b30fca268a802392b22aa6c6d939561f9a",
+        "body_sha256": "ba6dc7d7d5ff55d78230bc7718b7630c740274a3a4ac4294d3ed0dd8edeae3e2",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -11014,6 +11065,7 @@
           "configuration_guidance": null,
           "key_validation": {},
           "local": {
+            "attempt_id": null,
             "install_error": null,
             "install_state": "idle",
             "last_progress_at": null,
@@ -12709,7 +12761,7 @@
       },
       {
         "body_bytes": 13824,
-        "body_sha256": "09e3a4308a5e4c1ae289925781703ae05ec1a5ec2380e8ca8ce70a21489d7860",
+        "body_sha256": "5591b9a2bb849eca8a6d8ee9b247ecd117c41c1099f8efd0b7a8a3047417ef72",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -12900,9 +12952,11 @@
             ],
             "local_install": {
               "cancel": "cancel",
+              "cancelled_verdict": "installation cancelled",
               "failed_reason": "local setup stopped before it finished.",
               "failed_verdict": "local setup didn't finish",
               "install": "install local model",
+              "interrupted_verdict": "installation stopped",
               "notice_inflight": "local thinking will stay in your journal once setup finishes.",
               "phases": {
                 "downloading": "downloading",
@@ -12912,7 +12966,8 @@
               },
               "pill_failed": "couldn't finish",
               "pill_inflight": "setting up",
-              "retry": "try setup again"
+              "retry": "try setup again",
+              "stopped_reason": "you can try setup again when you're ready."
             },
             "local_recovery": {
               "retry": "try starting local again",
@@ -12942,10 +12997,10 @@
                   "reason": "the local model stopped before it became ready.",
                   "verdict": "local thinking couldn't start"
                 },
-                "gpu_probe_failed": {
+                "local_probe_failed": {
                   "pill": "couldn't check",
-                  "reason": "couldn't check whether this computer can run a local model.",
-                  "verdict": "couldn't check this computer's GPU"
+                  "reason": "try checking again in a moment.",
+                  "verdict": "couldn't check local setup"
                 },
                 "ready": {
                   "pill": "on",
@@ -13087,6 +13142,7 @@
             "configuration_guidance": null,
             "key_validation": {},
             "local": {
+              "attempt_id": null,
               "install_error": null,
               "install_state": "idle",
               "last_progress_at": null,
@@ -13238,7 +13294,7 @@
       },
       {
         "body_bytes": 2901,
-        "body_sha256": "d0884691542a98713cac76585c60b0ea4198e60c55d30f71726ee579875deffc",
+        "body_sha256": "7ec289122637986649d8ad1beb268266be3a97e7ebfa4d0dae15ff39e7c3575c",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -13304,6 +13360,7 @@
           "configuration_guidance": null,
           "key_validation": {},
           "local": {
+            "attempt_id": null,
             "install_error": null,
             "install_state": "idle",
             "last_progress_at": null,
@@ -13455,7 +13512,7 @@
       },
       {
         "body_bytes": 2901,
-        "body_sha256": "d0884691542a98713cac76585c60b0ea4198e60c55d30f71726ee579875deffc",
+        "body_sha256": "7ec289122637986649d8ad1beb268266be3a97e7ebfa4d0dae15ff39e7c3575c",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -13521,6 +13578,7 @@
           "configuration_guidance": null,
           "key_validation": {},
           "local": {
+            "attempt_id": null,
             "install_error": null,
             "install_state": "idle",
             "last_progress_at": null,
@@ -13688,7 +13746,7 @@
       },
       {
         "body_bytes": 2901,
-        "body_sha256": "d0884691542a98713cac76585c60b0ea4198e60c55d30f71726ee579875deffc",
+        "body_sha256": "7ec289122637986649d8ad1beb268266be3a97e7ebfa4d0dae15ff39e7c3575c",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -13754,6 +13812,7 @@
           "configuration_guidance": null,
           "key_validation": {},
           "local": {
+            "attempt_id": null,
             "install_error": null,
             "install_state": "idle",
             "last_progress_at": null,
@@ -13947,7 +14006,7 @@
       },
       {
         "body_bytes": 266,
-        "body_sha256": "eeea5af31d7065ff56fa0ae6137fead4d8879199ff4142a0a2f1d9bb443ff528",
+        "body_sha256": "ae800e6dc3ca9ec62bd0efe66cff4addc49d8915e50fad3799dc7a613b72d5d9",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
@@ -13960,6 +14019,7 @@
           "model_present": false,
           "platform_supported": "<HOST_DEPENDENT>",
           "reason": "<HOST_DEPENDENT>",
+          "reason_code": "<HOST_DEPENDENT>",
           "total_memory_gb": "<HOST_DEPENDENT>",
           "warning": "<HOST_DEPENDENT>"
         },
@@ -13969,6 +14029,7 @@
           "available_memory_gb": "host",
           "platform_supported": "host",
           "reason": "host",
+          "reason_code": "host",
           "total_memory_gb": "host",
           "warning": "host"
         },
@@ -13993,11 +14054,12 @@
         "why": "unknown model refusal on the availability route"
       },
       {
-        "body_bytes": 170,
-        "body_sha256": "2597d3360f5032bee40d5ad2e3a1cae2579cfba3375758567b393b868129cb03",
+        "body_bytes": 188,
+        "body_sha256": "35d0ec60b0bf56f7cb2308e60d3ceb5a6c3452c0a64e91badf8397c990715e78",
         "body_sha256_basis": "raw-body",
         "content_type": "application/json",
         "json": {
+          "attempt_id": null,
           "install_error": null,
           "install_state": "idle",
           "last_progress_at": null,

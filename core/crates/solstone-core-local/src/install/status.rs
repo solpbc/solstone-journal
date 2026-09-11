@@ -146,10 +146,14 @@ pub fn read_status(journal: &Path, provider: &str) -> Result<InstallStatus, Stat
         return Err(unknown_provider());
     }
     let path = status_path(journal, provider);
-    if !path.exists() {
-        return Ok(idle_status(provider));
-    }
-    let status: InstallStatus = serde_json::from_slice(&fs::read(&path)?)
+    let bytes = match fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(idle_status(provider));
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let status: InstallStatus = serde_json::from_slice(&bytes)
         .map_err(|_| StatusError::Malformed(format!("{}", path.display())))?;
     validate(&status, provider)?;
     Ok(status)

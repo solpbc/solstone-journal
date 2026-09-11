@@ -289,16 +289,40 @@ fn install_parakeet(
 }
 
 fn install_local(journal: &Path) -> Result<Value, Box<DispatchError>> {
-    let payload = if canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH).0 == "darwin"
-    {
-        json!({
-            "journal": journal.display().to_string(),
-            "model_id": "local/qwen3.5-4b",
-            "backend": "metal",
-        })
-    } else {
-        json!({"journal": journal.display().to_string()})
+    use solstone_core_system::process::{
+        InspectResult, ProcessInstanceSource, SystemProcessInstanceSource,
     };
+    let owner = match SystemProcessInstanceSource.inspect(std::process::id()) {
+        InspectResult::Present { instance, .. } if instance.birth.is_verifiable() => {
+            json!(instance)
+        }
+        _ => {
+            return Err(Box::new(DispatchError {
+                envelope: solstone_core_local::install::InstallEnvelope {
+                    schema: "solstone-local-install-v1",
+                    outcome: "error",
+                    result: None,
+                    error: Some(solstone_core_local::install::InstallError {
+                        kind: "state".into(),
+                        reason_code: "owner_unavailable".into(),
+                        message: "could not capture installer process identity".into(),
+                    }),
+                },
+                exit_code: 74,
+            }));
+        }
+    };
+    let mut payload =
+        if canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH).0 == "darwin" {
+            json!({
+                "journal": journal.display().to_string(),
+                "model_id": "local/qwen3.5-4b",
+                "backend": "metal",
+            })
+        } else {
+            json!({"journal": journal.display().to_string()})
+        };
+    payload["owner"] = owner;
     let envelope = dispatch(InstallVerb::RunLocal, payload).map_err(Box::new)?;
     Ok(envelope
         .result

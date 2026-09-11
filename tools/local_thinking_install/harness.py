@@ -485,17 +485,19 @@ def check_metal_evidence_darwin(journal_dir: Path) -> tuple[bool, str]:
     if "--mmproj" not in tokens:
         return False, f"Runtime argv tokens missing --mmproj: {tokens}"
 
-    chronicle_dir = journal_dir / "chronicle"
-    oplog_files = list(chronicle_dir.glob("*/health/oplog--*"))
+    # LocalLifecycleSeam's child inherits the supervisor's stdout/stderr.
+    # PortalProcess enables the pinned runtime's diagnostic verbosity and saves
+    # both streams here; per-service oplogs do not contain this child's output.
+    runtime_log = journal_dir.parent / "supervisor.log"
     evidence = []
-    for oplog in oplog_files:
-        content = oplog.read_text(encoding="utf-8", errors="replace")
-        evidence.extend(f"{oplog}: {line.strip()}" for line in content.splitlines()
+    if runtime_log.is_file():
+        content = runtime_log.read_text(encoding="utf-8", errors="replace")
+        evidence.extend(f"{runtime_log}: {line.strip()}" for line in content.splitlines()
                         if "ggml_metal" in line or "offloaded" in line)
     excerpt = "\n".join(evidence)
     (journal_dir.parent / "metal-evidence.log").write_text(excerpt)
     if "ggml_metal" not in excerpt or "offloaded" not in excerpt:
-        return False, "Missing Metal initialization or layer-offload evidence in managed oplogs"
+        return False, "Missing Metal initialization or layer-offload evidence in supervisor capture"
     return True, excerpt
 
 
@@ -567,6 +569,9 @@ def run_post_admit_checks(
         activate_url,
         method="PUT",
         data={"lane": "local"},
+        # Activation verifies both multi-gigabyte artifacts. Unoptimized candidate
+        # builds can spend longer here than a normal status request.
+        timeout=120.0,
     )
     if activate_resp.status not in (200, 202):
         return f"activate_failed_{activate_resp.status}", None, None
@@ -773,8 +778,14 @@ def run_scenario(
         portal_stop_err = portal.stop()
         ns_cleanup_err = cleanup_namespace(admit_result, source_root) if not portal_stop_err else "Namespace retained because process cleanup failed"
         cleanup_errors = [e for e in (portal_stop_err, ns_cleanup_err) if e]
-        if cleanup_errors and res is not None:
-            res.cleanup_error = "; ".join(cleanup_errors)
+        (case_dir / "cleanup.json").write_text(json.dumps({
+            "process_error": portal_stop_err, "namespace_error": ns_cleanup_err,
+        }, indent=2), encoding="utf-8")
+        if cleanup_errors:
+            if res is not None:
+                res.cleanup_error = "; ".join(cleanup_errors)
+            else:
+                raise RuntimeError("; ".join(cleanup_errors))
 
 
 def run_harness(

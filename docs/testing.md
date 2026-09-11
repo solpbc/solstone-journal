@@ -94,6 +94,15 @@ needed input into a temporary directory such as `tempfile::TempDir`.
   `SUPERVISOR_RACE_INCONCLUSIVE` marker when that helper returns an inconclusive outcome,
   and join `RUST_RACE_TEST_TARGETS` so `make check-rust-race` covers them.
 - Run one crate's default-feature same-crate tests with `cargo test --manifest-path core/Cargo.toml -p <crate> --lib --bins`. For `solstone-core-sol-link`, `solstone-core-convey-body`, `solstone-core-facets`, and `solstone-core-describe`, that selects only routine same-crate evidence; run the matching `make check-rust-classified-full-tests-<suffix>` target for broader `full-tests` same-crate evidence and `make check-rust-classified-full-clippy-<suffix>` for its feature-enabled lint evidence. The sol-link targets also enable `test-hooks`. Omit `--lib --bins` only when you intend Cargo's eligible integration-target and doctest selection. A crate command does **not** run a dependency's tests; use `--workspace` when you need the default-feature sweep.
+
+## On-demand local thinking installation
+
+The [local thinking installation harness](local-thinking-install.md)
+runs the real portal against disposable fresh and prior-MLX journals, through to
+an inference answer. Run it on an Apple Silicon Mac when changing this lifecycle;
+it is separate from ordinary CI and release gates. The guide covers candidate
+preparation, baseline comparisons, receipts, and cleanup.
+
 ## Worktree Development
 
 Run the full stack (supervisor + callosum + sense + cortex + convey) against test fixture data:

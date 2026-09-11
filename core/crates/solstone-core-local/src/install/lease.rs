@@ -31,6 +31,12 @@ pub fn is_held(journal: &Path, provider: &str) -> std::io::Result<bool> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(error) => return Err(error),
     };
+    if !file.metadata()?.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "install lease is not a regular file",
+        ));
+    }
     match file.try_lock_shared() {
         Ok(()) => Ok(false),
         Err(TryLockError::WouldBlock) => Ok(true),

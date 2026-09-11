@@ -569,6 +569,18 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                 "failed_reason",
                 CopyValue::String("local setup stopped before it finished."),
             ),
+            (
+                "cancelled_verdict",
+                CopyValue::String("installation cancelled"),
+            ),
+            (
+                "interrupted_verdict",
+                CopyValue::String("installation stopped"),
+            ),
+            (
+                "stopped_reason",
+                CopyValue::String("you can try setup again when you're ready."),
+            ),
             ("retry", CopyValue::String("try setup again")),
             ("install", CopyValue::String("install local model")),
             ("cancel", CopyValue::String("cancel")),
@@ -654,18 +666,13 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                         ]),
                     ),
                     (
-                        "gpu_probe_failed",
+                        "local_probe_failed",
                         CopyValue::Object(&[
                             ("pill", CopyValue::String("couldn't check")),
-                            (
-                                "verdict",
-                                CopyValue::String("couldn't check this computer's GPU"),
-                            ),
+                            ("verdict", CopyValue::String("couldn't check local setup")),
                             (
                                 "reason",
-                                CopyValue::String(
-                                    "couldn't check whether this computer can run a local model.",
-                                ),
+                                CopyValue::String("try checking again in a moment."),
                             ),
                         ]),
                     ),

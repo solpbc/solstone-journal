@@ -59,8 +59,8 @@ pub fn availability(journal: &Path, model: &str) -> Value {
         metal_candidate::inspect(&input).unwrap_or_else(|_| {
             json!({
                 "status": "proof-unavailable",
-                "reason_code": "gpu_probe_failed",
-                "host": {"platform_supported": true},
+                "reason_code": "local_probe_failed",
+                "host": {"platform_supported": cfg!(target_arch = "aarch64")},
                 "artifacts": {"binary_installed": false, "model_installed": false},
             })
         })
@@ -93,7 +93,15 @@ fn availability_payload(model: &str, readiness: Value) -> Value {
     let available_memory_gb = memory.available_bytes().map(bytes_to_gb);
     let min_ram_gb = 8;
     let download_bytes = 3_413_361_504_u64;
-    let (available, reason, reason_code) = if readiness_reason == "gpu_probe_failed" {
+    let (available, reason, reason_code) = if !platform_supported {
+        (
+            false,
+            "local thinking needs supported hardware on this computer.",
+            "gpu_unavailable",
+        )
+    } else if readiness_status == "proof-unavailable" || readiness_reason == "local_probe_failed" {
+        (false, "couldn't check local setup", "local_probe_failed")
+    } else if readiness_reason == "gpu_probe_failed" {
         (false, "inability to probe GPU hardware", "gpu_probe_failed")
     } else if readiness_reason == "gpu_unavailable" || !platform_supported {
         (
@@ -137,11 +145,17 @@ fn availability_payload(model: &str, readiness: Value) -> Value {
 pub fn bootstrap_status(journal: &Path, _model: &str) -> Value {
     match read_status(journal, "local") {
         Ok(mut status) => {
-            if cfg!(target_os = "macos") && !metal_candidate::status_targets_native(&status) {
+            let held = match is_held(journal, "local") {
+                Ok(held) => held,
+                Err(_) => return unavailable_bootstrap_status("lease_unreadable"),
+            };
+            if !held
+                && cfg!(target_os = "macos")
+                && !metal_candidate::status_targets_native(&status)
+            {
                 return idle_bootstrap_status();
             }
-            if is_in_flight(&status.install_state) && matches!(is_held(journal, "local"), Ok(false))
-            {
+            if is_in_flight(&status.install_state) && !held {
                 status.install_state = "failed".to_owned();
                 status.install_error = Some("install_interrupted".to_owned());
             }
@@ -161,18 +175,14 @@ pub fn bootstrap_status(journal: &Path, _model: &str) -> Value {
         {
             idle_bootstrap_status()
         }
-        Err(_) => json!({
-            "name": "local",
-            "install_state": "unavailable",
-            "reason_code": "status_unreadable",
-            "attempt_id": null,
-            "last_transition_at": null,
-            "last_progress_at": null,
-            "progress_bytes_received": null,
-            "progress_bytes_total": null,
-            "install_error": "status_unreadable"
-        }),
+        Err(_) => unavailable_bootstrap_status("status_unreadable"),
     }
+}
+
+fn unavailable_bootstrap_status(reason: &str) -> Value {
+    json!({"name":"local", "install_state":"unavailable", "reason_code":reason,
+        "attempt_id":null, "last_transition_at":null, "last_progress_at":null,
+        "progress_bytes_received":null, "progress_bytes_total":null, "install_error":reason})
 }
 
 fn idle_bootstrap_status() -> Value {
@@ -294,9 +304,11 @@ pub fn start_bootstrap(
 }
 
 fn classify_bootstrap(journal: &Path, readiness: &Value) -> BootstrapResponse {
-    if readiness["ready"].as_bool() == Some(true) {
-        return BootstrapResponse::Installed;
-    }
+    // Corrupt persisted state cannot be covered over by an artifact readiness proof.
+    let status = match read_status(journal, "local") {
+        Ok(status) => status,
+        Err(error) => return BootstrapResponse::Unavailable(error.to_string()),
+    };
     let readiness_status = readiness["status"].as_str().unwrap_or("");
     if readiness_status == "host-ineligible" {
         return BootstrapResponse::HostIneligible(
@@ -318,22 +330,7 @@ fn classify_bootstrap(journal: &Path, readiness: &Value) -> BootstrapResponse {
         Ok(held) => held,
         Err(error) => return BootstrapResponse::Unavailable(error.to_string()),
     };
-    let status_res = read_status(journal, "local");
-    let (install_state, is_stale_mlx) = match status_res {
-        Ok(status) => {
-            if cfg!(target_os = "macos") && !metal_candidate::status_targets_native(&status) {
-                ("idle".to_owned(), true)
-            } else {
-                (status.install_state, false)
-            }
-        }
-        Err(solstone_core_local::install::status::StatusError::Io(err))
-            if err.kind() == std::io::ErrorKind::NotFound =>
-        {
-            ("idle".to_owned(), false)
-        }
-        Err(err) => return BootstrapResponse::Unavailable(err.to_string()),
-    };
+    let install_state = status.install_state;
     if is_in_flight(&install_state) {
         if held {
             return BootstrapResponse::InFlight(install_state);
@@ -341,11 +338,11 @@ fn classify_bootstrap(journal: &Path, readiness: &Value) -> BootstrapResponse {
             return BootstrapResponse::Start;
         }
     }
-    if is_stale_mlx {
-        return BootstrapResponse::Start;
-    }
     if held {
         return BootstrapResponse::Busy(install_state);
+    }
+    if readiness["ready"].as_bool() == Some(true) {
+        return BootstrapResponse::Installed;
     }
     BootstrapResponse::Start
 }
@@ -593,6 +590,86 @@ mod tests {
         );
         assert_eq!(response, BootstrapResponse::Start);
         let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn corrupt_status_and_unreadable_lease_are_unavailable_even_with_ready_artifacts() {
+        let journal = temporary_journal("unreadable-bootstrap");
+        let status_path = solstone_core_local::install::status::status_path(&journal, "local");
+        fs::create_dir_all(status_path.parent().unwrap()).unwrap();
+        fs::write(&status_path, "not json").unwrap();
+        assert!(matches!(
+            classify_bootstrap(&journal, &json!({"ready":true})),
+            BootstrapResponse::Unavailable(_)
+        ));
+        assert_eq!(
+            super::bootstrap_status(&journal, default_model())["install_state"],
+            "unavailable"
+        );
+        fs::remove_file(status_path).unwrap();
+        fs::create_dir(solstone_core_local::install::lease::lease_path(
+            &journal, "local",
+        ))
+        .unwrap();
+        assert!(matches!(
+            classify_bootstrap(&journal, &json!({"ready":true})),
+            BootstrapResponse::Unavailable(_)
+        ));
+        assert_eq!(
+            super::bootstrap_status(&journal, default_model())["reason_code"],
+            "lease_unreadable"
+        );
+        fs::remove_dir_all(journal).unwrap();
+    }
+
+    #[test]
+    fn held_legacy_attempt_is_never_admitted_as_a_new_install() {
+        let journal = temporary_journal("held-legacy");
+        let _held = solstone_core_local::install::lease::acquire(&journal, "local")
+            .unwrap()
+            .unwrap();
+        solstone_core_local::install::status::begin(
+            &journal,
+            "{}".into(),
+            "legacy".into(),
+            None,
+            "downloading",
+        )
+        .unwrap();
+        assert_eq!(
+            classify_bootstrap(
+                &journal,
+                &json!({"ready":false,"status":"missing-artifacts"})
+            ),
+            BootstrapResponse::InFlight("downloading".into())
+        );
+        assert_eq!(
+            super::bootstrap_status(&journal, default_model())["install_state"],
+            "downloading"
+        );
+        fs::remove_dir_all(journal).unwrap();
+    }
+
+    #[test]
+    fn unavailable_proof_is_not_hardware_absence_or_an_install_offer() {
+        let unavailable = super::availability_payload(
+            default_model(),
+            json!({
+                "status":"proof-unavailable", "reason_code":"readiness_unavailable",
+                "host":{"platform_supported":true}, "artifacts":{}
+            }),
+        );
+        assert_eq!(unavailable["reason_code"], "local_probe_failed");
+        assert_eq!(unavailable["platform_supported"], true);
+        assert_eq!(unavailable["available"], false);
+        let unsupported = super::availability_payload(
+            default_model(),
+            json!({
+                "status":"host-ineligible", "reason_code":"gpu_unavailable",
+                "host":{"platform_supported":false}, "artifacts":{}
+            }),
+        );
+        assert_eq!(unsupported["reason_code"], "gpu_unavailable");
     }
 
     fn write_runtime_health(journal: &std::path::Path, phase: &str, reason_code: &str) {

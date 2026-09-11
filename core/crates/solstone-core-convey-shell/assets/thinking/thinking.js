@@ -49,7 +49,7 @@
   let copy = {};
   const confidentialTerminalPhases = new Set(['not_verified', 'repair_needed', 'early_access']);
   const installInFlightStates = new Set(['resolving', 'downloading', 'verifying', 'installing']);
-  const installTerminalStates = new Set(['idle', 'installed', 'failed']);
+  const installTerminalStates = new Set(['idle', 'installed', 'failed', 'unavailable']);
   const localServerUnhealthyReasons = new Set(['local_server_unhealthy', 'server_unhealthy']);
   const localSetupMissingReasons = new Set([
     'local_model_missing',
@@ -153,7 +153,7 @@
     const button = $(id);
     if (!button) return;
     const willHide = !visible;
-    if (willHide && document.activeElement === button) {
+    if (id.startsWith('local') && (willHide || disabled) && document.activeElement === button) {
       const fallback = $('localSetupMessage') || $('localRefresh') || $('localSetupTitle');
       if (fallback && typeof fallback.focus === 'function') {
         fallback.focus();
@@ -203,12 +203,15 @@
       };
     }
     if (phase === 'failed') {
+      const stopped = status.install_error === 'install_cancelled' || status.install_error === 'install_interrupted';
+      const verdict = status.install_error === 'install_cancelled' ? text?.cancelled_verdict
+        : status.install_error === 'install_interrupted' ? text?.interrupted_verdict : text?.failed_verdict;
       return {
-        pill: text?.pill_failed || '',
+        pill: stopped ? verdict : (text?.pill_failed || ''),
         title: 'local',
-        sub: text?.failed_verdict || '',
+        sub: verdict || '',
         message: '',
-        notice: text?.failed_reason || '',
+        notice: stopped ? (text?.stopped_reason || '') : (text?.failed_reason || ''),
         activate: false,
         bootstrap: true,
         bootstrapLabel: text?.retry || '',
@@ -2982,6 +2985,15 @@
         endpointOverride: true,
       };
     }
+    const inspectionFailed = state.install?.install_state === 'unavailable'
+      || ['local_probe_failed', 'gpu_probe_failed', 'availability_unavailable'].includes(state.localAvailability?.reason_code);
+    if (inspectionFailed) {
+      const text = copy.local_recovery?.states?.local_probe_failed || {};
+      return {pill: text.pill || "couldn't check", title: 'local',
+        sub: text.verdict || "couldn't check local setup", message: '',
+        notice: text.reason || "try checking again in a moment.",
+        activate: false, bootstrap: false, tone: ''};
+    }
     const installOverride = installCopyForStatus(state.install, copy.local_install || {});
     const runtimeOverride = localRuntimeCopy(
       state.providers.local_runtime,
@@ -2991,6 +3003,7 @@
     if (installIsInFlight(state.install)) return installOverride;
     if (
       runtimeOverride
+      && state.localAvailability?.available !== false
       && ['ready', 'ready-proof-unavailable'].includes(state.providers.local_runtime?.phase)
     ) {
       return runtimeOverride;
@@ -3029,13 +3042,13 @@
     // Disposition: gpu_probe_failed is retained for readiness outcomes even though
     // provider issues do not emit it.
     if (reason === 'gpu_probe_failed') {
-      const copyProbe = copy.local_recovery?.states?.gpu_probe_failed;
+      const copyProbe = copy.local_recovery?.states?.local_probe_failed;
       return {
         pill: copyProbe?.pill || "couldn't check",
         title: 'local',
-        sub: copyProbe?.verdict || "couldn't check this computer's GPU",
+        sub: copyProbe?.verdict || "couldn't check local setup",
         message: '',
-        notice: copyProbe?.reason || `couldn't check this computer's GPU. you can still use ${activeLaneLabel('byo')}.`,
+        notice: copyProbe?.reason || `couldn't check local setup. you can still use ${activeLaneLabel('byo')}.`,
         activate: false,
         bootstrap: false,
         tone: '',
@@ -3302,8 +3315,14 @@
   async function refreshLocalAvailability() {
     const model = $('localModelSelect')?.value || '';
     const suffix = model ? `?model=${encodeURIComponent(model)}` : '';
-    state.localAvailability = await api(`api/local/availability${suffix}`);
-    renderAll();
+    try {
+      state.localAvailability = await api(`api/local/availability${suffix}`);
+    } catch (error) {
+      state.localAvailability = {available: false, reason_code: 'availability_unavailable'};
+      throw error;
+    } finally {
+      renderAll();
+    }
   }
 
   function selectedLocalModelId() {
@@ -3507,8 +3526,9 @@
   }
 
   async function refreshInstallStatus({autoResume = false} = {}) {
+    const generation = state.installPollGeneration;
     const status = await fetchInstallStatus();
-    applyLocalInstallStatus(status);
+    if (!applyLocalInstallStatus(status, generation)) return status;
     if (installIsInFlight(status) && autoResume) {
       startInstallPoll(status);
     } else if (installIsTerminal(status)) {
@@ -3764,6 +3784,7 @@
   async function startLocalBootstrap() {
     if (bootstrapPending) return;
     bootstrapPending = true;
+    stopInstallPoll();
     renderLocal();
     try {
       const model = $('localModelSelect')?.value || '';
@@ -3792,6 +3813,7 @@
     const attemptId = state.install?.attempt_id || '';
     if (!attemptId) return;
     cancelPending = true;
+    stopInstallPoll();
     renderLocal();
     try {
       const url = `api/local/bootstrap/cancel?attempt_id=${encodeURIComponent(attemptId)}`;
@@ -3801,8 +3823,6 @@
       if (installIsInFlight(status)) {
         startInstallPoll(status);
       }
-    } catch (err) {
-      setMessage('localSetupMessage', err.message, 'error');
     } finally {
       cancelPending = false;
       renderLocal();
