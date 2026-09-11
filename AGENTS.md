@@ -90,6 +90,7 @@ Verified against `Makefile`. Grouped by use.
 
 | Target | When to use |
 |--------|-------------|
+| `make preflight` | Standalone host-readiness check for a from-source build: Rust toolchain, clang headers, ffmpeg/nasm/ripgrep/minisign, gstreamer/pipewire. Reports what's missing and how to fix it; never installs anything itself, and is not a dependency of any other target. |
 | `make install` | **Retired.** Install the journal from the distribution tree; develop against this checkout with Cargo directly. |
 | `make skills` | Regenerate generated router references, then rewrite the `solstone` + `journal` router skill symlinks into `journal/`. |
 | `make update` | Upgrade all deps to latest, regenerate `uv.lock` (the remaining `scripts/` Python tooling's own dependencies — not a product dependency set). |
@@ -141,7 +142,7 @@ not a missing or misconfigured system package, so no package installation or
 elevated permissions are needed. Before invoking Cargo directly, export this
 variable yourself to supply the missing clang builtin include directory:
 `export BINDGEN_EXTRA_CLANG_ARGS=-I$(find /usr/lib{,64}/clang/*/include -print -quit 2>/dev/null)`.
-`make`, `make ci`, `make test`, and `make check-rust-*` set it automatically.
+`make`, `make ci`, `make test`, and `make check-rust-*` set it automatically. `make preflight` catches a missing/unresolvable clang include path before it surfaces this way.
 
 ### Rust test topology
 
@@ -190,6 +191,7 @@ Use `cargo test --manifest-path core/Cargo.toml -p <package> --no-default-featur
 |--------|-------------|
 | `make pre-commit` | Install pre-commit hooks (optional). |
 | `make versions` | Print versions of Python, uv, and key deps (the remaining `scripts/` tooling's own environment, not a product dependency). Diagnostic. |
+| `make agent-setup` | Alias for `ci-full-prep-cargo`; a coding agent's one-shot cargo-side prep before a `ci-full`-adjacent run. |
 
 ### Release and transparency
 

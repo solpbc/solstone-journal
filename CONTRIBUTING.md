@@ -4,12 +4,12 @@ Thank you for your interest in contributing to solstone. This guide covers devel
 
 ## Prerequisites
 
-solstone development uses a source checkout, a repo-local Python environment, and the `uv` package manager.
+The journal itself is Rust; building and running it needs no Python and no package manager of its own. The repo's own hygiene scripts under `scripts/` still use Python via `uv`, which the Make targets that need it provision on demand. `make preflight` checks the items below on your machine and reports exactly what's missing, with a fix for each.
 
 Required everywhere:
 
-- Python 3.12 or later, as declared in `pyproject.toml`
-- [uv](https://docs.astral.sh/uv/)
+- a Rust toolchain via [rustup](https://rustup.rs) (the pinned version installs itself from `rust-toolchain.toml`)
+- Python 3.12 or later and [uv](https://docs.astral.sh/uv/), for the repo's hygiene scripts under `scripts/`
 - Git
 - ripgrep (`rg`)
 - ffmpeg for audio processing
@@ -19,7 +19,6 @@ Linux is the primary development platform. macOS is supported. Source-checkout i
 
 Linux source builds additionally require Clang development headers. Linux/x86_64
 also requires NASM; omit `nasm` from the commands below on Linux/aarch64.
-⚠ Nothing enforces this architecture split before compilation any more; `make preflight` did, and it went with the Python reference cut. Check the requirements above by hand.
 Install the exact minisign 0.12 binary from the
 [upstream 0.12 release](https://github.com/jedisct1/minisign/releases/tag/0.12)
 rather than relying on an unpinned distro package, then confirm `minisign -v`
@@ -28,21 +27,21 @@ prints `minisign 0.12`.
 Fedora/RHEL:
 
 ```bash
-sudo dnf install python3 git ripgrep ffmpeg nasm clang-devel libgomp pipewire gstreamer1-plugins-base gstreamer1-plugin-pipewire pulseaudio-utils
+sudo dnf install python3 git ripgrep ffmpeg nasm clang-devel libgomp pipewire gstreamer1-plugins-base gstreamer1-plugin-pipewire pulseaudio-utils  # omit nasm on aarch64
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 Ubuntu/Debian:
 
 ```bash
-sudo apt install python3 git ripgrep ffmpeg nasm libclang-dev libgomp1 pipewire gstreamer1.0-tools gstreamer1.0-pipewire pulseaudio-utils
+sudo apt install python3 git ripgrep ffmpeg nasm libclang-dev libgomp1 pipewire gstreamer1.0-tools gstreamer1.0-pipewire pulseaudio-utils  # omit nasm on aarch64
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 Arch:
 
 ```bash
-sudo pacman -S python git ripgrep ffmpeg nasm clang libgomp pipewire gstreamer gst-plugin-pipewire libpulse
+sudo pacman -S python git ripgrep ffmpeg nasm clang libgomp pipewire gstreamer gst-plugin-pipewire libpulse  # omit nasm on aarch64
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
@@ -53,6 +52,8 @@ xcode-select --install
 brew install python git ripgrep ffmpeg uv
 ```
 
+Then, from the checkout, run `make preflight` to confirm the above landed correctly before your first build.
+
 ## Source-checkout development
 
 `make install` is retired and exits with an error. The journal itself is Rust and has no Python environment; develop in the checkout with Cargo, via the Makefile targets in [AGENTS.md](AGENTS.md). The remaining `scripts/` hygiene tooling still uses `uv`, and the targets that need it build that environment on demand.
@@ -60,13 +61,14 @@ brew install python git ripgrep ffmpeg uv
 ```bash
 git clone https://github.com/solpbc/solstone-journal.git
 cd solstone-journal
+make preflight
 make test
 make ci
 ```
 
-To run a journal, install it from the distribution tree as described in [INSTALL.md](INSTALL.md); a checkout is not itself an installable journal. `journal setup` then configures the journal path, installs local transcription models, installs the agent skills, and starts the background service.
+To run a real journal from this checkout, run `core/target/debug/solstone-core-journal setup`: it writes the `solstone` and `journal` wrappers into `~/.local/bin` pointing at this build, then behaves exactly like setup on an installed tree ([README.md § Building from source](README.md#building-from-source)). Installing from the distribution tree instead, as described in [INSTALL.md](INSTALL.md), gives you a release build rather than your checkout's code. Either way, `journal setup` configures the journal path, installs local transcription models, installs the agent skills, and starts the background service.
 
-⚠ The prerequisites list above still describes the retired Python environment and is pending a rewrite. Provider keys are configured in the web interface under settings → providers, as described in [INSTALL.md](INSTALL.md).
+Provider keys are configured in the web interface under settings → providers, as described in [INSTALL.md](INSTALL.md).
 
 ### Seeding a dev/test journal from public media
 

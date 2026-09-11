@@ -7,7 +7,7 @@
 # about identical files.
 export TMPDIR := $(shell cd /var/tmp && /bin/pwd -P)
 
-.PHONY: install uninstall test test-cov test-integration test-performance test-app test-only format format-check install-checks ci ci-full clean clean-install coverage watch versions update pre-commit skills check-journal-device-sim check-distribution-route-protocol check-install-fast check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-test check-rust-classified-full-tests-sol-link check-rust-classified-full-tests-convey-body check-rust-classified-full-tests-facets check-rust-classified-full-tests-describe check-rust-classified-full-tests-mcp-endpoint check-rust-classified-full-clippy-sol-link check-rust-classified-full-clippy-convey-body check-rust-classified-full-clippy-facets check-rust-classified-full-clippy-describe check-rust-classified-full-clippy-mcp-endpoint check-rust-classified-full-clippy-onnx check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-shipped-binaries build build-sandbox-processing check-rust-sandbox-processing-build check-spl-dependency-pin audit contract check-contract build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-no-python-spawn check-removed-time-parser-ready dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-local-server-argv-owner check-local-install-transport check-local-generate-cutover check-thinking-cutover check-cogitate-cutover require-win-remote-host sync-win-host win-host-ci brand-sync FORCE
+.PHONY: install preflight uninstall test test-cov test-integration test-performance test-app test-only format format-check install-checks ci ci-full clean clean-install coverage watch versions update pre-commit skills check-journal-device-sim check-distribution-route-protocol check-install-fast check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-test check-rust-classified-full-tests-sol-link check-rust-classified-full-tests-convey-body check-rust-classified-full-tests-facets check-rust-classified-full-tests-describe check-rust-classified-full-tests-mcp-endpoint check-rust-classified-full-clippy-sol-link check-rust-classified-full-clippy-convey-body check-rust-classified-full-clippy-facets check-rust-classified-full-clippy-describe check-rust-classified-full-clippy-mcp-endpoint check-rust-classified-full-clippy-onnx check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-shipped-binaries build build-sandbox-processing check-rust-sandbox-processing-build check-spl-dependency-pin audit contract check-contract build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-no-python-spawn check-removed-time-parser-ready dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-local-server-argv-owner check-local-install-transport check-local-generate-cutover check-thinking-cutover check-cogitate-cutover require-win-remote-host sync-win-host win-host-ci brand-sync FORCE
 
 # Default target: build the native workspace.
 all: build
@@ -117,6 +117,14 @@ install .installed build check-distribution-route-protocol check-rust-msrv check
 endif
 REQUIRE_CARGO := command -v cargo >/dev/null 2>&1 || { echo "cargo is required for Rust checks; install cargo and retry" >&2; exit 1; }
 REQUIRE_RUSTUP := command -v rustup >/dev/null 2>&1 || { echo "rustup is required for platform gates; install rustup and retry" >&2; exit 1; }
+
+# Standalone from-source build-readiness check. Deliberately not a dependency
+# of build/dev/test/ci/ci-full/install -- it changes nothing about any other
+# target, it only reports. A dependency-free shell script, so it needs no
+# entry in UV_OPTIONAL_GOALS below (that list already carries `preflight`
+# from the retired Python-era battery; this reuses the same carve-out).
+preflight:
+	@bash scripts/preflight_env.sh
 # Prep measured, rather than merely anticipated, that a host GNU cargo build of
 # solstone-core-speakers-analyze reaches GLIBC_2.34. These zig-GNU maturin args
 # are therefore the checked-in developer path for the helper's GLIBC_2.27 floor.
@@ -310,11 +318,12 @@ endef
 
 REQUIRE_PDF_HOST_RUNTIME = $(REQUIRE_SUPPORTED_PDF_HOST); $(DEFINE_PDF_RUNTIME_VALIDATOR); if validate_pdf_runtime; then :; else validation_status=$$?; echo "$$validation_error" >&2; exit "$$validation_status"; fi
 
-# Require uv only for goals that actually use it. `preflight` is a pure
-# stdlib readiness battery and `install` runs preflight as its own fail-fast
-# pre-step, so neither should abort at parse time when uv is absent — they
-# report uv-absence themselves. Rust-only and retired/gated goals are likewise
-# optional; Python-dependent goals outside this list still abort at parse time.
+# Require uv only for goals that actually use it. `preflight` is a
+# dependency-free shell script and `install` is a retired stub that only
+# prints an error, so neither should abort at parse time when uv is absent --
+# they report uv-absence (or their own retirement) themselves. Rust-only and
+# retired/gated goals are likewise optional; Python-dependent goals outside
+# this list still abort at parse time.
 UV := $(shell command -v uv 2>/dev/null)
 UV_OPTIONAL_GOALS := \
 	preflight install \

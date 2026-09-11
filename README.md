@@ -214,19 +214,26 @@ The full layout and vocabulary, written for the agents that work inside it: [cor
 
 ## Building from source
 
-You need a Rust toolchain via rustup (the pinned version installs itself from `rust-toolchain.toml`), a C compiler with clang headers, and on linux x86_64, nasm. The first build fetches the pinned ffmpeg source and builds it into the tree.
+You'll need a Rust toolchain (installs itself via rustup from `rust-toolchain.toml`) and a few system packages. `make preflight` checks your machine and reports exactly what's missing, or see [CONTRIBUTING.md § Prerequisites](CONTRIBUTING.md#prerequisites) for the manual list.
 
 ```bash
 git clone https://github.com/solpbc/solstone-journal.git
 cd solstone-journal
-make build                 # cargo build of the workspace; binaries land in core/target/debug/
-make dev                   # the full stack against the fixture journal, on an auto-selected port (read it from tests/fixtures/journal/health/convey.port)
+make preflight             # optional: reports missing build dependencies and how to fix them
+make dev                   # builds the workspace, then runs the full stack against the fixture journal
+```
+
+That's the whole quickstart — `make dev` picks an auto-selected port (read it from `tests/fixtures/journal/health/convey.port`). The first build fetches the pinned ffmpeg source and compiles it into the tree, so expect it to take a while. `make sandbox` starts a disposable copy of the fixture journal in the background instead, and `make sandbox-stop` tears it down. To run a real journal from a checkout instead of the fixture, run `core/target/debug/solstone-core-journal setup`: it writes the `solstone` and `journal` wrappers into `~/.local/bin` pointing at this build, then behaves exactly like setup on an installed tree. `make build-sandbox-processing` additionally builds the speaker-analysis/diarization helpers, which the default `build`/`dev` targets skip.
+
+Before contributing a change:
+
+```bash
 make test                  # the selected unit harnesses
 make ci                    # the routine gate: fmt, topology, clippy, unit tests. Run before every commit
 make ci-full               # the full operator gate, on the exact final tree, after `make ci-full-prep`
 ```
 
-`make sandbox` starts a disposable copy of the fixture journal in the background and `make sandbox-stop` tears it down. To run a real journal from a checkout, run `core/target/debug/solstone-core-journal setup`: it writes the `solstone` and `journal` wrappers into `~/.local/bin` pointing at this build, then behaves exactly like setup on an installed tree. The complete Make table, the layer-hygiene rules every change must respect, and the testing topology are in [AGENTS.md](AGENTS.md). Contribution terms are in [CONTRIBUTING.md](CONTRIBUTING.md).
+The complete Make table, the layer-hygiene rules every change must respect, and the testing topology are in [AGENTS.md](AGENTS.md). Contribution terms are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Documentation
 
