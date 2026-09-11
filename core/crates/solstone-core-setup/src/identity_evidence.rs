@@ -736,6 +736,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn exact_v1_3_31_app_owned_children_form_one_legacy_transition() {
         let root = std::env::temp_dir().join(format!(
             "solstone-identity-v1-app-owned-child-{}",
