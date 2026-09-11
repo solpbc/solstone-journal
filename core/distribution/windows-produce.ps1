@@ -37,6 +37,21 @@ $environmentChanges=@{}
 $nativeNames=@('cl','link','MSBuild','rustc','cargo','ninja','cmake','ctest','vpk','signtool',
     'rfdetr-cli','solstone-distribution','git','bash','sh','make','nasm','perl')
 
+function Assert-FirstApplication([string]$Name, [string]$Expected) {
+    $applications=@(Get-Command $Name -CommandType Application -ErrorAction Stop)
+    $sourceProperty=$null
+    if ($applications.Count -gt 0 -and $null -ne $applications[0]) {
+        $sourceProperty=$applications[0].PSObject.Properties['Source']
+    }
+    if ($null -eq $sourceProperty -or $sourceProperty.Value -isnot [string] -or
+        [string]::IsNullOrEmpty($sourceProperty.Value)) {
+        throw "first PATH application has no scalar nonempty Source: $Name"
+    }
+    if (-not $sourceProperty.Value.Equals($Expected,[StringComparison]::OrdinalIgnoreCase)) {
+        throw "unexpected first PATH resolution: $Name"
+    }
+}
+
 function Require-PlainPath([string]$Path) {
     # Parentheses in Program Files (x86) are literal inside the quoted batches.
     if ($Path -notmatch '^[A-Za-z]:\\' -or $Path -match '["''%!&|<>^`$\x00-\x1f]') {
@@ -261,8 +276,7 @@ try {
         Set-BuildEnvironment 'SOLSTONE_DISTRIBUTION_OFFLINE' '1'
         $expected=[ordered]@{'cargo.exe'=$cargo;'git.exe'=$git;'cl.exe'=$cl;'link.exe'=$link;'sh.exe'=$sh;'make.exe'=$make;'nasm.exe'=$nasm}
         foreach ($name in $expected.Keys) {
-            $actual=(Get-Command $name -CommandType Application -ErrorAction Stop).Source
-            if (-not $actual.Equals($expected[$name],[StringComparison]::OrdinalIgnoreCase)) { throw "unexpected first PATH resolution: $name" }
+            Assert-FirstApplication $name $expected[$name]
         }
         Write-NewJson (Join-Path $reportRoot 'toolchain.json') @(@($expected.Values)+@($bash,$libclang) | ForEach-Object { [ordered]@{path=$_;sha256=(Digest $_)} })
         Invoke-Native 'shell-probe' $sh @('-c','printf FFMPEG_SH_READY') $RunRoot

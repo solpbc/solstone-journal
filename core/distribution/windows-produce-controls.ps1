@@ -63,11 +63,29 @@ try {
         [void][Management.Automation.Language.Parser]::ParseFile($file,[ref]$tokens,[ref]$errors)
         if ($errors.Count -ne 0) { throw ($errors | Out-String) }
     }
-    foreach ($name in @('Require-PlainPath','Write-NewText','Write-NewJson','Digest','Invoke-Native','Test-ExactSingleTest')) {
+    foreach ($name in @('Assert-FirstApplication','Require-PlainPath','Write-NewText','Write-NewJson','Digest','Invoke-Native','Test-ExactSingleTest')) {
         $functionNodes=@($ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq $name },$true))
         if ($functionNodes.Count -ne 1) { throw "expected one actual driver function: $name" }
         . ([ScriptBlock]::Create($functionNodes[0].Extent.Text))
     }
+    $firstToolRoot=Join-Path $FixtureRoot 'first-tool'
+    $secondToolRoot=Join-Path $FixtureRoot 'second-tool'
+    New-Item -ItemType Directory -Path $firstToolRoot,$secondToolRoot -ErrorAction Stop | Out-Null
+    $firstTool=Join-Path $firstToolRoot 'checkpoint-path.exe'
+    $secondTool=Join-Path $secondToolRoot 'checkpoint-path.exe'
+    [IO.File]::Copy((Join-Path $env:SystemRoot 'System32\cmd.exe'),$firstTool,$false)
+    [IO.File]::Copy((Join-Path $env:SystemRoot 'System32\cmd.exe'),$secondTool,$false)
+    $savedPath=$env:PATH
+    try {
+        $env:PATH=$firstToolRoot+';'+$secondToolRoot+';'+$savedPath
+        $applications=@(Get-Command checkpoint-path.exe -CommandType Application -ErrorAction Stop)
+        if ($applications.Count -ne 2) { throw 'duplicate-tool control did not observe both applications' }
+        Assert-FirstApplication 'checkpoint-path.exe' $firstTool
+        $wrongFirstRefused=$false
+        try { Assert-FirstApplication 'checkpoint-path.exe' $secondTool } catch { $wrongFirstRefused=$true }
+        if (-not $wrongFirstRefused) { throw 'second PATH application admitted as first' }
+        $pathReports.Add([ordered]@{case='duplicate-application';sources=@($applications | ForEach-Object {$_.Source});first_admitted=$true;second_refused=$wrongFirstRefused})
+    } finally { $env:PATH=$savedPath }
     Require-PlainPath 'C:\Program Files (x86)\Microsoft Visual Studio\vcvarsall.bat'
     foreach ($suffix in @('"','%','!','&','|','<','>','^','`','$',"'","`n")) {
         $refused=$false
