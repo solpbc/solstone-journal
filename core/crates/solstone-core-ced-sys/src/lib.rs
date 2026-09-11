@@ -70,6 +70,13 @@ struct Symbols {
 
 /// A loaded ced.cpp shared library with ABI-checked symbols.
 pub struct CedLibrary {
+    // On Windows, unloading CED after classification crashes process teardown
+    // even after model cleanup. Keep its loader reference until process exit;
+    // the helper opens one engine per process. Contexts and strings still use
+    // their normal Drop implementations below. Unix keeps ordinary dlclose.
+    #[cfg(windows)]
+    _library: std::mem::ManuallyDrop<Library>,
+    #[cfg(not(windows))]
     _library: Library,
     symbols: Symbols,
 }
@@ -95,6 +102,9 @@ impl CedLibrary {
             return Err(CedError::AbiMismatch { actual });
         }
         Ok(Self {
+            #[cfg(windows)]
+            _library: std::mem::ManuallyDrop::new(library),
+            #[cfg(not(windows))]
             _library: library,
             symbols,
         })
