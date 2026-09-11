@@ -160,7 +160,9 @@ method = "POST"
 route = "/app/thinking/api/local/bootstrap/cancel"
 contract_operation_id = "thinking.local.bootstrap-cancel"
 handler = "local_bootstrap_cancel"
-params = []
+params = [
+  { name = "attempt_id", kind = "option", type = "text", required = true, nargs = 1, multiple = false, options = ["--attempt-id"], secondary = [], hidden = false, is_flag = false, count = false },
+]
 
 [[entries]]
 path = ["thinking", "local", "bootstrap-status"]

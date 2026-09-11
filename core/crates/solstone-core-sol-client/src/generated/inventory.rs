@@ -1685,7 +1685,7 @@ pub const ENTRIES: &[InventoryEntry] = &[
         kind: "command",
         help: "Cancel local model setup.",
         authority_path: "core/native-sol/apps/thinking/native/authority.toml",
-        params_json: "[]",
+        params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"attempt_id\",\"nargs\":1,\"options\":[\"--attempt-id\"],\"required\":true,\"secondary\":[],\"type\":\"text\"}]",
         entry_type: "http",
         operation_id: "thinking.local.bootstrap-cancel",
         method: Some("POST"),

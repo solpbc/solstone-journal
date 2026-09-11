@@ -204,7 +204,12 @@ ADDITIONAL_NATIVE_ORACLE_ENTRIES: list[dict[str, Any]] = [
         "path": ["thinking", "local", "bootstrap-cancel"],
         "kind": "command",
         "help": "Cancel local model setup.",
-        "params": [],
+        "params": [{
+            "name": "attempt_id", "kind": "option", "type": "text",
+            "required": True, "nargs": 1, "multiple": False,
+            "options": ["--attempt-id"], "secondary": [], "hidden": False,
+            "is_flag": False, "count": False,
+        }],
     },
 ]
 
