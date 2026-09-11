@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use crate::access_tiers::{AccessTierError, COGITATE_ACCESS_TIERS, capabilities_for_access_tier};
+use crate::access_tiers::{AccessTierError, capabilities_for_access_tier};
 use crate::preambles::COGITATE_JOURNAL_COMMANDS;
 
 const SHELL_COMPOSITION_DENY: &str = "policy_deny: shell composition is not available; run one `solstone` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution";
@@ -10,16 +10,6 @@ const RESTRICTED_COMMAND_DENY: &str =
     "policy_deny: run_shell_command restricted to solstone or approved journal invocations";
 const RETIRED_SOL_CLI_DENY: &str =
     "policy_deny: `sol` is not available; run `solstone` or an approved `journal` command";
-const SUPPORT_SEND_VERBS: [&str; 7] = [
-    "create",
-    "reply",
-    "attach",
-    "feedback",
-    "close",
-    "resolved",
-    "still-need-help",
-];
-
 /// The policy result for one command invocation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CommandDecision {
@@ -32,9 +22,9 @@ pub struct CommandDecision {
 pub fn classify_command(
     command: &str,
     access_tier: &str,
-    outbound_approval: Option<&str>,
+    _outbound_approval: Option<&str>,
 ) -> Result<CommandDecision, AccessTierError> {
-    let submit_allowed = capabilities_for_access_tier(access_tier)?.submit;
+    capabilities_for_access_tier(access_tier)?;
 
     if shell_syntax_violation(command) {
         return Ok(deny(SHELL_COMPOSITION_DENY));
@@ -68,20 +58,6 @@ pub fn classify_command(
             && COGITATE_JOURNAL_COMMANDS.contains(&argv[1].as_str())))
     {
         return Ok(deny(RESTRICTED_COMMAND_DENY));
-    }
-
-    if let Some(send_verb) = support_send_verb(&argv) {
-        if !submit_allowed {
-            let required = submit_tiers().join(" or ");
-            return Ok(deny(&format!(
-                "policy_deny: 'solstone call support {send_verb}' requires access_tier '{required}'; this run is '{access_tier}'"
-            )));
-        }
-        if outbound_approval.is_none_or(str::is_empty) {
-            return Ok(deny(&format!(
-                "policy_deny: 'solstone call support {send_verb}' requires a per-send owner approval; this run was not launched with one"
-            )));
-        }
     }
 
     Ok(CommandDecision {
@@ -242,30 +218,6 @@ fn bare_journal_repair_prefix(family: &str) -> Option<[&str; 4]> {
     }
 }
 
-fn support_send_verb(argv: &[String]) -> Option<&str> {
-    for index in 0..argv.len().saturating_sub(3) {
-        if argv[index..index + 3]
-            .iter()
-            .map(String::as_str)
-            .eq(["solstone", "call", "support"])
-        {
-            let verb = argv[index + 3].as_str();
-            if SUPPORT_SEND_VERBS.contains(&verb) {
-                return Some(verb);
-            }
-        }
-    }
-    None
-}
-
-fn submit_tiers() -> Vec<&'static str> {
-    COGITATE_ACCESS_TIERS
-        .iter()
-        .copied()
-        .filter(|tier| capabilities_for_access_tier(tier).is_ok_and(|caps| caps.submit))
-        .collect()
-}
-
 fn shlex_join(argv: Vec<String>) -> String {
     argv.iter()
         .map(|value| shlex_quote(value))
@@ -299,7 +251,7 @@ mod tests {
     #[test]
     fn policy_command_vectors_match_the_oracle() {
         let fixture = oracle::fixture();
-        assert_eq!(fixture.policy_commands.len(), 62);
+        assert_eq!(fixture.policy_commands.len(), 48);
         for vector in &fixture.policy_commands {
             let decision = classify_command(
                 &vector.command,
@@ -319,16 +271,6 @@ mod tests {
             );
             assert_eq!(decision.argv, vector.expect.argv, "{} argv", vector.id);
         }
-    }
-
-    #[test]
-    fn short_support_command_is_not_scanned_for_a_send_verb() {
-        let decision =
-            classify_command("solstone call support", "normal", None).expect("known tier");
-        assert!(
-            decision.allowed,
-            "a three-token argv has range(0) in Python"
-        );
     }
 
     #[test]

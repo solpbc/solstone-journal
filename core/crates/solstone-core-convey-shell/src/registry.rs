@@ -270,7 +270,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         rail_group: None,
         rail_rank: 0,
         date_nav: None,
-        has_background: true,
+        has_background: false,
         converted: true,
     },
     AppDefinition {

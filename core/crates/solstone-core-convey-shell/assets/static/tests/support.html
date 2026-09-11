@@ -1,53 +1,33 @@
 <!doctype html>
 <html lang="en">
 <meta charset="utf-8">
-<title>support.js smoke</title>
+<title>local support report smoke</title>
 <style>
   body { font: 14px/1.4 sans-serif; padding: 16px; }
   .pass { color: #166534; }
   .fail { color: #b91c1c; }
 </style>
-<h1>support.js smoke</h1>
+<h1>local support report smoke</h1>
+<button id="report">report this</button>
 <div id="results"></div>
-<div id="fixture"></div>
-<script src="../relative-time.js"></script>
+<script src="../convey_copy.js"></script>
 <script>
-  window.ConveyIcons = {
-    svg: name => `<svg data-icon="${name}"></svg>`
+  const originalFetch = window.fetch;
+  window.fetch = async (url) => {
+    if (url !== '/app/support/api/context') throw new Error(`unexpected request: ${url}`);
+    return {
+      ok: true,
+      json: async () => ({ version: '2.0.0', os: 'Fedora Linux', os_version: '43' })
+    };
   };
-  window.SurfaceState = {
-    loading({ text = '' } = {}) {
-      return `<div class="surface-state surface-state--loading" role="status" aria-busy="true">`
-        + `<div class="surface-state-spinner" aria-hidden="true"></div>`
-        + `${text ? `<span class="surface-state-text" data-role="loading-status">${text}</span>` : ''}`
-        + `</div>`;
-    },
-    empty({ icon = '', heading = '', desc = '', action = '' } = {}) {
-      return `<div class="surface-state surface-state--empty">`
-        + `${icon ? `<div class="surface-state-icon" aria-hidden="true">${icon}</div>` : ''}`
-        + `${heading ? `<h2 class="surface-state-heading">${heading}</h2>` : ''}`
-        + `${desc ? `<p class="surface-state-desc">${desc}</p>` : ''}`
-        + `${action ? `<div class="surface-state-action">${action}</div>` : ''}`
-        + `</div>`;
-    },
-    error({ heading = '', desc = '', retry = false, retryLabel = 'try again' } = {}) {
-      return `<div class="surface-state surface-state--error" role="alert">`
-        + `${heading ? `<h2 class="surface-state-heading">${heading}</h2>` : ''}`
-        + `${desc ? `<p class="surface-state-desc">${desc}</p>` : ''}`
-        + `${retry ? `<button type="button" class="surface-state-retry">${retryLabel}</button>` : ''}`
-        + `</div>`;
-    }
-  };
+  window.solPathContext = () => ({ appName: 'transcripts' });
 </script>
-<script src="/app/support/static/support.js"></script>
+<script src="../report-error.js"></script>
 <script>
   const results = document.getElementById('results');
-  const fixture = document.getElementById('fixture');
   let failures = 0;
-  let openCalls = [];
-  let tabCalls = [];
 
-  function assert(name, condition, detail) {
+  function assert(name, condition, detail = '') {
     const row = document.createElement('div');
     row.className = condition ? 'pass' : 'fail';
     row.textContent = `${condition ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`;
@@ -55,286 +35,69 @@
     if (!condition) failures += 1;
   }
 
-  async function withFetch(impl, fn) {
-    const originalFetch = window.fetch;
-    window.fetch = impl;
-    try {
-      return await fn();
-    } finally {
-      window.fetch = originalFetch;
-    }
+  function flush() {
+    return new Promise(resolve => setTimeout(resolve, 0));
   }
 
-  function response({ status = 200, body = {} }) {
-    return { status, ok: status >= 200 && status < 300, json: async () => body };
-  }
-
-  function malformedResponse() {
-    return { status: 200, ok: true, json: async () => { throw new SyntaxError('bad json'); } };
-  }
-
-  function neverSettles() {
-    return new Promise(() => {});
-  }
-
-  async function flush() {
-    await new Promise(resolve => setTimeout(resolve, 0));
-  }
-
-  function resetFixture() {
-    fixture.innerHTML = `
-      <button id="diagnostics-btn">run diagnostics</button>
-      <div id="diagnostics-loading" style="display:none;">running diagnostics...</div>
-      <div id="diagnostics-results" style="display:none;"></div>
-      <div id="diagnostics-error" style="display:none;"></div>
-      <nav class="support-nav">
-        <button type="button" id="tab-tickets" class="active" data-section="tickets">active tickets</button>
-      </nav>
-      <div id="support-main">
-        <div id="tickets-list"></div>
-        <div id="ticket-detail"></div>
-      </div>
-      <div id="support-disabled" style="display:none;"></div>
-    `;
-    openCalls = [];
-    tabCalls = [];
-  }
-
-  function deps() {
-    return {
-      openTicket: (...args) => openCalls.push(args),
-      activateTab: section => tabCalls.push(section)
-    };
-  }
-
-  function visible(id) {
-    return document.getElementById(id).style.display !== 'none';
-  }
-
-  function hidden(id) {
-    return document.getElementById(id).style.display === 'none';
-  }
-
-  function text(selector) {
-    const el = document.querySelector(selector);
-    return el ? el.textContent : '';
-  }
-
-  async function run() {
-    resetFixture();
-    await withFetch(async () => response({
-      body: { services: { callosum: 'running', cortex: 'stopped' }, recent_errors: [] }
-    }), async () => {
-      window.SupportUI.runDiagnostics();
-      await flush();
-      assert(
-        'diagnostics success',
-        visible('diagnostics-results') &&
-          text('#diagnostics-results').includes('1 of 2 services running') &&
-          hidden('diagnostics-loading') &&
-          hidden('diagnostics-error') &&
-          document.getElementById('diagnostics-btn').disabled === false
-      );
+  document.getElementById('report').addEventListener('click', async () => {
+    window.convey.reportError({
+      apiError: { reasonCode: 'transcript_unavailable', message: 'must not be included' },
+      consoleEntries: [
+        { summary: 'first local error', detail: 'must not be included' },
+        { summary: 'second local error', stack: 'must not be included' }
+      ],
+      customDetail: 'must not be included'
     });
+    await flush();
 
-    resetFixture();
-    await withFetch(async () => response({ status: 500 }), async () => {
-      window.SupportUI.runDiagnostics();
-      await flush();
-      assert(
-        'diagnostics non-OK HTTP 500',
-        visible('diagnostics-error') &&
-          text('#diagnostics-error').includes('HTTP 500') &&
-          hidden('diagnostics-results') &&
-          document.getElementById('diagnostics-results').innerHTML === '' &&
-          hidden('diagnostics-loading') &&
-          document.getElementById('diagnostics-btn').disabled === false
-      );
-    });
+    const labels = [...document.querySelectorAll('.report-error-review dt')]
+      .map(item => item.textContent);
+    const values = [...document.querySelectorAll('.report-error-review dd')]
+      .map(item => item.textContent);
+    const recent = document.getElementById('report-error-recent');
+    const send = document.querySelector('.report-error-actions a');
+    const fragment = new URL(send.href).hash.slice(1);
+    const params = new URLSearchParams(fragment);
 
-    resetFixture();
-    await withFetch(async () => { throw new Error('network down'); }, async () => {
-      window.SupportUI.runDiagnostics();
-      await flush();
-      assert(
-        'diagnostics thrown fetch',
-        visible('diagnostics-error') &&
-          text('#diagnostics-error').includes('network down') &&
-          hidden('diagnostics-loading') &&
-          document.getElementById('diagnostics-btn').disabled === false
-      );
-    });
+    assert('review card has the exact fixed labels',
+      JSON.stringify(labels) === JSON.stringify([
+        'journal version', 'operating system', 'app', 'route', 'error code'
+      ]), JSON.stringify(labels));
+    assert('review card has the fixed values',
+      values[0] === '2.0.0' && values[1] === 'Fedora Linux 43' &&
+      values[2] === 'transcripts' && values[3] === window.location.pathname &&
+      values[4] === 'transcript_unavailable');
+    assert('recent error lines are editable and contain summaries only',
+      recent.value === 'first local error\nsecond local error' &&
+      !document.querySelector('.report-error-modal').textContent.includes('must not be included'));
+    assert('send is a fragment-only handoff',
+      send.origin === 'https://support.solstone.app' && send.pathname === '/' &&
+      send.search === '' && params.get('report') === 'v1');
+    assert('fragment uses the exact journal keys',
+      JSON.stringify([...params.keys()]) === JSON.stringify([
+        'report', 'app', 'version', 'os', 'os_version', 'route', 'error_code', 'recent'
+      ]));
+    assert('fragment carries editable recent text',
+      params.get('recent') === 'first local error\nsecond local error');
+    assert('fragment encoding uses plus for spaces and percent-encoded linefeeds',
+      send.hash.includes('recent=first+local+error%0Asecond+local+error'));
 
-    resetFixture();
-    await withFetch(async () => malformedResponse(), async () => {
-      window.SupportUI.runDiagnostics();
-      await flush();
-      assert(
-        'diagnostics malformed JSON',
-        visible('diagnostics-error') &&
-          hidden('diagnostics-results') &&
-          hidden('diagnostics-loading') &&
-          document.getElementById('diagnostics-btn').disabled === false
-      );
-    });
+    recent.value = 'owner edited this';
+    recent.dispatchEvent(new Event('input'));
+    assert('editing recent lines updates the handoff',
+      new URLSearchParams(new URL(send.href).hash.slice(1)).get('recent') === 'owner edited this');
 
-    resetFixture();
-    let capturedTimeoutFn;
-    window.SupportUI.__setTimers(fn => { capturedTimeoutFn = fn; return 1; }, () => {});
-    try {
-      await withFetch(() => neverSettles(), async () => {
-        window.SupportUI.runDiagnostics();
-        capturedTimeoutFn();
-        await flush();
-        assert(
-          'diagnostics timeout',
-          visible('diagnostics-error') &&
-            hidden('diagnostics-results') &&
-            hidden('diagnostics-loading') &&
-            document.getElementById('diagnostics-btn').disabled === false
-        );
-      });
-    } finally {
-      window.SupportUI.__setTimers();
-    }
+    document.querySelector('.report-error-actions button').click();
+    window.convey.reportError({ consoleEntries: [] });
+    await flush();
+    const noCodeLabels = [...document.querySelectorAll('.report-error-review dt')]
+      .map(item => item.textContent);
+    assert('error code row is omitted when there is no code',
+      !noCodeLabels.includes('error code'));
 
-    resetFixture();
-    await withFetch(async () => { throw new Error('first failure'); }, async () => {
-      window.SupportUI.runDiagnostics();
-      await flush();
-    });
-    window.SupportUI.__setTimers(fn => { capturedTimeoutFn = fn; return 1; }, () => {});
-    try {
-      await withFetch(() => neverSettles(), async () => {
-        window.SupportUI.runDiagnostics();
-        assert(
-          'diagnostics rerun-clears-stale',
-          hidden('diagnostics-results') &&
-            document.getElementById('diagnostics-results').innerHTML === '' &&
-            hidden('diagnostics-error') &&
-            document.getElementById('diagnostics-error').innerHTML === '' &&
-            visible('diagnostics-loading') &&
-            document.getElementById('diagnostics-btn').disabled === true
-        );
-        capturedTimeoutFn();
-        await flush();
-      });
-    } finally {
-      window.SupportUI.__setTimers();
-    }
-
-    resetFixture();
-    const hostileSubject = '<scr' + 'ipt>alert(1)</scr' + 'ipt>';
-    await withFetch(async () => response({
-      body: [{
-        id: '7" onclick="alert(1)',
-        subject: hostileSubject,
-        status: 'open',
-        product: 'solstone',
-        created_at: '2026-06-01T00:00:00Z'
-      }]
-    }), async () => {
-      await window.SupportUI.loadTickets(deps());
-      const badge = document.getElementById('tab-tickets-badge');
-      const ticket = document.querySelector('.support-ticket');
-      assert(
-        'tickets success-with-tickets',
-        !!ticket &&
-          text('.support-ticket-subject') === hostileSubject &&
-          text('.support-ticket-id') === '#7" onclick="alert(1)' &&
-          !ticket.hasAttribute('onclick') &&
-          !!badge &&
-          badge.textContent === '1'
-      );
-    });
-
-    resetFixture();
-    await withFetch(async () => response({ body: [] }), async () => {
-      await window.SupportUI.loadTickets(deps());
-      assert(
-        'tickets empty',
-        !!document.querySelector('#tickets-list .surface-state--empty') &&
-          !document.getElementById('tab-tickets-badge') &&
-          !tabCalls.includes('help')
-      );
-    });
-
-    resetFixture();
-    await withFetch(async () => response({ status: 403 }), async () => {
-      await window.SupportUI.loadTickets(deps());
-      assert(
-        'tickets 403',
-        document.getElementById('support-main').style.display === 'none' &&
-          document.getElementById('support-disabled').style.display === ''
-      );
-    });
-
-    resetFixture();
-    await withFetch(async () => response({ status: 500 }), async () => {
-      await window.SupportUI.loadTickets(deps());
-      assert(
-        'tickets non-OK HTTP 500',
-        !!document.querySelector('#tickets-list .surface-state-retry') &&
-          text('#tickets-list .surface-state-heading') === 'unable to load tickets'
-      );
-    });
-
-    resetFixture();
-    await withFetch(async () => { throw new Error('network down'); }, async () => {
-      await window.SupportUI.loadTickets(deps());
-      assert('tickets thrown fetch', !!document.querySelector('#tickets-list .surface-state-retry'));
-    });
-
-    resetFixture();
-    await withFetch(async () => malformedResponse(), async () => {
-      await window.SupportUI.loadTickets(deps());
-      assert('tickets malformed JSON', !!document.querySelector('#tickets-list .surface-state-retry'));
-    });
-
-    resetFixture();
-    window.SupportUI.__setTimers(fn => { capturedTimeoutFn = fn; return 1; }, () => {});
-    try {
-      await withFetch(() => neverSettles(), async () => {
-        const pending = window.SupportUI.loadTickets(deps());
-        capturedTimeoutFn();
-        await pending;
-        assert('tickets timeout', !!document.querySelector('#tickets-list .surface-state-retry'));
-      });
-    } finally {
-      window.SupportUI.__setTimers();
-    }
-
-    resetFixture();
-    await withFetch(async () => response({ status: 500 }), async () => {
-      await window.SupportUI.loadTickets(deps());
-    });
-    window.SupportUI.__setTimers(() => 1, () => {});
-    try {
-      await withFetch(() => neverSettles(), async () => {
-        document.querySelector('#tickets-list .surface-state-retry').click();
-        assert(
-          'tickets retry-re-enters-spinner',
-          text('#tickets-list .surface-state-text') === 'checking for tickets'
-        );
-      });
-    } finally {
-      window.SupportUI.__setTimers();
-    }
-
-    resetFixture();
-    document.getElementById('tickets-list').innerHTML = '<div>stale tickets</div>';
-    let sawSpinner = false;
-    await withFetch(async () => {
-      sawSpinner = text('#tickets-list .surface-state-text') === 'checking for tickets';
-      return response({ body: [] });
-    }, async () => {
-      await window.SupportUI.loadTickets(deps());
-      assert('tickets spinner-rendered-before-fetch', sawSpinner);
-    });
-
+    window.fetch = originalFetch;
     assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
-  }
-
-  run();
+  });
+  document.getElementById('report').click();
 </script>
 </html>

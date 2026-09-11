@@ -18,6 +18,12 @@ use crate::{
     request_body::{JsonBody, json_body},
 };
 
+// Compatibility-only declaration retained by the 2026-09-10 support-client
+// excision decision. These stored keys are neither projected nor writable.
+#[allow(dead_code)]
+const RETIRED_SUPPORT_CONFIG_KEYS: &[&str] =
+    &["enabled", "proactive", "anonymous_feedback", "portal_url"];
+
 pub async fn get(journal_root: PathBuf) -> Response {
     let config = solstone_core_journal_config::read_journal_config(&journal_root)
         .expect("session gate handled corrupt config")
@@ -78,7 +84,6 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
         ],
         "journal" => &["name"],
         "transcribe" => &["backend", "preserve_all", "confidential_audio"],
-        "support" => &["enabled", "proactive", "anonymous_feedback", "portal_url"],
         "env" => &["PLAUD_ACCESS_TOKEN"],
         "processing" => &[],
         _ => return invalid_config_value(format!("Unknown section: {section}")),
@@ -261,6 +266,7 @@ pub fn project_public_config(mut config: Map<String, Value>) -> Result<Map<Strin
         .and_then(|values| values.get("plaud"))
         .cloned();
     config.remove("service_key_validation");
+    config.remove("support");
     if let Some(value) = validation {
         config.insert("key_validation".to_owned(), json!({"plaud": value}));
     }

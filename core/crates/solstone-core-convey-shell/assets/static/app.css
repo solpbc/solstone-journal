@@ -1068,48 +1068,49 @@ a.notification-card:active {
   max-width: 560px;
 }
 
-.report-error-form {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.report-error-review {
+  margin: 1rem 0;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
-.report-error-form label {
+.report-error-review > div {
+  display: grid;
+  grid-template-columns: minmax(8rem, 0.45fr) 1fr;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+}
+
+.report-error-review > div + div {
+  border-top: 1px solid var(--hairline);
+}
+
+.report-error-review dt {
+  color: var(--muted, #666);
+}
+
+.report-error-review dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.report-error-modal label {
   display: block;
-  margin-bottom: 2px;
+  margin-bottom: 0.35rem;
   color: var(--text, #222);
   font-size: 0.9rem;
 }
 
-.report-error-form input[type="text"],
-.report-error-form textarea,
-.report-error-form select,
-.report-error-fallback-report {
+.report-error-detail {
   width: 100%;
   box-sizing: border-box;
   padding: 0.65rem 0.75rem;
   border: 1px solid var(--hairline);
   border-radius: 6px;
   font: inherit;
-}
-
-.report-error-form textarea {
-  min-height: 96px;
+  min-height: 140px;
   resize: vertical;
-}
-
-.report-error-checkbox {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.report-error-diagnostic {
-  max-height: 240px;
-  overflow-y: auto;
-  font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', 'Consolas', monospace;
-  font-size: 12px;
-  white-space: pre-wrap;
 }
 
 .report-error-actions {
@@ -1119,20 +1120,14 @@ a.notification-card:active {
   margin-top: 16px;
 }
 
-.report-error-fallback h2 {
-  color: var(--color-warning, #f59e0b);
-}
-
-.report-error-fallback-report {
-  min-height: 220px;
-  resize: vertical;
-  font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', 'Consolas', monospace;
-  font-size: 12px;
-}
-
-.report-error-failure-meta {
-  color: var(--muted, #666);
-  font-size: 0.85rem;
+.report-error-actions a {
+  align-items: center;
+  background: var(--accent, #c65f22);
+  border-radius: 6px;
+  color: white;
+  display: inline-flex;
+  padding: 0.5rem 0.8rem;
+  text-decoration: none;
 }
 
 .close {

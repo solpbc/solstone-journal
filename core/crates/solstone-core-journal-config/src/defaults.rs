@@ -4,6 +4,8 @@
 use serde_json::{Map, Value};
 use solstone_core_journal::python_strip;
 
+// The four support.* defaults are unexposed compatibility declarations retained
+// by the 2026-09-10 support-client excision decision. Product code does not read them.
 const DEFAULT_CONFIG_JSON: &str = r#"
 {
   "identity": {

@@ -126,7 +126,6 @@
               "speaker_review_unavailable",
               "speaker_sentence_missing",
               "speaker_voiceprint_busy",
-              "support_portal_failed",
               "talent_not_found",
               "talent_operation_failed",
               "talent_run_malformed",
@@ -236,7 +235,7 @@
   "info": {
     "description": "Generated from client_ingest_authority.json. Covers only the four Rust-served linked-device devices/ingest operations.",
     "title": "Linked-device v3 ingest client contract",
-    "version": "10.0.0",
+    "version": "11.0.0",
     "x-generated": true,
     "x-generated-by": "solstone-core-repository-contracts"
   },

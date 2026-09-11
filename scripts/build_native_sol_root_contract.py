@@ -32,7 +32,6 @@ CALL_GROUPS: list[str] = [
     "settings",
     "sol",
     "speakers",
-    "support",
     "thinking",
     "transcripts",
     "health",
@@ -67,9 +66,9 @@ def render_stdout(
 
 
 def build() -> dict[str, Any]:
-    if len(CALL_GROUPS) != 18:
+    if len(CALL_GROUPS) != 17:
         raise RuntimeError(
-            f"root call group count {len(CALL_GROUPS)} != 18: {CALL_GROUPS!r}"
+            f"root call group count {len(CALL_GROUPS)} != 17: {CALL_GROUPS!r}"
         )
     if len(CALL_GROUPS) != len(set(CALL_GROUPS)):
         raise RuntimeError(f"duplicate root call groups: {CALL_GROUPS!r}")
