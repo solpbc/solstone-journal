@@ -131,14 +131,8 @@ enforcement are layered on top of it.
 |---|---|---|
 | `normal` | default cogitate talents | the `solstone` tool (`solstone` / `solstone call`, plus approved direct `journal` families when a prompt names one), the bounded raw-read tier, a finalization tool |
 | `system-read` | diagnostics boundary for scoped operational evidence | no cogitate talent claims it today (steward was demoted to a deterministic renderer + `lite` generate); when used, the declared surface is the `solstone` tool (`solstone` / `solstone call`, plus approved direct `journal` families when a prompt names one), the bounded raw-read tier, and a finalization tool, with scoped evidence arriving through a talent pre-hook rather than an extra model read tool |
-| `outbound` | comms-like talents that may submit something that leaves the machine | `outbound` — comms-like talents that may submit something that leaves the machine. The tier remains in `TALENT_ACCESS_TIERS` (count 4) with no current occupant. A run in this tier may use the `solstone` tool (`solstone` / `solstone call`, plus approved direct `journal` families when a prompt names one) and a finalization tool; `solstone call support` send verbs are still gated on a per-send owner-approval token supplied on the run (`outbound_approval`). That token is no longer produced by a human-initiated chat launch — chat as a launch path is gone. Drafts and evidence still go through `solstone` domain commands, not a raw-read tier. |
+| `outbound` | comms-like talents that may submit something that leaves the machine | The tier remains in `TALENT_ACCESS_TIERS` (count 4) with no current occupant. A run in this tier may use the `solstone` tool (`solstone` / `solstone call`, plus approved direct `journal` families when a prompt names one) and a finalization tool. No current command surface consumes its submit capability. |
 | `synthesis` | pure command-surface synthesis talents (e.g. `weekly_reflection`, `partner`) whose source of record is a documented command form, not the raw journal tree | the `solstone` tool (`solstone` / `solstone call`, plus approved direct `journal` families when a prompt names one) and a finalization tool; **no raw-read tier and no submit** — same as `outbound` minus the outbound submit capability. Removing the raw-read tools keeps a synthesis talent from spelunking `chronicle/` / `talents/` / `facets/` and burning its budget instead of using documented commands |
-
-Policy denies support send verbs (`create`, `reply`, `attach`, `feedback`) for
-`normal` / `system-read` runs. `outbound` runs may use those verbs only when the
-launch config carries runtime owner send-approval. An agent cannot self-grant
-approval through prompt text, static frontmatter, templates, or scheduled
-injection.
 
 **There is no `repair` tier in cogitate.** Health fact-gathering and repair run
 through the deterministic `journal heartbeat` workflow, explicitly launched and

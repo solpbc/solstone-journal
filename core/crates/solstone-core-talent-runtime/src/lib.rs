@@ -43,7 +43,7 @@ pub mod writers;
 #[cfg(test)]
 mod test_support;
 
-use cogitate::{EngineKind, cogitate_request, from_prepared_config};
+use cogitate::{EngineKind, from_prepared_config};
 use contract::{CommitDisposition, GateDecision, PrePostState, resolve_hook};
 
 /// Config key honored only by steward and speaker_attribution pre-steps.
@@ -130,6 +130,26 @@ pub struct StageError {
     pub stage: &'static str,
     pub talent: String,
     pub detail: String,
+    pub usage: Option<Box<Value>>,
+    pub degraded: Option<Box<Value>>,
+}
+
+impl StageError {
+    pub fn new(
+        phase: &'static str,
+        stage: &'static str,
+        talent: impl Into<String>,
+        detail: impl Into<String>,
+    ) -> Self {
+        Self {
+            phase,
+            stage,
+            talent: talent.into(),
+            detail: detail.into(),
+            usage: None,
+            degraded: None,
+        }
+    }
 }
 
 impl std::fmt::Display for StageError {
@@ -147,6 +167,8 @@ pub enum RuntimeOutcome {
     Finished {
         output: String,
         disposition: CommitDisposition,
+        usage: Option<Box<Value>>,
+        degraded: Option<Box<Value>>,
     },
     Skipped {
         stage: String,
@@ -277,18 +299,18 @@ fn run_lines(
             (Ok(generate), Ok(cogitate)) => {
                 execute_request(request, paths, context, generate, cogitate, writer)
             }
-            (Err(error), _) => RuntimeOutcome::StageFailed(StageError {
-                phase: "generate",
-                stage: "runtime",
+            (Err(error), _) => RuntimeOutcome::StageFailed(StageError::new(
+                "generate",
+                "runtime",
                 talent,
-                detail: format!("{error}"),
-            }),
-            (_, Err(error)) => RuntimeOutcome::StageFailed(StageError {
-                phase: "cogitate",
-                stage: "runtime",
+                format!("{error}"),
+            )),
+            (_, Err(error)) => RuntimeOutcome::StageFailed(StageError::new(
+                "cogitate",
+                "runtime",
                 talent,
-                detail: format!("{error:?}"),
-            }),
+                format!("{error:?}"),
+            )),
         };
         emit_outcome(writer, outcome);
     }
@@ -405,6 +427,120 @@ fn emit_start(writer: &mut impl Write, prepared: &PreparedTalent) {
     emit(writer, Value::Object(event));
 }
 
+pub(crate) fn execute_bounded_attempts<F, E>(
+    schema_checked: bool,
+    batch: Option<usize>,
+    mut execute: F,
+    mut emit_attempt: E,
+) -> Result<GenerateResponse, RuntimeOutcome>
+where
+    F: FnMut(usize) -> Result<GenerateResponse, RuntimeOutcome>,
+    E: FnMut(Value),
+{
+    let mut last_response = None;
+    for ordinal in 0..=VALIDATION_RETRY_ATTEMPTS {
+        let response = execute(ordinal)?;
+        let cause = match &response {
+            GenerateResponse::Generated(generated) => {
+                if schema_checked && schema_validation_failed(generated.schema_validation.as_ref())
+                {
+                    Some("schema_validation_failed")
+                } else {
+                    None
+                }
+            }
+            GenerateResponse::Refused(refused) => {
+                refused.reason_code.as_ref().map(ReasonCodeValue::as_wire)
+            }
+        };
+        let is_eligible = is_bounded_retry_eligible(&response, schema_checked);
+        if is_eligible && ordinal < VALIDATION_RETRY_ATTEMPTS {
+            emit_attempt(json!({
+                "event": "generate_attempt",
+                "terminal": false,
+                "ordinal": ordinal,
+                "batch": batch,
+                "status": "retry_eligible",
+                "cause": cause,
+                "retry": true,
+            }));
+            continue;
+        }
+        let status = if cause.is_none() {
+            "success"
+        } else {
+            "exhausted"
+        };
+        emit_attempt(json!({
+            "event": "generate_attempt",
+            "terminal": false,
+            "ordinal": ordinal,
+            "batch": batch,
+            "status": status,
+            "cause": cause,
+            "retry": false,
+        }));
+        last_response = Some(response);
+        break;
+    }
+    Ok(last_response.expect("loop executed at least once"))
+}
+
+struct CogitateOutput {
+    result: String,
+    usage: Option<Box<Value>>,
+    degraded: Option<Box<Value>>,
+}
+
+fn cogitate_output(
+    prepared: &PreparedTalent,
+    context: &ExecutionContext,
+    cogitate: &CogitateOneShotClient,
+    writer: &mut impl Write,
+) -> Result<CogitateOutput, RuntimeOutcome> {
+    let mut usage = None;
+    let mut degraded = None;
+    let mut intermediate_writer = |event: &Value| {
+        if let Some(obj) = event.as_object()
+            && let Some(event_type) = obj.get("event").and_then(Value::as_str)
+            && (event_type == "finish" || event_type == "error")
+        {
+            if let Some(u) = obj.get("usage") {
+                usage = Some(Box::new(u.clone()));
+            }
+            if let Some(d) = obj.get("degraded") {
+                degraded = Some(Box::new(d.clone()));
+            }
+            let mut rewritten = obj.clone();
+            rewritten.insert(
+                "event".to_owned(),
+                Value::String("cogitate_child".to_owned()),
+            );
+            rewritten.insert(
+                "child_event".to_owned(),
+                Value::String(event_type.to_owned()),
+            );
+            rewritten.insert("terminal".to_owned(), Value::Bool(false));
+            emit(writer, Value::Object(rewritten));
+            return;
+        }
+        emit(writer, event.clone());
+    };
+    match cogitate::execute_request_with_writer(
+        prepared,
+        context,
+        cogitate,
+        &mut intermediate_writer,
+    ) {
+        Ok(result) => Ok(CogitateOutput {
+            result,
+            usage,
+            degraded,
+        }),
+        Err(outcome) => Err(outcome),
+    }
+}
+
 pub(crate) fn generate_and_write(
     prepared: &mut PreparedTalent,
     context: &ExecutionContext,
@@ -414,72 +550,71 @@ pub(crate) fn generate_and_write(
     engine: EngineKind,
     stage: Option<(&'static contract::StageSpec, PrePostState)>,
 ) -> RuntimeOutcome {
-    let response = match engine {
-        EngineKind::Generate => match screen_batch::generate_if_needed(prepared, context, generate)
-        {
-            Some(Ok(response)) => response,
-            Some(Err(outcome)) => return outcome,
-            None => {
-                let request = generate_request(prepared);
-                if prepared.name == "pulse" {
-                    emit_generate_input(writer, &request);
-                }
-                let mut last_response = None;
-                for attempt in 0..=VALIDATION_RETRY_ATTEMPTS {
-                    match generate.execute(&request) {
-                        Ok(response) => {
-                            if attempt < VALIDATION_RETRY_ATTEMPTS
-                                && is_bounded_retry_eligible(
-                                    &response,
-                                    prepared.config.contains_key("json_schema"),
-                                )
-                            {
-                                continue;
-                            }
-                            last_response = Some(response);
-                            break;
-                        }
-                        Err(error) => {
-                            return RuntimeOutcome::StageFailed(stage_error(
-                                "generate",
-                                "runtime",
-                                prepared,
-                                format!("{error}"),
-                            ));
-                        }
+    let (response, usage, degraded) = match engine {
+        EngineKind::Generate => {
+            match screen_batch::generate_if_needed(prepared, context, generate, Some(writer)) {
+                Some(Ok(response)) => (response, None, None),
+                Some(Err(outcome)) => return outcome,
+                None => {
+                    let request = generate_request(prepared);
+                    if prepared.name == "pulse" {
+                        emit_generate_input(writer, &request);
                     }
-                }
-                match last_response.expect("loop executed at least once") {
-                    GenerateResponse::Generated(response) => {
-                        if prepared.config.contains_key("json_schema")
-                            && schema_validation_failed(response.schema_validation.as_ref())
-                        {
-                            return RuntimeOutcome::SchemaValidationFailed {
-                                talent: prepared.name.clone(),
-                                validation: response
-                                    .schema_validation
-                                    .clone()
-                                    .unwrap_or(Value::Null),
+                    let response = match execute_bounded_attempts(
+                        prepared.config.contains_key("json_schema"),
+                        None,
+                        |_attempt| {
+                            generate.execute(&request).map_err(|error| {
+                                RuntimeOutcome::StageFailed(stage_error(
+                                    "generate",
+                                    "runtime",
+                                    prepared,
+                                    format!("{error}"),
+                                ))
+                            })
+                        },
+                        |event| emit(writer, event),
+                    ) {
+                        Ok(response) => response,
+                        Err(outcome) => return outcome,
+                    };
+                    match response {
+                        GenerateResponse::Generated(response) => {
+                            if prepared.config.contains_key("json_schema")
+                                && schema_validation_failed(response.schema_validation.as_ref())
+                            {
+                                return RuntimeOutcome::SchemaValidationFailed {
+                                    talent: prepared.name.clone(),
+                                    validation: response
+                                        .schema_validation
+                                        .clone()
+                                        .unwrap_or(Value::Null),
+                                };
+                            }
+                            let usage = if response.usage.is_null() {
+                                None
+                            } else {
+                                Some(Box::new(response.usage.clone()))
+                            };
+                            (response.text.clone(), usage, None)
+                        }
+                        GenerateResponse::Refused(response) => {
+                            return RuntimeOutcome::GenerateRefused {
+                                error: stage_error(
+                                    "generate",
+                                    "runtime",
+                                    prepared,
+                                    response.detail.clone(),
+                                ),
+                                response: Box::new(response),
                             };
                         }
-                        response.text.clone()
-                    }
-                    GenerateResponse::Refused(response) => {
-                        return RuntimeOutcome::GenerateRefused {
-                            error: stage_error(
-                                "generate",
-                                "runtime",
-                                prepared,
-                                response.detail.clone(),
-                            ),
-                            response: Box::new(response),
-                        };
                     }
                 }
             }
-        },
+        }
         EngineKind::Cogitate => match cogitate_output(prepared, context, cogitate, writer) {
-            Ok(output) => output,
+            Ok(output) => (output.result, output.usage, output.degraded),
             Err(outcome) => return outcome,
         },
     };
@@ -497,18 +632,44 @@ pub(crate) fn generate_and_write(
                     return RuntimeOutcome::Finished {
                         output: response,
                         disposition: CommitDisposition::RejectedNoMutation,
+                        usage,
+                        degraded,
                     };
                 }
-                Err(error) => return RuntimeOutcome::StageFailed(error),
+                Err(mut error) => {
+                    if error.usage.is_none() {
+                        error.usage = usage;
+                    }
+                    if error.degraded.is_none() {
+                        error.degraded = degraded;
+                    }
+                    return RuntimeOutcome::StageFailed(error);
+                }
             };
             let plan = match (commit.commit)(parsed, prepared, &state) {
                 Ok(plan) => plan,
-                Err(error) => return RuntimeOutcome::StageFailed(error),
+                Err(mut error) => {
+                    if error.usage.is_none() {
+                        error.usage = usage;
+                    }
+                    if error.degraded.is_none() {
+                        error.degraded = degraded;
+                    }
+                    return RuntimeOutcome::StageFailed(error);
+                }
             };
             disposition = match stage.writes_as_intent {
                 Some(apply) => match apply(plan, context) {
                     Ok(value) => value,
-                    Err(error) => return RuntimeOutcome::StageFailed(error),
+                    Err(mut error) => {
+                        if error.usage.is_none() {
+                            error.usage = usage;
+                        }
+                        if error.degraded.is_none() {
+                            error.degraded = degraded;
+                        }
+                        return RuntimeOutcome::StageFailed(error);
+                    }
                 },
                 None => CommitDisposition::CommittedNoOutput,
             };
@@ -516,127 +677,48 @@ pub(crate) fn generate_and_write(
             disposition = match writers::write_output_if_configured(prepared, &response) {
                 Ok(_) => CommitDisposition::Written,
                 Err(error) => {
-                    return RuntimeOutcome::StageFailed(stage_error(
-                        "write", "runtime", prepared, error,
-                    ));
+                    let mut err = stage_error("write", "runtime", prepared, error);
+                    err.usage = usage;
+                    err.degraded = degraded;
+                    return RuntimeOutcome::StageFailed(err);
                 }
             };
         }
         let output = match stage.output_override {
             Some(override_output) => match override_output(&response, prepared, &state) {
                 Ok(output) => output,
-                Err(error) => return RuntimeOutcome::StageFailed(error),
+                Err(mut error) => {
+                    if error.usage.is_none() {
+                        error.usage = usage;
+                    }
+                    if error.degraded.is_none() {
+                        error.degraded = degraded;
+                    }
+                    return RuntimeOutcome::StageFailed(error);
+                }
             },
             None => response,
         };
         return RuntimeOutcome::Finished {
             output,
             disposition,
+            usage,
+            degraded,
         };
     }
     match writers::write_output_if_configured(prepared, &response) {
         Ok(_) => RuntimeOutcome::Finished {
             output: response,
             disposition: CommitDisposition::Written,
+            usage,
+            degraded,
         },
-        Err(error) => RuntimeOutcome::StageFailed(stage_error("write", "runtime", prepared, error)),
-    }
-}
-
-fn cogitate_output(
-    prepared: &PreparedTalent,
-    context: &ExecutionContext,
-    client: &CogitateOneShotClient,
-    writer: &mut impl Write,
-) -> Result<String, RuntimeOutcome> {
-    let request = cogitate_request(prepared, context)?;
-    let run = client.execute(&request).map_err(|error| {
-        RuntimeOutcome::StageFailed(stage_error(
-            "cogitate",
-            "runtime",
-            prepared,
-            format!("{error:?}"),
-        ))
-    })?;
-    for event in &run.events {
-        emit(writer, event.clone());
-    }
-    let Some(terminal) = run.events.iter().rev().find(|event| {
-        matches!(
-            event.get("event").and_then(Value::as_str),
-            Some("finish" | "error")
-        )
-    }) else {
-        return Err(RuntimeOutcome::StageFailed(stage_error(
-            "cogitate",
-            "runtime",
-            prepared,
-            "cogitate one-shot produced no terminal event",
-        )));
-    };
-    match terminal.get("event").and_then(Value::as_str) {
-        Some("error")
-            if terminal
-                .get("provider_failure")
-                .is_some_and(Value::is_object) =>
-        {
-            Err(cogitate_refused(prepared, terminal))
+        Err(error) => {
+            let mut err = stage_error("write", "runtime", prepared, error);
+            err.usage = usage;
+            err.degraded = degraded;
+            RuntimeOutcome::StageFailed(err)
         }
-        Some("error") => Err(RuntimeOutcome::StageFailed(stage_error(
-            "cogitate",
-            "runtime",
-            prepared,
-            terminal
-                .get("error")
-                .and_then(Value::as_str)
-                .unwrap_or("cogitate run failed"),
-        ))),
-        Some("finish") => Ok(terminal
-            .get("result")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_owned()),
-        _ => Err(RuntimeOutcome::StageFailed(stage_error(
-            "cogitate",
-            "runtime",
-            prepared,
-            "cogitate one-shot produced no terminal event",
-        ))),
-    }
-}
-
-fn cogitate_refused(prepared: &PreparedTalent, terminal: &Value) -> RuntimeOutcome {
-    let detail = terminal
-        .get("error")
-        .and_then(Value::as_str)
-        .unwrap_or("cogitate run failed")
-        .to_owned();
-    let failure = terminal.get("provider_failure");
-    let code = failure
-        .and_then(|value| value.get("reason_code"))
-        .and_then(Value::as_str)
-        .or_else(|| terminal.get("reason_code").and_then(Value::as_str));
-    // CogitateRefused is intentionally out of reach of bounded validation retry:
-    // converse providers do not produce incomplete_json_length, and schema validation
-    // is generate-Generated only.
-    RuntimeOutcome::CogitateRefused {
-        error: stage_error("cogitate", "runtime", prepared, detail.clone()),
-        response: Box::new(RefusedResponse {
-            id: None,
-            reason: RefusalReason::Unknown,
-            reason_code: code.map(reason_code_value),
-            retryable: failure
-                .and_then(|value| value.get("retryable"))
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
-            blocking: failure
-                .and_then(|value| value.get("blocking"))
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
-            reset_at_ms: None,
-            provider: None,
-            detail,
-        }),
     }
 }
 
@@ -782,21 +864,51 @@ fn value_to_string(value: &Value) -> String {
     }
 }
 
+pub(crate) fn cogitate_refused(prepared: &PreparedTalent, terminal: &Value) -> RuntimeOutcome {
+    let detail = terminal
+        .get("error")
+        .and_then(Value::as_str)
+        .unwrap_or("cogitate run failed")
+        .to_owned();
+    let failure = terminal.get("provider_failure");
+    let code = failure
+        .and_then(|value| value.get("reason_code"))
+        .and_then(Value::as_str)
+        .or_else(|| terminal.get("reason_code").and_then(Value::as_str));
+    // CogitateRefused is intentionally out of reach of bounded validation retry:
+    // converse providers do not produce incomplete_json_length, and schema validation
+    // is generate-Generated only.
+    RuntimeOutcome::CogitateRefused {
+        error: stage_error("cogitate", "runtime", prepared, detail.clone()),
+        response: Box::new(RefusedResponse {
+            id: None,
+            reason: RefusalReason::Unknown,
+            reason_code: code.map(reason_code_value),
+            retryable: failure
+                .and_then(|value| value.get("retryable"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            blocking: failure
+                .and_then(|value| value.get("blocking"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            reset_at_ms: None,
+            provider: None,
+            detail,
+        }),
+    }
+}
+
 pub fn stage_error(
     phase: &'static str,
     stage: &'static str,
     prepared: &PreparedTalent,
     detail: impl Into<String>,
 ) -> StageError {
-    StageError {
-        phase,
-        stage,
-        talent: prepared.name.clone(),
-        detail: detail.into(),
-    }
+    StageError::new(phase, stage, prepared.name.clone(), detail)
 }
 
-fn emit(writer: &mut impl Write, event: Value) {
+fn emit(writer: &mut (impl Write + ?Sized), event: Value) {
     let _ = serde_json::to_writer(&mut *writer, &event);
     let _ = writer.write_all(b"\n");
 }
@@ -806,10 +918,22 @@ fn emit_outcome(writer: &mut impl Write, outcome: RuntimeOutcome) {
         RuntimeOutcome::Finished {
             output,
             disposition,
-        } => emit(
-            writer,
-            json!({"event":"finish", "output": output, "disposition": format!("{disposition:?}")}),
-        ),
+            usage,
+            degraded,
+        } => {
+            let mut event = json!({
+                "event": "finish",
+                "output": output,
+                "disposition": format!("{disposition:?}"),
+            });
+            if let Some(usage) = usage {
+                event["usage"] = *usage;
+            }
+            if let Some(degraded) = degraded {
+                event["degraded"] = *degraded;
+            }
+            emit(writer, event);
+        }
         RuntimeOutcome::Skipped {
             stage,
             talent,
@@ -834,10 +958,22 @@ fn emit_outcome(writer: &mut impl Write, outcome: RuntimeOutcome) {
             writer,
             json!({"event":"error", "terminal":true, "error":error.to_string(), "reason_code":"talent_prepare_failed"}),
         ),
-        RuntimeOutcome::StageFailed(error) => emit(
-            writer,
-            json!({"event":"error", "terminal":true, "name":error.talent, "error":error.to_string(), "reason_code":"talent_stage_failed"}),
-        ),
+        RuntimeOutcome::StageFailed(error) => {
+            let mut event = json!({
+                "event": "error",
+                "terminal": true,
+                "name": error.talent,
+                "error": error.to_string(),
+                "reason_code": "talent_stage_failed",
+            });
+            if let Some(usage) = error.usage {
+                event["usage"] = *usage;
+            }
+            if let Some(degraded) = error.degraded {
+                event["degraded"] = *degraded;
+            }
+            emit(writer, event);
+        }
         RuntimeOutcome::GenerateRefused { error, response }
         | RuntimeOutcome::CogitateRefused { error, response } => emit(
             writer,
@@ -1177,9 +1313,23 @@ mod tests {
         assert!(
             kinds.contains(&"tool_start")
                 && kinds.contains(&"tool_end")
-                && kinds.iter().filter(|event| **event == "finish").count() >= 1,
+                && kinds.contains(&"cogitate_child"),
             "{kinds:?}"
         );
+        let child_finish = output_events
+            .iter()
+            .find(|event| event["event"] == "cogitate_child")
+            .unwrap();
+        assert_eq!(child_finish["child_event"], "finish");
+        assert_eq!(child_finish["terminal"], false);
+
+        emit_outcome(&mut output, outcome);
+        let final_events = events(&output);
+        let finish = final_events
+            .iter()
+            .find(|event| event["event"] == "finish")
+            .unwrap();
+        assert_eq!(finish["usage"]["input_tokens"], 1);
         assert_eq!(fs::read_to_string(&output_path).unwrap(), "week notes");
 
         let mut failed_output = Vec::new();
@@ -1205,6 +1355,79 @@ mod tests {
             matches!(failed, RuntimeOutcome::StageFailed(_)),
             "{failed:?}"
         );
+    }
+
+    #[test]
+    fn cogitate_execute_request_write_failure_emits_error_with_usage_and_no_finish() {
+        let (root, paths, context) = fixture(
+            "weekly_reflection",
+            r#"{
+"type":"cogitate", "schedule":"weekly", "output":"md", "load":{"transcripts":false}
+}"#,
+        );
+        let output_path = context.journal.join("unwritable_output_dir");
+        fs::create_dir_all(&output_path).unwrap();
+
+        let cogitate = configure_cogitate_client(CogitateOneShotClient::at_path(
+            test_support::cogitate_one_shot_stub(
+                root.path(),
+                &[
+                    r#"{"event":"finish","terminal":true,"result":"week notes","usage":{"input_tokens":42},"degraded":{"reason":"fallback"}}"#,
+                ],
+            ),
+        ));
+        let generate =
+            OneShotClient::at_path(test_support::generate_one_shot_stub(root.path(), "unused"));
+        let mut output = Vec::new();
+        let outcome = execute_request(
+            json!({
+                "name":"weekly_reflection",
+                "use_id":"use-fail-write",
+                "day":"20260809",
+                "prompt":"Running scheduled weekly reflection.",
+                "output_path": output_path.display().to_string()
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+            &paths,
+            &context,
+            &generate,
+            &cogitate,
+            &mut output,
+        );
+        let RuntimeOutcome::StageFailed(err) = &outcome else {
+            panic!("expected StageFailed on write error, got {outcome:?}");
+        };
+        assert_eq!(err.phase, "write");
+        assert_eq!(err.stage, "runtime");
+        assert_eq!(err.usage.as_ref().unwrap()["input_tokens"], 42);
+        assert_eq!(err.degraded.as_ref().unwrap()["reason"], "fallback");
+
+        let output_events = events(&output);
+        let child_finish = output_events
+            .iter()
+            .find(|event| event["event"] == "cogitate_child")
+            .unwrap();
+        assert_eq!(child_finish["child_event"], "finish");
+        assert_eq!(child_finish["terminal"], false);
+
+        emit_outcome(&mut output, outcome);
+        let final_events = events(&output);
+
+        assert!(
+            final_events.iter().all(|event| event["event"] != "finish"),
+            "expected no finish event, got: {final_events:?}"
+        );
+
+        let terminal_errors: Vec<_> = final_events
+            .iter()
+            .filter(|event| event["event"] == "error" && event["terminal"] == true)
+            .collect();
+        assert_eq!(terminal_errors.len(), 1);
+        assert_eq!(terminal_errors[0]["usage"]["input_tokens"], 42);
+        assert_eq!(terminal_errors[0]["degraded"]["reason"], "fallback");
+        assert_eq!(terminal_errors[0]["reason_code"], "talent_stage_failed");
     }
 
     #[test]
@@ -1306,12 +1529,14 @@ mod tests {
             Ok(&unused_cogitate(root.path())),
         );
         let output_events = events(&output);
-        assert_eq!(output_events.len(), 2);
+        assert_eq!(output_events.len(), 3);
         assert_eq!(output_events[0]["event"], "start");
         assert_eq!(output_events[0]["name"], "plain");
         assert!(output_events[0].get("model").is_some());
         assert!(output_events[0].get("provider").is_some());
-        assert_eq!(output_events[1]["event"], "finish");
+        assert_eq!(output_events[1]["event"], "generate_attempt");
+        assert_eq!(output_events[1]["status"], "success");
+        assert_eq!(output_events[2]["event"], "finish");
         assert_eq!(
             fs::read_to_string(context.journal.join("chronicle/20260101/talents/plain.md"))
                 .unwrap(),
@@ -1366,9 +1591,10 @@ mod tests {
             Ok(&unused_cogitate(root.path())),
         );
         let enabled_events = events(&enabled_output);
-        assert_eq!(enabled_events.len(), 2);
+        assert_eq!(enabled_events.len(), 3);
         assert_eq!(enabled_events[0]["event"], "start");
-        assert_eq!(enabled_events[1]["event"], "finish");
+        assert_eq!(enabled_events[1]["event"], "generate_attempt");
+        assert_eq!(enabled_events[2]["event"], "finish");
         assert_eq!(fs::read_to_string(output_path).unwrap(), "generated");
     }
 
@@ -1417,11 +1643,15 @@ mod tests {
             Ok(&unused_cogitate(root.path())),
         );
         let output_events = events(&output);
-        assert_eq!(output_events.len(), 2);
+        assert_eq!(output_events.len(), 4);
         assert_eq!(output_events[0]["event"], "start");
-        assert_eq!(output_events[1]["event"], "error");
+        assert_eq!(output_events[1]["event"], "generate_attempt");
+        assert_eq!(output_events[1]["status"], "retry_eligible");
+        assert_eq!(output_events[2]["event"], "generate_attempt");
+        assert_eq!(output_events[2]["status"], "exhausted");
+        assert_eq!(output_events[3]["event"], "error");
         assert_eq!(
-            output_events[1]["error"],
+            output_events[3]["error"],
             "talent output failed schema validation"
         );
         assert_eq!(fs::read(&activity_path).unwrap(), before);
@@ -1564,10 +1794,11 @@ mod tests {
         assert!(matches!(source_outcome, RuntimeOutcome::Finished { .. }));
         emit_outcome(&mut source_output, source_outcome);
         let source_events = events(&source_output);
-        assert_eq!(source_events.len(), 2);
+        assert_eq!(source_events.len(), 3);
         assert_eq!(source_events[0]["event"], "start");
-        assert_eq!(source_events[1]["event"], "finish");
-        assert_eq!(source_events[1]["output"], "generated");
+        assert_eq!(source_events[1]["event"], "generate_attempt");
+        assert_eq!(source_events[2]["event"], "finish");
+        assert_eq!(source_events[2]["output"], "generated");
     }
 
     #[test]
@@ -2290,6 +2521,23 @@ mod tests {
         };
         assert_eq!(finished_output, r#"{"body":"attempt 2 valid"}"#);
         assert_eq!(stub_invocations(&stub), 2);
+        let attempts: Vec<_> = events(&output)
+            .into_iter()
+            .filter(|e| e["event"] == "generate_attempt")
+            .collect();
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(attempts[0]["ordinal"], 0);
+        assert_eq!(attempts[0]["status"], "retry_eligible");
+        assert_eq!(attempts[0]["cause"], "schema_validation_failed");
+        assert_eq!(attempts[0]["retry"], true);
+        assert_eq!(attempts[0]["terminal"], false);
+        assert!(attempts[0].get("prompt").is_none());
+        assert!(attempts[0].get("output").is_none());
+        assert_eq!(attempts[1]["ordinal"], 1);
+        assert_eq!(attempts[1]["status"], "success");
+        assert_eq!(attempts[1]["cause"], Value::Null);
+        assert_eq!(attempts[1]["retry"], false);
+        assert_eq!(attempts[1]["terminal"], false);
     }
 
     // AC3: direct path double schema fail -> SchemaValidationFailed after exactly 2 calls
@@ -2336,6 +2584,21 @@ mod tests {
         assert_eq!(talent, "schema_exhaust");
         assert_eq!(validation["errors"][0]["constraint"], "minLength");
         assert_eq!(stub_invocations(&stub), 2);
+        let attempts: Vec<_> = events(&output)
+            .into_iter()
+            .filter(|e| e["event"] == "generate_attempt")
+            .collect();
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(attempts[0]["ordinal"], 0);
+        assert_eq!(attempts[0]["status"], "retry_eligible");
+        assert_eq!(attempts[0]["cause"], "schema_validation_failed");
+        assert_eq!(attempts[0]["retry"], true);
+        assert_eq!(attempts[0]["terminal"], false);
+        assert_eq!(attempts[1]["ordinal"], 1);
+        assert_eq!(attempts[1]["status"], "exhausted");
+        assert_eq!(attempts[1]["cause"], "schema_validation_failed");
+        assert_eq!(attempts[1]["retry"], false);
+        assert_eq!(attempts[1]["terminal"], false);
     }
 
     // AC4: incomplete_json_length retry to success and double incomplete_json_length exhaustion
@@ -2381,6 +2644,21 @@ mod tests {
         };
         assert_eq!(finished_output, "attempt 2 success");
         assert_eq!(stub_invocations(&stub), 2);
+        let attempts: Vec<_> = events(&output)
+            .into_iter()
+            .filter(|e| e["event"] == "generate_attempt")
+            .collect();
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(attempts[0]["ordinal"], 0);
+        assert_eq!(attempts[0]["status"], "retry_eligible");
+        assert_eq!(attempts[0]["cause"], "incomplete_json_length");
+        assert_eq!(attempts[0]["retry"], true);
+        assert_eq!(attempts[0]["terminal"], false);
+        assert_eq!(attempts[1]["ordinal"], 1);
+        assert_eq!(attempts[1]["status"], "success");
+        assert_eq!(attempts[1]["cause"], Value::Null);
+        assert_eq!(attempts[1]["retry"], false);
+        assert_eq!(attempts[1]["terminal"], false);
 
         // Exhaustion on attempt 2
         let (root2, paths2, context2) = fixture(
@@ -2424,6 +2702,21 @@ mod tests {
         };
         assert_eq!(response.detail, "second refusal");
         assert_eq!(stub_invocations(&stub2), 2);
+        let attempts2: Vec<_> = events(&output2)
+            .into_iter()
+            .filter(|e| e["event"] == "generate_attempt")
+            .collect();
+        assert_eq!(attempts2.len(), 2);
+        assert_eq!(attempts2[0]["ordinal"], 0);
+        assert_eq!(attempts2[0]["status"], "retry_eligible");
+        assert_eq!(attempts2[0]["cause"], "incomplete_json_length");
+        assert_eq!(attempts2[0]["retry"], true);
+        assert_eq!(attempts2[0]["terminal"], false);
+        assert_eq!(attempts2[1]["ordinal"], 1);
+        assert_eq!(attempts2[1]["status"], "exhausted");
+        assert_eq!(attempts2[1]["cause"], "incomplete_json_length");
+        assert_eq!(attempts2[1]["retry"], false);
+        assert_eq!(attempts2[1]["terminal"], false);
     }
 
     // AC4a: attempt 1 incomplete_json_length, attempt 2 provider_response_invalid -> terminal carries attempt 2
@@ -2474,6 +2767,21 @@ mod tests {
         );
         assert_eq!(response.detail, "attempt 2 detail");
         assert_eq!(stub_invocations(&stub), 2);
+        let attempts: Vec<_> = events(&output)
+            .into_iter()
+            .filter(|e| e["event"] == "generate_attempt")
+            .collect();
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(attempts[0]["ordinal"], 0);
+        assert_eq!(attempts[0]["status"], "retry_eligible");
+        assert_eq!(attempts[0]["cause"], "incomplete_json_length");
+        assert_eq!(attempts[0]["retry"], true);
+        assert_eq!(attempts[0]["terminal"], false);
+        assert_eq!(attempts[1]["ordinal"], 1);
+        assert_eq!(attempts[1]["status"], "exhausted");
+        assert_eq!(attempts[1]["cause"], "provider_response_invalid");
+        assert_eq!(attempts[1]["retry"], false);
+        assert_eq!(attempts[1]["terminal"], false);
     }
 
     // AC4b: first-attempt success executes exactly 1 call
@@ -2508,6 +2816,18 @@ mod tests {
             "{outcome:?}"
         );
         assert_eq!(stub_invocations(&stub), 1);
+        let attempts: Vec<_> = events(&output)
+            .into_iter()
+            .filter(|e| e["event"] == "generate_attempt")
+            .collect();
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0]["ordinal"], 0);
+        assert_eq!(attempts[0]["status"], "success");
+        assert_eq!(attempts[0]["cause"], Value::Null);
+        assert_eq!(attempts[0]["retry"], false);
+        assert_eq!(attempts[0]["terminal"], false);
+        assert!(attempts[0].get("prompt").is_none());
+        assert!(attempts[0].get("output").is_none());
     }
 
     // AC4c: pulse execution with retry emits generate_input exactly once
@@ -2563,5 +2883,118 @@ mod tests {
             1,
             "generate_input must be emitted exactly once"
         );
+    }
+
+    #[test]
+    fn generate_attempt_evidence_records_ordinal_status_cause_and_retry() {
+        let (root, paths, context) = fixture(
+            "plain",
+            r#"{
+"type":"generate", "output":"md", "json_schema":{"type":"object"}, "load":{"transcripts":false}
+}"#,
+        );
+        let stub = test_support::sequenced_one_shot_stub(
+            root.path(),
+            &[
+                test_support::generated_response_value(
+                    "invalid schema output",
+                    json!({"valid": false, "errors": [{"path": "/field", "constraint": "required"}]}),
+                ),
+                test_support::generated_response_value(
+                    r#"{"field":"value"}"#,
+                    json!({"valid": true, "errors": []}),
+                ),
+            ],
+        );
+        let generate = OneShotClient::at_path(&stub);
+        let cogitate = CogitateOneShotClient::at_path(root.path().join("unused"));
+        let mut output = Vec::new();
+        let outcome = execute_request(
+            json!({"name":"plain", "day":"20260101", "prompt":"test"})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &paths,
+            &context,
+            &generate,
+            &cogitate,
+            &mut output,
+        );
+        assert!(matches!(outcome, RuntimeOutcome::Finished { .. }));
+        emit_outcome(&mut output, outcome);
+        let recorded = events(&output);
+        let attempt_events: Vec<_> = recorded
+            .iter()
+            .filter(|e| e["event"] == "generate_attempt")
+            .collect();
+        assert_eq!(attempt_events.len(), 2);
+        assert_eq!(attempt_events[0]["ordinal"], 0);
+        assert_eq!(attempt_events[0]["status"], "retry_eligible");
+        assert_eq!(attempt_events[0]["cause"], "schema_validation_failed");
+        assert_eq!(attempt_events[0]["retry"], true);
+        assert_eq!(attempt_events[0]["terminal"], false);
+
+        assert_eq!(attempt_events[1]["ordinal"], 1);
+        assert_eq!(attempt_events[1]["status"], "success");
+        assert!(attempt_events[1]["cause"].is_null());
+        assert_eq!(attempt_events[1]["retry"], false);
+        assert_eq!(attempt_events[1]["terminal"], false);
+    }
+    #[test]
+    fn cogitate_rewrites_child_terminal_events_and_propagates_usage_and_degraded() {
+        let (root, paths, context) = fixture(
+            "weekly_reflection",
+            r#"{
+"type":"cogitate", "output":"md", "load":{"transcripts":false}
+}"#,
+        );
+        let cogitate = configure_cogitate_client(CogitateOneShotClient::at_path(
+            test_support::cogitate_one_shot_stub(
+                root.path(),
+                &[
+                    r#"{"event":"tool_start","tool":"test"}"#,
+                    r#"{"event":"finish","terminal":true,"result":"reflection complete","usage":{"input_tokens":42,"output_tokens":17},"degraded":{"reason":"fallback_model"}}"#,
+                ],
+            ),
+        ));
+        let generate =
+            OneShotClient::at_path(test_support::generate_one_shot_stub(root.path(), "unused"));
+        let mut output = Vec::new();
+        let outcome = execute_request(
+            json!({
+                "name":"weekly_reflection",
+                "use_id":"use-cogitate-1",
+                "day":"20260809",
+                "prompt":"Weekly reflection."
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+            &paths,
+            &context,
+            &generate,
+            &cogitate,
+            &mut output,
+        );
+        assert!(matches!(outcome, RuntimeOutcome::Finished { .. }));
+        emit_outcome(&mut output, outcome);
+        let recorded = events(&output);
+
+        // Child finish rewritten to cogitate_child non-terminal
+        let child_events: Vec<_> = recorded
+            .iter()
+            .filter(|e| e["event"] == "cogitate_child")
+            .collect();
+        assert_eq!(child_events.len(), 1);
+        assert_eq!(child_events[0]["child_event"], "finish");
+        assert_eq!(child_events[0]["terminal"], false);
+
+        // Only one top-level finish event emitted by parent runtime
+        let finish_events: Vec<_> = recorded.iter().filter(|e| e["event"] == "finish").collect();
+        assert_eq!(finish_events.len(), 1);
+        assert_eq!(finish_events[0]["output"], "reflection complete");
+        assert_eq!(finish_events[0]["usage"]["input_tokens"], 42);
+        assert_eq!(finish_events[0]["usage"]["output_tokens"], 17);
+        assert_eq!(finish_events[0]["degraded"]["reason"], "fallback_model");
     }
 }

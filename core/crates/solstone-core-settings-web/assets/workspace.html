@@ -2187,10 +2187,6 @@ button:focus:not(:focus-visible) {
       <button class="settings-nav-item" data-section="storage" id="tab-storage" role="tab" aria-selected="false" aria-controls="section-storage" tabindex="-1">storage</button>
       <button class="settings-nav-item" data-section="facets" id="tab-facets" role="tab" aria-selected="false" aria-controls="section-facets" tabindex="-1">facets</button>
     </div>
-    <div class="settings-nav-group">
-      <div class="settings-nav-label">help</div>
-      <button class="settings-nav-item" data-section="support" id="tab-support" role="tab" aria-selected="false" aria-controls="section-support" tabindex="-1">support</button>
-    </div>
   </nav>
 
   <!-- Content panels -->
@@ -2627,43 +2623,6 @@ button:focus:not(:focus-visible) {
       <div class="settings-danger-section">
         <button type="button" id="cleanupNowBtn" class="action-button-danger">build the list</button>
         <small style="display: block; margin-top: 0.5em; color: #666;">build the list of original media ready for removal, based on your retention settings. building the list does not delete anything.</small>
-      </div>
-      </form>
-    </section>
-
-    <!-- Support Section -->
-    <section class="settings-section" id="section-support" role="tabpanel" aria-labelledby="tab-support">
-      <h2>support</h2>
-      <p class="settings-section-desc">configure support ticket access.</p>
-
-      <form class="settings-form" onsubmit="return false;">
-
-      <div class="settings-field">
-        <div class="toggle-container" style="justify-content: flex-start; gap: 1em;">
-          <label class="toggle-switch toggle-positive">
-            <input type="checkbox" id="field-support-enabled" data-section="support" data-key="enabled">
-            <span class="slider"></span>
-          </label>
-          <label for="field-support-enabled" class="toggle-label" style="cursor: pointer;">support agent</label>
-        </div>
-        <small>when enabled, support tickets can be filed and followed up on for you. review and approve anything before it's sent.</small>
-      </div>
-
-      <div class="settings-field">
-        <div class="toggle-container" style="justify-content: flex-start; gap: 1em;">
-          <label class="toggle-switch toggle-positive">
-            <input type="checkbox" id="field-support-anonymous" data-section="support" data-key="anonymous_feedback">
-            <span class="slider"></span>
-          </label>
-          <label for="field-support-anonymous" class="toggle-label" style="cursor: pointer;">anonymous feedback</label>
-        </div>
-        <small>strip installation identifiers when submitting feedback.</small>
-      </div>
-
-      <div class="settings-field">
-        <label for="field-support-portal-url">portal URL</label>
-        <input type="text" id="field-support-portal-url" data-section="support" data-key="portal_url" placeholder="https://support.solstone.app">
-        <small>where support requests go. change this if you run your own portal.</small>
       </div>
       </form>
     </section>
@@ -3391,12 +3350,6 @@ function populateFields(config) {
 
   // Shared settings
   document.getElementById('field-transcribe-preserve').checked = transcribe.preserve_all || false;
-
-  // Support settings
-  const support = config.support || {};
-  document.getElementById('field-support-enabled').checked = support.enabled !== false;
-  document.getElementById('field-support-anonymous').checked = support.anonymous_feedback || false;
-  setValue('field-support-portal-url', support.portal_url || 'https://support.solstone.app');
 
   // Env (API keys) - show status indicators
   // env = journal config status, runtime_env = loaded into process

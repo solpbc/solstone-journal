@@ -482,38 +482,23 @@ pub fn inspect_exact_text_admission(
     })
 }
 
-/// Build an unmodified text request and admit it using the provider's native
-/// count of the exact OpenAI chat body. Input is never clipped or reordered.
-///
-/// Exact text admission is the first-tier admission path for text-only Linux requests.
-/// Callers that can trim (such as [`generate_with`]) fall back to [`prepare_bundled_request`]
-/// only when this function returns `context_budget_exceeded`. A `local_endpoint_contract_failed`
-/// error is terminal and must not fall back. This function itself never trims.
-pub fn prepare_exact_text_request<F>(
-    input: &GenerateInput,
-    server: &ConnectedServer,
+struct AdmissionOptions {
+    requested_max_output_tokens: u32,
     context: ContextWindow,
+    input_budget: Option<InputBudget>,
+    initial_input_tokens: Option<u32>,
+    overflow_reason_code: &'static str,
+    overflow_detail: &'static str,
+}
+
+fn admit_and_clamp_request_body<F>(
+    mut body: Value,
+    options: AdmissionOptions,
     mut count: F,
 ) -> Result<PreparedRequest, GenerateError>
 where
     F: FnMut(&Value) -> Result<u32, String>,
 {
-    if count_image_parts(&input.contents) != 0 {
-        return Err(failure_error(
-            "local_endpoint_contract_failed",
-            "Exact text admission does not cover image input.".into(),
-        ));
-    }
-    let messages = build_messages(&input.contents, input.system_instruction.as_deref());
-    let mut body = build_request_body(
-        &server.served_model_id,
-        messages,
-        input.temperature,
-        input.max_output_tokens,
-        input.json_output,
-        input.json_schema.as_ref(),
-        true,
-    );
     let count_body = |body: &Value, count: &mut F| {
         count(body).map_err(|detail| {
             failure_error(
@@ -522,7 +507,10 @@ where
             )
         })
     };
-    let mut input_tokens = count_body(&body, &mut count)?;
+    let mut input_tokens = match options.initial_input_tokens {
+        Some(tokens) => tokens,
+        None => count_body(&body, &mut count)?,
+    };
     let mut recounts = 0u8;
     let clamped_max_tokens = loop {
         let required = SAFETY_MARGIN_TOKENS
@@ -530,22 +518,23 @@ where
             .and_then(|reserve| input_tokens.checked_add(reserve))
             .ok_or_else(|| {
                 failure_error(
-                    "context_budget_exceeded",
+                    options.overflow_reason_code,
                     "Local request token arithmetic overflowed.".into(),
                 )
             })?;
-        if required > context.window {
+        if required > options.context.window {
             return Err(failure_error(
-                "context_budget_exceeded",
-                "Unmodified local request input exceeds the model context window.".into(),
+                options.overflow_reason_code,
+                options.overflow_detail.into(),
             ));
         }
-        let room = context
+        let room = options
+            .context
             .window
             .checked_sub(input_tokens)
             .and_then(|room| room.checked_sub(SAFETY_MARGIN_TOKENS))
             .expect("required admission arithmetic checked above");
-        let clamped = input.max_output_tokens.min(room);
+        let clamped = options.requested_max_output_tokens.min(room);
         if body["max_tokens"].as_u64() == Some(u64::from(clamped)) {
             break clamped;
         }
@@ -562,16 +551,62 @@ where
     };
     Ok(PreparedRequest {
         body,
-        input_budget: None,
+        input_budget: options.input_budget,
         request_budget: RequestBudget {
-            window: context.window,
-            slots: context.slots,
+            window: options.context.window,
+            slots: options.context.slots,
             estimated_prompt_tokens: input_tokens,
             image_tokens: 0,
             clamped_max_tokens,
-            requested_max_output_tokens: input.max_output_tokens,
+            requested_max_output_tokens: options.requested_max_output_tokens,
         },
     })
+}
+
+/// Build an unmodified text request and admit it using the provider's native
+/// count of the exact OpenAI chat body. Input is never clipped or reordered.
+///
+/// Exact text admission is the first-tier admission path for text-only Linux requests.
+/// Callers that can trim (such as [`generate_with`]) fall back to [`prepare_bundled_request`]
+/// only when this function returns `context_budget_exceeded`. A `local_endpoint_contract_failed`
+/// error is terminal and must not fall back. This function itself never trims.
+pub fn prepare_exact_text_request<F>(
+    input: &GenerateInput,
+    server: &ConnectedServer,
+    context: ContextWindow,
+    count: F,
+) -> Result<PreparedRequest, GenerateError>
+where
+    F: FnMut(&Value) -> Result<u32, String>,
+{
+    if count_image_parts(&input.contents) != 0 {
+        return Err(failure_error(
+            "local_endpoint_contract_failed",
+            "Exact text admission does not cover image input.".into(),
+        ));
+    }
+    let messages = build_messages(&input.contents, input.system_instruction.as_deref());
+    let body = build_request_body(
+        &server.served_model_id,
+        messages,
+        input.temperature,
+        input.max_output_tokens,
+        input.json_output,
+        input.json_schema.as_ref(),
+        true,
+    );
+    admit_and_clamp_request_body(
+        body,
+        AdmissionOptions {
+            requested_max_output_tokens: input.max_output_tokens,
+            context,
+            input_budget: None,
+            initial_input_tokens: None,
+            overflow_reason_code: "context_budget_exceeded",
+            overflow_detail: "Unmodified local request input exceeds the model context window.",
+        },
+        count,
+    )
 }
 
 /// Build a bundled request from an injected tokenizer, without I/O other than that tokenizer.
@@ -669,7 +704,18 @@ fn prepare_linux_text_overflow_fallback<T: GenerateTransport>(
                 )
             })?;
         if required <= context.window {
-            return Ok(prepared);
+            return admit_and_clamp_request_body(
+                prepared.body,
+                AdmissionOptions {
+                    requested_max_output_tokens: input.max_output_tokens,
+                    context,
+                    input_budget: prepared.input_budget,
+                    initial_input_tokens: Some(loud_input_tokens),
+                    overflow_reason_code: "context_fitted_overflow",
+                    overflow_detail: "Local request prompt and image content exceed the local model context window.",
+                },
+                |body| count_input_tokens(transport, &server.base_url, body),
+            );
         }
         if attempt == LINUX_TEXT_OVERFLOW_SHRINK_ATTEMPTS {
             return Err(failure_error(
@@ -2092,19 +2138,17 @@ mod tests {
             }
             if path == "/tokenize" {
                 self.tokenize_posts += 1;
-                if let Some(divisor) = self.tokenize_divisor {
-                    if divisor >= 1 {
-                        let text = body.get("content").and_then(Value::as_str).unwrap_or("");
-                        let token_count = estimate_tokens(text) / divisor;
-                        let tokens = vec![0; token_count as usize];
-                        return Ok(HttpResponse {
-                            status: 200,
-                            body: json!({
-                                "tokens": tokens,
-                            })
-                            .to_string(),
-                        });
-                    }
+                if let Some(divisor) = self.tokenize_divisor.filter(|&d| d >= 1) {
+                    let text = body.get("content").and_then(Value::as_str).unwrap_or("");
+                    let token_count = estimate_tokens(text) / divisor;
+                    let tokens = vec![0; token_count as usize];
+                    return Ok(HttpResponse {
+                        status: 200,
+                        body: json!({
+                            "tokens": tokens,
+                        })
+                        .to_string(),
+                    });
                 }
                 return Err("scripted transport tokenize not enabled".into());
             }
@@ -2258,6 +2302,52 @@ mod tests {
         assert_eq!(transport.completion_posts, 0);
         assert!(transport.count_posts <= 4);
         assert!(transport.tokenize_posts >= 1);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_text_overflow_reclamps_max_tokens_when_tokenize_undercounts() {
+        let mut transport = ScriptedTransport::new([ok_http(json!({
+            "choices": [{"message": {"content": "response"}, "finish_reason": "stop"}]
+        }))]);
+        // Tokenizer undercounts so fitted prompt estimate is small, but loud recount is 15_000.
+        // FLOOR_CONTEXT_TOKENS (16_384): 15_000 + 256 + 256 = 15_512 <= 16_384.
+        // Available room = 16_384 - 15_000 - 256 = 1_128.
+        // Requested max output tokens = 4_096. Clamped max tokens must become 1_128.
+        transport.tokenize_divisor = Some(4);
+        transport.input_token_queue = std::collections::VecDeque::from([
+            FLOOR_CONTEXT_TOKENS - 511, // exact count overflows
+            15_000,                     // loud recount of fitted body
+            15_000,                     // count of stabilized body
+        ]);
+        let root = tempfile::tempdir().expect("journal");
+        let huge_transcript = format!(
+            "## Entry 1\n{}\n## Entry 2\n{}",
+            "x".repeat(120_000),
+            "y".repeat(120_000)
+        );
+        let mut request = input(json!([huge_transcript, "instruction"]));
+        request.journal_path = root.path().display().to_string();
+        request.max_output_tokens = 4_096;
+        let result = generate_with(request, &mut transport, |_| ConnectOutcome::Ready {
+            server: server(),
+        });
+        let GenerateResult::Success(success) = result else {
+            panic!("expected success after re-clamping, got: {result:?}");
+        };
+        assert!(success.input_budget.is_some());
+        assert_eq!(transport.completion_posts, 1);
+        let posted_body = &transport.completion_bodies[0];
+        assert_eq!(posted_body["max_tokens"], 1_128);
+        let budget = &success.request_budget;
+        assert_eq!(budget.estimated_prompt_tokens, 15_000);
+        assert_eq!(
+            budget.clamped_max_tokens,
+            posted_body["max_tokens"].as_u64().unwrap() as u32
+        );
+        assert_eq!(budget.clamped_max_tokens, 1_128);
+        assert_eq!(budget.window, FLOOR_CONTEXT_TOKENS);
+        assert_eq!(budget.requested_max_output_tokens, 4_096);
     }
 
     #[cfg(target_os = "linux")]

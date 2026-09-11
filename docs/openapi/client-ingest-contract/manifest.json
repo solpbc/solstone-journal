@@ -14,7 +14,7 @@
     }
   ],
   "bundle_schema_identity": "solstone.client-ingest-contract-bundle.schema.v1",
-  "bundle_semver": "10.0.0",
+  "bundle_semver": "11.0.0",
   "client_protocol_version": 3,
   "component_closure": [
     "Error",
@@ -38,7 +38,7 @@
     },
     {
       "path": "projection.openapi.json",
-      "sha256": "cc3d33694f3093f706e6844e832912d52c52e0abdd32f72c631429fe6450adb5"
+      "sha256": "e2b323f846b63871f89c5963d1c7caa786dee8387f5809c5b8afddddd591e193"
     },
     {
       "path": "vectors.json",
@@ -51,7 +51,7 @@
       "id": "openapi.client_ingest_authority",
       "path": "core/crates/solstone-core-repository-contracts/src/contracts/client_ingest_authority.json",
       "role": "openapi_source",
-      "sha256": "c27f58430f00cfbcf49f693a86033b5b5a3ec6a30c6d43778170ed6d24e2e2c5"
+      "sha256": "03595fba0190afb39f15c9f61d3353952e71512f01218c942741135bdb4cf3e0"
     }
   ],
   "openapi_document_version": "1.0.0",

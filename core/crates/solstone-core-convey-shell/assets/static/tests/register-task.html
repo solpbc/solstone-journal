@@ -51,10 +51,10 @@
       new Error('fail two'),
       new Error('fail three'),
       { count: 1 },
-      new window.ApiError({ status: 403, statusText: 'Forbidden', serverMessage: 'disabled', url: '/app/support/api/badge-count' })
+      new window.ApiError({ status: 403, statusText: 'Forbidden', serverMessage: 'disabled', url: '/app/thinking/api/badge-count' })
     ];
 
-    const task = window.AppServices.registerTask('support', 'badge-count', {
+    const task = window.AppServices.registerTask('thinking', 'badge-count', {
       intervalMs: 60000,
       run: async () => {
         const next = events.shift();
@@ -67,7 +67,7 @@
     await settle(task.runNow());
     await settle(task.runNow());
     assert('three failures mark task failing', task.getHealth().failing === true);
-    assert('failing transition shows one notification', notifications.length === 1 && notifications[0].title === 'support background task');
+    assert('failing transition shows one notification', notifications.length === 1 && notifications[0].title === 'thinking background task');
 
     await task.runNow();
     const successHealth = task.getHealth();
@@ -76,7 +76,7 @@
 
     await task.runNow();
     const disabledHealth = task.getHealth();
-    const taskHealth = window.AppServices.getTaskHealth('support')['badge-count'];
+    const taskHealth = window.AppServices.getTaskHealth('thinking')['badge-count'];
     assert('403 disables task without notification spam', disabledHealth.disabled === true && notifications.length === 1);
     assert('getTaskHealth exposes stored record', !!taskHealth && 'lastError' in taskHealth && 'intervalId' in taskHealth);
 
