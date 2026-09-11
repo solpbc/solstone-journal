@@ -773,6 +773,65 @@ fn archive_and_zip_refuse_escapes_and_digest_mismatch() {
 
 #[cfg(test)]
 #[test]
+fn provenance_binds_the_cargo_executable_instead_of_debug_sidecars() {
+    let cases = [
+        (
+            "x86_64-pc-windows-msvc",
+            "C:/work/x86_64-pc-windows-msvc/release/solstone-core.exe",
+            "C:/work/x86_64-pc-windows-msvc/release/solstone_core.pdb",
+        ),
+        (
+            "x86_64-unknown-linux-musl",
+            "/work/x86_64-unknown-linux-musl/release/solstone-core",
+            "/work/x86_64-unknown-linux-musl/release/solstone-core.debug",
+        ),
+        (
+            "aarch64-apple-darwin",
+            "/work/aarch64-apple-darwin/release/solstone-core",
+            "/work/aarch64-apple-darwin/release/solstone-core.dSYM",
+        ),
+    ];
+    let native_windows = cfg!(windows).then_some((
+        "x86_64-pc-windows-msvc",
+        r"C:\work\x86_64-pc-windows-msvc\release\solstone-core.exe",
+        r"C:\work\x86_64-pc-windows-msvc\release\solstone_core.pdb",
+    ));
+    for (triple, executable, sidecar) in cases.into_iter().chain(native_windows) {
+        let mut message = serde_json::json!({
+            "reason": "compiler-artifact",
+            "package_id": "path+file:///repo/core/crates/solstone-core#2.0.0",
+            "target": {"name": "solstone-core", "kind": ["bin"]},
+            "filenames": [executable, sidecar],
+            "executable": executable
+        });
+        for filenames in [[executable, sidecar], [sidecar, executable]] {
+            message["filenames"] = serde_json::json!(filenames);
+            let artifacts = provenance::bind_cargo_json(&message.to_string(), triple).unwrap();
+            assert_eq!(artifacts.len(), 1);
+            let (id, path) = artifacts.first_key_value().unwrap();
+            assert_eq!(id.package, "solstone-core");
+            assert_eq!(id.triple, triple);
+            assert_eq!(path, &PathBuf::from(executable));
+        }
+        message["executable"] = serde_json::Value::Null;
+        assert!(
+            provenance::bind_cargo_json(&message.to_string(), triple)
+                .unwrap()
+                .is_empty()
+        );
+        message.as_object_mut().unwrap().remove("executable");
+        assert!(
+            provenance::bind_cargo_json(&message.to_string(), triple)
+                .unwrap()
+                .is_empty()
+        );
+        message["executable"] = serde_json::json!("C:/other/solstone-core.exe");
+        assert!(provenance::bind_cargo_json(&message.to_string(), triple).is_err());
+    }
+}
+
+#[cfg(test)]
+#[test]
 fn provenance_refuses_dirty_stale_and_wrong_commit() {
     assert!(
         provenance::require_clean(true)
@@ -792,7 +851,7 @@ fn provenance_refuses_dirty_stale_and_wrong_commit() {
             .to_string()
             .contains("stale-lock")
     );
-    let json = r#"{"reason":"compiler-artifact","package_id":"solstone-core 1.0.22","target":{"name":"solstone-core","kind":["bin"]},"filenames":["/work/x86_64-unknown-linux-musl/release/solstone-core"]}"#;
+    let json = r#"{"reason":"compiler-artifact","package_id":"solstone-core 1.0.22","target":{"name":"solstone-core","kind":["bin"]},"filenames":["/work/x86_64-unknown-linux-musl/release/solstone-core"],"executable":"/work/x86_64-unknown-linux-musl/release/solstone-core"}"#;
     let artifacts = provenance::bind_cargo_json(json, "x86_64-unknown-linux-musl").unwrap();
     assert_eq!(artifacts.len(), 1);
     assert_eq!(
@@ -802,17 +861,17 @@ fn provenance_refuses_dirty_stale_and_wrong_commit() {
     // A host-layout artifact carries no triple component, so it stays unstamped
     // and `refuse_wrong_triple` rejects it. This is the guard the old
     // substring match provided and the exact-match must not lose.
-    let host = r#"{"reason":"compiler-artifact","package_id":"solstone-core 1.0.22","target":{"name":"solstone-core","kind":["bin"]},"filenames":["/work/release/solstone-core"]}"#;
+    let host = r#"{"reason":"compiler-artifact","package_id":"solstone-core 1.0.22","target":{"name":"solstone-core","kind":["bin"]},"filenames":["/work/release/solstone-core"],"executable":"/work/release/solstone-core"}"#;
     let host_artifacts = provenance::bind_cargo_json(host, "x86_64-unknown-linux-musl").unwrap();
     assert_eq!(host_artifacts.keys().next().unwrap().triple, "");
     // And an Apple triple binds, which the substring form could never do.
-    let apple = r#"{"reason":"compiler-artifact","package_id":"solstone-core 1.0.22","target":{"name":"solstone-core","kind":["bin"]},"filenames":["/work/aarch64-apple-darwin/release/solstone-core"]}"#;
+    let apple = r#"{"reason":"compiler-artifact","package_id":"solstone-core 1.0.22","target":{"name":"solstone-core","kind":["bin"]},"filenames":["/work/aarch64-apple-darwin/release/solstone-core"],"executable":"/work/aarch64-apple-darwin/release/solstone-core"}"#;
     let apple_artifacts = provenance::bind_cargo_json(apple, "aarch64-apple-darwin").unwrap();
     assert_eq!(
         apple_artifacts.keys().next().unwrap().triple,
         "aarch64-apple-darwin"
     );
-    let modern = r#"{"reason":"compiler-artifact","package_id":"path+file:///repo/core/crates/solstone-core-journal-bin#1.0.22","target":{"name":"solstone-core-journal","kind":["bin"]},"filenames":["/work/x86_64-unknown-linux-musl/release/solstone-core-journal"]}"#;
+    let modern = r#"{"reason":"compiler-artifact","package_id":"path+file:///repo/core/crates/solstone-core-journal-bin#1.0.22","target":{"name":"solstone-core-journal","kind":["bin"]},"filenames":["/work/x86_64-unknown-linux-musl/release/solstone-core-journal"],"executable":"/work/x86_64-unknown-linux-musl/release/solstone-core-journal"}"#;
     let modern_artifacts =
         provenance::bind_cargo_json(modern, "x86_64-unknown-linux-musl").unwrap();
     assert_eq!(

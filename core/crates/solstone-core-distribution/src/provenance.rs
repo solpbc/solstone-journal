@@ -98,6 +98,7 @@ pub fn bind_cargo_json(
         package_id: Option<String>,
         target: Option<Target>,
         filenames: Option<Vec<String>>,
+        executable: Option<String>,
     }
     #[derive(serde::Deserialize)]
     struct Target {
@@ -133,25 +134,33 @@ pub fn bind_cargo_json(
         let Some(filenames) = message.filenames else {
             continue;
         };
-        for filename in filenames {
-            let path = PathBuf::from(filename);
-            let triple = path
-                .components()
-                .find_map(|component| {
-                    let name = component.as_os_str().to_string_lossy();
-                    (!expected_triple.is_empty() && name == expected_triple)
-                        .then(|| name.into_owned())
-                })
-                .unwrap_or_default();
-            artifacts.insert(
-                ArtifactId {
-                    package: package.clone(),
-                    bin: bin.clone(),
-                    triple,
-                },
-                path,
-            );
+        // A binary's filenames can also include debug sidecars, including a
+        // Windows PDB even with release debuginfo disabled. Cargo identifies
+        // the runnable output separately; filenames order is not authority.
+        let Some(filename) = message.executable else {
+            continue;
+        };
+        if !filenames.contains(&filename) {
+            return Err(ProvenanceError::new(format!(
+                "Cargo executable is not a reported output: {package}/{bin}"
+            )));
         }
+        let path = PathBuf::from(filename);
+        let triple = path
+            .components()
+            .find_map(|component| {
+                let name = component.as_os_str().to_string_lossy();
+                (!expected_triple.is_empty() && name == expected_triple).then(|| name.into_owned())
+            })
+            .unwrap_or_default();
+        artifacts.insert(
+            ArtifactId {
+                package,
+                bin,
+                triple,
+            },
+            path,
+        );
     }
     Ok(artifacts)
 }
