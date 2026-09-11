@@ -4,6 +4,23 @@ All notable changes to solstone will be documented in this file.
 
 Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.0.1] - 2026-09-11
+
+### Added
+
+- you can now install a local model from thinking in your journal, see download progress, cancel setup, and choose it once installed. interrupted setup offers a retry, and a failed check no longer says your computer is unsupported.
+
+### Changed
+
+- "report this" and the support page now let you review a report in your journal, edit its recent error lines, and continue to the support website. the journal's built-in support agent and ticket controls are gone.
+
+### Fixed
+
+- generated text now replaces its previous version in one step, avoiding a partly written entry in your journal. a failed save no longer appears first as completed work.
+- when a model returns structured results in the wrong format or cuts them short, the journal tries once more before stopping.
+- on linux, text that is too long for a local model now gets a shorter working copy instead of stopping immediately. the original journal text stays intact, and work that still cannot fit reports why.
+- on apple silicon macs, local transcription can start when there is enough memory. the journal had treated the memory check as unavailable. transcription also follows your saved choice of where it runs.
+
 ## [2.0.0] - 2026-08-18
 
 ### Changed
@@ -12,7 +29,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - chat is gone. you have a working chat today. this upgrade takes it away. the chat bar in your journal, the chat page, and `solstone chat` are gone. on iphone, the ask bar on the day home is gone too, and nothing takes its place. that screen is your day.
 - chats you already have in your journal stay on your disk, untouched. they are no longer shown, and they no longer come up in search.
 - solstone is a personal memory platform. to ask questions of your journal, use your own agent, or the command line.
-- filing support through the chat bar and the journal's support agent are gone. "report this" and the support page now show one local review card with the journal version, operating system, app and route, an error code when there is one, and editable recent error lines. continuing opens the support website with the draft, and the journal sends nothing to support on its own. upgrading also removes the retired support credential from the journal.
+- filing support through the chat bar is gone. compose, review, and send now happen on the support page. the review card shows every field and every diagnostic value before anything leaves your machine.
 - chat requests to your phone are paused, not gone.
 - the timeline view is gone. your journal no longer picks a headline event out of every five-minute slice, or picks the few events it judged most important to stand for a day, a month, or a year. the timeline entries it already wrote stay on your disk, untouched, and nothing reads them. a link that used to open a day in the timeline opens it in the transcripts view now.
 
