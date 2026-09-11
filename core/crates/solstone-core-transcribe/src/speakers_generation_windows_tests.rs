@@ -14,6 +14,10 @@ use solstone_core_system::process::{
 use std::sync::Arc;
 use std::time::Instant;
 
+// Root probes perform signed admission of the complete installed payload twice.
+// Allow that I/O within a bounded fixture budget, including on evaluation VMs.
+const ROOT_PROBE_TIMEOUT: Duration = Duration::from_secs(90);
+
 #[test]
 #[ignore = "native signed-fixture generation/resource receipt"]
 fn windows_generation_cleanup_bag_receipt() {
@@ -179,7 +183,7 @@ fn run_unrelated_root_probe(
         resources,
         generation,
         mode,
-        Instant::now() + Duration::from_secs(30),
+        Instant::now() + ROOT_PROBE_TIMEOUT,
     );
 }
 
@@ -234,7 +238,7 @@ fn run_unrelated_root_probe_until(
         budget: BoundedHelperBudget {
             timeout: deadline
                 .saturating_duration_since(Instant::now())
-                .min(Duration::from_secs(30)),
+                .min(ROOT_PROBE_TIMEOUT),
             stdin_limit_bytes: 1,
             stdout_limit_bytes: 64 * 1024,
             stderr_limit_bytes: 64 * 1024,
@@ -340,7 +344,7 @@ fn windows_generation_descendant_probe() {
     )
     .unwrap();
     let release = journal.join(format!("descendant-{index}.release"));
-    let deadline = Instant::now() + Duration::from_secs(150);
+    let deadline = Instant::now() + Duration::from_secs(330);
     loop {
         if release.is_file() {
             break;
@@ -515,7 +519,7 @@ fn windows_generation_descendant_receipt() {
         .tempdir()
         .unwrap()
         .keep();
-    let deadline = Instant::now() + Duration::from_secs(180);
+    let deadline = Instant::now() + Duration::from_secs(360);
     let body_deadline = deadline - Duration::from_secs(15);
     let mut children = Vec::new();
     let outputs: Vec<_> = (0..2)
