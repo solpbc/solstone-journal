@@ -65,6 +65,65 @@ fn wait_for(path: &std::path::Path) {
 }
 
 #[test]
+fn coordinator_bootstrap_publication_preserves_an_in_progress_read() {
+    use std::io::Read;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    use solstone_core_system::lifecycle::{
+        CoordinatorBootstrap, CoordinatorBootstrapReady, DeclaredParent, ParentLossCoordinator,
+    };
+
+    let bed = Bed::new("coordinator-bootstrap-publication");
+    let parent = DeclaredParent::capture_current().expect("current parent identity");
+    let path = bed.root.join("health/parent-loss/bootstrap-ready.json");
+    fs::create_dir_all(path.parent().expect("readiness directory")).expect("readiness directory");
+    let previous = CoordinatorBootstrapReady {
+        schema: 1,
+        generation: 999,
+        coordinator: parent.instance(),
+        proof: "previous-generation-proof".to_owned(),
+    };
+    let mut previous_bytes = serde_json::to_vec_pretty(&previous).expect("previous readiness");
+    previous_bytes.push(b'\n');
+    fs::write(&path, &previous_bytes).expect("seed previous readiness");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("private readiness");
+    let previous_owner = fs::metadata(&path).expect("previous metadata").uid();
+
+    // An old pointer can still be open while the coordinator publishes its
+    // new generation. Force that interleaving without timing or process hooks.
+    let mut reader = fs::File::open(&path).expect("open previous readiness");
+    let mut observed = vec![0; previous_bytes.len() / 2];
+    reader.read_exact(&mut observed).expect("read first half");
+    let capability = b"publication-test-capability".to_vec();
+    let (_coordinator, current) = ParentLossCoordinator::bootstrap(CoordinatorBootstrap {
+        journal: bed.root.clone(),
+        supervisor: parent.instance(),
+        enabled: Vec::new(),
+        supervisor_heartbeat_filename: "solstone-v2-publication-test.check".to_owned(),
+        capability: capability.clone(),
+    })
+    .expect("publish current readiness");
+    reader
+        .read_to_end(&mut observed)
+        .expect("finish previous read");
+    assert_eq!(
+        observed, previous_bytes,
+        "publishing readiness must not truncate or modify a document already open for reading"
+    );
+    assert_eq!(
+        ParentLossCoordinator::read_bootstrap_ready(&bed.root).expect("read current readiness"),
+        Some(current.clone())
+    );
+    assert!(ParentLossCoordinator::bootstrap_ready_is_authenticated(
+        &current,
+        &capability
+    ));
+    let metadata = fs::metadata(&path).expect("published metadata");
+    assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
+    assert_eq!(metadata.uid(), previous_owner);
+}
+
+#[test]
 fn parent_loss_coordinator_survives_group_term_until_its_own_terminal_decision() {
     let bed = Bed::new("parent-loss-term-guard");
     let ready = bed.root.join("ready");

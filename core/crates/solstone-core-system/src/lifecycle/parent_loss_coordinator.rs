@@ -14,8 +14,9 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{
-    FileLease, JournalRoot, LeaseError, LeaseOptions, LockOptions, acquire_file_lease, hold_lock,
-    open_flat_directory_bound, read_observed_file_bounded,
+    AtomicWriteError, AtomicWriteOptions, FileLease, JournalRoot, LeaseError, LeaseOptions,
+    LockOptions, acquire_file_lease, atomic_replace, hold_lock, open_flat_directory_bound,
+    read_observed_file_bounded,
 };
 use thiserror::Error;
 
@@ -93,6 +94,8 @@ pub enum CoordinatorBootstrapError {
     Io(#[from] io::Error),
     #[error("coordinator readiness JSON failed: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("coordinator readiness publication failed: {0}")]
+    Write(#[from] AtomicWriteError),
 }
 
 #[derive(Debug, Error)]
@@ -778,21 +781,17 @@ fn write_bootstrap_ready(
     ready: &CoordinatorBootstrapReady,
 ) -> Result<(), CoordinatorBootstrapError> {
     let path = bootstrap_path(ledger);
-    let parent = path.parent().expect("bootstrap parent");
-    fs::create_dir_all(parent)?;
-    let bytes = serde_json::to_vec_pretty(ready)?;
-    let mut options = fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(FILE_MODE);
-    }
-    let mut file = options.open(path)?;
-    use std::io::Write;
-    file.write_all(&bytes)?;
-    file.write_all(b"\n")?;
-    file.sync_all()?;
+    let mut bytes = serde_json::to_vec_pretty(ready)?;
+    bytes.push(b'\n');
+    // The supervisor polls without the coordinator's writer lease. Publish
+    // only a complete document, preserving any already-open previous pointer.
+    atomic_replace(
+        path,
+        &bytes,
+        AtomicWriteOptions {
+            mode: Some(FILE_MODE),
+        },
+    )?;
     Ok(())
 }
 
