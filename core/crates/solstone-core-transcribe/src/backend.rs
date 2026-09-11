@@ -20,7 +20,9 @@ use crate::TranscribeError;
 const GIB: u64 = 1024 * 1024 * 1024;
 const LINUX_LOCAL_FLOOR_BYTES: u64 = 4 * GIB;
 const WINDOWS_LOCAL_FLOOR_BYTES: u64 = 4 * GIB;
-const DARWIN_ARM64_LOCAL_FLOOR_BYTES: u64 = 2 * GIB;
+// Apple Silicon: no auto free-RAM refuse. Some(0) keeps CoreML selected;
+// None would fall through to SttSurface. Unknown probe still fail-closed.
+const DARWIN_ARM64_LOCAL_FLOOR_BYTES: u64 = 0;
 pub(crate) const KNOWN_BACKENDS: [&str; 3] = STT_BACKENDS;
 
 /// Non-fatal backend-selection information for the caller to log.
@@ -150,19 +152,36 @@ mod tests {
     }
 
     #[test]
-    fn darwin_arm64_platform_floor_is_two_gib() {
+    fn darwin_arm64_platform_floor_is_zero() {
         assert_eq!(
             platform_floor_bytes_for("darwin", "arm64"),
+            Some(DARWIN_ARM64_LOCAL_FLOOR_BYTES)
+        );
+        assert_eq!(DARWIN_ARM64_LOCAL_FLOOR_BYTES, 0);
+    }
+
+    #[test]
+    fn macos_aarch64_platform_floor_is_zero() {
+        assert_eq!(
+            platform_floor_bytes_for("macos", "aarch64"),
             Some(DARWIN_ARM64_LOCAL_FLOOR_BYTES)
         );
     }
 
     #[test]
-    fn macos_aarch64_platform_floor_is_two_gib() {
+    fn darwin_default_admits_local_without_a_free_ram_reservation() {
+        let local = local_stt_backend_for("darwin", "arm64");
+        let floor = platform_floor_bytes_for("darwin", "arm64");
         assert_eq!(
-            platform_floor_bytes_for("macos", "aarch64"),
-            Some(DARWIN_ARM64_LOCAL_FLOOR_BYTES)
+            resolve_default_backend(None, local, Some(1), floor, false, false)
+                .unwrap()
+                .backend,
+            "parakeet"
         );
+        assert!(matches!(
+            resolve_default_backend(None, local, None, floor, false, false),
+            Err(TranscribeError::SttSurface { .. })
+        ));
     }
 
     #[cfg(target_os = "macos")]

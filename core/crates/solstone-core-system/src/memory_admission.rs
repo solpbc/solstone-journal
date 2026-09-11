@@ -161,10 +161,9 @@ pub fn resolve_memory_floor_bytes(
             platform.eq_ignore_ascii_case("darwin") && arch.eq_ignore_ascii_case("arm64")
                 || unified_memory()
         });
-        if !unified {
+        if !unified || platform.eq_ignore_ascii_case("darwin") {
             0
         } else {
-            // A gate floor below the STT local floor would admit transcribe jobs that then silently downgrade off the local backend.
             let lower = stt_floor_bytes.unwrap_or(2 * GIB).saturating_add(GIB);
             total_bytes()
                 .map(|total| percentage_floor(total).max(lower).min(12 * GIB))
@@ -330,12 +329,12 @@ mod tests {
                 None,
                 None
             ),
-            3 * GIB
+            0
         );
         assert_eq!(resolve(json!({}), "linux", "x86_64", false, None, None), 0);
         assert_eq!(
             resolve(json!({}), "Darwin", "arm64", false, None, Some(4 * GIB)),
-            5 * GIB
+            0
         );
         assert_eq!(
             resolve(

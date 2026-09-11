@@ -10,6 +10,7 @@ use std::process::Command;
 use serde_json::{Map, Value};
 
 const MIB: u64 = 1024 * 1024;
+#[cfg(test)]
 const GIB: u64 = 1024 * MIB;
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -127,28 +128,17 @@ impl Admission {
         *self.state.lock().expect("throttle lock")
     }
     pub fn floor_bytes(&self, config: &Map<String, Value>) -> u64 {
-        if let Some(value) = config
+        // Auto free-RAM wait is retired. Apple Silicon uses swap and the
+        // compressor; the large thinking model is gated by `sol check`
+        // (16 GiB total / 13 GiB available), not this Sense floor.
+        // An explicit `memory.floor_mib` remains an operator override.
+        config
             .get("memory")
             .and_then(Value::as_object)
             .and_then(|v| v.get("floor_mib"))
             .and_then(Value::as_u64)
-        {
-            return value.saturating_mul(MIB);
-        }
-        if !self.probe.unified_memory() {
-            return 0;
-        }
-        let stt_floor = if std::env::consts::OS == "macos" {
-            2 * GIB
-        } else {
-            4 * GIB
-        };
-        let auto = self
-            .probe
-            .total_bytes()
-            .map(|v| (v as f64 * 0.06) as u64)
-            .unwrap_or(stt_floor + GIB);
-        auto.clamp(stt_floor + GIB, 12 * GIB)
+            .map(|value| value.saturating_mul(MIB))
+            .unwrap_or(0)
     }
     pub fn wait<F, S, E>(
         &self,
@@ -249,6 +239,21 @@ mod tests {
             ),
             7 * MIB
         );
+    }
+
+    #[test]
+    fn auto_floor_is_zero_on_unified_memory() {
+        let a = Admission::new(Arc::new(Probe));
+        assert_eq!(a.floor_bytes(&Map::new()), 0);
+        let admitted = a.wait(
+            "transcribe",
+            &Map::new(),
+            || false,
+            |_available, _floor| panic!("auto floor must not throttle"),
+            |_waited| panic!("auto floor must not throttle"),
+        );
+        assert!(admitted);
+        assert!(!a.state().throttled);
     }
 
     #[test]

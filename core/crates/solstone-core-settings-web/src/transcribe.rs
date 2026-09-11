@@ -20,16 +20,37 @@ pub async fn get(journal_root: PathBuf) -> Response {
         true,
     );
     let available = SystemMemoryProbe.available_bytes();
-    let available_gb =
-        available.map(|bytes| (bytes as f64 / 1024_f64.powi(3) * 10.0).round() / 10.0);
     json_response(json!({
         "backends": backend_metadata(),
         "api_keys": {"parakeet": true, "parakeet-cpp": true},
         "config": transcribe,
         "runtime_label": runtime_label(std::env::consts::OS, std::env::consts::ARCH),
         "parakeet_uses_cpp": parakeet_uses_cpp(std::env::consts::OS, std::env::consts::ARCH),
-        "resource": {"min_ram_gb": 6, "available_memory_gb": available_gb, "requirement": "local transcription needs about 6 GB of free memory for the on-device model (transcription, speaker labels, and overlap detection).", "detected": available_gb.map(|value| format!("{value} GB of free memory detected on this machine.")).unwrap_or_else(|| "free memory on this machine could not be detected.".to_owned()), "needs_setup": available.is_some_and(|value| value < 6 * 1024_u64.pow(3)), "notice": ""},
+        "resource": transcribe_resource(std::env::consts::OS, std::env::consts::ARCH, available),
     }))
+}
+
+fn transcribe_resource(os: &str, arch: &str, available: Option<u64>) -> serde_json::Value {
+    let available_gb =
+        available.map(|bytes| (bytes as f64 / 1024_f64.powi(3) * 10.0).round() / 10.0);
+    if matches!(resolve_host_platform(os, arch), Ok(Platform::MacosArm64)) {
+        return json!({
+            "min_ram_gb": 0,
+            "available_memory_gb": available_gb,
+            "requirement": "",
+            "detected": "",
+            "needs_setup": false,
+            "notice": "",
+        });
+    }
+    json!({
+        "min_ram_gb": 6,
+        "available_memory_gb": available_gb,
+        "requirement": "local transcription needs about 6 GB of free memory for the on-device model (transcription, speaker labels, and overlap detection).",
+        "detected": available_gb.map(|value| format!("{value} GB of free memory detected on this machine.")).unwrap_or_else(|| "free memory on this machine could not be detected.".to_owned()),
+        "needs_setup": available.is_some_and(|value| value < 6 * 1024_u64.pow(3)),
+        "notice": "",
+    })
 }
 
 fn backend_metadata() -> serde_json::Value {
@@ -53,7 +74,7 @@ pub fn parakeet_uses_cpp(os: &str, arch: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{backend_metadata, parakeet_uses_cpp, runtime_label};
+    use super::{backend_metadata, parakeet_uses_cpp, runtime_label, transcribe_resource};
 
     /// G3-20: option/backend labels are sentence case, not Title Case — the
     /// only capitals allowed are proper nouns/acronyms already present
@@ -105,5 +126,15 @@ mod tests {
         assert!(!parakeet_uses_cpp("macos", "aarch64"));
         assert!(!parakeet_uses_cpp("darwin", "arm64"));
         assert!(!parakeet_uses_cpp("windows", "x86_64"));
+    }
+
+    #[test]
+    fn apple_silicon_does_not_require_free_ram_setup() {
+        let resource = transcribe_resource("darwin", "arm64", Some(1));
+        assert_eq!(resource["min_ram_gb"], 0);
+        assert_eq!(resource["needs_setup"], false);
+        assert_eq!(resource["requirement"], "");
+        let resource = transcribe_resource("macos", "aarch64", Some(1));
+        assert_eq!(resource["needs_setup"], false);
     }
 }

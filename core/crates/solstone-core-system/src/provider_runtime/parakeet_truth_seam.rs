@@ -46,7 +46,7 @@ use super::seams::{RuntimeStoreError, TruthObservationSeam};
 const GIB: u64 = 1024 * 1024 * 1024;
 const LINUX_LOCAL_FLOOR_BYTES: u64 = 4 * GIB;
 const WINDOWS_LOCAL_FLOOR_BYTES: u64 = 4 * GIB;
-const DARWIN_ARM64_LOCAL_FLOOR_BYTES: u64 = 2 * GIB;
+const DARWIN_ARM64_LOCAL_FLOOR_BYTES: u64 = 0;
 const PARAKEET_ATT_CONTEXT_ENV: &str = "PARAKEET_ATT_CONTEXT";
 const PARAKEET_ATT_CONTEXT: &str = "128";
 
