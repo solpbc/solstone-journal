@@ -52,14 +52,14 @@ Each solstone app has its own repository. Start at the [family index](https://gi
 
 As of September 2026:
 
-- **2.x is the native line, built and not yet on the release channel.** The journal is one self-contained Rust tree with no interpreter and no package manager of its own. It carries both commands, `solstone` and `journal`. The Python line ended at 1.0.22, and `journal setup` migrates a pip, uv or pipx install in place ([INSTALL.md](INSTALL.md#moving-from-a-pip-uv-or-pipx-install)).
+- **2.x is the native line, on the release channel.** The journal is one self-contained Rust tree with no interpreter and no package manager of its own. It carries both commands, `solstone` and `journal`. The Python line ended at 1.0.22, and `journal setup` migrates a pip, uv or pipx install in place ([INSTALL.md](INSTALL.md#moving-from-a-pip-uv-or-pipx-install)).
 - **Platforms:** linux on x86_64 and aarch64 (tarball, `.deb`, `.rpm`), and macos on Apple Silicon (tarball, signed and notarized `.pkg`). The solstone app already runs on windows; the journal does not yet.
 - **Chat is gone.** The 2.x line removes the chat bar, the chat page and `solstone chat`. Chats already in a journal stay on disk and are no longer shown. To ask questions of your journal, use your own agent or the command line.
-- **Releases** publish to `updates.solstone.app`, signed with minisign. The `release` lane is what `install.sh` follows; owners on the previous line stay on it until the first 2.x release is cut. What changed, in owner terms: [CHANGELOG.md](CHANGELOG.md).
+- **Releases** publish to `updates.solstone.app`, signed with minisign. The `release` lane is what `install.sh` follows. What changed, in owner terms: [CHANGELOG.md](CHANGELOG.md).
 
 ## Quick start
 
-Once a release is on the channel, one command fetches the signed release, verifies it, installs it, and runs setup:
+One command fetches the signed release, verifies it, installs it, and runs setup:
 
 ```bash
 curl -fsSL https://solstone.app/install.sh | sh

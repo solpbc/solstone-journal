@@ -35,7 +35,7 @@ sudo pacman -S libgomp         # Arch
 
 The release channel is `updates.solstone.app`. `install.sh` accepts only that host, re-checking on every redirect hop; loopback is allowed for testing, and `--origin` overrides. `install.sh` lives in this repository at `core/distribution/install.sh`, and is served at `https://solstone.app/install.sh` (mirrored, unchanged, at `https://updates.solstone.app/solstone-journal/install.sh`).
 
-One command does the whole thing, including signed-manifest verification and `journal setup`, once a release has been published:
+One command does the whole thing, including signed-manifest verification and `journal setup`:
 
 ```bash
 curl -fsSL https://solstone.app/install.sh | sh
@@ -57,7 +57,7 @@ sha256sum solstone-journal-<version>-linux-<arch>.tar.gz  # or the .deb or .rpm
 
 If minisign refuses, stop. Compare the artifact digest printed by `sha256sum` with that artifact's exact entry under `files` in the signed manifest. A matching manifest signature without this digest comparison does not authenticate the package or archive you are about to run.
 
-The public key is in this repository at `packaging/keys/solstone-journal-release.pub`. Once the channel is live it is also at `https://updates.solstone.app/solstone-journal/minisign.pub`. Install minisign from your distribution if you do not have it (`apt install minisign` or `dnf install minisign`).
+The public key is in this repository at `packaging/keys/solstone-journal-release.pub`. It is also at `https://updates.solstone.app/solstone-journal/minisign.pub`. Install minisign from your distribution if you do not have it (`apt install minisign` or `dnf install minisign`).
 
 If `minisign` is absent, `install.sh` refuses and prints the install command for apt or dnf. `--skip-signature` is the explicit opt-out, and the install receipt records that verification was skipped.
 
@@ -107,13 +107,13 @@ There is no separate download for talking to a journal running elsewhere. The tr
 
 Apple Silicon only. `install.sh` refuses any other mac by name.
 
-⚠ **The tree is not published yet.** Same origin and same bootstrap as linux, above. Until the first release lands on `updates.solstone.app`, start from the files you have. `install.sh` lives in this repository at `core/distribution/install.sh`.
+Same origin and same bootstrap as linux, above. `install.sh` lives in this repository at `core/distribution/install.sh`.
 
 Every release names its files `solstone-journal-<version>-macos-arm64`. The two containers are a `.tar.gz` and a signed, notarized, stapled `.pkg`. Each release also carries a `.sha256`, a `.manifest.json`, a `.manifest.json.minisig`, a `.release` record, and a `.signing.json`.
 
 ### The archive
 
-This is the route to run. It does not need administrator rights and it does not write `/usr/local`. The installer verifies minisign itself. To verify before running it, use these commands and compare the tarball digest with its exact `files` entry in the signed manifest. This does not replace Apple's signature on the `.pkg`.
+This local-file route does not need administrator rights and it does not write `/usr/local`. The installer verifies minisign itself. To verify before running it, use these commands and compare the tarball digest with its exact `files` entry in the signed manifest. This does not replace Apple's signature on the `.pkg`.
 
 ```bash
 minisign -Vm solstone-journal-<version>-macos-arm64.manifest.json \
