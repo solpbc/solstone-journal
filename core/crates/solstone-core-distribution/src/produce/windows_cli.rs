@@ -232,11 +232,17 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
     let before = capture_source(repo)?;
     validate_rust_notices(
         &read_bounded(
-            &repo.join("core/distribution/windows-rust-sources.json"),
+            &super::windows_stage::join_components(
+                repo,
+                "core/distribution/windows-rust-sources.json",
+            ),
             4 * 1024 * 1024,
         )?,
         &read_bounded(
-            &repo.join("core/distribution/windows-rust-NOTICES.txt"),
+            &super::windows_stage::join_components(
+                repo,
+                "core/distribution/windows-rust-NOTICES.txt",
+            ),
             16 * 1024 * 1024,
         )?,
         &before.lock_sha256,

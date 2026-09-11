@@ -135,7 +135,10 @@ impl CapturedBuild {
         let output = &self.receipt.outputs[0];
         // Re-reading for staging must compare against the original admission,
         // never learn a replacement file's digest after the verifier returns.
-        let bytes = capture_output(&output_root.join(expected_label), output)?;
+        let bytes = capture_output(
+            &super::windows_stage::join_components(output_root, expected_label),
+            output,
+        )?;
         let pe = crate::pe_dependencies::inspect_dependencies(&bytes)?;
         if pe.is_dll != expected_label.ends_with(".dll") {
             return Err(
@@ -543,7 +546,7 @@ pub fn admit_ffmpeg_notices(
     archive: &Path,
 ) -> Result<super::windows_archives::AdmittedArchiveInput, String> {
     let config = read_bounded(
-        &repo.join("core/distribution/builder-inputs.toml"),
+        &super::windows_stage::join_components(repo, "core/distribution/builder-inputs.toml"),
         DOCUMENT_LIMIT,
     )?;
     let pin = solstone_core_ffmpeg_build_support::parse_ffmpeg_pin(

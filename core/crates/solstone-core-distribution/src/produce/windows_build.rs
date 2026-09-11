@@ -78,7 +78,7 @@ pub fn build_windows_product(
         return Err("Windows product compilation requires its native MSVC host".into());
     }
     let source = capture_source(checkout)?;
-    let target_dir = checkout.join("core/target");
+    let target_dir = checkout.join("core").join("target");
     fs::create_dir(&target_dir).map_err(|e| format!("fresh core/target required: {e}"))?;
     let target_root = solstone_core_journal_io::JournalRoot::open(&target_dir)
         .map_err(|e| format!("retain fresh target root: {e}"))?;
@@ -532,6 +532,31 @@ pub fn capture_build_command_for_test(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn producer_component_paths_admit_nested_bounded_inputs() {
+        let temporary = tempfile::tempdir().unwrap();
+        #[cfg(windows)]
+        let root = temporary.path().to_path_buf();
+        #[cfg(not(windows))]
+        let root = temporary.path().canonicalize().unwrap();
+        let source =
+            super::super::windows_stage::join_components(&root, "core/distribution/notice.txt");
+        fs::create_dir_all(source.parent().unwrap()).unwrap();
+        fs::write(&source, b"original notice").unwrap();
+        assert_eq!(read_bounded(&source, 15).unwrap(), b"original notice");
+        assert!(read_bounded(&source, 3).is_err());
+        #[cfg(windows)]
+        {
+            // A verbatim-prefix root can normalize push(), masking this bug.
+            assert!(!root.as_os_str().to_string_lossy().starts_with(r"\\?\"));
+            assert!(read_bounded(&root.join("core/distribution/notice.txt"), 15).is_err());
+        }
+        let binary = super::super::windows_stage::join_components(&root, "bin/worker.exe");
+        fs::create_dir_all(binary.parent().unwrap()).unwrap();
+        fs::write(&binary, b"controlled bytes").unwrap();
+        assert_eq!(read_bounded(&binary, 16).unwrap(), b"controlled bytes");
+    }
 
     #[test]
     fn cargo_completion_and_freshness_are_required_together() {

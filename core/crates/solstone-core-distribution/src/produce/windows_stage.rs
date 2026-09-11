@@ -337,7 +337,7 @@ fn safe_relative(path: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn join_components(root: &Path, relative: &str) -> PathBuf {
+pub(super) fn join_components(root: &Path, relative: &str) -> PathBuf {
     // Explicit components also work when the native root uses a verbatim prefix.
     relative
         .split('/')
