@@ -1047,7 +1047,12 @@ fn sha256_file(path: &Path) -> io::Result<String> {
     use std::io::Read;
     let mut file = fs::File::open(path)?;
     let mut digest = Sha256::new();
-    let mut buffer = [0_u8; 1024 * 1024];
+    // Heap-allocated: a 1 MiB fixed-size array here previously lived on the
+    // stack, which alone is close to (and on some call paths apparently
+    // exceeds) the default 1 MiB Windows main-thread stack reserve before any
+    // other frame is considered. See commit history on this file for the
+    // superseded main()-side worker-thread workaround this replaces.
+    let mut buffer = vec![0_u8; 1024 * 1024];
     loop {
         let read = file.read(&mut buffer)?;
         if read == 0 {
