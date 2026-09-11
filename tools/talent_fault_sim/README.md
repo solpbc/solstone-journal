@@ -35,7 +35,9 @@ recovery, exhausted schema retry, Cogitate refusal, and publication failure
 after a valid result from either engine. The checks require exact call counts,
 fixture content in assembled Generate input, Cogitate journal identity,
 intermediate retry evidence, one final talent outcome, and expected artifact
-bytes. Publication-failure cases retain a sentinel in an invalid destination.
+bytes. Publication failures cover an unreadable existing artifact and an invalid
+destination. The runner verifies that its current account cannot read the
+permission fixture and refuses the run if that precondition does not hold.
 
 Every run keeps raw events, child requests, scripted responses, stderr,
 artifact digests, and per-scenario verdicts. Provenance records fixture revision

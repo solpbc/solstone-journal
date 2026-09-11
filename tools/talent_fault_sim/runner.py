@@ -400,11 +400,23 @@ def run(args):
         )
         destination = source / "talents" / (talent + ".json")
         destination.parent.mkdir()
-        if write_failure:
+        read_failure = name == "generate_write_failure"
+        if write_failure and not read_failure:
             destination.mkdir()
             (destination / "sentinel").write_text(OLD)
         else:
             destination.write_text(OLD)
+        if read_failure:
+            destination.chmod(0)
+            try:
+                destination.read_bytes()
+            except PermissionError:
+                pass
+            else:
+                destination.chmod(0o600)
+                raise ValueError(
+                    "the unreadable-artifact fixture requires an account without read-permission bypass"
+                )
         before_stat = destination.stat()
         before_identity = (before_stat.st_dev, before_stat.st_ino)
         request = {
@@ -447,8 +459,12 @@ def run(args):
                 if (case / "calls.jsonl").exists()
                 else []
             )
+            if read_failure:
+                destination.chmod(0o600)
             observed = (
-                destination / "sentinel" if write_failure else destination
+                destination / "sentinel"
+                if write_failure and not read_failure
+                else destination
             ).read_bytes()
             errors = verify(
                 events,

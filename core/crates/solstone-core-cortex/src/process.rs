@@ -796,6 +796,60 @@ mod tests {
     }
 
     #[test]
+    fn cogitate_stdout_charges_only_the_runtime_terminal() {
+        for terminal_event in ["finish", "error"] {
+            let directory = tempdir().unwrap();
+            let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+            let (spawn_tx, spawn_rx) = mpsc::channel();
+            let (cancel_tx, _) = mpsc::channel();
+            let (outbound_tx, _) = mpsc::channel();
+            let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
+            state.request(
+                serde_json::from_value(serde_json::json!({
+                    "use_id":"usage-once", "name":"conversation", "model":"request-model",
+                    "env":{"SOL_SEGMENT":"segment-a"}
+                }))
+                .unwrap(),
+            );
+            let work = spawn_rx.recv().unwrap();
+            state.update_resolved_talent(
+                "usage-once",
+                ResolvedTalent {
+                    talent_type: Some("cogitate".into()),
+                    declared_cwd: None,
+                    timeout_seconds: None,
+                },
+            );
+            let usage = serde_json::json!({"input_tokens":3,"output_tokens":7,"model_version":"actual-model"});
+            for event in [
+                serde_json::json!({"event":"cogitate_child","child_event":terminal_event,"terminal":false,"usage":usage}),
+                serde_json::json!({"event":"error","terminal":false,"usage":{"input_tokens":999}}),
+            ] {
+                handle_stdout(&state, &work, event.to_string());
+            }
+            assert!(!directory.path().join("tokens").exists());
+            handle_stdout(
+                &state,
+                &work,
+                serde_json::json!({"event":terminal_event,"usage":usage}).to_string(),
+            );
+            let token_files: Vec<_> = fs::read_dir(directory.path().join("tokens"))
+                .unwrap()
+                .collect();
+            assert_eq!(token_files.len(), 1);
+            let text = fs::read_to_string(token_files[0].as_ref().unwrap().path()).unwrap();
+            assert_eq!(text.lines().count(), 1);
+            let record: Value = serde_json::from_str(text.trim()).unwrap();
+            assert_eq!(record["model"], "actual-model");
+            assert_eq!(record["context"], "talent.system.conversation");
+            assert_eq!(record["segment"], "segment-a");
+            assert_eq!(record["type"], "cogitate");
+            assert_eq!(record["usage"]["input_tokens"], 3);
+            assert_eq!(record["usage"]["output_tokens"], 7);
+        }
+    }
+
+    #[test]
     fn generate_terminal_usage_does_not_write_record() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();

@@ -1380,7 +1380,7 @@ fn caught_up_native_backlog_fixture_states() {
         ],
     );
     let row = result("journal_caught_up", &capped);
-    assert_eq!(row.status, Status::Ok);
+    assert_eq!(row.status, Status::Warn);
     assert_eq!(
         row.detail,
         "caught up; 1 day(s) completed with capped daily unit(s)"

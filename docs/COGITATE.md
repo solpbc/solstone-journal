@@ -37,7 +37,9 @@ Cortex (cortex/request)
              |- type: generate (or absent) → solstone-core generate --one-shot
 ```
 
-The talent worker selects the engine from prepared `type` after `prepare()`. `type: cogitate` is translated to a `CogitateRequest` and spawned as a sibling `solstone-core cogitate --one-shot` subprocess (`CogitateOneShotClient`). There is no Generate fallback. `correlation_id` is the Cortex request `use_id` (required; never the talent name). One-shot NDJSON events (`tool_start`, `tool_end`, `thinking`, budget, terminal) are replayed onto the worker's stdout as distinct log lines so Cortex can relay them; the worker still emits its own `start` and `finish`/`error` envelopes around that stream. Artifact files such as weekly reflection markdown are written by the worker's existing `write_output_if_configured` path — `emit_final` / `finish` only supply the terminal `result` text.
+The talent worker selects the engine from prepared `type` after `prepare()`. `type: cogitate` becomes a `CogitateRequest` sent to a sibling `solstone-core cogitate --one-shot` subprocess (`CogitateOneShotClient`). `correlation_id` is the required Cortex request `use_id`.
+
+The worker replays child progress events, including `error` events with `terminal: false`. It records child `finish` and terminal `error` events as `cogitate_child` evidence with `terminal: false` and the original event type in `child_event`. After the applicable disposition and output publication, the worker emits one final `finish` or `error`, carrying usage and degraded metadata when the child reported them. A publication failure produces the final error even when the child succeeded. The child's `result` supplies the text processed by the runtime; a successful runtime event exposes its final text as `output`. Configured artifact output uses `write_output_if_configured` and atomic replacement.
 
 The model's initial context is the native request's **initial prompt plus native
 tool schemas** — not a snapshot of the cwd. Files that merely sit in the
