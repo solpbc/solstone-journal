@@ -1,18 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#[cfg(unix)]
 use std::env;
+#[cfg(unix)]
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+#[cfg(unix)]
 use std::path::PathBuf;
 
+#[cfg(unix)]
 fn parent(path: PathBuf, label: &str) -> PathBuf {
     path.parent()
         .unwrap_or_else(|| panic!("{label} has no parent: {}", path.display()))
         .to_path_buf()
 }
 
+#[cfg(unix)]
 fn main() {
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        return;
+    }
     let out_dir =
         PathBuf::from(env::var_os("OUT_DIR").expect("solstone launcher staging requires OUT_DIR"));
     let profile_dir = parent(
@@ -57,3 +66,6 @@ fn main() {
         )
     });
 }
+
+#[cfg(not(unix))]
+fn main() {}
