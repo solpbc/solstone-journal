@@ -11,7 +11,7 @@ use axum::{
     body::{Body, to_bytes},
     http::{HeaderMap, Request, StatusCode, header},
 };
-use chrono::{Duration, FixedOffset, NaiveDate, TimeZone, Utc};
+use chrono::{Duration, FixedOffset, Local, NaiveDate, TimeZone};
 use serde_json::{Value, json};
 use solstone_core_convey_shell::router;
 use solstone_core_journal_io::{
@@ -65,7 +65,7 @@ impl Fixture {
         );
     }
 
-    fn talent_guards(&self, now: chrono::DateTime<Utc>) {
+    fn talent_guards(&self, now: chrono::DateTime<Local>) {
         for day in [now.date_naive(), now.date_naive() - Duration::days(1)] {
             write_jsonl(
                 &self
@@ -333,10 +333,10 @@ async fn pipeline_rejects_non_calendar_day() {
     );
 }
 
-fn prepared_report_fixture() -> (Fixture, chrono::DateTime<Utc>, String) {
+fn prepared_report_fixture() -> (Fixture, chrono::DateTime<Local>, String) {
     let fixture = Fixture::new();
     fixture.established();
-    let now = Utc::now();
+    let now = Local::now();
     let day = now.format("%Y%m%d").to_string();
     fixture.talent_guards(now);
     fixture.facet("work");
@@ -378,11 +378,10 @@ async fn rich_fixture_matches_the_complete_report_contract() {
     assert_eq!(status, StatusCode::OK);
     let mut body = body_json(&bytes);
     normalize_report(&mut body);
-    let last_segment = now
-        .date_naive()
-        .and_hms_opt(2, 0, 0)
+    let last_segment = Local
+        .from_local_datetime(&now.date_naive().and_hms_opt(2, 0, 0).unwrap())
+        .single()
         .unwrap()
-        .and_utc()
         .timestamp_millis();
     assert_eq!(
         body,
@@ -457,7 +456,7 @@ async fn activity_fixture_variation_changes_only_synthesis_fields() {
 async fn entity_fixture_variation_changes_only_consumer_signal_fields() {
     let fixture = Fixture::new();
     fixture.established();
-    let now = Utc::now();
+    let now = Local::now();
     let day = now.format("%Y%m%d").to_string();
     fixture.talent_guards(now);
     let (_, _, baseline) = get(&format!("/api/health/summary?day={day}"), &fixture).await;
@@ -481,7 +480,7 @@ async fn entity_fixture_variation_changes_only_consumer_signal_fields() {
 async fn segment_fixture_variation_changes_only_backlog_fields() {
     let fixture = Fixture::new();
     fixture.established();
-    let now = Utc::now();
+    let now = Local::now();
     let day = now.format("%Y%m%d").to_string();
     fixture.talent_guards(now);
     let (_, _, baseline) = get(&format!("/api/health/summary?day={day}"), &fixture).await;
@@ -510,7 +509,7 @@ async fn segment_fixture_variation_changes_only_backlog_fields() {
 async fn pipeline_route_returns_fixture_values_not_zero_defaults() {
     let fixture = Fixture::new();
     fixture.established();
-    let day = Utc::now().format("%Y%m%d").to_string();
+    let day = Local::now().format("%Y%m%d").to_string();
     fixture.health_log(
         &day,
         "daily",
@@ -549,7 +548,7 @@ async fn pipeline_route_returns_fixture_values_not_zero_defaults() {
 async fn degraded_report_inputs_stay_200_but_internal_failures_are_safe_500s() {
     let fixture = Fixture::new();
     fixture.established();
-    let now = Utc::now();
+    let now = Local::now();
     let day = now.format("%Y%m%d").to_string();
     fixture.talent_guards(now);
     fs::write(fixture.root.path().join("talents/20260401.jsonl"), b"{").unwrap();

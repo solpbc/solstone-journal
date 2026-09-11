@@ -8,7 +8,9 @@ use std::fs;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
-use chrono::{DateTime, Duration, NaiveDate, NaiveTime, TimeZone, Timelike, Utc};
+use chrono::{
+    DateTime, Duration, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc,
+};
 use serde::Serialize;
 use serde_json::{Map, Value};
 use solstone_core_entity::load_all_journal_entities;
@@ -165,7 +167,7 @@ pub(crate) fn build_health_report(
     let generated_at = now.timestamp_millis();
     let facets = list_declared_facet_names(journal_root)
         .map_err(|error| HealthError::internal(error.to_string()))?;
-    let aggregate = scan_records(journal_root, &facets, range, utc_now)?;
+    let aggregate = scan_records(journal_root, &facets, range, now)?;
     let (capture_health, mut notes) =
         build_capture_health(journal_root, &aggregate, range, &facets, generated_at, now)?;
     let (synthesis_health, synthesis_notes) =
@@ -206,8 +208,9 @@ fn scan_records(
     journal_root: &Path,
     facets: &[String],
     range: (NaiveDate, NaiveDate),
-    now: DateTime<Utc>,
+    now: DateTime<impl TimeZone>,
 ) -> Result<ScanAggregate, HealthError> {
+    let now = now.fixed_offset();
     let mut aggregate = ScanAggregate::default();
     for day in days_inclusive(range) {
         let day_name = day.format("%Y%m%d").to_string();
@@ -226,26 +229,27 @@ fn add_record(
     aggregate: &mut ScanAggregate,
     record: &Map<String, Value>,
     day: NaiveDate,
-    now: DateTime<Utc>,
+    now: DateTime<FixedOffset>,
 ) {
+    let offset = *now.offset();
     for raw_segment in values(record.get("segments")) {
         let Some(raw_segment) = raw_segment.as_str() else {
             continue;
         };
-        let Some((start, end)) = parse_segment_bounds(raw_segment, day) else {
+        let Some((_start, end, local_start, local_end)) =
+            parse_segment_bounds(raw_segment, day, offset)
+        else {
             continue;
         };
-        let clipped_end = end.min(DateTime::<Utc>::from_naive_utc_and_offset(
-            (day + Duration::days(1))
-                .and_hms_opt(0, 0, 0)
-                .expect("midnight"),
-            Utc,
-        ));
-        let mut hour = start
-            .date_naive()
-            .and_hms_opt(start.hour(), 0, 0)
+        let local_midnight = (day + Duration::days(1))
+            .and_hms_opt(0, 0, 0)
+            .expect("midnight");
+        let clipped_local_end = local_end.min(local_midnight);
+        let mut hour = local_start
+            .date()
+            .and_hms_opt(local_start.hour(), 0, 0)
             .expect("valid segment hour");
-        while DateTime::<Utc>::from_naive_utc_and_offset(hour, Utc) < clipped_end {
+        while hour < clipped_local_end {
             aggregate
                 .capture_hour_slots
                 .insert((day.format("%Y%m%d").to_string(), hour.hour()));
@@ -383,13 +387,14 @@ fn last_segment_per_facet(
     facets: &[String],
     now: DateTime<impl TimeZone>,
 ) -> Result<BTreeMap<String, Option<i64>>, HealthError> {
+    let offset = *now.fixed_offset().offset();
     let mut values_by_facet = facets
         .iter()
         .cloned()
         .map(|facet| (facet, None))
         .collect::<BTreeMap<_, Option<i64>>>();
-    for offset in (0..=7).rev() {
-        let day = now.date_naive() - Duration::days(offset);
+    for day_offset in (0..=7).rev() {
+        let day = now.date_naive() - Duration::days(day_offset);
         let day_name = day.format("%Y%m%d").to_string();
         for facet in facets {
             for record in load_activity_records(journal_root, facet, &day_name, true)
@@ -399,7 +404,7 @@ fn last_segment_per_facet(
                     let Some(raw) = segment.as_str() else {
                         continue;
                     };
-                    let Some((_, end)) = parse_segment_bounds(raw, day) else {
+                    let Some((_, end, _, _)) = parse_segment_bounds(raw, day, offset) else {
                         continue;
                     };
                     let end_ms = end.timestamp_millis();
@@ -926,7 +931,16 @@ fn chronicle_days(journal_root: &Path) -> Result<Vec<String>, HealthError> {
     Ok(days)
 }
 
-fn parse_segment_bounds(raw: &str, day: NaiveDate) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
+// Segment labels `HHMMSS_duration` are naive local wall clock on the chronicle day;
+// `generated_at` is a true instant. The two were being read as one clock by stamping
+// the naive local datetime as UTC. Convert through `now`'s offset so silence,
+// `last_segment_at`, and `gap_hours` compare one timeline. Hour-slot coverage stays
+// on the local wall clock of the file day.
+fn parse_segment_bounds(
+    raw: &str,
+    day: NaiveDate,
+    offset: FixedOffset,
+) -> Option<(DateTime<Utc>, DateTime<Utc>, NaiveDateTime, NaiveDateTime)> {
     let (clock, duration) = raw.split_once('_')?;
     if clock.len() != 6 || !clock.as_bytes().iter().all(u8::is_ascii_digit) {
         return None;
@@ -935,11 +949,19 @@ fn parse_segment_bounds(raw: &str, day: NaiveDate) -> Option<(DateTime<Utc>, Dat
     let minute = clock[2..4].parse().ok()?;
     let second = clock[4..6].parse().ok()?;
     let duration = duration.parse::<i64>().ok()?;
-    let start = day.and_hms_opt(hour, minute, second)?;
-    let start = DateTime::<Utc>::from_naive_utc_and_offset(start, Utc);
-    Some((start, start + Duration::seconds(duration)))
+    let local_start = day.and_hms_opt(hour, minute, second)?;
+    let local_end = local_start + Duration::seconds(duration);
+    let start = offset
+        .from_local_datetime(&local_start)
+        .single()?
+        .with_timezone(&Utc);
+    let end = start + Duration::seconds(duration);
+    Some((start, end, local_start, local_end))
 }
 
+// Naive `%Y-%m-%dT%H:%M:%S` is UTC-naive by contract; schedule talent writes
+// `HH:MM:SS` (unparsed here, different gap); health-web tests use RFC3339 `Z`.
+// Do not rebind this arm to local.
 fn parse_start(value: &str) -> Option<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(value)
         .ok()
@@ -1018,7 +1040,7 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    use chrono::{Duration, NaiveTime, TimeZone, Timelike, Utc};
+    use chrono::{Duration, FixedOffset, NaiveTime, TimeZone, Timelike, Utc};
     use filetime::{FileTime, set_file_mtime};
     use serde_json::{Value, json};
     use tempfile::TempDir;
@@ -1468,6 +1490,156 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    fn capture_for_gap(
+        root: &Path,
+        facet_name: &str,
+        now: chrono::DateTime<chrono::FixedOffset>,
+        hours: i64,
+    ) {
+        facet(root, facet_name);
+        let captured = now - Duration::hours(hours) - Duration::minutes(1);
+        let day = captured.format("%Y%m%d").to_string();
+        let label = format!(
+            "{:02}{:02}{:02}_1",
+            captured.hour(),
+            captured.minute(),
+            captured.second()
+        );
+        activities(
+            root,
+            facet_name,
+            &day,
+            &[json!({"id": "old", "segments": [label]})],
+        );
+    }
+
+    #[test]
+    fn facet_silence_west_of_utc_under_twenty_four_hours_has_no_silence_note() {
+        let offset = FixedOffset::west_opt(6 * 3600).unwrap();
+        let now = offset.with_ymd_and_hms(2026, 4, 10, 12, 0, 0).unwrap();
+        let temporary = temporary();
+        capture_for_gap(temporary.path(), "work", now, 20);
+        let (capture, notes) = build_capture_health(
+            temporary.path(),
+            &ScanAggregate::default(),
+            (now.date_naive(), now.date_naive()),
+            &["work".to_owned()],
+            now.timestamp_millis(),
+            now,
+        )
+        .unwrap();
+        assert!(
+            capture
+                .facets_with_recent_capture
+                .contains(&"work".to_string())
+        );
+        assert!(!capture.facets_silent_24h.contains(&"work".to_string()));
+        assert!(
+            !notes
+                .iter()
+                .any(|note| note.message.starts_with("work: last capture"))
+        );
+    }
+
+    #[test]
+    fn facet_silence_east_of_utc_over_twenty_four_hours_reports_exact_gap_hours() {
+        let offset = FixedOffset::east_opt(9 * 3600).unwrap();
+        let now = offset.with_ymd_and_hms(2026, 4, 10, 12, 0, 0).unwrap();
+        let temporary = temporary();
+        capture_for_gap(temporary.path(), "work", now, 30);
+        let (capture, notes) = build_capture_health(
+            temporary.path(),
+            &ScanAggregate::default(),
+            (now.date_naive(), now.date_naive()),
+            &["work".to_owned()],
+            now.timestamp_millis(),
+            now,
+        )
+        .unwrap();
+        assert!(capture.facets_silent_24h.contains(&"work".to_string()));
+        assert!(
+            !capture
+                .facets_with_recent_capture
+                .contains(&"work".to_string())
+        );
+        let note = notes
+            .iter()
+            .find(|note| note.message.starts_with("work: last capture"))
+            .expect("silence note");
+        assert_eq!(note.severity, "info");
+        assert!(
+            note.message.contains("last capture 30h ago"),
+            "expected 30h gap in {}",
+            note.message
+        );
+    }
+
+    #[test]
+    fn capture_hour_slots_west_of_utc_remain_in_local_calendar_day() {
+        let offset = FixedOffset::west_opt(6 * 3600).unwrap();
+        let now = offset.with_ymd_and_hms(2026, 4, 10, 12, 0, 0).unwrap();
+        let day = "20260410";
+        let temporary = temporary();
+        let root = temporary.path();
+        facet(root, "work");
+        activities(
+            root,
+            "work",
+            day,
+            &[json!({"id": "morning", "segments": ["010000_3600"]})],
+        );
+        let aggregate = scan_records(
+            root,
+            &["work".to_owned()],
+            (now.date_naive(), now.date_naive()),
+            now,
+        )
+        .unwrap();
+        assert!(aggregate.capture_hour_slots.contains(&(day.to_string(), 1)));
+        assert!(!aggregate.capture_hour_slots.contains(&(day.to_string(), 7)));
+        let expected_last_segment = offset
+            .with_ymd_and_hms(2026, 4, 10, 2, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        assert_eq!(aggregate.last_segment_at, Some(expected_last_segment));
+    }
+
+    #[test]
+    fn capture_hour_slots_west_of_utc_clip_at_local_midnight() {
+        let offset = FixedOffset::west_opt(6 * 3600).unwrap();
+        let now = offset.with_ymd_and_hms(2026, 4, 10, 12, 0, 0).unwrap();
+        let day = "20260410";
+        let temporary = temporary();
+        let root = temporary.path();
+        facet(root, "work");
+        activities(
+            root,
+            "work",
+            day,
+            &[json!({"id": "late-night", "segments": ["230000_7200"]})],
+        );
+        let aggregate = scan_records(
+            root,
+            &["work".to_owned()],
+            (now.date_naive(), now.date_naive()),
+            now,
+        )
+        .unwrap();
+        assert!(
+            aggregate
+                .capture_hour_slots
+                .contains(&(day.to_string(), 23))
+        );
+        assert!(!aggregate.capture_hour_slots.contains(&(day.to_string(), 0)));
+        assert!(!aggregate.capture_hour_slots.contains(&(day.to_string(), 5)));
+        assert!(!aggregate.capture_hour_slots.contains(&(day.to_string(), 6)));
+        let expected_last_segment = offset
+            .with_ymd_and_hms(2026, 4, 11, 1, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        assert_eq!(aggregate.last_segment_at, Some(expected_last_segment));
     }
 
     #[test]
