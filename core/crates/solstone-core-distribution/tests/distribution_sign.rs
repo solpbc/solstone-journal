@@ -2,16 +2,15 @@
 // Copyright (c) 2026 sol pbc
 
 use std::fs;
-use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Output, Stdio};
+use std::process::Output;
 
 use minisign::{PublicKey, SignatureBox};
 use solstone_core_distribution::digest::sha256_hex;
 mod support;
 
 use support::{
-    BINARY, PASSPHRASE, assert_no_signature_artifacts, build_fixture, manifest_path, minisig_path,
+    PASSPHRASE, assert_no_signature_artifacts, build_fixture, manifest_path, minisig_path,
     partial_path, sign_dir, sign_ok,
 };
 
@@ -276,44 +275,19 @@ fn missing_inputs_each_refuse() {
     );
     assert_no_signature_paths(dest, &fixture.basename);
 
-    let mut empty_cmd = Command::new(BINARY);
-    empty_cmd.arg("sign").arg(dest);
-    empty_cmd.env("SOLSTONE_JOURNAL_MINISIGN_KEY", "");
-    empty_cmd.env("SOLSTONE_JOURNAL_MINISIGN_PIN", pin);
-    empty_cmd.stdin(Stdio::piped());
-    empty_cmd.stdout(Stdio::piped());
-    empty_cmd.stderr(Stdio::piped());
-    let mut child = empty_cmd.spawn().expect("spawn empty");
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(PASSPHRASE.as_bytes())
-        .unwrap();
-    let empty = child.wait_with_output().unwrap();
-    assert_eq!(empty.status.code(), Some(2), "{empty:?}");
+    let empty = sign_refuses(dest, Some(Path::new("")), Some(pin), PASSPHRASE.as_bytes());
     assert!(
         String::from_utf8_lossy(&empty.stderr).contains("empty-key-path"),
         "{empty:?}"
     );
     assert_no_signature_paths(dest, &fixture.basename);
 
-    let mut relative_cmd = Command::new(BINARY);
-    relative_cmd.arg("sign").arg(dest);
-    relative_cmd.env("SOLSTONE_JOURNAL_MINISIGN_KEY", "relative.key");
-    relative_cmd.env("SOLSTONE_JOURNAL_MINISIGN_PIN", pin);
-    relative_cmd.stdin(Stdio::piped());
-    relative_cmd.stdout(Stdio::piped());
-    relative_cmd.stderr(Stdio::piped());
-    let mut child = relative_cmd.spawn().expect("spawn relative");
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(PASSPHRASE.as_bytes())
-        .unwrap();
-    let relative = child.wait_with_output().unwrap();
-    assert_eq!(relative.status.code(), Some(2), "{relative:?}");
+    let relative = sign_refuses(
+        dest,
+        Some(Path::new("relative.key")),
+        Some(pin),
+        PASSPHRASE.as_bytes(),
+    );
     assert!(
         String::from_utf8_lossy(&relative.stderr).contains("relative-key-path"),
         "{relative:?}"
