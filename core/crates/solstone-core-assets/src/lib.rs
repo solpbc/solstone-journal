@@ -1064,8 +1064,8 @@ static PRODUCTION_CATALOG: LazyLock<Vec<Artifact>> = LazyLock::new(|| filter_art
 fn filter_artifacts(artifacts: &[Artifact]) -> Vec<Artifact> {
     artifacts
         .iter()
+        .filter(|&artifact| artifact.unit != "mlx-snapshot")
         .cloned()
-        .filter(|artifact| artifact.unit != "mlx-snapshot")
         .collect()
 }
 
@@ -1085,7 +1085,7 @@ fn inventory() -> &'static [Artifact] {
 
 fn shipped_view(inventory: &'static [Artifact]) -> &'static [Artifact] {
     if std::ptr::eq(inventory, ARTIFACTS) {
-        &*PRODUCTION_CATALOG
+        &PRODUCTION_CATALOG
     } else {
         Box::leak(filter_artifacts(inventory).into_boxed_slice())
     }
