@@ -1076,6 +1076,41 @@ where
             vec![system_instruction.unwrap_or_default().into()],
             Box::new(Value::String),
         ),
+        Value::Array(items)
+            if items
+                .first()
+                .and_then(Value::as_object)
+                .is_some_and(|item| {
+                    !item.contains_key("role")
+                        && item.get("type").and_then(Value::as_str) == Some("text")
+                        && item.get("text").is_some_and(Value::is_string)
+                }) =>
+        {
+            let block = items[0]["text"]
+                .as_str()
+                .expect("first text part checked above");
+            let mut preserved = vec![system_instruction.unwrap_or_default().into()];
+            preserved.extend(
+                items[1..]
+                    .iter()
+                    .filter(|item| image_part(item).is_none())
+                    .map(python_text),
+            );
+            let first = items[0].clone();
+            let trailing = items[1..].to_vec();
+            (
+                block,
+                preserved,
+                Box::new(move |fitted| {
+                    let mut first = first.clone();
+                    first["text"] = Value::String(fitted);
+                    let mut output = Vec::with_capacity(trailing.len() + 1);
+                    output.push(first);
+                    output.extend(trailing.clone());
+                    Value::Array(output)
+                }),
+            )
+        }
         Value::Array(items) if items.first().is_some_and(Value::is_string) => {
             let block = items[0].as_str().expect("first item checked");
             let mut preserved = vec![system_instruction.unwrap_or_default().into()];
@@ -1924,6 +1959,23 @@ mod tests {
         let budget = budget.expect("clipped");
         assert!(budget.clipped);
         assert_eq!(budget.dropped_chars, source.chars().count() - kept);
+    }
+
+    #[test]
+    fn an_oversized_text_part_keeps_its_shape_and_fits_its_text() {
+        let source = format!("{}TAIL-KEEP-ME", "a".repeat(8_000));
+        let contents = json!([{"type":"text", "text":source, "language":"markdown"}]);
+        let (fitted, budget) = fit_contents(&contents, None, 256, 2_048, &mut |text| {
+            u32::try_from(text.len()).unwrap()
+        })
+        .unwrap();
+
+        assert_eq!(fitted[0]["type"], "text");
+        assert_eq!(fitted[0]["language"], "markdown");
+        let text = fitted[0]["text"].as_str().expect("fitted text part");
+        assert!(text.starts_with(&format!("{TRUNCATION_MARKER}\n\n")));
+        assert!(text.ends_with("TAIL-KEEP-ME"));
+        assert!(budget.is_some_and(|budget| budget.clipped));
     }
 
     #[test]
