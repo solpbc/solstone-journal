@@ -147,9 +147,11 @@ pub fn check_version(version: &str) -> Result<(), VersionError> {
 /// its released objects are served under `runtimes/llama-cuda13/b10068/{filename}`.
 /// These are declarations only; this crate performs no fetches.
 ///
-/// The trailing MLX rows are retained as historical pin references while old
-/// journal data remains readable. They are excluded from [`catalog`] and cannot
-/// be resolved or advertised by a shipped command.
+/// MLX snapshot rows are retained in the inventory as historical pin
+/// references while old journal data remains readable. [`catalog`] includes
+/// every inventory row whose unit is not `mlx-snapshot` and includes no
+/// `mlx-snapshot` row. Those rows cannot be resolved or advertised by a
+/// shipped command.
 /// nvattest is excluded because its three archive plus companion-manifest pairs
 /// are governed by `nvattest_authority_v1.json` and its own `url_prefix`
 /// contract; duplicating them here would be unbound truth.
@@ -1001,13 +1003,41 @@ static VALIDATED: LazyLock<()> = LazyLock::new(|| {
     }
 });
 
+static PRODUCTION_CATALOG: LazyLock<Vec<Artifact>> = LazyLock::new(|| filter_artifacts(ARTIFACTS));
+
+fn filter_artifacts(artifacts: &[Artifact]) -> Vec<Artifact> {
+    artifacts
+        .iter()
+        .cloned()
+        .filter(|artifact| artifact.unit != "mlx-snapshot")
+        .collect()
+}
+
+#[cfg(test)]
+fn override_inventory() -> Option<&'static [Artifact]> {
+    tests::current_inventory_override()
+}
+
+#[cfg(not(test))]
+fn override_inventory() -> Option<&'static [Artifact]> {
+    None
+}
+
+fn inventory() -> &'static [Artifact] {
+    override_inventory().unwrap_or(ARTIFACTS)
+}
+
+fn shipped_view(inventory: &'static [Artifact]) -> &'static [Artifact] {
+    if std::ptr::eq(inventory, ARTIFACTS) {
+        &*PRODUCTION_CATALOG
+    } else {
+        Box::leak(filter_artifacts(inventory).into_boxed_slice())
+    }
+}
+
 pub fn catalog() -> &'static [Artifact] {
     LazyLock::force(&VALIDATED);
-    let active_len = ARTIFACTS
-        .iter()
-        .position(|artifact| artifact.unit == "mlx-snapshot")
-        .unwrap_or(ARTIFACTS.len());
-    &ARTIFACTS[..active_len]
+    shipped_view(inventory())
 }
 
 pub fn resolve(
@@ -1029,9 +1059,113 @@ pub fn assets_json() -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
     use std::collections::BTreeSet;
 
     use super::*;
+
+    thread_local! {
+        static INVENTORY_OVERRIDE: Cell<Option<&'static [Artifact]>> = const { Cell::new(None) };
+    }
+
+    pub(super) fn current_inventory_override() -> Option<&'static [Artifact]> {
+        INVENTORY_OVERRIDE.with(|cell| cell.get())
+    }
+
+    struct InventoryOverrideGuard {
+        previous: Option<&'static [Artifact]>,
+    }
+
+    impl Drop for InventoryOverrideGuard {
+        fn drop(&mut self) {
+            INVENTORY_OVERRIDE.with(|cell| cell.set(self.previous));
+        }
+    }
+
+    fn with_inventory_override<T>(fixture: &'static [Artifact], f: impl FnOnce() -> T) -> T {
+        let previous = INVENTORY_OVERRIDE.with(|cell| cell.replace(Some(fixture)));
+        let _guard = InventoryOverrideGuard { previous };
+        f()
+    }
+
+    static SANDWICH: [Artifact; 3] = [
+        Artifact {
+            unit: "test-fixture-prefix",
+            version: "v0.1.0",
+            filename: "test-prefix-fixture.bin",
+            sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+            size_bytes: 1,
+            upstream_url: "https://example.invalid/fixture",
+            origin_key: "assets/fixture",
+            artifact_key: None,
+            platform: None,
+            backend: None,
+            extracted_binary_sha256: None,
+        },
+        Artifact {
+            unit: "mlx-snapshot",
+            version: "v0.1.0",
+            filename: "test-mlx-fixture.bin",
+            sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+            size_bytes: 1,
+            upstream_url: "https://example.invalid/fixture",
+            origin_key: "assets/fixture",
+            artifact_key: None,
+            platform: None,
+            backend: None,
+            extracted_binary_sha256: None,
+        },
+        Artifact {
+            unit: "test-fixture-suffix",
+            version: "v0.1.0",
+            filename: "test-suffix-fixture.bin",
+            sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+            size_bytes: 1,
+            upstream_url: "https://example.invalid/fixture",
+            origin_key: "assets/fixture",
+            artifact_key: None,
+            platform: None,
+            backend: None,
+            extracted_binary_sha256: None,
+        },
+    ];
+
+    #[test]
+    fn catalog_includes_non_mlx_rows_on_both_sides_of_mlx_snapshot() {
+        with_inventory_override(&SANDWICH, || {
+            let rows = catalog();
+            assert_eq!(rows.len(), 2);
+            assert_eq!(rows[0].unit, "test-fixture-prefix");
+            assert_eq!(rows[0].filename, "test-prefix-fixture.bin");
+            assert_eq!(rows[1].unit, "test-fixture-suffix");
+            assert_eq!(rows[1].filename, "test-suffix-fixture.bin");
+            assert!(rows.iter().all(|artifact| artifact.unit != "mlx-snapshot"));
+        });
+    }
+
+    #[test]
+    fn catalog_equals_every_inventory_row_whose_unit_is_not_mlx_snapshot() {
+        let expected = ARTIFACTS
+            .iter()
+            .filter(|artifact| artifact.unit != "mlx-snapshot")
+            .cloned()
+            .collect::<Vec<_>>();
+        let actual = catalog().to_vec();
+        assert_eq!(actual, expected);
+        assert!(actual.iter().all(|artifact| artifact.unit != "mlx-snapshot"));
+    }
+
+    #[test]
+    fn resolve_mlx_snapshot_is_empty() {
+        assert!(resolve("mlx-snapshot", None, None).is_empty());
+        assert!(resolve("mlx-snapshot", Some(Platform::MacosArm64), None).is_empty());
+    }
+
+    #[test]
+    fn assets_json_emits_no_mlx_snapshot_row() {
+        let decoded: Vec<serde_json::Value> = serde_json::from_str(&assets_json()).unwrap();
+        assert!(decoded.iter().all(|row| row["unit"] != "mlx-snapshot"));
+    }
 
     #[test]
     fn parakeet_coreml_rows_have_the_installer_shape() {
