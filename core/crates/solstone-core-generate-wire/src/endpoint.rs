@@ -37,13 +37,14 @@ const ESTIMATED_IMAGE_TOKENS: u32 = 2_500;
 const RECLAMP_SLACK_TOKENS: u32 = 16;
 /// How many times a context refusal may re-fit the prompt against a smaller window.
 ///
-/// `estimate_tokens` assumes 3 characters per token. Measured against the real
-/// tokenizer over 11 journal samples (2026-09-04) that holds for prose (4.2-5.1
-/// chars/token, so the estimate runs *high* and is safe), but the JSON captures
-/// these talents actually send measure 1.5-2.3 chars/token -- a 2.04x under-count
-/// at worst. One halving is therefore sufficient: it hands the fitter under half
-/// the window, which absorbs a 2x under-count and still leaves completion room.
-const MAX_CONTEXT_REFITS: u32 = 1;
+/// Each refusal is authoritative evidence that the endpoint tokenizer still
+/// counts more input than the client's conservative character estimate. Halving
+/// the fitted window makes monotonic progress without trusting an error body's
+/// provider-specific token wording. Four bounded refits cover JSON-heavy talent
+/// payloads whose schema and escaping overhead remain larger than the prose-based
+/// estimate after the first retry, while accepting at the first window the
+/// endpoint actually admits.
+const MAX_CONTEXT_REFITS: u32 = 4;
 /// Completion ceiling used when the served window could not be resolved.
 ///
 /// A known window clamps the completion budget against the room actually left by
@@ -252,9 +253,14 @@ pub(crate) fn endpoint_generate_with<T: EndpointTransport>(
             // CLIENT-side fit under-counted the prompt, so re-clamping `max_tokens`
             // alone would resend byte-identical input and cannot make it fit. Halving
             // the window handed to `prepare_endpoint_request` is what actually trims
-            // the INPUT -- see `MAX_CONTEXT_REFITS` for the measurement behind it.
-            match endpoint_overflow_decision(&response.body, served_window, refits) {
+            // the INPUT -- see `MAX_CONTEXT_REFITS` for the bounded policy.
+            let overflow = endpoint_overflow_decision(&response.body, served_window, refits);
+            match overflow {
                 OverflowDecision::Retry(_) | OverflowDecision::Context => {}
+                // A detailed refusal with less than the minimum completion room is
+                // still recoverable for one-shot generation: unlike converse, this
+                // path owns a trimmable input block and can refit it to make room.
+                OverflowDecision::Budget if served_window.is_some() => {}
                 OverflowDecision::Budget => return failure("context_budget_exceeded"),
                 OverflowDecision::Contract => {
                     return failure("local_endpoint_contract_failed");
@@ -1468,10 +1474,10 @@ mod tests {
     }
 
     /// A context refusal is the endpoint telling us the client-side fit under-counted
-    /// the prompt, so generate re-fits it once against a halved window and re-posts.
+    /// the prompt, so generate re-fits it against a halved window and re-posts.
     /// Re-clamping `max_tokens` alone would resend byte-identical input.
     #[test]
-    fn detailed_context_overflow_refits_the_prompt_once_for_generate() {
+    fn detailed_context_overflow_refits_the_prompt_for_generate() {
         let runtime = EndpointRuntime::default();
         let journal = journal_path();
         let overflow = "maximum context length of 1000 tokens: 600 tokens from the input messages and 400 tokens for the completion";
@@ -1496,18 +1502,22 @@ mod tests {
         let _ = std::fs::remove_dir_all(journal);
     }
 
-    /// The refit is bounded: a second refusal ends the execution rather than
-    /// shrinking the prompt again.
+    /// JSON-heavy requests can require more than one shrink because the client
+    /// estimator does not see all provider-side schema and escaping overhead.
     #[test]
-    fn a_second_context_refusal_is_terminal_without_a_third_post() {
+    fn repeated_context_refusals_keep_shrinking_until_the_endpoint_accepts() {
         let runtime = EndpointRuntime::default();
         let journal = journal_path();
         let overflow = "maximum context length of 1000 tokens: 600 tokens from the input messages and 400 tokens for the completion";
         let mut transport = StubTransport {
-            post_script: vec![Ok(bad_request(overflow)), Ok(bad_request(overflow))],
+            post_script: vec![
+                Ok(bad_request(overflow)),
+                Ok(bad_request(overflow)),
+                Ok(response()),
+            ],
             ..Default::default()
         };
-        assert_eq!(
+        assert!(matches!(
             endpoint_generate_with(
                 &request(None),
                 &journal,
@@ -1517,9 +1527,46 @@ mod tests {
                 &mut transport,
                 Instant::now(),
             ),
+            EndpointResult::Generated(_)
+        ));
+        assert_eq!(transport.posts.len(), 3);
+        let first = transport.posts[0]["messages"].to_string().len();
+        let second = transport.posts[1]["messages"].to_string().len();
+        let third = transport.posts[2]["messages"].to_string().len();
+        assert!(third <= second && second <= first);
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    /// The retry sequence is still finite when every progressively smaller body
+    /// is refused by the endpoint.
+    #[test]
+    fn context_refit_exhaustion_is_terminal_without_an_extra_post() {
+        let runtime = EndpointRuntime::default();
+        let journal = journal_path();
+        let overflow = "request exceeds the context window";
+        let config = json!({"providers":{"local":{"served_context_window":65_536}}})
+            .as_object()
+            .unwrap()
+            .clone();
+        let mut transport = StubTransport {
+            post_script: (0..=MAX_CONTEXT_REFITS)
+                .map(|_| Ok(bad_request(overflow)))
+                .collect(),
+            ..Default::default()
+        };
+        assert_eq!(
+            endpoint_generate_with(
+                &request(None),
+                &journal,
+                &endpoint("http://endpoint"),
+                &config,
+                &runtime,
+                &mut transport,
+                Instant::now(),
+            ),
             failure("context_window_exceeded")
         );
-        assert_eq!(transport.posts.len(), 2);
+        assert_eq!(transport.posts.len(), MAX_CONTEXT_REFITS as usize + 1);
         let _ = std::fs::remove_dir_all(journal);
     }
 
@@ -1636,12 +1683,44 @@ mod tests {
     }
 
     #[test]
-    fn too_small_reclamp_is_context_budget_exceeded_without_retry() {
+    fn too_small_completion_room_refits_input_for_generate() {
         let runtime = EndpointRuntime::default();
         let journal = journal_path();
+        let mut oversized = request(None);
+        oversized.max_output_tokens = 512;
+        oversized.contents = vec![ContentPart::Text {
+            text: "lorem ipsum dolor sit amet ".repeat(4_000),
+        }];
         let overflow = "maximum context length of 1000 tokens: 800 tokens from the input messages and 400 tokens for the completion";
         let mut transport = StubTransport {
-            post_script: vec![Ok(bad_request(overflow))],
+            post_script: vec![Ok(bad_request(overflow)), Ok(response())],
+            ..Default::default()
+        };
+        assert!(matches!(
+            endpoint_generate_with(
+                &oversized,
+                &journal,
+                &endpoint("http://endpoint"),
+                &served_window_config(),
+                &runtime,
+                &mut transport,
+                Instant::now(),
+            ),
+            EndpointResult::Generated(_)
+        ));
+        assert_eq!(transport.posts.len(), 2);
+        let first = transport.posts[0]["messages"].to_string().len();
+        let second = transport.posts[1]["messages"].to_string().len();
+        assert!(second < first);
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn contract_400s_are_not_retried() {
+        let runtime = EndpointRuntime::default();
+        let journal = journal_path();
+        let mut transport = StubTransport {
+            post_script: vec![Ok(bad_request("unexpected endpoint response"))],
             ..Default::default()
         };
         assert_eq!(
@@ -1654,49 +1733,10 @@ mod tests {
                 &mut transport,
                 Instant::now(),
             ),
-            failure("context_budget_exceeded")
+            failure("local_endpoint_contract_failed")
         );
         assert_eq!(transport.posts.len(), 1);
         let _ = std::fs::remove_dir_all(journal);
-    }
-
-    #[test]
-    fn contract_400s_are_not_retried_and_context_400s_refit_once() {
-        for (body, reason_code, posts, script) in [
-            (
-                "request exceeds the context window",
-                "context_window_exceeded",
-                2usize,
-                2usize,
-            ),
-            (
-                "unexpected endpoint response",
-                "local_endpoint_contract_failed",
-                1,
-                1,
-            ),
-        ] {
-            let runtime = EndpointRuntime::default();
-            let journal = journal_path();
-            let mut transport = StubTransport {
-                post_script: (0..script).map(|_| Ok(bad_request(body))).collect(),
-                ..Default::default()
-            };
-            assert_eq!(
-                endpoint_generate_with(
-                    &request(None),
-                    &journal,
-                    &endpoint("http://endpoint"),
-                    &served_window_config(),
-                    &runtime,
-                    &mut transport,
-                    Instant::now(),
-                ),
-                failure(reason_code)
-            );
-            assert_eq!(transport.posts.len(), posts);
-            let _ = std::fs::remove_dir_all(journal);
-        }
     }
 
     #[test]
