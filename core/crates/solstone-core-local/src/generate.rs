@@ -21,7 +21,7 @@ const SAFETY_MARGIN_TOKENS: u32 = 256;
 const ESTIMATED_IMAGE_TOKENS: u32 = 2_500;
 const OUTPUT_RESERVE_DIVISOR: u32 = 4;
 const MIN_COMPLETION_TOKENS: u32 = 256;
-const LINUX_TEXT_OVERFLOW_SHRINK_ATTEMPTS: u32 = 2;
+const LINUX_TEXT_OVERFLOW_SHRINK_ATTEMPTS: u32 = 8;
 const TOKENIZE_TIMEOUT: Duration = Duration::from_secs(5);
 const TRUNCATION_MARKER: &str = "[earlier input truncated to fit the on-device model's context]";
 const LOCAL_SCHEMA_MAX_ITEMS: u64 = 192;
@@ -723,12 +723,15 @@ fn prepare_linux_text_overflow_fallback<T: GenerateTransport>(
                 "Managed local input-token recount still exceeds the context window after fallback shrink attempts.".into(),
             ));
         }
-        let remaining = effective.window.saturating_sub(loud_input_tokens);
-        let next = if remaining == 0 {
-            (effective.window / 2).max(1)
-        } else {
-            loud_input_tokens.saturating_add(remaining / 2)
-        };
+        // The plain-text tokenizer cannot see fixed chat-body overhead such as
+        // the response schema. Feed the exact native recount's overflow back
+        // into the fitted window, while forcing material progress when the two
+        // tokenizers disagree by only a small amount.
+        let overflow = required.saturating_sub(context.window);
+        let minimum_shrink = (effective.window / 8).max(1);
+        let next = effective
+            .window
+            .saturating_sub(overflow.max(minimum_shrink));
         if next >= effective.window {
             return Err(failure_error(
                 "context_fitted_overflow",
@@ -2278,7 +2281,7 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn linux_text_overflow_shrink_loop_stops_after_two_extra_attempts() {
+    fn linux_text_overflow_shrink_loop_is_bounded() {
         let mut transport = ScriptedTransport::new([]);
         transport.tokenize_divisor = Some(4);
         transport.input_tokens = FLOOR_CONTEXT_TOKENS - 511;
@@ -2300,8 +2303,40 @@ mod tests {
             Some("context_fitted_overflow")
         );
         assert_eq!(transport.completion_posts, 0);
-        assert!(transport.count_posts <= 4);
+        assert!(transport.count_posts <= LINUX_TEXT_OVERFLOW_SHRINK_ATTEMPTS as usize + 2);
         assert!(transport.tokenize_posts >= 1);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_text_overflow_feedback_covers_fixed_chat_body_overhead() {
+        let mut transport = ScriptedTransport::new([ok_http(json!({
+            "choices": [{"message": {"content": "fitted response"}, "finish_reason": "stop"}]
+        }))]);
+        transport.tokenize_divisor = Some(4);
+        transport.input_token_queue = std::collections::VecDeque::from([
+            FLOOR_CONTEXT_TOKENS - 511,
+            25_000,
+            19_000,
+            16_500,
+            15_000,
+            15_000,
+        ]);
+        let root = tempfile::tempdir().expect("journal");
+        let huge_transcript = format!(
+            "## Entry 1\n{}\n## Entry 2\n{}",
+            "x".repeat(120_000),
+            "y".repeat(120_000)
+        );
+        let mut request = input(json!([huge_transcript, "instruction"]));
+        request.journal_path = root.path().display().to_string();
+        request.max_output_tokens = 512;
+        let result = generate_with(request, &mut transport, |_| ConnectOutcome::Ready {
+            server: server(),
+        });
+        assert!(matches!(result, GenerateResult::Success(_)));
+        assert_eq!(transport.count_posts, 6);
+        assert_eq!(transport.completion_posts, 1);
     }
 
     #[cfg(target_os = "linux")]
