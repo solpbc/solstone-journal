@@ -1208,7 +1208,11 @@ mod tests {
             .collect::<Vec<_>>();
         let actual = catalog().to_vec();
         assert_eq!(actual, expected);
-        assert!(actual.iter().all(|artifact| artifact.unit != "mlx-snapshot"));
+        assert!(
+            actual
+                .iter()
+                .all(|artifact| artifact.unit != "mlx-snapshot")
+        );
     }
 
     #[test]
