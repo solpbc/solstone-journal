@@ -290,6 +290,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn committed_rust_notices_match_workspace_lock() {
+        validate_rust_notices(
+            include_bytes!("../../../../distribution/windows-rust-sources.json"),
+            include_bytes!("../../../../distribution/windows-rust-NOTICES.txt"),
+            &crate::digest::sha256_hex(include_bytes!("../../../../Cargo.lock")),
+        )
+        .expect("refresh Windows Rust notices when the workspace lock changes");
+    }
+
+    #[test]
     fn stale_lock_or_changed_rust_notices_refuse_before_production() {
         let notices = b"original upstream notices";
         let index = serde_json::to_vec(&serde_json::json!({
