@@ -1047,7 +1047,12 @@ fn sha256_file(path: &Path) -> io::Result<String> {
     use std::io::Read;
     let mut file = fs::File::open(path)?;
     let mut digest = Sha256::new();
-    let mut buffer = [0_u8; 1024 * 1024];
+    // Heap-allocated: a 1 MiB fixed-size array here previously lived on the
+    // stack, which alone is close to (and on some call paths apparently
+    // exceeds) the default 1 MiB Windows main-thread stack reserve before any
+    // other frame is considered. See commit history on this file for the
+    // superseded main()-side worker-thread workaround this replaces.
+    let mut buffer = vec![0_u8; 1024 * 1024];
     loop {
         let read = file.read(&mut buffer)?;
         if read == 0 {
@@ -1214,6 +1219,22 @@ fn open_error(error: c_ulong) -> ContractError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn file_hashing_fits_a_one_mib_stack() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf_corpus/text.pdf");
+        let expected = format!(
+            "{:x}",
+            Sha256::digest(fs::read(&path).expect("read PDF fixture"))
+        );
+        let actual = std::thread::Builder::new()
+            .stack_size(1024 * 1024)
+            .spawn(move || sha256_file(&path).expect("hash PDF fixture"))
+            .expect("spawn worker with Windows-sized stack")
+            .join()
+            .expect("hashing worker finished");
+        assert_eq!(actual, expected);
+    }
 
     #[test]
     fn whitespace_matches_python_isspace_exception() {

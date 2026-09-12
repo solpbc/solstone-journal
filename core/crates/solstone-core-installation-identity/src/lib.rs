@@ -1344,7 +1344,7 @@ enum OwnerCoordinatorKey {
         inode: u64,
     },
     Windows {
-        volume_serial: u32,
+        volume_serial: u64,
         file_id: [u8; 16],
     },
 }
@@ -2634,7 +2634,7 @@ fn nix_error(operation: &'static str, error: Errno) -> IdentityError {
 #[cfg(windows)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct WindowsFileIdentity {
-    volume_serial: u32,
+    volume_serial: u64,
     file_id: [u8; 16],
 }
 
@@ -2949,8 +2949,11 @@ fn file_id_windows(file: &File) -> Result<WindowsFileIdentity, IdentityError> {
         ));
     }
     Ok(WindowsFileIdentity {
-        volume_serial: u32::try_from(info.VolumeSerialNumber)
-            .map_err(|_| IdentityError::UnsafeState("Windows volume serial exceeds u32"))?,
+        // FILE_ID_INFO.VolumeSerialNumber is a 64-bit NTFS-internal serial (ULONGLONG),
+        // not the legacy 32-bit `vol`/GetVolumeInformation serial; it routinely has bits
+        // set above the low 32 (observed e.g. 0x006af53f6af531d0), so it must not be
+        // narrowed to u32.
+        volume_serial: info.VolumeSerialNumber,
         file_id: info.FileId.Identifier,
     })
 }

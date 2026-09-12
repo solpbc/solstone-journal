@@ -378,7 +378,7 @@ License: NVIDIA CUDA Toolkit End User License Agreement, Release 13.3,
 including the CUDA Toolkit Supplement, Attachment A, and Attachment B.
 
 These files are proprietary NVIDIA software. They are not licensed under
-solstone's AGPL-3.0 license or the llama.cpp MIT license. Their use and
+solstone's AGPL-3.0-only license or the llama.cpp MIT license. Their use and
 redistribution remain subject to the NVIDIA CUDA Toolkit EULA. A verbatim
 copy of the package-accompanying EULA, including its third-party notices,
 is reproduced in `licenses/NVIDIA-CUDA-EULA-13.3.txt` and accompanies each
@@ -414,3 +414,36 @@ The complete llama.cpp MIT license and copyright notice is reproduced in
 `licenses/llama.cpp-LICENSE.txt` and accompanies each runtime artifact.
 The MIT license permits sol pbc's redistribution of these Vulkan/CPU runtime
 files.
+
+## Microsoft Visual C++ runtime (windows)
+
+The windows package includes unmodified Microsoft redistributable runtime
+libraries in its application directory. They are not part of solstone and are
+not covered by solstone's AGPL-3.0-only license.
+
+Attribution: Microsoft Corporation.
+
+Source:
+
+- Package: Microsoft.VC.14.44.17.14.CRT.Redist.X64.base.vsix
+  (SHA-256 4aaf54db0bfc9435f7c3660e1a00237a4b556042bfeea64bde44c2e0194e6ee5)
+  from download.visualstudio.microsoft.com
+- Toolset: Microsoft.VC143.CRT and Microsoft.VC143.OpenMP, 14.44.35112
+
+| Bundled file | SHA-256 |
+|---|---|
+| `bin/msvcp140.dll`      | `0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9` |
+| `bin/vcruntime140.dll`  | `d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066` |
+| `bin/vcruntime140_1.dll`| `1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f` |
+| `bin/vcomp140.dll`      | `55aba23cdcd6484fbb06f4155b8ca75adfce7a881f10afd0c49457165e677164` |
+
+License notice: sol pbc redistributes these components under the Distributable
+Code terms of the Microsoft Visual Studio 2022 license, published at
+https://visualstudio.microsoft.com/license-terms/ (Distributable List:
+https://aka.ms/vs/17/redistribution). They are licensed separately by
+Microsoft. You may redistribute them only as part of this program, unmodified,
+and you may not reverse engineer, decompile or disassemble them, or remove or
+alter any Microsoft notice they carry. Microsoft provides these files as is and
+gives no warranty for them. Microsoft does not sponsor or endorse solstone.
+The same restrictions are restated in the installed package at
+share/licenses/msvc/NOTICE.md.

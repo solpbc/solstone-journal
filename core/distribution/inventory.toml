@@ -1062,7 +1062,7 @@ targets = ["windows-x86_64"]
 kind = "windows-native"
 component = "msvc"
 member = "runtime-license.docx"
-dest = "share/licenses/msvc/runtime-license.docx"
+dest = "share/provenance/msvc/runtime-license.docx"
 mode = 420
 targets = ["windows-x86_64"]
 
@@ -1093,4 +1093,18 @@ kind = "copy"
 source = "core/distribution/windows-rust-sources.json"
 dest = "share/provenance/rust-sources.json"
 mode = 0o644
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "copy"
+source = "core/distribution/windows-msvc-NOTICE.md"
+dest = "share/licenses/msvc/NOTICE.md"
+mode = 420
+targets = ["windows-x86_64"]
+
+[[entry]]
+kind = "copy"
+source = "THIRD_PARTY_NOTICES.md"
+dest = "share/THIRD_PARTY_NOTICES.md"
+mode = 420
 targets = ["windows-x86_64"]
