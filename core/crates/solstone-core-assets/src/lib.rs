@@ -990,6 +990,62 @@ static ARTIFACTS: &[Artifact] = &[
         backend: None,
         extracted_binary_sha256: None,
     },
+    // restic backs the BYO backup engine. Its own os/arch resolution
+    // (solstone-core-backup-runtime::readiness) predates and is independent of
+    // the Platform enum, so these entries carry no Platform/Backend — they
+    // exist so restic mirrors and reads back like every other artifact.
+    Artifact {
+        unit: "restic",
+        version: "0.19.0",
+        filename: "restic_0.19.0_darwin_amd64.bz2",
+        sha256: "c9d9a71234bc0955fdba6da93cc9375f8793ec1e1cbce77a91014d536a969148",
+        size_bytes: 10511173,
+        upstream_url: "https://github.com/restic/restic/releases/download/v0.19.0/restic_0.19.0_darwin_amd64.bz2",
+        origin_key: "assets/restic/0.19.0/restic_0.19.0_darwin_amd64.bz2",
+        artifact_key: Some("darwin-amd64"),
+        platform: None,
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "restic",
+        version: "0.19.0",
+        filename: "restic_0.19.0_darwin_arm64.bz2",
+        sha256: "1475397bf759ef4be16a77b19dec650bdbfec00d2cacd82005553411cdd37997",
+        size_bytes: 9724848,
+        upstream_url: "https://github.com/restic/restic/releases/download/v0.19.0/restic_0.19.0_darwin_arm64.bz2",
+        origin_key: "assets/restic/0.19.0/restic_0.19.0_darwin_arm64.bz2",
+        artifact_key: Some("darwin-arm64"),
+        platform: None,
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "restic",
+        version: "0.19.0",
+        filename: "restic_0.19.0_linux_amd64.bz2",
+        sha256: "13176fe6d89d4357947a2cd107218ab2873a5f9d8e1ac2d4cd1c8e07e6839c21",
+        size_bytes: 10097738,
+        upstream_url: "https://github.com/restic/restic/releases/download/v0.19.0/restic_0.19.0_linux_amd64.bz2",
+        origin_key: "assets/restic/0.19.0/restic_0.19.0_linux_amd64.bz2",
+        artifact_key: Some("linux-amd64"),
+        platform: None,
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "restic",
+        version: "0.19.0",
+        filename: "restic_0.19.0_linux_arm64.bz2",
+        sha256: "e522ce6bf748d753fee8093e8ec59359972cf5b6bc65fc7c7cf38ae952351d91",
+        size_bytes: 9040587,
+        upstream_url: "https://github.com/restic/restic/releases/download/v0.19.0/restic_0.19.0_linux_arm64.bz2",
+        origin_key: "assets/restic/0.19.0/restic_0.19.0_linux_arm64.bz2",
+        artifact_key: Some("linux-arm64"),
+        platform: None,
+        backend: None,
+        extracted_binary_sha256: None,
+    },
 ];
 
 static VALIDATED: LazyLock<()> = LazyLock::new(|| {

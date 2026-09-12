@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use sha2::{Digest, Sha256};
+use solstone_core_artifact_download::{PRODUCTION_DOWNLOAD_POLICY, origin_url};
 
 use crate::runner::{ToolRunner, run_restic};
 
@@ -41,9 +42,6 @@ pub const RESTIC_BZ2_SHA256: [(&str, &str); 4] = [
         "e522ce6bf748d753fee8093e8ec59359972cf5b6bc65fc7c7cf38ae952351d91",
     ),
 ];
-pub const RESTIC_GITHUB_URL_TEMPLATE: &str =
-    "https://github.com/restic/restic/releases/download/v0.19.0/restic_0.19.0_{os}_{arch}.bz2";
-
 pub fn platform_info() -> Result<(String, String), String> {
     let os = match env::consts::OS {
         "macos" => "darwin",
@@ -91,11 +89,10 @@ pub fn select_restic_asset(
         .find(|(name, _)| *name == filename)
         .map(|(_, digest)| *digest)
         .expect("asset matrix complete");
+    let origin_key = format!("assets/restic/{RESTIC_VERSION}/{filename}");
     Ok((
         filename,
-        RESTIC_GITHUB_URL_TEMPLATE
-            .replace("{os}", &os)
-            .replace("{arch}", normalized),
+        origin_url(PRODUCTION_DOWNLOAD_POLICY.origin_base_url, &origin_key),
         sha.to_owned(),
     ))
 }
@@ -191,7 +188,11 @@ mod tests {
                 select_restic_asset(Some(parts[2]), Some(parts[3])).unwrap();
             assert_eq!(selected, filename);
             assert_eq!(actual, digest);
-            assert!(url.ends_with(filename));
+            assert_eq!(
+                url,
+                format!("https://updates.solstone.app/assets/restic/{RESTIC_VERSION}/{filename}")
+            );
+            assert!(!url.contains("github.com"));
         }
         assert_eq!(
             select_restic_asset(Some("linux"), Some("x86_64"))
