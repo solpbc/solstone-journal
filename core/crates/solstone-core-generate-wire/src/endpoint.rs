@@ -254,8 +254,13 @@ pub(crate) fn endpoint_generate_with<T: EndpointTransport>(
             // alone would resend byte-identical input and cannot make it fit. Halving
             // the window handed to `prepare_endpoint_request` is what actually trims
             // the INPUT -- see `MAX_CONTEXT_REFITS` for the bounded policy.
-            match endpoint_overflow_decision(&response.body, served_window, refits) {
+            let overflow = endpoint_overflow_decision(&response.body, served_window, refits);
+            match overflow {
                 OverflowDecision::Retry(_) | OverflowDecision::Context => {}
+                // A detailed refusal with less than the minimum completion room is
+                // still recoverable for one-shot generation: unlike converse, this
+                // path owns a trimmable input block and can refit it to make room.
+                OverflowDecision::Budget if served_window.is_some() => {}
                 OverflowDecision::Budget => return failure("context_budget_exceeded"),
                 OverflowDecision::Contract => {
                     return failure("local_endpoint_contract_failed");
@@ -1678,17 +1683,22 @@ mod tests {
     }
 
     #[test]
-    fn too_small_reclamp_is_context_budget_exceeded_without_retry() {
+    fn too_small_completion_room_refits_input_for_generate() {
         let runtime = EndpointRuntime::default();
         let journal = journal_path();
+        let mut oversized = request(None);
+        oversized.max_output_tokens = 512;
+        oversized.contents = vec![ContentPart::Text {
+            text: "lorem ipsum dolor sit amet ".repeat(4_000),
+        }];
         let overflow = "maximum context length of 1000 tokens: 800 tokens from the input messages and 400 tokens for the completion";
         let mut transport = StubTransport {
-            post_script: vec![Ok(bad_request(overflow))],
+            post_script: vec![Ok(bad_request(overflow)), Ok(response())],
             ..Default::default()
         };
-        assert_eq!(
+        assert!(matches!(
             endpoint_generate_with(
-                &request(None),
+                &oversized,
                 &journal,
                 &endpoint("http://endpoint"),
                 &served_window_config(),
@@ -1696,9 +1706,12 @@ mod tests {
                 &mut transport,
                 Instant::now(),
             ),
-            failure("context_budget_exceeded")
-        );
-        assert_eq!(transport.posts.len(), 1);
+            EndpointResult::Generated(_)
+        ));
+        assert_eq!(transport.posts.len(), 2);
+        let first = transport.posts[0]["messages"].to_string().len();
+        let second = transport.posts[1]["messages"].to_string().len();
+        assert!(second < first);
         let _ = std::fs::remove_dir_all(journal);
     }
 
