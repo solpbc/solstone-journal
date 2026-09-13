@@ -1866,6 +1866,20 @@ required_features = ["test-hooks"]
 runtime = "none"
 
 [[suites]]
+id = "solstone-core::windows_task_readback"
+package = "solstone-core"
+target = "windows_task_readback"
+set = "component"
+areas = ["core"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core::service_logs_cli"
 package = "solstone-core"
 target = "service_logs_cli"

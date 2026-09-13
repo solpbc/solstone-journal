@@ -64,6 +64,10 @@ path = "tests/windows_service_capture_receipt.rs"
 required-features = ["test-hooks"]
 
 [[test]]
+name = "windows_task_readback"
+path = "tests/windows_task_readback.rs"
+
+[[test]]
 name = "think_verb_fidelity"
 path = "tests/think_verb_fidelity.rs"
 
